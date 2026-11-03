@@ -19,6 +19,7 @@ it("standalone defense engine smoke does not poll an unavailable API", () => {
       cwd: process.cwd(), encoding: "utf8", timeout: 15_000,
       env: { ...process.env, TEMPO_API_URL: "http://127.0.0.1:1" },
     });
+    expect(smoke.error).toBeUndefined();
     expect(smoke.status, smoke.stderr).toBe(0);
     expect(smoke.stdout).toContain("Restricted Stockfish search passed");
   } finally {

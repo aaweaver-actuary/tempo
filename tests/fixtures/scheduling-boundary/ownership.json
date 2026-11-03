@@ -2,16 +2,33 @@
   "version": 1,
   "module": "scheduling-review",
   "selection_status": "ownership-contract-only; not wired into shared CI planner",
-  "implementation_module": "app.services.scheduling_review_application",
-  "shared_contract_module": "app.services.scheduling_review_contracts",
+  "implementation_module": "tempo_learning_runtime.scheduling_review_application",
+  "shared_contract_module": "tempo_learning_runtime.scheduling_review_contracts",
+  "backend_facade_module": "app.services.scheduling_review_application",
+  "backend_contract_facade_module": "app.services.scheduling_review_contracts",
+  "graph_roots": [
+    "app",
+    "tempo_learning_runtime",
+    "tempo_legacy_database",
+    "tempo_learning_database"
+  ],
   "owning_tests": [
     "backend/tests/test_scheduling_boundary.py",
     "backend/tests/test_scheduling_package_adapter.py",
     "backend/tests/test_scheduling_review_application.py"
   ],
   "consumers": {
-    "app.services.scheduling_review_store": [
+    "tempo_legacy_database.adapters.scheduling_review_store": [
       "backend/tests/test_scheduling_review_store.py"
+    ],
+    "tempo_learning_database.adapters.scheduling_review_store": [
+      "backend/tests/test_scheduling_review_store.py"
+    ],
+    "tempo_learning_runtime.review_service": [
+      "services/learning/runtime/tests/test_review_storage_separation.py"
+    ],
+    "app.services.scheduling_review_contracts": [
+      "backend/tests/test_scheduling_review_application.py"
     ],
     "app.services.review_service": [
       "backend/tests/test_scheduling_review_store.py"
@@ -19,13 +36,23 @@
     "app.services.study_attempts": [
       "backend/tests/test_study_durability.py"
     ],
+    "app.study.game_feedback": [
+      "backend/tests/test_real_game_feedback_policy.py"
+    ],
+    "app.study.encounter_feedback": [
+      "backend/tests/test_product_encounter_integration.py"
+    ],
     "app.main": [
       "backend/tests/test_phone_offline_training.py",
       "backend/tests/test_prepared_review_continuation.py"
+    ],
+    "app.services.learning_review_adapter": [
+      "backend/tests/test_position_review_integration.py",
+      "backend/tests/test_position_review_reconciliation.py"
     ]
   },
   "unrelated": {
-    "module": "app.services.motif_detectors",
+    "module": "app.chess.motifs",
     "tests": [
       "backend/tests/test_motif_detectors.py"
     ]
@@ -36,15 +63,39 @@
       "app.services.scheduler",
       "app.services.scheduling_review_contracts",
       "datetime",
-      "tempo_learning_runtime"
+      "tempo_learning_runtime.scheduling_review_application"
     ],
     "app.services.scheduling_review_contracts": [
-      "tempo_learning_runtime"
+      "tempo_learning_runtime.scheduling_review_contracts"
     ],
     "app.services.scheduler": [
       "datetime",
       "fsrs",
       "tempo_scheduling"
+    ],
+    "tempo_learning_runtime.scheduling_review_application": [
+      "__future__",
+      "datetime",
+      "json",
+      "tempo_learning_runtime.clock",
+      "tempo_learning_runtime.scheduler",
+      "tempo_learning_runtime.scheduling_review_contracts"
+    ],
+    "tempo_learning_runtime.scheduling_review_contracts": [
+      "__future__",
+      "dataclasses",
+      "datetime",
+      "typing"
+    ],
+    "tempo_learning_runtime.scheduler": [
+      "datetime",
+      "fsrs",
+      "tempo_scheduling"
+    ],
+    "tempo_learning_runtime.clock": [
+      "contextvars",
+      "datetime",
+      "zoneinfo"
     ],
     "app": [],
     "app.services": []
@@ -63,7 +114,11 @@
   "source_paths": {
     "app.services.scheduling_review_application": "backend/app/services/scheduling_review_application.py",
     "app.services.scheduling_review_contracts": "backend/app/services/scheduling_review_contracts.py",
-    "app.services.scheduler": "backend/app/services/scheduler.py"
+    "app.services.scheduler": "backend/app/services/scheduler.py",
+    "tempo_learning_runtime.scheduling_review_application": "services/learning/runtime/src/tempo_learning_runtime/scheduling_review_application.py",
+    "tempo_learning_runtime.scheduling_review_contracts": "services/learning/runtime/src/tempo_learning_runtime/scheduling_review_contracts.py",
+    "tempo_learning_runtime.scheduler": "services/learning/runtime/src/tempo_learning_runtime/scheduler.py",
+    "tempo_learning_runtime.clock": "services/learning/runtime/src/tempo_learning_runtime/clock.py"
   },
   "packaged_owner": "tempo_learning_runtime.scheduling_review_application"
 }

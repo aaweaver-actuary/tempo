@@ -1,5 +1,5 @@
 """Fixed tactical, unseen, due and Study queue-admission operations on borrowed transactions."""
-from .eligibility import _DUE_CARD_ELIGIBILITY, _STUDY_NEW_ELIGIBILITY
+from .eligibility import _DUE_CARD_ELIGIBILITY, _STUDY_NEW_ELIGIBILITY, _POSITION_DUE_EXCLUSION
 
 
 def lock_tactical_card_edit(database, card_id):
@@ -135,8 +135,9 @@ def locked_card(database, card_id):
 
 
 def due_card_eligibility(database, card_id, queue_date):
+    predicate = _DUE_CARD_ELIGIBILITY + _POSITION_DUE_EXCLUSION
     return database.execute_native(
-        "SELECT 1 FROM cards c WHERE c.id=%s AND " + _DUE_CARD_ELIGIBILITY,
+        "SELECT 1 FROM cards c WHERE c.id=%s AND " + predicate,
         (card_id, queue_date, queue_date, queue_date),
     ).fetchone()
 
@@ -171,3 +172,30 @@ def append_study_card(database, queue_date, card_id, position):
            VALUES(%s,%s,%s,'study_exercise','new')""",
         (queue_date, card_id, position),
     )
+
+
+def position_carrier_eligible(database, repertoire_id, card_id, revision, queue_date):
+    """Recheck the original carrier and exclude outstanding/buried work."""
+    return database.execute_native("""SELECT EXISTS(SELECT 1 FROM daily_queue q
+        WHERE q.card_id=c.id AND ((q.queue_date=%s AND q.status IN ('queued','buried')) OR
+          (q.status='queued' AND EXISTS(SELECT 1 FROM queue_attempt_origins o
+            WHERE o.queue_entry_id=q.id AND o.card_id=c.id AND o.issued_as_head=1)))) occupied
+        FROM cards c WHERE c.id=%s AND c.revision=%s AND c.content_type='opening'
+          AND c.archived=0 AND c.superseded_by IS NULL
+          AND COALESCE(c.pending_validation,0)=0
+          AND NOT EXISTS(SELECT 1 FROM deleted_cards d WHERE d.card_id=c.id)
+          AND (c.repertoire_id=%s OR EXISTS(SELECT 1 FROM repertoire_cards rc
+              WHERE rc.card_id=c.id AND rc.repertoire_id=%s))
+          AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks b
+              WHERE b.card_id=c.id AND b.repertoire_id=%s)
+          """, (queue_date, card_id, revision, repertoire_id, repertoire_id, repertoire_id)).fetchone()
+
+
+def append_position_due(database, queue_date, repertoire_id, card_id):
+    """Append another real queue generation after the previous cycle completed."""
+    return database.execute_native("""INSERT INTO daily_queue
+        (queue_date,card_id,cycle,position,card_bucket,admission_kind,admission_repertoire_id)
+        SELECT %s,%s,COALESCE(MAX(cycle),-1)+1,%s,'opening','review',%s
+        FROM daily_queue WHERE queue_date=%s AND card_id=%s RETURNING id""",
+        (queue_date, card_id, next_queue_position(database, queue_date), repertoire_id,
+         queue_date, card_id)).fetchone()

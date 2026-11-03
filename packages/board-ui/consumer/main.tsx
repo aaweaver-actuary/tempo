@@ -22,7 +22,7 @@ function Consumer() {
   };
   return <>
     <h1>Installed Board UI consumer</h1>
-    <div ref={setHeading} id="heading">{banner && <p style={{ padding: 30 }}>A heading changes the board's vertical position.</p>}</div>
+    <div ref={setHeading} id="heading">{banner && <p style={{ padding: 30 }}>A heading changes the board&apos;s vertical position.</p>}</div>
     <div id="board-container" style={{ width: "min(100%, 643px)" }}>
       {mounted && <Board {...props} ref={board} layoutAnchor={heading} ariaDescribedBy="keyboard-help"
         onMove={event => recordMove(event)} onFreeMove={event => recordMove(event)}

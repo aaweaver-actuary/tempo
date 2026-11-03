@@ -198,12 +198,15 @@ def test_native_new_source_before_prepared_successor_preserves_save_and_issues_t
     from product_encounter_fixtures import qualified_feedback_source
     from test_product_recombination_postgres import ordinary_current_review
     case,clock = native_handoff,SystemClock()
-    day = datetime.now(timezone.utc).date().isoformat()
     active,ordinary = case.case.card_id+'-active',case.case.card_id+'-ordinary'
     monkeypatch.setattr(queue_next_card,'_prepare',None)
     monkeypatch.setattr(queue_next_card,'_source_pending',None)
     try:
         with case.case.transaction() as database:
+            # Issuance uses the stored Study timezone, including local dates
+            # that differ from UTC around midnight.
+            day = queue_commands.current_study_day(database)
+            study_timezone = database.execute_native("SELECT timezone FROM settings WHERE id=1").fetchone()[0]
             # Replace this fixture's earlier manual source with a genuine NEW
             # capture only after the protected board has actually been issued.
             database.execute_native('DELETE FROM product_feedback_deliveries WHERE source_key=%s',(case.source.source_key,))
@@ -243,7 +246,7 @@ def test_native_new_source_before_prepared_successor_preserves_save_and_issues_t
                 assert queue_commands.issue_queue_head(database,dict(queue_date=day,entry_id=ids[active],
                     card_id=active,expected_revision=1)) == {'issued':True}
                 adapter = LearningReviewAdapter(database,request,observed_at=datetime.now(timezone.utc),
-                    policy_provider=lambda:ReviewPolicy('UTC',7))
+                    policy_provider=lambda:ReviewPolicy(study_timezone,7))
                 command = command_from_request(active,request)
                 saved = submit_review(adapter,command,lambda:adapter.context(command)).as_dict()
                 assert saved['persisted'] and 'prepared_continuation' not in saved

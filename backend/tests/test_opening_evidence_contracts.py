@@ -1,8 +1,9 @@
 """Compatibility and authoritative preparation seams in the regular suite."""
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 import hashlib
 import json
 from pathlib import Path
+import sqlite3
 from types import SimpleNamespace
 
 import pytest
@@ -13,6 +14,33 @@ def checkpoint_http_envelope():
     manifest = json.loads((Path(__file__).resolve().parents[2] / 'tests/fixtures/opening-evidence-manifest.json').read_text())
     return {'attempt_id': 'http-admission-attempt', 'manifest': manifest, 'origin_queue_entry_id': 101,
             'started_at': '2026-09-30T12:00:00Z', 'study_timezone': 'UTC'}
+
+
+@pytest.fixture
+def review_policy_settings(monkeypatch):
+    """Give review-policy reads the two settings owned by the legacy schema."""
+    from app.services import learning_review_adapter
+
+    database = sqlite3.connect(':memory:')
+    database.row_factory = sqlite3.Row
+    database.execute('''CREATE TABLE settings (
+        id INTEGER PRIMARY KEY,
+        timezone TEXT NOT NULL,
+        light_first_interval_days INTEGER NOT NULL
+    )''')
+    database.execute(
+        "INSERT INTO settings (id, timezone, light_first_interval_days) VALUES (1, 'UTC', 7)"
+    )
+
+    @contextmanager
+    def read_connection():
+        yield database
+
+    monkeypatch.setattr(learning_review_adapter, 'read_connection', read_connection)
+    try:
+        yield database
+    finally:
+        database.close()
 
 
 @pytest.mark.parametrize('background_header', [True, False])
@@ -183,7 +211,10 @@ def test_foreground_review_http_preparation_keeps_foreground_request_lease(monke
         assert not activity_gate.in_background and activity_gate.foreground_requests_active
         snapshot = {'id': 1, 'card_id': 'shadow-card', 'revision': 3, 'start_fen': manifest['decisions'][0]['fen'],
                     'moves_json': '["e2e4","e7e5","g1f3","b8c6","f1b5"]', 'trained_color': 'white', 'effective_trained_color': 'white'}
-        yield SimpleNamespace(execute_native=lambda *arguments: SimpleNamespace(fetchone=lambda: snapshot))
+        def source_row(statement, *_arguments):
+            row = (False,) if statement == "SELECT to_regclass('public.study_position_issued_plans') IS NOT NULL" else snapshot
+            return SimpleNamespace(fetchone=lambda: row)
+        yield SimpleNamespace(execute_native=source_row)
     monkeypatch.setattr(main.postgres_store, 'connection', source_read)
     submitted = []
     def dispatch(name, payload, **options):
@@ -236,7 +267,6 @@ def test_opening_checkpoint_dispatches_as_background_without_changing_review_dis
 
 
 def test_opening_checkpoint_request_is_background_without_a_client_work_class_header(monkeypatch):
-    from contextlib import contextmanager
     from fastapi.testclient import TestClient
     from app import main, command_dispatch, opening_evidence_api
     fixture = json.loads((Path(__file__).resolve().parents[2]/'tests/fixtures/opening-evidence-manifest.json').read_text())
@@ -247,8 +277,12 @@ def test_opening_checkpoint_request_is_background_without_a_client_work_class_he
     def scope(work_class):
         observed_scopes.append(work_class)
         yield
+    @asynccontextmanager
+    async def foreground_scope():
+        observed_scopes.append('foreground')
+        yield
     monkeypatch.setattr(main.postgres_store, 'configured', lambda: True)
-    monkeypatch.setattr(main.activity_gate, 'foreground', lambda: scope('foreground'))
+    monkeypatch.setattr(main.activity_gate, 'async_foreground', foreground_scope)
     monkeypatch.setattr(main.activity_gate, 'background_request', lambda: scope('background'))
     monkeypatch.setattr(command_dispatch, 'dispatch_command', lambda *args, **kwargs: {'persisted': True})
     client = TestClient(main.app)
@@ -301,7 +335,10 @@ def test_shadow_chess_validation_closes_read_connection_before_traversal(monkeyp
     def read(**options):
         nonlocal active
         active=True
-        yield SimpleNamespace(execute_native=lambda *args:SimpleNamespace(fetchone=lambda:{'trained_color':'white','effective_trained_color':'white'}))
+        def source_row(statement, *_arguments):
+            row = (False,) if statement == "SELECT to_regclass('public.study_position_issued_plans') IS NOT NULL" else {'trained_color':'white','effective_trained_color':'white'}
+            return SimpleNamespace(fetchone=lambda: row)
+        yield SimpleNamespace(execute_native=source_row)
         active=False
     def derive(*args):
         assert not active,'Chess traversal held its database read connection'
@@ -357,7 +394,7 @@ def test_sqlite_reports_unsupported_evidence_without_claiming_shadow_persistence
     assert rejected.value.detail['aggregate_review_allowed'] is True
 
 
-def test_review_completion_requires_a_resolved_actual_queue_binding(monkeypatch):
+def test_review_completion_requires_a_resolved_actual_queue_binding(monkeypatch, review_policy_settings):
     import pytest
     from fastapi import HTTPException
     from app import review_commands
@@ -367,8 +404,18 @@ def test_review_completion_requires_a_resolved_actual_queue_binding(monkeypatch)
     completion={'attempt_id':'unbound-repeat','manifest':fixture,'origin_queue_entry_id':101,
       'queue_entry_id':None,'started_at':'2026-09-30T12:00:00Z','study_timezone':'UTC',
       'terminal':{'state':'complete','final_sequence':0,'ended_at':'2026-09-30T12:01:00Z'}}
+    def empty_query(statement, *_arguments):
+        assert statement.lstrip().startswith("SELECT"), "Unbound review attempted a data mutation"
+        return SimpleNamespace(fetchone=lambda: None)
+    def native(statement, *_arguments):
+        if statement == "SELECT to_regclass('public.study_position_issued_plans') IS NOT NULL":
+            return SimpleNamespace(fetchone=lambda: (False,))
+        if statement == "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))":
+            assert _arguments == (("tempo:card-edit:shadow-card",),)
+        return empty_query(statement, *_arguments)
+    database = SimpleNamespace(execute=empty_query, execute_native=native)
     with pytest.raises(HTTPException) as rejected:
-        review_commands.submit_review(SimpleNamespace(execute=lambda *args:SimpleNamespace(fetchone=lambda:None)),
+        review_commands.submit_review(database,
           {'card_id':'shadow-card','review':{'outcome':'correct','attempt_id':'unbound-repeat',
             'opening_evidence_completion':completion}})
     assert rejected.value.detail['code']=='opening_evidence_conflict'
@@ -410,7 +457,7 @@ def test_evidence_migration_captures_valid_scope_color_without_overwriting_conte
 ])
 @pytest.mark.parametrize("reconciling", [False, True])
 def test_review_requeue_context_correction_only_runs_for_fresh_review(
-        monkeypatch, has_receipt, idempotent, requeue_id, expected_corrections, reconciling):
+        monkeypatch, review_policy_settings, has_receipt, idempotent, requeue_id, expected_corrections, reconciling):
     from app import review_commands
     from app.services import postgres_opening_evidence
     from app.services import learning_review_adapter
@@ -439,13 +486,16 @@ def test_review_requeue_context_correction_only_runs_for_fresh_review(
         return SimpleNamespace(fetchone=lambda:row)
 
     def execute_native(statement, parameters):
+        if statement == "SELECT to_regclass('public.study_position_issued_plans') IS NOT NULL":
+            return SimpleNamespace(fetchone=lambda: (False,))
         if 'INSERT INTO opening_evidence_queue_contexts' in statement:
             assert validation_order == ['validated', 'reviewed', 'completed']
             corrections.append(parameters)
         return SimpleNamespace(fetchone=lambda:None if 'FROM deleted_cards' in statement else ('complete',))
 
     database = SimpleNamespace(execute=execute, execute_native=execute_native, raw=SimpleNamespace(execute=lambda *args:None))
-    def apply_review(adapter, command, context):
+    def apply_review(adapter, command, context, *, position=False):
+        assert position is False
         assert adapter.database is database and validation_order == ['validated']
         validation_order.append('reviewed')
         return ReviewResult.from_dict(result)
@@ -479,8 +529,12 @@ def test_opening_checkpoint_receipt_read_uses_background_admission(monkeypatch, 
     def scope(work_class):
         observed_scopes.append(work_class)
         yield
+    @asynccontextmanager
+    async def foreground_scope():
+        observed_scopes.append('foreground')
+        yield
     monkeypatch.setattr(main.postgres_store, 'configured', lambda: True)
-    monkeypatch.setattr(main.activity_gate, 'foreground', lambda: scope('foreground'))
+    monkeypatch.setattr(main.activity_gate, 'async_foreground', foreground_scope)
     monkeypatch.setattr(main.activity_gate, 'background_request', lambda: scope('background'))
     def read(operation_id, **options):
         reads.append((operation_id, options))
@@ -494,7 +548,8 @@ def test_opening_checkpoint_receipt_read_uses_background_admission(monkeypatch, 
     assert reads == [('opening-checkpoint:receipt', {'background': background})]
 
 
-def test_reconciliation_conflict_rolls_back_new_evidence_and_preserves_saved_checkpoint(monkeypatch):
+def test_reconciliation_conflict_rolls_back_new_evidence_and_preserves_saved_checkpoint(
+        monkeypatch, review_policy_settings):
     from app import review_commands
     from app.contracts.review_conflicts import ReviewConflict
     from app.services import postgres_opening_evidence as evidence

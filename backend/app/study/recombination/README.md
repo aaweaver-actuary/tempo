@@ -17,6 +17,22 @@ additive source migration 053; this is not a claim of live schema or deployment.
 Migration/readiness coordination and browser acceptance are recorded below. There
 is no additional service, scheduler, producer call or source content mutation.
 
+## Position ownership compatibility — #875
+
+The legacy adapter returns an explicit `inert` result before recording an R11
+review event for an original position-issued attempt or a saved
+`reviews.source_kind='position_study'` receipt. The immutable issued plan and
+canonical receipt/origin admission determine the scope; a card's primary
+repertoire does not. Original plans remain position-owned after pause or epoch
+changes. Missing or conflicting admission proof holds optional recombination.
+Active, staged and paused repertoire owners also hold source preparation,
+current-route join/recovery and confirmed split creation through the existing
+nonblocking owner fence. Inactive, shadow and absent owners retain legacy R11.
+Shared cards without proven admission check every retained membership.
+These guards never delete or rewrite historical generated cards, streaks,
+changes, reviews, original attempts or snapshots. Accepted historical lineage
+continues to be readable; no global R11 switch or schema change is introduced.
+
 ## Public application and transaction contract
 
 `Recombination(store, study, clock=..., next_local_study_day=..., new_id=...)`
@@ -196,7 +212,9 @@ or introductions. No source repertoire edit is made.
 
 ```mermaid
 flowchart LR
-    Saved["Retained Study saved review / between-attempt hook\nsource implemented"] --> App["Recombination application"]
+    Saved["Retained Study saved review / between-attempt hook\nsource implemented"] --> Ownership["Original position plan / receipt admission / owner fence"]
+    Ownership -->|legacy| App["Recombination application"]
+    Ownership -->|position or unproved| Inert["Inert result / hold; retained history"]
     App --> Policy["#502 reduce_clean_streak / plan_join\nimmutable shared #482 values"]
     App --> Boundary["StudyBoundary\nCurrentStudyRecombination\nactual current authority + normal schedule/queue"]
     App --> Store["PostgresRecombinationStore\nborrowed writer; private facts/projection"]

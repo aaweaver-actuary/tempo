@@ -54,6 +54,13 @@ class CurrentEncounterPort(CurrentDecisionPort, Protocol):
                           qualification: FirstDepartureWitness) -> tuple[DecisionPresentation, ...]: ...
 
 
+class PositionGameIntake(Protocol):
+    """Study-owned pre-lock source/owner fence and accepted-effect grade."""
+    def fence_position_intake(self, command, qualification) -> str: ...
+    def position_introduced(self, command, qualification) -> bool: ...
+    def apply_position_lapse(self, key, *, day, now) -> tuple[str, datetime, int] | None: ...
+
+
 class EncounterStore(GameFeedbackStore, Protocol):
     def encounter_card_facts(self, card_id: str, day: str) -> CardFacts | None: ...
     def lock_intake_target(self, card_id: str) -> None: ...
@@ -83,9 +90,10 @@ class EncounterFeedback(GameFeedback):
     def __init__(self, store: EncounterStore, decisions: CurrentEncounterPort, *,
                  clock: Callable[[], datetime], introductions: EncounterIntroductions | None,
                  introduction_policy: EncounterIntroductionPolicy | None,
-                 light_first_interval_days: int = 7):
+                 light_first_interval_days: int = 7, position_intake: PositionGameIntake | None = None):
         super().__init__(store, decisions, clock=clock, light_first_interval_days=light_first_interval_days)
         self.introductions, self.introduction_policy = introductions, introduction_policy
+        self.position_intake = position_intake
 
     @staticmethod
     def _command(effect):
@@ -151,6 +159,8 @@ class EncounterFeedback(GameFeedback):
         now = instant(self.clock())
         card = command.decision if isinstance(command, GameEncounter) else command.finding
         digest = encounter_digest(command) if isinstance(command, GameEncounter) else semantic_digest(command)
+        position_mode = (self.position_intake.fence_position_intake(command, qualification)
+                         if self.position_intake is not None and qualification is not None else "legacy")
         self.store.lock_intake_target(card.presentation_id)
         self.store.lock_effect(command.key)
         previous = self.store.get(command.key)
@@ -165,8 +175,9 @@ class EncounterFeedback(GameFeedback):
                 return self._encounter_receipt(changed, command, "conflict")
             if (qualification is not None and previous.status != "settled"
                     and previous.progress is None):
-                qualified = self._accept_priority(replace(previous, qualification=qualification), now)
+                qualified = self._accept_priority(replace(previous, qualification=qualification), now, position_mode)
                 self.store.save(qualified, now)
+                qualified = self._apply_position_intake(qualified, now, position_mode)
                 return self._encounter_receipt(qualified, command, "duplicate")
             return self._encounter_receipt(previous, command, "duplicate")
         source_revision = (command.source.source_revision if isinstance(command, GameEncounter)
@@ -177,24 +188,131 @@ class EncounterFeedback(GameFeedback):
             qualification=qualification,
             available_by=None,
             card_id=card.presentation_id, card_revision=card.presentation_revision)
-        effect = self._accept_priority(effect, now)
+        effect = self._accept_priority(effect, now, position_mode)
         self.store.save(effect, now)
+        effect = self._apply_position_intake(effect, now, position_mode)
         return self._encounter_receipt(effect, command,
             "stale_revision" if effect.status == "held" else "accepted")
 
-    def refresh_encounter(self, key, *, qualification=None):
+    def _apply_position_intake(self, effect, now, position_mode):
+        if position_mode != 'position' or effect.progress is None or effect.status != 'pending':
+            return effect
+        if effect.disposition == 'first_introduction':
+            # Canonical targeted position introduction is a separate admission.
+            effect = replace(effect, reason='position_introduction_pending')
+            self.store.save(effect, now)
+            return effect
+        result = self.position_intake.apply_position_lapse(effect.key, day=self._day(now), now=now)
+        if result is None:
+            effect = replace(effect, reason='position_introduction_pending')
+            self.store.save(effect, now)
+            return effect
+        receipt, applied, _version = result
+        progress = effect.progress.model_copy(update=dict(position_grade_effect_id=receipt,
+            schedule_applied_at=applied.isoformat(), remediation_fence=self._fence(effect.progress.target, now)))
+        effect = replace(effect, status='applied', applied_at=applied, progress=progress,
+                         reason='study_priority_pending')
+        self.store.save(effect, now)
+        return effect
+
+    def refresh_encounter(self, key, *, qualification=None, position_introduction=None, position_fence=None,
+                          position_carrier=None):
         """Study-owned consumption of one accepted identity; never a producer action."""
         observed = self.store.get(key)
         if observed is None or (observed.encounter is None and observed.lapse is None):
             return None
         now = instant(self.clock())
+        position_mode = (self.position_intake.fence_position_intake(self._command(observed), qualification)
+                         if self.position_intake is not None and qualification is not None else 'legacy')
+        if position_carrier is not None:
+            for card_id in sorted({observed.card_id, position_carrier[0].presentation_id}):
+                self.store.lock_intake_target(card_id)
         self.store.lock_target(observed.card_id,self._day(now).isoformat())
         self.store.lock_effect(key)
         current = self.store.get(key)
         if qualification is not None and not current.control and current.status in {"pending", "applied"}:
             current = replace(current, qualification=qualification)
             if current.progress is None:
-                current = self._accept_priority(current, now)
+                current = self._accept_priority(current, now, position_mode)
+                self.store.save(current, now)
+                current = self._apply_position_intake(current, now, position_mode)
+        if (position_carrier is not None and current.status == 'applied' and not current.control
+                and current.progress is not None and current.progress.position_grade_effect_id is not None
+                and current.progress.remediation_fence is not None):
+            from tempo_evidence_math.position_learning import Hold
+            retained = (current.target_authority or {}).get('kind') == 'position_carrier'
+            if retained:
+                settled = self._saved_settlement(current)
+                if settled is not None:
+                    self.store.save(settled, now)
+                    return self._encounter_receipt(settled, self._command(settled), 'duplicate')
+            checked, mapping, old_facts = self._current_encounter(current, now)
+            if mapping is None or old_facts.introduced_at is not None:
+                raise EncounterAuthorityUnavailable('position_carrier_origin_changed')
+            binding, definition = self.position_intake.fence_position_carrier(position_carrier)
+            progress = current.progress
+            urgency = self.store.position_urgency(progress.target.card_id, progress.target.card_revision,
+                                                  definition.key.repertoire_id)
+            if (urgency is None or isinstance(urgency, Hold) or urgency.definition != definition
+                    or urgency.grade_effect_id != progress.position_grade_effect_id
+                    or urgency.source_digest != position_carrier[3]):
+                raise EncounterAuthorityUnavailable('position_carrier_effect_changed')
+            facts = self.store.card_facts(binding.presentation_id, self._day(now).isoformat())
+            if (facts is None or facts.revision != binding.presentation_revision or facts.introduced_at is None
+                    or not facts.available or facts.active_attempt or facts.buried):
+                raise EncounterAuthorityUnavailable('position_carrier_unavailable')
+            target = EncounterTarget(card_id=binding.presentation_id, card_revision=binding.presentation_revision)
+            if retained:
+                if (target != progress.target or current.target_authority.get('owner_epoch') != urgency.owner_epoch
+                        or current.target_authority.get('source_digest') != urgency.source_digest):
+                    raise EncounterAuthorityUnavailable('position_carrier_binding_changed')
+            else:
+                previous_fences = progress.prior_remediation_fences + (progress.remediation_fence,)
+                progress = progress.model_copy(update=dict(target=target, prior_remediation_fences=previous_fences,
+                    remediation_fence=self._fence(target, now), first_issued=None, first_issued_ordinal=None))
+            authority = dict(kind='position_carrier', target=target.model_dump(mode='json'),
+                repertoire_id=definition.key.repertoire_id, position=definition.key.position,
+                variant=definition.key.variant, expected_uci=definition.expected_uci,
+                policy_version=definition.policy_version, owner_epoch=urgency.owner_epoch,
+                source_digest=urgency.source_digest, grade_effect_id=urgency.grade_effect_id)
+            current = replace(current, progress=progress, target_authority=authority,
+                              admission_status='available', reason='position_priority_pending')
+            if not self.store.promote_position_carrier(current, self._day(now).isoformat()):
+                raise EncounterAuthorityUnavailable('position_carrier_promotion_unavailable')
+            self.store.save(current, now)
+            return self._encounter_receipt(current, self._command(current), 'duplicate')
+        if position_introduction is not None and current.reason == 'position_introduction_pending':
+            current, mapping, facts = self._current_encounter(current, now)
+            if mapping is None:
+                if current.status == 'pending':
+                    current = replace(current, reason='position_introduction_pending')
+                self.store.save(current, now)
+                return self._encounter_receipt(current, self._command(current), 'duplicate')
+            prepared, target = position_introduction
+            fields = ('decision_id', 'repertoire_id', 'position_key', 'selected_response_uci',
+                      'presentation_id', 'presentation_revision', 'route_id', 'route_ply')
+            if (current.disposition != 'first_introduction' or facts.introduced_at is not None
+                    or current.progress is None or self.introductions is None
+                    or self.introduction_policy is None
+                    or self.introduction_policy.allowance != 'encounter_exception'
+                    or any(getattr(mapping, field) != getattr(target, field) for field in fields)):
+                raise EncounterAuthorityUnavailable('position_introduction_target_changed')
+            from app.services.position_queue_admission import admit_targeted_position_introduction
+            day = self._day(now).isoformat()
+            result = admit_targeted_position_introduction(self.store.database, position_introduction,
+                position_fence, day=day, now=now, introductions=self.introductions)
+            if result.status != 'introduced':
+                current = replace(current, admission_status='pending', reason='position_introduction_pending',
+                                  deferred_reason=getattr(result, 'reason', None))
+            else:
+                progress = current.progress.model_copy(update=dict(introduction_applied_at=now.isoformat(),
+                    remediation_fence=self._fence(current.progress.target, now)))
+                current = replace(current, status='applied', applied_at=now, progress=progress,
+                                  admission_status='available', reason='position_priority_pending')
+                if self.targets and not self.targets.promote_effect(current, day):
+                    raise EncounterAuthorityUnavailable('current_presentation_unavailable_or_busy')
+            self.store.save(current, now)
+            return self._encounter_receipt(current, self._command(current), 'duplicate')
         advanced = self._advance(current,now)
         self.store.save(advanced,now)
         return self._encounter_receipt(advanced,self._command(advanced),'duplicate')
@@ -230,7 +348,7 @@ class EncounterFeedback(GameFeedback):
             return replace(effect, status="held", reason="current_card_unavailable"),None,None
         return effect,mapping,facts
 
-    def _accept_priority(self, effect, now):
+    def _accept_priority(self, effect, now, position_mode='legacy'):
         """Intake owns only exact validation and durable acceptance, never queue work."""
         effect, mapping, facts = self._current_encounter(effect,now)
         if mapping is None:
@@ -244,8 +362,13 @@ class EncounterFeedback(GameFeedback):
             return replace(effect, observation_recorded=True, admission_status="pending",
                 reason="first_departure_qualification_pending")
         else:
-            disposition = ("first_introduction" if effect.disposition == "first_introduction"
-                           or effect.disposition is None and facts.introduced_at is None else "introduced_again")
+            if effect.disposition in {'first_introduction', 'introduced_again'}:
+                disposition = effect.disposition
+            elif position_mode == 'position':
+                introduced = self.position_intake.position_introduced(command, effect.qualification)
+                disposition = 'introduced_again' if introduced else 'first_introduction'
+            else:
+                disposition = 'first_introduction' if facts.introduced_at is None else 'introduced_again'
         if disposition == 'frequency_only':
             return replace(effect,observation_recorded=True,disposition=disposition,
                 status='settled',admission_status='not_requested',settled_at=now,
@@ -262,6 +385,29 @@ class EncounterFeedback(GameFeedback):
         """Study-owned refresh only; acceptance never calls this queue capability."""
         if effect.encounter is None and effect.qualification is None:
             return super()._advance(effect,now)
+        if effect.reason == "position_introduction_pending":
+            return effect
+        if effect.progress is not None and effect.progress.position_grade_effect_id is not None:
+            if effect.admission_status == 'available':
+                return self._saved_settlement(effect) or effect
+            effect, mapping, facts = self._current_encounter(effect, now)
+            if mapping is None:
+                return effect
+            if facts.active_attempt or facts.buried:
+                return replace(effect, admission_status='pending',
+                               reason='active_attempt' if facts.active_attempt else 'buried')
+            if facts.introduced_at is None:
+                return replace(effect, admission_status='pending', reason='position_carrier_unintroduced')
+            target = effect.progress.target
+            if (mapping.presentation_id, mapping.presentation_revision) != (target.card_id, target.card_revision):
+                return replace(effect, admission_status='pending', reason='position_target_changed')
+            promote = getattr(self.store, 'promote_position_target', None)
+            if promote is None or not promote(effect, self._day(now).isoformat(),
+                    effect.qualification.selection.decision.repertoire_id):
+                return replace(effect, admission_status='pending', reason='position_priority_pending')
+            return replace(effect, admission_status='available', reason='position_priority_pending')
+        if effect.reason == 'position_priority_pending':
+            return self._saved_settlement(effect) or effect
         if effect.progress is None:
             effect = self._accept_priority(effect, now)
         if effect.progress is None:

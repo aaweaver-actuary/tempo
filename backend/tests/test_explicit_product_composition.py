@@ -111,6 +111,7 @@ from app import queue_commands
 from app.services import queue_next_card
 queue_commands.current_study_day = lambda db: '2026-01-01'
 main.read_connection = lambda: nullcontext(object())
+main.queue_projection_storage.evidence_timezone = lambda *args: ('UTC',)
 main.queue_projection_storage.queue_projection = lambda *args: None
 main.queue_projection_storage.queue_diagnostics = lambda *args: []
 main.queue_projection_storage.queue_rows = lambda *args, **kwargs: []

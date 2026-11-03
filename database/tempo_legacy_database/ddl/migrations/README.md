@@ -2,6 +2,14 @@
 
 [DDL owner](../README.md) · [Source schema charts](../../schema/README.md)
 
+Migration [058](058_queue_attempt_abandonment.sql) adds exact-origin abandonment receipts at source readiness 58. It preserves origins and accepted review history; no live migration is implied.
+
+Position Study adds [057_position_study.sql](057_position_study.sql), at source
+readiness 57. Its reject-only legacy card ID namespace guard reserves new IDs
+without changing existing rows. Its [owner dictionary](../../schema/study-position/README.md)
+describes inactive epochs, schedules, issuance and receipts. This is additive
+source DDL; it does not seed or activate a cohort.
+
 #622 adds [055_study_attempt_issuance.sql](055_study_attempt_issuance.sql), at
 source readiness 55. It extends existing attempt origins with actual first-head
 sequence/time. Existing issued attempts keep unknown generation/time; no history
@@ -91,3 +99,7 @@ migration has been run by the feature implementation.
 
 - [054_product_repertoire_review.sql](054_product_repertoire_review.sql)
 - [055_study_attempt_issuance.sql](055_study_attempt_issuance.sql)
+
+- [056_managed_game_feedback_mode.sql](056_managed_game_feedback_mode.sql)
+- [057_position_study.sql](057_position_study.sql)
+- [058_queue_attempt_abandonment.sql](058_queue_attempt_abandonment.sql)

@@ -426,6 +426,11 @@ def test_capacity_worker_preparation_preserves_normal_plan_and_returns_parent_de
     pages = []
 
     def read(statement, parameters=(), *, native=False):
+        if statement == worker.read_storage._ACTIVE_OPENING_MISS_SQL:
+            # This fixture has no active game-miss rows. Keep the PostgreSQL
+            # miss projection at its bounded-read seam instead of feeding it
+            # to SQLite's SQL parser.
+            return []
         if statement.startswith("WITH active_miss"):
             pages.append(parameters[1])
             sql = main._PRIORITY_OPENING_CANDIDATE_BODY
@@ -563,6 +568,16 @@ def test_capacity_checkpoint_resume_retains_witness_and_rejects_old_lease(
     from contextlib import contextmanager
     from app.services import postgres_queue_refresh as worker, study_mode
 
+    # This lease/checkpoint fixture admits legacy cards, with no position cohort.
+    from app.services import position_queue_admission
+    from tempo_legacy_database.adapters.study import position_owner_epoch as position_owners
+    monkeypatch.setattr(position_queue_admission, "prepare_opening_introduction",
+        lambda _database, item: ("legacy", item["repertoire_id"]))
+    original_mode = position_owners.owner_mode
+    monkeypatch.setattr(position_owners, "owner_mode", lambda conn, repertoire, digest:
+        position_owners.OwnerDecision("legacy", "inactive", None, None, "position_owner_absent")
+        if isinstance(conn, NativeSqlite) and repertoire == "rep"
+        else original_mode(conn, repertoire, digest))
     connection, day, _ = capacity_database
     introduce_prefixes(connection, day, monkeypatch)
     planned = capacity_plan(connection, day)
@@ -644,6 +659,10 @@ def test_capacity_worker_full_allowance_avoids_frontier_queries(
     )
 
     def read(statement, parameters=(), *, native=False):
+        if statement == worker.read_storage._ACTIVE_OPENING_MISS_SQL:
+            # The fixture has no active miss facts; this is a semantic answer
+            # for the PG-only read, not a SQL translation.
+            return []
         if statement.startswith("WITH active_miss"):
             return []
         return connection.execute(statement.replace("%s", "?"), parameters).fetchall()

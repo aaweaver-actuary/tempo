@@ -25,3 +25,47 @@ The original extraction receipts describe the earlier source revision. Optional 
 
 
 The existing [daily queue rollover worker](../../../../backend/app/tasks.py) now uses `refresh_requests.daily_queue_projection` for its complete `state`/`refresh_pending` read by queue date. The [queue-projection dictionary](../../schema/study-queue-review-2/README.md) remains canonical for actual fields/types/date key and relationships. Worker date, foreground/read scope, ready/pending decision, command ID/dispatch and retry/error response stay in the original application. Its sole direct database site is centralized; other Celery command dispatch is application orchestration. Whole non-import worker AST restoration, two-source compilation and the existing rollover-until-ready fake case pass. Native worker/broker/database/lifecycle and full-system were not run.
+
+### Exact queue-attempt abandonment
+
+[Queue abandonment](queue_attempt_abandonment.py) records one explicit user-intended
+abandonment against a retained issued opening origin. A checked plan returns the
+exact origin fingerprint; apply requires that fingerprint, the same tuple, a
+stable operation ID, actor and reason. The command borrows its transaction and
+serializes on the existing card-edit, queue-day and exact origin locks. Missing
+card and repertoire records do not cause ownership reconstruction. An accepted
+review or a position-issued plan prevents abandonment. The immutable receipt and
+origin are retained without a review or grade. Later new review, failure marker
+and opening evidence writes for that identity are rejected; existing accepted
+review retries keep their receipt behavior. When a queue entry has multiple retained
+origins, the exact requested tuple is eligible only after the current projection
+is independently matched to the current card revision and its retained origin.
+The current projection is checked for completion only when it represents the
+requested tuple; accepted target review and checkpoint guards remain in force.
+An identical retry resolves its immutable receipt under the target card lock even
+if the replacement projection has since changed. Conflicting retries still hold.
+The old-issued frontier treats only an exact receipt as terminal. Schema 56 readers
+safely observe no receipt.
+
+Migration 058 keeps projection cleanup independent: the pre-existing queue-origin
+capture trigger skips updating an exact abandoned origin, while unrelated origin
+capture is unchanged. A replacement projection, its deletion, and unrelated card
+changes do not rewrite the retained abandoned origin. Direct changed updates or
+deletion of the receipt or its origin are rejected by the schema. This source
+change does not authorize a migration or a live abandonment.
+
+```mermaid
+flowchart LR
+    Operator["Checked exact-origin plan / apply"] --> Locks["Card, queue and origin locks"]
+    Locks --> Origin[("Retained origin")]
+    Locks --> Receipt[("Immutable abandonment receipt")]
+    Review["Review, failure and evidence writers"] --> Receipt
+    Receipt --> Frontier["Position owner frontier"]
+    Origin --> Frontier
+    Queue["Replaceable queue projection"] --> Origin
+```
+
+The queue-to-origin edge preserves the origin after abandonment; it no longer
+mirrors subsequent changes to that exact projection. Review/evidence writers
+reject new work when the exact receipt exists. The frontier reads the receipt
+alongside the origin and continues to hold all other unfinished issued origins.

@@ -2,6 +2,7 @@
 import type { BackendQueueCard } from "./transport";
 import type { OpeningEvidenceCheckpoint } from "./opening-evidence";
 import type { StudyAnswer, StudyAssessment } from "./study-exercises";
+import type { PositionOfflinePlan } from "./position-offline-plan";
 
 export type OfflineAttempt = {
   localEntryId: number;
@@ -36,4 +37,6 @@ export type PreparedTraining = {
   cards: BackendQueueCard[];
   attempts: OfflineAttempt[];
   nextTemporaryId: number;
+  /** Immutable v1 position issues accompany, but never rewrite, legacy queue cards. */
+  positionPlans?: PositionOfflinePlan[];
 };

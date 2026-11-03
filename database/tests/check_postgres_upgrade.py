@@ -113,6 +113,10 @@ def test_postgres_handled_upgrade_requires_matching_queued_revision_and_card(dsn
 
 def test_postgres_stale_admission_and_revisioned_same_move_replay(dsn: str) -> None:
     """Use real transactions, leases, unique constraints, and queue persistence."""
+    from fastapi import HTTPException
+    from app.services.canonical_scope_freshness import (
+        game_scope_generation, opportunity_is_current, scope_identity,
+    )
     repertoire_id = "revision-lifecycle"
     starting_fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
     fen_key = " ".join(starting_fen.split()[:4])
@@ -172,6 +176,27 @@ def test_postgres_stale_admission_and_revisioned_same_move_replay(dsn: str) -> N
                 assert current["handled_evidence_json"] is None and current["admission_state"] is None
                 assert current["card_id"] is None
                 payload_b = {**payload, "evidence_fingerprint": fingerprint_b}
+                # Authored fixture changes invalidated the saved publication's
+                # scope. Prove refusal before publishing B for the actual owner
+                # facts; do not relax the currentness fence or replay intent A.
+                assert current["status"] == "active"
+                assert not opportunity_is_current(database, current)
+                try:
+                    discovery_commands.accept_discovery(database, payload_b)
+                except HTTPException as error:
+                    assert error.status_code == 404 and error.detail == "Active discovery not found"
+                else:
+                    raise AssertionError("Stale saved scope was accepted")
+                assert database.execute("SELECT COUNT(*) FROM discovery_admission_intents WHERE opportunity_id=?", (opportunity_id,)).fetchone()[0] == 1
+                identity = scope_identity(database, repertoire_id, lock=True)
+                generation = game_scope_generation(database, lock=True)
+                database.execute("""UPDATE repertoire_opportunities SET canonical_prefix_revision=?,
+                    canonical_scope_source_revision=?,canonical_scope_preview_id=?,game_scope_generation=?
+                    WHERE id=? AND evidence_fingerprint=?""", (
+                    identity["canonical_prefix_revision"], identity["canonical_scope_source_revision"],
+                    identity["canonical_scope_preview_id"], generation, opportunity_id, fingerprint_b))
+                published = database.execute("SELECT * FROM repertoire_opportunities WHERE id=?", (opportunity_id,)).fetchone()
+                assert opportunity_is_current(database, published)
                 intent_b = discovery_commands.accept_discovery(database, payload_b)["intent_id"]
                 assert intent_b != intent_a
                 assert discovery_commands.accept_discovery(database, payload_b)["intent_id"] == intent_b
@@ -202,6 +227,8 @@ def test_postgres_stale_admission_and_revisioned_same_move_replay(dsn: str) -> N
 def main() -> None:
     if os.getenv("TEMPO_TEST_INSTANCE") != "disposable":
         raise RuntimeError("Upgrade rehearsal requires a disposable PostgreSQL instance")
+    from app.product_composition.database_infrastructure import bind_database_infrastructure
+    bind_database_infrastructure()
     database_name = f"tempo_upgrade_{uuid.uuid4().hex[:12]}"
     admin_dsn = "postgresql://postgres@postgres:5432/postgres"
     with psycopg.connect(admin_dsn, autocommit=True) as admin:

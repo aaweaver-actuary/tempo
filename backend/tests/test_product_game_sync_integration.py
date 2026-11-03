@@ -526,26 +526,86 @@ def test_both_provider_workflow_uses_existing_study_owner_and_overlap_has_one_ef
     assert runner.run_once() == restarted.run_once() == "stopped"
 
 
-def test_native_review_configuration_projection_and_retry_are_durable(owned_postgres):
-    """New Games persistence/API boundary; Study storage remains a semantic fake."""
+def test_retry_preparation_rejects_altered_expected_move_before_any_writer(monkeypatch):
+    from app.contracts.product_v02.learning import GameLapse
+    from app.product_composition import game_review_commands as commands, provider_priority
+
+    original = GameLapse.model_validate_json(json.dumps(fixture("lapse")))
+    assert original.finding.kind == "confirmed_miss" and original.finding.lapse_eligible
+    assert original.finding.expected_uci == ("e2e4",)
+    original_bytes = original.model_dump_json()
+    reads = []
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("altered finding reached preparation or a writer")
+
+    class StoredSource:
+        def __init__(self, connections):
+            pass
+
+        def source_detail(self, workspace, provider, game_id):
+            assert (workspace, provider, game_id) == (
+                original.key.workspace_id, original.key.provider, original.key.game_id)
+            reads.append(game_id)
+            return SimpleNamespace(quarantined=False, findings=(original.finding,))
+
+        deliveries = staticmethod(forbidden)
+
+    monkeypatch.setattr(commands, "PostgresReviewStore", StoredSource)
+    monkeypatch.setattr(provider_priority, "prepare_delivery_feedback", forbidden)
+    monkeypatch.setattr(commands, "retry", forbidden)
+    altered = original.finding.model_dump(mode="json") | {"expected_uci": ["g1f3"]}
+    with pytest.raises(HTTPException) as refused:
+        commands.prepare_retry({"finding": altered, "operation_id": "altered-finding"},
+            workspace=original.key.workspace_id, connections=forbidden, clock=FakeClock())
+    assert refused.value.status_code == 409
+    assert refused.value.detail == "current_confirmed_finding_required"
+    assert reads == [original.key.game_id]
+    assert original.model_dump_json() == original_bytes
+
+
+def test_native_review_configuration_projection_and_encounter_receipt_replay_are_durable(owned_postgres):
+    """Games persistence/API uses encounter receipts; unqualified replay cannot grade Study."""
     from contextlib import contextmanager
     from app.product_composition.game_review import create_game_review
     from tempo_legacy_database.adapters.games.product_feedback import PostgresGamesStore
+    from app.study.encounter_feedback import EncounterFeedback
 
     @contextmanager
     def connections():
         with owned_postgres() as database:
             yield database.raw
 
-    snapshot = RepertoireSnapshot.model_validate_json(json.dumps(fixture("snapshot")))
-    study, clock = StudyMemoryStore(), FakeClock()
-    owner = GameFeedback(study, Decisions(), clock=lambda: NOW)
+    payload = fixture("snapshot")
+    payload["decision_presentations"][0].update(
+        route_id=payload["membership"]["routes"][0]["route_id"], route_ply=0)
+    snapshot = RepertoireSnapshot.model_validate_json(json.dumps(payload))
+    class EncounterStudyStore(StudyMemoryStore):
+        def encounter_card_facts(self, card_id, day):
+            return self.facts
+
+        def promote_encounter(self, card_id, day):
+            self.queue[(day, card_id)] = "encounter-priority"
+
+    class EncounterDecisions(Decisions):
+        def current_encounter(self, command):
+            return self.mappings
+
+        def current_qualified(self, command, qualification):
+            assert qualification.matches(command)
+            return self.mappings
+
+    study, clock = EncounterStudyStore(), FakeClock()
+    decisions = EncounterDecisions()
+    decisions.mappings = snapshot.decision_presentations
+    owner = EncounterFeedback(study, decisions, clock=lambda: NOW,
+        introductions=None, introduction_policy=None)
     original = PGN.replace("1. e4 e5 2. Nf3 Nc6", "1. d4")
     rows = [{"id": "native-review-game", "createdAt": 1792929600000,
              "speed": "rapid", "rated": True, "pgn": original}]
     runtime = create_game_sync(policies=(policy("lichess"), policy("chesscom")),
         store=PostgresGamesStore(connections), snapshots=SimpleNamespace(snapshot=lambda repertoire: snapshot),
-        learning=owner, clock=clock, transport_factory=lambda: httpx.MockTransport(
+        learning=owner, clock=clock, encounter_feedback=True, transport_factory=lambda: httpx.MockTransport(
             lambda request: httpx.Response(200, content="\n".join(json.dumps(row) for row in rows),
                                            headers={"Content-Type": "application/x-ndjson"})))
     operations = create_game_review(workspace="fixture", connections=connections,
@@ -573,22 +633,25 @@ def test_native_review_configuration_projection_and_retry_are_durable(owned_post
             detail = (await client.get(base + "/games/lichess/native-review-game")).json()
             assert detail["moves"] == ["d2d4"] and detail["receipts"] == []
             assert not study.reviews  # GET never applies the pending command.
-            retry = {"finding": detail["findings"][0], "operation_id": "native-retry"}
-            receipt = await client.post(base + "/feedback/retry", json=retry)
-            assert receipt.status_code == 200, receipt.text
-            assert receipt.json()["status"] == "applied"
-            duplicate = (await client.post(base + "/feedback/retry", json=retry)).json()
-            assert duplicate["owner_receipt_id"] == receipt.json()["owner_receipt_id"]
-            assert duplicate["available_by"] == receipt.json()["available_by"]
-            assert duplicate["outcome"] == "duplicate" and duplicate["status"] == "applied"
-            assert len(study.reviews) == 1
-            forged = retry | {"finding": retry["finding"] | {"expected_uci": ["g1f3"]}}
-            assert (await client.post(base + "/feedback/retry", json=forged)).status_code == 409
+            source = operations.store.source_detail("fixture", "lichess", "native-review-game")
+            pending, = [item for item in operations.store.deliveries(source.source_key)
+                        if item.encounter is not None]
+            assert pending.state == "pending" and pending.encounter is not None
+            runtime.runner.coordinator.deliver(pending)
+            applied = runtime.runner.coordinator.store.delivery(pending.operation_id)
+            receipt = applied.receipt
+            assert applied.state == "acknowledged", (applied.state, receipt.status, receipt.reason)
+            assert receipt.status == "pending" and receipt.observation == "missed"
+            assert receipt.reason == "first_departure_qualification_pending"
+            duplicate = owner.accept_encounter(pending.encounter)
+            assert duplicate.owner_receipt_id == receipt.owner_receipt_id
+            assert duplicate.outcome == "duplicate" and duplicate.status == "pending"
+            assert not study.reviews  # An unqualified occurrence cannot grade Study.
             # A recreated HTTP facade reads committed state using new connections.
             reopened = create_game_review(workspace="fixture", connections=connections,
                                           learning=owner, clock=clock)
             assert reopened.configuration("lichess").account == "Learner"
-            assert reopened.game_detail(provider="lichess", game_id="native-review-game", repertoire_id=None).receipts[0].status == "applied"
+            assert reopened.game_detail(provider="lichess", game_id="native-review-game", repertoire_id=None).receipts[0].status == "pending"
             stale = configuration | {"account": "Different"}
             assert (await client.post(base + "/configuration", json={"configuration": stale, "expected_revision": 0})).status_code == 409
             # Explicit recurrence is durable and enqueues at most one due unit.

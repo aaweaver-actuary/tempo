@@ -5,6 +5,7 @@ Legacy source assertions originate at d0485d9f; donor harness assertions at c3bc
 Estimator-only tests remain explicitly adapter-owned.
 
 - `test_canonical_object_rejects_storage_deletion` — tests/test_boundaries.py
+- `test_authored_route_accepts_500_decisions_but_keeps_source_bounds` — tests/test_boundaries.py
 - `test_opening_probability_public_schema_describes_recursive_json_objects` — tests/test_move_probability.py
 - `test_opening_probability_opaque_json_validation_remains_strict` — tests/test_move_probability.py
 - `test_opening_probability_opaque_json_roundtrip_preserves_detached_frozen_values` — tests/test_move_probability.py

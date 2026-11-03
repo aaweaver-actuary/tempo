@@ -4,7 +4,7 @@ from tempo_legacy_database.connections import background_read_connection
 from tempo_legacy_database.adapters import postgres_store
 from tempo_legacy_database.adapters.real_game_miss_projection import outstanding_miss_sql
 from tempo_legacy_database.adapters.tactic_admission import DAILY_TACTIC_COUNT_SQL
-from .eligibility import _DUE_CARD_ELIGIBILITY, _STUDY_NEW_ELIGIBILITY
+from .eligibility import _DUE_CARD_ELIGIBILITY, _STUDY_NEW_ELIGIBILITY, _POSITION_DUE_EXCLUSION
 from .openings import _STUDY_OPENING_ORDER, _STUDY_OPENING_ROUTES, _PRIORITY_OPENING_PAGE_SQL
 from .presentation import _QUARANTINE_OPENING_ELIGIBILITY, _PROJECTION_BLOCKED_COUNT_SQL
 from .capacity import capacity_priority_statement
@@ -105,8 +105,9 @@ def reviewed_introductions(repertoire_id, queue_date):
 
 
 def due_candidate(queue_date):
+    predicate = _DUE_CARD_ELIGIBILITY + _POSITION_DUE_EXCLUSION
     return _bounded_read(
-        "SELECT c.id FROM cards c WHERE " + _DUE_CARD_ELIGIBILITY +
+        "SELECT c.id FROM cards c WHERE " + predicate +
         " ORDER BY c.due_date,c.id LIMIT 1",
         (queue_date, queue_date, queue_date), native=True,
     )

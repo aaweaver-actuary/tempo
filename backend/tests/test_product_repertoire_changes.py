@@ -598,20 +598,27 @@ def test_legacy_branch_guard_stops_conflict_before_insert(monkeypatch):
     assert error.value.status_code == 409 and error.value.detail == "conflict_pending_resolution"
 
 
-def test_legacy_card_edit_guard_keeps_shared_membership_before_writes(monkeypatch):
+@pytest.mark.parametrize('source_bound', [False, True])
+def test_legacy_card_edit_guard_keeps_shared_membership_before_writes(monkeypatch, source_bound):
     from app import card_commands as command
     from app.services import canonical_prefix
     from fastapi import HTTPException
     monkeypatch.setattr(command.storage, "card_scope", lambda *_: [("rep",)])
     monkeypatch.setattr(canonical_prefix, "ensure_line_in_scope", lambda *_args, **_kwargs: {})
-    monkeypatch.setattr(command.change_storage, "lock_sources", lambda *_: (source_row(), source_row("card:card")))
+    def locked_sources(*_):
+        if source_bound:
+            raise ChangeError('source_exceeds_bound')
+        return (source_row(), source_row("card:card"))
+    monkeypatch.setattr(command.change_storage, "lock_sources", locked_sources)
     with pytest.raises(HTTPException) as error:
         command.revise_card.__wrapped__(object(), dict(card_id="card", request=dict(
             starting_fen=chess.STARTING_FEN, moves=["d2d4"], expected_revision=1, history_mode="preserve")))
-    assert error.value.status_code == 409 and error.value.detail == "conflict_pending_resolution"
+    assert error.value.status_code == 409 and error.value.detail == (
+        'source_exceeds_bound' if source_bound else 'conflict_pending_resolution')
 
 
-def test_legacy_integrity_repair_cannot_introduce_new_response_conflict(monkeypatch):
+@pytest.mark.parametrize('source_bound', [False, True])
+def test_legacy_integrity_repair_cannot_introduce_new_response_conflict(monkeypatch, source_bound):
     from app import integrity_repair_commands as command
     from app.services import canonical_prefix
     from fastapi import HTTPException
@@ -621,12 +628,17 @@ def test_legacy_integrity_repair_cannot_introduce_new_response_conflict(monkeypa
     monkeypatch.setattr(command.storage, "locked_source_line", lambda *_: dict(
         id="old", repertoire_id="rep", start_fen=chess.STARTING_FEN, moves_json='["e2e4"]'))
     monkeypatch.setattr(canonical_prefix, "ensure_line_in_scope", lambda *_args, **_kwargs: {})
-    monkeypatch.setattr(command.change_storage, "lock_sources", lambda *_: (source_row(), source_row("card:card")))
+    def locked_sources(*_):
+        if source_bound:
+            raise ChangeError('source_exceeds_bound')
+        return (source_row(), source_row("card:card"))
+    monkeypatch.setattr(command.change_storage, "lock_sources", locked_sources)
     with pytest.raises(HTTPException) as error:
         command.resolve_integrity_issue.__wrapped__(object(), dict(repertoire_id="rep", issue_id="issue",
             signature="signature", changed_lines={"old": ["d2d4"]}, changed_cards={},
             expected_line_moves={"old": '["e2e4"]'}, expected_card_moves={}, unsupported_card_ids=[]))
-    assert error.value.status_code == 409 and error.value.detail == "conflict_pending_resolution"
+    assert error.value.status_code == 409 and error.value.detail == (
+        'source_exceeds_bound' if source_bound else 'conflict_pending_resolution')
 
 
 def test_approval_for_displayed_addition_passes_exact_cards_to_owner_without_learning_write():
