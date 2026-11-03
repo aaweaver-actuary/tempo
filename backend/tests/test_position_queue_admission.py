@@ -4,6 +4,63 @@ from tempo_evidence_math.position_learning import Hold
 from app.services.position_queue_admission import select_carrier
 
 
+def test_due_consumers_apply_position_ownership_only_when_schema_present(monkeypatch):
+    import psycopg
+    from tempo_legacy_database.adapters.queue_refresh import eligibility
+    from tempo_legacy_database.adapters.queue_refresh.application import admission, seeding
+    from tempo_legacy_database.adapters.study import conflicts
+
+    class Connection:
+        pass
+
+    class Result:
+        def __init__(self, rows): self.rows = rows
+        def fetchone(self): return self.rows[0] if self.rows else None
+        def fetchall(self): return self.rows
+
+    class Database:
+        def __init__(self, present):
+            self.raw = Connection()
+            self.present = present
+            self.statements = []
+        def execute_native(self, statement, parameters=()):
+            self.statements.append((statement, parameters))
+            if 'to_regclass' in statement:
+                return Result([(self.present,)])
+            return Result([])
+        def execute(self, statement, parameters=()):
+            self.statements.append((statement, parameters))
+            return Result([])
+
+    monkeypatch.setattr(psycopg, 'Connection', Connection)
+    monkeypatch.setattr(conflicts, 'held_unscoped_card_sql', lambda db: 'FALSE')
+    for present in (False, True):
+        database = Database(present)
+        assert not admission.has_missing_due_card(database, '2026-11-02')
+        assert seeding.due_cards(database, '2026-11-02') == []
+        queries = [sql for sql, _ in database.statements if 'FROM cards' in sql]
+        assert len(queries) == 2
+        assert all(('study_position_owners' in sql) == present for sql in queries)
+        if present:
+            assert eligibility._POSITION_DUE_EXCLUSION in queries[0]
+            assert eligibility._POSITION_DUE_EXCLUSION.replace('c.', 'cards.') in queries[1]
+    assert eligibility.position_due_exclusion(NS(raw=object())) == ''
+
+
+def test_due_owner_schema_probe_failure_is_not_treated_as_legacy(monkeypatch):
+    import psycopg
+    import pytest
+    from tempo_legacy_database.adapters.queue_refresh.eligibility import position_due_exclusion
+
+    class Connection:
+        pass
+    monkeypatch.setattr(psycopg, 'Connection', Connection)
+    def fail(*args):
+        raise RuntimeError('owner schema unavailable')
+    with pytest.raises(RuntimeError, match='owner schema unavailable'):
+        position_due_exclusion(NS(raw=Connection(), execute_native=fail))
+
+
 def binding(card, *, repertoire='r', response='e2e4', available=True):
     return NS(repertoire_id=repertoire, position_key='position', selected_response_uci=response,
               presentation_id=card, presentation_revision=1, decision_id=card,
