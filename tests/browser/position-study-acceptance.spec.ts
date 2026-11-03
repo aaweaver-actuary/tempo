@@ -60,7 +60,7 @@ with psycopg.connect(dsn, row_factory=tempo_row_factory) as raw:
             raw.execute("""INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,decision_fen_key,starting_fen,moves_json,trained_color)
                 VALUES(%s,3,%s,0,%s,%s,%s,%s,'white')""", (rep,route,card,chess.STARTING_FEN,chess.STARTING_FEN,moves))
         raw.execute("""INSERT INTO repertoire_integrity_state(repertoire_id,status,scan_status,scan_generation,checked_at,scan_completed_sources,scan_total_sources)
-            VALUES(%s,'clean','idle','scan:2',%s,1,1)""", (rep,now.isoformat()))
+            VALUES(%s,'clean','idle',%s,%s,2,2)""", (rep,rep+'-scan:2',now.isoformat()))
         for suffix, kind, generation, payload in [('graph','opening_graph_rebuild',3,{}),('scan','integrity_scan',2,{'repertoire_id':rep,'graph_generation':3})]:
             raw.execute("""INSERT INTO background_tasks(id,kind,deduplication_key,generation,state,payload_json,next_attempt_at,created_at,updated_at)
                 VALUES(%s,%s,%s,%s,'complete',%s,%s,%s,%s)""", (rep+'-'+suffix,kind,rep,generation,json.dumps(payload),now.isoformat(),now.isoformat(),now.isoformat()))
