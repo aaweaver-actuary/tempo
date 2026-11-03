@@ -44,6 +44,8 @@ erDiagram
   queue_projections {
     text queue_date PK
     bigint generation
+    bigint requested_refresh_epoch
+    bigint published_refresh_epoch
   }
   background_tasks ||..o{ background_task_events : task_id
 ```
@@ -54,7 +56,15 @@ The only shown FK is the enforced task-event relationship with cascade delete. A
 | --- | --- | --- |
 | `background_tasks` | Text ID/kind/deduplication/state/phase/payload JSON, next-attempt/lease/error/times and timeout checkpoint; bigint generation/priority/payload version/attempt budgets, generation/age diagnostics and timeout counter. | Task PK; unique kind/deduplication tuple. Lease, generation and selected-return validation remain application authority. |
 | `background_task_events` | Bigint event ID/generation; text task/event/optional phase/detail/creation time. | Event PK; task FK. Existing pruning retains the most recent 100 events per task. |
-| `queue_projections` | Text queue date/state/error, nullable update time; bigint generation/refresh-pending/blocked count. | Queue-date PK; task payload date mapping is logical. Existing refresh/error updates remain in the same transaction as accepted task transitions. |
+| `queue_projections` | Text queue date/state/error, nullable update time; bigint generation/refresh-pending/blocked count and separate requested/published refresh epochs. | Queue-date PK; task payload date mapping is logical. Refresh/error updates remain in the same transaction as accepted task transitions. |
+
+Exact current-day queue requests now use create-or-lock singleton storage and
+the [queue owner's epoch protocol](../queue_refresh/README.md#current-day-refresh-request-and-publication-epochs).
+Normal and compact producers share this path. Same-day active requests do not
+replace task generation, phase, lease or timeout checkpoint. The application
+merges the maximum preserved-entry pointer before checkpoints; storage never
+commits or wakes independently. Other task kinds and deduplication keys retain
+their original replacement behavior.
 | `analysis_refresh_requests` | Text kind/repertoire/input/publication identities and request/pending times. | Composite kind/repertoire PK; repertoire FK. Existing claim clears pending time for the two specified refresh kinds. |
 | Existing sync, integrity, coverage and analysis status rows | Pipeline-specific text error/status/update/completion state, imported-game analysis state and scan generation/error. | Existing terminal-failure propagation only; no new table access, schema or authority. |
 
