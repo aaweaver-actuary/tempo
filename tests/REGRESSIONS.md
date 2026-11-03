@@ -13,7 +13,11 @@ same-day review requests now deliberately coalesce.
 membership, malformed plan refusal and native unchanged/position-only/kind-change
 origin-trigger, protected/failed/abandoned-origin and missing/status/day rollback
 cases. `test_queue_refresh_diagnostics.py` covers bounded timeout details without
-private payload exposure and truthful historical worker status. Run each through
+private payload exposure and truthful historical worker status.
+`test_queue_refresh_priority_noop.py` preserves every publication fence and the
+original priority path for any stored reason; `test_queue_refresh_compatibility_atomicity.py`
+proves materialization, epoch certification and lease completion roll back together
+and that stale delivery cannot republish. Run each through
 `make python-file FILE=<path>` with the documented Python environment.
 
 The native owner suite

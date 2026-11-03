@@ -120,6 +120,12 @@ These three tables have **no enforced FK** connecting them to each other or to q
 
 The queue-refresh repair adds two nonnegative epoch fields to the existing projection; its publication generation remains a separate count. Exact `daily_queue/current` normal and compact requests lock or create the singleton task before atomically incrementing the day's requested epoch. Active same-day work retains its generation, lease, phase, timeout episode and checkpoint. The maximum preserved-entry pointer survives later worker checkpoints. An older-day request cannot replace a newer singleton.
 
+Randomization retains its mandatory fresh presentation/currentness comparison.
+After the queue-date lock, the extra priority pass is skipped only when no queued
+row for that date has a stored priority reason. Any non-null stored reason,
+including one filtered from the current presentation, retains the original pass.
+This avoids a second complete eligibility read when priority ordering is identity.
+
 Before preparing a new cycle, the PostgreSQL worker checkpoints `_refresh_cycle_epoch`. Old checkpoints without it conservatively restart a complete cycle. Every slice and frozen-order restart retains that pin. Finalization locks task then projection: matching epoch permits published-epoch certification, ready projection and task completion in one transaction; a newer request checkpoints one follow-up cycle and leaves pending. SQLite compatibility materializes and certifies the complete queue within its serialized writer transaction. Advisory wakes remain after commit. Independent replacement Learning storage/runtime is not adopted by this legacy repair.
 
 ```mermaid
