@@ -145,6 +145,9 @@ export function mapQueueCardToPracticeCard(
     if (original.kind !== "opening") throw new Error("Position study requires an opening card");
     const display = adaptPositionPresentation(card.position_presentation, original);
     const { plan } = display;
+    // Position Study keys retain EP only when a legal capture is available;
+    // manifest FENs may preserve the FEN-spec square after every pawn double move.
+    const legalPositionKey = (fen: string) => canonicalFenKey(new Chess(fen).fen());
     const manifest = original.openingDecisionManifest;
     if (!manifest || manifest.card_id !== plan.original_card_id ||
         manifest.card_revision !== plan.original_card_revision ||
@@ -153,7 +156,7 @@ export function mapQueueCardToPracticeCard(
         manifest.decisions.some((decision, index) => {
           const slot = plan.decision_slots[index];
           return decision.decision_index !== index || decision.move_offset !== slot.move_offset ||
-            canonicalFenKey(decision.fen) !== slot.position_key || decision.expected_uci !== slot.expected_uci;
+            legalPositionKey(decision.fen) !== slot.position_key || decision.expected_uci !== slot.expected_uci;
         })) {
       throw new Error("Issued position evidence does not match the displayed decisions");
     }
@@ -164,7 +167,7 @@ export function mapQueueCardToPracticeCard(
     for (const [offset, uci] of plan.moves_uci.entries()) {
       const slot = slots.get(offset);
       if ((board.turn() === learnerTurn) !== Boolean(slot) ||
-          (slot && canonicalFenKey(board.fen()) !== slot.position_key)) {
+          (slot && legalPositionKey(board.fen()) !== slot.position_key)) {
         throw new Error("Issued position decisions do not match the displayed line");
       }
       board.move({ from: uci.slice(0, 2) as Square, to: uci.slice(2, 4) as Square, promotion: uci[4] });
