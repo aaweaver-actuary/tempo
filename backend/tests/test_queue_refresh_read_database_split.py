@@ -1,5 +1,6 @@
 """Bounded-reader relocation and preserved queue/presentation query boundaries."""
 import ast
+from contextlib import contextmanager
 from pathlib import Path
 import re
 
@@ -35,12 +36,19 @@ def test_study_query_preparation_captures_route_identity_before_read_callbacks(m
     monkeypatch.setattr(reads, '_STUDY_OPENING_ROUTES', 'poisoned-later-route')
     monkeypatch.setattr(reads, '_STUDY_OPENING_ORDER', 'poisoned-later-order')
 
-    def bounded(statement, parameters=(), *, native=False):
-        assert native
-        statements.append((statement, parameters))
-        return []
+    class Reader:
+        def execute_native(self, statement, parameters):
+            statements.append((statement, parameters))
+            return self
+        def fetchall(self):
+            return []
 
-    monkeypatch.setattr(reads, '_bounded_read', bounded)
+    @contextmanager
+    def snapshot(*, repertoire_snapshot=False):
+        assert repertoire_snapshot
+        yield Reader()
+
+    monkeypatch.setattr(reads, 'read_connection', snapshot)
     assert read_last() == []
     size = 8 if frozen_active else 6
     after, upper = tuple(range(size)), tuple(range(10, 10 + size))
@@ -49,6 +57,35 @@ def test_study_query_preparation_captures_route_identity_before_read_callbacks(m
     assert all('poisoned-later' not in statement for statement, _ in statements)
     assert statements[1][1] == (*after, *upper, 16)
     assert statements[1][0].count('%s') == 2 * size + 1
+
+
+@pytest.mark.parametrize('frozen_active', [False, True])
+def test_ordered_opening_occurrences_use_closed_snapshot_readers_with_original_cursors(monkeypatch, frozen_active):
+    calls = []
+    class Reader:
+        def execute_native(self, statement, parameters):
+            calls.append(('query', statement, parameters))
+            return self
+        def fetchall(self):
+            return [('result',)]
+    @contextmanager
+    def read_connection(*, repertoire_snapshot=False):
+        assert repertoire_snapshot is True
+        calls.append(('open',))
+        yield Reader()
+        calls.append(('close',))
+    monkeypatch.setattr(reads, 'read_connection', read_connection, raising=False)
+    monkeypatch.setattr(reads, '_bounded_read', lambda *args, **kwargs: pytest.fail('occurrences must use snapshot reader'))
+    last, page = reads.study_opening_queries(frozen_active)
+    size = 8 if frozen_active else 6
+    after, upper = tuple(range(size)), tuple(range(10, 10 + size))
+    assert last() == [('result',)]
+    assert page(after, upper, 16) == [('result',)]
+    assert [call[0] for call in calls] == ['open', 'query', 'close', 'open', 'query', 'close']
+    assert calls[1][1].endswith(' DESC LIMIT 1') and calls[1][2] == ()
+    assert calls[4][1].endswith(' LIMIT %s')
+    assert calls[4][2] == (*after, *upper, 16)
+    assert calls[4][1].count('%s') == 2 * size + 1
 
 
 def test_empty_presentation_keeps_single_read_without_review_or_eligibility_queries(monkeypatch):
