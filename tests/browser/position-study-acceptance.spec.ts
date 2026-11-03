@@ -280,6 +280,7 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
     elapsed_ms: number;
     http_status: number;
   }> = [];
+  let unavailableQueueTimingCount = 0;
   let unavailableAcceptedReviewTimingCount = 0;
   let timingCaptureErrorCount = 0;
   const acceptedReviewTimingTasks: Promise<void>[] = [];
@@ -311,24 +312,45 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
   await waitForProtectedStudyQuiet();
   fixture(project, "seed", identity);
   const before = fixture<Snapshot>(project, "read", identity);
-  await prepareUI(page);
-  const queue = async () => {
-    const startedAt = performance.now();
-    const response = await request.get(`${api}/queue/window?limit=20&include_opening_evidence=true`);
-    const status = response.status();
+  // This synthetic fixture observes the app's issuing requests. A separate
+  // queue GET can itself issue the head and race the app's card-edit lock.
+  const nextAppQueue = () => page.waitForResponse(response => {
+    const url = new URL(response.url());
+    return response.request().method() === "GET" &&
+      url.origin + url.pathname === `${api}/queue/window`;
+  });
+  const readAppQueue = async (pending: ReturnType<typeof nextAppQueue>): Promise<Queue> => {
+    const response = await pending;
+    await response.finished();
     const body = await response.body();
-    const elapsedMs = performance.now() - startedAt;
-    requestTimingSamples.push({ operation: "queue_window", elapsed_ms: elapsedMs, http_status: status });
-    if (!response.ok()) return { cards: [] } satisfies Queue;
+    const elapsedMs = response.request().timing().responseEnd;
+    if (Number.isFinite(elapsedMs) && elapsedMs >= 0) {
+      requestTimingSamples.push({ operation: "queue_window", elapsed_ms: elapsedMs, http_status: response.status() });
+    } else {
+      unavailableQueueTimingCount += 1;
+    }
+    expect(response.ok(), body.toString()).toBe(true);
     return JSON.parse(body.toString()) as Queue;
   };
-  await expect.poll(async () => (await queue()).cards[0]?.position_presentation?.original_card_id).toBe(`${identity}-card-a`);
-  const first = (await queue()).cards[0].position_presentation!;
+  const positionHead = (queue: Queue, cardId: string): WirePlan => {
+    const head = queue.cards[0];
+    expect(head?.id).toBe(cardId);
+    expect(head?.position_study_mode).toBe("position");
+    expect(head?.position_study_hold).toBeFalsy();
+    expect(head?.position_presentation).toBeTruthy();
+    expect(head?.position_presentation?.original_card_id).toBe(cardId);
+    expect(head?.position_presentation?.queue_entry_id).toBe(head?.queue_entry_id);
+    return head.position_presentation!;
+  };
+  const initialQueue = nextAppQueue();
+  await prepareUI(page);
+  const first = positionHead(await readAppQueue(initialQueue), `${identity}-card-a`);
   expect(first.moves_uci).toEqual(["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "g8f6", "f3g5", "d7d5", "e4d5"]);
   await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", String(first.queue_entry_id));
   await expect.poll(async () => position((await page.locator(".board-frame").first().getAttribute("data-fen")) ?? ""))
     .toBe(position(new Chess(first.starting_fen).fen()));
   const firstBoard = new Chess(first.starting_fen);
+  const successorQueue = nextAppQueue();
   for (const uci of first.moves_uci) {
     if (firstBoard.turn() === "w") {
       await expect.poll(async () => position((await page.locator(".board-frame").first().getAttribute("data-fen")) ?? ""))
@@ -339,14 +361,14 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
   }
   await expect.poll(() => fixture<Snapshot>(project, "read", identity).reviews.some(r =>
     r.attempt_id === first.attempt_id && r.source_kind === "position_study" && r.outcome === "correct" && !r.guided), { timeout: 30_000, intervals: [1000, 2000] }).toBe(true);
-  await expect.poll(async () => (await queue()).cards[0]?.position_presentation?.original_card_id, { timeout: 30_000 })
-    .toBe(`${identity}-card-b`);
-  const suffix = (await queue()).cards[0].position_presentation!;
+  const suffix = positionHead(await readAppQueue(successorQueue), `${identity}-card-b`);
   expect(suffix.attempt_id).not.toBe(first.attempt_id);
   expect(suffix.original_card_revision).toBe(1);
   expect(suffix.moves_uci).toEqual(["f8c5", "c2c3"]);
   expect(new Chess(suffix.starting_fen).turn()).toBe("b");
+  const suffixReloadQueue = nextAppQueue();
   await page.reload();
+  expect(positionHead(await readAppQueue(suffixReloadQueue), `${identity}-card-b`)).toEqual(suffix);
   await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", String(suffix.queue_entry_id));
   const afterCue = new Chess(suffix.starting_fen);
   afterCue.move({ from: "f8", to: "c5" });
@@ -362,8 +384,9 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
   expect(partial.grades.filter(g => g.attempt_id === suffix.attempt_id && g.grade === "again")).toHaveLength(1);
   const journal = await openingEvents(page, suffix.attempt_id);
   const wrong = journal.find(event => event.kind === "first_response" && event.disposition === "wrong")!;
+  const replayQueue = nextAppQueue();
   await page.reload();
-  const replay = (await queue()).cards[0].position_presentation!;
+  const replay = positionHead(await readAppQueue(replayQueue), `${identity}-card-b`);
   expect(replay).toEqual(suffix);
   await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", String(suffix.queue_entry_id));
   const recovered = await openingEvents(page, suffix.attempt_id);
@@ -385,16 +408,19 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
 
   // Complete the real guided position attempt before introducing a separate
   // legacy card; no retained issued work is removed or manually completed.
+  const reconnectedQueue = nextAppQueue();
   await page.reload();
+  expect(positionHead(await readAppQueue(reconnectedQueue), `${identity}-card-b`)).toEqual(suffix);
   await move(page, "c2", "c3");
   await expect.poll(() => fixture<Snapshot>(project, "read", identity).reviews.some(r =>
     r.attempt_id === suffix.attempt_id && r.source_kind === "position_study" && r.outcome === "again"),
     { timeout: 30_000, intervals: [1000, 2000] }).toBe(true);
   await waitForProtectedStudyQuiet();
   const legacy = fixture<{ card: string }>(project, "legacy", identity);
+  const legacyQueue = nextAppQueue();
   await page.reload();
-  await expect.poll(async () => (await queue()).cards[0]?.id, { timeout: 30_000 }).toBe(legacy.card);
-  const legacyHead = (await queue()).cards[0];
+  const legacyHead = (await readAppQueue(legacyQueue)).cards[0];
+  expect(legacyHead?.id).toBe(legacy.card);
   expect(legacyHead.position_study_mode).toBeUndefined();
   await expect.poll(() => preparedEntryIds(page), { timeout: 30_000 }).toContain(legacyHead.queue_entry_id);
   await context.setOffline(true);
@@ -421,9 +447,10 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
   await testInfo.attach("position-study-request-timings", {
     body: Buffer.from(JSON.stringify({
       source: "synthetic_disposable_browser_journey",
-      queue_elapsed_boundary: "client elapsed from performance.now before queue/window request through full response body consumption; not server transaction duration",
+      queue_elapsed_boundary: "Playwright app request.timing().responseEnd after response.finished(), relative to request start; not server transaction duration",
       accepted_review_elapsed_boundary: "Playwright request.timing().responseEnd after response.finished(), relative to request start",
       samples: requestTimingSamples,
+      unavailable_queue_timing_count: unavailableQueueTimingCount,
       unavailable_accepted_review_timing_count: unavailableAcceptedReviewTimingCount,
       timing_capture_error_count: timingCaptureErrorCount,
     }, null, 2)),
