@@ -139,8 +139,8 @@ def test_native_preparation_trace_localizes_capture_failure_and_retains_both_own
     from app.product_composition import provider_priority as composition
     from app.services import study_priority
     from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
-    caplog.set_level(logging.INFO, logger='tempo.study.feedback')
     caplog.set_level(logging.WARNING, logger='tempo.games.priority_intake')
+    caplog.set_level(logging.INFO, logger='tempo.study.feedback')
     case = native_handoff
     command = case.original.command
     before = case.case.readback()
