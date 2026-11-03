@@ -699,6 +699,23 @@ def current_encounter_service(database, capture, snapshot, *, case=None, now=NOW
     return owner
 
 
+def encounter_admission_diagnostic(service, command, receipt, case):
+    """Only public outcome facts/booleans; never emit source or target payloads."""
+    from app.study.introductions.encounter import introduction_target_identity
+    retained = service.store.get(command.key)
+    prepared = case.qualified.prepared
+    target = prepared.qualification.selection.decision.model_copy(update={
+        'repertoire_revision':prepared.prepared_decisions.introduction_revision(
+            prepared.qualification.selection.decision.repertoire_id)})
+    introduction = case.qualified.prepared_introduction
+    return dict(receipt_reason=receipt.reason, receipt_deferred_reason=receipt.deferred_reason,
+        receipt_status=receipt.status, receipt_admission_status=receipt.admission_status,
+        effect_reason=retained.reason, effect_deferred_reason=retained.deferred_reason,
+        effect_status=retained.status, effect_admission_status=retained.admission_status,
+        qualification_present=retained.qualification is not None,
+        prepared_definition_matches=introduction.target_identity == introduction_target_identity(target))
+
+
 @pytest.mark.parametrize('matched',[False,True])
 def test_native_encounter_current_owner_introduces_once_and_persists_original_without_review(case, matched):
     capture,snapshot,command=current_encounter_case(case,matched=matched)
@@ -714,7 +731,8 @@ def test_native_encounter_current_owner_introduces_once_and_persists_original_wi
             replay=service.accept_encounter(command)
             assert replay.outcome=='duplicate' and replay.owner_receipt_id==receipt.owner_receipt_id
             return
-        assert receipt.disposition=='first_introduction' and receipt.admission_status=='available'
+        assert receipt.disposition=='first_introduction' and receipt.admission_status=='available', \
+            encounter_admission_diagnostic(service,command,receipt,case)
         state=tuple(database.execute_native('SELECT introduced_at,state,interval_days,fsrs_card_json FROM cards WHERE id=%s',
             (case.card_id,)).fetchone())
         assert state[0]==NOW.date().isoformat() and state[1]=='learning'
@@ -755,7 +773,9 @@ def test_native_encounter_failed_refresh_preserves_accepted_receipt_and_rolls_ba
             (case.card_id,)).fetchone()[0]==0
         retained=PostgresGameFeedbackStore(database).get(command.key)
         assert retained.status=='pending' and retained.encounter==command
-        assert current_encounter_service(database,capture,snapshot,case=case).refresh_encounter(command.key).admission_status=='available'
+        service=current_encounter_service(database,capture,snapshot,case=case)
+        receipt=service.refresh_encounter(command.key)
+        assert receipt.admission_status=='available', encounter_admission_diagnostic(service,command,receipt,case)
 
 
 def test_native_encounter_ordinary_introduction_race_preserves_current_progress_and_single_charge(case):
@@ -805,7 +825,20 @@ def test_native_encounter_saved_pause_and_pre_admission_hold_remain_durable(case
         database.execute_native('UPDATE settings SET study_only_mode=0 WHERE id=1')
         service=current_encounter_service(database,capture,snapshot,case=case)
         assert service.accept_encounter(command).status=='held'
-        service.maintain(after=effect_id(command.key)[:-1])
+        # The module retains other cases' real effects. A prefix cursor is not
+        # an exact key selection, and held rows are excluded by owed_page.
+        # Keep this maintenance unit scoped to this case's authorized effect.
+        owed_page=service.store.owed_page
+        def selected_page(after,limit):
+            return tuple(effect for effect in owed_page(after,limit) if effect.key==command.key)
+        service.store.owed_page=selected_page
+        assert service.maintain(after=effect_id(command.key)[:-1]) is None
+        retained=service.store.get(command.key)
+        assert retained.status=='held' and retained.encounter==command
+        durable=service.encounter_status(command.key)
+        assert durable.owner_receipt_id==receipt.owner_receipt_id
+        assert durable.observation_recorded and durable.detected_at==command.detected_at
+        assert durable.admission_status=='pending' and durable.available_by is None
         assert database.execute_native('SELECT introduced_at FROM cards WHERE id=%s',(case.card_id,)).fetchone()[0] is None
         assert database.execute_native('SELECT COUNT(*) FROM cards WHERE id=%s AND introduced_at IS NOT NULL',
             (case.card_id,)).fetchone()[0]==0
