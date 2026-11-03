@@ -107,11 +107,16 @@ describe("desktop live queue isolation", () => {
     vi.useFakeTimers();
     try {
       const plan = issuedPositionCard();
-      const request = vi.fn().mockResolvedValueOnce(positionQueue(busyPositionCard())).mockResolvedValueOnce(positionQueue(plan));
+      const request = vi.fn().mockResolvedValueOnce(positionQueue(busyPositionCard()))
+        .mockResolvedValueOnce(Response.json({ count: 1, cards: [plan], local_date: "2026-11-03",
+          projection: { queue_date: "2026-11-03", state: "ready", generation: 3,
+            updated_at: "2026-11-03T21:12:53.033958+00:00", refresh_pending: 0, last_error: null,
+            blocked_count: 0, requested_refresh_epoch: 2, published_refresh_epoch: 2 } }));
       vi.stubGlobal("fetch", request);
       const loading = fetchAndInitializeQueue(false, { preparePhoneQueue: false });
+      const settled = loading.then(() => null, error => error);
       await advanceStudyTimers(5_000);
-      await loading;
+      expect(await settled).toBeNull();
       expect(request).toHaveBeenCalledTimes(2);
       for (const call of request.mock.calls) {
         expect(String(call[0])).toContain("/api/queue/window");
