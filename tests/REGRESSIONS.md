@@ -5423,7 +5423,7 @@ The final `test_queue_application_database_split.py` selection also covers compl
 
 ## Queue command storage and warm projection ordering
 
-`backend/tests/test_queue_command_database_split.py` owns four focused boundaries for complete query capture, warming compiler/completion order, advisory lock behavior and application/database direction. Existing queue issuance/ensure/bury cases preserve assertions; native locks and whole-system behavior remain unverified.
+`backend/tests/test_queue_command_database_split.py` owns four focused boundaries for complete query capture, warming compiler/completion order, advisory lock behavior and application/database direction. The position Study regression `test_legacy_issuance_owner_facts_are_fenced_before_card_locks` additionally verifies borrowed ownership reads, sorted owner adjudication, non-legacy hold short-circuiting and owner-before-card/day lock order; the unchanged AST guard keeps SQL in the existing queue storage adapter. Existing queue issuance/ensure/bury cases preserve assertions; native locks and whole-system behavior remain unverified.
 
 
 ## Card and repertoire deletion storage
