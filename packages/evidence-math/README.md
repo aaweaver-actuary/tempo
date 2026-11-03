@@ -11,6 +11,8 @@ See `docs/contracts.md` for versions, ownership, examples and limitations.
 `tempo_evidence_math.position_learning` exports immutable position-owned Study
 facts. These detached values do not attest source authority or perform scheduling;
 Study owns issuance, grading and borrowed transaction ports.
+Source `RouteOption` values allow up to 1000 plies / 500 learner decision
+occurrences; Study's issued presentations retain their 40-move / 20-decision bound.
 
 Development: install only `requirements-dev.lock` into a task-owned environment,
 install a noneditable wheel, then run `python qualify.py suite --report /absolute/report.json`.
