@@ -49,6 +49,7 @@ def test_native_abandonment_exact_retry_preservation_and_queue_cleanup(case):
         before = dict(db.execute_native('SELECT * FROM queue_attempt_origins WHERE queue_entry_id=%s', (plan['queue_entry_id'],)).fetchone())
         cards = tuple(db.execute_native('SELECT interval_days,fsrs_card_json,state,due_date FROM cards WHERE id=%s', (case.card_id,)).fetchone())
         reviews = db.execute_native('SELECT count(*) FROM reviews WHERE card_id=%s', (case.card_id,)).fetchone()[0]
+        position_grades = db.execute_native('SELECT count(*) FROM study_position_grades').fetchone()[0]
         assert abandonment.abandon_in_writer(db, payload, now=NOW)['idempotent'] is False
     with case.transaction() as db:
         assert abandonment.abandon_in_writer(db, payload, now=NOW)['idempotent'] is True
@@ -61,7 +62,7 @@ def test_native_abandonment_exact_retry_preservation_and_queue_cleanup(case):
         assert dict(db.execute_native('SELECT * FROM queue_attempt_origins WHERE queue_entry_id=%s', (plan['queue_entry_id'],)).fetchone()) == before
         assert tuple(db.execute_native('SELECT interval_days,fsrs_card_json,state,due_date FROM cards WHERE id=%s', (case.card_id,)).fetchone()) == cards
         assert db.execute_native('SELECT count(*) FROM reviews WHERE card_id=%s', (case.card_id,)).fetchone()[0] == reviews
-        assert db.execute_native('SELECT count(*) FROM study_position_grades').fetchone()[0] == 0
+        assert db.execute_native('SELECT count(*) FROM study_position_grades').fetchone()[0] == position_grades
 
 
 def test_native_changed_wrong_and_outer_rollback(case):
@@ -123,6 +124,7 @@ def test_native_review_and_abandonment_serialize_both_orders(case, monkeypatch, 
             before_schedule = tuple(db.execute_native(
                 'SELECT interval_days,fsrs_card_json,state,due_date FROM cards WHERE id=%s', (case.card_id,)).fetchone())
             before_count = db.execute_native('SELECT count(*) FROM reviews WHERE card_id=%s', (case.card_id,)).fetchone()[0]
+            before_position_grades = db.execute_native('SELECT count(*) FROM study_position_grades').fetchone()[0]
             before_queue = [tuple(row) for row in db.execute_native('SELECT * FROM daily_queue WHERE card_id=%s ORDER BY id', (case.card_id,)).fetchall()]
             replay = _review(db, case, payload)
             assert replay == first_result and replay['persisted'] and replay['review_id'] == first_result['review_id']
@@ -130,6 +132,7 @@ def test_native_review_and_abandonment_serialize_both_orders(case, monkeypatch, 
             assert tuple(db.execute_native('SELECT * FROM review_attempt_receipts WHERE attempt_id=%s', ('review-' + case.card_id,)).fetchone()) == before_receipt
             assert tuple(db.execute_native('SELECT interval_days,fsrs_card_json,state,due_date FROM cards WHERE id=%s', (case.card_id,)).fetchone()) == before_schedule
             assert db.execute_native('SELECT count(*) FROM reviews WHERE card_id=%s', (case.card_id,)).fetchone()[0] == before_count
+            assert db.execute_native('SELECT count(*) FROM study_position_grades').fetchone()[0] == before_position_grades
             assert [tuple(row) for row in db.execute_native('SELECT * FROM daily_queue WHERE card_id=%s ORDER BY id', (case.card_id,)).fetchall()] == before_queue
             assert not abandonment.is_abandoned(db, plan['queue_entry_id'], case.card_id, 1)
         else:
