@@ -1261,7 +1261,7 @@ def materialize_daily_queue(database, queue_date: str, *, preserve_through_entry
     return queue_application.materialize_daily_queue(database, queue_date, preserve_through_entry_id=preserve_through_entry_id)
 
 
-def _issue_returned_queue_head(queue_date: str, card: dict) -> None:
+def _issue_returned_queue_head(queue_date: str, card: dict) -> dict | JSONResponse:
     """Use the writer boundary without granting write credentials to the API."""
     payload = {"queue_date": queue_date, "entry_id": card["queue_entry_id"],
                "card_id": card["id"], "expected_revision": card["revision"]}
@@ -1291,8 +1291,21 @@ def _issue_returned_queue_head(queue_date: str, card: dict) -> None:
         raise HTTPException(503, {'code':'study_feedback_preparation_pending',
             'message':'Local Study priority work must prepare before the next new attempt'})
     if isinstance(result, JSONResponse):
-        raise HTTPException(503, "Queue changed or attempt issuance is pending. Retry loading the queue.")
+        return result
     if result.get('position_study_mode') == 'position':
+        from .contracts.queue_issuance import immutable_issuance_conflict
+        conflict = immutable_issuance_conflict(result)
+        if conflict:
+            raise HTTPException(409, {'code': conflict, 'message': 'The original position attempt conflicts with its immutable plan. Check its retained evidence before retrying.'})
+        if result.get('issued') and postgres_store.configured():
+            # A receipt is not a queue snapshot. Re-read the retained original
+            # plan after the wait, rather than hydrating its saved raw response.
+            from .services.queue_next_card import prepare_queue_head
+            replay = prepare_queue_head(payload)
+            if replay.mode != 'replay':
+                raise HTTPException(409, 'The issued position plan is unavailable. Refresh the queue.')
+            result = {'issued': True, 'position_study_mode': 'position',
+                      'position_presentation': replay.proposal.to_wire(), 'position_study_hold': None}
         return result
     if not result.get("issued"):
         raise HTTPException(503, "Queue changed or attempt issuance is pending. Retry loading the queue.")
@@ -1333,6 +1346,18 @@ def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool =
                                (datetime.now(timezone.utc) - timedelta(days=7)).isoformat())
     if cards:
         issuance = _issue_returned_queue_head(day, cards[0])
+        if isinstance(issuance, JSONResponse):
+            return issuance
+        if issuance.get('issued') and postgres_store.configured():
+            # The command wait can span another tab's review/day rollover.
+            # Serve only a still-current head, never the stale pre-wait window.
+            with read_connection() as current_database:
+                current_day = current_study_day(current_database)
+                current_rows = queue_projection_storage.queue_rows(current_database, current_day, 1, miss_reason=MISS_REASON)
+            if (current_day != day or not current_rows or
+                    (current_rows[0]['queue_entry_id'], current_rows[0]['id'], current_rows[0]['revision']) !=
+                    (cards[0]['queue_entry_id'], cards[0]['id'], cards[0]['revision'])):
+                raise HTTPException(503, 'The queue head changed. Retry loading the current queue.')
         if issuance.get('position_study_mode') == 'position':
             cards[0].update({key: issuance[key] for key in
                 ('position_study_mode', 'position_presentation', 'position_study_hold')})
@@ -1386,6 +1411,8 @@ def prepare_next_queue_head(idempotency_key: str | None = Header(None, alias='Id
 def prepared_queue(include_opening_evidence: bool = False):
     from .study.queue_serving import exercise_snapshot
     payload = _queue_payload(include_opening_evidence=include_opening_evidence)
+    if isinstance(payload, JSONResponse):
+        return payload
     study_cards = [card for card in payload["cards"] if card["content_type"] == "study_exercise"]
     if study_cards:
         with read_connection() as database:

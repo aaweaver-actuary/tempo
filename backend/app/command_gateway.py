@@ -117,6 +117,36 @@ def record_operation_attempt(
         return True, saved_payload, attempt_token, cycle_attempts + 1
 
 
+
+def select_queue_issuance_operation(payload: dict[str, Any]) -> str:
+    """Coalesce a head while allowing throttled, immutable retry incarnations.
+
+    Concurrent absent readers derive generation zero; concurrent completed-hold
+    readers derive the same successor. A stale reader can only redeliver an
+    older immutable receipt, whose worker claim refuses repeat preparation.
+    """
+    from .contracts.queue_issuance import (
+        issuance_operation_id, issuance_generation, immutable_issuance_conflict,
+        ISSUANCE_RETRY_SECONDS, MAX_GENERATION,
+    )
+    first = issuance_operation_id(payload)
+    with storage.foreground_receipt_reader() as database:
+        latest = storage.latest_queue_issuance(database, first, issuance_operation_id(payload, MAX_GENERATION))
+    if latest is None:
+        return first
+    operation_id, command_name, request_hash, state, response_json, completed_at = latest
+    if command_name != 'queue.issue_head' or request_hash != request_digest(command_name, payload):
+        raise CommandConflict('Queue issuance receipt identity does not match its original head')
+    generation = issuance_generation(operation_id, payload)
+    if state != 'complete':
+        return operation_id
+    response = json.loads(response_json)
+    if response.get('issued') or immutable_issuance_conflict(response):
+        return operation_id
+    if datetime.now(timezone.utc) < completed_at + timedelta(seconds=ISSUANCE_RETRY_SECONDS):
+        return operation_id
+    return issuance_operation_id(payload, generation + 1)
+
 def load_blocked_operation(operation_id: str) -> dict[str, Any] | None:
     with storage.foreground_receipt_reader() as database:
         row = storage.blocked_operation(database, operation_id)
