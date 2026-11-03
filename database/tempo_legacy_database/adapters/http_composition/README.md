@@ -109,6 +109,9 @@ position must have no state in any epoch. Issued attempts, evidence, explicit or
 retry work, guided failures, accepted Games obligations and uncertain authority
 remain visible. All physical rows, held seed outcomes and history remain intact;
 the diagnostic reports `position_retained_carrier_without_logical_state`.
+The legacy physical reinforcement flag is retained too: it cannot create a
+position-owned obligation without logical state. Actual retry cycles and
+reinforcement attempts remain protected by the queue-attempt guards.
 
 ```mermaid
 flowchart LR

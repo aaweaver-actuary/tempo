@@ -16,7 +16,7 @@ _OMIT = """c.content_type='opening' AND q.status='queued'
  AND q.attempt_state='clean' AND q.attempt_failed=0
  AND q.review_result_json IS NULL AND q.admission_source IS NULL
  AND COALESCE(q.gameplay_priority_reason,'')=''
- AND COALESCE(c.guided_review,0)=0 AND COALESCE(c.reinforcement_pending,0)=0
+ AND COALESCE(c.guided_review,0)=0
  AND EXISTS (
    SELECT 1 FROM queue_attempt_origins origin
    JOIN study_position_owners owner ON owner.repertoire_id=origin.admission_repertoire_id

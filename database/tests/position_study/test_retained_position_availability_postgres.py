@@ -33,8 +33,8 @@ def _fixture(raw, dsn):
     carrier_moves = json.dumps([opponent, definition.expected_uci])
     now = datetime.now(timezone.utc)
     raw.execute("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
-        fsrs_card_json,introduced_at,revision,content_type,trained_color,canonical_route_source)
-        VALUES('retained','italian','prefix',%s,%s,'learning',%s,%s,%s,1,'opening','white',0)""",
+        fsrs_card_json,introduced_at,revision,content_type,trained_color,canonical_route_source,reinforcement_pending)
+        VALUES('retained','italian','prefix',%s,%s,'learning',%s,%s,%s,1,'opening','white',0,1)""",
         (carrier_start, carrier_moves, day,
          Card(card_id=999,due=now-timedelta(days=1)).to_json(),(now-timedelta(days=3)).isoformat()))
     raw.execute("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES('italian','retained',0)")
@@ -97,6 +97,7 @@ def test_retained_unissuable_physical_head_yields_to_fenced_successor_without_wr
         with psycopg.connect(dsn,row_factory=tempo_row_factory) as raw:
             db, day, entry, successor, definition = _fixture(raw, dsn)
             before = _retained(raw, entry)
+            assert raw.execute("SELECT reinforcement_pending FROM cards WHERE id='retained'").fetchone()[0] == 1
             assert _visible(db, day) == successor['id']
             diagnostics = queue_projection.queue_diagnostics(db, day)
             assert any(row['card_id']=='retained' and row['message']==retained_position_availability.RETAINED_HOLD for row in diagnostics)
@@ -111,6 +112,7 @@ def test_retained_unissuable_physical_head_yields_to_fenced_successor_without_wr
             raw.commit()
             assert _retained(raw, entry) == before
             assert raw.execute('SELECT count(*) FROM study_position_issued_plans').fetchone()[0] == 1
+            assert raw.execute("SELECT reinforcement_pending FROM cards WHERE id='retained'").fetchone()[0] == 1
             assert raw.execute('SELECT count(*) FROM study_position_grades').fetchone()[0] == 0
             assert not raw.execute('SELECT 1 FROM study_position_states WHERE repertoire_id=%s AND position=%s',
                 ('italian',definition.key.position)).fetchone()
@@ -135,6 +137,7 @@ def test_retained_head_omission_preserves_uncertain_source_state_and_protected_w
                 ('retry', 'UPDATE daily_queue SET cycle=1 WHERE id=%s', (entry,)),
                 ('failed', 'UPDATE daily_queue SET attempt_failed=1 WHERE id=%s', (entry,)),
                 ('guided', "UPDATE daily_queue SET attempt_state='guided' WHERE id=%s", (entry,)),
+                ('reinforcement attempt', "UPDATE daily_queue SET attempt_state='reinforcement' WHERE id=%s", (entry,)),
                 ('issued', 'UPDATE queue_attempt_origins SET issued_as_head=1 WHERE queue_entry_id=%s', (entry,)),
                 ('owner paused', "UPDATE study_position_owners SET mode='paused' WHERE repertoire_id='italian'", ()),
                 ('source header changed', "UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE id='italian'", ()),
