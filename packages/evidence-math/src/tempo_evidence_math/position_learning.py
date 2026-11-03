@@ -100,7 +100,9 @@ class RouteOption:
             raise ValueError("route_not_certified")
         if self.learner_color not in {"white", "black"}:
             raise ValueError("invalid_learner_color")
-        if len(self.moves_uci) > 1000 or len(self.decisions) > 20:
+        # Source routes can contain 1000 plies; issued presentations have their
+        # own smaller wire/evidence bounds in Study.
+        if len(self.moves_uci) > 1000 or len(self.decisions) > 500:
             raise ValueError("route_exceeds_reference_bound")
         if any(not UCI_RE.fullmatch(m) for m in self.moves_uci):
             raise ValueError("invalid_route_uci")

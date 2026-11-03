@@ -54,6 +54,26 @@ def test_london_transposition_and_exact_repeated_ply():
     assert [d.ply for d in option.decisions if d.definition.key.position == opening_position_key(chess.STARTING_FEN)] == [0, 4]
 
 
+def test_certified_long_authored_route_preserves_all_learner_occurrences():
+    moves = ("g1f3", "g8f6", "f3g1", "f6g8") * 10 + ("g1f3",)
+    options = project(snapshot(route("long", moves)))
+    assert not isinstance(options, Hold)
+    assert len(options) == 1
+    option = options[0]
+    assert option.moves_uci == moves
+    assert tuple(d.ply for d in option.decisions) == tuple(range(0, 41, 2))
+    assert len(option.decisions) == 21
+    board = chess.Board(option.start_fen)
+    by_ply = {d.ply: d for d in option.decisions}
+    for ply, uci in enumerate(moves):
+        if ply in by_ply:
+            decision = by_ply[ply]
+            assert decision.fen == board.fen()
+            assert decision.definition.expected_uci == uci
+            assert decision.definition.key.position == opening_position_key(board.fen())
+        board.push_uci(uci)
+
+
 def test_conflicts_illegal_incomplete_and_missing_authority_hold():
     conflict = project(snapshot(route("a", ("e2e4",)), route("b", ("d2d4",))))
     assert isinstance(conflict, Hold) and "own_response_conflict" in conflict.detail
