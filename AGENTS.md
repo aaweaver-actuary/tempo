@@ -1,86 +1,67 @@
-# Tempo working rules
+# Tempo agent working rules
 
-## Current product scope: SPEC.md
+Tempo is a single-user, local-first chess study product. Protect playable Study, Tactics, saved reviews, issued attempts, learning history, and accepted obligations while delivering the smallest useful change. Prefer a modular monolith with explicit ownership over new services, frameworks, or broad rewrites.
 
-[SPEC.md](SPEC.md) governs current product scope and delivery order. The current explicit assignment selects the work and its action type: review, documentation, implementation, integration, migration, or operation. An explicitly authorized scope change must be reconciled with SPEC, not silently inferred.
+## 1. Authority, assignment, and stopping
 
-Read the assigned acceptance case and relevant owner guidance. A linked guide, skill, README, old issue, audit, or checklist supplies applicable facts and constraints; reading it does not assign every procedure it contains or authorize its operations. Historical #192 and #357 programmes do not add prerequisites to ordinary feature work.
+- [SPEC.md](SPEC.md) defines intended product behavior and delivery order. The current explicit assignment defines scope, action type, exclusions, and authorization. Read the relevant SPEC acceptance case, current source, owning component guidance, and [test selection](docs/testing.md#select-the-smallest-relevant-proof). Older issues, plans, audits, and guides are evidence, not automatic new assignments or permission to perform their procedures.
+- Before editing, identify the observable outcome, affected owner and consumers, allowed files/interfaces, preservation requirements, finite proof, delivery owner, and stop condition. Resolve ordinary reversible decisions without another planning cycle. If the source and SPEC disagree, report the discrepancy rather than silently changing requirements.
+- A component worker owns its implementation and focused proof. For parallel work, one delivery owner coordinates shared files, contracts, migration numbers, integration, and the assembled user journey. Do not absorb neighboring issues, optional features, or unmerged branches. Missing delivery ownership does not prevent independent safe component work; report the gap.
+- Stop when the assigned acceptance and safeguards pass. Distinguish **implemented**, **component-tested**, **assembled-demonstrated**, **merge-qualified**, **installed**, and **activated**. None implies the next. A blocked merge or install is not a reason to expand completed feature code; report the blocker and next owner.
+- Work on an isolated feature branch/worktree based on current main or an explicitly approved dependency base. Do not edit main or the live Study checkout. Preserve other owners' changes and use only verified task-owned disposable test resources. Never borrow live data, delete retained work, or globally prune shared resources. Follow [CONTRIBUTING](CONTRIBUTING.md#task-resources-and-cleanup).
+- Existing authorization remains effective; do not ask again for already-approved actions. An assignment, worker role, or documentation command does not grant new permission for consequential merges, deployments, migrations, data changes, or service operations.
 
-Preserve working Study/Tactics and current content/history. Replacement-runtime adoption, history migration, broad cleanup, and separately proposed fresh starts are not feature prerequisites. Safety, permissions, and actual required gates still apply. Source establishes implementation facts; SPEC establishes intended behavior. A discrepancy is not permission to redefine either silently.
+## 2. Reliability invariants: Study is the protected product
 
-## Execution contract and stopping rule
+- **Essential Study and Tactics must work without optional Games, analysis, engines, external providers, or their workers.** An optional failure, missing source, retryable hold, stopped collector, or unavailable feature mode must not indefinitely block an unrelated valid card, a review save, or accepted Study work.
+- **Fail closed at the affected authority boundary, not across the whole product.** An unsafe, stale, ambiguous, or unqualified target remains held with its actual reason and durable identity. Do not bypass source/currentness/integrity/legality checks, manufacture a safe target, or discard uncertain work to make the queue appear healthy.
+- Distinguish **new optional producer work**, **already accepted Study-owned obligations**, **ready actionable priority**, **recoverable prerequisite holds**, and **ordinary Study**. Pending work is not automatically an issuance veto. Disabling Games must not erase or strand accepted Study effects. Keep exact original effect/operation IDs, clocks, receipts, dispositions, retry history, and deduplication.
+- **Study/Learning is the sole owner** of scheduling, grades, review receipts, queue membership/admission, issuance, and settlement. Optional producers submit typed semantic commands through the owner; they never write learning tables or run a second scheduler.
+- Review saving and ordinary issuance must not synchronously perform provider I/O, full repertoire replay, optional health checks, broad exports, or unbounded source reconstruction. Prepare expensive work outside short writer transactions; revalidate immutable proposals under the existing owner fences before applying.
+- Preserve original attempts, revisions, queue origins, offline journals, accepted feedback, and human review counts. A retry, lost acknowledgment, page reload, worker restart, or queue refresh must not lose a committed review, duplicate an Again, create an extra issued plan, or silently reset accepted work.
 
-Use the existing assignment to identify one outcome, exclusions, worker, delivery owner where different, allowed changes/public boundaries, finite acceptance evidence, and stop condition. Do not require another planning document or routine confirmation. Resolve ordinary reversible engineering choices within scope.
+## 3. State ownership, transactions, and recovery
 
-A component worker owns its component and evidence, not the entire product. A self-contained feature's implementer may also be its delivery owner. Parallel feature work has one designated delivery owner for dependencies, shared changes, integration, and the assembled user journey. Missing integration ownership does not block independent safe component work; report the gap.
+- Each durable state transition has one authoritative writer and an explicit owner. Application/domain policy consumes typed facts and public capabilities. Database adapters own SQL, physical schema, and storage locks; application services must not introduce new direct SQL or cross-owner writes. When touching an existing direct-SQL seam, prefer a narrow existing adapter rather than a new generic repository abstraction.
+- Preserve the original **atomic effect + receipt + checkpoint** boundary. Retain idempotency keys, operation generations, leases, source/revision epochs, and lock ordering. Never turn a retry into a fresh logical operation merely to escape a hold, or mark an unfinished projection ready.
+- Prepare outside writer transactions; publish only if the exact source, queue membership, revision, and lease remain current. On a race, retry bounded work or return a truthful hold. Repeated invalidations must preserve useful refresh progress and eventually converge after input becomes quiet.
+- A foreground save that commits must remain committed even if a post-commit broker wake fails. Wakes are advisory; durable work must recover through existing finite periodic paths. Essential queue and receipt recovery must not depend on an idle optional worker or a browser remaining active.
+- Classify failures explicitly: immutable conflict, safety hold, transient contention, pending operation, terminal failure, and unavailable dependency are different states. Retain the original identity across HTTP 202/poll/reload and distinguish a completed hold from an in-flight command. Do not replace a real failure with a generic success or infinite silent retry.
+- Bound database connections, locks, transactions, retries, source preparation, and worker occupancy. Foreground queue routing alone does not guarantee capacity if expensive preparations occupy all foreground workers or share the same database pool. Measure before increasing global deadlines, memory, concurrency, or container count.
 
-Use the smallest dependency set that satisfies the assigned outcome. Do not absorb optional features or unmerged work merely because they share a parent issue or branch ancestry. Report missing contracts and out-of-scope edits to the delivery owner; do not create a second implementation or silently enlarge the task.
+## 4. Component boundaries and startup isolation
 
-Stop local implementation when assigned acceptance and applicable safeguards pass. Component completion, assembled demonstration, merge qualification, and installation are separate states. A remaining merge or installation blocker is not permission to keep polishing complete feature code. Report the specific blocker, smallest safe alternative, tradeoff, and next owner. Preserve scoped task cleanup responsibilities.
+- Cross-component calls use declared public interfaces, not private sibling imports. Composition roots inject concrete implementations; domain modules do not import composition roots or infrastructure. Importing a public contract must not start providers, connect to databases, register workers, or trigger application startup.
+- Keep command registration explicit and owned. Preserve persisted command names and compatibility during extraction; removing an eager import is not safe until its registered handlers and recovery consumers are accounted for. Optional features must not be essential API/worker startup prerequisites.
+- Use one cohesive responsibility per module, not one function per file. A facade may re-export its own implementation; it must not disguise reverse dependencies. Pure shared libraries and intentional public contracts are legitimate dependencies. Separate services/databases are not required for modularity.
+- Before building or replacing a component, inspect the current API, owning README, actual consumers, registration, and reusable implementations. Source import graphs and file size suggest risks, but do not prove runtime harm; verify emitted bundles, executed paths, or actual failure mechanisms before refactoring.
+- Keep the browser's durable review/operation/offline journals and their distinct authorities. Shared transport states should be typed and consistent, but do not collapse separate business workflows into one global store or discard compatibility paths without positive reachability and replay proof.
 
-## Deliver a usable single-user MVP
+## 5. Verification: prove the changed boundary and the usable journey
 
-Tempo serves one user. Prefer the simplest supported implementation that delivers the assigned behavior. Do not add speculative frameworks, services, general hardening, or exhaustive rare-case handling without an assigned need. Preserve essential correctness, permissions, durable state, and honest pending/failure behavior.
+- Select the smallest **real** test set that covers the changed component, its consumers, and its ownership boundary; see [docs/testing.md](docs/testing.md). Pure logic gets pure tests. Concurrency, lock order, leases, rollback, migrations, and SQL semantics require the applicable native PostgreSQL proof. Browser pending/receipt behavior requires real transport and browser coverage when mocks cannot establish it.
+- Every user-reported defect needs a discoverable named regression (reuse an existing suitable one). Reproduce the failure before claiming its fix when feasible. Include negative cases: optional producer unavailable, stale source, concurrent request, worker death, timeout, lost broker wake, replay, and protected active attempts as applicable. Never weaken a safety assertion merely to make a test pass.
+- For changes to queue issuance, review saving, feedback admission, or deployment, the delivery owner must demonstrate the **assembled saved-review → authoritative playable-next-card** journey on the appropriate disposable stack. A 200/202 response, healthy container, passed unit suite, or merged PR is not proof of a playable card or installed behavior. Exercise relevant failure injection and exact-once receipts, not only the happy path.
+- Avoid indiscriminate full-suite execution for every leaf. Use targeted contract/native gates and a single coordinated assembled proof for the release; full-system runs remain integration or periodic checkpoints. Record which checks actually ran, on which SHA/schema/runtime, and which were skipped, pending, or unavailable. Never report a planned test or prior unrelated receipt as a current pass.
+- The release/installation record must distinguish source SHA, immutable image identities, schema, active modes, worker identities, migration state, and observed functional acceptance. Verify installed behavior separately from merge qualification. Preserve backup and recovery safeguards; reinstalling an older image is not necessarily a safe database rollback.
+- The current Tempo CLI `--no-ci` workaround is explicitly approved while hosted CI is unavailable. It permits using that flag without renewed approval; **it does not mean CI passed, waive applicable local/native/assembled acceptance, or authorize an otherwise unapproved installation**. State `ci-disabled` or equivalent truthfully.
 
-Record safe nonblocking limitations briefly in the existing task or PR. Create another issue only when actionable independent follow-up warrants one. A review or verification assignment can finish with no code change when existing behavior/evidence satisfies it.
+## 6. Delivery discipline and documentation
 
-Use [test selection](docs/testing.md#select-the-smallest-relevant-proof) and [scoped review](CONTRIBUTING.md#changes-and-review). Test counts and repeated reviews do not substitute for the assigned outcome.
+- Optimize for the smallest supported single-user MVP. Prefer deleting unnecessary dependencies over adding orchestration. Do not introduce speculative services, event buses, schedulers, broad refactors, or defensive machinery without a demonstrated requirement. One credible failure mode and its bounded regression are more useful than a general hardening campaign.
+- Coordinate shared-file edits, interface changes, and migrations with the delivery owner. Use focused tests and scoped review under [CONTRIBUTING](CONTRIBUTING.md#changes-and-review). Record residual nonblocking risks and an actionable owner in the existing issue/PR; create a new issue only for independent work that merits one.
+- Update the affected canonical architecture drawing when a change materially alters dependency direction, state ownership, transaction/persistence, or lifecycle/failure isolation. No material architecture change means no new diagram. See [drawing procedure](docs/architecture/diagrams/README.md#maintenance-and-review-procedure).
+- Database operations belong in the existing database owner. Schema/storage changes update the affected data description and diagram per [database documentation](database/README.md#before-merge). Do not turn a scoped change into a whole-database census or migration.
+- Report: exact changed boundary, preserved invariants, tests and observed evidence, remaining uncertainty, source/assembled/install state, and the next owner. Stop rather than expanding scope to eliminate unrelated risks.
 
-## Protect existing work
+## Guidance index
 
-Do not develop on main or in the live Study checkout. Use an isolated branch from current main, or an explicitly agreed dependency base for a necessary stack. Preserve user changes and other owners' work. Reuse a checkout only after establishing that it is available and safe.
+- [SPEC.md](SPEC.md): product behavior, scope, and delivery order.
+- [CONTRIBUTING.md](CONTRIBUTING.md): review, publication, permissions, and resource cleanup.
+- [docs/testing.md](docs/testing.md): test selection, regression ownership, and runner limitations.
+- [Component architecture](docs/architecture/component-reconstruction.md): public boundaries and discovery.
+- [Architecture diagrams](docs/architecture/diagrams/README.md): canonical drawings and change procedure.
+- [Database guidance](database/README.md): database ownership and schema documentation.
+- [Small-task guide](docs/architecture/study-first-reduction-2026-10-21/SMALL-TASKS.md): finite task execution.
 
-Use only verified task-owned disposable resources for tests. Never borrow live data or globally prune shared resources. Install only dependencies required by selected checks. Follow [cleanup rules](CONTRIBUTING.md#task-resources-and-cleanup).
-
-An assignment, README command, or delivery-owner role grants no additional merge, deployment, service, data, or permission authority. Continue already-authorized actions without asking again; obtain genuinely missing consequential authority before acting.
-
-## Naming and scope
-
-Prefer understandable names without renaming adjacent code merely for style. One module means one cohesive responsibility, not one function per file. Shared contracts, migrations, transaction boundaries, and build configuration each have one coordinated owner.
-
-A user-reported defect fixed by a change needs a discoverable named regression; an existing suitable regression can satisfy this requirement. Follow [regression ownership](docs/testing.md#regression-ownership-during-reconstruction). Preserve still-applicable invariants; an explicitly changed product requirement may require updating its obsolete expectation with the reason recorded.
-
-## Component-owned interfaces are required
-
-Cross-component consumers use declared public surfaces, not private sibling implementation or cross-owner writes. Public facades may explicitly re-export or delegate to their own implementation; public signatures must not leak private dependencies. Domain policy uses typed facts/capabilities. Composition roots choose concrete implementations; domain code must not import those roots. Public interface imports must not start providers, connections, workers, or application startup.
-
-Keep one authoritative state writer and preserve required atomic effects/receipts, transaction ownership, retry identity, and lock order. Pure shared libraries and intentional public-contract dependencies are permitted; modularity does not mean zero dependencies or require separate services/databases for every feature.
-
-Use supported existing boundaries. New boundaries need explicit contracts; unrelated legacy components do not need wholesale relocation into interfaces/ as a feature prerequisite. Repository-wide interface extraction is separately assigned. Run existing affected guards; add narrowly justified coverage for changed contracts or guard behavior, not generic enforcement machinery for every feature.
-
-## Optional features must fail independently of Study
-
-Study/Tactics must remain usable when optional Games, analysis, engines, or providers are absent or fail. Do not add Study startup, serving, readiness, lifecycle, or synchronous-call dependencies on an optional producer. Practice influence enters the Study/Learning owner's semantic command interface; producers never write its queue, reviews, or schedules.
-
-Preserve active attempts, learning history, durable accepted obligations, and idempotent settlement. Foreground work takes priority; bound optional resource use and lock duration. State actual shared process/host/database limits. Prove the failure boundary changed by the assignment; reuse valid unchanged evidence. Source separation alone is not deployed resource isolation, and this rule does not assign unrelated runtime reconstruction.
-
-## Maintain architecture drawings as an acceptance criterion
-
-When a change materially alters an interface, dependency, state owner, transaction, persistence relationship, or failure/lifecycle boundary, update the affected canonical view. No runtime architecture change means no new diagram is required. Use the [diagram procedure](docs/architecture/diagrams/README.md#maintenance-and-review-procedure); do not regenerate unrelated views or turn rendering polish into a new gate.
-
-## Keep database charts accurate before merge
-
-New database-operation files belong under the existing owner within database/; application policy remains outside. A scoped repair may use an existing legacy adapter without completing unrelated relocation. Physical colocation grants no cross-owner access or shared connection authority.
-
-Schema/storage changes must keep affected owner diagrams and data descriptions accurate. See [database documentation](database/README.md#before-merge). This does not require a live census, new schema, or general database audit.
-
-## Discover shared components before building
-
-Inspect the relevant existing API, owner README, consumer adapters, and registry entry before replacing reusable behavior. Search current source when registration is incomplete. A planned registry entry is not proof that no implementation exists, and a target design is not proof of an implemented component.
-
-Use [bounded component discovery](docs/architecture/component-reconstruction.md#discover-before-building). For board work, inspect [Board UI](packages/board-ui/README.md) and [existing wrappers](app/components/README.md). Discovery does not assign historical adoption programmes.
-
-## Tempo CLI Workaround While GitHub Actions Is Not Implemented
-
-Until proper CI is reimplemented, you are considered to have direct approval to use the `--no-ci` flag with the tempo CLI. You need no further authorization besides this direct approval. 
-
-## Authoritative guidance
-
-- Product requirements and delivery order: [SPEC](SPEC.md).
-- Execution and safeguards: this file; [small-task guide](docs/architecture/study-first-reduction-2026-10-21/SMALL-TASKS.md).
-- Review, publication, and cleanup: [CONTRIBUTING](CONTRIBUTING.md).
-- Check selection, evidence reuse, and current runner limits: [testing](docs/testing.md).
-- Applicable architecture constraints and reference targets: [architecture guide](docs/architecture/component-reconstruction.md).
-- Changed-boundary documentation: [drawing procedure](docs/architecture/diagrams/README.md#maintenance-and-review-procedure).
-
-Detailed procedures have one home. Local guidance may specify its component's contracts and commands, but must not silently enlarge the assigned scope or contradict these rules. Report a concrete conflict instead of launching another policy audit.
+This file sets cross-cutting invariants. Owner-local guidance supplies concrete interfaces and commands without silently enlarging an assignment. Resolve specific conflicts with the delivery owner; do not launch another policy audit.
