@@ -5583,28 +5583,14 @@ def test_postgres_discovery_recommendation_yields_to_foreground_and_discards_res
     assert "discovery_recommendation" in tasks._SUPPORTED_BACKGROUND_KINDS
 
 
-def test_postgres_activity_control_dispatches_idempotent_command(monkeypatch):
+def test_postgres_accepted_activity_control_handler_remains_available(monkeypatch):
     from fastapi.testclient import TestClient
     from app import activity_commands, main
 
-    dispatched = []
+    from app.command_gateway import is_command_registered
+
+    assert is_command_registered("activity.control")
     controlled = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-    monkeypatch.setattr(
-        command_dispatch, "dispatch_command",
-        lambda name, payload, *, idempotency_key:
-            dispatched.append((name, payload, idempotency_key)) or {"ok": True},
-    )
-    response = TestClient(main.app).post(
-        "/api/system/activity/control", headers={"Idempotency-Key": "control-one"},
-        json={"source": "durable", "id": "task-one", "action": "prioritize"},
-    )
-    assert response.status_code == 200, response.text
-    assert response.json() == {"ok": True}
-    assert dispatched == [("activity.control", {
-        "source": "durable", "id": "task-one", "action": "prioritize",
-    }, "control-one")]
     monkeypatch.setattr(
         activity_commands, "set_control_in_transaction",
         lambda database, source, work_id, action:

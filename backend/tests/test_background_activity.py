@@ -1,14 +1,13 @@
 """Named regressions for the background activity tray contract."""
 
 from datetime import datetime, timezone
-import time
 from concurrent.futures import ThreadPoolExecutor
 
 from fastapi.testclient import TestClient
 
 from tempo_legacy_database import connections as database
 from app.main import app
-from app.services.background_activity import list_activity, report_progress, set_control
+from app.services.background_activity import report_progress, set_control
 from tempo_legacy_database.adapters.database_executor import database_writer
 from app.services.durable_tasks import claim_task, complete_task, enqueue_task, requeue_interrupted_tasks
 from app.services import game_sync_coordinator
@@ -36,24 +35,23 @@ def _seed_all_sources() -> None:
         db.execute("INSERT INTO game_analysis_jobs(game_id,status,updated_at) VALUES('activity-game','queued',?)", (now,))
 
 
-def test_activity_projection_lists_every_background_source_and_pages_without_losing_counts(tmp_path, monkeypatch):
+def test_retired_tray_routes_leave_existing_pause_metadata_unchanged(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     database.initialize()
     _seed_all_sources()
+    assert set_control("durable", "activity-task", "pause")
+    with database.read_connection() as db:
+        before = tuple(db.execute("SELECT * FROM background_activity WHERE source='durable' AND work_id='activity-task'").fetchone())
     client = TestClient(app)
-    first = client.get("/api/system/activity?limit=3").json()
-    all_items = client.get("/api/system/activity?limit=100").json()["items"]
-    assert {item["source"] for item in all_items} == {
-        "durable", "sync", "derivation", "integrity", "coverage",
-        "game_analysis",
-    }
-    assert first["total"] == 6
-    assert not set_control("statistics", "2026-09-22", "prioritize")
-    assert not set_control("priority", "activity-rep", "prioritize")
-    assert len(first["items"]) == 3
-    assert first["next_offset"] == 3
-    integrity = next(item for item in all_items if item["source"] == "integrity")
-    assert (integrity["completed"], integrity["total"]) == (2, 5)
+    assert client.get("/api/system/activity").status_code == 404
+    assert client.post("/api/system/activity/control", json={"source": "durable", "id": "activity-task", "action": "resume"}).status_code == 404
+    with database.read_connection() as db:
+        assert tuple(db.execute("SELECT * FROM background_activity WHERE source='durable' AND work_id='activity-task'").fetchone()) == before
+    database_writer.start()
+    try:
+        assert claim_task("daily_queue") is None
+    finally:
+        database_writer.stop()
 
 
 def test_activity_controls_survive_restart_and_prioritize_only_their_queue(tmp_path, monkeypatch):
@@ -68,7 +66,8 @@ def test_activity_controls_survive_restart_and_prioritize_only_their_queue(tmp_p
         claimed = claim_task("activity_fixture")
         assert claimed and claimed["id"] == second["id"]
         requeue_interrupted_tasks()
-        assert list_activity()["counts"]["paused"] >= 1
+        with database.read_connection() as db:
+            assert db.execute("SELECT paused FROM background_activity WHERE source='durable' AND work_id=?", (first["id"],)).fetchone()[0] == 1
         assert set_control("durable", first["id"], "resume")
         claimed_again = claim_task("activity_fixture")
         assert claimed_again and claimed_again["id"] == second["id"]
@@ -91,7 +90,8 @@ def test_activity_progress_rejects_stale_generation_and_lease(tmp_path, monkeypa
     assert report_progress("game_analysis", "activity-game", "1:1", "Scanning", 1, 2, lease_id="current-lease")
     assert set_control("game_analysis", "activity-game", "pause")
     assert not report_progress("game_analysis", "activity-game", "1:1", "Scanning", 2, 2, lease_id="current-lease")
-    assert list_activity()["items"][0]["phase"] != "Stale"
+    with database.read_connection() as db:
+        assert tuple(db.execute("SELECT phase,completed_units,total_units,paused FROM background_activity WHERE source='game_analysis' AND work_id='activity-game'").fetchone()) == ("Scanning", 1, 2, 1)
 
 
 def test_pausing_coverage_invalidates_browser_lease_and_resume_reopens_queue(tmp_path, monkeypatch):
@@ -109,20 +109,16 @@ def test_pausing_coverage_invalidates_browser_lease_and_resume_reopens_queue(tmp
             (START_FEN, now, now),
         )
     client = TestClient(app)
-    response = client.post("/api/system/activity/control", json={
-        "source": "coverage", "id": "activity-coverage", "action": "pause",
-    })
-    assert response.status_code == 200
+    assert set_control("coverage", "activity-coverage", "pause")
     assert client.post("/api/repertoire-coverage/maia/heartbeat", json={
         "node_id": "activity-node", "lease_id": "old-lease",
     }).status_code == 409
     with database.read_connection() as db:
         node = db.execute("SELECT maia_status,lease_id FROM repertoire_coverage_nodes WHERE id='activity-node'").fetchone()
     assert tuple(node) == ("queued", None)
-    assert client.post("/api/system/activity/control", json={
-        "source": "coverage", "id": "activity-coverage", "action": "resume",
-    }).status_code == 200
-    assert next(item for item in list_activity()["items"] if item["source"] == "coverage")["state"] == "queued"
+    assert set_control("coverage", "activity-coverage", "resume")
+    with database.read_connection() as db:
+        assert db.execute("SELECT paused FROM background_activity WHERE source='coverage' AND work_id='activity-coverage'").fetchone()[0] == 0
 
 
 def test_derivation_pauses_after_a_phase_and_resumes_without_replaying_completed_work(tmp_path, monkeypatch):
@@ -167,23 +163,3 @@ def test_activity_progress_keeps_foreground_settings_read_responsive(tmp_path, m
         client = TestClient(app)
         assert client.get("/api/settings").status_code == 200
         writer.result(timeout=5)
-
-
-def test_activity_projection_pages_one_thousand_queued_jobs_without_a_sweep_write(tmp_path, monkeypatch):
-    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
-    database.initialize()
-    now = datetime.now(timezone.utc).isoformat()
-    with database.connection() as db:
-        db.executemany(
-            """INSERT INTO background_tasks(id,kind,deduplication_key,generation,priority,state,phase,
-               payload_version,payload_json,attempt_count,max_attempts,next_attempt_at,created_at,updated_at)
-               VALUES(?,?,?,1,100,'queued','queued',1,'{}',0,5,?,?,?)""",
-            [(f"large-{index}", "activity_fixture", f"large-{index}", now, now, now)
-             for index in range(1_000)],
-        )
-    started = time.perf_counter()
-    page = list_activity(limit=50)
-    assert time.perf_counter() - started < 2.0
-    assert page["total"] == 1_000
-    assert len(page["items"]) == 50
-    assert page["next_offset"] == 50

@@ -37,22 +37,11 @@ ADMIN_DSN = 'postgresql://postgres@postgres:5432/postgres'
 
 def verify_activity_pause_provenance(request_id, task_id, unrelated_task_id):
     """Actual PostgreSQL controls preserve individual pauses across global changes and reconnect."""
-    def item(source, work_id):
-        return next(row for row in background_activity.list_activity()['items']
-                    if row['source'] == source and row['id'] == work_id)
-
     def control(source, work_id, action):
         with postgres_store.connection() as connection:
             return activity_commands.control_activity(connection, {'source': source, 'id': work_id, 'action': action})
 
     for source, work_id in [('durable', task_id), ('threat_analysis', request_id)]:
-        with postgres_store.connection() as connection:
-            controls_before = [tuple(row) for row in connection.execute('SELECT * FROM background_activity ORDER BY source,work_id')]
-        projected = item(source, work_id)
-        assert (projected['state'], projected['paused'], projected['paused_by_settings']) == ('paused', True, True)
-        assert item(source, work_id) == projected
-        with postgres_store.connection() as connection:
-            assert [tuple(row) for row in connection.execute('SELECT * FROM background_activity ORDER BY source,work_id')] == controls_before
         assert control(source, work_id, 'pause') == {'ok': True}
         with postgres_store.connection() as connection:
             individual_before = tuple(connection.execute('SELECT * FROM background_activity WHERE source=? AND work_id=?',
@@ -68,38 +57,29 @@ def verify_activity_pause_provenance(request_id, task_id, unrelated_task_id):
                                             (source, work_id)).fetchone()) == individual_before
             assert connection.execute('SELECT defensive_analysis_enabled FROM settings WHERE id=1').fetchone()[0] == 0
             connection.execute('UPDATE settings SET defensive_analysis_enabled=1')
-        projected = item(source, work_id)
-        assert (projected['state'], projected['paused'], projected['paused_by_settings']) == ('paused', True, False)
         assert control(source, work_id, 'resume') == {'ok': True}
-        projected = item(source, work_id)
-        assert projected['paused'] is False and projected['paused_by_settings'] is False
         with postgres_store.connection() as connection:
             assert connection.execute('SELECT paused FROM background_activity WHERE source=? AND work_id=?',
                                       (source, work_id)).fetchone()[0] == 0
             connection.execute('UPDATE settings SET defensive_analysis_enabled=0')
         assert control(source, work_id, 'prioritize') == {'ok': True}
-        assert item(source, work_id)['promoted'] is True
         assert control(source, work_id, 'normal') == {'ok': True}
     assert control('durable', task_id, 'pause') == {'ok': True}
     with postgres_store.connection() as connection:
         connection.execute("UPDATE background_tasks SET state='failed',last_error='retry fixture' WHERE id=?", (task_id,))
     with postgres_store.connection() as connection:
         assert activity_commands.retry_failed_task(connection, {'task_id': task_id})['state'] == 'queued'
-    projected = item('durable', task_id)
-    assert projected['paused'] is True and projected['paused_by_settings'] is True
     with postgres_store.connection() as connection:
         assert connection.execute("SELECT paused FROM background_activity WHERE source='durable' AND work_id=?",
                                   (task_id,)).fetchone()[0] == 0
     with postgres_store.connection() as connection:
         connection.execute("UPDATE repertoire_opportunities SET status='active'")
     assert control('threat_analysis', request_id, 'pause') == {'ok': True}
-    assert item('threat_analysis', request_id)['paused_by_settings'] is False
     assert control('threat_analysis', request_id, 'resume') == {'ok': True}
-    assert item('threat_analysis', request_id)['paused'] is False
     for action, paused in [('pause', True), ('resume', False)]:
         assert control('durable', unrelated_task_id, action) == {'ok': True}
-        projected = item('durable', unrelated_task_id)
-        assert projected['paused'] is paused and projected['paused_by_settings'] is False
+        with postgres_store.connection() as connection:
+            assert bool(connection.execute('SELECT paused FROM background_activity WHERE source=? AND work_id=?', ('durable', unrelated_task_id)).fetchone()[0]) is paused
     with postgres_store.connection() as connection:
         assert connection.execute('SELECT defensive_analysis_enabled FROM settings WHERE id=1').fetchone()[0] == 0
         connection.execute("UPDATE repertoire_opportunities SET status='dismissed'")
@@ -197,7 +177,6 @@ def verify_pause():
     assert claimed['id'] == request_id
     assert application.defensive_engine_control(request_id,claimed['lease_id'])['search_allowed']
     assert not application.defensive_engine_control(request_id,'stale')['search_allowed']
-    assert next(item for item in background_activity.list_activity()['items'] if item['id']==request_id)['title']=='Repertoire recommendation search'
     with postgres_store.connection() as connection:
         connection.execute("UPDATE repertoire_opportunities SET status='dismissed'")
     assert not application.defensive_engine_control(request_id,claimed['lease_id'])['search_allowed']
