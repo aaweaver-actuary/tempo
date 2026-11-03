@@ -223,8 +223,12 @@ def test_collect_only_current_worker_persists_evidence_without_study_effects(cas
         case.service(database).accept_lapse(case.lapse)
 
     @contextmanager
-    def connections():
+    def connections(*, repertoire_snapshot=False):
         with case.transaction() as database:
+            if repertoire_snapshot:
+                # Match the current snapshot port's read-only call contract;
+                # retain this disposable fixture's bounded query timeouts.
+                database.execute_native("SET TRANSACTION READ ONLY")
             yield database.raw
 
     @contextmanager
