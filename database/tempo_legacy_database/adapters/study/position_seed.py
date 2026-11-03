@@ -6,6 +6,7 @@ F4 to inspect, not authorization to switch ownership.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, datetime
 import json
 
 from tempo_legacy_database.adapters.authored_repertoires.position_study_source import PreparedPositionSource
@@ -284,11 +285,23 @@ def _seed_shadow_page_locked(db, prepared, request, epoch, now, page_size, clone
         db.execute_native('UPDATE study_position_seed_runs SET allocator_preflight_json=%s::jsonb WHERE repertoire_id=%s AND owner_epoch=%s',
                           (json.dumps(preflight), rep, epoch))
         return {'stage': 'preflight', 'complete': preflight['complete'], 'scanned': preflight['scanned']}
-    if run['status'] == 'complete':
-        return {'stage': 'verification_required', 'seeded': run['seeded_count'], 'held': run['held_count']}
+    recovering = run['status'] == 'complete'
+    prior_holds = {}
+    if recovering:
+        eligible = sorted(key for key, decision in by_key.items() if decision.selected is not None)
+        rows = db.execute_native('''SELECT * FROM study_position_seed_outcomes
+            WHERE repertoire_id=%s AND owner_epoch=%s AND disposition='hold'
+            AND (variant,position) IN (SELECT * FROM unnest(%s::text[],%s::text[]))
+            ORDER BY variant,position LIMIT %s FOR UPDATE NOWAIT''',
+            (rep, epoch, [key[0] for key in eligible], [key[1] for key in eligible], page_size + 1)).fetchall()
+        more_recovery = len(rows) > page_size
+        prior_holds = {(row['variant'], row['position']): dict(row) for row in rows[:page_size]}
+        if not prior_holds:
+            return {'stage': 'verification_required', 'seeded': run['seeded_count'], 'held': run['held_count']}
     checkpoint = ((run['checkpoint_variant'], run['checkpoint_position'])
                   if run['checkpoint_variant'] is not None else None)
-    keys = [k for k in sorted(definitions) if checkpoint is None or k > checkpoint][:page_size]
+    keys = (sorted(prior_holds) if recovering else
+            [k for k in sorted(definitions) if checkpoint is None or k > checkpoint][:page_size])
     inventory = build_inventory(request)
     positions = {(p['variant'], p['position']): p for r in inventory['repertoires']
                  if r['repertoire_id'] == rep for p in r['positions']}
@@ -300,13 +313,20 @@ def _seed_shadow_page_locked(db, prepared, request, epoch, now, page_size, clone
     ids = {i for key in keys if key not in unavailable for i in candidates[key]}
     fence_donor_facts(db, [facts[i] for i in sorted(ids)])
     seeded, held_count = run['seeded_count'], run['held_count']
+    provenance = []
     for key in keys:
         definition, decision = definitions[key], by_key[key]
+        prior = prior_holds.get(key)
+        if prior and (prior['expected_uci'] != definition.expected_uci
+                      or prior['policy_version'] != definition.policy_version):
+            raise ValueError('position_receipt_conflict')
         state = db.execute_native('SELECT 1 FROM study_position_states WHERE repertoire_id=%s AND variant=%s AND position=%s FOR UPDATE NOWAIT',
                                   (rep, *key)).fetchone()
         if state:
             raise ValueError('position_state_already_exists')
         if decision.hold or key in unavailable:
+            if recovering:
+                raise ValueError('donor_currentness_unavailable')
             hold_reason = 'donor_currentness_unavailable' if key in unavailable else decision.hold.reason
             db.execute_native('''INSERT INTO study_position_seed_outcomes
                 (repertoire_id,owner_epoch,variant,position,expected_uci,policy_version,disposition,hold_reason)
@@ -322,7 +342,18 @@ def _seed_shadow_page_locked(db, prepared, request, epoch, now, page_size, clone
             raise ValueError('donor_identity_collision')
         clone = clone_state(selected.fsrs_card_json, allocated_new_card_id=allocated)
         fingerprint = hashlib.sha256(clone.encode()).hexdigest()
-        introduced = facts[selected.donor_card_id].introduced_at
+        from .position_seed_inventory import _legacy_introduction_day
+        raw_introduced = facts[selected.donor_card_id].introduced_at
+        if _legacy_introduction_day(raw_introduced) and date.fromisoformat(raw_introduced) > now.date():
+            raise ValueError('introduction_day_after_adoption')
+        introduced = now if _legacy_introduction_day(raw_introduced) else raw_introduced
+        if prior or _legacy_introduction_day(raw_introduced):
+            provenance.append({'variant': key[0], 'position': key[1],
+                'prior_outcome': prior, 'raw_introduced_at': raw_introduced,
+                'introduced_at': introduced.isoformat() if isinstance(introduced, datetime) else introduced,
+                'introduction_basis': 'adoption_lower_bound' if _legacy_introduction_day(raw_introduced) else 'legacy_instant',
+                'donor_card_id': selected.donor_card_id, 'donor_card_revision': selected.donor_revision,
+                'donor_fingerprint': selected.fsrs_fingerprint})
         db.execute_native('''INSERT INTO study_position_states
             (repertoire_id,variant,position,expected_uci,policy_version,owner_epoch,source_digest,
              fsrs_internal_card_id,fsrs_json,due_at,introduced_at,donor_card_id,donor_card_revision,
@@ -331,7 +362,20 @@ def _seed_shadow_page_locked(db, prepared, request, epoch, now, page_size, clone
             (rep, *key, definition.expected_uci, definition.policy_version, epoch, token.authored_digest,
              allocated, clone, selected.due_at, introduced, selected.donor_card_id, selected.donor_revision,
              selected.fsrs_fingerprint, policy))
-        db.execute_native('''INSERT INTO study_position_seed_outcomes
+        if prior:
+            updated = db.execute_native('''UPDATE study_position_seed_outcomes SET
+                disposition='seeded',hold_reason=NULL,donor_card_id=%s,donor_card_revision=%s,
+                donor_fingerprint=%s,donor_selection_policy=%s,donor_fsrs_internal_card_id=%s,
+                allocated_fsrs_internal_card_id=%s,clone_fingerprint=%s,introduced_at=%s
+                WHERE repertoire_id=%s AND owner_epoch=%s AND variant=%s AND position=%s
+                AND disposition='hold' AND hold_reason=%s AND expected_uci=%s AND policy_version=%s''',
+                (selected.donor_card_id, selected.donor_revision, selected.fsrs_fingerprint, policy,
+                 selected.donor_internal_card_id, allocated, fingerprint, introduced,
+                 rep, epoch, *key, prior['hold_reason'], definition.expected_uci, definition.policy_version))
+            if updated.rowcount != 1:
+                raise ValueError('position_receipt_conflict')
+        else:
+            db.execute_native('''INSERT INTO study_position_seed_outcomes
             (repertoire_id,owner_epoch,variant,position,expected_uci,policy_version,disposition,donor_card_id,
              donor_card_revision,donor_fingerprint,donor_selection_policy,donor_fsrs_internal_card_id,
              allocated_fsrs_internal_card_id,clone_fingerprint,introduced_at)
@@ -340,13 +384,17 @@ def _seed_shadow_page_locked(db, prepared, request, epoch, now, page_size, clone
              selected.donor_revision, selected.fsrs_fingerprint, policy, selected.donor_internal_card_id,
              allocated, fingerprint, introduced))
         seeded += 1
+        if recovering:
+            held_count -= 1
     complete = seeded + held_count == len(definitions)
-    last = keys[-1] if keys else checkpoint
+    last = checkpoint if recovering else keys[-1] if keys else checkpoint
     db.execute_native('''UPDATE study_position_seed_runs SET checkpoint_variant=%s,checkpoint_position=%s,
         seeded_count=%s,held_count=%s,status=%s,completed_at=%s WHERE repertoire_id=%s AND owner_epoch=%s''',
         (last[0] if last else None, last[1] if last else None, seeded, held_count,
-         'complete' if complete else 'incomplete', now if complete else None, rep, epoch))
-    return {'stage': 'complete' if complete else 'seeding', 'seeded': seeded, 'held': held_count}
+         'complete' if complete else 'incomplete', run['completed_at'] if recovering else now if complete else None, rep, epoch))
+    return {'stage': ('recovering' if more_recovery else 'complete') if recovering else
+            'complete' if complete else 'seeding', 'seeded': seeded, 'held': held_count,
+            'provenance': provenance}
 
 
 def verify_seed_receipts_page(database, prepared, request, *, epoch, after=None, limit=100):
@@ -401,7 +449,7 @@ def verify_seed_receipts_page(database, prepared, request, *, epoch, after=None,
                 or receipt['policy_version'] != definition.policy_version):
             raise ValueError('position_receipt_conflict')
         state = database.execute_native('''SELECT owner_epoch,source_digest,donor_card_id,
-            donor_card_revision,donor_fingerprint,fsrs_internal_card_id,version,fsrs_json FROM study_position_states
+            donor_card_revision,donor_fingerprint,fsrs_internal_card_id,version,fsrs_json,introduced_at FROM study_position_states
             WHERE repertoire_id=%s AND variant=%s AND position=%s''', (rep, *key)).fetchone()
         if receipt['disposition'] == 'hold':
             if state is not None:
@@ -417,6 +465,28 @@ def verify_seed_receipts_page(database, prepared, request, *, epoch, after=None,
                 or state['donor_fingerprint'] != receipt['donor_fingerprint']
                 or state['fsrs_internal_card_id'] != receipt['allocated_fsrs_internal_card_id']):
             raise ValueError('position_receipt_conflict')
+        from .position_seed_inventory import _legacy_introduction_day
+        if state['introduced_at'] != receipt['introduced_at']:
+            raise ValueError('position_introduction_receipt_conflict')
+        if _legacy_introduction_day(fact.introduced_at):
+            records = database.execute_native('''SELECT evidence.value FROM operation_receipts
+                CROSS JOIN LATERAL jsonb_array_elements(
+                    COALESCE(response_json::jsonb->'page'->'provenance','[]'::jsonb)) evidence
+                WHERE command_name='position_owner.seed' AND state='complete'
+                AND response_json::jsonb->>'repertoire_id'=%s AND response_json::jsonb->>'epoch'=%s
+                AND evidence.value->>'variant'=%s AND evidence.value->>'position'=%s''',
+                (rep, epoch, *key)).fetchall()
+            matches = [row[0] for row in records if
+                row[0].get('raw_introduced_at') == fact.introduced_at
+                and row[0].get('donor_card_id') == fact.card_id
+                and row[0].get('donor_card_revision') == fact.revision
+                and row[0].get('donor_fingerprint') == receipt['donor_fingerprint']
+                and row[0].get('introduction_basis') == 'adoption_lower_bound'
+                and datetime.fromisoformat(row[0]['introduced_at']) == receipt['introduced_at']]
+            if len(matches) != 1:
+                raise ValueError('position_introduction_provenance_missing')
+        elif datetime.fromisoformat(fact.introduced_at.replace('Z', '+00:00')) != receipt['introduced_at']:
+            raise ValueError('position_introduction_receipt_conflict')
         if state['version'] == 1 and hashlib.sha256(state['fsrs_json'].encode()).hexdigest() != receipt['clone_fingerprint']:
             raise ValueError('initial_clone_fingerprint_changed')
     return {'next_after': (page[-1]['variant'], page[-1]['position']) if len(rows) > limit else None,

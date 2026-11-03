@@ -47,12 +47,19 @@ erDiagram
   allocator preflight, plus checkpoint, seeded/held counts and completion time.
   A completed count is not a cutover certificate: F4 must check actual outcomes,
   source currentness, holds and introduction support.
-- `study_position_seed_outcomes`: immutable seeded or held outcome per manifest
+- `study_position_seed_outcomes`: seeded or held outcome per manifest
   position. Seeded outcomes retain donor card/revision/blob fingerprint, selection
   policy, original and allocated FSRS IDs, initial clone fingerprint and original
   introduction time. The donor and new IDs must differ. A hold has a reason.
   Page writes atomically commit outcomes, new states and the checkpoint; retries
   compare original provenance without overwriting an already graded state.
+  A completed inactive/shadow run may recover at most 100 newly eligible held
+  positions per page under the original fences and allocator preflight. Its
+  immutable operator response retains the full prior hold and donor provenance;
+  seeded outcomes and existing states are never replaced. Canonical legacy
+  introduction days remain evidence of introduction, with the aware adoption
+  time used as a conservative Games eligibility lower bound. The response keeps
+  the raw day and adopted bound; aware legacy introduction instants stay exact.
 - `study_position_issued_plans`: one frozen plan per original attempt, storing
   original queue/card/revision, scope, source, issue day, digest and plan JSON
   including route and due witnesses. A unique original queue/card/revision fence
