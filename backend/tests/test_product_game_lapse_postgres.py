@@ -207,6 +207,7 @@ def owned_postgres(tmp_path_factory, *, additional_ports=(), profile='default'):
                 assert raw.execute("SELECT current_database()").fetchone()[0] == database_name
                 yield PostgresConnection(raw)
 
+        transaction.connection_options = dict(options)
         yield transaction
     finally:
         # Check uncertain startup outcomes by exact name; never prune or touch
