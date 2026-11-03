@@ -10,6 +10,7 @@ import { confirmOperationResponse, FailedOperationError, PendingOperationError, 
 import { notifications, publishNotification, resolveNotification } from "./notifications";
 import { markOpeningEvidenceTimeout, openingEvidenceFetch, OpeningEvidenceHttpError, openingEvidenceRecoveryPolicy, openingEvidenceRetryDelays } from "./opening-evidence-recovery-policy";
 import { subscribeOperationStatusChange } from "./operation-status-events";
+import { legalPositionKey } from "../domain/position-presentation";
 
 const captures = new Map<string, OpeningAttemptJournal>();
 const sessionId = crypto.randomUUID();
@@ -127,11 +128,87 @@ let writeTail = Promise.resolve();
 const releaseLeases = new Map<string, () => void>();
 
 function holdAttemptLease(attemptId: string): void {
+  if (releaseLeases.has(attemptId)) return;
   if (typeof navigator === "undefined" || !navigator.locks) return;
   void navigator.locks.request(`tempo-opening-attempt:${attemptId}`, async () => {
     await new Promise<void>((resolve) => releaseLeases.set(attemptId, resolve));
     releaseLeases.delete(attemptId);
   });
+}
+
+/** Acquire exclusive capture ownership and restore the exact issued position journal. */
+const positionReservations = new Map<string, Promise<string | undefined>>();
+const positionPauses = new Map<string, Promise<void>>();
+const positionLeaseReleases = new Map<string, Promise<void>>();
+export function preparePositionOpeningAttempt(card: PracticeCard): Promise<string | undefined> {
+  const position = card as PracticeCard & { positionStudyMode?: "position"; positionStudyHold?: string;
+    positionPresentation?: { attempt_id: string } };
+  const plan = position.positionPresentation;
+  const attemptId = plan?.attempt_id;
+  if (position.positionStudyMode !== "position" || position.positionStudyHold || !attemptId)
+    return Promise.resolve("The issued position attempt is unavailable.");
+  const pause = positionPauses.get(attemptId);
+  if (pause) return pause.then(() => preparePositionOpeningAttempt(card));
+  const existing = positionReservations.get(attemptId);
+  if (existing) return existing.then(reason => reason ?? preparePositionOpeningAttempt(card));
+  if (releaseLeases.has(attemptId)) {
+    const capture = captures.get(attemptId);
+    return Promise.resolve(capture && JSON.stringify(capture.positionPlan) === JSON.stringify(plan)
+      ? undefined : "The active position attempt does not match this issued plan.");
+  }
+  if (typeof indexedDB === "undefined" || typeof navigator === "undefined" || !navigator.locks)
+    return Promise.resolve("Position Study needs browser storage and exclusive tab ownership.");
+  const preparing = new Promise<string | undefined>(resolve => {
+    const lockRequest = navigator.locks.request(`tempo-opening-attempt:${attemptId}`, { ifAvailable: true }, async lease => {
+      if (!lease) { resolve("This position attempt is open in another tab."); return; }
+      let release!: () => void;
+      const held = new Promise<void>(done => { release = done; });
+      releaseLeases.set(attemptId, release);
+      try {
+        await writeTail.catch(() => undefined);
+        const database = await offlineTrainingDatabase();
+        const prior = await journalStorage.readPositionOpeningJournal(database, attemptId);
+        if (prior && (prior.attempt.position_plan === undefined ||
+            JSON.stringify(prior.attempt.position_plan) !== JSON.stringify(plan) ||
+            JSON.stringify(prior.attempt.manifest) !== JSON.stringify(card.openingDecisionManifest) ||
+            prior.attempt.queue_entry_id !== card.queueEntryId || prior.attempt.terminal ||
+            ["rejected", "retained"].includes(prior.attempt.delivery_state))) {
+          resolve("The saved position attempt does not match this issued plan or needs review."); return;
+        }
+        const journal = beginOpeningAttempt(card, attemptId);
+        if (!journal) { resolve("The issued position attempt is invalid."); return; }
+        if (prior) {
+          const events = prior.events.map(({ attempt_id: _attemptId, ...event }) => openingDecisionEventSchema.parse(event))
+            .sort((a, b) => a.sequence - b.sequence);
+          if (events.length !== prior.attempt.final_sequence || events.some((event, index) => {
+            const decision = prior.attempt.manifest.decisions[event.decision_index];
+            return event.sequence !== index + 1 || !decision || event.decision_id !== decision.decision_id ||
+              event.expected_uci !== decision.expected_uci;
+          })) {
+            captures.delete(attemptId);
+            resolve("The saved position response sequence is incomplete."); return;
+          }
+          const { owner_session_id: _owner, final_sequence: _sequence, delivery_state: _state, rejection: _rejection,
+            retention_reason: _retention, local_capture_gap: _gap, delivery: _delivery, position_plan: _plan, ...header } = prior.attempt;
+          const restored = new OpeningAttemptJournal(header, storeAppend, plan);
+          restored.events.push(...events);
+          captures.set(attemptId, restored);
+        } else {
+          // Persist the immutable plan and header before input is enabled.
+          await storeAppend(journal, undefined, false);
+        }
+        resolve(undefined);
+        await held;
+      } catch {
+        resolve("Position Study could not restore durable browser storage. Restore storage access and retry.");
+      } finally { releaseLeases.delete(attemptId); }
+    });
+    const released = lockRequest.then(() => undefined, () => { resolve("Position Study could not reserve exclusive tab ownership."); });
+    positionLeaseReleases.set(attemptId, released);
+    void released.finally(() => { if (positionLeaseReleases.get(attemptId) === released) positionLeaseReleases.delete(attemptId); });
+  }).finally(() => positionReservations.delete(attemptId));
+  positionReservations.set(attemptId, preparing);
+  return preparing;
 }
 
 /** A bounded in-memory attempt; storage is an explicit asynchronous boundary. */
@@ -141,7 +218,8 @@ export class OpeningAttemptJournal {
   terminal: OpeningEvidenceCheckpoint["terminal"] = null;
   storageError: string | undefined;
   constructor(readonly header: AttemptHeader,
-    private readonly append: (journal: OpeningAttemptJournal, event?: OpeningDecisionEvent) => Promise<void>) {
+    private readonly append: (journal: OpeningAttemptJournal, event?: OpeningDecisionEvent) => Promise<void>,
+    readonly positionPlan?: unknown) {
     this.header = structuredClone(header);
   }
 
@@ -208,7 +286,8 @@ async function storeAppend(journal: OpeningAttemptJournal, event?: OpeningDecisi
   const snapshot = journal.snapshot();
   const attempt: SavedAttempt = { ...snapshot, owner_session_id: sessionId, final_sequence: snapshot.events.length,
     local_capture_gap: journal.storageError,
-    delivery_state: event || snapshot.terminal?.state === "partial" ? "pending" : "idle" };
+    ...(journal.positionPlan !== undefined ? { position_plan: structuredClone(journal.positionPlan) } : {}),
+    delivery_state: event || snapshot.terminal?.state === "partial" || (journal.positionPlan !== undefined && snapshot.events.length) ? "pending" : "idle" };
   delete (attempt as Partial<OpeningEvidenceCheckpoint>).events;
   const pendingEvents = [...journal.uncommittedEvents.values()];
   const writing = writeTail.catch(() => undefined).then(async () => {
@@ -232,9 +311,29 @@ export function beginOpeningAttempt(card: PracticeCard, attemptId: string | unde
     severity: "warning", source: "opening evidence", key: `opening-evidence-unavailable:${card.id}`,
     message: card.openingEvidenceDiagnostic,
   });
+  // Position plans are issued for one specific online attempt and displayed suffix.
+  // Refuse incomplete or mismatched metadata rather than capturing a legacy line.
+  const position = card as PracticeCard & { positionStudyMode?: "position"; positionStudyHold?: string;
+    positionPresentation?: { attempt_id: string; original_card_id: string; original_card_revision: number;
+      queue_entry_id: number; decision_slots: readonly { move_offset: number; position_key: string; expected_uci: string }[] } };
+  if (position.positionStudyMode === "position") {
+    const plan = position.positionPresentation;
+    const manifest = card.openingDecisionManifest;
+    if (options.offline || position.positionStudyHold || !plan || !attemptId || !releaseLeases.has(attemptId) || attemptId !== plan.attempt_id ||
+        !manifest || !openingEvidenceCheckpointSchema.shape.manifest.safeParse(manifest).success ||
+        card.backendId !== plan.original_card_id || card.revision !== plan.original_card_revision ||
+        card.queueEntryId !== plan.queue_entry_id || manifest.card_id !== plan.original_card_id ||
+        manifest.card_revision !== plan.original_card_revision || manifest.decisions.length !== plan.decision_slots.length ||
+        manifest.decisions.some((decision, index) => {
+          const slot = plan.decision_slots[index];
+          return !slot || decision.decision_index !== index || decision.move_offset !== slot.move_offset ||
+            decision.expected_uci !== slot.expected_uci || legalPositionKey(decision.fen) !== slot.position_key;
+        })) return;
+  }
   if (!attemptId || card.kind !== "opening" || !card.openingDecisionManifest || !card.queueEntryId || typeof indexedDB === "undefined") return;
   const existing = captures.get(attemptId);
-  if (existing) return existing;
+  if (existing) return position.positionStudyMode !== "position" ||
+    JSON.stringify(existing.positionPlan) === JSON.stringify(position.positionPresentation) ? existing : undefined;
   let timezone = options.studyTimezone;
   try { if (timezone && timezone !== "local") new Intl.DateTimeFormat("en", { timeZone: timezone }); else timezone = undefined; }
   catch { timezone = undefined; }
@@ -244,7 +343,7 @@ export function beginOpeningAttempt(card: PracticeCard, attemptId: string | unde
     parent_attempt_id: card.openingEvidenceParentAttemptId ?? null, started_at: new Date().toISOString(),
     study_timezone: timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
     source: options.offline ? "offline" : card.queueAttemptState === "reinforcement" ? "reinforcement" : "live", terminal: null };
-  const journal = new OpeningAttemptJournal(header, storeAppend);
+  const journal = new OpeningAttemptJournal(header, storeAppend, position.positionStudyMode === "position" ? position.positionPresentation : undefined);
   captures.set(attemptId, journal);
   holdAttemptLease(attemptId);
   return journal;
@@ -253,6 +352,18 @@ export function beginOpeningAttempt(card: PracticeCard, attemptId: string | unde
 export function partialOpeningAttempt(attemptId: string | undefined): void {
   if (!attemptId) return;
   const journal = captures.get(attemptId);
+  if (journal?.positionPlan !== undefined && !journal.terminal) {
+    // A pause must preserve the issued attempt and its first responses for reload.
+    if (!positionPauses.has(attemptId)) {
+      const pausing = storeAppend(journal).then(() => {
+        const released = positionLeaseReleases.get(attemptId);
+        releaseLeases.get(attemptId)?.();
+        return released;
+      }).catch(() => undefined).finally(() => positionPauses.delete(attemptId));
+      positionPauses.set(attemptId, pausing);
+    }
+    return;
+  }
   if (journal && !journal.terminal && journal.events.length) journal.finish("partial");
   // Keep failed partial appends reachable until their local transaction commits.
   if (!journal?.events.length || journal.terminal?.state === "complete") captures.delete(attemptId);
@@ -316,7 +427,7 @@ async function deliverOpeningEvidence(attemptId?: string): Promise<void> {
     if (!saved) return;
     const frozenDelivery = saved.attempt.delivery;
     const header = openingEvidenceCheckpointSchema.omit({ events: true }).parse(Object.fromEntries(
-      Object.entries(saved.attempt).filter(([key]) => !["owner_session_id", "final_sequence", "delivery_state", "rejection", "retention_reason", "delivery", "local_capture_gap"].includes(key)),
+      Object.entries(saved.attempt).filter(([key]) => !["owner_session_id", "final_sequence", "delivery_state", "rejection", "retention_reason", "delivery", "local_capture_gap", "position_plan"].includes(key)),
     ));
     const events = saved.events.map(event => openingDecisionEventSchema.parse(
       Object.fromEntries(Object.entries(event).filter(([key]) => key !== "attempt_id")),
@@ -386,7 +497,7 @@ function hasRecoveryWork(attempt: SavedAttempt, pendingAggregateIds: Set<string 
     !["rejected", "retained"].includes(attempt.delivery_state) &&
     !(attempt.terminal?.state === "complete" && pendingAggregateIds.has(attempt.attempt_id)) &&
     (attempt.delivery_state === "pending" ||
-      (attempt.owner_session_id !== sessionId && attempt.terminal?.state !== "partial")));
+      (attempt.position_plan === undefined && attempt.owner_session_id !== sessionId && attempt.terminal?.state !== "partial")));
 }
 
 function recoveryDeadlineArrived(attemptId: string): boolean {
@@ -484,7 +595,7 @@ async function recoverSavedOpeningEvidence(): Promise<RecoverySliceResult> {
               } else if (response.status !== 404) throw new OpeningEvidenceHttpError(response.status);
             } catch (error) { markOpeningEvidenceTimeout(error, controller.signal); throw error; } finally { clearTimeout(timeout); }
           }
-          await journalStorage.markOrphanedOpeningAttemptPartial(database, attempt, () => new Date().toISOString());
+          if (attempt.position_plan === undefined) await journalStorage.markOrphanedOpeningAttemptPartial(database, attempt, () => new Date().toISOString());
         });
       }
       if (deliver) {

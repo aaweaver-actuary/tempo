@@ -6,6 +6,7 @@ import { Chess } from "chess.js";
 import Home from "../../app/views/home_view";
 import { useTrainingStore } from "../../app/state/training-store";
 import { useBoardShellStore } from "../../app/state/board-shell-store";
+import { pendingReviews } from "../../app/lib/review-outbox";
 import { asSanMove } from "../../app/types";
 import {
   installTempoDragCapture, recordTempoDragPhase, resetTempoDragDiagnostics,
@@ -239,4 +240,5 @@ it("real Home preserves saved endgame queue lines, plays them and submits the or
   expect(useTrainingStore.getState().feedback).toBe("complete");
   await waitFor(() => expect(reviews).toHaveLength(1), { timeout: 3000 });
   expect(reviews[0]).toMatchObject({ outcome: "correct", queue_entry_id: 731 });
+  await waitFor(() => expect(pendingReviews()).toHaveLength(0));
 });

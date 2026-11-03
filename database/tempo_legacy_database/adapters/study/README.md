@@ -1,5 +1,33 @@
 # Study game-feedback storage
 
+## Position Study owner operation
+
+The registered local coordinator command can preview and advance a bounded
+shadow seed without enabling Study ownership. The target must already have a
+matching deployed image, verified backup and source-bound qualification
+evidence. A missing or stale receipt holds the command.
+
+```sh
+node scripts/position-study/owner-mode.mjs --action seed --repertoire REPERTOIRE --epoch EPOCH --operation-id PAGE_ID --qualification QUALIFICATION.json --page-size 100
+node scripts/position-study/owner-mode.mjs --action seed --repertoire REPERTOIRE --epoch EPOCH --operation-id PAGE_ID --qualification QUALIFICATION.json --page-size 100 --apply
+```
+
+The first command previews only. The second commits at most one allocator
+preflight or seed page and its operation receipt in the same transaction.
+Retry the same page with the same operation ID; use a new ID to advance the
+checkpoint. A completed seed still requires the operator's stage and activation
+checks, including readback and the attempt frontier. Paused compatible owners
+can roll forward to a new epoch while retaining position schedules and history;
+changed definitions and unresolved evidence remain held.
+
+For an active owner, `--action adopt-queue` previews up to 100 current-day
+unissued legacy queue entries whose admission scope is null; append `--apply`
+to atomically set the proven unique scope and record the before/after identity.
+The command rechecks the current authored source, physical binding, card revision,
+owner memberships and untouched attempt evidence. Busy, ambiguous, changed or
+previously issued entries hold the whole page. Retry with the same operation ID
+to retrieve its receipt. Existing queue order and learning history are retained.
+
 The Study-owned [recombination adapter](recombination.py) now supplies bounded
 `CurrentStudyRecombination` source/attempt fencing, fresh generated card scheduling,
 normal queue projection and confirmed splits. Its canonical
@@ -133,6 +161,16 @@ the complete paths and the same SQL-NULL legacy-reset fallback as a borrowed
 native connection. The regrouped obligation lookup already uses single-step
 extraction; its complete repertoire paths share the focused translation regression.
 
+Callers that have found an existing regrouped presentation may opt into
+`include_regrouped=True`. Ready historical resets then follow only one explicit
+current decision/repertoire target, with the actual non-invalidated Again review
+and current presentation revision intact. Ambiguous or unavailable lineage cannot
+fall back to the old card. Queue presentation and next-head ordering use this same
+read capability; it changes no receipt, review, grade, deadline or membership.
+The default path needs no optional regrouping schema.
+An old reset without its application/issuance fence remains owed after a later
+clean review; this urgency read grants no settlement authority.
+
 `retains_encounter_introduction(database, card_id)` and the complete
 `retained_encounter_introduction_query()` expose an existing same-revision material
 admission fact to Study's legacy admission/rebuild adapter. They grant no new
@@ -208,3 +246,14 @@ flowchart LR
   Fence --> Effect[Existing Study effect and receipt]
   Legacy[Unqualified compatibility] --> Capture[Existing legacy capture]
 ```
+
+### Position game grade acceptance
+
+`position_grade_effects.apply_game_lapse` consumes a persisted, qualified game
+effect and a prepared, re-fenced authored source in the borrowed writer. It
+rechecks the active owner, exact first-departure definition and introduced state,
+then atomically records the original game key and a position Again transition.
+Matching retries return the original grade receipt. Position Study completion
+settlement verifies the saved plan, exact unassisted first response, completed
+review receipt and accepted grade; the original issuance fence and, where
+present, the position reset version also apply.

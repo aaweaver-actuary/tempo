@@ -25,7 +25,7 @@ def test_native_retained_import_approval_retry_and_outer_rollback(case, monkeypa
     sole importer/refresh invocation. This is owner proof, not root/UI assembly.
     """
     from contextlib import contextmanager
-    from datetime import date
+    from datetime import date, datetime
     import json
     from app import main, pgn_import_commands, queue_commands
     from app import command_gateway as gateway
@@ -40,8 +40,13 @@ def test_native_retained_import_approval_retry_and_outer_rollback(case, monkeypa
         @classmethod
         def today(cls): return NOW.date()
 
+    class PolicyDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW.astimezone(tz) if tz else NOW.replace(tzinfo=None)
+
     monkeypatch.setattr(main, 'date', PolicyDate)
-    monkeypatch.setattr(queue_commands, 'date', PolicyDate)
+    monkeypatch.setattr(queue_commands, 'datetime', PolicyDateTime)
     monkeypatch.setattr(pgn_import_commands, 'date', PolicyDate)
 
     @contextmanager
@@ -478,3 +483,214 @@ def test_retained_snapshot_invalid_tail_remains_diagnostic_without_mapping(retai
     report = conflict_report(value)
     assert not report.clean and any(item.code=='illegal_move' for item in report.diagnostics)
     assert not value.decision_presentations
+
+
+@pytest.mark.parametrize('scenario,prefix', [
+    pytest.param('unsupported-canonical-card', (), id='unsupported-canonical-card'),
+    pytest.param('shared-direct-owner-card', ('g1f3', 'g8f6'), id='shared-direct-owner-card'),
+    pytest.param('legal-repair-replay', ('b1c3', 'b8c6'), id='legal-repair-replay'),
+    pytest.param('existing-opposite-color-replacement', ('g2g3', 'g7g6'), id='existing-opposite-color-replacement'),
+])
+def test_native_mutation_validates_actual_sources_before_receipt(case, monkeypatch, scenario, prefix):
+    """Real registered commands, savepoint, source reads and mutation adapters.
+
+    Reuses the capped checked-source-DDL fixture above. Only database transport,
+    Redis availability and policy day are injected. Graph enqueue, canonical
+    scope, refresh decorator, archival/rewrite/revision and receipts stay real;
+    no worker or installed-product qualification is claimed. The validator
+    observer delegates unchanged and retains its exceptions.
+    """
+    from contextlib import contextmanager
+    from datetime import date
+    import json
+    import chess
+    from app import card_commands, integrity_repair_commands
+    from app import command_gateway as gateway
+    from app.chess.cards import card_id
+    from app.repertoire.changes.application import validate_source_rows
+    from app.services import postgres_opening_graph, redis_admission_gate
+    from tempo_legacy_database.adapters import postgres_store
+    from tempo_legacy_database.adapters.authored_repertoires.product_changes import lock_sources
+    from test_product_game_lapse import NOW
+
+    class PolicyDate(date):
+        @classmethod
+        def today(cls):
+            return NOW.date()
+
+    @contextmanager
+    def transport(*, read_only=False, **_options):
+        with case.transaction() as database:
+            if read_only:
+                database.execute_native('SET TRANSACTION READ ONLY')
+            yield database
+
+    monkeypatch.setattr(postgres_store, 'configured', lambda: True)
+    monkeypatch.setattr(postgres_store, 'connection', transport)
+    monkeypatch.setattr(redis_admission_gate, 'configured', lambda: False)
+    monkeypatch.delenv('TEMPO_REDIS_URL', raising=False)
+    monkeypatch.delenv('TEMPO_FOREGROUND_ACTIVITY_URL', raising=False)
+    monkeypatch.setattr(card_commands, 'date', PolicyDate)
+    monkeypatch.setattr(integrity_repair_commands, 'date', PolicyDate)
+    assert gateway._handlers['integrity.issue.resolve'] is integrity_repair_commands.resolve_integrity_issue
+    assert gateway._handlers['cards.revise'] is card_commands.revise_card
+
+    board = chess.Board()
+    for move in prefix:
+        board.push_uci(move)
+    starting_fen = board.fen()
+    assert board.is_valid() and all(chess.Move.from_uci(move) in board.legal_moves for move in ('e2e4', 'd2d4'))
+    old_card = card_id(starting_fen, ['e2e4'])
+    replacement = card_id(starting_fen, ['d2d4'])
+    identity = uuid4().hex
+    repertoire = 'actual-source-' + identity
+    other = 'other-source-' + identity
+    line = 'line-' + identity
+    issue = 'issue-' + identity
+    operation = 'actual-source-command-' + identity
+    day = NOW.date().isoformat()
+    old_moves = json.dumps(['e2e4'])
+    revised_moves = json.dumps(['d2d4'])
+    card_revision = scenario == 'existing-opposite-color-replacement'
+    legal = scenario == 'legal-repair-replay'
+
+    # All these rows live in the existing uniquely owned fixture database.
+    # Full-table snapshots also retain unrelated fixture history and counters.
+    tables = (
+        'repertoires', 'repertoire_lines', 'repertoire_line_training_depths',
+        'cards', 'repertoire_cards', 'card_revisions', 'reviews', 'daily_queue',
+        'queue_attempt_origins', 'study_attempts', 'study_game_feedback',
+        'opening_graph_publications', 'opening_graph_steps', 'background_tasks',
+        'background_task_events', 'repertoire_integrity_issues',
+        'repertoire_integrity_state', 'repertoire_integrity_card_blocks',
+        'opening_segmentation_state', 'canonical_prefix_positions',
+        'repertoire_game_scope', 'priority_source_epoch',
+    )
+
+    def durable_state(database):
+        return {table: [dict(row) for row in database.execute_native(
+            f'SELECT * FROM {table} AS stored ORDER BY to_jsonb(stored)::text').fetchall()]
+            for table in tables}
+
+    def receipt(database):
+        return dict(database.execute_native(
+            'SELECT * FROM operation_receipts WHERE operation_id=%s', (operation,)).fetchone())
+
+    with case.transaction() as database:
+        assert database.execute_native('SELECT id FROM cards WHERE id IN (%s,%s)',
+            (old_card, replacement)).fetchall() == []
+        database.execute_native('INSERT INTO repertoires(id,name,source_name,created_at) '
+            'VALUES(%s,%s,%s,%s),(%s,%s,%s,%s)',
+            (repertoire, repertoire, 'synthetic-native-guard', NOW.isoformat(),
+             other, other, 'synthetic-native-guard', NOW.isoformat()))
+        database.execute_native('INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) '
+            'VALUES(%s,%s,%s,\'white\',%s,%s,%s)',
+            (line, repertoire, line, starting_fen, revised_moves if card_revision else old_moves, NOW.isoformat()))
+        database.execute_native('INSERT INTO repertoire_line_training_depths(line_id,learner_decision_count) VALUES(%s,1)', (line,))
+        database.execute_native('INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,trained_color,state,due_date,revision,introduced_at) '
+            'VALUES(%s,%s,\'response\',%s,%s,\'white\',\'mature\',%s,7,%s)',
+            (old_card, repertoire, starting_fen, old_moves, day, NOW.isoformat()))
+        database.execute_native('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,1)',
+            (repertoire, old_card))
+        if scenario == 'shared-direct-owner-card':
+            database.execute_native('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,1)',
+                (other, old_card))
+        if card_revision:
+            # The existing replacement keeps its actual facts; copying the old
+            # white card into an early forecast cannot establish final validity.
+            database.execute_native('INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,trained_color,content_type,due_date,revision) '
+                'VALUES(%s,%s,\'response\',%s,%s,\'black\',\'opening\',%s,11)',
+                (replacement, other, starting_fen, revised_moves, day))
+        database.execute_native('INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,source_ref) '
+            'VALUES(%s,\'correct\',%s,10,20,%s)', (old_card, NOW.isoformat(), 'original-history:' + identity))
+        database.execute_native('INSERT INTO daily_queue(queue_date,card_id,position,status,admission_repertoire_id) '
+            'VALUES(%s,%s,1,\'queued\',%s)', (day, old_card, repertoire))
+        database.execute_native('INSERT INTO repertoire_integrity_issues(id,repertoire_id,kind,fen_key,fen,trained_color,signature,created_at,updated_at) '
+            'VALUES(%s,%s,\'multiple_responses\',%s,%s,\'white\',%s,%s,%s)',
+            (issue, repertoire, ' '.join(starting_fen.split()[:4]), starting_fen, identity, NOW.isoformat(), NOW.isoformat()))
+        database.execute_native('INSERT INTO repertoire_integrity_state(repertoire_id,status) VALUES(%s,\'needs_repair\')', (repertoire,))
+        database.execute_native('INSERT INTO repertoire_integrity_card_blocks(repertoire_id,card_id,issue_id,scan_generation,published_at) '
+            'VALUES(%s,%s,%s,\'synthetic-generation\',%s)', (repertoire, old_card, issue, NOW.isoformat()))
+        graph = postgres_opening_graph.request_graph_rebuild_in_transaction(database, repertoire, day)
+        database.execute_native('UPDATE background_tasks SET state=\'complete\' WHERE id=%s', (graph['id'],))
+        database.execute_native('INSERT INTO opening_graph_publications(repertoire_id,generation,published_at) VALUES(%s,%s,%s)',
+            (repertoire, graph['generation'], NOW.isoformat()))
+        database.execute_native('INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,decision_fen_key,starting_fen,moves_json,trained_color) '
+            'VALUES(%s,%s,%s,0,%s,%s,%s,%s,\'white\')',
+            (repertoire, graph['generation'], line, old_card, ' '.join(starting_fen.split()[:4]), starting_fen,
+             revised_moves if card_revision else old_moves))
+        before = durable_state(database)
+        history_before = before['reviews']
+
+    validations = []
+
+    def observe_validation(repertoire_id, rows):
+        validations.append((repertoire_id, tuple(dict(row) for row in rows)))
+        return validate_source_rows(repertoire_id, rows)
+
+    command_module = card_commands if card_revision else integrity_repair_commands
+    monkeypatch.setattr(command_module, 'validate_source_rows', observe_validation)
+    if card_revision:
+        command = 'cards.revise'
+        payload = dict(card_id=old_card, request=dict(starting_fen=starting_fen,
+            moves=['d2d4'], history_mode='preserve', expected_revision=7))
+    else:
+        command = 'integrity.issue.resolve'
+        rewrite = scenario in {'shared-direct-owner-card', 'legal-repair-replay'}
+        payload = dict(repertoire_id=repertoire, issue_id=issue, signature=identity,
+            changed_lines={line: ['d2d4']}, expected_line_moves={line: old_moves},
+            changed_cards={old_card: ['d2d4']} if rewrite else {},
+            expected_card_moves={old_card: old_moves} if rewrite else {},
+            unsupported_card_ids=[] if rewrite else [old_card])
+    gateway.record_operation_attempt(operation, command, payload, background=False)
+    result = gateway.execute_command(operation, command, payload)
+    assert len(validations) == 2 and all(item[0] == repertoire for item in validations)
+    early, actual = (item[1] for item in validations)
+    assert {json.loads(row['moves_json'])[0] for row in early} == {'d2d4'}
+    if card_revision:
+        assert {row['trained_color'] for row in early} == {'white'}
+        assert {row['trained_color'] for row in actual} == {'white', 'black'}
+        assert next(row for row in actual if row['source_id'] == 'card:' + replacement)['trained_color'] == 'black'
+    elif not legal:
+        assert {json.loads(row['moves_json'])[0] for row in actual} == {'e2e4', 'd2d4'}
+        assert 'card:' + old_card in {row['source_id'] for row in actual}
+
+    with case.transaction() as database:
+        saved_receipt = receipt(database)
+        assert saved_receipt['command_name'] == command
+        assert saved_receipt['request_hash'] == gateway.request_digest(command, payload)
+        assert json.loads(saved_receipt['payload_json']) == payload
+        if not legal:
+            assert result is None and saved_receipt['state'] == 'failed'
+            error = json.loads(saved_receipt['error_json'])
+            assert error['status_code'] == 409
+            assert error['detail'] == ('invalid_source' if card_revision else 'conflict_pending_resolution')
+            assert saved_receipt['response_json'] is None
+            assert durable_state(database) == before
+        else:
+            assert result['repertoire_id'] == repertoire and result['issue_id'] == issue
+            assert saved_receipt['state'] == 'complete' and json.loads(saved_receipt['response_json']) == result
+            current = lock_sources(database, repertoire)
+            validate_source_rows(repertoire, current)
+            assert {json.loads(row['moves_json'])[0] for row in current} == {'d2d4'}
+            assert 'card:' + old_card not in {row['source_id'] for row in current}
+            assert tuple(database.execute_native('SELECT archived,superseded_by FROM cards WHERE id=%s',
+                (old_card,)).fetchone()) == (1, replacement)
+            assert database.execute_native('SELECT count(*) FROM repertoire_cards WHERE repertoire_id=%s AND card_id=%s',
+                (repertoire, replacement)).fetchone()[0] == 1
+            assert [dict(row) for row in database.execute_native('SELECT * FROM reviews AS stored ORDER BY to_jsonb(stored)::text').fetchall()] == history_before
+            assert database.execute_native('SELECT generation FROM background_tasks WHERE id=%s',
+                (graph['id'],)).fetchone()[0] == graph['generation'] + 1
+            committed = durable_state(database)
+
+    if legal:
+        assert gateway.execute_command(operation, command, payload) == result
+    else:
+        with pytest.raises(RuntimeError, match='invalid_source' if card_revision else 'conflict_pending_resolution'):
+            gateway.execute_command(operation, command, payload)
+    assert len(validations) == 2  # Terminal replay never invokes either handler again.
+    with case.transaction() as database:
+        assert receipt(database) == saved_receipt
+        assert durable_state(database) == (committed if legal else before)
+        assert database.execute_native('SELECT count(*) FROM operation_receipts WHERE operation_id=%s',
+            (operation,)).fetchone()[0] == 1

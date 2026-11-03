@@ -9,6 +9,33 @@ from tempo_evidence_math import *
 from .support import fixture, memory, AS_OF
 
 
+def test_authored_route_accepts_500_decisions_but_keeps_source_bounds():
+    from dataclasses import replace
+    import chess
+    from tempo_evidence_math.position_learning import (
+        DecisionOccurrence, PositionDefinition, PositionKey, RouteOption, SourceCertificate,
+    )
+
+    moves = ("g1f3", "g8f6", "f3g1", "f6g8") * 250
+    board = chess.Board()
+    decisions = []
+    for ply, uci in enumerate(moves):
+        if board.turn == chess.WHITE:
+            definition = PositionDefinition(PositionKey("rep", opening_position_key(board.fen())), uci, "v1")
+            decisions.append(DecisionOccurrence(ply, definition, board.fen()))
+        board.push_uci(uci)
+    route = RouteOption("long", chess.STARTING_FEN, moves, "white", tuple(decisions),
+                        SourceCertificate("snapshot", "revision", "digest", True, True), True)
+    assert len(route.decisions) == 500 and len(route.moves_uci) == 1000
+    board.pop()
+    extra = DecisionOccurrence(999, PositionDefinition(
+        PositionKey("rep", opening_position_key(board.fen())), moves[999], "v1"), board.fen())
+    with pytest.raises(ValueError, match="route_exceeds_reference_bound"):
+        replace(route, decisions=route.decisions + (extra,))
+    with pytest.raises(ValueError, match="route_exceeds_reference_bound"):
+        replace(route, moves_uci=route.moves_uci + ("g1f3",))
+
+
 def test_arithmetic_import_retains_standard_library_only_closure():
     source='''import sys
 from tempo_evidence_math import ProbabilityEvidence, route_probability

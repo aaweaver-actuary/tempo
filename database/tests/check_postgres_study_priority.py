@@ -15,6 +15,7 @@ from datetime import date
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import secrets
 import socket
@@ -117,6 +118,71 @@ def advance_unlock_checkpoint(*, force_timeout=False):
             time.sleep(0.05)  # Yield outside the transaction, as the owning task does.
 
 
+_CHECKPOINT_CHILD = r"""
+import json
+import re
+import sys
+try:
+    from database.tests.check_postgres_study_priority import advance_unlock_checkpoint
+    print(json.dumps(advance_unlock_checkpoint()))
+except Exception as error:
+    frames = []
+    traceback = error.__traceback__
+    while traceback is not None:
+        frame = traceback.tb_frame
+        function = frame.f_code.co_name
+        frames.append({'module': frame.f_globals.get('__name__', ''),
+                       'function': '_module' if function == '<module>' else function,
+                       'line': traceback.tb_lineno})
+        frames = frames[-8:]
+        traceback = traceback.tb_next
+    def symbol(value, module=False):
+        pattern = r'[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*' if module else r'[A-Za-z_][A-Za-z0-9_]*'
+        return isinstance(value, str) and len(value) <= 96 and re.fullmatch(pattern, value) is not None
+    if (symbol(type(error).__name__) and frames
+            and all(symbol(frame['module'], True) and symbol(frame['function'])
+                    and type(frame['line']) is int and 1 <= frame['line'] <= 10_000_000
+                    for frame in frames)):
+        print('CHECKPOINT_FAILURE ' + json.dumps({'class': type(error).__name__,
+                                                 'frames': frames}))
+    sys.exit(1)
+"""
+
+
+def resume_unlock_checkpoint(environment):
+    """Expose only bounded symbolic failures, never raw child output or messages."""
+    try:
+        resumed = subprocess.run([sys.executable, '-c', _CHECKPOINT_CHILD],
+            cwd=ROOT / 'scripts', env=environment, check=False,
+            capture_output=True, text=True, timeout=20)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError('Checkpoint child timed out') from None
+    if resumed.returncode == 0:
+        return json.loads(resumed.stdout)
+    generic = f'Checkpoint child failed (exit code {resumed.returncode})'
+    if resumed.returncode < 0:
+        raise RuntimeError(generic)
+    diagnostic = None
+    if (len(resumed.stdout) <= 4096
+            and resumed.stdout.startswith('CHECKPOINT_FAILURE ')):
+        try:
+            record = json.loads(resumed.stdout[len('CHECKPOINT_FAILURE '):])
+            def symbol(value, *, module=False):
+                pattern = r'[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*' if module else r'[A-Za-z_][A-Za-z0-9_]*'
+                return isinstance(value, str) and len(value) <= 96 and re.fullmatch(pattern, value) is not None
+            if (type(record) is dict and set(record) == {'class', 'frames'}
+                    and symbol(record['class']) and type(record['frames']) is list
+                    and 1 <= len(record['frames']) <= 8
+                    and all(type(frame) is dict and set(frame) == {'module', 'function', 'line'}
+                            and symbol(frame['module'], module=True) and symbol(frame['function'])
+                            and type(frame['line']) is int and 1 <= frame['line'] <= 10_000_000
+                            for frame in record['frames'])):
+                diagnostic = json.dumps(record, sort_keys=True)
+        except (ValueError, TypeError, RecursionError):
+            pass
+    raise RuntimeError(generic + (': ' + diagnostic if diagnostic else ''))
+
+
 def assert_monotonic_activity_renewal(server, namespace, *, script=None):
     """Actual Redis: a short pulse cannot retire another live foreground lease."""
     from app.services.redis_admission_gate import _REGISTER_FOREGROUND
@@ -149,6 +215,180 @@ def prepare_priority_control_fixture(namespace):
     return shared, assert_monotonic_activity_renewal(shared, namespace)
 
 
+def _checkpoint_pythonpath(inherited):
+    # Keep the owning image's source-package roots available to the fresh child.
+    return os.pathsep.join([str(ROOT / 'backend'), str(ROOT / 'database'),
+                            *(entry for entry in inherited.split(os.pathsep) if entry)])
+
+
+HISTORICAL_TABLES = ('repertoires', 'cards', 'reviews', 'operation_receipts')
+PRIORITY_INDEXES = ('idx_operation_retry_due', 'idx_operation_lease_due', 'idx_operation_queue_due')
+
+
+def historical_migration_sources():
+    """Resolve the actual registered sources and require the complete 1..49 prefix."""
+    from database.tooling.apply_postgres_migrations import MIGRATIONS, migration_source, validate_migration_history
+    files = sorted(path for path in MIGRATIONS.glob('[0-9][0-9][0-9]_*.sql')
+                   if int(path.name[:3]) <= 49)
+    validate_migration_history(files, [], expected_version=49)
+    return [(path, migration_source(path)) for path in files]
+
+
+def require_ledger(database, version):
+    actual = [row[0] for row in database.execute(
+        'SELECT version FROM tempo_schema_migrations ORDER BY version').fetchall()]
+    if actual != list(range(1, version + 1)):
+        raise RuntimeError(f'Expected exact migration ledger 1..{version}, got {actual}')
+
+
+def table_contract(database, table):
+    columns = database.execute("""SELECT column_name, data_type, udt_name, is_nullable,
+        is_identity, identity_generation FROM information_schema.columns
+        WHERE table_schema='public' AND table_name=%s ORDER BY ordinal_position""", (table,)).fetchall()
+    foreign_keys = database.execute("""SELECT pg_get_constraintdef(c.oid)
+        FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid
+        JOIN pg_namespace n ON n.oid=t.relnamespace
+        WHERE n.nspname='public' AND t.relname=%s AND c.contype='f'
+        ORDER BY pg_get_constraintdef(c.oid)""", (table,)).fetchall()
+    if not columns:
+        raise RuntimeError(f'Missing copy table {table}')
+    return columns, foreign_keys
+
+
+def require_copy_contract(source, destination):
+    for table in HISTORICAL_TABLES:
+        if table_contract(source, table) != table_contract(destination, table):
+            raise RuntimeError(f'Schema or foreign keys differ for {table}')
+
+
+def historical_rows(database, receipt_ids):
+    predicates = {
+        'repertoires': ("id='priority'", ()),
+        'cards': ("id LIKE 'review-%%'", ()),
+        'reviews': ("card_id LIKE 'review-%%'", ()),
+        'operation_receipts': ('operation_id = ANY(%s)', (receipt_ids,)),
+    }
+    rows = {}
+    for table, (where, args) in predicates.items():
+        key = 'operation_id' if table == 'operation_receipts' else 'id'
+        query = sql.SQL('SELECT * FROM {} WHERE ' + where + ' ORDER BY {}').format(
+            sql.Identifier(table), sql.Identifier(key))
+        rows[table] = database.execute(query, args).fetchall()
+    expected = {'repertoires': 1, 'cards': 120, 'reviews': 60, 'operation_receipts': 60}
+    if {table: len(values) for table, values in rows.items()} != expected or len(set(receipt_ids)) != 60:
+        raise RuntimeError('Synthetic history has missing or duplicate rows')
+    return rows
+
+
+def copy_historical_rows(source, destination, receipt_ids):
+    require_copy_contract(source, destination)
+    rows = historical_rows(source, receipt_ids)
+    for table in HISTORICAL_TABLES:
+        columns = [column[0] for column in table_contract(source, table)[0]]
+        query = sql.SQL('INSERT INTO {} ({}) VALUES ({})').format(
+            sql.Identifier(table), sql.SQL(',').join(map(sql.Identifier, columns)),
+            sql.SQL(',').join(sql.Placeholder() for _ in columns))
+        with destination.cursor() as cursor:
+            cursor.executemany(query, rows[table])
+    # The card-insert trigger advances the destination repertoire revision. Restore
+    # the exact copied parent values after its children have been inserted.
+    columns = [column[0] for column in table_contract(source, 'repertoires')[0]]
+    assignments = sql.SQL(',').join(sql.SQL('{}=%s').format(sql.Identifier(c)) for c in columns)
+    destination.execute(sql.SQL('UPDATE repertoires SET {} WHERE id=%s').format(assignments),
+                        (*rows['repertoires'][0], 'priority'))
+    require_historical_rows(destination, receipt_ids, rows)
+
+    return rows
+
+
+def require_historical_rows(database, receipt_ids, expected):
+    if historical_rows(database, receipt_ids) != expected:
+        raise RuntimeError('Historical copy differs from source')
+    for table in HISTORICAL_TABLES:
+        count = database.execute(sql.SQL('SELECT COUNT(*) FROM {}').format(sql.Identifier(table))).fetchone()[0]
+        if count != len(expected[table]):
+            raise RuntimeError(f'Unexpected additional rows in historical {table}')
+
+
+def require_same_cluster(source, destination):
+    query = 'SELECT system_identifier, pg_postmaster_start_time() FROM pg_control_system()'
+    if source.execute(query).fetchone() != destination.execute(query).fetchone():
+        raise RuntimeError('Historical database is not on the original disposable cluster')
+
+
+def require_priority_indexes(database, present):
+    found = [database.execute('SELECT to_regclass(%s)', ('public.' + name,)).fetchone()[0] is not None
+             for name in PRIORITY_INDEXES]
+    if found != [present] * len(PRIORITY_INDEXES):
+        raise RuntimeError(f'Unexpected migration 49 indexes: {found}')
+
+
+def study_snapshot(database):
+    # Preserve the original overlap proof's whole-table fingerprints on the
+    # latest-schema database, including rows outside the historical copy.
+    return tuple(database.execute("SELECT md5(COALESCE(string_agg(row_to_json(item)::text,',' ORDER BY item.id),'')) FROM " + table + " item").fetchone()[0]
+                 for table in ('cards', 'reviews')) + (
+        database.execute('SELECT COUNT(*) FROM operation_receipts').fetchone()[0],)
+
+
+def historical_rollback_proof(parent_url, owned_url, receipt_ids):
+    from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
+    sources = historical_migration_sources()
+    with psycopg.connect(owned_url) as original:
+        original_snapshot = study_snapshot(original)
+    with private_database(parent_url) as historical_url:
+        with psycopg.connect(historical_url) as historical:
+            for version, (path, source) in enumerate(sources, 1):
+                with historical.transaction():
+                    historical.execute(source, prepare=False)
+                    require_ledger(historical, version)
+            require_priority_indexes(historical, True)
+            with psycopg.connect(owned_url) as original:
+                require_same_cluster(original, historical)
+                require_ledger(original, POSTGRES_SCHEMA_VERSION)
+                before = copy_historical_rows(original, historical, receipt_ids)
+                historical.commit()
+                historical.execute((ROOT / 'database/tempo_legacy_database/ddl/rollbacks/049_study_priority_recovery.sql').read_text(), prepare=False)
+                require_ledger(historical, 48)
+                require_priority_indexes(historical, False)
+                require_historical_rows(historical, receipt_ids, before)
+                if study_snapshot(original) != original_snapshot:
+                    raise RuntimeError('Original study snapshot changed during rollback')
+                historical.commit()
+                with historical.transaction():
+                    historical.execute(sources[-1][1], prepare=False)
+                    require_ledger(historical, 49)
+                    require_priority_indexes(historical, True)
+                    require_historical_rows(historical, receipt_ids, before)
+                require_ledger(original, POSTGRES_SCHEMA_VERSION)
+                if historical_rows(original, receipt_ids) != before:
+                    raise RuntimeError('Original accepted history changed')
+                if study_snapshot(original) != original_snapshot:
+                    raise RuntimeError('Original study snapshot changed during rollback proof')
+    with psycopg.connect(owned_url) as original:
+        if study_snapshot(original) != original_snapshot:
+            raise RuntimeError('Original study snapshot changed during historical database cleanup')
+    return {'schema_path': [49, 48, 49], 'accepted_reviews_retained': 60,
+            'source_and_copy_exact_rows_unchanged': True, 'original_ledger_unchanged': True,
+            'study_snapshot_unchanged': True}
+
+
+def stop_owned_writers(processes, loader, stop_load):
+    stop_load.set()
+    if loader:
+        loader.join(timeout=1)
+        if loader.is_alive():
+            raise RuntimeError('Owned background loader did not stop')
+    for process in reversed(processes):
+        process.terminate()
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
+    processes.clear()
+
+
 def run_proof(parent_url, redis_url, evidence, *, graph_rows=1_400_000, receipt_rows=415_000, postgres_container=None):
     from database.tooling.apply_postgres_migrations import apply_migrations
     with private_database(parent_url) as owned_url:
@@ -159,7 +399,8 @@ def run_proof(parent_url, redis_url, evidence, *, graph_rows=1_400_000, receipt_
         configuration.update(TEMPO_DATABASE_READ_URL=owned_url, TEMPO_DATABASE_WRITE_URL=owned_url,
             TEMPO_REDIS_URL=redis_url, TEMPO_ADMISSION_NAMESPACE='tempo:priority:' + uuid4().hex,
             TEMPO_REDIS_NAMESPACE='tempo:priority:' + uuid4().hex + ':', TEMPO_COORDINATOR_MODE='external',
-            TEMPO_TRAINING_TIMINGS='1', TEMPO_TEST_INSTANCE='disposable', PYTHONPATH=str(ROOT / 'backend'),
+            TEMPO_TRAINING_TIMINGS='1', TEMPO_TEST_INSTANCE='disposable',
+            PYTHONPATH=_checkpoint_pythonpath(configuration.get('PYTHONPATH', '')),
             TEMPO_PRIORITY_CHECKPOINT_RETRY_EVIDENCE=str(evidence / 'checkpoint-retries.jsonl'),
             TEMPO_POSTGRES_BACKGROUND_TRANSACTION_TIMEOUT_MS='250', TEMPO_POSTGRES_BACKGROUND_LOCK_TIMEOUT_MS='25')
         original = dict(os.environ)
@@ -212,8 +453,11 @@ def run_proof(parent_url, redis_url, evidence, *, graph_rows=1_400_000, receipt_
                 pages += 1
                 if pages == 2:
                     postgres_store.close_pools()
-                    resumed=subprocess.run([sys.executable,'-c','import json; from database.tests.check_postgres_study_priority import advance_unlock_checkpoint; print(json.dumps(advance_unlock_checkpoint()))'],cwd=ROOT/'scripts',env=configuration,check=True,capture_output=True,text=True,timeout=20)
-                    cursor=json.loads(resumed.stdout)
+                    # A fresh process needs the repository namespace after this
+                    # proof's relocation from scripts/ to database/tests/.
+                    restart_environment = {**configuration,
+                        'PYTHONPATH': os.pathsep.join((str(ROOT), configuration['PYTHONPATH']))}
+                    cursor = resume_unlock_checkpoint(restart_environment)
                     assert cursor == 'locked-000048'
                     pages += 1
                 assert pages <= 129
@@ -271,7 +515,7 @@ def run_proof(parent_url, redis_url, evidence, *, graph_rows=1_400_000, receipt_
                     except httpx.TransportError: pass
                     assert time.monotonic() < deadline, 'Owned study assembly did not become ready'
                     time.sleep(0.1)
-                samples = {'idle': [], 'loaded': []}; replay_samples = []
+                samples = {'idle': [], 'loaded': []}; replay_samples = []; receipt_ids = []
                 server_samples = []; network_samples = []; priority_yield = []; progress = [0]
                 stop_load = threading.Event(); load_started = threading.Event(); load_idle = threading.Event()
                 def background_load():
@@ -304,6 +548,7 @@ def run_proof(parent_url, redis_url, evidence, *, graph_rows=1_400_000, receipt_
                     queue = client.get('/api/queue/window?limit=2').json()
                     first, second = queue['cards'][:2]
                     attempt = uuid4().hex
+                    receipt_ids.append('review-attempt:' + attempt)
                     payload = {'outcome':'correct','queue_entry_id':first['queue_entry_id'],
                         'expected_revision':first['revision'],'attempt_id':attempt,
                         'prepared_next':{'queue_entry_id':second['queue_entry_id'],'card_id':second['id'],
@@ -365,19 +610,9 @@ def run_proof(parent_url, redis_url, evidence, *, graph_rows=1_400_000, receipt_
                 assert stale['active'] is True and stale['available'] is False
                 shared.set(study_priority.POLICY_KEY,encoded,ex=15)
                 results[CASES[4]] = {'independent_devices':2,'expired_policy_denies_optional':True}
-                def study_snapshot(database):
-                    return tuple(database.execute("SELECT md5(COALESCE(string_agg(row_to_json(item)::text,',' ORDER BY item.id),'')) FROM "+table+" item").fetchone()[0]
-                        for table in ('cards','reviews')) + (database.execute("SELECT COUNT(*) FROM operation_receipts").fetchone()[0],)
-                with psycopg.connect(owned_url,autocommit=True) as database:
-                    before_rollback = study_snapshot(database)
-                    database.execute((ROOT/'database/tempo_legacy_database/ddl/rollbacks/049_study_priority_recovery.sql').read_text())
-                    assert database.execute('SELECT MAX(version) FROM tempo_schema_migrations').fetchone()[0] == 48
-                    assert study_snapshot(database) == before_rollback
-                apply_migrations(owned_url)
-                with psycopg.connect(owned_url) as database:
-                    assert study_snapshot(database) == before_rollback
-                    assert database.execute('SELECT MAX(version) FROM tempo_schema_migrations').fetchone()[0] == 49
-                results[CASES[5]] = {'schema_path':[49,48,49],'accepted_reviews_retained':60,'study_snapshot_unchanged':True}
+            stop_owned_writers(processes, loader, stop_load)
+            postgres_store.close_pools()
+            results[CASES[5]] = historical_rollback_proof(parent_url, owned_url, receipt_ids)
             assert set(results) == set(CASES)
             return results
         finally:

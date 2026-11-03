@@ -56,8 +56,8 @@ it("refuses receipt polling after the supplied authority changes during a 202 bo
 it("checks each original receipt through its own supplied client", async () => {
   const { record, store } = fixture(true);
   const otherStore = fixture(true).store;
-  const firstFetch = vi.fn(async () => Response.json({ operation_id: "original", state: "complete", response: { attempt_id: "attempt" } }));
-  const secondFetch = vi.fn(async () => Response.json({ operation_id: "original", state: "complete", response: { attempt_id: "attempt" } }));
+  const firstFetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => Response.json({ operation_id: "original", state: "complete", response: { attempt_id: "attempt" } }));
+  const secondFetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => Response.json({ operation_id: "original", state: "complete", response: { attempt_id: "attempt" } }));
   const first = client(firstFetch), second = client(secondFetch);
   Object.defineProperty(second, "origin", { value: "https://b.example" });
   const a = createStudyCommandDelivery(first, async () => store);

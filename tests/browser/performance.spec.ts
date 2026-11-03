@@ -20,8 +20,19 @@ function summarize(samples: number[]) {
 
 test("warm workspace and Study move responsiveness", async ({ page }, testInfo) => {
   test.setTimeout(120_000);
+  const trainingCards = Array.from({ length: 5 }, (_, index) => ({
+    id: `performance-move-card-${index + 1}`,
+    queue_entry_id: index + 1,
+    start_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+    moves: ["e2e4"],
+    content_type: "opening" as const,
+    repertoire_name: `Move sample ${index + 1}`,
+    repertoire_source: "PGN",
+    first_correct_at: "2026-09-17T12:00:00Z",
+    trained_color: "white" as const,
+  }));
   await page.setViewportSize({ width: 1280, height: 800 });
-  await prepareVisualUI(page, false);
+  await prepareVisualUI(page, false, trainingCards);
   const boardReadySamples: number[] = [];
   for (let reload = 0; reload < 5; reload++) {
     if (reload > 0) await page.reload();
@@ -50,6 +61,9 @@ test("warm workspace and Study move responsiveness", async ({ page }, testInfo) 
     }
   }
   await navigate(page, "Train");
+  await expect(page.locator(".opening-title h2")).toHaveText(trainingCards[0].repertoire_name);
+  await expect(page.locator('[data-queue-entry-id]')).toHaveAttribute("data-queue-entry-id", "1");
+  await expect(page.locator(".board-frame")).toHaveAttribute("data-fen", /PPPPPPPP/);
   const separator = page.getByRole("separator", { name: "Board size" });
   await separator.focus();
   await page.evaluate(() => new Promise<void>((resolve) =>
@@ -109,9 +123,12 @@ test("warm workspace and Study move responsiveness", async ({ page }, testInfo) 
     expect(moveDuration).not.toBeNull();
     moveToPaintSamples.push(moveDuration!);
     if (repetition < 4) {
-      await page.locator(".shared-board-toolbar .board-tools")
-        .getByRole("button", { name: /Back/ }).click();
-      await expect(page.locator(".board-frame")).not.toHaveAttribute("data-fen", /4P3/);
+      const nextCard = trainingCards[repetition + 1];
+      await expect(page.locator(".opening-title h2")).toHaveText(nextCard.repertoire_name);
+      await expect(page.locator('[data-queue-entry-id]')).toHaveAttribute(
+        "data-queue-entry-id", String(nextCard.queue_entry_id),
+      );
+      await expect(page.locator(".board-frame")).toHaveAttribute("data-fen", /PPPPPPPP/);
     }
   }
   const longTasks = await page.evaluate(() =>
@@ -135,7 +152,12 @@ test("warm workspace and Study move responsiveness", async ({ page }, testInfo) 
     schemaVersion: 1,
     timestamp: new Date().toISOString(),
     commit: process.env.TEMPO_COMMIT ?? process.env.GITHUB_SHA ?? null,
-    fixture: { name: "prepareVisualUI-default", boardReloads: 5, warmMoves: 5 },
+    fixture: {
+      name: "five distinct unassisted single-move opening attempts",
+      boardReloads: 5,
+      moveSamples: trainingCards.length,
+      move: "e2e4",
+    },
     browser: browserName,
     viewSwitchSamples,
     viewSwitchSummary: Object.fromEntries(

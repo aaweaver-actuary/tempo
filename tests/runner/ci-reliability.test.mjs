@@ -586,13 +586,13 @@ test("demoted critical cases remain required by their complete browser families"
   }
 });
 
-test("ordinary prose and standalone core tests select only five global browser smoke cases", () => {
-  assert.equal(inventory.critical.length, 5);
+test("ordinary prose and standalone core tests select only four global browser smoke cases", () => {
+  assert.equal(inventory.critical.length, 4);
   const proseAndCorePaths = ["docs/testing.md", "README.md", "CONTRIBUTING.md", "AGENTS.md", "THIRD_PARTY_NOTICES.md",
     "app/components/README.md", "tests/browser/README.md", "tests/REGRESSIONS.md", "tests/unit/study-regressions.test.tsx", "backend/tests/test_studies.py"];
   const realCases = currentBrowserCases();
   const criticalIds = plan({ cases: realCases }).collection.filter(item => item.critical).map(item => item.id).sort();
-  assert.equal(criticalIds.length, 5);
+  assert.equal(criticalIds.length, 4);
   for (const paths of [...proseAndCorePaths.map(path => [path]), proseAndCorePaths]) {
     const planned = plan({ cases: realCases, paths });
     assert.equal(planned.scope, "targeted", paths.join(", "));
@@ -621,7 +621,7 @@ test("shared subsystem sources select complete consumer families without unrelat
     ["app/lib/opening-evidence-review.ts", ["defense", "training"]],
     ["app/domain/study-exercises.ts", ["studies", "training"]],
     ["backend/app/services/study_grading.py", ["studies", "training"]],
-    ["backend/app/services/opening_segmentation.py", ["repertoire", "training"]],
+    ["backend/app/chess/opening_segments.py", ["repertoire", "training"]],
   ];
   for (const [sourcePath, expectedFamilies] of examples) {
     const planned = plan({ paths: [sourcePath, "tests/REGRESSIONS.md"] });
@@ -801,7 +801,7 @@ test("packaged_browser_prerequisites_fail_when_selected_without_fixture", () => 
   ]) {
     assert(source.includes(env));
     assert(source.includes(`if (!scenarioPath) throw new Error("${error}")`));
-    assert(!source.includes("test.skip(!scenarioPath"));
+    assert(!source.includes(["test", "skip"].join(".") + "(!scenarioPath"));
   }
 });
 

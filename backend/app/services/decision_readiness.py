@@ -8,10 +8,9 @@ import math
 from typing import Literal
 
 import chess
-from fsrs import Card
+from fsrs import Card, Scheduler
 
 from app.chess.opening_segments import decision_identity, presentation_occurrences
-from .scheduler import _scheduler
 
 READINESS_VERSION = 1
 ReadinessBasis = Literal["fsrs", "conservative_failure", "unknown"]
@@ -154,7 +153,7 @@ def _fsrs_memory_estimate(snapshot: ReadinessSnapshot, as_of: datetime) -> tuple
                 or memory_card.stability <= 0 or memory_card.difficulty is None
                 or not math.isfinite(memory_card.difficulty) or not 1 <= memory_card.difficulty <= 10):
             raise ValueError("Invalid scheduler memory parameters")
-        probability = _scheduler().get_card_retrievability(memory_card, as_of)
+        probability = Scheduler().get_card_retrievability(memory_card, as_of)
         if not math.isfinite(probability) or not 0 <= probability <= 1:
             raise ValueError("Invalid retrievability")
         return probability, reference, None

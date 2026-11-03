@@ -3,6 +3,8 @@ import {
   queueCardSchema,
   packagedPuzzleSchema,
 } from "../schemas";
+import { adaptPositionPresentation } from "./position-presentation-adapter";
+import { legalPositionKey } from "../position-presentation";
 import { openingDecisionManifestSchema } from "../opening-evidence";
 import { studySnapshotSchema } from "../study-exercises";
 import {
@@ -49,7 +51,7 @@ export function mapQueueCardToPracticeCard(
       `Invalid queue card ${card.id}: ${validatedLine.diagnostics[0].message}`,
     );
   }
-  return {
+  const original: PracticeCard = {
     id: asCardId(`queue-${card.queue_entry_id}`),
     backendId: asCardId(card.id),
     queueEntryId: asQueueEntryId(Number(card.queue_entry_id)),
@@ -127,6 +129,62 @@ export function mapQueueCardToPracticeCard(
       ? asRepertoireId(String(card.repertoire_id))
       : undefined,
   };
+  if (card.position_study_mode !== "position") {
+    if (card.position_presentation != null || card.position_study_hold != null) {
+      throw new Error("Position presentation is missing its study mode");
+    }
+    return original;
+  }
+  // Keep the held authoritative head visible; dropping it could promote an
+  // unissued queue entry. It must never become a legacy full-card attempt.
+  const held = (reason: string): PracticeCard => ({
+    ...original, positionStudyMode: "position", positionStudyHold: reason,
+    moves: [], userMoveTarget: 0,
+  });
+  if (card.position_study_hold) return held(card.position_study_hold);
+  if (!card.position_presentation) return held("The issued position plan is missing. Refresh training while connected.");
+  try {
+    if (original.kind !== "opening") throw new Error("Position study requires an opening card");
+    const display = adaptPositionPresentation(card.position_presentation, original);
+    const { plan } = display;
+    const manifest = original.openingDecisionManifest;
+    if (!manifest || manifest.card_id !== plan.original_card_id ||
+        manifest.card_revision !== plan.original_card_revision ||
+        manifest.trained_color !== display.learnerColor ||
+        manifest.decisions.length !== plan.decision_slots.length ||
+        manifest.decisions.some((decision, index) => {
+          const slot = plan.decision_slots[index];
+          return decision.decision_index !== index || decision.move_offset !== slot.move_offset ||
+            legalPositionKey(decision.fen) !== slot.position_key || decision.expected_uci !== slot.expected_uci;
+        })) {
+      throw new Error("Issued position evidence does not match the displayed decisions");
+    }
+    const board = new Chess(plan.starting_fen);
+    const learnerTurn = display.learnerColor === "white" ? "w" : "b";
+    const slots = new Map(plan.decision_slots.map(slot => [slot.move_offset, slot]));
+    // A legal issued line must account for every displayed learner decision.
+    for (const [offset, uci] of plan.moves_uci.entries()) {
+      const slot = slots.get(offset);
+      if ((board.turn() === learnerTurn) !== Boolean(slot) ||
+          (slot && legalPositionKey(board.fen()) !== slot.position_key)) {
+        throw new Error("Issued position decisions do not match the displayed line");
+      }
+      board.move({ from: uci.slice(0, 2) as Square, to: uci.slice(2, 4) as Square, promotion: uci[4] });
+    }
+    return {
+      ...original,
+      startingFen: asFenString(plan.starting_fen),
+      moves: movesToSanFormat(plan.starting_fen, [...plan.moves_uci]).map(asSanMove),
+      orientation: display.orientation,
+      userMoveTarget: plan.decision_slots.length,
+      positionStudyMode: "position",
+      positionPresentation: plan,
+      suggestShorterPrefix: false,
+    };
+  } catch (error) {
+    reportDataDiagnostic("position presentation", card, String(error), card.id);
+    return held("The issued position plan is unavailable. Refresh training while connected.");
+  }
 }
 
 // Converts packaged puzzle records into domain practice cards.

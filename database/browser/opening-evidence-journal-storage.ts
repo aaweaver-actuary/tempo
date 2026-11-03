@@ -41,6 +41,22 @@ export function readSavedOpeningJournal(database: IDBDatabase, attemptId: string
   });
 }
 
+/** Read the complete retained position capture, including acknowledged events. */
+export function readPositionOpeningJournal(database: IDBDatabase, attemptId: string): Promise<SavedOpeningJournal | undefined> {
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(["opening_attempts", "opening_events"]);
+    const request = transaction.objectStore("opening_attempts").get(attemptId);
+    request.onsuccess = () => {
+      const attempt = request.result as SavedAttempt | undefined;
+      if (!attempt) { resolve(undefined); return; }
+      const events = transaction.objectStore("opening_events").index("attempt_id").getAll(attemptId, 256);
+      events.onsuccess = () => resolve({ attempt, events: events.result as SavedEvent[] });
+      events.onerror = () => reject(events.error);
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
 export function rejectOpeningAttempt(database: IDBDatabase, attemptId: string, message: string): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const transaction = database.transaction("opening_attempts", "readwrite");
@@ -107,6 +123,14 @@ export function confirmOpeningDelivery(database: IDBDatabase, checkpoint: Openin
     current.onsuccess = () => {
       if (!current.result || ["rejected", "retained"].includes(current.result.delivery_state)) return;
       onConfirmed();
+      if (current.result.position_plan !== undefined) {
+        // Position reload needs the full original response sequence, even after
+        // the server acknowledged it. Only the aggregate receipt removes it.
+        attemptStore.put({ ...current.result, delivery: undefined,
+          local_capture_gap: receipt.contiguous_sequence === current.result.final_sequence ? undefined : current.result.local_capture_gap,
+          delivery_state: (receipt.contiguous_sequence ?? 0) < current.result.final_sequence ? "pending" : "idle" });
+        return;
+      }
       for (const event of checkpoint.events) if (receipt.received_sequences!.includes(event.sequence)) eventStore.delete([checkpoint.attempt_id, event.sequence]);
       const remaining = eventStore.index("attempt_id").count(checkpoint.attempt_id);
       remaining.onsuccess = () => {

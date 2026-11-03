@@ -273,6 +273,74 @@ class PreparedRecombination:
     reason: str | None = None
 
 
+def _position_schema(database):
+    return database.execute_native("SELECT to_regclass('study_position_owners') IS NOT NULL").fetchone()[0]
+
+
+def _position_repertoire_reason(database, repertoire_id, *, fence=False):
+    """Position ownership never authorizes the legacy R11 writer.
+
+    Preparation uses closed reads; the actual writer holds the existing owner's
+    nonblocking fence. Inactive/shadow/absent owners retain legacy behavior.
+    """
+    if not _position_schema(database):
+        return None
+    if fence:
+        from .position_owner_epoch import owner_mode
+        owner = owner_mode(database, repertoire_id, None)
+        return None if owner.disposition == 'legacy' else 'position_recombination_disabled:' + owner.reason
+    row = database.execute_native("SELECT mode FROM study_position_owners WHERE repertoire_id=%s",
+                                  (repertoire_id,)).fetchone()
+    return None if row is None or row[0] in ('inactive','shadow') else 'position_recombination_disabled:' + row[0]
+
+
+def _position_card_reason(database, card_id, *, fence=False):
+    if not _position_schema(database):
+        return None
+    # Every membership matters. The physical card's primary repertoire cannot
+    # prove the admission of a shared presentation.
+    rows = database.execute_native("SELECT repertoire_id FROM repertoire_cards WHERE card_id=%s ORDER BY repertoire_id",
+                                   (card_id,)).fetchall()
+    for row in rows:
+        reason = _position_repertoire_reason(database,row[0],fence=fence)
+        if reason:
+            return reason
+    return None
+
+
+def _position_review_guard(database, attempt_id, *, card_id=None, saved=False):
+    """Original issued plan/receipt wins across owner pause or epoch changes."""
+    if not _position_schema(database):
+        return None
+    plan = database.execute_native("""SELECT card_id,card_revision,queue_entry_id,repertoire_id
+        FROM study_position_issued_plans WHERE attempt_id=%s""", (attempt_id,)).fetchone() if attempt_id else None
+    if not saved:
+        if plan:
+            return {'status':'inert','reason':'position_owned_attempt'}
+        reason = _position_card_reason(database,card_id) if card_id else None
+        return {'status':'held','reason':reason} if reason else None
+    rows = database.execute_native("""SELECT r.card_id,r.source_kind,receipt.queue_entry_id,
+        origin.revision,origin.admission_repertoire_id FROM review_attempt_receipts receipt
+        JOIN reviews r ON r.id=receipt.review_id AND r.card_id=receipt.card_id
+        JOIN queue_attempt_origins origin ON origin.queue_entry_id=receipt.queue_entry_id AND origin.card_id=receipt.card_id
+        WHERE receipt.attempt_id=%s ORDER BY origin.revision LIMIT 2""", (attempt_id,)).fetchall()
+    if plan:
+        if len(rows)!=1 or (rows[0]['card_id'],rows[0]['revision'],rows[0]['queue_entry_id'],rows[0]['admission_repertoire_id']) != (
+                plan['card_id'],plan['card_revision'],plan['queue_entry_id'],plan['repertoire_id']):
+            return {'status':'held','reason':'position_attempt_admission_unproved'}
+        return {'status':'inert','reason':'position_owned_attempt'}
+    if len(rows)!=1:
+        # Legacy validation below still owns absent/ambiguous saved receipts.
+        return None
+    row = rows[0]
+    if row['source_kind']=='position_study':
+        return {'status':'inert','reason':'position_owned_review'}
+    repertoire_id = row['admission_repertoire_id']
+    reason = (_position_repertoire_reason(database,repertoire_id,fence=True) if repertoire_id
+              else _position_card_reason(database,row['card_id'],fence=True))
+    return {'status':'held','reason':reason} if reason else None
+
+
 class _ReadRows:
     def __init__(self, rows):
         self.rows = rows
@@ -367,6 +435,9 @@ def _target_graphs(database, repertoire_id, generation, route_id, *, fence=False
 def _prepare_recombination_source(database, card_id):
     if not installed(database):
         return PreparedRecombination()
+    reason = _position_card_reason(database,card_id)
+    if reason:
+        return PreparedRecombination(reason=reason)
     routes = routes_for_card(database,card_id)
     if len(routes)!=1:
         return PreparedRecombination(reason='route_missing' if not routes else 'ambiguous_route')
@@ -458,7 +529,13 @@ def prepare_recombination_review(payload, *, read_connection=None):
         from tempo_legacy_database.connections import read_connection
     try:
         with read_connection() as database:
-            prepared = _prepare_recombination_source(database,payload['card_id'])
+            if not installed(database):
+                prepared = PreparedRecombination()
+            else:
+                review = payload.get('review',{})
+                guarded = _position_review_guard(database,review.get('attempt_id'),card_id=payload['card_id'])
+                prepared = (PreparedRecombination(reason=guarded['reason']) if guarded else
+                            _prepare_recombination_source(database,payload['card_id']))
     except (psycopg.Error,ValueError,KeyError,TypeError,RuntimeError) as error:
         prepared = PreparedRecombination(reason='source_discovery_unavailable:'+type(error).__name__)
     return {**payload,'prepared_recombination':prepared}
@@ -594,6 +671,9 @@ class CurrentStudyRecombination:
         if not route_row:
             return self._hold("route_missing")
         repertoire_id = route_row[0]
+        reason = _position_repertoire_reason(database,repertoire_id,fence=not self._preparing)
+        if reason:
+            return self._hold(reason)
         if not self._preparing and not database.execute_native("SELECT pg_try_advisory_xact_lock_shared(hashtextextended(%s,0))",
                 ("tempo:opening-graph:" + repertoire_id,)).fetchone()[0]:
             return self._hold("current_graph_busy")
@@ -843,6 +923,9 @@ def after_saved_review(database, attempt_id, *, clock=None, prepared=None):
     """Called AFTER ordinary completion/evidence and prepared issuance, same writer."""
     if not attempt_id or not installed(database):
         return None
+    guarded = _position_review_guard(database,attempt_id,saved=True)
+    if guarded:
+        return guarded
     from app.study.recombination.application import Recombination
     boundary = CurrentStudyRecombination(database,clock=clock,prepared=prepared)
     event = boundary.event_for_review(attempt_id)
@@ -1297,6 +1380,9 @@ def accept_current_split(database, presentation_id, expected_revision, *, confir
         (SELECT COALESCE(max(id),0) FROM reviews WHERE card_id=p.presentation_id AND rating='again' AND invalidated_at IS NULL)
         FROM study_recombination_presentations p WHERE p.presentation_id=%s""", (presentation_id,)).fetchone()
     route_id, last_failure = tuple(row)
+    reason = _position_card_reason(database,presentation_id,fence=True)
+    if reason:
+        raise ValueError(reason)
     command_id = f"split:{presentation_id}:{expected_revision}:{last_failure}"
     if confirmed_queue_entry_id is not None:
         command_id += f":attempt:{confirmed_queue_entry_id}"

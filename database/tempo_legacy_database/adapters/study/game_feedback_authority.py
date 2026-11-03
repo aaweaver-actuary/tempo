@@ -88,7 +88,7 @@ class CurrentOwnerDecisions:
         return self
 
     def prepare_qualified(self, command, qualification, *, qualified_publications,
-                          qualification_fence, game, select_first_boundary, prepared_targets=()):
+                          qualification_fence, game, select_first_boundary, prepared_targets=(), position_source=None):
         """Recompute first-boundary authority on trusted closed-read owner facts.
 
         The selector is injected by composition through its public pure port.
@@ -153,6 +153,7 @@ class CurrentOwnerDecisions:
         self._qualification_fence = qualification_fence
         self._qualified = (command.model_dump_json(), qualification.model_dump_json())
         self._prepared_targets = targets
+        self._position_source = position_source
         if self.prepared_target(qualification.selection.decision) is None:
             self.prepare_encounter(qualified_encounter_view(command,qualification))
         return self
@@ -180,6 +181,153 @@ class CurrentOwnerDecisions:
             getattr(item.current,field) == getattr(target,field) for field in fields)]
         _require(len(matches) <= 1, 'first_departure_current_target_ambiguous')
         return matches[0] if matches else None
+
+    def prepare_position_introduction(self, target):
+        """Prepare the owner's exact unseen position on already closed reads."""
+        source = getattr(self, '_position_source', None)
+        if source is None:
+            return None
+        from app.services.position_queue_admission import prepare_targeted_position_introduction
+        return prepare_targeted_position_introduction(source, target)
+
+    def prepare_position_carrier(self, database, qualification, *, retained_target=None):
+        """Prepare one bounded introduced carrier from the owner projection."""
+        source = getattr(self, '_position_source', None)
+        if source is None:
+            return None
+        selection = qualification.selection
+        decision = selection.decision
+        definitions = {item.definition for route in source.routes for item in route.decisions
+                       if item.definition.key.repertoire_id == decision.repertoire_id
+                       and item.definition.key.position == selection.position_key}
+        if len(definitions) != 1:
+            return None
+        definition = next(iter(definitions))
+        routes = [route for route in selection.surviving_routes
+                  if (route.repertoire_id, route.route_id, route.route_ply) ==
+                     (decision.repertoire_id, decision.route_id, decision.route_ply)]
+        if (tuple(selection.expected_uci) != (definition.expected_uci,)
+                or len(routes) != 1 or routes[0].policy_id != definition.policy_version):
+            return None
+        bindings = [item for item in source.snapshot.decision_presentations
+                    if item.repertoire_id == decision.repertoire_id and item.position_key == selection.position_key
+                    and item.selected_response_uci == definition.expected_uci and item.available
+                    and item.introduction == 'introduced' and item.presentation_id != decision.presentation_id]
+        if retained_target is not None:
+            bindings = [item for item in bindings if (item.presentation_id, item.presentation_revision) ==
+                        (retained_target.card_id, retained_target.card_revision)]
+        if len(bindings) > 128:
+            return None
+        from .current_feedback_authority import read_current_feedback_target
+        for binding in sorted(bindings, key=lambda item: (item.presentation_id, item.route_id, item.route_ply)):
+            facts = read_current_feedback_target(database, binding)
+            card = facts['card']
+            if (card['revision'] == binding.presentation_revision and card['introduced_at'] is not None
+                    and card['content_type'] == 'opening' and not any(card[field] for field in
+                        ('archived', 'pending_validation', 'superseded_by'))
+                    and any(item['repertoire_id'] == decision.repertoire_id for item in facts['memberships'])
+                    and any(item['line_id'] == binding.route_id for item in facts['graphs'])
+                    and self._carrier_executable(binding, definition, card)):
+                return (binding, facts, definition, source.authored_token.authored_digest)
+        return None
+
+    @staticmethod
+    def _carrier_executable(binding, definition, card):
+        from tempo_game_evidence_contracts.legacy import decision_identity
+        try:
+            moves = json.loads(card['moves_json'])
+            board = chess.Board(card['start_fen'])
+            if not board.is_valid() or not 1 <= len(moves) <= 40:
+                return False
+            matches = 0
+            for offset, uci in enumerate(moves):
+                move = chess.Move.from_uci(uci)
+                if move not in board.legal_moves:
+                    return False
+                if (board.turn == (card['trained_color'] == 'white')
+                        and canonical_fen_key(board.fen(en_passant='legal')) == definition.key.position
+                        and uci == definition.expected_uci
+                        and decision_identity(card['id'], offset, moves[:offset]) == binding.decision_id):
+                    matches += 1
+                board.push(move)
+            return matches == 1
+        except (TypeError, ValueError, KeyError):
+            return False
+
+    def fence_position_carrier(self, prepared):
+        """Recheck the captured physical relation after source and card fences."""
+        from .current_feedback_authority import read_current_feedback_target
+        binding, facts, definition, digest = prepared
+        _require(digest == self._position_source.authored_token.authored_digest,
+                 'position_carrier_source_changed')
+        _require(read_current_feedback_target(self.database, binding) == facts,
+                 'position_carrier_binding_changed')
+        return binding, definition
+
+    def fence_position_intake(self, command, qualification):
+        """Fence active position ownership before the existing card/effect locks."""
+        from .position_owner_epoch import owner_mode
+        from tempo_legacy_database.adapters.authored_repertoires.position_study_source import fence_position_source
+        installed = self.database.execute_native("SELECT to_regclass('study_position_owners') IS NOT NULL").fetchone()[0]
+        if not installed:
+            return 'legacy'
+        source = getattr(self, '_position_source', None)
+        repertoire_id = qualification.selection.decision.repertoire_id
+        if source is not None:
+            held = fence_position_source(self.database, source)
+            _require(held is None, held.reason if held else 'position_source_unavailable')
+        decision = owner_mode(self.database, repertoire_id,
+                              source.authored_token.authored_digest if source is not None else None)
+        if decision.disposition == 'hold':
+            raise CurrentDecisionUnavailable(decision.reason)
+        if decision.disposition == 'position':
+            _require(source is not None and source.authored_token.repertoire_id == repertoire_id,
+                     'position_source_preparation_required')
+        return decision.disposition
+
+    def apply_position_lapse(self, key, *, day, now):
+        from .position_grade_effects import GradeEffectError, apply_game_lapse
+        try:
+            return apply_game_lapse(self.database, key, prepared_source=self._position_source,
+                                    accepted_study_day=day, accepted_at=now)
+        except GradeEffectError as error:
+            if str(error) == 'position_unintroduced':
+                return None
+            raise
+
+    def position_introduced(self, command, qualification):
+        """Classify the exact qualified position while holding its state lock."""
+        from app.study.encounter_feedback import qualified_encounter_view
+        from app.study.position_learning.game_target_mapping import map_first_departure
+        from tempo_evidence_math.position_learning import Hold
+        from .position_owner_epoch import owner_mode
+        source = self._position_source
+        class Definitions:
+            def current_definition(self, *, repertoire_id, position):
+                matches = {item.definition for route in source.routes for item in route.decisions
+                           if item.definition.key.repertoire_id == repertoire_id
+                           and item.definition.key.position == position}
+                return next(iter(matches)) if len(matches) == 1 else Hold('current_position_ambiguous')
+        target = map_first_departure(qualified_encounter_view(command, qualification), qualification,
+                                     current_source=Definitions())
+        _require(not isinstance(target, Hold), target.reason if isinstance(target, Hold) else '')
+        definition, token = target.definition, source.authored_token
+        owner = owner_mode(self.database, token.repertoire_id, token.authored_digest)
+        _require(owner.disposition == 'position', owner.reason)
+        key = definition.key
+        args = (key.repertoire_id, key.variant, key.position)
+        row = self.database.execute_native('''SELECT expected_uci,policy_version,owner_epoch,source_digest,introduced_at
+            FROM study_position_states WHERE repertoire_id=%s AND variant=%s AND position=%s
+            FOR UPDATE SKIP LOCKED''', args).fetchone()
+        if row is None:
+            exists = self.database.execute_native('''SELECT 1 FROM study_position_states
+                WHERE repertoire_id=%s AND variant=%s AND position=%s''', args).fetchone()
+            _require(not exists, 'position_state_busy')
+            return False
+        _require((row['expected_uci'], row['policy_version'], row['owner_epoch'], row['source_digest']) ==
+                 (definition.expected_uci, definition.policy_version, owner.epoch, token.authored_digest),
+                 'position_state_changed')
+        return row['introduced_at'] is not None
 
     def current_qualified(self, command, qualification):
         _require(self._qualified == (command.model_dump_json(), qualification.model_dump_json()),
@@ -435,7 +583,7 @@ def current_owner_encounter_intake(database, *, retained_owner_capture=None, sna
     if qualification is not None:
         _require(prepared_decisions is not None, 'first_departure_prepared_authority_required')
     return EncounterFeedback(PostgresGameFeedbackStore(database), decisions,
-        clock=clock,introductions=None,introduction_policy=None)
+        clock=clock,introductions=None,introduction_policy=None, position_intake=decisions)
 
 
 def current_owner_encounter_feedback(database, *, retained_owner_capture=None, snapshot=None, clock,
@@ -463,4 +611,4 @@ def current_owner_encounter_feedback(database, *, retained_owner_capture=None, s
     return EncounterFeedback(PostgresGameFeedbackStore(database, prepared_priority=prepared_priority,
         prepared_targets=decisions._prepared_targets), decisions,
         clock=clock,introductions=RetainedIntroductionTarget() if introductions is not None else None,
-        introduction_policy=introduction_policy)
+        introduction_policy=introduction_policy, position_intake=decisions)

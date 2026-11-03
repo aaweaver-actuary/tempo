@@ -33,33 +33,40 @@ def test_availability_projection_is_captured_before_each_date_read(monkeypatch):
 
     class Database:
         def execute(self, statement, parameters):
+            if statement.startswith("SELECT queue_date FROM queue_attempt_origins"):
+                origin_reads.append((statement, parameters))
+                events.append('origin')
+                return Cursor(None)
+            if statement.startswith("SELECT 1 FROM queue_attempt_origins"):
+                origin_reads.append((statement, parameters))
+                events.append('origin')
+                return Cursor(None)
             reads.append((statement, parameters))
             events.append('read')
-            return Cursor({'id': 7 if len(reads) == 1 else 9})
+            return Cursor({'id': 7})
 
     def builder(reason):
         assert reason == queue_commands.queue_application.MISS_REASON
         events.append('capture')
         return f'projection-{len(reads)}'
 
-    class Today:
-        @staticmethod
-        def today():
-            events.append('date')
-            return Today()
+    def current_day(_database):
+        events.append('date')
+        return 'day'
 
-        def isoformat(self):
-            return 'day'
-
+    origin_reads = []
     monkeypatch.setattr(storage, 'available_attempt_sql', builder)
-    monkeypatch.setattr(queue_commands, 'date', Today)
+    monkeypatch.setattr(queue_commands, 'current_study_day', current_day)
     monkeypatch.setattr(queue_attempt_origins, 'validate_failure_marker',
                         lambda *args: events.append('marker'))
     queue_commands.validate_available_attempt(Database(), 7, 'card', 3)
-    assert events == ['capture', 'date', 'read', 'marker', 'capture', 'date', 'read', 'read']
+    assert events == ['capture', 'origin', 'date', 'read', 'marker',
+                      'capture', 'read', 'origin']
     assert reads[0][0].startswith('projection-0') and reads[0][1] == ('day', 7)
     assert reads[1][0].startswith('projection-1') and reads[1][1] == ('day',)
-    assert reads[2][1] == (7, 'card', 3)
+    assert [parameters for _, parameters in origin_reads] == [(7, 'card', 3), (7, 'card', 3)]
+    assert origin_reads[0][0].startswith('SELECT queue_date FROM queue_attempt_origins')
+    assert origin_reads[1][0].startswith('SELECT 1 FROM queue_attempt_origins')
 
 
 def test_queue_warming_captures_compiler_before_completion_callback(monkeypatch):
@@ -163,3 +170,49 @@ def test_internal_readiness_queries_return_day_receipt_and_queued_presence(queue
         for projection in projections:
             assert dict(projection) == dict(state='ready', refresh_pending=0,
                                            presentation_membership_hash=receipt, has_queued_entries=int(queued))
+
+
+@pytest.mark.parametrize('dispositions,expected', [
+    (['legacy', 'legacy'], ['owners', 'owner:a', 'owner:b', 'card', 'day']),
+    (['legacy', 'position'], ['owners', 'owner:a', 'owner:b']),
+    (['hold', 'legacy'], ['owners', 'owner:a']),
+])
+def test_legacy_issuance_owner_facts_are_fenced_before_card_locks(monkeypatch, dispositions, expected):
+    from types import SimpleNamespace
+    from tempo_legacy_database.adapters.study import position_owner_epoch
+
+    events, reads = [], []
+    rows = [{'repertoire_id': 'a'}, {'repertoire_id': 'b'}]
+
+    class Database:
+        def execute_native(self, statement, parameters):
+            events.append('owners')
+            reads.append((statement, parameters))
+            return SimpleNamespace(fetchall=lambda: rows)
+
+    database = Database()
+    payload = dict(queue_date='2026-11-02', entry_id=7, card_id='card', expected_revision=3)
+    monkeypatch.setattr(queue_commands, 'current_study_day', lambda db: payload['queue_date'])
+    monkeypatch.setattr(storage, 'is_postgres_connection', lambda db: db is database)
+
+    def owner_mode(db, repertoire_id, epoch):
+        assert db is database and epoch is None
+        events.append('owner:' + repertoire_id)
+        return SimpleNamespace(disposition=dispositions[rows.index({'repertoire_id': repertoire_id})],
+                               reason='owner-unavailable')
+
+    monkeypatch.setattr(position_owner_epoch, 'owner_mode', owner_mode)
+    monkeypatch.setattr(queue_commands, '_lock_attempt_card', lambda db, entry: events.append('card'))
+    monkeypatch.setattr(queue_commands, 'lock_queue_date_for_position', lambda db, day: events.append('day'))
+    monkeypatch.setattr(storage, 'issued_origin', lambda *args: True)
+    monkeypatch.setattr(storage, 'prepare_queue_head', lambda *args: lambda day: None)
+    result = queue_commands.issue_queue_head(database, payload)
+    assert events == expected
+    assert len(reads) == 1
+    assert reads[0][1] == (7, 'card', 3) * 3
+    assert reads[0][0].endswith('ORDER BY r.repertoire_id')
+    if dispositions == ['legacy', 'legacy']:
+        assert result == {'issued': False}
+    else:
+        assert result == dict(issued=False, position_study_mode='position',
+                              position_presentation=None, position_study_hold='owner-unavailable')

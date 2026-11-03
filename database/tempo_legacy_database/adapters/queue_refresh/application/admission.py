@@ -265,9 +265,10 @@ def lock_product_admission(database, day, card_id):
 
 
 def has_missing_due_card(database, day):
-    from ..eligibility import _DUE_CARD_ELIGIBILITY
+    from ..eligibility import _DUE_CARD_ELIGIBILITY, position_due_exclusion
     return database.execute_native(
-        'SELECT 1 FROM cards c WHERE ' + _DUE_CARD_ELIGIBILITY + ' LIMIT 1',
+        'SELECT 1 FROM cards c WHERE ' + _DUE_CARD_ELIGIBILITY
+        + position_due_exclusion(database) + ' LIMIT 1',
         (day, day, day),
     ).fetchone() is not None
 

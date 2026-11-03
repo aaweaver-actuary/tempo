@@ -34,6 +34,8 @@ class PreparedFeedbackEffect:
     reason: str | None = None
     retry_at: datetime | None = None
     terminal: bool = False
+    position_introduction: object = None
+    position_carrier: object = None
 
 
 def prepare_feedback_effect(observed, *, read, capture, clock, qualification_prepare=None):
@@ -66,19 +68,35 @@ def prepare_feedback_effect(observed, *, read, capture, clock, qualification_pre
         from app.study.introductions.encounter import PreparedEncounterIntroduction, introduction_target_identity
         target = qualification.selection.decision.model_copy(update={
             'repertoire_revision': decisions.introduction_revision(qualification.selection.decision.repertoire_id)})
+        position_introduction = None
+        if (observed.disposition == 'first_introduction' and observed.progress is not None
+                and observed.progress.introduction_applied_at is None and target.introduction == 'unintroduced'):
+            from tempo_evidence_math.position_learning import Hold
+            position_introduction = decisions.prepare_position_introduction(target)
+            if isinstance(position_introduction, Hold):
+                return PreparedFeedbackEffect(observed, reason='position_introduction_pending',
+                    retry_at=instant(clock())+timedelta(seconds=30))
         prepared_target = decisions.prepared_target(target)
         introduction = (prepare_encounter_introduction(target, read=read,prepared_target=prepared_target)
             if target.introduction == 'unintroduced' else PreparedEncounterIntroduction(
                 introduction_target_identity(target), '', (), 'encounter_preparation_required'))
         with read() as database:
             day = PostgresGameFeedbackStore(database).study_day(instant(clock())).isoformat()
+            retained = (observed.target_authority or {}).get('kind') == 'position_carrier'
+            position_carrier = (decisions.prepare_position_carrier(database, qualification,
+                                retained_target=observed.progress.target if retained else None)
+                if observed.progress is not None and observed.progress.position_grade_effect_id is not None
+                and (target.introduction == 'unintroduced' or observed.reason == 'position_carrier_unintroduced'
+                     or (observed.target_authority or {}).get('kind') == 'position_carrier') else None)
         progress = observed.progress
         determined_at = progress.determined_at if progress else qualification.determined_at
         stream = progress.stream if progress else qualification.stream
-        priority = prepare_priority_promotion(day,target.presentation_id,read=read,
+        priority_card = position_carrier[0].presentation_id if position_carrier is not None else target.presentation_id
+        priority = prepare_priority_promotion(day,priority_card,read=read,
             priority_order=dict(urgent_determined_at=determined_at,urgent_stream=stream,
                                 urgent_effect_id=effect_id(observed.key)))
-        return PreparedFeedbackEffect(observed,captured,snapshot,qualification,decisions,introduction,priority)
+        return PreparedFeedbackEffect(observed,captured,snapshot,qualification,decisions,introduction,priority,
+                                      position_introduction=position_introduction, position_carrier=position_carrier)
     except (CurrentDecisionUnavailable, RemediationError, ValueError, ImportError) as error:
         # No raw exception/SQL/PGN is retained in public status. A later sweep
         # can obtain changed source facts without erasing the original debt.
@@ -110,10 +128,19 @@ def apply_prepared_feedback_effect(database, prepared, *, clock, operation_admit
         store.lock_effect(observed.key)
         current = store.get(observed.key)
         if current and current.status in {'pending','applied'} and not current.control:
-            store.save(replace(current,reason=prepared.reason,admission_status='pending',
+            reason = ('position_introduction_pending' if current.reason == 'position_introduction_pending'
+                      and not prepared.terminal else prepared.reason)
+            store.save(replace(current,reason=reason,admission_status='pending',
                 status='held' if prepared.terminal else current.status,
                 preparation_retry_at=prepared.retry_at,deferred_reason='authority_unavailable'),instant(clock()))
         return None
+    position_fence = None
+    if prepared.position_introduction is not None:
+        from app.services.position_queue_admission import fence_targeted_position_introduction
+        from tempo_evidence_math.position_learning import Hold
+        position_fence = fence_targeted_position_introduction(database, prepared.position_introduction)
+        if isinstance(position_fence, Hold):
+            raise CurrentDecisionUnavailable(position_fence.reason)
     from app.services.queue_admission_adapter import current_owner_encounter_introductions
     from app.study.encounter_feedback import EncounterIntroductionPolicy
     introductions = current_owner_encounter_introductions(database,
@@ -123,7 +150,9 @@ def apply_prepared_feedback_effect(database, prepared, *, clock, operation_admit
         retained_owner_capture=prepared.target_capture,snapshot=prepared.target_snapshot,clock=clock,
         introductions=introductions,introduction_policy=EncounterIntroductionPolicy('encounter_exception'),
         prepared_priority=prepared.prepared_priority,prepared_decisions=prepared.prepared_decisions)
-    return owner.refresh_encounter(observed.key,qualification=prepared.qualification)
+    return owner.refresh_encounter(observed.key,qualification=prepared.qualification,
+        position_introduction=prepared.position_introduction, position_fence=position_fence,
+        position_carrier=prepared.position_carrier)
 
 
 def _wake_due_refresh(write, clock):

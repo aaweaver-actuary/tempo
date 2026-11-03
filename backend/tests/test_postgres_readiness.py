@@ -31,6 +31,8 @@ class Reader:
     def execute_native(self, statement, _parameters=()):
         if "tempo_schema_migrations" in statement:
             return Cursor((POSTGRES_SCHEMA_VERSION,))
+        if "to_regclass" in statement:
+            return Cursor((True,))
         if "FROM settings" in statement:
             return Cursor((1,))
         if "queue_projections" in statement:
@@ -95,3 +97,15 @@ def test_postgres_startup_never_starts_sqlite_writer_or_coordinator(monkeypatch)
 
     asyncio.run(run_lifespan())
     assert calls == ["schema", "queue", "serving"]
+
+
+def test_postgres_health_holds_when_position_tables_are_missing(monkeypatch):
+    readiness(monkeypatch, {"state": "ready", "refresh_pending": 0, "last_error": None})
+    original = Reader.execute_native
+    def missing(self, statement, parameters=()):
+        if "to_regclass" in statement:
+            return Cursor((False,))
+        return original(self, statement, parameters)
+    monkeypatch.setattr(Reader, "execute_native", missing)
+    with pytest.raises(HTTPException, match="position Study tables are missing"):
+        postgres_readiness.postgres_health()

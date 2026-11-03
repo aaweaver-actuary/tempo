@@ -9,13 +9,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.contracts.product_v02.games import GamePage
 from app.games.feedback.comparison import normalize_record
 from app.games.feedback.coordinator import Coordinator, delivery_for
 from app.games.feedback.jobs import FeedbackRunner
 from app.games.feedback.ports import ConcurrentUpdate, PageCommit
-from app.games.providers.lichess_acquisition import LichessSourceRecord
-from app.games.providers.chesscom_acquisition import ChesscomSourceRecord
+from app.games.providers.lichess_acquisition import LichessGamePage, LichessSourceRecord
+from app.games.providers.chesscom_acquisition import ChesscomGamePage, ChesscomSourceRecord
 from app.product_composition.game_history import project_retained_encounters
 from app.product_composition.game_sync import WorkflowComparer, WorkflowNormalizer
 from app.product_composition.retained_game import retained_canonical_game
@@ -72,7 +71,8 @@ def workflow(source, request, captured, identity):
             super().commit_page(commit)
             self.last_commit = commit
     memory, clock, receiver = RecordingStore(), FakeClock(), EncounterReceiver()
-    page = GamePage(provider=request.provider, account=request.account, window=request.window,
+    page_type = LichessGamePage if request.provider == "lichess" else ChesscomGamePage
+    page = page_type(provider=request.provider, account=request.account, window=request.window,
         records=(source,), rejections=(), continuation=None, complete=True, saturated=False)
     coordinator = Coordinator(providers={request.provider: SimpleNamespace(fetch_page=lambda **kwargs: page)},
         normalizer=WorkflowNormalizer(), source_identity=identity, comparer=WorkflowComparer(),
@@ -134,7 +134,7 @@ def test_recomparison_preserves_frozen_command_when_acquisition_revision_changes
     later = request.model_copy(update={"job_id": "overlap"})
     newer = source.model_copy(update={"source_revision": 8})
     h.coordinator.providers["lichess"] = SimpleNamespace(fetch_page=lambda **kwargs:
-        GamePage(
+        LichessGamePage(
             provider="lichess", account=request.account, window=request.window, records=(newer,),
             rejections=(), continuation=None, complete=True, saturated=False))
     h.clock.value += 3600
@@ -238,9 +238,11 @@ def test_current_factory_injects_source_owner_without_starting_or_receiving(monk
     monkeypatch.setattr(composition, "create_game_review", lambda **kwargs: "unstarted-review")
     def forbidden():
         pytest.fail("factory opened a source connection")
+    receiver = SimpleNamespace(accept_qualified=lambda *args, **kwargs: None,
+        prepare=lambda delivery: delivery)
     runtime, schedule = composition.create_current_game_sync(workspace="workspace", connections=forbidden,
-        learning="explicit-qualified-receiver", clock=FakeClock())
+        learning=receiver, clock=FakeClock())
     assert runtime == "unstarted-runtime" and schedule.schedule == "unstarted-review"
     assert supplied["source_identity"] is supplied["store"]
     assert isinstance(supplied["source_identity"], owner.PostgresCanonicalGamesStore)
-    assert supplied["encounter_feedback"] is True and supplied["learning"] == "explicit-qualified-receiver"
+    assert supplied["encounter_feedback"] is True and supplied["learning"] is receiver

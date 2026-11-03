@@ -174,6 +174,7 @@ class EncounterProgress(Value):
     stream: Literal["forward", "reconciliation", "manual"]
     target: EncounterTarget
     scheduling_review_id: int | None = Field(ge=1, le=2**53 - 1)
+    position_grade_effect_id: Identifier | None = Field(default=None, exclude_if=lambda value: value is None)
     schedule_applied_at: UtcTimestamp | None
     introduction_applied_at: UtcTimestamp | None
     remediation_fence: RemediationFence | None
@@ -185,8 +186,9 @@ class EncounterProgress(Value):
 
     @model_validator(mode="after")
     def actual_application_and_issuance_evidence(self):
-        if (self.scheduling_review_id is None) != (self.schedule_applied_at is None):
-            raise ValueError("Again application needs the actual scheduler review and application time")
+        receipts = sum(value is not None for value in (self.scheduling_review_id, self.position_grade_effect_id))
+        if receipts != (1 if self.schedule_applied_at is not None else 0):
+            raise ValueError("Again application needs exactly one actual scheduling receipt and application time")
         if self.schedule_applied_at is not None and self.introduction_applied_at is not None:
             raise ValueError("one accepted disposition cannot claim both Again and first introduction")
         application = self.schedule_applied_at or self.introduction_applied_at
@@ -326,7 +328,7 @@ class EncounterReceipt(LearningReceipt):
         progress = self.progress
         if self.disposition == "introduced_again" and progress.introduction_applied_at is not None:
             raise ValueError("introduced Again cannot claim first introduction")
-        if self.disposition == "first_introduction" and progress.scheduling_review_id is not None:
+        if self.disposition == "first_introduction" and (progress.scheduling_review_id is not None or progress.position_grade_effect_id is not None):
             raise ValueError("first introduction cannot fabricate an Again scheduling review")
         if self.admission_status in {"available", "settled"}:
             application = progress.schedule_applied_at if self.disposition == "introduced_again" else progress.introduction_applied_at

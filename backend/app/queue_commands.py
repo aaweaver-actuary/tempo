@@ -72,9 +72,44 @@ def current_study_day(database, *, now=None):
 
 def issue_queue_head(database, payload: dict[str, Any]) -> dict[str, Any]:
     """Commit one head's issuance before returning it; never stamp prefetch."""
+    from .services.queue_next_card import PreparedQueueHead
+    prepared = payload if isinstance(payload, PreparedQueueHead) else PreparedQueueHead(payload, 'legacy')
+    payload = prepared.payload
     entry_id = int(payload["entry_id"])
     if payload["queue_date"] != current_study_day(database):
         return {"issued": False}
+    position_plan = None
+    if prepared.mode == 'hold':
+        return {'issued': False, 'position_study_mode': 'position',
+                'position_presentation': None, 'position_study_hold': prepared.reason}
+    if prepared.mode == 'position':
+        # G2's source fence is repeated internally after card locks. Acquire it
+        # here first so the source/owner ordering precedes all Study locks.
+        from tempo_evidence_math.position_learning import Hold
+        from tempo_legacy_database.adapters.authored_repertoires.position_study_source import fence_position_source
+        from tempo_legacy_database.adapters.study.position_issued_plans import issue_in_borrowed_transaction
+        held = fence_position_source(database, prepared.proposal.source)
+        if held is not None:
+            return {'issued': False, 'position_study_mode': 'position',
+                    'position_presentation': None, 'position_study_hold': held.reason}
+        position_plan = issue_in_borrowed_transaction(database, prepared.proposal)
+        if isinstance(position_plan, Hold):
+            return {'issued': False, 'position_study_mode': 'position',
+                    'position_presentation': None, 'position_study_hold': position_plan.reason}
+    elif prepared.mode == 'replay':
+        position_plan = prepared.proposal
+    elif queue_storage.is_postgres_connection(database):
+        # Hold the same owner advisory fences used by activation, even for a
+        # missing/inactive owner, before any card or queue lock.
+        from tempo_legacy_database.adapters.study.position_owner_epoch import owner_mode
+        owners = queue_storage.issuance_owner_repertoires(
+            database, entry_id, payload['card_id'], payload['expected_revision'],
+        )
+        for row in owners:
+            decision = owner_mode(database, row['repertoire_id'], None)
+            if decision.disposition != 'legacy':
+                return {'issued': False, 'position_study_mode': 'position',
+                        'position_presentation': None, 'position_study_hold': decision.reason}
     _lock_attempt_card(database, entry_id)
     if queue_storage.is_postgres_connection(database):
         lock_queue_date_for_position(database, payload["queue_date"])
@@ -84,15 +119,32 @@ def issue_queue_head(database, payload: dict[str, Any]) -> dict[str, Any]:
     from .services.queue_next_card import pending_next_card_preparation
     if (not queue_storage.issued_origin(database, entry_id, payload['card_id'], payload['expected_revision'])
             and pending_next_card_preparation(database, payload['queue_date'],candidate_card_id=payload['card_id'])):
+        if position_plan is not None:
+            raise HTTPException(409, 'Position head changed during issuance')
         return {'issued': False, 'reason': 'study_feedback_preparation_pending'}
     read_head = queue_storage.prepare_queue_head(database, queue_application.MISS_REASON)
     head = read_head(payload["queue_date"])
     if not head or head["id"] != entry_id:
+        if position_plan is not None:
+            raise HTTPException(409, 'Position head changed during issuance')
         return {"issued": False}
     try:
         validate_available_attempt(database, entry_id, payload["card_id"], payload["expected_revision"])
     except ReviewConflict:
+        if position_plan is not None:
+            raise HTTPException(409, 'Position head changed during issuance')
         return {"issued": False}
+    if prepared.urgency is not None:
+        from tempo_evidence_math.position_learning import Hold
+        from tempo_legacy_database.adapters.study import game_feedback
+        reader = getattr(game_feedback, 'read_position_urgency', None)
+        actual = (reader(database, card_id=payload['card_id'], revision=payload['expected_revision'],
+                         repertoire_id=prepared.urgency.definition.key.repertoire_id, lock=True)
+                  if reader else None)
+        if isinstance(actual, Hold) or actual != prepared.urgency:
+            # G2 may already have inserted a plan; the command savepoint must
+            # roll back rather than committing an unauthorized urgent head.
+            raise HTTPException(409, 'Position urgency changed during issuance')
     from .services.legacy_study_remediation import bind_first_issuance
     bind_first_issuance(database, entry_id, payload["card_id"], payload["expected_revision"])
     changed = queue_storage.stamp_issued_head(database, entry_id, payload["card_id"], payload["expected_revision"])
@@ -101,6 +153,11 @@ def issue_queue_head(database, payload: dict[str, Any]) -> dict[str, Any]:
         if installed(database):
             from tempo_legacy_database.adapters.study.game_feedback import record_feedback_issuance
             record_feedback_issuance(database, entry_id, payload['card_id'], payload['expected_revision'])
+    if not changed and position_plan is not None:
+        raise HTTPException(409, 'Position head changed during issuance')
+    if position_plan is not None:
+        return {'issued': bool(changed), 'position_study_mode': 'position',
+                'position_presentation': position_plan.to_wire(), 'position_study_hold': None}
     return {"issued": bool(changed)}
 
 
@@ -166,7 +223,8 @@ def request_queue_refresh_in_transaction(database: PostgresConnection,
     )
 
 
-register_command("queue.issue_head", issue_queue_head)
+from .services.queue_next_card import prepare_queue_head
+register_command("queue.issue_head", issue_queue_head, prepare=prepare_queue_head)
 from .services.queue_next_card import prepare_next_card_command, prepared_next_card_result
 register_command('queue.prepare_next', prepared_next_card_result, prepare=prepare_next_card_command)
 register_command("queue.attempt_failed", mark_attempt_failed)

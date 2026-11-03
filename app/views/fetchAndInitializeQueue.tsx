@@ -16,7 +16,7 @@ import { waitForOfflineShell } from "../lib/offline-shell";
 import { flushTrainingFailures, pendingTrainingFailures, pendingTrainingFailureContexts, isLegacyTrainingFailure } from "../lib/training-failure-outbox";
 import { hydrateNotifications, notifications, publishNotification, resolveNotification, updateNotification, type NotificationSeverity } from "../lib/notifications";
 import { attemptEntryKey } from "../domain/attempt";
-import { queueEnvelopeSchema } from "../domain/schemas";
+import { queueCardSchema, queueEnvelopeSchema } from "../domain/schemas";
 import { studyWorkspace } from "../lib/study-connection";
 
 export function rememberConfirmedQueueEntry(card: PracticeCard): void {
@@ -204,14 +204,17 @@ function waitForQueueRetry(milliseconds: number, signal: AbortSignal): Promise<v
   });
 }
 
-async function loadTodayQueueWithRetry(signal: AbortSignal, progression: string, retryPreparation: boolean): Promise<QueuePayload> {
+async function loadTodayQueueWithRetry(
+  signal: AbortSignal, progression: string, retryPreparation: boolean, acquisition: { observedBusyHead: boolean },
+): Promise<QueuePayload> {
   let failedRequests = 0;
   let retryDeferred = retryPreparation;
   let localPriorityPending = false;
   let completedPreparationHold: string | null = null;
   let nonblockingPreparationHold = false;
+  let retryBusyHead = false;
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    const { response, payload: responsePayload } = await fetchQueueWindow(signal, attempt > 0 && !localPriorityPending);
+    const { response, payload: responsePayload } = await fetchQueueWindow(signal, attempt > 0 && !localPriorityPending && !retryBusyHead);
     if (response.ok) {
       failedRequests = 0;
       const payload = responsePayload as QueuePayload;
@@ -222,6 +225,18 @@ async function loadTodayQueueWithRetry(signal: AbortSignal, progression: string,
       if (payload.projection?.state !== "refreshing" || payload.cards.length) {
         const validated = queueEnvelopeSchema.safeParse(responsePayload);
         if (!validated.success) throw new QueueProcessingError("The local queue returned an invalid queue response. Retry loading the queue.");
+        const headResult = queueCardSchema.safeParse(validated.data.cards[0]);
+        const head = headResult.success ? headResult.data : undefined;
+        if (head?.position_study_mode === "position" && head.position_presentation === null &&
+            head.position_study_hold === "position_card_busy") {
+          acquisition.observedBusyHead = true;
+          if (attempt === 19) throw new QueueProcessingError("Position study is temporarily busy. Retry loading the queue.");
+          // A retry may issue the head, so it needs the same foreground admission
+          // as the initial acquisition, not the preparation-observation class.
+          retryBusyHead = true;
+          await waitForQueueRetry(250, signal);
+          continue;
+        }
         if (nonblockingPreparationHold) publishNotification({ severity: "info", source: "training queue",
           key: "optional-feedback-hold", message: "Game feedback is pending. Ordinary Study remains available and the pending work is retained." });
         return validated.data;
@@ -246,6 +261,7 @@ async function loadTodayQueueWithRetry(signal: AbortSignal, progression: string,
     const priorityFailure = responsePayload as { detail?: { code?: string } } | undefined;
     if (!independentStudy && response.status === 503 &&
         priorityFailure?.detail?.code === 'study_feedback_preparation_pending') {
+      if (retryBusyHead) throw new QueueProcessingError("Study preparation is pending. Retry loading the queue after its prerequisite is restored.");
       localPriorityPending = true;
       // One fresh server read can supersede an old completed hold after mode
       // disable or recovery. If still blocked, retain it without another POST.
@@ -404,10 +420,14 @@ export async function fetchAndInitializeQueue(
         if (generation === requestGeneration && isStudyIntentStoreCurrent(intentStore)) showGuidedAttemptSaveNotice(failureSaveError);
       });
     let raw: QueuePayload;
+    const acquisition = { observedBusyHead: false };
     try {
       raw = await awaitQueueStage(loadTodayQueueWithRetry(controller.signal, options.expectedAttempt?.attemptId ??
-        useTrainingStore.getState().attempt.attemptId ?? "queue-load", options.retryPreparation === true), controller.signal);
-    } catch (error) {
+        useTrainingStore.getState().attempt.attemptId ?? "queue-load", options.retryPreparation === true, acquisition), controller.signal);
+    } catch (caught) {
+      const error = acquisition.observedBusyHead && !controller.signal.aborted && !(caught instanceof QueueProcessingError)
+        ? new QueueProcessingError(`Position study could not be loaded after a busy response. ${String(caught)}`, { cause: caught })
+        : caught;
       queueRequestFailed = !(error instanceof QueueProcessingError);
       failedOperation = queueRequestFailed ? "load today queue" : "process today queue response";
       failedEndpoint = `${API_URL}/api/queue/window?limit=20`;

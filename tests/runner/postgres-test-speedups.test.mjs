@@ -167,7 +167,7 @@ test("study_import_pending_issuance_remains_bounded_and_preserves_integrity_fail
 });
 
 const fullStages = [
-  "compose_config", "image_build", "maintenance_cli", "startup", "service_health",
+  "compose_config", "image_build", "maintenance_cli", "startup", "service_health", "game_review_reader",
   "background_budget", "operation_recovery", "schema_migrations", "background_diagnostics", "deployment_lifecycle", "background_workloads",
   "threat_candidate_upsert", "command_recreation", "backup_restore", "browser",
   "study_isolation", "study_durability", "cleanup",
@@ -589,6 +589,55 @@ for (const mode of ["full", "browser", "durability", "lifecycle"]) {
   });
 }
 
+test("packaged Games reader runs once on the host after ready owned services and before cleanup", async () => {
+  const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
+  const start = source.indexOf("  game_review_reader: async () => {");
+  const end = source.indexOf("  background_budget: async () => {", start);
+  assert(start >= 0 && end > start);
+  const calls = [];
+  const environment = { isolated: "kept", TEMPO_DATABASE_READ_URL: undefined };
+  const project = "tempo-pg-regressions-123-abc";
+  const action = runInNewContext(`({${source.slice(start, end)}})`, {
+    resolvePython: () => "owned-python", resolve: path => resolve(root, path), environment, project,
+    process: { env: { TEMPO_DEVELOPMENT_BUDGET_TOKEN: "owned-token" } },
+    run: (command, args, options) => calls.push({ command, args: Array.from(args), env: options.env }),
+  }).game_review_reader;
+  for (const mode of ["full", "durability"]) {
+    calls.length = 0;
+    const stages = postgresTestStages({ mode });
+    assert.equal(stages[stages.indexOf("service_health") + 1], "game_review_reader");
+    const events = [];
+    const actions = Object.fromEntries(stages.map(stage => [stage, () => events.push(stage)]));
+    actions.game_review_reader = async () => { events.push("game_review_reader"); await action(); };
+    await executePostgresTestPlan(stages, actions, directMeasurement);
+    assert.deepEqual(events, stages);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].command, "owned-python");
+    assert.deepEqual(calls[0].args, ["database/tests/check_postgres_game_review_reader.py"]);
+    assert.equal(calls[0].env.isolated, "kept");
+    assert.equal(calls[0].env.PYTHONPATH, ["backend", "database", "backend/tests"].map(path => resolve(root, path)).join(":"));
+    assert.equal(calls[0].env.TEMPO_TEST_INSTANCE, "disposable");
+    assert.equal(calls[0].env.TEMPO_TEST_COMPOSE_PROJECT, project);
+    assert.equal(calls[0].env.TEMPO_DEVELOPMENT_BUDGET_TOKEN, "owned-token");
+  }
+  for (const mode of ["browser", "study", "lifecycle"]) {
+    assert(!postgresTestStages({ mode }).includes("game_review_reader"));
+  }
+});
+
+for (const missing of [false, true]) {
+  test(`packaged Games reader ${missing ? "missing action" : "failure"} fails the owned plan and cleans up`, async () => {
+    const called = [];
+    const stages = postgresTestStages({ mode: "durability" });
+    const actions = Object.fromEntries(stages.map(stage => [stage, () => called.push(stage)]));
+    if (missing) delete actions.game_review_reader;
+    else actions.game_review_reader = () => { called.push("game_review_reader"); throw new Error("reader failed"); };
+    await assert.rejects(executePostgresTestPlan(stages, actions, directMeasurement),
+      missing ? /Missing PostgreSQL test action: game_review_reader/ : /reader failed/);
+    assert.deepEqual(called, missing ? ["cleanup"] : [...stages.slice(0, stages.indexOf("game_review_reader") + 1), "cleanup"]);
+  });
+}
+
 test("scenario failure captures diagnostics before cleanup and never runs later tests", async () => {
   const called = [];
   const failure = new Error("browser failed");
@@ -779,6 +828,27 @@ test("nested timing cannot qualify failed, missing or stale durability and lifec
       assert.throws(() => validatePostgresScenarios(layer, plan, invalid), /missing, failed or mismatched/);
     }
   }
+});
+
+test("packaged Games reader cannot be missing, skipped, failed, or omitted from the qualification plan", () => {
+  const planned_stages = postgresTestStages({ mode: "durability" });
+  const plan = { commit: "candidate", hash: "immutable-plan", jobs: { postgres: { mode: "durability", planned_stages } } };
+  const report = { runner: "postgres", mode: "durability", commit: plan.commit, plan_hash: plan.hash, planned_stages,
+    stages: Object.fromEntries(planned_stages.map(stage => [stage, { exit_code: 0 }])) };
+  assert.doesNotThrow(() => validatePostgresScenarios("postgres", plan, report));
+  for (const modify of [
+    candidate => { delete candidate.stages.game_review_reader; },
+    candidate => { candidate.stages.game_review_reader = { skipped: true }; },
+    candidate => { candidate.stages.game_review_reader.exit_code = 1; },
+    candidate => { candidate.planned_stages = candidate.planned_stages.filter(stage => stage !== "game_review_reader"); },
+  ]) {
+    const invalid = structuredClone(report);
+    modify(invalid);
+    assert.throws(() => validatePostgresScenarios("postgres", plan, invalid), /missing, failed or mismatched/);
+  }
+  const stalePlan = structuredClone(plan);
+  stalePlan.jobs.postgres.planned_stages = planned_stages.filter(stage => stage !== "game_review_reader");
+  assert.throws(() => validatePostgresScenarios("postgres", stalePlan, report), /planned|inventory|stage/i);
 });
 
 test("completed invalid study fixtures fail immediately instead of polling for impossible admission", () => {
@@ -1027,7 +1097,8 @@ test("pr102 background restoration recovers API health before starting dependent
   assert.deepEqual(events, [["background-worker", "background-scheduler"], "original readiness passed",
     ["defense-engine", "maia-worker"], "verified all running"]);
   const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
-  assert.equal(source.match(/restoreConsumers: \(\) => restoreBackgroundWorkloadConsumers\(/g)?.length, 4);
+  // The retired priority benchmark no longer adds a restoration call site.
+  assert.equal(source.match(/restoreConsumers: \(\) => restoreBackgroundWorkloadConsumers\(/g)?.length, 3);
 });
 
 

@@ -142,7 +142,7 @@ mapping or evidence that native/cross-owner proof is dispensable.
 | --- | --- |
 | `backend/app/services/queue_presentation.py` | `test_queue_refresh_read_database_split.py` has callback/native-shape tests; actual PostgreSQL proof is `test_study_encounter_intake_boundary.py::test_applied_game_priority_allows_bounded_daily_queue_preparation_without_losing_attempts`. Its exact case is registered in the `study-game-priority` owner qualifier, which requires that case to pass and emits candidate/base, declared input hashes and runtime scope. This source registration has not yet been executed as native evidence; FAST/STUDY still does not run it. |
 | `backend/app/study/interfaces/game_priority.py` | Public cross-owner contract: `test_study_priority_interface.py`, the boundary case in `test_product_contracts.py`, and registered `study-game-priority` native qualification. FAST/STUDY does not invoke that suite, provision its owner fixtures/images/lock, or bind its expected/executed cases and runtime to the CI plan/report. |
-| `backend/app/product_composition/game_review.py` | `test_product_game_review_composition.py` and `test_product_game_review_receipts.py` need the actual `test_product_game_review_packaged_reader.py` proof. That test requires an already-owned disposable API/foreground-worker/PostgreSQL stack, budget token, packaged source hashes and reader/writer profiles; it creates none. Its schema-52 fixture expectation also needs reconciliation with newer schema metadata. Generic backend pytest is not this fixture bridge. |
+| `backend/app/product_composition/game_review.py` | `test_product_game_review_composition.py` and `test_product_game_review_receipts.py` need the actual `database/tests/check_postgres_game_review_reader.py` proof. The mandatory `game_review_reader` stage runs after service health in the existing full and CI durability PostgreSQL plans, against that invocation's owned packaged API/foreground-worker/PostgreSQL stack and budget. It verifies exact current schema, packaged hashes, ten reader ACLs, current receipt and cleanup. Generic backend pytest covers only the inert import and refusal guards. The smaller FAST/STUDY bridge remains absent; registration or mocked boundary checks do not establish a native pass. See the [owned proof lifetime](../.github/workflows/README.md#owned-postgresql-proof-lifetime). |
 
 The first two native owners use `test_product_game_lapse_postgres.py`'s capped,
 labelled PostgreSQL 18.6 fixture. Discover the priority suite with
@@ -185,9 +185,9 @@ use explicitly imported Worker types or its own runtime-specific configuration.
 
 FAST/STUDY selection and the retained FULL browser inventory are distinct. Use their executable inventories for current selection. The literal count and global-case table retained below are also consumed by a CI reliability test; they are not an instruction to run that inventory for every assignment.
 
-Global critical browser smoke: **5 cases**.
+Global critical browser smoke: **4 cases**.
 
-The preserved runner report below records the exact five global and eight family
+The preserved runner report below records the exact four global and eight family
 identities, their invariants, and complementary lower-level proofs. The checked-in
 `scripts/ci-verification-inventory.json` remains the source for current titles.
 
@@ -315,6 +315,8 @@ Schema version 2 adds start-ordered `details` beneath the unchanged required sta
 
 `schema_migrations`, `priority_recovery` and `background_diagnostics` run in ordinary durability and full mode. `deployment_lifecycle` invokes the unchanged complete `verifyTempoCliLifecycle()` rehearsal in full mode and independent `--mode lifecycle` / `make docker-lifecycle`. Full mode still quiesces and restores its parent applications around the child rehearsal. The ordinary durability mode and legacy `--skip-browser` alias omit this deployment rehearsal; they retain every direct database proof. Historical timing reports may still use the former combined `schema_upgrade` name.
 
+Within that existing child lifetime, `test_tempo_cli_abandon_orphan_exact_plan_apply_retry_preserves_history` uses the registered Node abandonment command after the real upgrade reaches readiness. When executed, its fixed synthetic orphan checks default plan, checked apply, exact retry and specific stale-hash, revision, target-registration and changed-payload refusals, while retaining origin/receipt bytes, FSRS, reviews and snapshots with zero grades. Only the disposable historical fixture seeds the orphan; normal whole-stack teardown removes its retained data. This synthetic case does not authorize abandonment of a user attempt or replace native owner and visual qualification.
+
 The existing immutable CI plan adds a blocking `lifecycle` layer. Its sensitivity rules live alongside the browser inventory, but lifecycle selection does not use browser families or rendering breadth. Migrations/schema readiness, PostgreSQL storage/credential infrastructure, Tempo deployment scripts and entrypoints, backup/restore, Redis recovery, Compose/service images, dependencies and lifecycle/verification harness inputs require it. Sensitive matches override ordinary product/prose exemptions; unclassified infrastructure and missing comparison history select it conservatively. Both names of renames/copies and deleted paths remain classified.
 
 The backend ordinary exemption is limited to exact reviewed service files and root domain command handlers, API modules, contracts and models listed in the lifecycle inventory. It does not exempt all of `backend/app/` or `backend/app/services/`, or introduce suffix-based exemptions for future command/API modules. New service or root modules require lifecycle until explicitly reviewed and classified; existing sensitive rules still override exact ordinary exemptions. Normal product tests and `tests/REGRESSIONS.md` remain ordinary companions to domain changes.
@@ -407,7 +409,7 @@ PostgreSQL/browser invocation owns fresh ports, credentials, volumes and
 containers and remains serial within its stack. GitHub's **Re-run failed jobs**
 repeats a failed layer and its aggregate without repeating successful layers.
 
-Global critical browser smoke: **5 cases**.
+Global critical browser smoke: **4 cases**.
 
 The table audits all 13 cases previously designated critical. A global case
 protects a shared browser invariant needed on ordinary PRs. A family case stays
@@ -420,7 +422,7 @@ FULL verification. FAST/STUDY use the emergency selections above.
 | --- | --- | --- | --- | --- | --- |
 | `recovery.spec.ts` | `intentional training failure is saved once and reload resumes it without another failure` | global | Browser failure outbox drains once, and reload resumes guided state without a duplicate failure. Shared save/reload invariant. | training | `tests/unit/training-failure-outbox-regressions.test.ts` |
 | `phone-offline-training.spec.ts` | `prepared phone queue and study worker survive full offline reload and sync one review per attempt` | global | Real browser shell/storage survives outage and reload; ordered review replay does not repeat after confirmation. Shared offline invariant. | training | `tests/unit/offline-shell-regressions.test.ts`, `backend/tests/test_phone_offline_training.py` |
-| `recovery.spec.ts` | `failed initial loads never display empty records or zero statistics` | global | Service failure shows an actionable error instead of fabricated empty records or metrics. Shared fail-closed invariant. | training | Complementary validation/error boundaries in `tests/unit/validated-data-regressions.test.ts` and `tests/unit/status-polling-regressions.test.tsx` |
+| `recovery.spec.ts` | `failed initial loads never display empty records or zero statistics` | retired | Deleted with the legacy Games workspace in `7ee2583d`; no current browser-equivalence claim. | historical training | Complementary validation/error boundaries in `tests/unit/validated-data-regressions.test.ts` and `tests/unit/status-polling-regressions.test.tsx` |
 | `studies.spec.ts` | `FEN-only study square exercise is authored enrolled and reviewed through the real workspace` | global | A real PostgreSQL-backed Study can be authored, enrolled, answered and assessed through the workspace. One shared Study workflow. | studies | `tests/unit/study-exercise-grading.test.ts`, `backend/tests/test_studies.py` |
 | `held-drag-preservation.spec.ts` | `held training drag survives sync, service, notification and parent updates and drops once` | global | A real held piece survives unrelated updates without lease resets and drops exactly once. Shared input-preservation invariant. | board | `tests/unit/board-drag-preservation-regressions.test.tsx` |
 | `opening-evidence.spec.ts` | `AS-15 a real tab lease releases stranded evidence into a later idle slice` | family | Real cross-tab Web Locks release wakes stranded evidence without reconnect; one-journal slices preserve ownership. Opening-specific recovery. | training | `tests/unit/opening-evidence-recovery-lifecycle.test.tsx`, `tests/unit/opening-evidence-recovery-slices.test.tsx` |

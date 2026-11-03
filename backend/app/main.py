@@ -1268,7 +1268,17 @@ def _issue_returned_queue_head(queue_date: str, card: dict) -> None:
     with read_connection() as database:
         issued = queue_projection_storage.issued_head(database, payload["entry_id"], payload["card_id"], payload["expected_revision"])
     if issued and issued["issued_as_head"]:
-        return
+        if not postgres_store.configured():
+            return {}
+        from .services.queue_next_card import prepare_queue_head
+        replay = prepare_queue_head(payload)
+        if replay.mode == 'replay':
+            return {'issued': True, 'position_study_mode': 'position',
+                    'position_presentation': replay.proposal.to_wire(), 'position_study_hold': None}
+        if replay.mode != 'legacy':
+            return {'issued': False, 'position_study_mode': 'position',
+                    'position_presentation': None, 'position_study_hold': replay.reason or 'position_plan_missing'}
+        return {'issued': True}
     if postgres_store.configured():
         from .command_dispatch import dispatch_command
         result = dispatch_command("queue.issue_head", payload, idempotency_key=None)
@@ -1280,8 +1290,13 @@ def _issue_returned_queue_head(queue_date: str, card: dict) -> None:
     if not isinstance(result, JSONResponse) and result.get('reason') == 'study_feedback_preparation_pending':
         raise HTTPException(503, {'code':'study_feedback_preparation_pending',
             'message':'Local Study priority work must prepare before the next new attempt'})
-    if isinstance(result, JSONResponse) or not result.get("issued"):
+    if isinstance(result, JSONResponse):
         raise HTTPException(503, "Queue changed or attempt issuance is pending. Retry loading the queue.")
+    if result.get('position_study_mode') == 'position':
+        return result
+    if not result.get("issued"):
+        raise HTTPException(503, "Queue changed or attempt issuance is pending. Retry loading the queue.")
+    return result
 
 
 def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool = False):
@@ -1290,11 +1305,17 @@ def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool =
     with read_connection() as day_database:
         day = current_study_day(day_database)
     with read_connection() as db:
-        evidence_timezone = queue_projection_storage.evidence_timezone(db)[0] if include_opening_evidence and postgres_store.configured() else None
+        evidence_timezone = queue_projection_storage.evidence_timezone(db)[0] if postgres_store.configured() else None
         projection_row = queue_projection_storage.queue_projection(db, day)
         diagnostic_rows = queue_projection_storage.queue_diagnostics(db, day)
         rows = queue_projection_storage.queue_rows(db, day, limit, miss_reason=MISS_REASON)
         cards = assemble_queue_cards(rows)
+        if postgres_store.configured():
+            position_modes = queue_projection_storage.position_pending_modes(db, cards)
+            for card in cards:
+                if position_modes.get(card['queue_entry_id']):
+                    card.update(position_study_mode='position', position_presentation=None,
+                                position_study_hold='position_not_issued')
         total_count = len(cards) if limit is None else queue_projection_storage.available_count(db, day, miss_reason=MISS_REASON)
     # Advisory Games evidence owns a separate bounded read. A failed projection
     # must close/rollback its own transaction before core issuance proceeds.
@@ -1311,7 +1332,10 @@ def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool =
         add_encounter_evidence(card, encounter_by_fen,
                                (datetime.now(timezone.utc) - timedelta(days=7)).isoformat())
     if cards:
-        _issue_returned_queue_head(day, cards[0])
+        issuance = _issue_returned_queue_head(day, cards[0])
+        if issuance.get('position_study_mode') == 'position':
+            cards[0].update({key: issuance[key] for key in
+                ('position_study_mode', 'position_presentation', 'position_study_hold')})
     else:
         from .services.queue_next_card import pending_next_card_preparation
         with read_connection() as pending_database:
@@ -1320,9 +1344,24 @@ def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool =
             raise HTTPException(503, {'code':'study_feedback_preparation_pending',
                 'message':'Local Study priority work must prepare before the next new attempt'})
     finalize_queue_cards(cards)
-    if include_opening_evidence and postgres_store.configured():
+    position_head = bool(cards and cards[0].get('position_presentation'))
+    if (include_opening_evidence or position_head) and postgres_store.configured():
         from .services.postgres_opening_evidence import queue_manifests
-        queue_manifests(cards)
+        queue_manifests(cards if include_opening_evidence else cards[:1])
+        if position_head:
+            from .services.postgres_opening_evidence import issued_position_manifest
+            from tempo_evidence_math.position_learning import Hold
+            from tempo_legacy_database.adapters.study.position_issued_plans import replay_exact_attempt
+            card = cards[0]
+            with read_connection() as database:
+                plan = replay_exact_attempt(database, card['position_presentation']['attempt_id'])
+            try:
+                if isinstance(plan, Hold) or plan is None or 'opening_decision_manifest' not in card:
+                    raise ValueError('position_manifest_scope_unavailable')
+                card['opening_decision_manifest'] = issued_position_manifest(plan, card['opening_decision_manifest'])
+            except (TypeError, ValueError, KeyError):
+                card['position_presentation'] = None
+                card['position_study_hold'] = 'position_manifest_scope_unavailable'
         for card in cards:
             if "opening_decision_manifest" in card:
                 card["opening_evidence_study_timezone"] = evidence_timezone or "local"
