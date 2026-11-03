@@ -1599,8 +1599,21 @@ def test_current_owner_obligation_target_split_and_offday_readback_preserve_orig
         assert PostgresGameFeedbackStore(database).get(lapse.key)==original
     with transaction() as database:
         reviewed,_ = ordinary_current_review(database,combined,monkeypatch)
-        settled = PostgresGameFeedbackStore(database).get(lapse.key)
-        assert settled.status=="settled" and settled.settlement_review_id==reviewed["review_id"] and settled.available_by==deadline
+        assert reviewed['persisted']
+        completion = database.execute_native('SELECT card_id,rating,guided,source_kind,invalidated_at '
+            'FROM reviews WHERE id=%s',(reviewed['review_id'],)).fetchone()
+        assert completion['card_id']==combined and completion['rating']=='correct' and not completion['guided']
+        assert completion['source_kind'] in {'study','study_exercise'} and completion['invalidated_at'] is None
+        from tempo_legacy_database.adapters.study.issuance import completion_issuance
+        assert completion_issuance(database,reviewed['review_id'],combined,1) is not None
+        retained = PostgresGameFeedbackStore(database).get(lapse.key)
+        # This genuinely old reset has no application/issuance fence. Even a
+        # real later completion cannot invent that missing settlement authority.
+        # Qualified current-target settlement has its separate owner-backed case.
+        assert retained.progress is None and retained.remediation_fence is None
+        assert retained.status=='applied' and retained.settlement_review_id is None
+        assert retained.review_id==review_id and retained.available_by==deadline
+        assert retained.lapse.model_dump_json()==lapse.model_dump_json()
     for _ in range(3):
         with transaction() as database:
             ordinary_current_review(database,combined,monkeypatch,outcome="again")
