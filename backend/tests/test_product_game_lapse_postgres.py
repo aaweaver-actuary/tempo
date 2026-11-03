@@ -773,10 +773,15 @@ def test_native_encounter_ordinary_introduction_race_preserves_current_progress_
             repertoire_id=command.decision.repertoire_id,decision_id=command.key.decision_id,target=target).status=='introduced'
         state=tuple(database.execute_native('SELECT introduced_at,state,interval_days,fsrs_card_json FROM cards WHERE id=%s',
             (case.card_id,)).fetchone())
+    original_command, original_source = command.model_dump_json(), case.qualified.source.model_dump_json()
+    case.qualified.reprepare()
+    assert case.qualified.command.model_dump_json() == original_command
+    assert case.qualified.source.model_dump_json() == original_source
     with case.transaction() as database:
         # Original capture still says unintroduced; only that current field may
         # race. Definition/revision/source/membership fences remain exact.
-        receipt=current_encounter_service(database,capture,snapshot,case=case).refresh_encounter(command.key)
+        receipt=current_encounter_service(database,capture,snapshot,case=case).refresh_encounter(
+            command.key,qualification=case.qualified.prepared.qualification)
         assert receipt.disposition=='first_introduction' and receipt.admission_status=='available'
         assert tuple(database.execute_native('SELECT introduced_at,state,interval_days,fsrs_card_json FROM cards WHERE id=%s',
             (case.card_id,)).fetchone())==state
@@ -817,6 +822,11 @@ def test_native_encounter_historical_miss_applies_current_again_preserving_human
         before=tuple(database.execute_native('SELECT introduced_at,state,interval_days,fsrs_card_json,first_correct_at FROM cards WHERE id=%s',
             (case.card_id,)).fetchone())
         history=database.execute_native('SELECT COUNT(*) FROM reviews WHERE card_id=%s',(case.card_id,)).fetchone()[0]
+    original_command, original_source = command.model_dump_json(), case.qualified.source.model_dump_json()
+    case.qualified.reprepare()
+    assert case.qualified.command.model_dump_json() == original_command
+    assert case.qualified.source.model_dump_json() == original_source
+    with case.transaction() as database:
         service=current_encounter_service(database,capture,snapshot,case=case,include_introductions=False)
         receipt=accept_and_refresh(service,command)
         assert receipt.disposition=='introduced_again' and receipt.observation_recorded
