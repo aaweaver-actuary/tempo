@@ -34,11 +34,12 @@ def latest(monkeypatch):
     return row, calls
 
 
-def receipt(state='complete', result=None, generation=0, seconds_ago=2):
+def receipt(state='complete', result=None, generation=0, seconds_ago=2, error=None):
     return (issuance_operation_id(PAYLOAD, generation), 'queue.issue_head',
             request_digest('queue.issue_head', PAYLOAD), state,
             json.dumps(result if result is not None else {'issued': False}),
-            datetime.now(timezone.utc) - timedelta(seconds=seconds_ago))
+            datetime.now(timezone.utc) - timedelta(seconds=seconds_ago),
+            json.dumps(error) if error is not None else None)
 
 
 def test_italian_initial_arrivals_choose_same_exact_family_without_receipt(latest):
@@ -186,3 +187,31 @@ def test_unrelated_dispatch_and_explicit_queue_keys_do_not_use_family_selector(m
     assert dispatch.dispatch_command('cards.review', {}, idempotency_key='original-review') == {'ok': True}
     assert dispatch.dispatch_command('queue.issue_head', PAYLOAD, idempotency_key='explicit-key') == {'ok': True}
     assert [options['args'][0] for options in sent] == ['original-review', 'explicit-key']
+
+
+def test_italian_failed_head_preemption_gets_throttled_fresh_receipt_without_reset(latest):
+    row, _ = latest
+    error = {'status_code': 409, 'code': 'position_head_changed',
+             'retryable': True, 'message': 'Position head changed during issuance'}
+    row[0] = receipt(state='failed', generation=7, seconds_ago=0, error=error)
+    assert gateway.select_queue_issuance_operation(PAYLOAD) == issuance_operation_id(PAYLOAD, 7)
+    row[0] = receipt(state='failed', generation=7, error=error)
+    original = row[0]
+    assert gateway.select_queue_issuance_operation(PAYLOAD) == issuance_operation_id(PAYLOAD, 8)
+    assert gateway.select_queue_issuance_operation(PAYLOAD) == issuance_operation_id(PAYLOAD, 8)
+    assert row[0] == original
+
+
+@pytest.mark.parametrize('error', [
+    {'status_code': 409, 'message': 'Position head changed during issuance'},
+    {'status_code': 409, 'code': 'position_head_changed', 'retryable': False},
+    {'status_code': 409, 'code': 'position_head_changed', 'retryable': 'true'},
+    {'status_code': 500, 'code': 'position_head_changed', 'retryable': True},
+    {'status_code': 409, 'code': 'position_attempt_payload_conflict', 'retryable': True},
+    {'status_code': 409, 'code': 'different_conflict', 'retryable': True},
+    None,
+])
+def test_italian_failed_receipt_retry_requires_exact_typed_preemption(latest, error):
+    row, _ = latest
+    row[0] = receipt(state='failed', error=error)
+    assert gateway.select_queue_issuance_operation(PAYLOAD) == issuance_operation_id(PAYLOAD)

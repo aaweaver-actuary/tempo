@@ -123,19 +123,19 @@ def issue_queue_head(database, payload: dict[str, Any]) -> dict[str, Any]:
     if (not queue_storage.issued_origin(database, entry_id, payload['card_id'], payload['expected_revision'])
             and pending_next_card_preparation(database, payload['queue_date'],candidate_card_id=payload['card_id'])):
         if position_plan is not None:
-            raise HTTPException(409, 'Position head changed during issuance')
+            raise ReviewConflict('position_head_changed', 'Position head changed during issuance', retryable=True)
         return {'issued': False, 'reason': 'study_feedback_preparation_pending'}
     read_head = queue_storage.prepare_queue_head(database, queue_application.MISS_REASON)
     head = read_head(payload["queue_date"])
     if not head or head["id"] != entry_id:
         if position_plan is not None:
-            raise HTTPException(409, 'Position head changed during issuance')
+            raise ReviewConflict('position_head_changed', 'Position head changed during issuance', retryable=True)
         return {"issued": False}
     try:
         validate_available_attempt(database, entry_id, payload["card_id"], payload["expected_revision"])
     except ReviewConflict:
         if position_plan is not None:
-            raise HTTPException(409, 'Position head changed during issuance')
+            raise ReviewConflict('position_head_changed', 'Position head changed during issuance', retryable=True)
         return {"issued": False}
     if prepared.urgency is not None:
         from tempo_evidence_math.position_learning import Hold
@@ -157,7 +157,7 @@ def issue_queue_head(database, payload: dict[str, Any]) -> dict[str, Any]:
             from tempo_legacy_database.adapters.study.game_feedback import record_feedback_issuance
             record_feedback_issuance(database, entry_id, payload['card_id'], payload['expected_revision'])
     if not changed and position_plan is not None:
-        raise HTTPException(409, 'Position head changed during issuance')
+        raise ReviewConflict('position_head_changed', 'Position head changed during issuance', retryable=True)
     if position_plan is not None:
         return {'issued': bool(changed), 'position_study_mode': 'position',
                 'position_presentation': position_plan.to_wire(), 'position_study_hold': None}

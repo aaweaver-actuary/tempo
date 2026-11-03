@@ -167,7 +167,7 @@ def is_deleted_card_content(error):
 def latest_queue_issuance(database, first_operation_id, last_operation_id):
     """Read one indexed immutable incarnation; the receipt writer still claims it."""
     return database.raw.execute(
-        "SELECT operation_id,command_name,request_hash,state,response_json,updated_at "
+        "SELECT operation_id,command_name,request_hash,state,response_json,updated_at,error_json "
         "FROM operation_receipts WHERE operation_id >= %s AND operation_id <= %s "
         "ORDER BY operation_id DESC LIMIT 1",
         (first_operation_id, last_operation_id),

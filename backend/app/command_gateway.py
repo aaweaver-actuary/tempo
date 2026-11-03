@@ -134,14 +134,23 @@ def select_queue_issuance_operation(payload: dict[str, Any]) -> str:
         latest = storage.latest_queue_issuance(database, first, issuance_operation_id(payload, MAX_GENERATION))
     if latest is None:
         return first
-    operation_id, command_name, request_hash, state, response_json, completed_at = latest
+    operation_id, command_name, request_hash, state, response_json, completed_at, error_json = latest
     if command_name != 'queue.issue_head' or request_hash != request_digest(command_name, payload):
         raise CommandConflict('Queue issuance receipt identity does not match its original head')
     generation = issuance_generation(operation_id, payload)
-    if state != 'complete':
-        return operation_id
-    response = json.loads(response_json)
-    if response.get('issued') or immutable_issuance_conflict(response):
+    if state == 'failed':
+        # A source-fenced proposal can lose its head to urgent work. Its entire
+        # handler rolled back, so a later same-head retry needs a new receipt.
+        # No other failed receipt is implicitly converted into fresh work.
+        error = json.loads(error_json) if error_json else {}
+        if (error.get('status_code') != 409 or error.get('code') != 'position_head_changed'
+                or error.get('retryable') is not True):
+            return operation_id
+    elif state == 'complete':
+        response = json.loads(response_json)
+        if response.get('issued') or immutable_issuance_conflict(response):
+            return operation_id
+    else:
         return operation_id
     if datetime.now(timezone.utc) < completed_at + timedelta(seconds=ISSUANCE_RETRY_SECONDS):
         return operation_id
