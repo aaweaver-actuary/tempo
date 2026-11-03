@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import psycopg
 import pytest
 
-from app.contracts.product_v02.games import GamePage
+from app.games.providers.lichess_acquisition import LichessGamePage
 from app.games.feedback.coordinator import Coordinator
 from app.games.feedback.jobs import FeedbackRunner
 from app.product_composition.game_history import project_retained_encounters
@@ -38,7 +38,7 @@ def test_canonical_publication_rollback_and_retained_replay_share_one_frozen_sou
             yield database
     source, request, snapshot = inputs()
     store, clock, receiver = PostgresCanonicalGamesStore(connections), FakeClock(), EncounterReceiver()
-    page = GamePage(provider="lichess", account=request.account, window=request.window,
+    page = LichessGamePage(provider="lichess", account=request.account, window=request.window,
         records=(source,), rejections=(), continuation=None, complete=True, saturated=False)
     coordinator = Coordinator(providers={"lichess": SimpleNamespace(fetch_page=lambda **kwargs: page)},
         normalizer=WorkflowNormalizer(), source_identity=store, comparer=WorkflowComparer(),

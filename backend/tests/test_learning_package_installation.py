@@ -11,6 +11,7 @@ def test_backend_learning_distribution_and_command_import_need_no_source_or_serv
 import importlib, importlib.metadata as metadata, json, sys
 from pathlib import Path
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(0, sys.argv[2])
 def reject_connections(event, arguments):
     if event in {'socket.connect', 'socket.bind', 'sqlite3.connect'}:
         raise AssertionError('Import initialized a service: '+event)
@@ -34,7 +35,7 @@ assert command_gateway._handlers['cards.review'] is review_commands.submit_revie
 assert command_gateway._handlers['cards.review.reconcile'] is review_commands.reconcile_review
 assert 'app.main' not in sys.modules
 '''
-    result = subprocess.run([sys.executable, '-I', '-c', probe, str(backend)],
+    result = subprocess.run([sys.executable, '-I', '-c', probe, str(backend), str(backend.parent / 'database')],
                             capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stdout + result.stderr
     origins = [json.loads(line) for line in result.stdout.splitlines()]

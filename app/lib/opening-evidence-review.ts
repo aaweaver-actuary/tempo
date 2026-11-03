@@ -12,6 +12,8 @@ type ReviewEvidenceOptions = {
   endpoint: string; operationKey: string; body: Record<string, unknown>; completion?: OpeningEvidenceCheckpoint;
   evidenceRejected?: string; signal?: AbortSignal;
   aggregateOnly?: boolean;
+  /** Issued position attempts must retain their exact evidence envelope. */
+  positionStudy?: boolean;
   verifyReceiptFirst?: boolean;
   onEvidenceRejected: (message: string) => void | Promise<void>;
   request?: (url: string, options: RequestInit) => Promise<Response>;
@@ -46,7 +48,7 @@ export async function saveEvidenceAwareReview(options: ReviewEvidenceOptions): P
   let response: Response;
   try { response = await send(); }
   catch (error) {
-    const evidenceFailure = options.completion && definitiveEvidenceFailure(error);
+    const evidenceFailure = !options.positionStudy && options.completion && definitiveEvidenceFailure(error);
     if (!evidenceFailure || rejection) throw error;
     requireCurrent();
     rejection = evidenceFailure;
@@ -56,7 +58,7 @@ export async function saveEvidenceAwareReview(options: ReviewEvidenceOptions): P
     requireCurrent();
     return send();
   }
-  if (options.completion && !rejection && response.status === 409) {
+  if (!options.positionStudy && options.completion && !rejection && response.status === 409) {
     const result = await response.clone().json().catch(() => ({})) as {
       detail?: { code?: string; message?: string; aggregate_review_allowed?: boolean };
     };

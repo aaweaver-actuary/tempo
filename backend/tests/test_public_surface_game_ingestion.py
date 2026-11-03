@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from types import ModuleType
 
 import pytest
 
@@ -80,7 +81,15 @@ def test_ingestion_public_exports_keep_exact_existing_identity(module):
     expected = {name for names in SURFACES[module].values() for name in names}
     assert set(public.__all__) == expected
     assert len(public.__all__) == len(expected)
-    assert {name for name in vars(public) if not name.startswith("_")} == expected
+    visible = {name for name in vars(public) if not name.startswith("_")}
+    # Importing this documented public child module attaches it to the package
+    # namespace. It is a module path, not an extra root export; any other
+    # undeclared package value still fails this exact-surface assertion.
+    if (module == "app.games.feedback.interfaces" and "managed_mode" in visible
+            and isinstance(public.managed_mode, ModuleType)
+            and public.managed_mode.__name__ == module + ".managed_mode"):
+        visible.remove("managed_mode")
+    assert visible == expected
     for origin, names in SURFACES[module].items():
         implementation = importlib.import_module(origin)
         for name in names:

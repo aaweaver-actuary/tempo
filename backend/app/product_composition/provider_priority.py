@@ -312,6 +312,20 @@ def _prepare_qualified_owner(command, qualification, *, source, configuration,
     with feedback_span('current_target_read'):
         with connections() as raw:
             target_facts = read_current_feedback_target(PostgresConnection(raw), decision)
+    # Position source is prepared on a closed read before the borrowed writer.
+    # The writer rechecks the actual owner and source; this read grants no authority.
+    from tempo_legacy_database.adapters.authored_repertoires.position_study_source import prepare_position_source
+    from tempo_evidence_math.position_learning import Hold
+    with connections() as raw:
+        position_read = PostgresConnection(raw, read_only=True)
+        installed = position_read.execute_native("SELECT to_regclass('study_position_owners') IS NOT NULL").fetchone()[0]
+        row = (position_read.execute_native("SELECT mode FROM study_position_owners WHERE repertoire_id=%s",
+                                            (decision.repertoire_id,)).fetchone() if installed else None)
+        position_source = None
+        if row is not None and row['mode'] not in ('inactive', 'shadow'):
+            position_source = prepare_position_source(position_read, decision.repertoire_id)
+            if isinstance(position_source, Hold):
+                raise DeliveryDeferred(position_source.reason)
     source_fence = partial(fence_qualified_feedback,
         expected_configuration=configuration, expected_source=source,
         require_active_mode=require_active_mode, mode_runtime_id=runtime_id)
@@ -320,6 +334,7 @@ def _prepare_qualified_owner(command, qualification, *, source, configuration,
             target_facts=target_facts).prepare_qualified(command, qualification,
                 qualified_publications=publications,
                 prepared_targets=prepared_targets,
+                position_source=position_source,
                 qualification_fence=source_fence,
                 game=game, select_first_boundary=selector)
     return PreparedProviderFeedback(command, None, None, qualification, decisions,

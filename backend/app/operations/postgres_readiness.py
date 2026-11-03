@@ -15,7 +15,7 @@ from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 
 def postgres_health() -> dict[str, object]:
     try:
-        version_row, settings_row, queue_row, queue_task = read_health_facts(read_connection, lambda: date.today())
+        version_row, position_tables, settings_row, queue_row, queue_task = read_health_facts(read_connection, lambda: date.today())
     except Exception as error:
         raise HTTPException(
             503, "PostgreSQL reader unavailable; check the database, reader role, and migrations"
@@ -23,6 +23,8 @@ def postgres_health() -> dict[str, object]:
     if version_row is None or version_row[0] != POSTGRES_SCHEMA_VERSION:
         raise HTTPException(503, f"PostgreSQL schema is not version {POSTGRES_SCHEMA_VERSION}; "
                             "stop writers, verify a backup, then apply the documented schema upgrade")
+    if position_tables is None or not position_tables[0]:
+        raise HTTPException(503, "PostgreSQL position Study tables are missing; check migrations")
     if settings_row is None:
         raise HTTPException(503, "PostgreSQL settings are missing; verify the SQLite import")
     try:

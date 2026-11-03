@@ -44,6 +44,12 @@ erDiagram
     text id PK
     text game_id FK
   }
+  queue_attempt_abandonments {
+    bigint queue_entry_id PK,FK
+    text card_id PK,FK
+    bigint revision PK,FK
+    text operation_id "unique"
+  }
   queue_attempt_origins {
     bigint queue_entry_id PK
     text card_id PK
@@ -55,6 +61,7 @@ erDiagram
     text queue_date PK
     text card_id PK
   }
+  queue_attempt_origins ||..o| queue_attempt_abandonments : "exact origin"
   repertoires o|..o{ cards : "repertoire_id"
   cards o|..o{ cards : "unlock_after_card_id"
   study_exercises o|..o{ cards : "study_exercise_id"
@@ -242,6 +249,22 @@ Primary key: (`id`). DDL: [001_initial.sql](../../ddl/migrations/001_initial.sql
 | `updated_at` | `text` | no |  |
 
 Foreign key delete actions: (`game_id`) CASCADE.
+
+### `public.queue_attempt_abandonments`
+
+A terminal, explicit abandonment receipt; it does not record a review or change the retained origin. The exact origin tuple is both primary and foreign key. DDL: [058_queue_attempt_abandonment.sql](../../ddl/migrations/058_queue_attempt_abandonment.sql).
+
+| Field | SQL type | Null allowed | Keys |
+| --- | --- | --- | --- |
+| `queue_entry_id` | `bigint` | no | PK, FK |
+| `card_id` | `text` | no | PK, FK |
+| `revision` | `bigint` | no | PK, FK |
+| `operation_id` | `text` | no | unique |
+| `request_sha256` | `text` | no |  |
+| `origin_sha256` | `text` | no |  |
+| `actor` | `text` | no |  |
+| `reason` | `text` | no |  |
+| `abandoned_at` | `timestamptz` | no |  |
 
 ### `public.queue_attempt_origins`
 

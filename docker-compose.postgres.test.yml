@@ -9,6 +9,14 @@ services:
       TEMPO_TEST_INSTANCE: disposable
     secrets: [admin_pgpass, reader_pgpass, writer_pgpass, reader_password, writer_password]
     command: [database/tooling/apply_postgres_migrations.py]
+    # Only the disposable historical fixture is mounted; migration code and DDL
+    # still come from the actual maintenance image under qualification.
+    volumes:
+      - type: bind
+        source: ./database/tests/check_postgres_cli_lifecycle.py
+        target: /work/database/tests/check_postgres_cli_lifecycle.py
+        read_only: true
+        bind: {create_host_path: false}
 
   postgres-backup:
     profiles: [maintenance]

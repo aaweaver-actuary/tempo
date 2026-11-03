@@ -1,5 +1,5 @@
 """HTTP admission, immutable scopes, and fixed SQL bounds for #82."""
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 import json
@@ -139,7 +139,11 @@ def test_prefix_diagnostics_background_admission_preserves_foreground_progress(m
     def scope(name):
         scopes.append(name)
         yield
-    monkeypatch.setattr(main.activity_gate, 'foreground', lambda: scope('foreground'))
+    @asynccontextmanager
+    async def foreground():
+        scopes.append('foreground')
+        yield
+    monkeypatch.setattr(main.activity_gate, 'async_foreground', foreground)
     monkeypatch.setattr(main.activity_gate, 'background_request', lambda: scope('background'))
     monkeypatch.setattr(api.postgres_store, 'configured', lambda: False)
     assert TestClient(main.app).get(route).status_code == 503
@@ -183,10 +187,12 @@ def test_prefix_diagnostics_reader_credentials_are_sufficient(monkeypatch):
     monkeypatch.delenv('TEMPO_DATABASE_WRITE_URL', raising=False)
     monkeypatch.setenv('TEMPO_DATABASE_READ_URL', 'postgresql://tempo_reader@postgres/tempo')
     @contextmanager
-    def raw_connection():
+    def raw_connection(**options):
+        assert options == {'timeout': 0.1}
         yield SimpleNamespace(execute=lambda *arguments: None)
-    def pool(read_only):
+    def pool(read_only, *, background=False):
         assert read_only, 'Diagnostic incorrectly requires the unavailable writer pool'
+        assert background, 'Diagnostic must use the reserved background reader pool'
         return SimpleNamespace(connection=raw_connection)
     @contextmanager
     def scope(): yield

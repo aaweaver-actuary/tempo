@@ -84,13 +84,22 @@ def test_queue_admission_application_has_no_sql_or_driver_dependencies():
     # The replaced SQL-text pin made storage changes break an application test.
     # Behavior now belongs to the semantic and real-adapter suites. This guard
     # enforces the boundary on both the application and its pure planner.
-    for name in ('queue_admission', 'opening_capacity_frontier'):
-        tree = ast.parse((APP_ROOT / f'services/{name}.py').read_text())
+    sources = (
+        (APP_ROOT / 'services/queue_admission.py',
+         {'__future__', 'dataclasses', 'typing', 'app.study.openings.capacity_frontier'}, 1),
+        (APP_ROOT / 'study/openings/capacity_frontier.py',
+         {'__future__', 'dataclasses'}, 0),
+    )
+    for path, allowed_from_imports, expected_capacity_imports in sources:
+        tree = ast.parse(path.read_text())
+        assert sum(isinstance(node, ast.ImportFrom)
+                   and node.module == 'app.study.openings.capacity_frontier'
+                   for node in ast.walk(tree)) == expected_capacity_imports
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 assert {alias.name for alias in node.names} <= {'json'}, ast.unparse(node)
             if isinstance(node, ast.ImportFrom):
-                assert node.module in {'__future__', 'dataclasses', 'typing', 'opening_capacity_frontier'}, ast.unparse(node)
+                assert node.module in allowed_from_imports, ast.unparse(node)
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
                 assert node.func.attr not in {'execute', 'executemany', 'execute_native', 'commit', 'rollback', 'connect', 'close'}, ast.unparse(node)
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
@@ -212,9 +221,33 @@ def test_queue_extraction_preserves_frozen_capacity_proposal_checkpoint(monkeypa
                'opening_plan': [proposal], 'opening_index': 0, 'preserve_through_entry_id': 42}
     captured = {}
     admitted = []
+    reader, writer = object(), object()
+    from app.services import position_queue_admission
+    from tempo_legacy_database.adapters.study import position_owner_epoch
+    original_prepare = position_queue_admission.prepare_opening_introduction
+    original_owner = position_owner_epoch.owner_mode
+
+    def prepare_legacy(database, planned):
+        if database is reader and planned == proposal:
+            return ('legacy', 'rep')
+        return original_prepare(database, planned)
+
+    def legacy_owner(database, repertoire, digest):
+        if database is writer and repertoire == 'rep' and digest is None:
+            return position_owner_epoch.OwnerDecision(
+                'legacy', 'inactive', None, None, 'position_owner_absent')
+        return original_owner(database, repertoire, digest)
+
+    @contextmanager
+    def legacy_reader():
+        yield reader
+
+    monkeypatch.setattr(postgres_queue_refresh, 'background_read_connection', legacy_reader)
+    monkeypatch.setattr(position_queue_admission, 'prepare_opening_introduction', prepare_legacy)
+    monkeypatch.setattr(position_owner_epoch, 'owner_mode', legacy_owner)
     @contextmanager
     def owned_connection(**kwargs):
-        yield object()
+        yield writer
     monkeypatch.setattr(postgres_queue_refresh.postgres_store, 'configured', lambda: True)
     monkeypatch.setattr(postgres_queue_refresh, 'connection', owned_connection)
     monkeypatch.setattr(postgres_queue_refresh, 'lock_current_slice', lambda database, task: True)

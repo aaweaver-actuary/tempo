@@ -16,3 +16,20 @@ Application/contract tests that exercise storage alongside feature behavior rema
 - [Learning browser fixtures](browser/README.md): existing serialized IndexedDB setup/inspection/fault callback expressions; qualifier scenario policy remains outside.
 
 These are source/discovery moves. No actual Redis, PostgreSQL, browser or resource qualification was run. Application-facing SQLite/fake-storage assertions retain their regular feature suite owners; the supplemental test-factory inventory distinguishes fixture organization from runtime storage implementation.
+
+## Packaged Games reader proof
+
+`check_postgres_game_review_reader.py` preserves the existing packaged receipt,
+reader privilege, source hash and synthetic-row cleanup proof. The existing
+PostgreSQL runner invokes it once as mandatory `game_review_reader` immediately
+after service health in full and durability modes. It borrows only that runner's
+owned stack; it creates no container, credential, schema or application service.
+The exact migration ledger uses the authoritative current version, including
+migration 056 and its tenth feedback relation's SELECT-only ACL.
+
+Generic backend pytest checks import and target refusals in
+`test_packaged_game_review_reader_boundary.py`; it does not claim packaged proof.
+Missing, skipped or failed native stage evidence cannot qualify the PostgreSQL
+layer. Native execution remains separate from these source and boundary checks.
+The [canonical verification view](../../.github/workflows/README.md#owned-postgresql-proof-lifetime)
+shows the existing runner's lifetime and cleanup owner.

@@ -10,7 +10,7 @@ Physical colocation does not grant a component access to another owner's data an
 
 | Owner | Namespace / scope | Tables in source DDL | Charts and complete field/type dictionary |
 | --- | --- | ---: | --- |
-| [Legacy backend](tempo_legacy_database/README.md) | `public (existing shared legacy database)` | 163 | [Schema index](tempo_legacy_database/schema/README.md) |
+| [Legacy backend](tempo_legacy_database/README.md) | `public (existing shared legacy database)` | 171 | [Schema index](tempo_legacy_database/schema/README.md) |
 | [Content](tempo_content_database/README.md) | `content` | 20 | [Schema index](tempo_content_database/schema/README.md) |
 | [Intelligence](tempo_intelligence_database/README.md) | `intelligence` | 25 | [Schema index](tempo_intelligence_database/schema/README.md) |
 | [Game Evidence](tempo_game_evidence_database/README.md) | `public in dedicated Game Evidence database` | 14 | [Schema index](tempo_game_evidence_database/schema/README.md) |
@@ -19,7 +19,7 @@ Physical colocation does not grant a component access to another owner's data an
 | [Browser](browser/README.md) | IndexedDB databases and local replay stores | object stores | [Browser storage chart/dictionary](browser/README.md) |
 | [Browser intent package](browser-intents/README.md) | Workspace-scoped IndexedDB intent/teaching facts | object stores | [Intent storage chart/dictionary](browser-intents/README.md) |
 
-Counts are separate installation schemas, **not a total of tables in one live database**. The legacy 163 already include 12 remediation tables; Learning runtime's 70 also include its 12 remediation tables. They are included by separate owners, not independent extra copies to add to those totals.
+Counts are separate installation schemas, **not a total of tables in one live database**. The legacy 171 already include 12 remediation tables; Learning runtime's 70 also include its 12 remediation tables. They are included by separate owners, not independent extra copies to add to those totals.
 
 Legacy Redis admission/policy key layouts, JSON fields, expiry and logical generation fences are documented in [Redis control storage](tempo_legacy_database/adapters/redis_control/README.md). They are control keys, not SQL tables or foreign-key constraints.
 

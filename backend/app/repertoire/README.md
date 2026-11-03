@@ -350,3 +350,41 @@ Study's rejection of producer mapping substitution. The public facade case
 also proves literal constructor identity and a fresh import without optional
 runtime or infrastructure; the product boundary guard rejects package-root,
 private sibling, undeclared export/member and dynamic sibling access.
+
+### Position schedule route projection
+
+`app.repertoire.interfaces.position_schedule_occurrences` exposes the pure
+`routes_from_snapshot(snapshot, source_certificate=...)`,
+`inventory_from_snapshot(snapshot, source_certificate=...)`, `index_routes`, and
+`options_for_target` functions. The projection uses the shared
+`tempo_evidence_math.position_learning` values and builds the private index
+inside Repertoire. Consumers receive immutable route and binding facts. It permits physical-card ambiguity but holds on
+illegal or incomplete authored content and conflicting selected responses.
+The detached certificate must come from the source owner for the exact snapshot,
+revision and digest; constructing one proves nothing. The current snapshot port
+alone does not establish a digest-bound current-integrity certificate. Product
+composition must obtain that proof and issuance must fence it again before use.
+This pure interface does not wire a provider, change persistence or grant a
+Study schedule authority.
+
+The database owner's `prepare_position_source(database, repertoire_id)` constructs
+an ephemeral `PreparedPositionSource` from the complete published owner read,
+the actual completed integrity/task facts and the legal route projection. Its
+`authored_token` binds the original snapshot ID/revision/full digest as immutable
+provenance and separately records an authored-only digest of the source header,
+standard variant, response policy, and every route's identity, color, root and
+moves. The original `SourceCertificate` is provenance for that capture: a later
+successful authored fence does not claim its full physical-card digest is still
+current.
+
+The issuing owner must call `fence_position_source` on its borrowed writer
+transaction before effects, persist `authored_token.as_dict()` with the immutable
+attempt, and independently fence its original queue/card identity. The fence
+uses the existing shared graph advisory lock, locked source/publication and
+completed scan/task rows, and a bounded exact authored-line reread, without graph
+or chess replay. The repertoire line trigger advances the locked source header
+for route insertions, deletions and changes to repertoire, root, moves or color;
+that serialization also prevents route phantoms crossing the writer's fence.
+Physical-only changes do not invalidate the authored token. This is a new
+prepared boundary, not a new store; independent source review and native
+PostgreSQL concurrency tests are required before production adoption.

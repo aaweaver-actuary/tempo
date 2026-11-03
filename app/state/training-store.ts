@@ -14,6 +14,7 @@ import { demoCards } from "../samples";
 import { BoardTheme, PieceSet } from "../components/chessboard";
 import {
   initialTrainingState,
+  trainingAttemptId,
   attemptEntryKey,
   isAttemptPlayable,
   isCurrentAttempt,
@@ -437,7 +438,10 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
   resetTrainingLine: (
     nextCard = get().practiceCards[get().activeCardIndex] ?? demoCards[0],
   ) => {
-    partialOpeningAttempt(get().attempt.attemptId);
+    // Restarting one issued position plan remains the same human attempt:
+    // preserve its first responses and failure journal through guided replay.
+    if (nextCard.positionStudyMode !== "position" || get().attempt.entryKey !== attemptEntryKey(nextCard))
+      partialOpeningAttempt(get().attempt.attemptId);
     const start = initialTrainingState(nextCard);
     set({
       currentFenString: start.fen,
@@ -448,7 +452,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
       attempt: {
         entryKey: attemptEntryKey(nextCard),
         generation: get().attempt.generation + 1,
-        attemptId: crypto.randomUUID(),
+        attemptId: trainingAttemptId(nextCard),
         phase: "playerTurn",
       },
       reviewSaveError: "",
@@ -495,7 +499,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
       attempt: {
         entryKey: attemptEntryKey(card),
         generation: get().attempt.generation + 1,
-        attemptId: crypto.randomUUID(),
+        attemptId: trainingAttemptId(card),
         phase: nextAttemptFailed ? "guided" : "playerTurn",
       },
       reviewSaveError: "",
@@ -581,7 +585,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
           attempt: {
             entryKey: card ? attemptEntryKey(card) : "",
             generation: current.attempt.generation + 1,
-            attemptId: crypto.randomUUID(),
+            attemptId: trainingAttemptId(card),
             phase: card ? (failed ? "guided" : "playerTurn") : "complete",
           },
         });
@@ -612,7 +616,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
       attempt: {
         entryKey: card ? attemptEntryKey(card) : "",
         generation: current.attempt.generation + 1,
-        attemptId: crypto.randomUUID(),
+        attemptId: trainingAttemptId(card),
         phase: card ? (failed ? "guided" : "playerTurn") : "complete",
       },
     });

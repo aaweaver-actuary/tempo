@@ -12,7 +12,7 @@ const repository = resolve(directory, "../..");
 const deployment = "./tempo-deployment.mjs";
 const rules = {
   "scripts/tempo-cutover-plan.mjs": { builtins: ["node:util", "node:path"], public: ["targetKey"] },
-  "scripts/tempo-cutover-transition.mjs": { builtins: ["node:crypto", "node:fs", "node:path", "node:util"], public: ["acquireTargetLock", "atomicJson"] },
+  "scripts/tempo-cutover-transition.mjs": { builtins: ["node:crypto", "node:fs", "node:path", "node:url", "node:util"], public: ["acquireTargetLock", "atomicJson"] },
   "scripts/tempo-cutover-readiness.mjs": { builtins: ["node:crypto"], public: [] },
 };
 const pythonSources = ["database/tooling/opening_graph_transfer.py", "database/tooling/opening_graph_fresh_learning.py"];

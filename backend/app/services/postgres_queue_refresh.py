@@ -593,7 +593,7 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     phase = str(payload.get("_queue_phase") or _ELIGIBILITY_PHASES[0])
     if phase not in (*_ELIGIBILITY_PHASES, "tactical_introductions",
                      "reset_opening_new", "reset_opening_stale", "reconcile_unseen",
-                     "admit_due", "prioritized_openings", "prioritized_opening_item",
+                     "admit_due", "admit_position_due", "prioritized_openings", "prioritized_opening_item",
                      "study_opening_page", "study_opening_item",
                      "admit_study", "real_game_misses", "randomize_queue", "quarantine",
                      "publish_projection"):
@@ -633,6 +633,25 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     if phase == "admit_due":
         activity_gate.wait_for_foreground()
         due_card_id = _prepare_due_card(queue_date)
+    position_due = None
+    if phase == "admit_position_due":
+        activity_gate.wait_for_foreground()
+        from .position_queue_admission import prepare_due
+        with background_read_connection() as database:
+            position_due = prepare_due(database, queue_date, payload)
+    position_introduction = None
+    planned_introduction = None
+    if phase == 'study_opening_item':
+        planned_introduction = payload['study_opening_items'][int(payload['study_opening_index'])]
+    elif phase == 'prioritized_opening_item':
+        index = int(payload['opening_index'])
+        if index < len(payload['opening_plan']):
+            planned_introduction = payload['opening_plan'][index]
+    if planned_introduction is not None:
+        from .position_queue_admission import prepare_opening_introduction
+        activity_gate.wait_for_foreground()
+        with background_read_connection() as database:
+            position_introduction = prepare_opening_introduction(database, planned_introduction)
     prioritized_plan = None
     if phase == "prioritized_openings":
         activity_gate.wait_for_foreground()
@@ -666,6 +685,15 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
             return False
         if frozen_token != list(frozen_opening_order.activation(database, lock=True)):
             return advance_task_slice_in_transaction(database, task, next_phase="unlock_opening", next_payload={"queue_date": queue_date})
+        position_introduction_fence = None
+        if planned_introduction is not None:
+            from tempo_evidence_math.position_learning import Hold
+            from .position_queue_admission import fence_opening_introduction
+            if isinstance(position_introduction, Hold):
+                raise RuntimeError('Position introduction held: ' + position_introduction.reason)
+            position_introduction_fence = fence_opening_introduction(database, position_introduction)
+            if isinstance(position_introduction_fence, Hold):
+                raise RuntimeError('Position introduction held: ' + position_introduction_fence.reason)
         if phase == "publish_projection":
             presentation_storage.publish_projection(database, queue_date, blocked_count, datetime.now(timezone.utc).isoformat())
             if not complete_task_slice_in_transaction(database, task):
@@ -721,11 +749,30 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
                                 "introduced_counts": introduced_counts}
         elif phase == "admit_due":
             if due_card_id is None:
-                next_phase = "prioritized_openings"
+                next_phase = "admit_position_due"
             else:
                 _admit_one_due_card(database, queue_date, due_card_id)
                 next_phase = phase
             next_payload = {"queue_date": queue_date, "_queue_phase": next_phase}
+        elif phase == "admit_position_due":
+            from tempo_evidence_math.position_learning import Hold
+            from .position_queue_admission import admit_due
+            if isinstance(position_due, Hold):
+                raise RuntimeError('Position queue admission held: ' + position_due.reason)
+            if position_due is None:
+                next_phase = "prioritized_openings"
+                next_payload = {"queue_date": queue_date, "_queue_phase": next_phase}
+            elif 'repertoire_done' in position_due:
+                next_phase = phase
+                next_payload = {"queue_date": queue_date, "_queue_phase": phase,
+                                "position_repertoire_after": position_due['repertoire_done']}
+            else:
+                held = admit_due(database, queue_date, position_due)
+                if isinstance(held, Hold):
+                    raise RuntimeError('Position queue admission held: ' + held.reason)
+                next_phase = phase
+                next_payload = {"queue_date": queue_date, "_queue_phase": phase,
+                                **position_due['cursor']}
         elif phase == "prioritized_openings":
             next_phase = "prioritized_opening_item" if prioritized_plan else "admit_study"
             next_payload = {"queue_date": queue_date, "_queue_phase": next_phase,
@@ -749,7 +796,14 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
         elif phase == 'study_opening_item':
             items = payload['study_opening_items']
             item_index = int(payload['study_opening_index'])
-            admitted = _admit_one_prioritized_opening(database, queue_date, items[item_index])
+            from .position_queue_admission import redundant_opening_introduction
+            admitted = (False if (redundant_opening_introduction(position_introduction, position_introduction_fence)
+                                  and items[item_index].get('reason') != MISS_REASON)
+                        else _admit_one_prioritized_opening(database, queue_date, items[item_index]))
+            if admitted and position_introduction is not None:
+                from .position_queue_admission import apply_opening_introduction
+                apply_opening_introduction(database, position_introduction, position_introduction_fence,
+                                           now=datetime.now(timezone.utc))
             counts = dict(payload['study_opening_counts'])
             counts['admitted'] = counts.get('admitted', 0) + int(bool(admitted))
             counts['publication_rejected'] = counts.get('publication_rejected', 0) + int(not admitted)
@@ -765,8 +819,14 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
             opening_plan = payload["opening_plan"]
             opening_index = int(payload["opening_index"])
             if opening_index < len(opening_plan):
-                _admit_one_prioritized_opening(database, queue_date,
-                                               opening_plan[opening_index])
+                from .position_queue_admission import redundant_opening_introduction
+                admitted = (False if (redundant_opening_introduction(position_introduction, position_introduction_fence)
+                                      and opening_plan[opening_index].get('reason') != MISS_REASON)
+                            else _admit_one_prioritized_opening(database, queue_date, opening_plan[opening_index]))
+                if admitted and position_introduction is not None:
+                    from .position_queue_admission import apply_opening_introduction
+                    apply_opening_introduction(database, position_introduction, position_introduction_fence,
+                                               now=datetime.now(timezone.utc))
             opening_index += 1
             next_phase = phase if opening_index < len(opening_plan) else "admit_study"
             next_payload = {"queue_date": queue_date, "_queue_phase": next_phase,

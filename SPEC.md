@@ -159,6 +159,51 @@ R11's automatic regrouping of already-approved moves is not a repertoire edit or
 
 ## 6. R11 — Adaptive card recombination
 
+### Position-owned opening Study amendment (#832)
+
+For an explicitly activated opening repertoire cohort, Study owns one FSRS state
+per `(repertoire_id, variant, normalized_exact_position)`. Exact identity includes
+the board, side to move, castling rights and legally relevant en passant, and
+ignores move clocks. The approved response and policy version are fenced
+definitions. Authored transpositions share the position state within a repertoire;
+different repertoires remain independent. Repertoire owns certified authored
+routes through its existing snapshot and position index; Study's pure planner
+selects a presentation without becoming another graph or scheduler.
+
+An unassisted correct first response at a due position earns Good only when its
+required completion is durably saved, at most once per local Study day. A correct
+nondue response is observation without scheduling. A verified wrong first
+response earns an idempotent Again, including nondue context and an abandoned
+line; a later independent failure can earn Again after Good. Guided correction
+and duplicate evidence do not create another failure. Per-position correct
+evidence survives a later distinct mistake; permission to skip a prefix requires
+a previously complete, saved, entirely clean exercise with matching authored
+prefix, source, local day and owner epoch.
+
+The server freezes the authorized route, starting FEN, opponent cue, decision
+offsets, source and answer definitions, due witnesses, original card and queue
+identity, and attempt ID. Reload and retry reuse that plan and first-response
+history. An entirely covered exercise must not manufacture a Correct review.
+Position-owned v1 may be explicitly unavailable offline; it must not fall back to
+card scheduling, erase legacy offline journals, or claim unsaved server effects.
+
+Existing schedules are seeded deterministically from eligible complete card
+states with unique internal FSRS IDs and donor provenance. Original cards,
+reviews, schedules and outstanding references remain intact; replay cannot
+overwrite accepted position reviews. Unsafe ambiguous cohorts remain held.
+Source route edits preserving the exact position and response preserve memory;
+answer changes require explicit currentness handling. Staged activation, pause
+and data-compatible roll-forward must preserve accepted evidence and history.
+
+For these cohorts, a single event advances only the position scheduler and R11
+join/split scheduling is inert. Games effects retain their original occurrence
+identity but target exact position state: an introduced own departure earns one
+Again, an unseen eligible target is introduced without a fabricated review, and
+urgent delivery settles only through legitimate compatible Study evidence.
+Opponent-first departures cause no recall failure. Legacy card-owned openings,
+Tactics, Endgames and Defense retain their existing policies. The R11 rules below
+continue to apply to legacy card-owned cohorts.
+
 ### C01 — Earn eligibility through clean recall
 
 Each opening training presentation has its own consecutive-clean-review counter. A genuine, complete, unassisted correct review increments it once. A wrong response, Again, hint/reveal, or guided completion is not a clean success and resets the streak. Incomplete attempts do not increment it. Retries of one submission cannot count twice.

@@ -55,6 +55,9 @@ export type PracticeCard = {
   orientation?: PieceColor;
   revision?: number;
   repertoireId?: RepertoireId;
+  positionStudyMode?: "position";
+  positionPresentation?: import("./position-presentation").PositionPresentation;
+  positionStudyHold?: string;
   openingDecisionManifest?: import("./opening-evidence").OpeningDecisionManifest;
   openingEvidenceDiagnostic?: string;
   openingEvidenceStudyTimezone?: string;

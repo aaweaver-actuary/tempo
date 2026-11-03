@@ -11,6 +11,7 @@ const props: BoardProps = { fen: "8/8/8/8/8/8/4P3/4K2k w - - 0 1", positionIdent
 let root: Root | undefined;
 let container: HTMLDivElement;
 const board = createRef<BoardHandle>();
+type ChessgroundPiece = HTMLElement & { cgKey?: string };
 function mount(initial: BoardProps) {
   vi.useFakeTimers(); vi.stubGlobal("matchMedia", () => ({ matches: true }));
   container = document.createElement("div"); document.body.append(container);
@@ -29,7 +30,7 @@ it("BUI-15 real Chessground preserves selection across equivalent renders and de
   await act(() => vi.advanceTimersByTimeAsync(30));
   expect(first).not.toHaveBeenCalled();
   expect(latest).toHaveBeenCalledExactlyOnceWith({ from: "e2", to: "e4", positionIdentity: "first", positionRevision: 0 });
-  expect([...container.querySelectorAll("piece.pawn.white")].some(piece => (piece as any).cgKey === "e4")).toBe(true);
+  expect([...container.querySelectorAll<ChessgroundPiece>("piece.pawn.white")].some(piece => piece.cgKey === "e4")).toBe(true);
 });
 
 it("BUI-15 real deferred Chessground moves are fenced and pieces restored by same-FEN identity replacement", async () => {
@@ -39,7 +40,7 @@ it("BUI-15 real deferred Chessground moves are fenced and pieces restored by sam
   await act(() => vi.advanceTimersByTimeAsync(30));
   expect(handler).not.toHaveBeenCalled();
   const pawn = [...container.querySelectorAll("piece.pawn.white")].find(piece => !piece.classList.contains("ghost"));
-  expect((pawn as any).cgKey).toBe("e2");
+  expect((pawn as ChessgroundPiece).cgKey).toBe("e2");
 });
 
 it("BUI-15 real Chessground legal destinations and read-only permissions constrain the keyboard seam", async () => {

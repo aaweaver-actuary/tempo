@@ -576,8 +576,11 @@ class EngineFairnessProof:
 
 
 def proof_engine_fairness(parent_database_url):
-    # This standalone proof directly executes the analysis command gateway.
-    game_analysis_commands.register_commands()
+    # Use the worker's registration authority so later background proof commands
+    # can resolve their handlers without duplicating this fixture's callbacks.
+    from app.product_composition.worker_game_commands import resolve_worker_game_command
+    for name in ('games.analysis.position.claim', 'games.analysis.position.release', 'games.analysis.position.report'):
+        resolve_worker_game_command(name)
     from app.product_composition.database_infrastructure import bind_database_infrastructure
     bind_database_infrastructure()
     if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':

@@ -1,7 +1,7 @@
-"""Exact encounter admission on existing schema051, with no weighted D tables.
+"""Exact encounter admission on the current schema, with no weighted D tables.
 
-Use the existing capped task-owned PostgreSQL fixture. Schema051 is unchanged
-published feedback-owner source, assembled for this qualification only.
+Use the existing capped task-owned PostgreSQL fixture and the complete ordered
+published migration ledger, assembled for this qualification only.
 """
 from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
@@ -30,11 +30,12 @@ DAY = '2026-10-26'
 
 @pytest.fixture(scope='module')
 def canonical_transaction(owned_postgres):
+    from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
     spec = importlib.util.spec_from_file_location('encounter_migrations',ROOT/'database/tooling/apply_postgres_migrations.py')
     migrations = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migrations)
     files = sorted(migrations.MIGRATIONS.glob('[0-9][0-9][0-9]_*.sql'))
-    assert files[-1].name == '051_study_game_feedback.sql'
+    migrations.validate_migration_history(files, [], expected_version=POSTGRES_SCHEMA_VERSION)
     with psycopg.connect(**owned_postgres) as raw:
         for path in files:
             registration = migrations.MODULE_MIGRATIONS.get(path.name)
@@ -43,6 +44,8 @@ def canonical_transaction(owned_postgres):
                 assert hashlib.sha256(source).hexdigest() == registration[3]
                 raw.execute(source.decode(),prepare=False)
             raw.execute(path.read_text(),prepare=False)
+        assert [row[0] for row in raw.execute(
+            'SELECT version FROM tempo_schema_migrations ORDER BY version').fetchall()] == list(range(1, POSTGRES_SCHEMA_VERSION + 1))
         raw.execute('INSERT INTO settings(id) VALUES(1)')
         for table in ('state','periods','charges','rankings'):
             assert raw.execute('SELECT to_regclass(%s)',('study_product_introduction_'+table,)).fetchone()[0] is None

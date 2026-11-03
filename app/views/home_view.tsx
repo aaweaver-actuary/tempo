@@ -22,7 +22,7 @@ import {
 import * as z from "zod";
 import { localRepertoireSchema } from "../domain/schemas";
 import { measureTempoOperation, measureTempoDragPhase } from "../lib/performance";
-import { isCurrentAttempt } from "../domain/attempt";
+import { isCurrentAttempt, positionStudyUnavailable } from "../domain/attempt";
 import { DataDiagnosticsNotice } from "../components/data-diagnostics-notice";
 import { Suspense, useState, useCallback, useEffect, useRef } from "react";
 import type { BoardTheme, PieceSet } from "../components/chessboard";
@@ -84,7 +84,7 @@ import {
 } from "../lib/review-outbox";
 import { describeOfflineQueue, markOfflineAttemptFailed, recordOfflineAttempt } from "../lib/offline-training";
 import { enqueueTrainingFailure, flushTrainingFailures } from "../lib/training-failure-outbox";
-import { beginOpeningAttempt, completeOpeningAttempt, partialOpeningAttempt } from "../lib/opening-evidence-journal";
+import { beginOpeningAttempt, completeOpeningAttempt, partialOpeningAttempt, preparePositionOpeningAttempt } from "../lib/opening-evidence-journal";
 import { useOpeningEvidenceRecovery } from "../hooks/use-opening-evidence-recovery";
 import type { AssistanceKind } from "../domain/opening-evidence";
 import { useShallow } from "zustand/react/shallow";
@@ -103,6 +103,16 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
   const studyOnlyMode = useStudyOnlyMode();
   useEffect(() => prepareMoveSounds(), []);
   const [currentView, setCurrentView] = useState<View>("train");
+  const [browserOnline, setBrowserOnline] = useState(() => navigator.onLine);
+  useEffect(() => {
+    const updateConnection = () => setBrowserOnline(navigator.onLine);
+    window.addEventListener("online", updateConnection);
+    window.addEventListener("offline", updateConnection);
+    return () => {
+      window.removeEventListener("online", updateConnection);
+      window.removeEventListener("offline", updateConnection);
+    };
+  }, []);
   const [safeBreakCounter, setSafeBreakCounter] = useState(0);
   const [reviewPersistenceState, setReviewPersistenceState] = useState<
     | "idle"
@@ -272,7 +282,45 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
   );
   const activeQueueEntry = useRef<number | undefined>(undefined);
   const card = practiceCards[activeCardIndex] ?? demoCards[0];
-  const openingJournal = useCommittedCallback(() => card.kind !== "opening" ? undefined : beginOpeningAttempt(card, useTrainingStore.getState().attempt.attemptId,
+  const positionMetadataUnavailable = positionStudyUnavailable(card, offlineQueue || !browserOnline);
+  const positionCaptureKey = card.positionPresentation
+    ? `${card.positionPresentation.plan_id}:${card.positionPresentation.attempt_id}` : "";
+  const [positionCapture, setPositionCapture] = useState<{ key: string; hold?: string }>();
+  const positionUnavailable = positionMetadataUnavailable ?? (card.positionStudyMode === "position"
+    ? positionCapture?.key !== positionCaptureKey ? "Preparing the issued position attempt…" : positionCapture.hold
+    : undefined);
+  useEffect(() => {
+    if (card.positionStudyMode !== "position" || positionMetadataUnavailable) return;
+    let active = true;
+    const id = card.positionPresentation?.attempt_id;
+    void preparePositionOpeningAttempt(card).then(hold => {
+      if (!active) {
+        if (useTrainingStore.getState().attempt.attemptId !== id) partialOpeningAttempt(id);
+        return;
+      }
+      if (!hold) {
+        const capture = beginOpeningAttempt(card, id, { studyTimezone: card.openingEvidenceStudyTimezone });
+        if (!capture) hold = "The issued position attempt could not be restored. Refresh training.";
+        else {
+          const events = capture.snapshot().events;
+          if (events.some(event => event.kind === "manual_failure" ||
+              event.kind === "first_response" && ["wrong", "illegal"].includes(event.disposition ?? ""))) {
+            setAttemptFailed(true);
+            setShowHint(true);
+            setFailureFen(useTrainingStore.getState().currentFenString);
+          }
+          if (events.some(event => event.kind === "assistance" || event.kind === "manual_failure"))
+            setAssistedThisAttempt(true);
+        }
+      }
+      setPositionCapture({ key: positionCaptureKey, hold });
+    }).catch(error => {
+      if (active) setPositionCapture({ key: positionCaptureKey,
+        hold: `The issued position attempt could not be restored. ${String(error)}` });
+    });
+    return () => { active = false; };
+  }, [card, positionCaptureKey, positionMetadataUnavailable, setAttemptFailed, setShowHint, setFailureFen, setAssistedThisAttempt]);
+  const openingJournal = useCommittedCallback(() => card.kind !== "opening" || positionUnavailable ? undefined : beginOpeningAttempt(card, useTrainingStore.getState().attempt.attemptId,
     { offline: offlineQueue, studyTimezone: card.openingEvidenceStudyTimezone }));
   const observeAssistance = useCommittedCallback((moveOffset: number, kind: AssistanceKind) => {
     openingJournal()?.assistance(moveOffset, kind);
@@ -773,6 +821,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
   }
 
   async function persistExplicitAttemptFailure() {
+    if (card.positionStudyMode === "position") return true;
     if (!usesLocalApi() || card.kind === "defense" || !card.queueEntryId) return true;
     if (offlineQueue) {
       try { await markOfflineAttemptFailed(card.queueEntryId); showTrainingNotice("Guided attempt saved on phone.", "success"); return true; }
@@ -836,7 +885,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
       setBoardAttempt((value) => value + 1);
       return;
     }
-    if (pendingBurialEntryId !== undefined || (serviceError && !offlineQueue)) return;
+    if (positionUnavailable || pendingBurialEntryId !== undefined || (serviceError && !offlineQueue)) return;
     const currentTurn =
       new Chess(currentFenString).turn() === "b" ? "black" : "white";
     if (
@@ -864,7 +913,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
     }
     if (!move) return;
     const responseUci = `${move.from}${move.to}${move.promotion ?? ""}`;
-    if (position.isCheckmate()) {
+    if (position.isCheckmate() && (card.positionStudyMode !== "position" || move.san === card.moves[step])) {
       openingJournal()?.response(step, responseUci, move.san === card.moves[step] ? "expected" : "wrong");
       setLastMove([move.from, move.to]);
       setOpponentLastMove(undefined);
@@ -1035,7 +1084,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
   ) {
     // Queue recovery can fail while this exact completed result is retained.
     // Retrying its frozen delivery must remain possible without enabling grading.
-    if (pendingBurialEntryId !== undefined || (serviceError && !offlineQueue && !options.retryPending)) return;
+    if ((positionUnavailable && !options.retryPending && !options.recordedAtCompletion) || pendingBurialEntryId !== undefined || (serviceError && !offlineQueue && !options.retryPending)) return;
     const entryKey = String(card.queueEntryId ?? card.id);
     if (reviewPendingEntries.current.has(entryKey) || cardsLeft === 0) return;
     const pendingBeforeReview = databaseQueue && !offlineQueue ? pendingReviews() : [];
@@ -1119,6 +1168,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
             const completion = completeOpeningAttempt(attemptId);
             submittedAttemptId = await enqueuePendingReview({
               attemptId, openingEvidenceCompletion: completion, completedAt: completion?.terminal?.ended_at,
+              positionStudy: card.positionStudyMode === "position" ? true : undefined,
               backendId: card.backendId,
               queueEntryId: card.queueEntryId,
               expectedRevision: card.revision,
@@ -1254,6 +1304,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
   }
 
   async function completeAttempt(finalFen: string) {
+    if (positionStudyUnavailable(card, offlineQueue || !navigator.onLine)) return;
     setCurrentFenString(asFenString(finalFen));
     setAttemptPhase("feedbackPause");
     setFeedback("complete");
@@ -1271,6 +1322,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
         if (!isCurrentAttempt(useTrainingStore.getState().attempt, token)) return;
         await enqueuePendingReview({
           attemptId: token.attemptId, completedAt, openingEvidenceCompletion: completion,
+          positionStudy: card.positionStudyMode === "position" ? true : undefined,
           backendId: card.backendId,
           queueEntryId: card.queueEntryId,
           expectedRevision: card.revision,
@@ -1310,6 +1362,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
   );
 
   function markMoveSeen(moveStep: number) {
+    if (card.positionStudyMode === "position") return;
     const key = asTeachingMoveKey(
       `${card.backendId ?? card.id}:${card.revision ?? 1}:${moveStep}`,
     );
@@ -1326,7 +1379,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
   );
   useEffect(() => {
     let active = true;
-    if (!card.backendId || card.kind !== "opening") {
+    if (!card.backendId || card.kind !== "opening" || card.positionStudyMode === "position") {
       queueMicrotask(() => setTeachingReadyCard(teachingCardKey));
       return;
     }
@@ -1370,6 +1423,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
   }, [
     card.backendId,
     card.kind,
+    card.positionStudyMode,
     setSeenMoves,
     setTeachingReadyCard,
     teachingCardKey,
@@ -1387,6 +1441,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
       }
       if (
         card.kind !== "opening" ||
+        card.positionStudyMode === "position" ||
         card.firstCleanPassAt ||
         card.hasPriorStudyReview ||
         card.queueAttemptState === "reinforcement"
@@ -1410,6 +1465,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
   }, [
     card.kind,
     card.queueAttemptState,
+    card.positionStudyMode,
     card.firstCleanPassAt,
     card.hasPriorStudyReview,
     card.backendId,
@@ -1460,7 +1516,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
   ].includes(currentView);
 
   function handleAttemptFailure() {
-    if (pendingBurialEntryId !== undefined || (serviceError && !offlineQueue)) return;
+    if (positionUnavailable || pendingBurialEntryId !== undefined || (serviceError && !offlineQueue)) return;
     openingJournal()?.manualFailure(step);
     if (!attemptFailed) {
       setAttemptFailed(true);
@@ -1473,7 +1529,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
   }
 
   function resetCardAttempt() {
-    if (pendingBurialEntryId !== undefined || (serviceError && !offlineQueue)) return;
+    if (positionUnavailable || pendingBurialEntryId !== undefined || (serviceError && !offlineQueue)) return;
     resetLine();
     setAttemptFailed(true);
     setShowHint(true);
@@ -1551,6 +1607,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
               dateLabel={new Date().toLocaleDateString(undefined, independentStudy ? { timeZone: studyConnection()?.bootstrap?.timezone } : undefined)}
               serviceError={serviceError}
               offlineQueue={offlineQueue}
+              positionStudyUnavailableReason={positionUnavailable}
               refreshDatabaseQueue={refreshDatabaseQueue}
               cardsLeft={cardsLeft}
               card={card}

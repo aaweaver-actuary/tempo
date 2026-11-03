@@ -37,3 +37,21 @@ replaced by those behavioral proofs; the strict package function has no defaults
 Direct strict-package callers are the backend adapter, package tests, that adapter
 regression and the installed producer-parity test. Review orchestration still calls
 the unchanged backend signature. No database/queue/receipt claim moves here.
+
+Position-owned #854 / #832 (same package-local regular suite):
+
+- `test_two_position_clones_preserve_complete_donor_memory_with_new_ids` and
+  `test_clone_resets_physical_metadata_without_mutating_donor` cover native
+  FSRS 6.3.2 decoding/roundtrip, identity separation and presentation flag reset.
+- `test_invalid_position_card_is_held`, `test_incomplete_position_card_is_held`,
+  `test_new_identity_must_be_positive_and_different`, and
+  `test_unsupported_fsrs_version_is_held` reject incoherent or unsupported state.
+- `test_position_grade_matches_one_native_fsrs_transition_at_acceptance` and
+  `test_first_clean_position_has_no_positive_reinforcement_requeue` establish
+  Good/Again math at a fixed acceptance clock, without same-day reinforcement.
+- `test_position_operations_do_not_call_legacy_scheduler_or_environment` and
+  `test_position_transition_is_pure_and_preserves_legacy_behavior` preserve the
+  legacy wrapper while proving deterministic independent position operations.
+
+These are pure native-library proofs; the Study writer's native persistence tests
+must establish daily credit, duplicate receipt and concurrent acceptance safety.
