@@ -6596,6 +6596,15 @@ nondue witnesses, queue authority and canonical fresh-state introduction.
 competing transitions for adopted cohorts. Actual integrated Games promotion and
 settlement qualification remains separate from mocked port checks.
 
+`test_position_queue_admission.py` also preserves SQLite and pre-position-schema
+due reads while propagating PostgreSQL owner-schema probe failures.
+`acceptance.py::test_real_due_queries_respect_position_owner_without_rewriting_legacy_state`
+owns the real PostgreSQL direct/membership ownership checks for active, staged
+and paused cohorts, inactive/shadow compatibility and an unrelated genuine legacy
+due obligation. Its explicit N2 execution is required before claiming the legacy
+due seeder and prepared-admission readiness guard honor position ownership;
+collection or a skipped opt-in case is not native evidence.
+
 Browser decoder, issued-display, attempt identity and journal tests in
 `tests/unit/position-*` and `tests/unit/opening-evidence-*` own wire decoding and
 retention behavior. Real compiled browser and applicable service-worker checks
