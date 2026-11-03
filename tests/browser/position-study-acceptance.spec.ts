@@ -282,6 +282,7 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
     http_status: number;
   }> = [];
   let unavailableAcceptedReviewTimingCount = 0;
+  let timingCaptureErrorCount = 0;
   const acceptedReviewTimingTasks: Promise<void>[] = [];
   context.on("response", response => {
     const request = response.request();
@@ -291,7 +292,7 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
     if (request.method() !== "POST" ||
         (responseUrl.origin + responseUrl.pathname !== cardAReview && responseUrl.origin + responseUrl.pathname !== cardBReview))
       return;
-    acceptedReviewTimingTasks.push((async () => {
+    const timingTask = (async () => {
       await response.finished();
       if (!response.ok()) return;
       const result: unknown = await response.json();
@@ -302,7 +303,10 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
       } else {
         unavailableAcceptedReviewTimingCount += 1;
       }
-    })());
+    })();
+    acceptedReviewTimingTasks.push(timingTask.catch(() => {
+      timingCaptureErrorCount += 1;
+    }));
   });
   await context.addInitScript(() => Object.defineProperty(navigator, "standalone", { value: true, configurable: true }));
   await waitForProtectedStudyQuiet();
@@ -422,6 +426,7 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
       accepted_review_elapsed_boundary: "Playwright request.timing().responseEnd after response.finished(), relative to request start",
       samples: requestTimingSamples,
       unavailable_accepted_review_timing_count: unavailableAcceptedReviewTimingCount,
+      timing_capture_error_count: timingCaptureErrorCount,
     }, null, 2)),
     contentType: "application/json",
   });
