@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { Chess } from "chess.js";
 import { expect, test } from "./observability";
@@ -121,7 +121,8 @@ with psycopg.connect(dsn, row_factory=tempo_row_factory) as raw:
             WHERE receipt.card_id IN (%s,%s) ORDER BY receipt.review_id""", (rep+'-card-a',rep+'-card-b')).fetchall()]
         grades = [dict(row) for row in raw.execute('SELECT attempt_id,position,grade FROM study_position_grades WHERE repertoire_id=%s ORDER BY accepted_at,effect_id', (rep,)).fetchall()]
         physical = {row['id']:row['fsrs_card_json'] for row in raw.execute('SELECT id,fsrs_card_json FROM cards WHERE id IN (%s,%s)', (rep+'-card-a',rep+'-card-b')).fetchall()}
-        print(json.dumps({'plans':plans,'reviews':reviews,'grades':grades,'physical':physical},default=str))
+        states = [dict(row) for row in raw.execute('SELECT * FROM study_position_states WHERE repertoire_id=%s ORDER BY position', (rep,)).fetchall()]
+        print(json.dumps({'plans':plans,'reviews':reviews,'grades':grades,'physical':physical,'states':states},default=str))
     else:
         raise ValueError('unknown fixture operation')
 `;
@@ -131,10 +132,11 @@ type WirePlan = {
   queue_entry_id: number; starting_fen: string; moves_uci: string[];
   decision_slots: Array<{ move_offset: number; expected_uci: string }>;
 };
-type Queue = { cards: Array<{ id: string; queue_entry_id: number; position_study_mode?: string;
+type Queue = { cards: Array<{ id: string; queue_entry_id: number; revision: number; position_study_mode?: string;
   position_presentation?: WirePlan | null; position_study_hold?: string | null }> };
 type Snapshot = { reviews: Array<{ attempt_id: string; outcome: string; guided: boolean; source_kind: string }>;
-  grades: Array<{ attempt_id: string; grade: string }>; physical: Record<string, string> };
+  grades: Array<{ attempt_id: string; grade: string }>; physical: Record<string, string>;
+  plans: Array<{ attempt_id: string; queue_entry_id: number; card_id: string }>; states: unknown[] };
 
 function fixture<T>(project: string, action: "seed" | "read" | "legacy", identity: string): T {
   // Execute inside already-budgeted runner services: no extra Compose container.
@@ -142,6 +144,70 @@ function fixture<T>(project: string, action: "seed" | "read" | "legacy", identit
   return JSON.parse(execFileSync("docker", ["compose", "-p", project,
     "-f", "docker-compose.postgres.test.yml", ...service,
     "python", "-c", fixtureProgram, action, identity], { encoding: "utf8", timeout: 30_000 }));
+}
+
+// The only fault injection is a transaction-scoped advisory lock in the
+// already-owned disposable worker. It rolls back on release, EOF, or deadline.
+const lockHolderProgram = String.raw`
+import os, select, sys, psycopg
+rep = sys.argv[1]
+assert rep.startswith('position-browser-') and len(rep[17:]) == 32 and rep[17:].isalnum()
+dsn = os.environ['TEMPO_DATABASE_WRITE_URL']
+assert dsn.startswith('postgresql://tempo_writer@postgres:5432/tempo')
+with psycopg.connect(dsn) as db:
+    assert db.execute('SELECT current_database(), current_user').fetchone() == ('tempo', 'tempo_writer')
+    card = rep + '-card-a'
+    assert db.execute('SELECT 1 FROM cards WHERE id=%s AND repertoire_id=%s AND revision=1', (card, rep)).fetchone()
+    assert db.execute('SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))', ('tempo:card-edit:' + card,)).fetchone()[0]
+    print('READY', flush=True)
+    ready, _, _ = select.select([sys.stdin], [], [], 15)
+    command = sys.stdin.readline().strip() if ready else ''
+    db.rollback()
+    print('RELEASED' if command == 'release' else 'EXPIRED', flush=True)
+`;
+function startCardLock(project: string, identity: string) {
+  const child = spawn("docker", ["compose", "-p", project, "-f", "docker-compose.postgres.test.yml",
+    "exec", "-T", "foreground-worker", "python", "-u", "-c", lockHolderProgram, identity],
+    { stdio: ["pipe", "pipe", "ignore"] });
+  let output = "";
+  let releaseRequested = false;
+  child.stdin.on("error", () => { /* Exit and release confirmation report holder failure. */ });
+  const release = () => {
+    if (releaseRequested) return;
+    releaseRequested = true;
+    if (!child.stdin.destroyed) child.stdin.end("release\n");
+  };
+  let readyResolve!: () => void;
+  let readyReject!: (error: Error) => void;
+  const ready = new Promise<void>((resolve, reject) => { readyResolve = resolve; readyReject = reject; });
+  const done = new Promise<number | null>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", (code) => resolve(code));
+  });
+  child.stdout.setEncoding("utf8");
+  child.stdout.on("data", (chunk: string) => {
+    output += chunk;
+    if (output.split("\n").includes("READY")) readyResolve();
+  });
+  void done.then(code => readyReject(new Error(`Card lock holder exited before readiness (code ${code})`)),
+    () => readyReject(new Error("Card lock holder failed to start")));
+  const readyDeadline = setTimeout(() => readyReject(new Error("Card lock holder readiness timed out")), 15_000);
+  void ready.finally(() => clearTimeout(readyDeadline)).catch(() => undefined);
+  return {
+    ready,
+    release,
+    finish: async () => {
+      release();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const code = await Promise.race([done, new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("Card lock holder cleanup uncertain: process did not exit")), 17_000);
+        })]);
+        if (code !== 0 || !output.split("\n").includes("RELEASED"))
+          throw new Error(`Card lock holder did not confirm release (exit ${code}; output ${JSON.stringify(output)})`);
+      } finally { if (timer !== undefined) clearTimeout(timer); }
+    },
+  };
 }
 
 async function openingEvents(page: Page, attemptId: string) {
@@ -283,6 +349,7 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
   let unavailableQueueTimingCount = 0;
   let unavailableAcceptedReviewTimingCount = 0;
   let timingCaptureErrorCount = 0;
+  const contentionObservations: Array<{ status: number; hold: string | null; entry: number | null }> = [];
   const acceptedReviewTimingTasks: Promise<void>[] = [];
   let settledReviewTimingCount = 0;
   const onTimingResponse = (response: Response) => {
@@ -418,9 +485,79 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
     expect(head?.position_presentation?.queue_entry_id).toBe(head?.queue_entry_id);
     return head.position_presentation!;
   };
-  const initialQueue = nextAppQueue();
-  await prepareUI(page);
-  const first = positionHead(await readAppQueue(initialQueue), `${identity}-card-a`);
+  expect(before.plans).toHaveLength(0);
+  expect(before.reviews).toHaveLength(0);
+  expect(before.grades).toHaveLength(0);
+  const holder = startCardLock(project, identity);
+  let first!: WirePlan;
+  // Buffer every app queue request from the new document so no busy response
+  // can be skipped while snapshots are read or the held lock is released.
+  const requests: Request[] = [];
+  let wake: (() => void) | undefined;
+  let committed = false;
+  const onStartupNavigation = (frame: Frame) => { if (frame === page.mainFrame()) committed = true; };
+  const onStartupRequest = (request: Request) => {
+    if (!committed || request.frame() !== page.mainFrame() || !isAppQueue(request.url(), request.method())) return;
+    requests.push(request);
+    wake?.();
+  };
+  const takeStartupRequest = async (): Promise<Request> => {
+    if (!requests.length) await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => { wake = undefined; reject(new Error("Timed out waiting for app queue retry")); }, 30_000);
+      wake = () => { clearTimeout(timer); wake = undefined; resolve(); };
+    });
+    return requests.shift()!;
+  };
+  page.on("framenavigated", onStartupNavigation);
+  page.on("request", onStartupRequest);
+  try {
+    await holder.ready;
+    await prepareUI(page);
+    let entry: number | undefined;
+    let released = false;
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const appRequest = await takeStartupRequest();
+      expect(appRequest.headers()["x-tempo-work-class"]).not.toBe("background");
+      const queue = await readAppQueue(Promise.resolve(appRequest));
+      const status = (await appRequest.response())!.status();
+      const head = queue.cards[0];
+      contentionObservations.push({ status, hold: head?.position_study_hold ?? null, entry: head?.queue_entry_id ?? null });
+      expect(status).toBe(200);
+      expect(head?.id).toBe(`${identity}-card-a`);
+      expect(head?.revision).toBe(1);
+      expect(head?.position_study_mode).toBe("position");
+      if (entry === undefined) entry = head.queue_entry_id;
+      expect(head?.queue_entry_id).toBe(entry);
+      if (head.position_study_hold === "position_card_busy") {
+        expect(head.position_presentation).toBeNull();
+        if (!released) {
+          expect(fixture<Snapshot>(project, "read", identity)).toEqual(before);
+          await expect(page.locator(".board-frame").first()).toHaveAttribute("data-input-enabled", "false");
+          holder.release();
+          await holder.finish();
+          released = true;
+        }
+        continue;
+      }
+      // Any other hold, missing plan, or failed HTTP response fails immediately.
+      expect(released).toBe(true);
+      first = positionHead(queue, `${identity}-card-a`);
+      break;
+    }
+    expect(first, "The app did not recover from the busy card within its retry budget").toBeTruthy();
+    const issued = fixture<Snapshot>(project, "read", identity);
+    expect(issued.plans).toHaveLength(1);
+    expect(issued.plans[0]).toMatchObject({ attempt_id: first.attempt_id, queue_entry_id: first.queue_entry_id,
+      card_id: `${identity}-card-a` });
+    expect(issued.reviews).toEqual(before.reviews);
+    expect(issued.grades).toEqual(before.grades);
+    expect(issued.states).toEqual(before.states);
+    expect(issued.physical).toEqual(before.physical);
+  } finally {
+    page.off("framenavigated", onStartupNavigation);
+    page.off("request", onStartupRequest);
+    await holder.finish();
+  }
   expect(first.moves_uci).toEqual(["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "g8f6", "f3g5", "d7d5", "e4d5"]);
   await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", String(first.queue_entry_id));
   await expect.poll(async () => position((await page.locator(".board-frame").first().getAttribute("data-fen")) ?? ""))
@@ -534,6 +671,7 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
       queue_elapsed_boundary: "Playwright app request.timing().responseEnd after response.finished(), relative to request start; not server transaction duration",
       accepted_review_elapsed_boundary: "Playwright request.timing().responseEnd after response.finished(), relative to request start",
       samples: requestTimingSamples,
+      contention_observations: contentionObservations,
       unavailable_queue_timing_count: unavailableQueueTimingCount,
       unavailable_accepted_review_timing_count: unavailableAcceptedReviewTimingCount,
       pending_accepted_review_timing_count: acceptedReviewTimingTasks.length - settledReviewTimingCount,
