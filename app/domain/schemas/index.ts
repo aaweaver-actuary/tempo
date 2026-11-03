@@ -114,6 +114,8 @@ export const queueEnvelopeSchema = z.strictObject({
       refresh_pending: sqliteBooleanSchema,
       last_error: z.string().nullable(),
       blocked_count: integer.optional(),
+      requested_refresh_epoch: integer.optional(),
+      published_refresh_epoch: integer.optional(),
     })
     .optional(),
 });
