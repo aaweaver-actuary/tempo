@@ -4,7 +4,6 @@ import { useBoardShellStore } from "../state/board-shell-store";
 import { useTrainingStore } from "../state/training-store";
 import { dataDiagnostics } from "./data-validation";
 import { usesLocalApi } from "../utils/local";
-import { backgroundDiagnosticsSnapshot, serviceStatusSnapshot } from "./service-status";
 import { offlineShellVersion } from "./offline-shell";
 import { debugIncidentKey, notifications, publishNotification,
   resolveNotification, sanitizeNotificationText } from "./notifications";
@@ -331,8 +330,6 @@ export function buildDebugBundle(recordId?: string): string {
       },
     },
     dataDiagnostics: diagnosticSummary(),
-    serviceStatus: serviceStatusSnapshot(),
-    backgroundDiagnostics: backgroundDiagnosticsSnapshot(),
     omitted: [
       "raw response payloads",
       "PGN and repertoire lines",
