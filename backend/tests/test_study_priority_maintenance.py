@@ -424,8 +424,10 @@ def test_checkpoint_pythonpath_preserves_inherited_source_roots_without_empty_en
              '/packages/repertoire-contracts/src']
     inherited = os.pathsep + os.pathsep.join(roots) + os.pathsep * 2
     composed = proof._checkpoint_pythonpath(inherited)
-    assert composed.split(os.pathsep) == [str(proof.ROOT / 'backend'), *roots]
-    assert proof._checkpoint_pythonpath('') == str(proof.ROOT / 'backend')
+    assert composed.split(os.pathsep) == [str(proof.ROOT / 'backend'), str(proof.ROOT / 'database'), *roots]
+    assert proof._checkpoint_pythonpath('').split(os.pathsep) == [
+        str(proof.ROOT / 'backend'), str(proof.ROOT / 'database')]
     # The restart still adds the repository namespace to that preserved context.
     restarted = os.pathsep.join((str(proof.ROOT), composed))
-    assert restarted.split(os.pathsep) == [str(proof.ROOT), str(proof.ROOT / 'backend'), *roots]
+    assert restarted.split(os.pathsep) == [
+        str(proof.ROOT), str(proof.ROOT / 'backend'), str(proof.ROOT / 'database'), *roots]
