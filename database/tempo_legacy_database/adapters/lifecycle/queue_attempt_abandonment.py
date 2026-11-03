@@ -73,12 +73,16 @@ def is_abandoned(database, entry_id, card_id, revision):
         (entry_id, card_id, revision)).fetchone())
 
 
+def _lock_target(database, card_id):
+    database.execute_native('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',
+                            ('tempo:card-edit:' + card_id,))
+
+
 def _locked_origin(database, payload):
     """Serialize with reviews/checkpoints without inferring any repertoire owner."""
     from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
     card_id, entry_id = payload['card_id'], payload['queue_entry_id']
-    database.execute_native('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',
-                            ('tempo:card-edit:' + card_id,))
+    _lock_target(database, card_id)
     target_card = database.execute_native('SELECT id,revision,start_fen,moves_json,trained_color,content_type FROM cards WHERE id=%s FOR UPDATE', (card_id,)).fetchone()
     initial = database.execute_native('SELECT queue_date,card_id FROM daily_queue WHERE id=%s', (entry_id,)).fetchone()
     queue = None
@@ -168,7 +172,9 @@ def abandon_in_writer(database, payload, *, now):
     # Savepoint ensures an exception never leaves partial work in a caller-owned transaction.
     database.execute_native('SAVEPOINT queue_attempt_abandonment')
     try:
-        origin, queue = _locked_origin(database, payload)
+        # A committed receipt is authoritative even if a replacement projection
+        # later changes. Serialize on the target before checking retry identity.
+        _lock_target(database, payload['card_id'])
         prior = database.execute_native('''SELECT * FROM queue_attempt_abandonments
             WHERE operation_id=%s OR (queue_entry_id=%s AND card_id=%s AND revision=%s)
             FOR UPDATE''', (payload['operation_id'], payload['queue_entry_id'], payload['card_id'], payload['revision'])).fetchall()
@@ -178,6 +184,7 @@ def abandon_in_writer(database, payload, *, now):
             result = {'abandoned': True, 'idempotent': True, 'operation_id': payload['operation_id'],
                       'origin_sha256': prior[0]['origin_sha256']}
         else:
+            origin, queue = _locked_origin(database, payload)
             _check_unaccepted(database, origin, queue)
             fingerprint = origin_fingerprint(origin)
             if fingerprint != payload['expected_origin_sha256']:

@@ -434,3 +434,54 @@ def test_native_retargeted_old_accepted_review_still_holds(case, monkeypatch):
         with pytest.raises(ValueError, match='not_unfinished_issued_opening|review_already_accepted'):
             abandonment.plan_in_writer(db, plan)
         assert not abandonment.is_abandoned(db, plan['queue_entry_id'], case.card_id, 1)
+
+
+def test_native_retargeted_receipt_retry_survives_current_card_change(case):
+    plan, new_case = _retarget_attempt(case)
+    payload = _apply_payload(case, plan)
+    with case.transaction() as db:
+        accepted = abandonment.abandon_in_writer(db, payload, now=NOW)
+        receipt = tuple(db.execute_native('SELECT * FROM queue_attempt_abandonments WHERE operation_id=%s',
+                                          (plan['operation_id'],)).fetchone())
+    with case.transaction() as db:
+        # No revision-3 origin is captured for this blocked projection.
+        db.execute_native('UPDATE cards SET revision=3 WHERE id=%s', (new_case.card_id,))
+        assert not db.execute_native('SELECT 1 FROM queue_attempt_origins WHERE queue_entry_id=%s AND card_id=%s AND revision=3',
+                                     (plan['queue_entry_id'], new_case.card_id)).fetchone()
+    with case.transaction() as db:
+        replay = abandonment.abandon_in_writer(db, payload, now=NOW)
+        assert replay == {**accepted, 'idempotent': True}
+        assert tuple(db.execute_native('SELECT * FROM queue_attempt_abandonments WHERE operation_id=%s',
+                                       (plan['operation_id'],)).fetchone()) == receipt
+        for changed in ({**payload, 'reason': 'changed'}, {**payload, 'operation_id': 'other-operation'},
+                        {**payload, 'card_id': new_case.card_id, 'revision': 2}):
+            with pytest.raises(ValueError, match='receipt_conflict'):
+                abandonment.abandon_in_writer(db, changed, now=NOW)
+
+
+def test_native_foreign_card_lock_contention_holds_then_succeeds(case):
+    plan, new_case = _retarget_attempt(case)
+    payload = _apply_payload(case, plan)
+    locked, release = Event(), Event()
+    def hold_foreign():
+        with case.transaction() as db:
+            db.execute_native('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',
+                              ('tempo:card-edit:' + new_case.card_id,))
+            locked.set()
+            assert release.wait(10)
+    def abandon():
+        with case.transaction() as db:
+            return abandonment.abandon_in_writer(db, payload, now=NOW)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        holder = pool.submit(hold_foreign)
+        try:
+            assert locked.wait(5)
+            attempt = pool.submit(abandon)
+            with pytest.raises(ValueError, match='queue_changed'):
+                attempt.result(timeout=5)
+            assert not _is_retired(case, plan)
+        finally:
+            release.set()
+            holder.result(timeout=10)
+    with case.transaction() as db:
+        assert abandonment.abandon_in_writer(db, payload, now=NOW)['abandoned']

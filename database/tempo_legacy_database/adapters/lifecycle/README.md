@@ -42,6 +42,8 @@ origins, the exact requested tuple is eligible only after the current projection
 is independently matched to the current card revision and its retained origin.
 The current projection is checked for completion only when it represents the
 requested tuple; accepted target review and checkpoint guards remain in force.
+An identical retry resolves its immutable receipt under the target card lock even
+if the replacement projection has since changed. Conflicting retries still hold.
 The old-issued frontier treats only an exact receipt as terminal. Schema 56 readers
 safely observe no receipt.
 
