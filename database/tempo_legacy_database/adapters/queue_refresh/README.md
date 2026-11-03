@@ -86,7 +86,7 @@ erDiagram
 
 [openings.py](openings.py) owns the original published-route/order/priority SQL constants and the complete route occurrence, parent-review, allowance, current-opportunity, locked-card, safe-route, opening append/introduction and opportunity-resolution operations. Application code still validates exact content/route, frozen proposal state, allowance/miss/capacity decisions and the original post-lock rechecks. The [opening graph dictionary](../../schema/opening-graph/README.md) records its actual `(repertoire_id,generation,line_id,decision_index)` step PK and enforced repertoire/line FKs. Its card, parent-card and publication-generation associations are logical without additional constraints.
 
-[presentation.py](presentation.py) owns saved-plan/current-membership/locked-hash reads, the same affected-row-count randomization update and plan write, locked quarantine facts and skip/diagnostic writes, projection publication and diagnostic reset. Application code retains presentation/attempt/membership/frozen-state comparisons, exact admitted-head protection, generated list/clock evaluation, affected-row decisions, quarantine content comparison, task completion and prefix-transition callbacks in their original order and transactions.
+[presentation.py](presentation.py) owns saved-plan/current-membership/locked-hash reads, matched-member randomization and plan writes, locked quarantine facts and skip/diagnostic writes, projection publication and diagnostic reset. `apply_plan` retains its six arguments and returns all exact matched planned members, including unchanged rows. It rejects duplicate IDs and unequal arrays, locks matched rows, and separates genuine admission-kind changes from position/bucket changes so unchanged kinds do not fire the origin row trigger. Application code retains presentation/attempt/membership/frozen-state comparisons, exact admitted-head protection, generated list/clock evaluation, strict matched-count decisions, quarantine content comparison, task completion and prefix-transition callbacks in their original order and transactions.
 
 ```mermaid
 erDiagram
@@ -104,6 +104,8 @@ erDiagram
     bigint refresh_pending
     text last_error
     bigint blocked_count
+    bigint requested_refresh_epoch
+    bigint published_refresh_epoch
   }
   queue_projection_diagnostics {
     text queue_date PK
@@ -112,7 +114,34 @@ erDiagram
   }
 ```
 
-These three tables have **no enforced FK** connecting them to each other or to queue/card rows: their date/card associations are logical. All fields are non-null except projection `updated_at` and `last_error`. The canonical [day/diagnostic dictionary](../../schema/study-queue-review-1/README.md) and [projection dictionary](../../schema/study-queue-review-2/README.md) retain DDL links and full constraints. Publication still increments the existing projection generation, records the blocked count/status/timestamp, and commits only with successful task completion; lost-receipt exceptions roll back that transaction. No schema, new publication/queue authority, storage format or owner permission changed.
+These three tables have **no enforced FK** connecting them to each other or to queue/card rows: their date/card associations are logical. All fields are non-null except projection `updated_at` and `last_error`. The canonical [day/diagnostic dictionary](../../schema/study-queue-review-1/README.md) and [projection dictionary](../../schema/study-queue-review-2/README.md) retain DDL links and full constraints. Publication still increments the existing projection generation, records the blocked count/status/timestamp, and commits only with successful task completion; lost-receipt exceptions roll back that transaction. The additive epoch contract below retains existing publication/queue authority and owner permissions.
+
+### Current-day refresh request and publication epochs
+
+The queue-refresh repair adds two nonnegative epoch fields to the existing projection; its publication generation remains a separate count. Exact `daily_queue/current` normal and compact requests lock or create the singleton task before atomically incrementing the day's requested epoch. Active same-day work retains its generation, lease, phase, timeout episode and checkpoint. The maximum preserved-entry pointer survives later worker checkpoints. An older-day request cannot replace a newer singleton.
+
+Randomization retains its mandatory fresh presentation/currentness comparison.
+After the queue-date lock, the extra priority pass is skipped only when no queued
+row for that date has a stored priority reason. Any non-null stored reason,
+including one filtered from the current presentation, retains the original pass.
+This avoids a second complete eligibility read when priority ordering is identity.
+
+Before preparing a new cycle, the PostgreSQL worker checkpoints `_refresh_cycle_epoch`. Old checkpoints without it conservatively restart a complete cycle. Every slice and frozen-order restart retains that pin. Finalization locks task then projection: matching epoch permits published-epoch certification, ready projection and task completion in one transaction; a newer request checkpoints one follow-up cycle and leaves pending. SQLite compatibility materializes and certifies the complete queue within its serialized writer transaction. Advisory wakes remain after commit. Independent replacement Learning storage/runtime is not adopted by this legacy repair.
+
+```mermaid
+flowchart LR
+  Review["Accepted foreground mutation"] --> Task["Lock singleton task"]
+  Task --> Request["Increment requested epoch"]
+  Request --> Commit["Commit mutation and signal"]
+  Commit --> Wake["Advisory capacity wake"]
+  Cycle["Pin epoch before cycle preparation"] --> Slices["Durable bounded slices"]
+  Slices --> Fence["Lock task then projection"]
+  Fence -->|epoch current| Ready["Certify epoch, publish ready and complete task atomically"]
+  Fence -->|newer request| Follow["Checkpoint one follow-up, keep pending"]
+  Follow --> Cycle
+```
+
+The measured 1,258-row randomization writer has an explicit 500 ms transaction profile; other slices retain their configured background budget, normally 250 ms. Lock timeout and foreground admission remain unchanged. This is a shared host/process/database boundary: foreground work arriving during an admitted writer can still wait for that bounded section. Native contention evidence and installed behavior are separate from this source contract. The existing read-only task endpoint exposes whitelisted phase, timeout episode, next retry and error; historical projections are not described as current workers. Projection `updated_at` remains a publication timestamp, not a heartbeat.
 
 All 55 original direct database sites are now delegated: admission writers cover 29 sites and opening/presentation operations cover 26. The latter use 21 fixed new operations and reuse five call sites from an existing fixed operation; all seven SQL constants remain compatibility exports under their original application names, including `_PRIORITY_OPENING_PAGE_SQL` consumed by the ranking snapshot. All original query/parameter/result expressions, deletion/lock order, quotas, replay, admitted-head/position allocation and transaction authority are preserved. No new generic execution interface was added.
 
