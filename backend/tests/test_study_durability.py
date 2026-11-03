@@ -21,9 +21,12 @@ def test_tactic_discovery_uses_local_day_after_utc_midnight(tmp_path, monkeypatc
             return datetime(2026, 9, 17, 1, tzinfo=timezone.utc)
     monkeypatch.setattr(main, "date", LocalDate)
     from app import queue_commands
-    monkeypatch.setattr(queue_commands, "date", LocalDate)
+    monkeypatch.setattr(queue_commands, "datetime", UtcClock)
     monkeypatch.setattr(main, "datetime", UtcClock)
     with TestClient(app) as client:
+        settings = client.get("/api/settings").json()
+        settings["timezone"] = "America/New_York"
+        assert client.put("/api/settings", json=settings).status_code == 200
         result = client.post("/api/tactics/attempt", json={
             "attempt_id":"utc-lapse","puzzle_id":"utc-puzzle","deck_id":"fork-easy",
             "correct":False,"clean":False,
@@ -68,7 +71,7 @@ def install_clock(monkeypatch):
         def now(cls, tz=None): return clock["now"].astimezone(tz) if tz else clock["now"].replace(tzinfo=None)
     monkeypatch.setattr(main, "date", ClockDate)
     from app import queue_commands
-    monkeypatch.setattr(queue_commands, "date", ClockDate)
+    monkeypatch.setattr(queue_commands, "datetime", ClockDatetime)
     monkeypatch.setattr(main, "datetime", ClockDatetime)
     return clock
 
@@ -83,6 +86,7 @@ def test_study_reinforces_today_reviews_tomorrow_and_persists_unassisted_later_r
     with TestClient(app) as client:
         settings = client.get('/api/settings').json()
         settings['new_cards_per_day'] = 1
+        settings['timezone'] = 'UTC'
         assert client.put('/api/settings', json=settings).status_code == 200
         imported = client.post("/api/imports/pgn", files={"file": ("durability.pgn", PGN)}, data={"initial_depth": 2})
         wait_for_integrity(client, imported.json()["repertoire_id"])
@@ -172,6 +176,9 @@ def test_tactical_failures_requeue_once_and_clean_reviews_survive_restart_and_re
     payload = {"attempt_id": "durable-discovery", "puzzle_id": "durable-tactic", "deck_id": "hangingPiece-easy", "correct": False, "clean": False,
                "source_fen": "q3k1nr/1pp1nQpp/3p4/1P2p3/4P3/B1PP1b2/B5PP/5K2 b k - 0 17", "moves": ["e8d7", "a2e6", "d7d8", "f7f8"]}
     with TestClient(app) as client:
+        settings = client.get("/api/settings").json()
+        settings["timezone"] = "UTC"
+        assert client.put("/api/settings", json=settings).status_code == 200
         assert client.post("/api/tactics/attempt", json=payload).status_code == 200
         assert client.post("/api/tactics/attempt", json=payload).status_code == 200
         first = client.get("/api/queue/today").json()["cards"][0]
