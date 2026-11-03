@@ -254,6 +254,20 @@ Logical modules need not be separate services, deployments, or databases. Use na
 
 Keep **Study**, **Tactics**, **Game review**, **Repertoire**, and small **Settings**. Coverage, conflicts, similarity, and repairs belong within Repertoire. Reuse the shared board and existing useful UI. Retire an old view only after preserving its useful capability elsewhere; simpler navigation is not permission to remove working behavior.
 
+### Jobs and discovery Saves retirement — November 3, 2026
+
+Retire the legacy workspace Jobs/Background Activity tray and discovery Saves
+widget, their automatic discovery-admission retry polling, and unused tray-only
+HTTP projection and UI control routes. Preserve Saved Locally, repair notices,
+Settings, Repertoire and Games navigation, Study review saving and its offline
+journals. Retain active integrity task retry, background progress, pause controls
+and accepted command recovery. Essential Study queue progress and periodic
+recovery remain; a wake change requires a reproduced defect. Browser retirement
+clears only `tempo-pending-discovery-admissions-v1`, best-effort on workspace
+mount. Installation must first reconcile and preserve any pending or accepted
+operations in that key. No database history deletion or removal of pause flags
+is part of this retirement. Source cleanup alone makes no Study latency claim.
+
 ## 8. Delivery and bounded acceptance
 
 Deliver through the current product, one useful slice at a time. R11 is a separate Study slice and does not block game feedback. Exact-conflict work can proceed independently. Maia refines a useful Explorer-based path; engines are unnecessary for the first game miss.
