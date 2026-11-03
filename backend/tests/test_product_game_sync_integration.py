@@ -526,6 +526,44 @@ def test_both_provider_workflow_uses_existing_study_owner_and_overlap_has_one_ef
     assert runner.run_once() == restarted.run_once() == "stopped"
 
 
+def test_retry_preparation_rejects_altered_expected_move_before_any_writer(monkeypatch):
+    from app.contracts.product_v02.learning import GameLapse
+    from app.product_composition import game_review_commands as commands, provider_priority
+
+    original = GameLapse.model_validate_json(json.dumps(fixture("lapse")))
+    assert original.finding.kind == "confirmed_miss" and original.finding.lapse_eligible
+    assert original.finding.expected_uci == ("e2e4",)
+    original_bytes = original.model_dump_json()
+    reads = []
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("altered finding reached preparation or a writer")
+
+    class StoredSource:
+        def __init__(self, connections):
+            pass
+
+        def source_detail(self, workspace, provider, game_id):
+            assert (workspace, provider, game_id) == (
+                original.key.workspace_id, original.key.provider, original.key.game_id)
+            reads.append(game_id)
+            return SimpleNamespace(quarantined=False, findings=(original.finding,))
+
+        deliveries = staticmethod(forbidden)
+
+    monkeypatch.setattr(commands, "PostgresReviewStore", StoredSource)
+    monkeypatch.setattr(provider_priority, "prepare_delivery_feedback", forbidden)
+    monkeypatch.setattr(commands, "retry", forbidden)
+    altered = original.finding.model_dump(mode="json") | {"expected_uci": ["g1f3"]}
+    with pytest.raises(HTTPException) as refused:
+        commands.prepare_retry({"finding": altered, "operation_id": "altered-finding"},
+            workspace=original.key.workspace_id, connections=forbidden, clock=FakeClock())
+    assert refused.value.status_code == 409
+    assert refused.value.detail == "current_confirmed_finding_required"
+    assert reads == [original.key.game_id]
+    assert original.model_dump_json() == original_bytes
+
+
 def test_native_review_configuration_projection_and_encounter_receipt_replay_are_durable(owned_postgres):
     """Games persistence/API uses encounter receipts; unqualified replay cannot grade Study."""
     from contextlib import contextmanager
