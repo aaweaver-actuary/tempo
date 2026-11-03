@@ -46,15 +46,15 @@ _OMIT = """c.content_type='opening' AND q.status='queued'
      AND origin.trained_color=c.trained_color AND origin.content_type='opening'
      AND owner.mode='active' AND seeded.status='complete' AND seeded.completed_at IS NOT NULL
      AND seeded.seeded_count+seeded.held_count=seeded.manifest_count
-     AND seeded.source_token_json->>'authored_digest'=epoch.source_digest
-     AND seeded.source_token_json->>'repertoire_id'=repertoire.id
-     AND seeded.source_token_json->'header'=jsonb_build_object(
+     AND json_extract_path_text(seeded.source_token_json::json,'authored_digest')=epoch.source_digest
+     AND json_extract_path_text(seeded.source_token_json::json,'repertoire_id')=repertoire.id
+     AND json_extract_path(seeded.source_token_json::json,'header')::jsonb=jsonb_build_object(
        'id',repertoire.id,'scope_source_revision',repertoire.scope_source_revision,
        'canonical_prefix_revision',repertoire.canonical_prefix_revision,
        'canonical_prefix_moves_json',repertoire.canonical_prefix_moves_json,
        'graph_generation',publication.generation,'graph_state',publication.state,
        'workspace_id',identity.workspace_id)
-     AND seeded.source_token_json->'integrity'=jsonb_build_object(
+     AND json_extract_path(seeded.source_token_json::json,'integrity')::jsonb=jsonb_build_object(
        'integrity_status',integrity.status,'scan_status',integrity.scan_status,
        'scan_generation',integrity.scan_generation,'checked_at',integrity.checked_at,
        'scan_completed_sources',integrity.scan_completed_sources,
@@ -92,10 +92,10 @@ _OMIT = """c.content_type='opening' AND q.status='queued'
      AND CASE WHEN c.moves_json IS JSON ARRAY THEN
        CASE WHEN split_part(c.start_fen,' ',2)=CASE c.trained_color WHEN 'white' THEN 'w' ELSE 'b' END
          THEN jsonb_array_length(c.moves_json::jsonb) IN (1,2)
-           AND c.moves_json::jsonb->>0=outcome.expected_uci
+           AND c.moves_json::json->>0=outcome.expected_uci
          ELSE split_part(c.start_fen,' ',2) IN ('w','b')
            AND jsonb_array_length(c.moves_json::jsonb) IN (2,3)
-           AND c.moves_json::jsonb->>1=outcome.expected_uci END
+           AND c.moves_json::json->>1=outcome.expected_uci END
        ELSE FALSE END
  )
  AND NOT EXISTS(SELECT 1 FROM queue_attempt_origins exposed

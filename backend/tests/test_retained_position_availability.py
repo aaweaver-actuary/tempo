@@ -38,27 +38,42 @@ def test_retained_position_guard_compiles_through_shared_sql_adapter(monkeypatch
     compiled = postgres_sql(availability.available_attempt_sql('real_game_miss'))
     assert 'study_position_seed_runs' in compiled
     assert compiled.count('%s') == 1
-    # The SQLite-to-PG adapter emits the json_* overloads. Their document
-    # argument must be JSON; JSONB here caused a real native undefined-function
-    # failure before any queue head could issue.
+
+    # Validate every extraction in the NEW predicate, including bare seed-token
+    # fields and physical move-array reads. The adapter emits PostgreSQL json_*
+    # overloads; a JSONB argument caused native undefined-function failures.
     import sqlglot
     from sqlglot import exp
-    tree = sqlglot.parse_one(compiled, read='postgres')
-    guarded_documents = [node.this for node in tree.walk()
-        if isinstance(node, (exp.JSONExtract, exp.JSONExtractScalar))
-        and isinstance(node.this, exp.Case)]
-    assert len(guarded_documents) == 3
-    for document in guarded_documents:
-        casts = list(document.find_all(exp.Cast))
-        assert len(casts) == 2
-        assert all(cast.args['to'].is_type('JSON') for cast in casts)
+    compiled_guard = postgres_sql('SELECT 1 WHERE ' + retained.omission_predicate())
+    tree = sqlglot.parse_one(compiled_guard, read='postgres')
+    extractions = [node for node in tree.walk()
+                   if isinstance(node, (exp.JSONExtract, exp.JSONExtractScalar))]
+    assert len(extractions) == 12
+    for extraction in extractions:
+        document = extraction.this
+        if isinstance(document, exp.Case):
+            casts = list(document.find_all(exp.Cast))
+            assert len(casts) == 2
+            assert all(cast.args['to'].is_type('JSON') for cast in casts)
+        elif isinstance(document, exp.Cast):
+            assert document.args['to'].is_type('JSON'), extraction.sql()
+        else:
+            # Only a nested json_extract_path output is another JSON document.
+            # Scalar/text extraction output and an uncast JSONB column are not.
+            assert isinstance(document, exp.JSONExtract), extraction.sql()
+
     numeric_generation = next(node for node in tree.find_all(exp.JSONExtract)
         if 'graph_generation' in node.expression.sql())
     assert isinstance(numeric_generation.parent, exp.Cast)
     assert numeric_generation.parent.args['to'].is_type('JSONB')
-    # Keep remapped accepted Games targets protected. A variadic native JSON
-    # helper is parsed as a two-argument SQLite function and loses later path
-    # components; explicit nested calls preserve the entire path.
+    for field in ('header', 'integrity'):
+        certificate = next(node for node in tree.find_all(exp.JSONExtract)
+            if field in node.expression.sql())
+        assert isinstance(certificate.parent, exp.Cast)
+        assert certificate.parent.args['to'].is_type('JSONB')
+
+    # Explicit nested two-argument calls preserve the full remapped Games path;
+    # SQLite parsing of a variadic native helper silently drops later keys.
     effect_target = next(node for node in tree.find_all(exp.JSONExtractScalar)
         if 'card_id' in node.expression.sql())
     assert len(list(effect_target.find_all(exp.JSONExtract))) == 3
