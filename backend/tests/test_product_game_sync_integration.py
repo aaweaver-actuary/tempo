@@ -576,7 +576,10 @@ def test_native_review_configuration_projection_and_encounter_receipt_replay_are
         with owned_postgres() as database:
             yield database.raw
 
-    snapshot = RepertoireSnapshot.model_validate_json(json.dumps(fixture("snapshot")))
+    payload = fixture("snapshot")
+    payload["decision_presentations"][0].update(
+        route_id=payload["membership"]["routes"][0]["route_id"], route_ply=0)
+    snapshot = RepertoireSnapshot.model_validate_json(json.dumps(payload))
     class EncounterStudyStore(StudyMemoryStore):
         def encounter_card_facts(self, card_id, day):
             return self.facts
@@ -637,7 +640,7 @@ def test_native_review_configuration_projection_and_encounter_receipt_replay_are
             runtime.runner.coordinator.deliver(pending)
             applied = runtime.runner.coordinator.store.delivery(pending.operation_id)
             receipt = applied.receipt
-            assert applied.state == "acknowledged"
+            assert applied.state == "acknowledged", (applied.state, receipt.status, receipt.reason)
             assert receipt.status == "pending" and receipt.observation == "missed"
             assert receipt.reason == "first_departure_qualification_pending"
             duplicate = owner.accept_encounter(pending.encounter)
