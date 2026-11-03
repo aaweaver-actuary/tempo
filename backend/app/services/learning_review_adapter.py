@@ -7,7 +7,6 @@ import json
 from fastapi import HTTPException
 import tempo_learning_review as learning
 from tempo_legacy_database.adapters.learning_bridge import review as storage
-from tempo_legacy_database.adapters.queue_refresh.foreground import mark_queue_refreshing
 from tempo_legacy_database.connections import connection, read_connection
 from app.contracts.transport.study import ReviewRequest
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
@@ -263,19 +262,10 @@ class LearningReviewAdapter:
     def refresh_maturity(self, context):
         from .durable_tasks import enqueue_task_in_transaction
         day = context.local_day.isoformat()
-        if storage.configured():
-            enqueue_task_in_transaction(self.database, "daily_queue", "current", {"queue_date":day}, priority=10)
-            mark_queue_refreshing(self.database, day)
-        else:
-            self.deferred_effects.append(lambda: self._compatibility_queue_refresh(day))
-
-    def _compatibility_queue_refresh(self, day):
-        from .durable_tasks import enqueue_task
-        from tempo_legacy_database.adapters.database_executor import submit_foreground_write
-        from .game_sync_coordinator import coordinator
-        enqueue_task("daily_queue", "current", {"queue_date":day}, priority=10, foreground=True)
-        submit_foreground_write(lambda database: mark_queue_refreshing(database, day), label=f"daily-queue-refreshing:{day}")
-        coordinator.wake()
+        enqueue_task_in_transaction(self.database, "daily_queue", "current", {"queue_date": day}, priority=10)
+        if not storage.configured():
+            from .game_sync_coordinator import coordinator
+            self.deferred_effects.append(coordinator.wake)
 
     def finish_compatibility_effects(self):
         for effect in self.deferred_effects:
