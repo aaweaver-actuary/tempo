@@ -7,8 +7,10 @@ import re
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
+from psycopg import OperationalError
 
 from app import prefix_transition_api as api
+from app.services import prefix_transition_source
 from app.services.prefix_evaluation import snapshot_identity
 from app.services.prefix_transition import canonical_json
 from test_prefix_transition import prepared_snapshot, changed_snapshot
@@ -95,14 +97,24 @@ def test_issue79_http_conflicting_authored_membership_returns_complete_blocked_p
 
 def test_issue79_http_outage_and_foreground_preemption_are_retryable_without_false_success(prepared, monkeypatch):
     state, client = prepared
+    outages = []
     def unavailable(*_args):
-        raise api.psycopg.OperationalError('No reader available')
+        outages.append(1)
+        raise OperationalError('No reader available')
     monkeypatch.setattr(api, 'load_transition_snapshot', unavailable)
     response = client.post('/api/repertoires/rep/prefix-transition/plan', json=request_payload(state))
     assert response.status_code == 503 and response.headers['Retry-After'] == '1'
-    monkeypatch.setattr(api.structural, 'check_available', lambda *_args: (_ for _ in ()).throw(api.structural.diagnostic_error('evaluation_busy', 'Foreground study is active.', 503)))
+    assert outages == [1] and 'plan_id' not in response.json()
+    monkeypatch.setattr(api, 'load_transition_snapshot', lambda *_args: state['snapshot'])
+    preemptions = []
+    def foreground_preemption(*_args):
+        preemptions.append(1)
+        raise api.structural.diagnostic_error('evaluation_busy', 'Foreground study is active.', 503)
+    monkeypatch.setattr(prefix_transition_source.structural, 'check_available', foreground_preemption)
     response = client.post('/api/repertoires/rep/prefix-transition/plan', json=request_payload(state))
     assert response.status_code == 503 and 'plan_id' not in response.json()
+    assert response.headers['Retry-After'] == '1'
+    assert preemptions == [1] and outages == [1]
 
 
 @pytest.mark.parametrize('oversized', ['rows', 'bytes', None])
@@ -332,9 +344,9 @@ def test_pr102_snapshot_size_checks_use_one_statement_with_unchanged_native_rows
             return SimpleNamespace(fetchone=lambda: dict(count=sum(table_counts), bytes=sum(table_bytes),
                                                         table_counts=table_counts, table_bytes=table_bytes))
         return SimpleNamespace(fetchall=lambda: table_rows)
-    monkeypatch.setattr(api.structural, 'load_snapshot', lambda _identifier, _deadline, *, capture: (
+    monkeypatch.setattr(prefix_transition_source.structural, 'load_snapshot', lambda _identifier, _deadline, *, capture: (
         captured_fixture.source, capture(SimpleNamespace(execute_native=execute, execute_native_batch=lambda statements: [execute(query, parameters) for query, parameters in statements]))))
-    monkeypatch.setattr(api.structural, 'check_available', lambda *_args: None)
+    monkeypatch.setattr(prefix_transition_source.structural, 'check_available', lambda *_args: None)
     captured = api.load_transition_snapshot('rep', captured_fixture.lookup_card_ids, captured_fixture.study_day, 999999999)
     assert captured.rows('cards') == captured_fixture.rows('cards')
     assert captured.rows('repertoire_cards') == captured_fixture.rows('repertoire_cards')
@@ -400,7 +412,7 @@ def test_pr102_snapshot_batch_respects_cumulative_limits_and_stale_link_preceden
         card_identifier = 'not-in-approved-lookup' if stale_link else fixture.lookup_card_ids[0]
         return [SimpleNamespace(fetchall=lambda: []), SimpleNamespace(fetchall=lambda: []),
                 SimpleNamespace(fetchall=lambda: [{'card_id': card_identifier, 'repertoire_id': 'rep'}])]
-    monkeypatch.setattr(api.structural, 'load_snapshot', lambda _identifier, _deadline, *, capture: (
+    monkeypatch.setattr(prefix_transition_source.structural, 'load_snapshot', lambda _identifier, _deadline, *, capture: (
         fixture.source, capture(SimpleNamespace(execute_native=execute, execute_native_batch=batch))))
     with pytest.raises(api.PrefixEvaluationError) as error:
         api.load_transition_snapshot('rep', fixture.lookup_card_ids, fixture.study_day, 999999999)

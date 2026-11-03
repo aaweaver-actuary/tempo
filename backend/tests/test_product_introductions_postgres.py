@@ -263,6 +263,8 @@ def legacy_transaction(owned_postgres):
                 assert hashlib.sha256(source).hexdigest() == registration[3]
                 raw.execute(source.decode(), prepare=False)
             raw.execute(path.read_text(), prepare=False)
+        assert [row[0] for row in raw.execute(
+            'SELECT version FROM tempo_schema_migrations ORDER BY version').fetchall()] == list(range(1, POSTGRES_SCHEMA_VERSION + 1))
         raw.execute(SCHEMA_SQL, prepare=False)
         raw.execute('INSERT INTO settings(id) VALUES(1)')
 
@@ -474,7 +476,7 @@ def test_current_owner_unchanged_content_retains_ranking_across_capture_refresh(
 
 @pytest.fixture(scope='module')
 def repertoire_bridge_schema(legacy_transaction):
-    """Published conflict-owner DDL, required only for the changed bridge proof.
+    """Consume conflict-owner tables from the complete registered migration ledger.
 
     The leaf's source qualification assembly contains unchanged #483/#487
     dependency files. Integrated suites use those same normal source imports.
@@ -482,8 +484,23 @@ def repertoire_bridge_schema(legacy_transaction):
     """
     from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import current_snapshot
     from tempo_legacy_database.adapters.study.conflicts import PostgresConflictStore
+    columns = {
+        'study_conflict_holds': (
+            'scope_key', 'repertoire_id', 'route_id', 'ply', 'card_id', 'card_revision',
+            'source_revision', 'source_generation', 'source_digest', 'active',
+            'first_seen_at', 'updated_at'),
+        'study_conflict_queue_holds': (
+            'scope_key', 'queue_entry_id', 'card_id', 'card_revision', 'original_status'),
+        'study_conflict_receipts': (
+            'command_id', 'payload_digest', 'receipt_json', 'processed_at'),
+    }
     with legacy_transaction() as database:
-        database.raw.execute((ROOT/'database/tempo_legacy_database/ddl/study_conflicts.sql').read_text(),prepare=False)
+        for table, expected in columns.items():
+            actual = database.raw.execute(
+                'SELECT column_name FROM information_schema.columns '
+                'WHERE table_schema=current_schema() AND table_name=%s ORDER BY ordinal_position',
+                (table,)).fetchall()
+            assert tuple(row[0] for row in actual) == expected
     return current_snapshot, PostgresConflictStore
 
 
