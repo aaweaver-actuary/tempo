@@ -37,8 +37,13 @@ card and repertoire records do not cause ownership reconstruction. An accepted
 review or a position-issued plan prevents abandonment. The immutable receipt and
 origin are retained without a review or grade. Later new review, failure marker
 and opening evidence writes for that identity are rejected; existing accepted
-review retries keep their receipt behavior. The old-issued frontier treats only
-an exact receipt as terminal. Schema 56 readers safely observe no receipt.
+review retries keep their receipt behavior. When a queue entry has multiple retained
+origins, the exact requested tuple is eligible only after the current projection
+is independently matched to the current card revision and its retained origin.
+The current projection is checked for completion only when it represents the
+requested tuple; accepted target review and checkpoint guards remain in force.
+The old-issued frontier treats only an exact receipt as terminal. Schema 56 readers
+safely observe no receipt.
 
 Migration 058 keeps projection cleanup independent: the pre-existing queue-origin
 capture trigger skips updating an exact abandoned origin, while unrelated origin

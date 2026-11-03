@@ -33,7 +33,7 @@ def _review(db, case, payload):
     from app.services.learning_review_adapter import LearningReviewAdapter, command_from_request
     from tempo_learning_review import ReviewPolicy, submit_review
     request = ReviewRequest(outcome='correct', queue_entry_id=payload['queue_entry_id'],
-                            expected_revision=1, attempt_id='review-' + case.card_id)
+                            expected_revision=payload['revision'], attempt_id='review-' + case.card_id)
     adapter = LearningReviewAdapter(db, request, observed_at=NOW + timedelta(days=7),
                                     policy_provider=lambda: ReviewPolicy('UTC', 7))
     command = command_from_request(case.card_id, request)
@@ -327,3 +327,110 @@ def test_native_schema56_without_abandonment_table(owned_postgres):
                         'revision': 1, 'operation_id': 'test', 'actor': 'test', 'reason': 'test'})
         finally:
             admin.execute(sql.SQL('DROP DATABASE {}').format(sql.Identifier(child)))
+
+
+def _retarget_attempt(case):
+    """Retain the issued old origin while the row now projects another card."""
+    from dataclasses import replace
+    plan = _new_attempt(case)
+    new_card = 'replacement-' + case.card_id
+    with case.transaction() as db:
+        db.execute_native("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
+            introduced_at,revision,interval_days,fsrs_card_json,first_correct_at,stability,content_type)
+            SELECT %s,repertoire_id,kind,start_fen,moves_json,state,due_date,introduced_at,2,
+                   interval_days,fsrs_card_json,first_correct_at,stability,content_type
+            FROM cards WHERE id=%s""", (new_card, case.card_id))
+        db.execute_native("UPDATE daily_queue SET card_id=%s,status='blocked' WHERE id=%s",
+                          (new_card, plan['queue_entry_id']))
+    return plan, replace(case, card_id=new_card)
+
+
+def _retarget_snapshot(db, plan, new_card):
+    entry = plan['queue_entry_id']
+    return {
+        'cards': [tuple(row) for row in db.execute_native('SELECT * FROM cards WHERE id IN (%s,%s) ORDER BY id',
+                                                         (plan['card_id'], new_card)).fetchall()],
+        'queue': [tuple(row) for row in db.execute_native('SELECT * FROM daily_queue WHERE id=%s', (entry,)).fetchall()],
+        'origins': [tuple(row) for row in db.execute_native('SELECT * FROM queue_attempt_origins WHERE queue_entry_id=%s ORDER BY card_id,revision', (entry,)).fetchall()],
+        'reviews': [tuple(row) for row in db.execute_native('SELECT * FROM reviews WHERE card_id IN (%s,%s) ORDER BY id', (plan['card_id'], new_card)).fetchall()],
+        'receipts': [tuple(row) for row in db.execute_native('SELECT * FROM review_attempt_receipts WHERE queue_entry_id=%s ORDER BY attempt_id', (entry,)).fetchall()],
+    }
+
+
+def test_native_retargeted_origin_abandonment_preserves_current_review(case, monkeypatch):
+    from tempo_legacy_database.adapters import postgres_store
+    monkeypatch.setattr(postgres_store, 'configured', lambda: True)
+    plan, new_case = _retarget_attempt(case)
+    # The foreign projection may already have an accepted review; it is not
+    # evidence that the explicitly named old origin was completed.
+    new_plan = {**plan, 'card_id': new_case.card_id, 'revision': 2}
+    with case.transaction() as db:
+        db.execute_native("UPDATE daily_queue SET status='queued' WHERE id=%s", (plan['queue_entry_id'],))
+        result = _review(db, new_case, new_plan)
+        assert result['persisted']
+    payload = _apply_payload(case, plan)
+    with case.transaction() as db:
+        before = _retarget_snapshot(db, plan, new_case.card_id)
+        assert len(before['origins']) == 2 and len(before['receipts']) == 1
+        assert abandonment.abandon_in_writer(db, payload, now=NOW)['abandoned']
+        assert _retarget_snapshot(db, plan, new_case.card_id) == before
+        assert abandonment.is_abandoned(db, plan['queue_entry_id'], case.card_id, 1)
+        assert not abandonment.is_abandoned(db, plan['queue_entry_id'], new_case.card_id, 2)
+        assert abandonment.abandon_in_writer(db, payload, now=NOW)['idempotent']
+        with pytest.raises(ValueError, match='receipt_conflict'):
+            abandonment.abandon_in_writer(db, {**payload, 'reason': 'other'}, now=NOW)
+
+
+def test_native_retargeted_origin_holds_unknown_projection_and_changed_identity(case, monkeypatch):
+    plan, new_case = _retarget_attempt(case)
+    payload = _apply_payload(case, plan)
+    with case.transaction() as db:
+        with pytest.raises(ValueError, match='origin_changed'):
+            abandonment.abandon_in_writer(db, {**payload, 'expected_origin_sha256': '0' * 64}, now=NOW)
+        with pytest.raises(ValueError, match='missing_or_ambiguous'):
+            abandonment.abandon_in_writer(db, {**payload, 'revision': 99}, now=NOW)
+        db.execute_native('DELETE FROM queue_attempt_origins WHERE queue_entry_id=%s AND card_id=%s',
+                          (plan['queue_entry_id'], new_case.card_id))
+        with pytest.raises(ValueError, match='queue_changed'):
+            abandonment.abandon_in_writer(db, payload, now=NOW)
+    assert not _is_retired(case, plan)
+
+
+def test_native_retargeted_queue_identity_change_after_read_holds(case, monkeypatch):
+    from tempo_legacy_database.adapters import queue_position_lock
+    plan, new_case = _retarget_attempt(case)
+    payload = _apply_payload(case, plan)
+    original = queue_position_lock.lock_queue_date_for_position
+    def change_queue_before_lock(db, day):
+        db.execute_native("UPDATE daily_queue SET queue_date='2030-01-01' WHERE id=%s", (plan['queue_entry_id'],))
+        original(db, day)
+    monkeypatch.setattr(queue_position_lock, 'lock_queue_date_for_position', change_queue_before_lock)
+    with case.transaction() as db:
+        with pytest.raises(ValueError, match='queue_changed'):
+            abandonment.abandon_in_writer(db, payload, now=NOW)
+        assert not abandonment.is_abandoned(db, plan['queue_entry_id'], plan['card_id'], plan['revision'])
+
+
+def _is_retired(case, plan):
+    with case.transaction() as db:
+        return abandonment.is_abandoned(db, plan['queue_entry_id'], plan['card_id'], plan['revision'])
+
+
+def test_native_retargeted_old_accepted_review_still_holds(case, monkeypatch):
+    from tempo_legacy_database.adapters import postgres_store
+    monkeypatch.setattr(postgres_store, 'configured', lambda: True)
+    plan = _new_attempt(case)
+    with case.transaction() as db:
+        assert _review(db, case, plan)['persisted']
+        # A separate retained current identity does not erase the old completion.
+        new_card = 'replacement-' + case.card_id
+        db.execute_native("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
+            introduced_at,revision,interval_days,fsrs_card_json,first_correct_at,stability,content_type)
+            SELECT %s,repertoire_id,kind,start_fen,moves_json,state,due_date,introduced_at,2,
+                   interval_days,fsrs_card_json,first_correct_at,stability,content_type FROM cards WHERE id=%s""",
+            (new_card, case.card_id))
+        db.execute_native("UPDATE daily_queue SET card_id=%s,status='blocked',review_result_json=NULL WHERE id=%s",
+                          (new_card, plan['queue_entry_id']))
+        with pytest.raises(ValueError, match='not_unfinished_issued_opening|review_already_accepted'):
+            abandonment.plan_in_writer(db, plan)
+        assert not abandonment.is_abandoned(db, plan['queue_entry_id'], case.card_id, 1)
