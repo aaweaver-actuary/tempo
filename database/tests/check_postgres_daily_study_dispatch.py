@@ -214,6 +214,7 @@ def proof_deadline_recovery(identifier):
             operation_id = identifier + '-wakeup'
             failed_operation_id = identifier + '-rolled-back-wakeup'
             observed_wakes = []
+            wake_observer_errors = []
             original_send = celery_app.send_task
 
             def enqueue_from_command(database, payload):
@@ -224,8 +225,16 @@ def proof_deadline_recovery(identifier):
                 return {'accepted': True}
 
             def observe_committed_wake(name, **options):
-                assert name == 'app.tasks.poll_background_tasks'
-                assert options['queue'] == 'background' and options['ignore_result'] is True
+                try:
+                    return observe_committed_wake_checked(name, **options)
+                except BaseException as error:
+                    wake_observer_errors.append(error)
+                    raise
+
+            def observe_committed_wake_checked(name, **options):
+                assert name == 'app.tasks.progress_study_queue'
+                assert options['queue'] == 'foreground' and options['ignore_result'] is True
+                assert options['headers']['queue_refresh_wake'] is True
                 assert options['retry'] is False
                 with psycopg.connect(DSN) as observer:
                     receipt = observer.execute('SELECT state FROM operation_receipts WHERE operation_id=%s', (operation_id,)).fetchone()
@@ -245,7 +254,8 @@ def proof_deadline_recovery(identifier):
                     assert command_gateway.execute_command(operation_id, proof_command, {}) == {'accepted': True}
                     assert command_gateway.execute_command(failed_operation_id, proof_command, {'fail': True}) is None
                     assert saved_state() == committed_state
-                    assert observed_wakes == ['app.tasks.poll_background_tasks']
+                    assert observed_wakes == ['app.tasks.progress_study_queue']
+                    assert wake_observer_errors == [], wake_observer_errors
             finally:
                 command_gateway._handlers.pop(proof_command)
                 with psycopg.connect(DSN) as connection:
@@ -260,7 +270,7 @@ def proof_deadline_recovery(identifier):
 
 
 def proof_deferred_capacity_wakes(identifier):
-    """No beat: consume real Redis poll messages with an explicit delivery clock."""
+    """No beat: consume real Redis legacy and essential wakes with a delivery clock."""
     from kombu import Exchange, Queue
     from kombu.exceptions import EncodeError, OperationalError
     from app import command_gateway
@@ -276,6 +286,9 @@ def proof_deferred_capacity_wakes(identifier):
     deliveries, publications, executions, polls, operation_ids = [], [], [], [], []
     delivery_messages = []
     effective_delivery_headers = []
+    active_operation_id = [None]
+    publication_errors = []
+    claim_attempts = []
     ownership_prefix = identifier + ':capacity-owner:'
     fail_next_slice = [True]
     original_send = celery_app.send_task
@@ -305,7 +318,12 @@ def proof_deferred_capacity_wakes(identifier):
     def command(suffix):
         operation_id = identifier + '-' + suffix
         operation_ids.append(operation_id)
-        result = command_gateway.execute_command(operation_id, proof_command, {})
+        active_operation_id[0] = operation_id
+        try:
+            result = command_gateway.execute_command(operation_id, proof_command, {})
+        finally:
+            active_operation_id[0] = None
+        assert publication_errors == [], publication_errors
         with psycopg.connect(DSN) as observer:
             assert observer.execute('SELECT state FROM operation_receipts WHERE operation_id=%s', (operation_id,)).fetchone()[0] == 'complete'
         return result
@@ -316,15 +334,33 @@ def proof_deferred_capacity_wakes(identifier):
         capacity_messages = broker.SimpleQueue(broker_queue)
 
         def publish_capacity(name, **options):
-            assert name == 'app.tasks.poll_background_tasks' and options['queue'] == 'background'
+            try:
+                return publish_capacity_checked(name, **options)
+            except BaseException as error:
+                publication_errors.append(error)
+                raise
+
+        def publish_capacity_checked(name, **options):
+            assert (name, options['queue']) in {
+                ('app.tasks.poll_background_tasks', 'background'),
+                ('app.tasks.progress_study_queue', 'foreground'),
+            }
+            if name == 'app.tasks.progress_study_queue':
+                assert options['headers']['queue_refresh_wake'] is True
+                assert options['retry'] is False and options['ignore_result'] is True
             assert not options.get('args') and not options.get('kwargs') and 'task_id' not in options
             # Independent real writer must obtain the row before broker I/O.
             with psycopg.connect(DSN) as observer:
+                if active_operation_id[0] is not None:
+                    assert observer.execute('SELECT state FROM operation_receipts WHERE operation_id=%s',
+                        (active_operation_id[0],)).fetchone()[0] == 'complete'
                 saved = observer.execute("SELECT state,next_attempt_at,lease_token FROM background_tasks "
                     "WHERE kind='daily_queue' AND deduplication_key=%s FOR UPDATE NOWAIT", (identifier,)).fetchone()
                 if 'eta' in options:
+                    # Deadline ETA matches persisted eligibility; the legacy
+                    # foreground-denial handoff adds a hint to a queued row.
                     assert saved[0] in {'queued', 'retrying'} and saved[2] is None
-                    if not tasks.activity_gate.foreground_waiting:
+                    if name == 'app.tasks.progress_study_queue' and saved[0] == 'retrying':
                         assert datetime.fromisoformat(saved[1]) == options['eta']
                     assert options['retry'] is False and options['ignore_result'] is True
             # Only the transport queue is isolated; the production task name,
@@ -354,7 +390,9 @@ def proof_deferred_capacity_wakes(identifier):
             heapq.heappush(deliveries, (delivery_at, len(delivery_messages)))
             return result
 
-        def claim_owned(**options):
+        def claim_owned(*args, **options):
+            claim_attempts.append((args, options))
+            assert args == ('daily_queue',) and not options
             claimed = original_claim('daily_queue')
             if claimed is not None:
                 assert claimed['deduplication_key'] == identifier
@@ -367,21 +405,27 @@ def proof_deferred_capacity_wakes(identifier):
                 raise TransactionTimeout('Controlled deferred PostgreSQL queue deadline')
             return execute_postgres_queue_refresh_slice(claimed)
 
-        def deliver_due():
+        def deliver_due(*, one=False):
             for _delivery_number in range(100):
                 if not deliveries or deliveries[0][0] > observed_clock[0]:
                     return
                 delivery_at, publication_number = heapq.heappop(deliveries)
                 message = delivery_messages[publication_number - 1]
-                tasks.poll_background_tasks.push_request(
-                    id=message.headers['id'], headers=dict(message.headers))
+                delivered = {
+                    'app.tasks.poll_background_tasks': tasks.poll_background_tasks,
+                    'app.tasks.progress_study_queue': tasks.progress_study_queue,
+                }[message.headers['task']]
+                delivered.push_request(id=message.headers['id'], headers=dict(message.headers))
                 try:
-                    polls.append((delivery_at, tasks.poll_background_tasks()))
-                    effective_delivery_headers.append(dict(tasks.poll_background_tasks.request.headers))
+                    polls.append((delivery_at, delivered()))
+                    effective_delivery_headers.append(dict(delivered.request.headers))
+                    assert publication_errors == [], publication_errors
                 finally:
-                    tasks.poll_background_tasks.pop_request()
+                    delivered.pop_request()
                     if not message.acknowledged:
                         message.ack()
+                if one:
+                    return
             raise AssertionError('Unbounded capacity delivery loop')
 
         command_gateway.register_command(proof_command, enqueue_from_command)
@@ -393,54 +437,81 @@ def proof_deferred_capacity_wakes(identifier):
                     patch.object(tasks, 'claim_task', claim_owned), \
                     patch.object(tasks, 'execute_postgres_queue_refresh_slice', execute_slice):
                 fail_next_slice[0] = False
-                finished = Event()
-                worker_errors = []
-
-                def consume_committed_wake():
-                    try:
-                        deliver_due()
-                    except BaseException as error:
-                        worker_errors.append(error)
-                    finally:
-                        finished.set()
-
+                # Legacy and essential publications have distinct Redis owners.
+                # The old route denies without stealing the already-owned
+                # essential opportunity, which progresses during foreground.
                 with tasks.activity_gate.foreground():
-                    celery_app.send_task('app.tasks.poll_background_tasks', queue='background')
-                    accepted = command('foreground-denied')
+                    celery_app.send_task('app.tasks.poll_background_tasks', queue='background',
+                        headers={'queue_refresh_wake': True})
+                    accepted = command('foreground-legacy-handoff')
                     before = saved_state()
-                    worker = Thread(target=consume_committed_wake)
+                    assert len(deliveries) == 2
+                    assert [message.headers['task'] for message in delivery_messages[-2:]] == [
+                        'app.tasks.poll_background_tasks', 'app.tasks.progress_study_queue']
+                    assert background_wakes.ownership_keys('app.tasks.poll_background_tasks') != background_wakes.ownership_keys('app.tasks.progress_study_queue')
+                    assert delivery_messages[-2].headers[background_wakes.WAKE_HEADER] != delivery_messages[-1].headers[background_wakes.WAKE_HEADER]
+                    claims_before_denial = len(claim_attempts)
+                    finished = Event()
+                    worker_errors = []
+
+                    def consume_legacy_wake():
+                        try:
+                            deliver_due(one=True)
+                        except BaseException as error:
+                            worker_errors.append(error)
+                        finally:
+                            finished.set()
+
+                    worker = Thread(target=consume_legacy_wake)
                     worker.start()
                     assert finished.wait(1), 'Denied committed queue wake occupied its worker'
                     worker.join(1)
                     assert not worker.is_alive() and worker_errors == [], worker_errors
                     assert saved_state() == before and executions == []
+                    assert len(claim_attempts) == claims_before_denial
                     assert before[0]['attempt_count'] == 0 and before[0]['lease_token'] is None
                     assert before[0]['lease_expires_at'] is None and before[0]['last_error'] is None
                     assert effective_delivery_headers[-1]['queue_refresh_wake'] is True
-                    assert len(deliveries) == 1
-                    assert deliveries[0][0] == observed_clock[0] + timedelta(seconds=1)
-                    for _denial_number in range(2):
-                        eligibility = deliveries[0][0]
-                        observed_clock[0] = eligibility - timedelta(microseconds=1)
-                        poll_count = len(polls)
-                        deliver_due()
-                        assert len(polls) == poll_count
-                        observed_clock[0] = eligibility
-                        deliver_due()
-                        assert len(polls) == poll_count + 1 and len(deliveries) == 1
-                        assert deliveries[0][0] == eligibility + timedelta(seconds=1)
-                        assert saved_state() == before and executions == []
-                postgres_store.close_pools()
-                observed_clock[0] = deliveries[0][0]
-                deliver_due()
-                saved_task, projection = saved_state()
-                assert executions == [(accepted['generation'], observed_clock[0])]
-                assert saved_task['generation'] == accepted['generation'] and saved_task['state'] == 'complete'
-                assert (projection['state'], projection['refresh_pending'], projection['last_error']) == ('ready', 0, None)
-                assert not deliveries
-                print('PASS test_issue135_postgres_foreground_denied_queue_wake_retains_future_delivery_without_periodic_polling')
+                    assert len(deliveries) == 1 and deliveries[0][0] == observed_clock[0]
+                    assert publications[-1][0] == observed_clock[0] + timedelta(seconds=1)
+                    deliver_due()
+                    saved_task, projection = saved_state()
+                    assert executions == [(accepted['generation'], observed_clock[0])]
+                    assert saved_task['generation'] == accepted['generation'] and saved_task['state'] == 'complete'
+                    assert (projection['state'], projection['refresh_pending'], projection['last_error']) == ('ready', 0, None)
+                    assert not deliveries
+                print('PASS test_issue135_postgres_legacy_denial_hands_off_to_owned_essential_wake')
 
-                for scenario in ('recover', 'replace', 'earlier_progress'):
+                # A preexisting intent without an essential owner receives an
+                # actual delayed essential delivery from the old marked route.
+                with postgres_store.connection() as database:
+                    accepted = enqueue_from_command(database, {})
+                before = saved_state()
+                execution_count = len(executions)
+                with tasks.activity_gate.foreground():
+                    celery_app.send_task('app.tasks.poll_background_tasks', queue='background',
+                        headers={'queue_refresh_wake': True})
+                    claims_before_denial = len(claim_attempts)
+                    deliver_due(one=True)
+                    assert len(claim_attempts) == claims_before_denial
+                    assert saved_state() == before and len(executions) == execution_count
+                    assert len(deliveries) == 1
+                    eligibility = observed_clock[0] + timedelta(seconds=1)
+                    assert deliveries[0][0] == eligibility
+                    observed_clock[0] = eligibility - timedelta(microseconds=1)
+                    deliver_due()
+                    assert saved_state() == before and len(executions) == execution_count
+                    postgres_store.close_pools()
+                    observed_clock[0] = eligibility
+                    deliver_due()
+                    saved_task, projection = saved_state()
+                    assert executions[execution_count:] == [(accepted['generation'], eligibility)]
+                    assert saved_task['generation'] == accepted['generation'] and saved_task['state'] == 'complete'
+                    assert (projection['state'], projection['refresh_pending'], projection['last_error']) == ('ready', 0, None)
+                    assert not deliveries
+                print('PASS test_issue135_postgres_legacy_denial_retains_delayed_essential_delivery_without_periodic_polling')
+
+                for scenario in ('recover', 'replace', 'coalesced_replacement'):
                     fail_next_slice[0] = True
                     first_execution = len(executions)
                     first_poll = len(polls)
@@ -461,15 +532,18 @@ def proof_deferred_capacity_wakes(identifier):
                             with postgres_store.connection() as database:
                                 replacement = enqueue_from_command(database, {})
                         else:
+                            reserved_delivery = deliveries[0]
                             replacement = command(scenario + '-replacement')
                             deliver_due()
+                            assert deliveries == [reserved_delivery]
+                            assert len(executions) == first_execution + 1
                         current_generation = replacement['generation']
                         assert current_generation == accepted['generation'] + 1
                     observed_clock[0] = eligibility - timedelta(microseconds=1)
                     deliver_due()
                     assert len(executions) == first_execution + 1
-                    # A newer request joins the already-reserved bounded ETA
-                    # opportunity instead of creating an independent early poll.
+                    # Same-name essential requests share their reserved ETA;
+                    # the legacy poll has a separate owner, proven above.
                     observed_clock[0] = eligibility
                     heapq.heappush(deliveries, deliveries[0])  # duplicate broker delivery
                     deliver_due()
@@ -492,7 +566,7 @@ def proof_deferred_capacity_wakes(identifier):
                     assert saved_task['generation'] == accepted['generation'] and saved_task['state'] == 'queued'
                     assert projection['generation'] == accepted['generation'] and projection['state'] == 'refreshing'
                     # Finish only this proof's retained task before the next scenario.
-                    assert not execute_postgres_queue_refresh_slice(claim_owned())
+                    assert not execute_postgres_queue_refresh_slice(claim_owned('daily_queue'))
                 print('PASS test_issue135_postgres_advisory_broker_errors_preserve_committed_receipts')
         finally:
             command_gateway._handlers.pop(proof_command)
@@ -601,7 +675,8 @@ def test_issue135_postgres_ensure_current_timeout_deferral_lock_order():
             return ensure_current_queue(database, {'queue_date': queue_date})
 
     def publish(name, **options):
-        assert name == 'app.tasks.poll_background_tasks' and options['queue'] == 'background'
+        assert name == 'app.tasks.progress_study_queue' and options['queue'] == 'foreground'
+        assert options['headers']['queue_refresh_wake'] is True
         assert options['eta'] == clock + timedelta(seconds=1)
         assert not options.get('args') and not options.get('kwargs')
         assert options['retry'] is False and options['ignore_result'] is True
