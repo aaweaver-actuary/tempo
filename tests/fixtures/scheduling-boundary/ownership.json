@@ -45,6 +45,10 @@
     "app.main": [
       "backend/tests/test_phone_offline_training.py",
       "backend/tests/test_prepared_review_continuation.py"
+    ],
+    "app.services.learning_review_adapter": [
+      "backend/tests/test_position_review_integration.py",
+      "backend/tests/test_position_review_reconciliation.py"
     ]
   },
   "unrelated": {

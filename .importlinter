@@ -52,6 +52,7 @@ type = protected
 protected_modules =
     app.services.scheduling_review_contracts
 allowed_importers =
+    app.services.learning_review_adapter
     app.services.scheduling_review_application
     tempo_legacy_database.adapters.scheduling_review_store
     app.study.game_feedback
