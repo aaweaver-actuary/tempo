@@ -6667,6 +6667,15 @@ The owning regressions retain current source contracts after earlier component m
 Component packaging fixtures include the existing development-web-cache leaf; exact dependency closure includes the three already declared Game Evidence dependencies. The graph preparation guard permits the transition's existing node:url builtin used for protected checkout exclusion, and the duplicate shared Learning suite registration includes its database owner root. These corrections preserve exact test inventories, input fencing and failure accounting. The PostgreSQL readiness fixture expects three remaining restoration call sites after the priority benchmark retirement; behavioral health-before-engine assertions remain.
 
 `standalone defense engine smoke does not poll an unavailable API` retains its 15-second deadline, one thread, 32MiB hash and depth-four restricted search. Its smoke branch now terminates the owned Stockfish child in a finally block before exiting; ordinary engine processing is unchanged.
+### Retained import storage direction (#827)
+
+`backend/tests/test_pgn_import_storage_boundary.py` owns
+`test_retained_import_storage_does_not_import_application_policy`, its original-import
+negative cases, and `test_retained_import_public_values_import_without_command_registration`.
+The same suite checks the complete receipt tuple/raw JSON, exact ordered card
+projection, INTRANS probe and existing opaque receipt writer lock. Existing
+retained-import unit and native approval/retry/outer-rollback cases remain the
+behavioral owners; the native fixture freezes the actual queue issuance clock.
 
 ### Pure Study worker validation (#826)
 

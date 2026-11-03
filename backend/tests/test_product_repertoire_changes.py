@@ -23,7 +23,8 @@ def retained_import_case(monkeypatch):
     from app.command_gateway import request_digest
     from app import pgn_import_commands
     from app.repertoire.changes import retained
-    from tempo_legacy_database.adapters.authored_repertoires import product_changes, product_imports
+    from app.repertoire.changes import imports as imports_owner
+    from tempo_legacy_database.adapters.authored_repertoires import product_changes, product_snapshot
     from tempo_legacy_database.adapters.authored_repertoires.pgn_import import storage
     from tempo_legacy_database.adapters.commands.receipts import storage as receipts
     from tempo_legacy_database.adapters.postgres_store import TempoRow
@@ -49,7 +50,7 @@ def retained_import_case(monkeypatch):
     monkeypatch.setattr(storage, 'current_sources', lambda *_args: [])
     monkeypatch.setattr(storage, 'deleted_card_ids', lambda *_args: [])
     monkeypatch.setattr(storage, 'lock_main_repertoire', lambda *_args: state.locks.append('main'))
-    monkeypatch.setattr(product_imports, 'current_snapshot', lambda *_args: state.source)
+    monkeypatch.setattr(product_snapshot, 'current_snapshot', lambda *_args: state.source)
     monkeypatch.setattr(retained, 'lock_retained_sources', lambda *_args: state.locks.append('graph'))
     monkeypatch.setattr(product_changes, 'lock_sources', lambda *_args: state.locks.append('sources'))
     def publish(_database, payload):
@@ -57,7 +58,7 @@ def retained_import_case(monkeypatch):
         return dict(repertoire_id=state.target or 'new-real-id', preparation_state='pending')
     monkeypatch.setattr(pgn_import_commands, 'explicit_pgn_import', publish)
     database = Database()
-    owner = product_imports.RetainedImports(database)
+    owner = imports_owner.retained_imports(database)
     good = parse_pgn('1. e4 c5 2. Nf3 (2. Nc3 e6) e6 *')
     good_lines = good[1] if isinstance(good, tuple) else good
     return SimpleNamespace(owner=owner, database=database, state=state, lines=tuple(good_lines),

@@ -250,9 +250,14 @@ still retain the existing integrity-report owner rather than a second snapshot.
 ## Retained conflicted import (C2)
 
 **Owner checkpoint; explicit-command hook implemented, changed-hook native proof pending.**
-`imports.py` is the public facade; the borrowed PostgreSQL adapter is
+`imports.py` owns `RetainedImportApplication` and is the public facade; the borrowed PostgreSQL adapter is
 [`product_imports.py`](../../../../database/tempo_legacy_database/adapters/authored_repertoires/product_imports.py).
-There is no new table, importer, worker, connection factory or Study writer.
+The application owns retained receipt interpretation, preview construction,
+current-source/card fencing, validation and apply orchestration. There is no
+new table, importer, worker, connection factory or Study writer.
+
+`retained_imports(database) -> RetainedImportApplication` composes that policy
+over the caller's borrowed database and the raw storage adapter.
 
 - `retained_imports(database).read(operation_id) -> RetainedImport` reopens a real
   terminal `repertoire_conflict` receipt. The original command, hash, payload and
@@ -281,6 +286,13 @@ There is no new table, importer, worker, connection factory or Study writer.
 - `apply_approved_import(database, payload) -> dict` remains available for direct
   owner composition. It validates then invokes the existing decorated explicit
   importer once on the same transaction.
+
+`RetainedImportStorage` is deliberately raw and limited to four borrowed-database
+operations: `read_operation` reads the existing operation receipt,
+`card_rows` reads current card definitions, `in_transaction` observes the current
+transaction state, and `lock_original` takes the existing operation lock. It
+does not interpret receipts, construct previews, choose import policy, mutate
+receipts or own transaction completion.
 
 `pgn_import_commands.explicit_pgn_import` now checks for
 `retained_import_preview`, calls `validate_approved_import`, and follows its

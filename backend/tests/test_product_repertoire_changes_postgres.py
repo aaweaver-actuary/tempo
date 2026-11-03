@@ -46,6 +46,7 @@ def test_native_retained_import_approval_retry_and_outer_rollback(case, monkeypa
             return NOW.astimezone(tz) if tz else NOW.replace(tzinfo=None)
 
     monkeypatch.setattr(main, 'date', PolicyDate)
+    # Issuance derives the local Study day from the authoritative UTC clock.
     monkeypatch.setattr(queue_commands, 'datetime', PolicyDateTime)
     monkeypatch.setattr(pgn_import_commands, 'date', PolicyDate)
 
