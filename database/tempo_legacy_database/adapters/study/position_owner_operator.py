@@ -613,6 +613,8 @@ def main():
             raise OperatorHold('position_operator_request_invalid')
         prepared, request = (None, None) if action == 'pause' else _prepare_request(rep)
         with connection() as database:
+            # Start the caller-owned transaction before borrowing it in owner APIs.
+            database.execute_native('SELECT 1')
             if payload['plan']:
                 result = plan_in_writer(database, prepared, request, payload)
             elif action == 'seed':

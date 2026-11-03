@@ -683,3 +683,37 @@ def test_seed_page_failure_rolls_back_before_receipt(monkeypatch):
             now=datetime(2026, 1, 1, tzinfo=timezone.utc), release=release)
     assert any(sql.startswith('ROLLBACK TO SAVEPOINT') for sql, _ in db.statements)
     assert not any(sql.startswith('INSERT INTO operation_receipts') for sql, _ in db.statements)
+
+
+@pytest.mark.parametrize('plan',[True,False])
+def test_cli_begins_caller_owned_transaction_before_plan_or_seed(monkeypatch,capsys,plan):
+    import base64,json,sys
+    from contextlib import contextmanager
+    from tempo_legacy_database.adapters import postgres_store
+    db=SimpleNamespace(read_only=False,raw=SimpleNamespace(info=SimpleNamespace(transaction_status=SimpleNamespace(name='IDLE'))))
+    statements=[]
+    def execute(sql,params=()):
+        statements.append(sql)
+        assert sql=='SELECT 1'
+        db.raw.info.transaction_status=SimpleNamespace(name='INTRANS')
+        return Cursor((1,))
+    db.execute_native=execute
+    exited=[]
+    @contextmanager
+    def connection():
+        yield db
+        exited.append(True)
+    def borrowed(database,*args,**kwargs):
+        if not operator._writer(database):
+            raise operator.OperatorHold('borrowed_owner_writer_transaction_required')
+        return {'plan':plan,'borrowed_transaction':True}
+    monkeypatch.setattr(postgres_store,'connection',connection)
+    monkeypatch.setattr(operator,'_prepare_request',lambda rep:(object(),object()))
+    monkeypatch.setattr(operator,'plan_in_writer',borrowed)
+    monkeypatch.setattr(operator,'seed_page_in_writer',borrowed)
+    payload={'version':1,'plan':plan,'action':'seed','repertoire_id':'rep','epoch':'epoch','operation_id':'op','release':{}}
+    wire=base64.b64encode(json.dumps(payload).encode()).decode()
+    monkeypatch.setattr(sys,'argv',['operator','--request-base64',wire])
+    operator.main()
+    assert json.loads(capsys.readouterr().out)['borrowed_transaction']
+    assert statements==['SELECT 1'] and exited==[True]
