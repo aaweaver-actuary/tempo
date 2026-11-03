@@ -52,7 +52,9 @@ def _measured_background_database_section():
 
 
 @contextmanager
-def connection(*, background: bool = False) -> Iterator[BorrowedTransaction | ReadConnection]:
+def connection(*, background: bool = False, queue_refresh_publication: bool = False) -> Iterator[BorrowedTransaction | ReadConnection]:
+    if queue_refresh_publication and not background:
+        raise ValueError("Queue refresh publication requires background admission")
     if _query_only_request.get():
         with read_connection() as database:
             yield database
@@ -65,7 +67,8 @@ def connection(*, background: bool = False) -> Iterator[BorrowedTransaction | Re
                 gate_wait_seconds = time.perf_counter() - gate_started
                 transaction_started = time.perf_counter()
                 try:
-                    with postgres_store.connection(read_only=False, background=True) as database:
+                    with postgres_store.connection(read_only=False, background=True,
+                            **({"queue_refresh_publication": True} if queue_refresh_publication else {})) as database:
                         yield database
                 finally:
                     transaction_seconds = time.perf_counter() - transaction_started

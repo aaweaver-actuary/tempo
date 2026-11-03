@@ -14,6 +14,7 @@ from tempo_legacy_database.connections import background_read_connection, connec
 from tempo_legacy_database.adapters import postgres_store
 from tempo_legacy_database.adapters.queue_refresh import reads as read_storage
 from tempo_legacy_database.adapters.queue_refresh import admissions, openings as openings_storage, presentation as presentation_storage
+from tempo_legacy_database.adapters.queue_refresh import foreground as refresh_requests
 from tempo_legacy_database.adapters.queue_refresh.openings import _STUDY_OPENING_ORDER, _STUDY_OPENING_ROUTES, _PRIORITY_OPENING_PAGE_SQL
 from tempo_legacy_database.adapters.queue_refresh.presentation import _QUARANTINE_OPENING_ELIGIBILITY, _PROJECTION_BLOCKED_COUNT_SQL
 from tempo_legacy_database.adapters.queue_refresh.eligibility import _DUE_CARD_ELIGIBILITY, _STUDY_NEW_ELIGIBILITY
@@ -590,6 +591,21 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
 
     payload = task["payload"]
     queue_date = str(payload.get("queue_date") or date.today().isoformat())
+    # Pin before preparing any work. An upgraded checkpoint cannot certify that
+    # its earlier slices covered requests accepted before epoch tracking existed.
+    if "_refresh_cycle_epoch" not in payload:
+        with connection(background=True) as database:
+            if not lock_current_slice(database, task):
+                return False
+            epochs = refresh_requests.lock_refresh_epochs(database, queue_date)
+            epoch = (int(epochs[0]) if epochs is not None else
+                     refresh_requests.signal_queue_refresh_in_transaction(database, queue_date))
+            return advance_task_slice_in_transaction(
+                database, task, next_phase="unlock_opening",
+                next_payload={"queue_date": queue_date, "_queue_phase": "unlock_opening",
+                              "_refresh_cycle_epoch": epoch},
+            )
+    cycle_epoch = int(payload["_refresh_cycle_epoch"])
     phase = str(payload.get("_queue_phase") or _ELIGIBILITY_PHASES[0])
     if phase not in (*_ELIGIBILITY_PHASES, "tactical_introductions",
                      "reset_opening_new", "reset_opening_stale", "reconcile_unseen",
@@ -603,7 +619,7 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     with background_read_connection() as frozen_database:
         frozen_token = list(frozen_opening_order.activation(frozen_database))
     if payload.get("frozen_token", [None, 0]) != frozen_token:
-        payload = {"queue_date": queue_date, "_queue_phase": "unlock_opening", "frozen_token": frozen_token, **({"preserve_through_entry_id": payload["preserve_through_entry_id"]} if "preserve_through_entry_id" in payload else {})}
+        payload = {"queue_date": queue_date, "_queue_phase": "unlock_opening", "frozen_token": frozen_token, "_refresh_cycle_epoch": cycle_epoch, **({"preserve_through_entry_id": payload["preserve_through_entry_id"]} if "preserve_through_entry_id" in payload else {})}
         phase = payload["_queue_phase"]
     # Resume existing checkpoints without traversing optional admission/ranking.
     skipped_phases = {"prioritized_openings": "study_opening_page",
@@ -680,11 +696,12 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
         activity_gate.wait_for_foreground()
         blocked_count = _prepare_projection_blocked_count(queue_date)
     activity_gate.wait_for_foreground()
-    with connection(background=True) as database:
+    with connection(background=True, **({"queue_refresh_publication": True}
+                                     if phase == "randomize_queue" else {})) as database:
         if not lock_current_slice(database, task):
             return False
         if frozen_token != list(frozen_opening_order.activation(database, lock=True)):
-            return advance_task_slice_in_transaction(database, task, next_phase="unlock_opening", next_payload={"queue_date": queue_date})
+            return advance_task_slice_in_transaction(database, task, next_phase="unlock_opening", next_payload={"queue_date": queue_date, "_queue_phase": "unlock_opening", "_refresh_cycle_epoch": cycle_epoch})
         position_introduction_fence = None
         if planned_introduction is not None:
             from tempo_evidence_math.position_learning import Hold
@@ -695,6 +712,23 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
             if isinstance(position_introduction_fence, Hold):
                 raise RuntimeError('Position introduction held: ' + position_introduction_fence.reason)
         if phase == "publish_projection":
+            epochs = refresh_requests.lock_refresh_epochs(database, queue_date)
+            if epochs is None:
+                raise RuntimeError("Queue refresh request epoch is missing")
+            requested_epoch = int(epochs[0])
+            if requested_epoch != cycle_epoch:
+                if requested_epoch < cycle_epoch:
+                    raise RuntimeError("Queue refresh cycle is ahead of its durable request epoch")
+                # Coalesce every late request into one complete follow-up. This
+                # checkpoint releases the lease using the existing post-commit
+                # worker continuation; no readiness is published in between.
+                return advance_task_slice_in_transaction(
+                    database, task, next_phase="unlock_opening",
+                    next_payload={"queue_date": queue_date, "_queue_phase": "unlock_opening",
+                                  "_refresh_cycle_epoch": requested_epoch},
+                )
+            if not refresh_requests.publish_refresh_epoch_if_current(database, queue_date, cycle_epoch):
+                raise RuntimeError("Queue refresh publication lost its request epoch")
             presentation_storage.publish_projection(database, queue_date, blocked_count, datetime.now(timezone.utc).isoformat())
             if not complete_task_slice_in_transaction(database, task):
                 raise RuntimeError("Queue projection publication lost its task lease")
@@ -882,6 +916,7 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
             next_payload = {"queue_date": queue_date, "_queue_phase": next_phase}
         if "preserve_through_entry_id" in payload:
             next_payload["preserve_through_entry_id"] = payload["preserve_through_entry_id"]
+        next_payload["_refresh_cycle_epoch"] = cycle_epoch
         if 'study_opening_counts' in payload and 'study_opening_counts' not in next_payload:
             next_payload['study_opening_counts'] = payload['study_opening_counts']
         if frozen_token != [None, 0]:
