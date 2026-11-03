@@ -2,6 +2,8 @@ import { settleStudyStorageTasks, advanceStudyTimers, withMissingReceipts } from
 import { initializeStudyIntentStorage } from "../../database/browser/study-intent-storage";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { waitFor } from "@testing-library/react";
+import { Chess } from "chess.js";
+import { canonicalFenKey } from "../../app/utils/canonical-line";
 import { fetchAndInitializeQueue, loadEligibleOfflineQueue } from "../../app/views/fetchAndInitializeQueue";
 import { useTrainingStore } from "../../app/state/training-store";
 import { clearDebugErrors, debugErrors } from "../../app/lib/debug-reporting";
@@ -30,6 +32,35 @@ const activeCard: PracticeCard = {
   orientation: "white", revision: 1, startingFen: asFenString(startingFen),
   moves: [asSanMove("e4"), asSanMove("e5"), asSanMove("Nf3")], userMoveTarget: 2,
 };
+
+// A real wire plan and evidence are passed through the queue adapter and store.
+function issuedPositionCard() {
+  const moves = ["e2e4", "e7e5", "g1f3", "b8c6"];
+  const board = new Chess();
+  const decisions: { move_offset: number; position_key: string; expected_uci: string }[] = [];
+  const manifestDecisions: { decision_id: string; decision_index: number; move_offset: number; fen: string; expected_uci: string }[] = [];
+  moves.forEach((move, offset) => {
+    if (board.turn() === "w") {
+      decisions.push({ move_offset: offset, position_key: canonicalFenKey(board.fen()), expected_uci: move });
+      manifestDecisions.push({ decision_id: String(decisions.length).repeat(64), decision_index: decisions.length - 1,
+        move_offset: offset, fen: board.fen(), expected_uci: move });
+    }
+    board.move(move);
+  });
+  return {
+    id: "italian", queue_entry_id: 42, revision: 3, start_fen: startingFen, moves,
+    content_type: "opening", repertoire_name: "Italian", repertoire_source: "synthetic", trained_color: "white",
+    opening_decision_manifest: { manifest_version: 1, policy_version: 1, manifest_id: "f".repeat(64), presentation_snapshot_id: 1,
+      repertoire_id: "rep-italian", card_id: "italian", card_revision: 3, trained_color: "white", decisions: manifestDecisions },
+    position_study_mode: "position", position_study_hold: null,
+    position_presentation: { version: 1, plan_id: "a".repeat(64), original_card_id: "italian", original_card_revision: 3,
+      queue_entry_id: 42, attempt_id: "issued-attempt-42", owner_epoch: "epoch-1", route_id: "authored-route",
+      target_ply: 0, starting_fen: startingFen, moves_uci: moves, decision_slots: decisions,
+      source_digest: "source-1", local_day: "2026-11-02", skipped_prefix_proof_ids: [] },
+  };
+}
+const positionQueue = (card: unknown) => Response.json({ count: 1, cards: [card] });
+const busyPositionCard = () => ({ ...issuedPositionCard(), position_presentation: null, position_study_hold: "position_card_busy" });
 
 beforeEach(() => {
   localStorage.clear();
@@ -72,6 +103,94 @@ describe("desktop live queue isolation", () => {
       expect(useTrainingStore.getState().serviceError).toBe("");
     } finally { vi.useRealTimers(); }
   });
+  it("retries a busy position head with foreground authority and installs the issued plan", async () => {
+    vi.useFakeTimers();
+    try {
+      const plan = issuedPositionCard();
+      const request = vi.fn().mockResolvedValueOnce(positionQueue(busyPositionCard())).mockResolvedValueOnce(positionQueue(plan));
+      vi.stubGlobal("fetch", request);
+      const loading = fetchAndInitializeQueue(false, { preparePhoneQueue: false });
+      await advanceStudyTimers(5_000);
+      await loading;
+      expect(request).toHaveBeenCalledTimes(2);
+      for (const call of request.mock.calls) {
+        expect(String(call[0])).toContain("/api/queue/window");
+        expect(call[1]?.headers).toBeUndefined();
+        expect(call[1]?.method ?? "GET").toBe("GET");
+      }
+      expect(useTrainingStore.getState().getCard().positionPresentation).toEqual(plan.position_presentation);
+      expect(useTrainingStore.getState().attempt.attemptId).toBe("issued-attempt-42");
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("bounds repeated busy responses and retains the previous attempt", async () => {
+    vi.useFakeTimers();
+    try {
+      useTrainingStore.getState().hydrateLocalQueue([activeCard], true, 1);
+      const attempt = useTrainingStore.getState().attempt;
+      const request = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => positionQueue(busyPositionCard()));
+      vi.stubGlobal("fetch", request);
+      const loading = fetchAndInitializeQueue(false, { preparePhoneQueue: false });
+      const settled = loading.then(() => null, error => error);
+      await advanceStudyTimers(10_000);
+      expect(await settled).toBeInstanceOf(Error);
+      expect(request).toHaveBeenCalledTimes(20);
+      for (const call of request.mock.calls) {
+        expect(String(call[0])).toContain("/api/queue/window");
+        expect(call[1]?.headers).toBeUndefined();
+        expect(call[1]?.method ?? "GET").toBe("GET");
+      }
+      expect(useTrainingStore.getState().getCard().id).toBe(activeCard.id);
+      expect(useTrainingStore.getState().attempt).toEqual(attempt);
+      expect(useTrainingStore.getState().serviceError).toContain("temporarily busy");
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("does not start preparation when a busy retry encounters a priority hold", async () => {
+    vi.useFakeTimers();
+    try {
+      const request = vi.fn().mockResolvedValueOnce(positionQueue(busyPositionCard())).mockResolvedValueOnce(
+        Response.json({ detail: { code: "study_feedback_preparation_pending" } }, { status: 503 }));
+      vi.stubGlobal("fetch", request);
+      const loading = fetchAndInitializeQueue(false, { preparePhoneQueue: false });
+      const settled = loading.then(() => null, error => error);
+      await advanceStudyTimers(5_000);
+      expect(await settled).toBeInstanceOf(Error);
+      expect(request).toHaveBeenCalledTimes(2);
+      expect(String(request.mock.calls[1][0])).toContain("/api/queue/window");
+      expect(request.mock.calls[1][1]?.headers).toBeUndefined();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it.each(["position_source_unavailable", "position_plan_owner_unproven", "position_manifest_scope_unavailable"])(
+    "does not retry the deliberate %s hold", async hold => {
+      const request = vi.fn(async () => positionQueue({ ...busyPositionCard(), position_study_hold: hold }));
+      vi.stubGlobal("fetch", request);
+      await fetchAndInitializeQueue(false, { preparePhoneQueue: false });
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(useTrainingStore.getState().getCard()).toMatchObject({ positionStudyHold: hold, moves: [], userMoveTarget: 0 });
+    },
+  );
+
+  it("cancels a busy retry without replacing the prior queue or attempt", async () => {
+    vi.useFakeTimers();
+    try {
+      useTrainingStore.getState().hydrateLocalQueue([activeCard], true, 1);
+      const attempt = useTrainingStore.getState().attempt;
+      const request = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => positionQueue(busyPositionCard()));
+      vi.stubGlobal("fetch", request);
+      const controller = new AbortController();
+      const loading = fetchAndInitializeQueue(false, { preparePhoneQueue: false, signal: controller.signal });
+      await settleStudyStorageTasks();
+      await vi.advanceTimersByTimeAsync(0);
+      controller.abort();
+      await loading.catch(() => undefined);
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(useTrainingStore.getState().getCard().id).toBe(activeCard.id);
+      expect(useTrainingStore.getState().attempt).toEqual(attempt);
+    } finally { vi.useRealTimers(); }
+  });
+
   it("AS-15 only the current queue generation can settle recovery readiness", async () => {
     let firstRead!: (value: null) => void;
     let secondRead!: (value: null) => void;
