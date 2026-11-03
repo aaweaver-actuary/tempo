@@ -323,9 +323,19 @@ def require_priority_indexes(database, present):
         raise RuntimeError(f'Unexpected migration 49 indexes: {found}')
 
 
+def study_snapshot(database):
+    # Preserve the original overlap proof's whole-table fingerprints on the
+    # latest-schema database, including rows outside the historical copy.
+    return tuple(database.execute("SELECT md5(COALESCE(string_agg(row_to_json(item)::text,',' ORDER BY item.id),'')) FROM " + table + " item").fetchone()[0]
+                 for table in ('cards', 'reviews')) + (
+        database.execute('SELECT COUNT(*) FROM operation_receipts').fetchone()[0],)
+
+
 def historical_rollback_proof(parent_url, owned_url, receipt_ids):
     from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
     sources = historical_migration_sources()
+    with psycopg.connect(owned_url) as original:
+        original_snapshot = study_snapshot(original)
     with private_database(parent_url) as historical_url:
         with psycopg.connect(historical_url) as historical:
             for version, (path, source) in enumerate(sources, 1):
@@ -342,6 +352,8 @@ def historical_rollback_proof(parent_url, owned_url, receipt_ids):
                 require_ledger(historical, 48)
                 require_priority_indexes(historical, False)
                 require_historical_rows(historical, receipt_ids, before)
+                if study_snapshot(original) != original_snapshot:
+                    raise RuntimeError('Original study snapshot changed during rollback')
                 historical.commit()
                 with historical.transaction():
                     historical.execute(sources[-1][1], prepare=False)
@@ -351,8 +363,14 @@ def historical_rollback_proof(parent_url, owned_url, receipt_ids):
                 require_ledger(original, POSTGRES_SCHEMA_VERSION)
                 if historical_rows(original, receipt_ids) != before:
                     raise RuntimeError('Original accepted history changed')
+                if study_snapshot(original) != original_snapshot:
+                    raise RuntimeError('Original study snapshot changed during rollback proof')
+    with psycopg.connect(owned_url) as original:
+        if study_snapshot(original) != original_snapshot:
+            raise RuntimeError('Original study snapshot changed during historical database cleanup')
     return {'schema_path': [49, 48, 49], 'accepted_reviews_retained': 60,
-            'source_and_copy_exact_rows_unchanged': True, 'original_ledger_unchanged': True}
+            'source_and_copy_exact_rows_unchanged': True, 'original_ledger_unchanged': True,
+            'study_snapshot_unchanged': True}
 
 
 def stop_owned_writers(processes, loader, stop_load):
