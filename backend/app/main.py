@@ -119,7 +119,7 @@ from .services.repertoire_statistics import repertoire_statistics, repertoire_po
 from .services.repertoire_game_refresh import execute_repertoire_game_refresh_slice, refreshing_game_scope
 from app.games.ingestion.serialization import serialize_job
 from tempo_legacy_database.adapters.database_executor import database_writer, submit_background_write, submit_foreground_write
-from .services.durable_tasks import enqueue_task, enqueue_task_in_transaction, list_tasks, retry_task
+from .services.durable_tasks import annotate_queue_projection_workers, enqueue_task, enqueue_task_in_transaction, list_tasks, retry_task
 from .services.background_activity import report_progress, set_control
 from .services.background_metrics import BackgroundDiagnostics
 from .services.repertoire_conflicts import (
@@ -983,7 +983,7 @@ def system_tasks():
                 default=0,
             ),
         },
-        "queue_projections": projections,
+        "queue_projections": annotate_queue_projection_workers(projections, tasks, date.today().isoformat()),
     }
     if not postgres_store.configured():
         status["writer"] = {"healthy": database_writer.healthy,

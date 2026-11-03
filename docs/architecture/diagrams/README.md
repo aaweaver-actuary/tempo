@@ -11,6 +11,13 @@ records source-only checks and the removal of Pages publication.
 
 ## Source and status
 
+**SOURCE CANDIDATE / #897:** The legacy [queue-refresh owner view](../../../database/tempo_legacy_database/adapters/queue_refresh/README.md#current-day-refresh-request-and-publication-epochs)
+documents atomic request epochs, pinned complete cycles, coalesced follow-up,
+task-before-projection locking and bounded publication. Its
+[projection dictionary](../../../database/tempo_legacy_database/schema/study-queue-review-2/README.md)
+records the additive epoch fields. This is a source contract; release and
+installed acceptance are maintained in #897.
+
 **SOURCE IMPLEMENTED / #503:** [Study recombination](../../../backend/app/study/recombination/README.md)
 owns the canonical saved-review, route-local join/split transaction, exact manual
 attempt confirmation and original-obligation targeting diagrams. Its six-table

@@ -181,6 +181,14 @@ def test_issue135_queue_wake_continuation_progresses_during_foreground(retry_wak
     assert driver.state()[1]["state"] == "ready" and driver.deliveries == []
 
 
+def replace_with_next_day():
+    # A real rollover, unlike a same-day invalidation, supersedes the lease.
+    with database.connection() as connection:
+        return durable_tasks.enqueue_task_in_transaction(
+            connection, "daily_queue", "current", {"queue_date": "2026-10-10"}, priority=10,
+        )
+
+
 @pytest.mark.parametrize("replace_generation", [False, True], ids=["resume", "stale-deferral"])
 def test_issue135_queue_wake_raced_claim_preserves_checkpoint_and_fences_deferral(
     retry_wakes, monkeypatch, replace_generation,
@@ -202,7 +210,7 @@ def test_issue135_queue_wake_raced_claim_preserves_checkpoint_and_fences_deferra
                 if replace_generation:
                     # Commit a replacement without injecting an extra wake.
                     with queue_refresh_wakeup.capture_queue_refresh_request():
-                        command_gateway._execute_command("replacement", "settings.update", {})
+                        replace_with_next_day()
                 foreground_entered.set()
                 assert release_foreground.wait(5), "Raced-claim proof did not release foreground"
         except BaseException as error:
@@ -267,7 +275,7 @@ def test_issue135_foreground_delayed_wake_claims_only_current_generation_once(re
         original = driver.state()[0]
         driver.deliver_due()
     with queue_refresh_wakeup.capture_queue_refresh_request():
-        command_gateway._execute_command("replacement", "settings.update", {})
+        replace_with_next_day()
     replacement = driver.state()[0]
     assert replacement["generation"] == original["generation"] + 1
 
@@ -275,8 +283,6 @@ def test_issue135_foreground_delayed_wake_claims_only_current_generation_once(re
         driver.executions.append((claimed["generation"], driver.clock[0]))
         with database.connection(background=True) as connection:
             assert durable_tasks.complete_task_slice_in_transaction(connection, claimed)
-            durable_tasks.update_queue_refresh_status_in_transaction(connection, "daily_queue",
-                claimed["payload"], state="ready")
         return False
 
     monkeypatch.setattr(tasks, "execute_postgres_queue_refresh_slice", complete_replacement)
@@ -284,7 +290,8 @@ def test_issue135_foreground_delayed_wake_claims_only_current_generation_once(re
     heapq.heappush(driver.deliveries, driver.deliveries[0])
     driver.deliver_due()
     assert driver.executions == [(replacement["generation"], driver.clock[0])]
-    assert driver.state()[0]["state"] == "complete" and driver.state()[1]["state"] == "ready"
+    assert driver.state()[0]["state"] == "complete"
+    assert driver.state()[1]["state"] == "refreshing"  # Previous day remains historical.
     assert driver.deliveries == []
 
 
@@ -339,7 +346,7 @@ def test_issue135_deferred_queue_recovers_without_periodic_polling(retry_wakes):
     assert driver.polls[-1] == (eligibility, False)
 
 
-def test_issue135_delayed_capacity_wake_cannot_execute_replaced_generation(retry_wakes):
+def test_issue135_delayed_capacity_wake_cannot_execute_replaced_generation(retry_wakes, monkeypatch):
     driver = retry_wakes
     command_gateway.execute_command("original", "settings.update", {})
     driver.deliver_due()
@@ -348,22 +355,39 @@ def test_issue135_delayed_capacity_wake_cannot_execute_replaced_generation(retry
     assert len(driver.deliveries) == 1
     # Replace before the old ETA, then let that old delivery claim current work.
     with queue_refresh_wakeup.capture_queue_refresh_request():
-        command_gateway._execute_command("replacement", "settings.update", {})
+        replace_with_next_day()
     replacement, _projection = driver.state()
     assert replacement["generation"] == original["generation"] + 1
+    def consume_current_without_publishing(claimed):
+        driver.executions.append((claimed["generation"], driver.clock[0]))
+        with database.connection(background=True) as connection:
+            assert durable_tasks.complete_task_slice_in_transaction(connection, claimed)
+        return False
+
+    monkeypatch.setattr(tasks, "execute_postgres_queue_refresh_slice", consume_current_without_publishing)
     driver.clock[0] = eligibility
     driver.deliver_due()
     assert [generation for generation, _time in driver.executions] == [original["generation"], replacement["generation"]]
-    assert driver.state()[0]["state"] == "complete" and driver.state()[1]["state"] == "ready"
+    assert driver.state()[0]["state"] == "complete"
+    assert driver.state()[1]["state"] == "refreshing"  # Previous day remains historical.
 
 
-def test_issue135_earlier_progress_makes_old_delayed_wake_harmless(retry_wakes):
+def test_issue135_earlier_progress_makes_old_delayed_wake_harmless(retry_wakes, monkeypatch):
     driver = retry_wakes
     command_gateway.execute_command("original", "settings.update", {})
     driver.deliver_due()
     original, _projection = driver.state()
     eligibility = datetime.fromisoformat(original["next_attempt_at"])
-    command_gateway.execute_command("replacement", "settings.update", {})
+    def consume_current_without_publishing(claimed):
+        driver.executions.append((claimed["generation"], driver.clock[0]))
+        with database.connection(background=True) as connection:
+            assert durable_tasks.complete_task_slice_in_transaction(connection, claimed)
+        return False
+
+    monkeypatch.setattr(tasks, "execute_postgres_queue_refresh_slice", consume_current_without_publishing)
+    with database.connection() as connection:
+        durable_tasks.enqueue_task_in_transaction(connection, "daily_queue", "current", {"queue_date": "2026-10-10"}, priority=10)
+    queue_refresh_wakeup.wake_queue_refresh()
     driver.deliver_due()
     completed = driver.state()
     assert completed[0]["generation"] == original["generation"] + 1
@@ -390,7 +414,7 @@ def test_issue135_rejected_or_rolled_back_deferral_emits_no_delayed_wake(retry_w
         with pytest.raises(RuntimeError, match="Controlled deferral commit failure"):
             durable_tasks.defer_task_for_transaction_timeout(claimed, TransactionTimeout("Deadline"))
     assert driver.state() == before and len(driver.publications) == publication_count
-    command_gateway.execute_command("replacement", "settings.update", {})
+    replace_with_next_day()
     publication_count = len(driver.publications)
     assert durable_tasks.defer_task_for_transaction_timeout(claimed, TransactionTimeout("Stale deadline")) is False
     assert len(driver.publications) == publication_count

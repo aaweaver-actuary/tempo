@@ -1,5 +1,13 @@
 # Legacy backend migrations
 
+Migration [059](059_queue_refresh_epochs.sql) adds nonnegative requested and
+published queue-refresh epochs at source readiness 59. Existing projection
+generations, queue entries, accepted reviews and retained attempts are preserved.
+In-flight checkpoints without a cycle epoch restart conservatively. Producer
+coalescing and the final publication fence must be deployed together. The
+supported migration workflow requires its existing stopped-writer/backup and
+verification steps; this source change does not itself migrate a live database.
+
 [DDL owner](../README.md) · [Source schema charts](../../schema/README.md)
 
 Migration [058](058_queue_attempt_abandonment.sql) adds exact-origin abandonment receipts at source readiness 58. It preserves origins and accepted review history; no live migration is implied.
@@ -103,3 +111,4 @@ migration has been run by the feature implementation.
 - [056_managed_game_feedback_mode.sql](056_managed_game_feedback_mode.sql)
 - [057_position_study.sql](057_position_study.sql)
 - [058_queue_attempt_abandonment.sql](058_queue_attempt_abandonment.sql)
+- [059_queue_refresh_epochs.sql](059_queue_refresh_epochs.sql)

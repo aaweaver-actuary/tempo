@@ -26,15 +26,17 @@ def test_projection_publication_rolls_back_lost_receipt_and_commits_once(monkeyp
             CREATE TABLE frozen_opening_activation(id INTEGER PRIMARY KEY,run_id TEXT,epoch INTEGER);
             INSERT INTO frozen_opening_activation VALUES(1,NULL,0);
             CREATE TABLE queue_projections(queue_date TEXT PRIMARY KEY,state TEXT,generation INTEGER,
-                refresh_pending INTEGER,last_error TEXT,blocked_count INTEGER,updated_at TEXT);
-            INSERT INTO queue_projections VALUES('2026-10-21','refreshing',5,1,NULL,0,'before');
+                refresh_pending INTEGER,last_error TEXT,blocked_count INTEGER,updated_at TEXT,
+                requested_refresh_epoch INTEGER NOT NULL DEFAULT 0,
+                published_refresh_epoch INTEGER NOT NULL DEFAULT 0);
+            INSERT INTO queue_projections VALUES('2026-10-21','refreshing',5,1,NULL,0,'before',3,2);
         ''')
         callbacks = []
         lease = {'completed': False}
 
         class BorrowedDatabase:
             def execute(self, query, parameters=()):
-                return database.execute(query, parameters)
+                return database.execute(query.replace(' FOR UPDATE', ''), parameters)
 
             def execute_native(self, query, parameters=()):
                 return database.execute(query.replace('%s', '?'), parameters)
@@ -60,16 +62,23 @@ def test_projection_publication_rolls_back_lost_receipt_and_commits_once(monkeyp
         monkeypatch.setattr(prefix_transition_application, 'enqueue_completion',
                             lambda *args: callbacks.append(args[1:]))
         task = {'id': 'task', 'generation': 7,
-                'payload': {'queue_date': '2026-10-21', '_queue_phase': 'publish_projection'}}
+                'payload': {'queue_date': '2026-10-21', '_queue_phase': 'publish_projection',
+                            '_refresh_cycle_epoch': 3}}
         with pytest.raises(RuntimeError, match='publication lost its task lease'):
             refresh.execute_postgres_queue_refresh_slice(task)
         assert tuple(database.execute(
             'SELECT state,generation,refresh_pending,blocked_count,updated_at FROM queue_projections'
         ).fetchone()) == ('refreshing', 5, 1, 0, 'before')
         assert callbacks == []
+        assert tuple(database.execute(
+            'SELECT requested_refresh_epoch,published_refresh_epoch FROM queue_projections'
+        ).fetchone()) == (3, 2)
         lease['completed'] = True
         assert refresh.execute_postgres_queue_refresh_slice(task) is False
         assert tuple(database.execute(
             'SELECT state,generation,refresh_pending,blocked_count FROM queue_projections'
         ).fetchone()) == ('ready', 6, 0, 3)
         assert callbacks == [('task', 7, '2026-10-21')]
+        assert tuple(database.execute(
+            'SELECT requested_refresh_epoch,published_refresh_epoch FROM queue_projections'
+        ).fetchone()) == (3, 3)

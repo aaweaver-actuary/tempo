@@ -43,6 +43,15 @@ def current_membership(database, queue_date):
     ).fetchall()
 
 
+def has_queue_priority(database, queue_date):
+    """Check stored queued reasons while the caller holds the queue-date lock."""
+    return bool(database.execute_native(
+        """SELECT EXISTS(SELECT 1 FROM daily_queue
+           WHERE queue_date=%s AND status='queued' AND gameplay_priority_reason IS NOT NULL)""",
+        (queue_date,),
+    ).fetchone()[0])
+
+
 def locked_membership_hash(database, queue_date):
     return database.execute_native(
         "SELECT membership_hash FROM daily_queue_days WHERE queue_date=%s FOR UPDATE",
@@ -51,17 +60,51 @@ def locked_membership_hash(database, queue_date):
 
 
 def apply_plan(database, entry_ids, positions, buckets, kinds, queue_date):
-    return database.execute_native(
+    """Apply a plan in the caller's transaction and return its matched membership."""
+    if not (len(entry_ids) == len(positions) == len(buckets) == len(kinds)):
+        raise ValueError("Queue plan arrays must have equal lengths")
+    if any(type(entry_id) is not int or entry_id <= 0 for entry_id in entry_ids):
+        raise ValueError("Queue plan entry IDs must be positive integers")
+    if len(set(entry_ids)) != len(entry_ids):
+        raise ValueError("Queue plan entry IDs must be distinct")
+    if not entry_ids:
+        return 0
+
+    # Lock every matched member before deciding whether any writes are safe.
+    # The caller retains its task/date/currentness fences and owns rollback.
+    matched = database.execute_native(
+        """SELECT id FROM daily_queue
+           WHERE id=ANY(%s::bigint[]) AND queue_date=%s AND status='queued'
+           ORDER BY id FOR UPDATE""",
+        (entry_ids, queue_date),
+    ).fetchall()
+    matched_count = len(matched)
+    if matched_count != len(entry_ids):
+        return matched_count
+
+    values = (entry_ids, positions, buckets, kinds, queue_date)
+    database.execute_native(
         """UPDATE daily_queue AS queue
            SET position=planned.position,card_bucket=planned.bucket,
                admission_kind=planned.kind
            FROM unnest(%s::bigint[],%s::bigint[],%s::text[],%s::text[])
                 AS planned(id,position,bucket,kind)
-           WHERE queue.id=planned.id AND queue.queue_date=%s AND queue.status='queued'""",
-        (entry_ids, positions,
-         buckets, kinds,
-         queue_date),
-    ).rowcount
+           WHERE queue.id=planned.id AND queue.queue_date=%s AND queue.status='queued'
+             AND queue.admission_kind IS DISTINCT FROM planned.kind""",
+        values,
+    )
+    database.execute_native(
+        """UPDATE daily_queue AS queue
+           SET position=planned.position,card_bucket=planned.bucket
+           FROM unnest(%s::bigint[],%s::bigint[],%s::text[],%s::text[])
+                AS planned(id,position,bucket,kind)
+           WHERE queue.id=planned.id AND queue.queue_date=%s AND queue.status='queued'
+             AND queue.admission_kind IS NOT DISTINCT FROM planned.kind
+             AND (queue.position,queue.card_bucket) IS DISTINCT FROM
+                 (planned.position,planned.bucket)""",
+        values,
+    )
+    return matched_count
 
 
 def save_plan(database, queue_date, seed, membership_hash, generated_at):

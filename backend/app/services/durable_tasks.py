@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 import json
 import random
 import sqlite3
@@ -128,6 +128,12 @@ def enqueue_task_in_transaction(
 ) -> dict:
     """Persist a task inside the caller's existing short publication transaction."""
 
+    if kind == "daily_queue" and deduplication_key == "current":
+        return _request_current_queue_in_transaction(
+            database, payload, priority=priority, max_attempts=max_attempts,
+            delay_seconds=delay_seconds, minimum_generation=minimum_generation,
+        )
+
     existing = storage.task_by_kind(database, (kind, deduplication_key))
     handoff = getattr(database, '_selected_rebuild_handoff', None)
     selected = isinstance(handoff, dict) and kind == handoff['kind']
@@ -180,6 +186,13 @@ def enqueue_compact_postgres_task_in_transaction(
 ) -> None:
     """Checkpoint a follow-up and its event in one bounded PostgreSQL statement."""
 
+    if kind == "daily_queue" and deduplication_key == "current":
+        _request_current_queue_in_transaction(
+            database, payload, priority=priority, max_attempts=5,
+            delay_seconds=delay_seconds, minimum_generation=0,
+        )
+        return
+
     from datetime import timedelta
 
     now = _now()
@@ -196,6 +209,58 @@ def enqueue_compact_postgres_task_in_transaction(
     storage.prune_events(database, (queued["id"],))
     if kind == "daily_queue":
         mark_queue_refresh_requested()
+
+
+def _merge_preserve_pointer(target, current):
+    """Keep the furthest issued entry protected across queued checkpoints."""
+    values = [value for value in (target.get("preserve_through_entry_id"),
+                                  current.get("preserve_through_entry_id"))
+              if value is not None]
+    if values:
+        target["preserve_through_entry_id"] = max(values)
+    return target
+
+
+def _request_current_queue_in_transaction(database, payload, *, priority, max_attempts,
+                                          delay_seconds, minimum_generation):
+    from tempo_legacy_database.adapters.queue_refresh.foreground import signal_queue_refresh_in_transaction
+
+    payload = dict(payload)
+    payload["queue_date"] = payload.get("queue_date") or date.today().isoformat()
+    now = _now()
+    task, created = storage.lock_or_create_current_queue_task(
+        database, task_id=str(uuid.uuid4()), payload_json=json.dumps(payload, separators=(",", ":")),
+        priority=priority, max_attempts=max_attempts, now=_iso(now),
+        initial_generation=minimum_generation + 1,
+        next_attempt_at=_iso(now + timedelta(seconds=delay_seconds)),
+    )
+    previous_payload = json.loads(task["payload_json"])
+    previous_day = previous_payload.get("queue_date") or payload["queue_date"]
+    started = created
+    if not created and previous_day > payload["queue_date"]:
+        return dict(task)
+    if not created and previous_day == payload["queue_date"] and task["state"] in ACTIVE_STATES:
+        merged = _merge_preserve_pointer(dict(previous_payload), payload)
+        if merged != previous_payload:
+            if not storage.update_locked_queue_task_payload(
+                database, task_id=task["id"], generation=task["generation"],
+                payload_json=json.dumps(merged, separators=(",", ":")),
+            ):
+                raise RuntimeError("Locked current queue task changed during request")
+        task = storage.task_by_id(database, (task["id"],))
+    elif not created:
+        started = True
+        task = storage.prepare_task_upsert()(
+            database,
+            (task["id"], "daily_queue", "current", max(int(task["generation"]) + 1,
+             minimum_generation + 1), priority, json.dumps(payload, separators=(",", ":")),
+             max_attempts, _iso(now + timedelta(seconds=delay_seconds)), task["created_at"], _iso(now)),
+        )
+    signal_queue_refresh_in_transaction(database, payload["queue_date"])
+    if started:
+        _record_event(database, task["id"], task["generation"], "enqueued", "queued", kind="daily_queue")
+        mark_queue_refresh_requested()
+    return dict(task)
 
 
 def claim_task(
@@ -295,6 +360,16 @@ def advance_task_slice_in_transaction(
     database, task: dict, *, next_phase: str, next_payload: dict, eligible_at: str | None = None,
 ) -> bool:
     """Commit slice effects and restart state together in the caller's transaction."""
+
+    if task.get("kind") == "daily_queue":
+        locked = (storage.lock_slice(database, (task["id"],))
+                  if storage.supports_native_execution(database)
+                  else storage.task_by_id(database, (task["id"],)))
+        if not (locked and locked["generation"] == task["generation"]
+                and locked["lease_token"] == task["lease_token"] and locked["state"] == "leased"):
+            return False
+        current = storage.task_by_id(database, (task["id"],))
+        next_payload = _merge_preserve_pointer(dict(next_payload), json.loads(current["payload_json"]))
 
     now = _iso()
     changed = storage.advance_slice(
@@ -539,7 +614,8 @@ def serialize_task(row: sqlite3.Row | dict) -> dict:
         age_seconds = max(0, int((_now() - created_at).total_seconds()))
     except (TypeError, ValueError):
         age_seconds = 0
-    return {
+    row = dict(row)
+    result = {
         "id": row["id"],
         "kind": row["kind"],
         "deduplication_key": row["deduplication_key"],
@@ -555,6 +631,54 @@ def serialize_task(row: sqlite3.Row | dict) -> dict:
         "age_seconds": age_seconds,
         "last_error": row["last_error"],
     }
+    if row["kind"] == "daily_queue" and row["deduplication_key"] == "current":
+        phases = {"unlock_opening", "block_opening", "block_defense", "restore_due", "restore_study",
+                  "tactical_introductions", "reset_opening_new", "reset_opening_stale", "reconcile_unseen",
+                  "admit_due", "admit_position_due", "prioritized_openings", "prioritized_opening_item",
+                  "study_opening_page", "study_opening_item", "admit_study", "real_game_misses",
+                  "randomize_queue", "quarantine", "publish_projection"}
+        try:
+            payload = json.loads(row.get("payload_json") or "{}")
+            if not isinstance(payload, dict):
+                payload = {}
+        except (TypeError, ValueError):
+            payload = {}
+        day = payload.get("queue_date")
+        try:
+            day = datetime.strptime(day, "%Y-%m-%d").date().isoformat()
+        except (TypeError, ValueError):
+            day = None
+        phase = payload.get("_queue_phase")
+        result["queue_date"] = day
+        result["queue_phase"] = phase if isinstance(phase, str) and phase in phases else None
+        result["transaction_timeout_count"] = row.get("transaction_timeout_count") or 0
+        # The stored checkpoint contains the entire private payload. Expose only
+        # known phase and bounded numeric offsets, never the raw checkpoint.
+        checkpoint = None
+        try:
+            saved = json.loads(row.get("transaction_timeout_checkpoint") or "null")
+            saved_payload = saved[-1] if isinstance(saved, list) and saved else None
+            if isinstance(saved_payload, dict):
+                saved_phase = saved_payload.get("_queue_phase")
+                checkpoint = {"queue_phase": saved_phase if isinstance(saved_phase, str) and saved_phase in phases else None}
+                for key in ("opening_index", "study_opening_index"):
+                    value = saved_payload.get(key)
+                    if type(value) is int and 0 <= value <= 1000000:
+                        checkpoint[key] = value
+        except (TypeError, ValueError):
+            pass
+        result["timeout_checkpoint"] = checkpoint
+    return result
+
+
+def annotate_queue_projection_workers(projections, tasks, today):
+    """Label read-only projection history without treating timestamps as heartbeats."""
+    active_days = {task.get("queue_date") for task in tasks
+                   if task.get("kind") == "daily_queue" and task.get("deduplication_key") == "current"
+                   and task.get("state") in {"queued", "leased", "retrying"}}
+    return [{**projection, "worker_status": ("historical" if projection.get("queue_date") < today
+             else "current" if projection.get("queue_date") == today and today in active_days
+             else "inactive")} for projection in projections]
 
 
 def list_tasks() -> list[dict]:

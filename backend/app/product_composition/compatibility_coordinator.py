@@ -13,28 +13,37 @@ def enqueue_daily_queue_refresh(*, foreground: bool = True) -> dict:
     with read_connection() as database:
         queue_date = current_study_day(database)
     task = enqueue_task("daily_queue", "current", {"queue_date": queue_date}, priority=10, foreground=foreground)
-    submit = submit_foreground_write if foreground else submit_background_write
-    submit(lambda database: queue_maintenance_storage.mark_queue_projection_refreshing(database, queue_date),
-           label=f"daily-queue-refreshing:{queue_date}")
     compose_compatibility_coordinator().wake()
     return task
 
 
 def _execute_daily_queue_task(task: dict) -> None:
     queue_date = task["payload"].get("queue_date") or date.today().isoformat()
-    try:
-        submit_background_write(
-            lambda database: queue_application.materialize_daily_queue(database, queue_date,
-                preserve_through_entry_id=task["payload"].get("preserve_through_entry_id")),
-            label=f"daily-queue:{queue_date}",
-        )
-    except Exception as error:
-        sanitized_error = str(error)[:500]
-        submit_background_write(
-            lambda database: queue_maintenance_storage.mark_queue_projection_failed(database, queue_date, sanitized_error),
-            label=f"daily-queue-failed:{queue_date}",
-        )
-        raise
+    def publish(database):
+        import json
+        from tempo_legacy_database.adapters.durable_tasks import storage
+        from tempo_legacy_database.adapters.queue_refresh import foreground
+        from app.services.durable_tasks import complete_task_slice_in_transaction
+        # SQLite's owning writer transaction serializes acceptance and complete
+        # materialization. Use the durable payload, including a late preserve
+        # pointer, rather than the delivery snapshot.
+        current = storage.task_by_id(database, (task["id"],))
+        if not (current and current["state"] == "leased"
+                and current["generation"] == task["generation"]
+                and current["lease_token"] == task["lease_token"]):
+            return
+        payload = json.loads(current["payload_json"])
+        epochs = foreground.lock_refresh_epochs(database, queue_date)
+        epoch = (int(epochs[0]) if epochs is not None else
+                 foreground.signal_queue_refresh_in_transaction(database, queue_date))
+        queue_application.materialize_daily_queue(database, queue_date,
+            preserve_through_entry_id=payload.get("preserve_through_entry_id"))
+        if not foreground.publish_refresh_epoch_if_current(database, queue_date, epoch):
+            raise RuntimeError("Compatibility queue publication lost its request epoch")
+        if not complete_task_slice_in_transaction(database, task):
+            raise RuntimeError("Compatibility queue publication lost its task lease")
+    # The coordinator's existing failure handler owns fenced failure status.
+    submit_background_write(publish, label=f"daily-queue:{queue_date}")
 
 
 def _ensure_current_daily_queue() -> None:

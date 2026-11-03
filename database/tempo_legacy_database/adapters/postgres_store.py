@@ -276,7 +276,9 @@ def prepare_authoritative_background_pool() -> None:
 @contextmanager
 def connection(*, read_only: bool = False, background: bool = False, authoritative: bool = False,
                repeatable_read: bool = False, pool_timeout_seconds: float | None = None,
-               repertoire_snapshot: bool = False) -> Iterator[PostgresConnection]:
+               repertoire_snapshot: bool = False, queue_refresh_publication: bool = False) -> Iterator[PostgresConnection]:
+    if queue_refresh_publication and (not background or read_only or repertoire_snapshot):
+        raise ValueError("Queue refresh publication requires a background writer")
     if repertoire_snapshot and not read_only:
         raise ValueError("repertoire_snapshot_requires_read_only")
     if repertoire_snapshot and background:
@@ -309,6 +311,11 @@ def connection(*, read_only: bool = False, background: bool = False, authoritati
                     "TEMPO_POSTGRES_BACKGROUND_TRANSACTION_TIMEOUT_MS", 250,
                     minimum=50, maximum=10000,
                 )
+                if queue_refresh_publication:
+                    # Measured 1,258-row atomic publication needs 228–337ms
+                    # after changed-only writes. Other slices keep their normal
+                    # configured budget; this one profile remains capped.
+                    transaction_limit = 500
                 lock_limit = _background_timeout_ms(
                     "TEMPO_POSTGRES_BACKGROUND_LOCK_TIMEOUT_MS", 25,
                     minimum=1, maximum=1000,

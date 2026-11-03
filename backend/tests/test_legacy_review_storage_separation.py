@@ -84,25 +84,28 @@ def test_evidence_revision_authority_keeps_current_or_retained_completed_revisio
     assert review.LearningReviewAdapter(None,None).evidence_revision_allowed(command) is allowed
 
 
-def test_postgres_maturity_enqueues_before_projection_on_same_transaction(monkeypatch):
+def test_postgres_maturity_signals_through_atomic_task_owner(monkeypatch):
     from app.services import durable_tasks
     events=[];database=object()
     monkeypatch.setattr(review.storage,'configured',lambda: True)
     def enqueue(db,*_args,**_kwargs):assert db is database;events.append('task')
-    def mark(db,day):assert db is database and day==DAY.isoformat();events.append('projection')
     monkeypatch.setattr(durable_tasks,'enqueue_task_in_transaction',enqueue)
-    monkeypatch.setattr(review,'mark_queue_refreshing',mark)
     review.LearningReviewAdapter(database,None).refresh_maturity(SimpleNamespace(local_day=DAY))
-    assert events==['task','projection']
+    # The task owner now writes the epoch/projection atomically; a second mark
+    # would race completion in the compatibility path.
+    assert events==['task']
 
 
-def test_sqlite_maturity_defers_and_resolves_callback_at_flush(monkeypatch):
+def test_sqlite_maturity_signals_in_transaction_and_defers_only_wake(monkeypatch):
+    from app.services import durable_tasks
+    from app.services.game_sync_coordinator import coordinator
     events=[]
     monkeypatch.setattr(review.storage,'configured',lambda: False)
+    monkeypatch.setattr(durable_tasks,'enqueue_task_in_transaction',lambda *_args,**_kwargs: events.append('task'))
+    monkeypatch.setattr(coordinator,'wake',lambda: events.append('wake'))
     adapter=review.LearningReviewAdapter(None,None)
-    adapter.refresh_maturity(SimpleNamespace(local_day=DAY));assert events==[]
-    monkeypatch.setattr(adapter,'_compatibility_queue_refresh',lambda day: events.append(day))
-    adapter.finish_compatibility_effects();assert events==[DAY.isoformat()]
+    adapter.refresh_maturity(SimpleNamespace(local_day=DAY));assert events==['task']
+    adapter.finish_compatibility_effects();assert events==['task','wake']
 
 
 def test_receipt_write_precedes_late_current_revision_and_remediation_settlement(monkeypatch):
