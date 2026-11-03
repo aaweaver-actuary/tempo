@@ -107,3 +107,26 @@ def test_queue_refresh_new_day_replaces_singleton_without_marking_old_day_ready(
     assert projection["state"] == "refreshing" and projection["refresh_pending"] == 1
     _, old = task_and_projection(store)
     assert old["state"] != "ready"
+
+
+def test_queue_refresh_late_older_day_does_not_replace_newer_task(store):
+    new = request(store, '2026-10-08')
+    before = task_and_projection(store, '2026-10-08')
+    request(store, DAY)
+    assert task_and_projection(store, '2026-10-08') == before
+    with store.read_connection() as conn:
+        assert conn.execute('SELECT count(*) FROM queue_projections WHERE queue_date=?', (DAY,)).fetchone()[0] == 0
+
+
+def test_queue_refresh_advance_preserves_new_pointer_from_locked_task(store, monkeypatch):
+    request(store, preserve=42)
+    def write(operation, *, label):
+        with store.connection(background=True) as conn:
+            return operation(conn)
+    monkeypatch.setattr(durable_tasks, 'submit_background_write', write)
+    claimed = durable_tasks.claim_task('daily_queue')
+    request(store, preserve=50)
+    with store.connection(background=True) as conn:
+        assert durable_tasks.advance_task_slice_in_transaction(conn, claimed, next_phase='next', next_payload={'queue_date': DAY, '_queue_phase': 'next'})
+    after, _ = task_and_projection(store)
+    assert json.loads(after['payload_json'])['preserve_through_entry_id'] == 50

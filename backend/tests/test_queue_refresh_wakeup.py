@@ -98,8 +98,10 @@ def test_issue135_queue_wake_coalesces_replacements_without_claiming(queue_wakeu
     monkeypatch.setattr(queue_refresh_wakeup, "wake_queue_refresh", lambda: observed_wakes.append(True))
     command_gateway.execute_command("replace", "settings.update", {})
     with sqlite3.connect(queue_wakeup_store) as observer:
-        assert observer.execute("SELECT generation,state,lease_token FROM background_tasks").fetchone() == (7, "queued", None)
+        assert observer.execute("SELECT generation,state,lease_token FROM background_tasks").fetchone() == (1, "queued", None)
     assert observed_wakes == [True]
+    with sqlite3.connect(queue_wakeup_store) as observer:
+        assert observer.execute("SELECT requested_refresh_epoch,published_refresh_epoch FROM queue_projections").fetchone() == (7, 0)
 
 
 def test_issue135_queue_ensure_receipt_replay_wakes_without_replacing_work(monkeypatch):

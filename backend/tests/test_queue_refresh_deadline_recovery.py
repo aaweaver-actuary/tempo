@@ -86,6 +86,9 @@ def test_issue135_new_queue_generation_does_not_inherit_deadline_cooldown(
 ):
     observed_clock = queue_refresh_store
     for _generation_number in range(7):
+        if previous_state == "retrying" and _generation_number:
+            with database.connection(background=True) as connection:
+                connection.execute("UPDATE background_tasks SET state='failed' WHERE kind='daily_queue'")
         queued = _queue_task()
         claimed = durable_tasks.claim_task("daily_queue")
         assert _deadline(claimed)
@@ -292,7 +295,7 @@ def test_issue135_replacement_generation_wins_failure_publication_race(
             with sqlite3.connect(database.DB_PATH) as replacement_connection:
                 replacement_connection.row_factory = sqlite3.Row
                 durable_tasks.enqueue_task_in_transaction(replacement_connection,
-                    "daily_queue", "current", {"queue_date": QUEUE_DATE}, priority=10)
+                    "daily_queue", "current", {"queue_date": "2026-10-08"}, priority=10)
                 replacement_connection.execute("UPDATE queue_projections SET last_error=? WHERE queue_date=?",
                     ("Replacement generation owns status", QUEUE_DATE))
 
