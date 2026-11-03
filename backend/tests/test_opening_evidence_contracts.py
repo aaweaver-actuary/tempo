@@ -211,7 +211,10 @@ def test_foreground_review_http_preparation_keeps_foreground_request_lease(monke
         assert not activity_gate.in_background and activity_gate.foreground_requests_active
         snapshot = {'id': 1, 'card_id': 'shadow-card', 'revision': 3, 'start_fen': manifest['decisions'][0]['fen'],
                     'moves_json': '["e2e4","e7e5","g1f3","b8c6","f1b5"]', 'trained_color': 'white', 'effective_trained_color': 'white'}
-        yield SimpleNamespace(execute_native=lambda *arguments: SimpleNamespace(fetchone=lambda: snapshot))
+        def source_row(statement, *_arguments):
+            row = (False,) if statement == "SELECT to_regclass('public.study_position_issued_plans') IS NOT NULL" else snapshot
+            return SimpleNamespace(fetchone=lambda: row)
+        yield SimpleNamespace(execute_native=source_row)
     monkeypatch.setattr(main.postgres_store, 'connection', source_read)
     submitted = []
     def dispatch(name, payload, **options):
