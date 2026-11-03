@@ -304,3 +304,22 @@ def test_black_learner_and_wire_caps_and_unknown_fields():
         for index in range(20)
     ]
     assert not isinstance(validate_wire_v1(max_wire), Hold)
+
+
+def test_presentation_end_freezes_authored_prefix_and_replays_exactly():
+    route = option("italian-knight-attack")
+    request = request_for(route, target_ply=2)
+    full = select_and_freeze(request)
+    shortened = select_and_freeze(replace(request, end_ply=5,
+        dues=tuple(w for w in request.dues if w.definition.key in
+                   {d.definition.key for d in route.decisions if d.ply < 5})))
+    assert not isinstance(full, Hold) and full.moves_uci == route.moves_uci
+    assert not isinstance(shortened, Hold)
+    assert shortened.moves_uci == route.moves_uci[:5]
+    assert tuple(s.original_ply for s in shortened.decision_slots) == (0, 2, 4)
+    assert IssuedPlan.from_record(json.loads(json.dumps(shortened.to_record()))) == shortened
+    for end in (2, 4, 6, len(route.moves_uci), True):
+        assert isinstance(select_and_freeze(replace(request, end_ply=end)), Hold)
+    missing_before_target = replace(request, end_ply=5, dues=tuple(
+        w for w in request.dues if w.definition.key != route.decisions[0].definition.key))
+    assert isinstance(select_and_freeze(missing_before_target), Hold)

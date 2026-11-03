@@ -135,6 +135,28 @@ def test_fresh_issuance_checks_admission_and_all_witnesses_before_insert(monkeyp
     assert issuer.issue_in_borrowed_transaction(db, work).reason == "position_due_witness_changed"
     assert not any('INSERT INTO study_position_issued_plans' in sql for sql, _ in db.calls)
 
+    # A forged or stale cutoff is rejected even when all shown witnesses match.
+    route = work.source.routes[0]
+    request = request_for(route, target_ply=2)
+    shown = {d.definition.key for d in route.decisions if d.ply < 5}
+    short = prepare_position_issuance(work.source, replace(request, end_ply=5,
+        dues=tuple(w for w in request.dues if w.definition.key in shown)))
+    plan = short.plan
+    Reader.witnesses = plan.due_positions
+    next_key = next(d.definition.key for d in route.decisions if d.ply >= 5)
+    def context(self, keys):
+        if keys == (next_key,):
+            return (self.omitted,)
+        return self.witnesses
+    Reader.read_context = context
+    Reader.omitted = Hold("position_state_missing")
+    assert issuer.issue_in_borrowed_transaction(Writer(), short) == plan
+    Reader.omitted = request.dues[-1]
+    db = Writer()
+    assert issuer.issue_in_borrowed_transaction(db, short).reason == "position_presentation_end_unproven"
+    assert not any('INSERT INTO study_position_issued_plans' in sql for sql, _ in db.calls)
+    assert issuer.issue_in_borrowed_transaction(Database(stored(plan)), short).to_record() == plan.to_record()
+
 
 def test_clean_proof_requires_saved_review_and_all_first_response_receipts(monkeypatch):
     from app.services import postgres_opening_evidence as evidence

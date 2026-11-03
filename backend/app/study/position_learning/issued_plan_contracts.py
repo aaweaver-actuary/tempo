@@ -134,6 +134,7 @@ class SelectionRequest:
     queue_entry_id: int
     attempt_id: str
     authored_source_token: Mapping[str, Any] | None = None
+    end_ply: int | None = None
 
 
 def _canonical_json(value: Any) -> str:
@@ -417,6 +418,15 @@ def select_and_freeze(request: SelectionRequest) -> IssuedPlan | Hold:
                          study_day=day, owner_epoch=epoch)
     if isinstance(chosen, Hold):
         return chosen
+    if request.end_ply is not None:
+        end = request.end_ply
+        if (type(end) is not int or end <= chosen.target_ply
+                or end >= chosen.start_ply + len(chosen.moves_uci)
+                or not any(d.ply + 1 == end for d in chosen.decision_occurrences)):
+            return Hold("invalid_presentation_end")
+        chosen = replace(chosen,
+            moves_uci=chosen.moves_uci[:end - chosen.start_ply],
+            decision_occurrences=tuple(d for d in chosen.decision_occurrences if d.ply < end))
     return freeze_issued_plan(
         original_card_id=request.original_card_id,
         original_card_revision=request.original_card_revision,

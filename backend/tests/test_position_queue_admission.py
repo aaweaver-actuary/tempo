@@ -401,7 +401,7 @@ def test_urgent_game_target_is_selected_when_natural_due_is_false(monkeypatch):
     from tempo_legacy_database import connections
     from tempo_legacy_database.adapters.study import game_feedback, position_due_candidates, position_issued_plans
     from tests.test_position_issued_plan_contracts import option, request_for
-    request = request_for(option('italian-knight-attack'), due=False)
+    request = request_for(option('italian-knight-attack'), target_ply=2, due=False)
     route, target = request.routes[0], request.target
     class Token:
         repertoire_id = target.key.repertoire_id
@@ -434,7 +434,11 @@ def test_urgent_game_target_is_selected_when_natural_due_is_false(monkeypatch):
     class DueReader:
         def __init__(self, *a, **kw): pass
         def read_due_page(self, **kw): pytest.fail('Urgent target must not require natural due')
-        def read_context(self, keys): return request.dues
+        missing = None
+        def read_context(self, keys):
+            witnesses = {w.definition.key: w for w in request.dues}
+            return tuple(Hold('position_state_missing') if key == self.missing else witnesses[key]
+                         for key in keys)
     import pytest
     monkeypatch.setattr(connections, 'read_connection', borrowed)
     monkeypatch.setattr(queue_next_card, '_cached_position_source', lambda *a: source)
@@ -447,6 +451,15 @@ def test_urgent_game_target_is_selected_when_natural_due_is_false(monkeypatch):
     assert result.mode == 'position' and result.urgency == urgency
     witness = next(w for w in result.proposal.plan.due_positions if w.definition == target)
     assert witness.due is False and witness.position_revision == 7
+    assert result.proposal.plan.moves_uci == route.moves_uci
+    DueReader.missing = route.decisions[3].definition.key
+    result = queue_next_card.prepare_queue_head(payload)
+    assert result.mode == 'position'
+    assert result.proposal.plan.moves_uci == route.moves_uci[:5]
+    assert len(result.proposal.plan.due_positions) == 3
+    DueReader.missing = route.decisions[0].definition.key
+    result = queue_next_card.prepare_queue_head(payload)
+    assert result.mode == 'hold' and result.reason == 'position_state_missing'
 
 
 def test_changed_urgency_rolls_back_inserted_position_plan(monkeypatch):

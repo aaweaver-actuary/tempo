@@ -28,6 +28,10 @@ The original queue/card/attempt identity, frozen plan, definition, source proof,
 owner epoch and a due witness for every physically shown learner position must
 be persisted together. A proposed plan is not an issued receipt. A matching
 retry returns the original issuance; changed bytes under the same identity hold.
+When the first unavailable state is after the target, queue preparation may end
+at the preceding learner response. The issuer rechecks the exact certified route
+slice and the first omitted state before accepting that boundary. A completed
+root-prefix attempt proves only its played moves and saved responses.
 
 The writer uses the captured due witness as necessary, never sufficient, positive
 entitlement. Under the existing borrowed transaction it locks position states in

@@ -210,8 +210,22 @@ def prepare_queue_head(payload):
         witnesses = reader.read_context(keys)
         if isinstance(witnesses, Hold):
             return held(witnesses.reason)
-        if any(isinstance(w, Hold) for w in witnesses):
-            return held(next(w.reason for w in witnesses if isinstance(w, Hold)))
+        # Only an absent future state may end a presentation. Every decision
+        # through the target still needs its actual owner witness.
+        by_key = dict(zip(keys, witnesses))
+        end_ply = None
+        for index, decision in enumerate(route.decision_occurrences):
+            witness = by_key[decision.definition.key]
+            if isinstance(witness, Hold):
+                if (witness.reason != 'position_state_missing' or decision.ply <= route.target_ply
+                        or index == 0):
+                    return held(witness.reason)
+                end_ply = route.decision_occurrences[index - 1].ply + 1
+                break
+        if end_ply is not None:
+            shown_keys = tuple(dict.fromkeys(d.definition.key for d in route.decision_occurrences
+                                             if d.ply < end_ply))
+            witnesses = tuple(by_key[key] for key in shown_keys)
         if urgency is not None:
             target_witness = next((w for w in witnesses if w.definition == target), None)
             if target_witness is None or target_witness.position_revision < urgency.position_version:
@@ -219,7 +233,7 @@ def prepare_queue_head(payload):
         attempt = str(uuid5(NAMESPACE_URL, 'tempo:position-study:%s:%s:%s' %
                             (payload['entry_id'], payload['card_id'], payload['expected_revision'])))
         request = SelectionRequest(target, source.routes, tuple(witnesses), tuple(proofs),
-            payload['card_id'], payload['expected_revision'], payload['entry_id'], attempt)
+            payload['card_id'], payload['expected_revision'], payload['entry_id'], attempt, end_ply=end_ply)
         proposal = prepare_position_issuance(source, request)
         return (held(proposal.reason) if isinstance(proposal, Hold) else
                 PreparedQueueHead(payload, 'position', proposal, urgency=urgency))

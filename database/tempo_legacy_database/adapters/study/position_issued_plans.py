@@ -133,9 +133,17 @@ def issue_in_borrowed_transaction(database, prepared):
         return Hold("position_route_unproven")
     route = routes[0]
     cert = route.certificate
-    expected_decisions = tuple(d for d in route.decisions if d.ply >= plan.start_ply)
+    end_ply = plan.start_ply + len(plan.moves_uci)
+    expected_decisions = tuple(d for d in route.decisions if plan.start_ply <= d.ply < end_ply)
+    omitted_decisions = tuple(d for d in route.decisions if d.ply >= end_ply)
+    shortened_end = end_ply < len(route.moves_uci)
     if (not route.legal_verified or not cert.complete or not cert.current_integrity
-            or plan.moves_uci != route.moves_uci[plan.start_ply:]
+            or plan.moves_uci != route.moves_uci[plan.start_ply:end_ply]
+            or end_ply > len(route.moves_uci)
+            or (shortened_end and (request.end_ply != end_ply or not omitted_decisions
+                or not expected_decisions or expected_decisions[-1].ply + 1 != end_ply
+                or end_ply <= plan.target_ply))
+            or (not shortened_end and request.end_ply is not None)
             or (plan.start_ply == 0 and plan.starting_fen != route.start_fen)
             or (not plan.skipped_prefix_proof_ids and (plan.start_ply != 0
                 or plan.opponent_cue_uci is not None or plan.opponent_cue_ply is not None))
@@ -243,6 +251,13 @@ def issue_in_borrowed_transaction(database, prepared):
     reader = PositionDueCandidateReader(database, repertoire_id=token.repertoire_id,
         owner_epoch=plan.owner_epoch, source_digest=token.authored_digest,
         issued_at=plan.issued_at, study_day=plan.local_day)
+    if shortened_end:
+        # The proposed cutoff is authorized only by the first omitted state's
+        # actual absence, not merely by an omitted or forged witness.
+        omitted = reader.read_context((omitted_decisions[0].definition.key,))
+        if (isinstance(omitted, Hold) or len(omitted) != 1
+                or not isinstance(omitted[0], Hold) or omitted[0].reason != "position_state_missing"):
+            return Hold("position_presentation_end_unproven")
     keys = tuple(w.definition.key for w in plan.due_positions)
     locked = reader.states.read_many(keys, lock=True)
     if isinstance(locked, Hold):

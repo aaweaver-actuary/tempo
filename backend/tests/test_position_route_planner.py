@@ -194,3 +194,14 @@ def test_missing_target_or_route_holds():
     missing = PositionKey("rep-italian", "8/8/8/8/8/8/8/K6k w - -")
     assert plan(missing, (route,)).reason == "no_exact_target_route"
     assert plan(target_after(route, 6), ()).reason == "no_exact_target_route"
+
+
+def test_clean_completed_root_prefix_does_not_credit_unplayed_target():
+    route = option("italian-knight-attack")
+    proof = clean_proof(route, moves=route.moves_uci[:5])
+    chosen = plan(target_after(route, 6), (route,), (proof,))
+    assert isinstance(chosen, Plan)
+    assert chosen.start_ply == 5
+    assert chosen.opponent_cue_uci == route.moves_uci[5]
+    assert tuple(d.ply for d in chosen.skipped_prefix_decisions) == (0, 2, 4)
+    assert chosen.moves_uci == route.moves_uci[5:]
