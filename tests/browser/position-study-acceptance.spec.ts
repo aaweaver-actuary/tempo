@@ -214,7 +214,7 @@ async function waitForProtectedStudyQuiet() {
 /* iPhone standalone enables the real offline preparation path and service worker. */
 test.use({ viewport: { width: 390, height: 844 }, userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1" });
 
-test("position Study keeps its server-issued suffix and first-wrong journal across reload and offline", async ({ page, request, context, baseURL }) => {
+test("position Study keeps its server-issued suffix and first-wrong journal across reload and offline", async ({ page, request, context, baseURL }, testInfo) => {
   test.setTimeout(180_000);
   const project = process.env.TEMPO_TEST_COMPOSE_PROJECT;
   if (!project || !/^tempo-pg-regressions-\d+-[a-f0-9]+$/.test(project))
@@ -276,15 +276,48 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
   const updatedSettings = await request.put(`${api}/settings`, { data: { ...settings, new_cards_per_day: 2, initial_depth: 2, lichess_username: "", chesscom_username: "" } });
   expect(updatedSettings.ok(), await updatedSettings.text()).toBe(true);
   const identity = `position-browser-${randomUUID().replaceAll("-", "")}`;
+  const requestTimingSamples: Array<{
+    operation: "queue_window" | "accepted_review_http";
+    elapsed_ms: number;
+    http_status: number;
+  }> = [];
+  let unavailableAcceptedReviewTimingCount = 0;
+  const acceptedReviewTimingTasks: Promise<void>[] = [];
+  context.on("response", response => {
+    const request = response.request();
+    const responseUrl = new URL(response.url());
+    const cardAReview = `${api}/cards/${identity}-card-a/review`;
+    const cardBReview = `${api}/cards/${identity}-card-b/review`;
+    if (request.method() !== "POST" ||
+        (responseUrl.origin + responseUrl.pathname !== cardAReview && responseUrl.origin + responseUrl.pathname !== cardBReview))
+      return;
+    acceptedReviewTimingTasks.push((async () => {
+      await response.finished();
+      if (!response.ok()) return;
+      const result: unknown = await response.json();
+      if (!result || typeof result !== "object" || !("persisted" in result) || result.persisted !== true) return;
+      const elapsedMs = request.timing().responseEnd;
+      if (Number.isFinite(elapsedMs) && elapsedMs >= 0) {
+        requestTimingSamples.push({ operation: "accepted_review_http", elapsed_ms: elapsedMs, http_status: response.status() });
+      } else {
+        unavailableAcceptedReviewTimingCount += 1;
+      }
+    })());
+  });
   await context.addInitScript(() => Object.defineProperty(navigator, "standalone", { value: true, configurable: true }));
   await waitForProtectedStudyQuiet();
   fixture(project, "seed", identity);
   const before = fixture<Snapshot>(project, "read", identity);
   await prepareUI(page);
   const queue = async () => {
+    const startedAt = performance.now();
     const response = await request.get(`${api}/queue/window?limit=20&include_opening_evidence=true`);
+    const status = response.status();
+    const body = await response.body();
+    const elapsedMs = performance.now() - startedAt;
+    requestTimingSamples.push({ operation: "queue_window", elapsed_ms: elapsedMs, http_status: status });
     if (!response.ok()) return { cards: [] } satisfies Queue;
-    return await response.json() as Queue;
+    return JSON.parse(body.toString()) as Queue;
   };
   await expect.poll(async () => (await queue()).cards[0]?.position_presentation?.original_card_id).toBe(`${identity}-card-a`);
   const first = (await queue()).cards[0].position_presentation!;
@@ -381,4 +414,15 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
   } finally {
     await context.setOffline(false);
   }
+  await Promise.all(acceptedReviewTimingTasks);
+  await testInfo.attach("position-study-request-timings", {
+    body: Buffer.from(JSON.stringify({
+      source: "synthetic_disposable_browser_journey",
+      queue_elapsed_boundary: "client elapsed from performance.now before queue/window request through full response body consumption; not server transaction duration",
+      accepted_review_elapsed_boundary: "Playwright request.timing().responseEnd after response.finished(), relative to request start",
+      samples: requestTimingSamples,
+      unavailable_accepted_review_timing_count: unavailableAcceptedReviewTimingCount,
+    }, null, 2)),
+    contentType: "application/json",
+  });
 });
