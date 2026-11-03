@@ -1,6 +1,6 @@
 # Retired activity metadata census — 2026-11-03
 
-**NO SAFE DELETION.** Current database and browser counts, job relationships and receipt references are unknown. No live database or browser was accessed. The 2026-10-30 diagnostic summarized in task 03 observed two unpaused `priority` activity rows, but it describes a different older installation and is not a current count. No exact eligible subset, expected count, allowlist or restore rehearsal is established. No mutation is proposed.
+**NO SAFE DATABASE DELETION.** The initial census did not access live database or browser state, so its grouped counts, job relationships and receipt references remained unknown. The later bounded Safari reconciliation below covers only six browser records and their exact server identities. The 2026-10-30 diagnostic summarized in task 03 observed two unpaused `priority` activity rows, but it describes a different older installation and is not a current count. No exact eligible subset, expected count, allowlist or restore rehearsal is established. No mutation is proposed.
 
 Source inspected: `aa7d0dfe2ef957c270ea4cefe15ebe26dfe9e834` after tasks 09/10. Activity progress/control and command recovery remain supported even though tray projection/routes were removed. In particular, `activity.control`, `activity.progress` and `activity.task.retry` remain registered; accepted operations may be recovered. An error response does not establish that an effect was not accepted.
 
