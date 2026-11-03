@@ -66,6 +66,103 @@ def test_real_clean_position_review_supplies_prefix_proof(monkeypatch):
     _run_schema_journey(monkeypatch, branches=True, verify_clean_proof=True)
 
 
+def test_real_due_queries_respect_position_owner_without_rewriting_legacy_state():
+    """Position ownership suppresses legacy due cards while preserving ordinary due work."""
+    from database.tests.position_study.italian_acceptance import LINES, _moves, seed_disposable_source
+    from tempo_legacy_database.adapters.queue_refresh.application.admission import has_missing_due_card
+    from tempo_legacy_database.adapters.queue_refresh.application.seeding import append_due_card, due_cards, maximum_position
+
+    dsn = _dsn()
+    now = datetime.now(timezone.utc)
+    with psycopg.connect(dsn, row_factory=tempo_row_factory) as raw:
+        db, _source, physical, day = seed_disposable_source(
+            raw, dsn, (_moves(LINES['knight']), _moves(LINES['giuoco'])),
+            ('Italian knight route', 'Italian giuoco route'),
+            repertoire_id='due-owner', now=now,
+        )
+        original_ids = tuple(sorted(physical))
+
+        def rows(sql, params=()):
+            return [dict(row) for row in raw.execute(sql, params).fetchall()]
+
+        def json_rows(sql, params=()):
+            return json.dumps(rows(sql, params), sort_keys=True, default=str)
+
+        original_cards = json_rows(
+            'SELECT id,state,due_date,fsrs_card_json FROM cards WHERE id = ANY(%s) ORDER BY id',
+            (list(original_ids),),
+        )
+        assert {row['id']: row['fsrs_card_json'] for row in rows(
+            'SELECT id,fsrs_card_json FROM cards WHERE id = ANY(%s)', (list(original_ids),)
+        )} == physical
+        position_states = json_rows('SELECT * FROM study_position_states ORDER BY repertoire_id,variant,position')
+        position_grades = json_rows('SELECT * FROM study_position_grades ORDER BY effect_id')
+        queue_before = [tuple(row) for row in raw.execute(
+            'SELECT id,queue_date,card_id,position FROM daily_queue ORDER BY queue_date,position,id'
+        ).fetchall()]
+
+        # A physical opening card owned only through repertoire_cards exercises
+        # the membership branch independently of cards.repertoire_id.
+        raw.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('legacy-carrier','Legacy carrier','fixture',%s)", (now.isoformat(),))
+        carrier_blob = Card(card_id=700,due=now-timedelta(days=2)).to_json()
+        raw.execute("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,fsrs_card_json,introduced_at,revision,content_type,trained_color)
+            VALUES('membership-carrier','legacy-carrier','prefix',%s,%s,'learning',%s,%s,%s,1,'opening','white')""",
+            (chess.STARTING_FEN, json.dumps(_moves(LINES['knight'])), day, carrier_blob, (now-timedelta(days=3)).isoformat()))
+        raw.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('due-owner','membership-carrier')")
+        raw.commit()
+
+        owned_ids = set(original_ids) | {'membership-carrier'}
+        for mode in ('active','staged','paused'):
+            raw.execute('UPDATE study_position_owners SET mode=%s WHERE repertoire_id=%s', (mode,'due-owner'))
+            raw.commit()
+            assert not has_missing_due_card(db, day), mode
+            due_ids = {row[0] for row in due_cards(db, day)}
+            assert not (owned_ids & due_ids), (mode, due_ids)
+
+        for mode in ('inactive','shadow'):
+            raw.execute('UPDATE study_position_owners SET mode=%s WHERE repertoire_id=%s', (mode,'due-owner'))
+            raw.commit()
+            assert has_missing_due_card(db, day), mode
+            due_ids = {row[0] for row in due_cards(db, day)}
+            assert set(original_ids) <= due_ids, (mode, due_ids)
+
+        raw.execute("UPDATE study_position_owners SET mode='active' WHERE repertoire_id='due-owner'")
+        raw.execute("DELETE FROM repertoire_cards WHERE repertoire_id='due-owner' AND card_id='membership-carrier'")
+        raw.commit()
+        assert has_missing_due_card(db, day), 'unlinked physical carrier remains legacy due work'
+        assert 'membership-carrier' in {row[0] for row in due_cards(db, day)}
+        raw.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('due-owner','membership-carrier')")
+        raw.commit()
+        assert not has_missing_due_card(db, day), 'owner membership suppresses the physical carrier'
+
+        # A genuine unrelated legacy due card still holds admission until the
+        # ordinary due seeder adds it to today's queue.
+        legacy_blob = Card(card_id=701,due=now-timedelta(days=1)).to_json()
+        raw.execute("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,fsrs_card_json,introduced_at,revision,content_type,trained_color)
+            VALUES('unrelated-legacy','legacy-carrier','prefix',%s,%s,'learning',%s,%s,%s,1,'opening','white')""",
+            (chess.STARTING_FEN, json.dumps(_moves(LINES['giuoco'])), day, legacy_blob, (now-timedelta(days=3)).isoformat()))
+        raw.commit()
+        assert has_missing_due_card(db, day)
+        assert {row[0] for row in due_cards(db, day)} == {'unrelated-legacy'}
+        append_due_card(db, day, 'unrelated-legacy', maximum_position(db, day)+1)
+        raw.commit()
+        assert not has_missing_due_card(db, day)
+        assert due_cards(db, day) == []
+
+        assert json_rows(
+            'SELECT id,state,due_date,fsrs_card_json FROM cards WHERE id = ANY(%s) ORDER BY id',
+            (list(original_ids),),
+        ) == original_cards
+        assert json_rows('SELECT * FROM study_position_states ORDER BY repertoire_id,variant,position') == position_states
+        assert json_rows('SELECT * FROM study_position_grades ORDER BY effect_id') == position_grades
+        queue_after = [tuple(row) for row in raw.execute(
+            'SELECT id,queue_date,card_id,position FROM daily_queue ORDER BY queue_date,position,id'
+        ).fetchall()]
+        assert len(queue_after) == len(queue_before)+1
+        assert queue_after[:-1] == queue_before
+        assert queue_after[-1][2] == 'unrelated-legacy'
+
+
 def _run_schema_journey(monkeypatch, *, branches, verify_clean_proof=False):
     from app.services.position_queue_admission import prepare_due, admit_due
     dsn = _dsn()
