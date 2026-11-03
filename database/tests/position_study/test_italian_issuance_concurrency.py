@@ -63,7 +63,8 @@ def _worker(dsn, payload, channel, entered, release, count, *, selected=None, pr
             raise RuntimeError('native initial-delivery barrier timed out')
         result = tasks.execute_foreground_command.run(operation, 'queue.issue_head', payload)
         receipt = command_gateway.read_operation(operation)
-        channel.send(('done', result, receipt['state']))
+        channel.send(('done', result, receipt['state'], receipt['error'])
+                     if receipt['state'] == 'failed' else ('done', result, receipt['state']))
     except BaseException:
         channel.send(('error', traceback.format_exc()))
     finally:
@@ -163,7 +164,7 @@ def test_real_initial_missing_receipt_race_coalesces_before_first_claim():
         release.set()
         winner = next(channel for _, channel in workers if channel is not loser)
         done = _receive(winner)
-        assert done[0] == 'done' and done[1]['issued'] and done[2] == 'complete', done
+        assert done[0] == 'done' and isinstance(done[1], dict) and done[1]['issued'] and done[2] == 'complete', done
         assert count.value == 1
         _assert_one_plan(dsn, payload)
         assert _receipt(dsn, operation)['attempt_count'] == 1
@@ -191,7 +192,7 @@ def test_real_two_foreground_processes_share_preparation_and_immutable_plan():
         assert count.value == 1
         release.set()
         done = _receive(workers[0][1])
-        assert done[0] == 'done' and done[1]['issued'] and done[2] == 'complete', done
+        assert done[0] == 'done' and isinstance(done[1], dict) and done[1]['issued'] and done[2] == 'complete', done
         original = _assert_one_plan(dsn, payload)
         assert _receipt(dsn, first[1])['attempt_count'] == 1
         # An actual duplicate envelope after completion remains the same receipt
@@ -237,7 +238,7 @@ def test_real_completed_card_busy_hold_gets_fresh_bounded_incarnation():
             workers.append(_spawn(ctx, dsn, payload, entered, release, count))
             first = _receive(workers[0][1])
             done = _receive(workers[0][1])
-            assert done[1]['position_study_hold'] == 'position_card_busy' and done[2] == 'complete', done
+            assert isinstance(done[1], dict) and done[1]['position_study_hold'] == 'position_card_busy' and done[2] == 'complete', done
             held_receipt = _receipt(dsn, first[1])
             # Freeze this task-owned cooldown in the future so process startup
             # speed cannot accidentally age it out. No sleeps prove ordering.
@@ -256,7 +257,7 @@ def test_real_completed_card_busy_hold_gets_fresh_bounded_incarnation():
         from app.contracts.queue_issuance import issuance_operation_id
         assert second[1] == issuance_operation_id(payload, 1) != first[1]
         done = _receive(workers[2][1])
-        assert done[1]['issued'] and done[2] == 'complete', done
+        assert isinstance(done[1], dict) and done[1]['issued'] and done[2] == 'complete', done
         assert count.value == 2
         saved = _receipt(dsn, first[1])
         assert (saved['response_json'], saved['attempt_count'], saved['state']) == (held_receipt['response_json'], 1, 'complete')
@@ -281,7 +282,7 @@ def test_real_owner_change_after_preparation_cannot_publish_plan():
             raw.execute("UPDATE study_position_owners SET mode='paused' WHERE repertoire_id='italian'")
         publish.set()
         done = _receive(workers[0][1])
-        assert done[0] == 'done' and not done[1]['issued'] and done[1]['position_study_hold'], done
+        assert done[0] == 'done' and isinstance(done[1], dict) and not done[1]['issued'] and done[1]['position_study_hold'], done
         with psycopg.connect(dsn) as raw:
             assert raw.execute('SELECT count(*) FROM study_position_issued_plans').fetchone()[0] == 0
             assert raw.execute('SELECT issued_as_head FROM queue_attempt_origins WHERE queue_entry_id=%s', (payload['entry_id'],)).fetchone()[0] == 0
@@ -310,10 +311,92 @@ def test_real_abandoned_preparation_resumes_original_operation():
         workers.append(_spawn(ctx, dsn, payload, entered, release, count))
         assert _receive(workers[1][1])[1] == first[1]
         done = _receive(workers[1][1])
-        assert done[1]['issued'] and done[2] == 'complete', done
+        assert isinstance(done[1], dict) and done[1]['issued'] and done[2] == 'complete', done
         current = _receipt(dsn, first[1])
         assert current['attempt_count'] == 2
         assert current['attempt_token'] != original['attempt_token']
         _assert_one_plan(dsn, payload)
     finally:
         _stop(workers, release)
+
+
+def test_real_prepared_head_preemption_rolls_back_and_retries_original_after_burial():
+    """A typed head change permits one new incarnation, retaining failed evidence."""
+    dsn = _dsn()
+    payload, _ = _seed(dsn)
+    ctx = mp.get_context('spawn')
+    entered, release, prepared, publish = (ctx.Event() for _ in range(4))
+    count = ctx.Value('i', 0)
+    release.set()
+    workers = []
+    try:
+        workers.append(_spawn(ctx, dsn, payload, entered, release, count,
+                              selected=publish, prepared=prepared))
+        first = _receive(workers[0][1])
+        assert first[0] == 'selected'
+        assert prepared.wait(TIMEOUT), 'A never completed source preparation'
+        claimed = _receipt(dsn, first[1])
+        assert claimed['state'] == 'executing'
+        # B is an eligible existing synthetic carrier, admitted ahead of A only
+        # after A's real source preparation. No review or grade is manufactured.
+        with psycopg.connect(dsn,row_factory=tempo_row_factory) as raw:
+            card_b = raw.execute("SELECT id FROM cards WHERE id<>%s ORDER BY id LIMIT 1",
+                                 (payload['card_id'],)).fetchone()[0]
+            entry_b = raw.execute("""INSERT INTO daily_queue(queue_date,card_id,cycle,position,
+                status,admission_kind,admission_repertoire_id)
+                VALUES(%s,%s,0,-1,'queued','review','italian') RETURNING id""",
+                (payload['queue_date'],card_b)).fetchone()[0]
+        publish.set()
+        rejected = _receive(workers[0][1])
+        assert rejected[:3] == ('done',None,'failed'), rejected
+        error = rejected[3]
+        assert error['status_code'] == 409 and error['code'] == 'position_head_changed', error
+        assert error['retryable'] is True
+        failed = _receipt(dsn, first[1])
+        assert failed['payload_json'] == claimed['payload_json']
+        assert failed['request_hash'] == claimed['request_hash']
+        with psycopg.connect(dsn) as raw:
+            assert raw.execute('SELECT count(*) FROM study_position_issued_plans').fetchone()[0] == 0
+            assert raw.execute('SELECT issued_as_head FROM queue_attempt_origins WHERE queue_entry_id=%s',
+                               (payload['entry_id'],)).fetchone()[0] == 0
+            raw.execute("UPDATE operation_receipts SET updated_at=NOW()+INTERVAL '1 minute' WHERE operation_id=%s", (first[1],))
+        # Freeze the fixture cooldown so process startup cannot age it out.
+        workers.append(_spawn(ctx, dsn, payload, entered, release, count))
+        assert _receive(workers[1][1])[1] == first[1]
+        assert _receive(workers[1][1]) == rejected
+        assert count.value == 1
+        # Let B be genuinely issued, then remove it via the ordinary owning bury
+        # operation. Retain its immutable plan/origin; never fake a saved review.
+        payload_b = {'queue_date':payload['queue_date'],'entry_id':entry_b,
+                     'card_id':card_b,'expected_revision':1}
+        workers.append(_spawn(ctx, dsn, payload_b, entered, release, count))
+        selected_b = _receive(workers[2][1])
+        assert selected_b[0] == 'selected' and selected_b[1] != first[1]
+        done_b = _receive(workers[2][1])
+        assert done_b[0] == 'done' and isinstance(done_b[1],dict) and done_b[1]['issued'], done_b
+        from app.queue_commands import bury_queue_entry, queue_storage
+        from app.product_composition.database_infrastructure import bind_database_infrastructure
+        bind_database_infrastructure()
+        with psycopg.connect(dsn,row_factory=tempo_row_factory) as raw:
+            db = PostgresConnection(raw)
+            result = bury_queue_entry(db, payload_b)
+            assert result == {'buried':True,'queue_entry_id':entry_b}
+            raw.commit()
+            assert queue_storage.prepare_queue_head(db,'real_game_miss')(payload['queue_date'])['id'] == payload['entry_id']
+            assert raw.execute('SELECT count(*) FROM reviews').fetchone()[0] == 0
+            assert raw.execute('SELECT count(*) FROM study_position_grades').fetchone()[0] == 0
+            assert raw.execute('SELECT count(*) FROM study_position_issued_plans WHERE queue_entry_id=%s', (entry_b,)).fetchone()[0] == 1
+            raw.execute("UPDATE operation_receipts SET updated_at=NOW()-INTERVAL '2 seconds' WHERE operation_id=%s", (first[1],))
+        workers.append(_spawn(ctx, dsn, payload, entered, release, count))
+        retry = _receive(workers[3][1])
+        from app.contracts.queue_issuance import issuance_operation_id
+        assert retry[1] == issuance_operation_id(payload,1) != first[1]
+        accepted = _receive(workers[3][1])
+        assert accepted[0] == 'done' and isinstance(accepted[1],dict) and accepted[1]['issued'], accepted
+        assert accepted[2] == 'complete' and count.value == 3
+        _assert_one_plan(dsn,payload)
+        retained = _receipt(dsn,first[1])
+        for field in ('state','error_json','payload_json','request_hash','attempt_count'):
+            assert retained[field] == failed[field], field
+    finally:
+        _stop(workers,release,publish)
