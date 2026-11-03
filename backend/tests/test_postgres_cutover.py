@@ -2578,7 +2578,7 @@ def test_postgres_priority_opening_slice_checkpoints_one_item_and_rejects_stale_
     saved_phase = None
     saved_payload = None
     admitted = []
-    writer = object()
+    reader, writer = object(), object()
 
     @contextmanager
     def section(*, background):
@@ -2587,7 +2587,7 @@ def test_postgres_priority_opening_slice_checkpoints_one_item_and_rejects_stale_
 
     @contextmanager
     def read_section():
-        yield writer
+        yield reader
 
     original_owner_mode = position_owner_epoch.owner_mode
 
@@ -2614,10 +2614,10 @@ def test_postgres_priority_opening_slice_checkpoints_one_item_and_rejects_stale_
     monkeypatch.setattr(postgres_queue_refresh, "advance_task_slice_in_transaction", advance)
     monkeypatch.setattr(postgres_queue_refresh, "_admit_one_prioritized_opening",
                         lambda database, day, planned: admitted.append(planned["card_id"]))
-    monkeypatch.setattr(position_queue_admission, "prepare_opening_introduction",
-                        lambda database, planned: ("legacy", planned["repertoire_id"])
-                        if database is writer and planned["repertoire_id"] == "white"
-                        else (_ for _ in ()).throw(AssertionError("unexpected opening preparation")))
+    def prepare_legacy(database, planned):
+        assert database is reader and planned["repertoire_id"] == "white"
+        return ("legacy", planned["repertoire_id"])
+    monkeypatch.setattr(position_queue_admission, "prepare_opening_introduction", prepare_legacy)
     monkeypatch.setattr(position_owner_epoch, "owner_mode", owner_mode)
     plan = [{"card_id": "one", "repertoire_id": "white", "reason": None},
             {"card_id": "two", "repertoire_id": "white", "reason": None}]
