@@ -43,10 +43,14 @@ def queue_projection(database, day: str):
 
 
 def queue_diagnostics(database, day: str):
-    return database.execute(
+    rows = database.execute(
         "SELECT card_id,message FROM queue_projection_diagnostics WHERE queue_date=? ORDER BY card_id",
         (day,),
     ).fetchall()
+    if isinstance(database, postgres_store.PostgresConnection):
+        from .retained_position_availability import retained_holds
+        rows = [*rows, *retained_holds(database, day)]
+    return rows
 
 
 def queue_rows(database, day: str, limit: int | None, *, miss_reason: str):
