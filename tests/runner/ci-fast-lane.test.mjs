@@ -182,6 +182,20 @@ test('issue239_native_runner_option_is_allowlisted_bounded_and_before_browser', 
   assert.throws(()=>parsePostgresTestOptions(['--mode','browser','--native-check','redis-fixture-isolation','--native-check','redis-fixture-isolation'],{}));
 });
 
+test('defensive pause native selection is bounded and preserves Redis ordering', () => {
+  for (const mode of ['study', 'browser']) {
+    const options = parsePostgresTestOptions(['--mode', mode, '--browser-grep', 'position',
+      '--native-check', 'redis-fixture-isolation', '--native-check', 'defensive-pause'], {});
+    const stages = postgresTestStages(options);
+    assert(stages.indexOf('redis-fixture-isolation') < stages.indexOf('defensive-pause'));
+    assert(stages.indexOf('defensive-pause') < stages.indexOf('browser'));
+    assert.equal(stages.at(-1), 'cleanup');
+  }
+  assert.throws(() => parsePostgresTestOptions(['--mode', 'durability', '--native-check', 'defensive-pause'], {}));
+  assert.throws(() => parsePostgresTestOptions(['--mode', 'browser', '--native-check', 'defensive-pause', '--native-check', 'defensive-pause'], {}));
+  assert.throws(() => postgresTestStages({mode:'study', nativeChecks:['defensive-pause','defensive-pause']}));
+});
+
 test('emergency_docs_only_changes_do_not_trigger_full_qualification', () => {
   const selection = selectFastLane(['docs/testing.md','docs/database-security.md','.github/workflows/README.md','CONTRIBUTING.md']);
   assert.equal(selection.tier,'FAST'); assert.equal(selection.node,false); assert.equal(selection.python,false);

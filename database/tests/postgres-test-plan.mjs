@@ -1,7 +1,7 @@
 // The executable plan is also the read-only --list output; keep one source of truth.
 export function postgresTestStages({ mode, nativeChecks = [] }) {
   if (!Array.isArray(nativeChecks) || new Set(nativeChecks).size !== nativeChecks.length
-    || nativeChecks.some(check => check !== 'redis-fixture-isolation')
+    || nativeChecks.some(check => !['redis-fixture-isolation', 'defensive-pause'].includes(check))
     || nativeChecks.length && !['study','browser'].includes(mode)) throw new Error('Invalid native PostgreSQL selection');
   if (!["full", "browser", "study", "durability", "lifecycle"].includes(mode)) throw new Error(`Unknown PostgreSQL test mode: ${mode}`);
   if (mode === "study") return ["compose_config", "image_build", "startup", "service_health", "study_queue_receipts", "study_only", "study_durability", "study_isolation", ...nativeChecks, "browser", "cleanup"];
