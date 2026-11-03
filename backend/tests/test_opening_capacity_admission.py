@@ -563,6 +563,8 @@ def test_capacity_checkpoint_resume_retains_witness_and_rejects_old_lease(
     from contextlib import contextmanager
     from app.services import postgres_queue_refresh as worker, study_mode
 
+    # This lease/checkpoint fixture admits legacy cards, with no position cohort.
+    monkeypatch.setattr(worker, "prepare_opening_introduction", lambda *_: None)
     connection, day, _ = capacity_database
     introduce_prefixes(connection, day, monkeypatch)
     planned = capacity_plan(connection, day)
