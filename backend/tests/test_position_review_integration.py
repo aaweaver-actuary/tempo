@@ -75,5 +75,7 @@ def test_position_human_review_does_not_save_card_schedule(monkeypatch):
     assert result["next_due"] == card.due_date and result["interval_days"] == card.interval_days
     assert not result["requeue_today"]
     assert len(saved) == 1 and saved[0].source_kind == "position_study"
+    from app.services.scheduling_review_contracts import ReviewRecord
+    assert type(saved[0]) is ReviewRecord
     assert saved[0].source_ref == "attempt:attempt-a"
     assert saved[0].previous_interval == saved[0].next_interval == card.interval_days

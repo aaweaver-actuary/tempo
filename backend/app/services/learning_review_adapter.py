@@ -177,7 +177,7 @@ class LearningReviewAdapter:
     def record_position_review(self, command, context, *, outcome, guided):
         """Save the human review without advancing the physical card schedule."""
         from tempo_legacy_database.adapters.scheduling_review_store import OwnedConnectionSchedulingReviewStore
-        from tempo_learning_runtime.scheduling_review_contracts import ReviewRecord
+        from .scheduling_review_contracts import ReviewRecord
         owner = OwnedConnectionSchedulingReviewStore(self.database)
         card = owner.load_card_state(command.card_id, require_active=True)
         if card is None:
