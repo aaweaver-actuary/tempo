@@ -1,10 +1,22 @@
 import { StrictMode, act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
+import type { Config } from "@lichess-org/chessground/config";
 import { Board } from "../src/Board.js";
 import type { BoardHandle, BoardProps } from "../src/types.js";
 
-const factory = vi.hoisted(() => ({ instances: [] as any[] }));
+type MockInstance = {
+  initial: Config;
+  state: { drawable: Record<string, never>; dom: { bounds: { clear: ReturnType<typeof vi.fn> }; redraw: ReturnType<typeof vi.fn> } };
+  set: ReturnType<typeof vi.fn>;
+  destroy: ReturnType<typeof vi.fn>;
+  cancelMove: ReturnType<typeof vi.fn>;
+  redrawAll: ReturnType<typeof vi.fn>;
+  setShapes: ReturnType<typeof vi.fn>;
+  setAutoShapes: ReturnType<typeof vi.fn>;
+  selectSquare: ReturnType<typeof vi.fn>;
+};
+const factory = vi.hoisted(() => ({ instances: [] as MockInstance[] }));
 vi.mock("../src/renderer.js", () => ({ createRenderer: vi.fn((_surface, config) => {
   const instance = { initial: config, state: { drawable: {}, dom: { bounds: { clear: vi.fn() }, redraw: vi.fn() } },
     set: vi.fn(), destroy: vi.fn(), cancelMove: vi.fn(), redrawAll: vi.fn(),
