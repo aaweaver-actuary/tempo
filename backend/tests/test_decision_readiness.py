@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 import json
 
 import chess
-from fsrs import Card
+from fsrs import Card, Scheduler
 import pytest
 
 from app.services.decision_readiness import (
@@ -13,7 +13,7 @@ from app.services.decision_readiness import (
     PresentationIdentity, ReadinessSnapshot, StudyReviewEvidence, decision_readiness,
 )
 from app.chess.opening_segments import presentation_occurrences
-from app.services.scheduler import _scheduler, schedule_review
+from app.services.scheduler import schedule_review
 
 REVIEW_TIME = datetime(2026, 10, 1, 12, tzinfo=timezone.utc)
 PREFIX = ("e2e4", "e7e5", "g1f3", "b8c6", "f1b5")
@@ -77,7 +77,7 @@ def test_decision_readiness_clean_practice_restores_fsrs_estimate():
     as_of = recovered_at + timedelta(days=2)
     estimate = decision_readiness(recovered, as_of, decision_index=0)
     assert estimate.basis == "fsrs"
-    assert estimate.readiness_score == _scheduler().get_card_retrievability(Card.from_json(schedule.fsrs_card_json), as_of)
+    assert estimate.readiness_score == Scheduler().get_card_retrievability(Card.from_json(schedule.fsrs_card_json), as_of)
     assert estimate.readiness_score > decision_readiness(failed, as_of, decision_index=0).readiness_score
     success_model = decision_readiness(reviewed("correct"), REVIEW_TIME + timedelta(days=1))
     failure_model = decision_readiness(failed, REVIEW_TIME + timedelta(days=1))
@@ -90,7 +90,7 @@ def test_decision_readiness_overdue_decay_uses_explicit_as_of_without_due_penalt
     overdue = REVIEW_TIME + timedelta(days=90)
     estimate = decision_readiness(current, overdue)
     assert 0 < estimate.readiness_score < decision_readiness(current, at_due).readiness_score
-    assert estimate.readiness_score == _scheduler().get_card_retrievability(Card.from_json(current.fsrs_card_json), overdue)
+    assert estimate.readiness_score == Scheduler().get_card_retrievability(Card.from_json(current.fsrs_card_json), overdue)
     assert estimate.readiness_score < 0.92
     assert estimate.confidence == "model_based"
     assert estimate == decision_readiness(replace(current, due_date=overdue.date()), overdue)
@@ -271,7 +271,7 @@ def test_decision_readiness_clamped_memory_reference_and_actual_freshness_remain
     estimate = decision_readiness(replace(current, fsrs_card_json=json.dumps(serialized)), REVIEW_TIME + timedelta(days=4))
     assert estimate.memory_reference_at == REVIEW_TIME
     assert estimate.latest_evidence_at == REVIEW_TIME + timedelta(days=3)
-    assert estimate.readiness_score == _scheduler().get_card_retrievability(Card.from_json(json.dumps(serialized)), estimate.as_of)
+    assert estimate.readiness_score == Scheduler().get_card_retrievability(Card.from_json(json.dumps(serialized)), estimate.as_of)
 
 
 @pytest.mark.parametrize("change", [{"card_revision": 2}, {"repertoire_id": "other"},
