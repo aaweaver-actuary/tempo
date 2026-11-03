@@ -122,7 +122,12 @@ with psycopg.connect(dsn, row_factory=tempo_row_factory) as raw:
         grades = [dict(row) for row in raw.execute('SELECT attempt_id,position,grade FROM study_position_grades WHERE repertoire_id=%s ORDER BY accepted_at,effect_id', (rep,)).fetchall()]
         physical = {row['id']:row['fsrs_card_json'] for row in raw.execute('SELECT id,fsrs_card_json FROM cards WHERE id IN (%s,%s)', (rep+'-card-a',rep+'-card-b')).fetchall()}
         states = [dict(row) for row in raw.execute('SELECT * FROM study_position_states WHERE repertoire_id=%s ORDER BY position', (rep,)).fetchall()]
-        print(json.dumps({'plans':plans,'reviews':reviews,'grades':grades,'physical':physical,'states':states},default=str))
+        legacy_reviews = [dict(row) for row in raw.execute("""SELECT receipt.attempt_id,receipt.card_id,receipt.queue_entry_id,receipt.outcome,receipt.guided,
+            receipt.review_id,review.rating,review.source_kind FROM review_attempt_receipts receipt
+            JOIN reviews review ON review.id=receipt.review_id WHERE receipt.card_id=%s ORDER BY receipt.review_id""", (rep+'-legacy-card',)).fetchall()]
+        legacy_entries = [dict(row) for row in raw.execute("SELECT id,card_id,status,attempt_state FROM daily_queue WHERE card_id=%s ORDER BY id", (rep+'-legacy-card',)).fetchall()]
+        print(json.dumps({'plans':plans,'reviews':reviews,'grades':grades,'physical':physical,'states':states,
+                          'legacy_reviews':legacy_reviews,'legacy_entries':legacy_entries},default=str))
     else:
         raise ValueError('unknown fixture operation')
 `;
@@ -136,7 +141,9 @@ type Queue = { cards: Array<{ id: string; queue_entry_id: number; revision: numb
   position_presentation?: WirePlan | null; position_study_hold?: string | null }> };
 type Snapshot = { reviews: Array<{ attempt_id: string; outcome: string; guided: boolean; source_kind: string }>;
   grades: Array<{ attempt_id: string; grade: string }>; physical: Record<string, string>;
-  plans: Array<{ attempt_id: string; queue_entry_id: number; card_id: string }>; states: unknown[] };
+  plans: Array<{ attempt_id: string; queue_entry_id: number; card_id: string }>; states: unknown[];
+  legacy_reviews: Array<{ attempt_id: string; card_id: string; queue_entry_id: number; outcome: string; guided: number; review_id: number; rating: string; source_kind: string }>;
+  legacy_entries: Array<{ id: number; card_id: string; status: string; attempt_state: string }> };
 
 function fixture<T>(project: string, action: "seed" | "read" | "legacy", identity: string): T {
   // Execute inside already-budgeted runner services: no extra Compose container.
@@ -234,6 +241,19 @@ async function preparedEntryIds(page: Page): Promise<number[]> {
       request.onerror = () => { database.close(); resolve([]); };
     };
   }));
+}
+
+async function savedOfflineReview(page: Page, attemptId: string) {
+  return page.evaluate((id) => new Promise<unknown>((resolve, reject) => {
+    const open = indexedDB.open("tempo-offline-training", 2);
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const database = open.result;
+      const request = database.transaction("training").objectStore("training").get("prepared-daily-queue");
+      request.onsuccess = () => { database.close(); resolve((request.result?.attempts ?? []).find((attempt: { attemptId?: string }) => attempt.attemptId === id) ?? null); };
+      request.onerror = () => { database.close(); reject(request.error); };
+    };
+  }), attemptId);
 }
 
 async function preparedPositionPlan(page: Page, entryId: number): Promise<string | null> {
@@ -648,6 +668,8 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
   expect(legacyHead?.id).toBe(legacy.card);
   expect(legacyHead.position_study_mode).toBeUndefined();
   await expect.poll(() => preparedEntryIds(page), { timeout: 30_000 }).toContain(legacyHead.queue_entry_id);
+  let legacyAttempt = "";
+  let legacyWrong: Awaited<ReturnType<typeof openingEvents>>[number] | undefined;
   await context.setOffline(true);
   try {
     await page.reload();
@@ -655,10 +677,10 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
     await expect.poll(() => offlineAttemptsForCard(page, legacyHead)).toHaveLength(1);
     const matchingOfflineAttempts = await offlineAttemptsForCard(page, legacyHead);
     expect(matchingOfflineAttempts).toHaveLength(1);
-    const [legacyAttempt] = matchingOfflineAttempts;
+    [legacyAttempt] = matchingOfflineAttempts;
     await expect.poll(async () => (await openingEvents(page, legacyAttempt)).some(event =>
       event.kind === "first_response" && event.response_uci === "d2d4" && event.disposition === "wrong")).toBe(true);
-    const legacyWrong = (await openingEvents(page, legacyAttempt)).find(event =>
+    legacyWrong = (await openingEvents(page, legacyAttempt)).find(event =>
       event.kind === "first_response" && event.disposition === "wrong");
     await page.reload();
     expect(await offlineAttemptsForCard(page, legacyHead)).toEqual([legacyAttempt]);
@@ -667,9 +689,31 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
     const durable = fixture<Snapshot>(project, "read", identity);
     expect(durable.grades.filter(g => g.attempt_id === suffix.attempt_id && g.grade === "again")).toHaveLength(1);
     expect(durable.reviews.some(r => r.attempt_id === suffix.attempt_id && r.source_kind === "position_study" && r.outcome === "again")).toBe(true);
+    await move(page, "e2", "e4");
+    const afterLegacyReply = new Chess();
+    afterLegacyReply.move("e4"); afterLegacyReply.move("e5");
+    await expect.poll(async () => position((await page.locator(".board-frame").first().getAttribute("data-fen")) ?? ""))
+      .toBe(position(afterLegacyReply.fen()));
+    await move(page, "g1", "f3");
+    await expect.poll(() => savedOfflineReview(page, legacyAttempt)).toMatchObject({
+      attemptId: legacyAttempt, localEntryId: legacyHead.queue_entry_id, cardId: legacy.card, outcome: "again", guided: true });
   } finally {
     await context.setOffline(false);
   }
+  await expect.poll(() => fixture<Snapshot>(project, "read", identity).legacy_reviews.filter(r => r.attempt_id === legacyAttempt),
+    { timeout: 30_000, intervals: [1000, 2000] }).toHaveLength(1);
+  const settledLegacy = fixture<Snapshot>(project, "read", identity);
+  expect(settledLegacy.legacy_reviews).toHaveLength(1);
+  expect(settledLegacy.legacy_reviews[0]).toMatchObject({ attempt_id: legacyAttempt, card_id: legacy.card,
+    queue_entry_id: legacyHead.queue_entry_id, outcome: "again", guided: 1, rating: "again", source_kind: "study" });
+  expect(settledLegacy.legacy_reviews[0].review_id).toBeGreaterThan(0);
+  expect(settledLegacy.legacy_entries.find(entry => entry.id === legacyHead.queue_entry_id)).toMatchObject({
+    card_id: legacy.card, status: "complete", attempt_state: "guided" });
+  await page.reload();
+  const legacyWrongEvents = (await openingEvents(page, legacyAttempt)).filter(event =>
+    event.kind === "first_response" && event.disposition === "wrong");
+  expect(legacyWrongEvents).toEqual([legacyWrong]);
+  expect(fixture<Snapshot>(project, "read", identity).legacy_reviews).toEqual(settledLegacy.legacy_reviews);
   await Promise.all(acceptedReviewTimingTasks);
   } finally {
   context.off("response", onTimingResponse);
