@@ -117,7 +117,14 @@ def test_position_due_snapshot_and_writer_fences(owned_postgres, monkeypatch):
             with postgres_store.connection(background=True) as writer:
                 source_hold=source_admit(writer,day,proposals[0])
                 assert isinstance(source_hold,Hold), source_hold
+            # A whole-source read may outlive an authored edit. Its original
+            # owner token must still be rejected before queue mutation.
+            raw.execute("UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE id='source-proof'")
+            raw.commit()
+            with postgres_store.connection(background=True) as writer:
+                authored_hold=source_admit(writer,day,proposals[0])
+                assert isinstance(authored_hold,Hold), authored_hold
             assert raw.execute('SELECT count(*) FROM daily_queue WHERE queue_date=%s',(day,)).fetchone()[0] == 1
-        print('PASS real 320ms snapshot; reader',snapshots,'writer',writes,'foreground_ms',foreground,'stale_owner',owner_hold,'stale_source',source_hold)
+        print('PASS real 320ms snapshot; reader',snapshots,'writer',writes,'foreground_ms',foreground,'stale_owner',owner_hold,'stale_source',source_hold,'authored_change',authored_hold)
     finally:
         postgres_store.close_pools()
