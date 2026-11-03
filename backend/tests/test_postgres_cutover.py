@@ -3995,6 +3995,15 @@ def test_postgres_review_reserves_card_then_queue_position_before_reordering(mon
                 observed.append(("card_lock", statement, parameters))
             return self
 
+        def execute_native(self, statement, parameters=()):
+            if statement == "SELECT to_regclass('public.study_position_issued_plans') IS NOT NULL":
+                assert parameters == ()
+                return SimpleNamespace(fetchone=lambda: (False,))
+            if statement == "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))":
+                assert parameters == ("tempo:card-edit:card-1",)
+                return self
+            return self.execute(statement, parameters)
+
         def fetchone(self):
             return None
 
@@ -4003,10 +4012,14 @@ def test_postgres_review_reserves_card_then_queue_position_before_reordering(mon
     monkeypatch.setattr(learning_review_adapter.LearningReviewAdapter, "policy",
                         lambda _adapter: learning_review_adapter.learning.ReviewPolicy("UTC", 1))
     monkeypatch.setattr(learning_review_adapter, "datetime", SimpleNamespace(now=lambda _timezone: observed_at))
+
+    def record_review(adapter, command, context, *, position=False):
+        assert not position
+        observed.append(("review", command.card_id, command.outcome))
+        return ReviewResult.from_dict({"persisted": True})
+
     monkeypatch.setattr(f"{installed_apply_review.__module__}.apply_review",
-                        lambda adapter, command, context:
-                        observed.append(("review", command.card_id, command.outcome))
-                        or ReviewResult.from_dict({"persisted": True}))
+                        record_review)
     assert review_commands.submit_review(
         RecordingDatabase(), {"card_id": "card-1", "review": {"outcome": "again"}},
     ) == {"persisted": True}
@@ -4710,8 +4723,11 @@ def test_postgres_cutover_queue_repertoire_choices_scan_only_active_cards(monkey
     statements: list[str] = []
 
     class EmptyCursor:
+        def __init__(self, row=None):
+            self.row = row
+
         def fetchone(self):
-            return None
+            return self.row
 
         def fetchall(self):
             return []
@@ -4719,7 +4735,7 @@ def test_postgres_cutover_queue_repertoire_choices_scan_only_active_cards(monkey
     class EmptyDatabase:
         def execute(self, statement, _parameters=()):
             statements.append(statement)
-            return EmptyCursor()
+            return EmptyCursor(("UTC",) if statement == "SELECT timezone FROM settings WHERE id=1" else None)
 
     @contextmanager
     def test_read_connection():
@@ -5114,6 +5130,7 @@ def test_postgres_due_queue_slices_admit_only_eligible_cards_in_order(monkeypatc
             CREATE TABLE study_exercises(id TEXT PRIMARY KEY,study_id TEXT,status TEXT);
             CREATE TABLE studies(id TEXT PRIMARY KEY,archived INTEGER);
             CREATE TABLE study_sibling_burials(exercise_id TEXT,study_day TEXT);
+            CREATE TABLE study_position_owners(repertoire_id TEXT,mode TEXT);
             CREATE TABLE daily_queue(queue_date TEXT,card_id TEXT,position INTEGER);
             INSERT INTO repertoires(id) VALUES('r1');
             INSERT INTO studies VALUES('study',0);
