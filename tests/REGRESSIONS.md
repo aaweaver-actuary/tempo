@@ -1,3 +1,30 @@
+## Current queue refresh progress and freshness
+
+`backend/tests/test_queue_refresh_invalidation_coalescing.py` covers same-day
+queued/leased/retrying identity, twenty durable invalidations, rollback, terminal
+restart, rollover, older-day refusal and preservation of a pointer accepted after
+a worker snapshot. `test_queue_refresh_maturity_atomicity.py` keeps maturity
+signals in the accepted review transaction and prevents deferred wakes from
+dirtying completed work. Existing deadline, retry-wake and wakeup suites retain
+stale-generation and rollback proofs using genuine rollover/terminal replacement;
+same-day review requests now deliberately coalesce.
+
+`backend/tests/test_queue_randomization_noop_protection.py` owns exact matched
+membership, malformed plan refusal and native unchanged/position-only/kind-change
+origin-trigger, protected/failed/abandoned-origin and missing/status/day rollback
+cases. `test_queue_refresh_diagnostics.py` covers bounded timeout details without
+private payload exposure and truthful historical worker status. Run each through
+`make python-file FILE=<path>` with the documented Python environment.
+
+The native owner suite
+`make python-file FILE=database/tests/check_postgres_queue_refresh_concurrency.py`
+uses one invocation-owned PostgreSQL 18.6 fixture and the real migration ledger
+for epochs, races, saved review replay, stale leases, rollback, eventual ready,
+publication budget and foreground contention. The separate
+`check_postgres_queue_refresh_baseline.py` is an explicit profiling probe: a
+successful probe can report publication failure and is not an acceptance pass.
+Neither native fixture nor a source pass establishes live installation.
+
 ## Reserved background compiler admission
 
 `backend/tests/test_product_game_review_commands.py::test_only_reserved_background_profile_disables_jit_in_original_setup_roundtrip`
