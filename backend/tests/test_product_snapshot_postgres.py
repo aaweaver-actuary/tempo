@@ -154,50 +154,53 @@ def test_current_snapshot_scope_is_parameter_bound(database):
 
 
 @pytest.mark.parametrize("name", ["Plain authored name " * 20, 'Quoted " \\ \n\t café ' * 20])
-def test_serialized_byte_accounting_admits_complete_snapshot_without_changing_facts(database, monkeypatch, name):
-    """Worst-case escape multiplication must not reject ordinary complete facts."""
-    from app.repertoire import project_repertoire
+def test_serialized_byte_accounting_admits_complete_snapshot_without_changing_facts(database, name):
+    """The raw row cap is exact; the aggregate size estimate does not reject facts."""
+    from app.repertoire import PreparedPublishedRepertoire
     connection, _ = database
     connection.execute("SET LOCAL statement_timeout='250ms'")
     connection.execute("SET LOCAL lock_timeout='100ms'")
-    connection.execute("UPDATE repertoire_lines SET name=%s", (name,))
+    fixed = connection.execute("""SELECT octet_length(concat_ws('',id,repertoire_id,trained_color,
+        start_fen,moves_json)) fixed FROM repertoire_lines WHERE id='route'""").fetchone()["fixed"]
+    padding = storage.MAX_ROW_BYTES - fixed - len(name.encode())
+    assert padding >= 0
+    stored_name = name + "x" * padding
+    connection.execute("UPDATE repertoire_lines SET name=%s", (stored_name,))
     expected = storage.read_repertoire(connection, "rep")
-    before = project_repertoire(expected)
-    actual_bytes = len(json.dumps(expected, ensure_ascii=False).encode())
-    # Lower the fixture cap rather than increasing the production 32 MiB cap.
-    monkeypatch.setattr(storage, "MAX_SNAPSHOT_BYTES", actual_bytes + 1024)
-    row = connection.execute(storage.STATEMENT, ("rep", 10000, 20000, storage.MAX_SNAPSHOT_BYTES, 65536)).fetchone()
+    before = PreparedPublishedRepertoire(expected).snapshot
+    actual_bytes = len(json.dumps(expected, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode())
+    row = connection.execute(storage.STATEMENT,
+        ("rep", storage.MAX_SOURCE_ROWS, storage.MAX_ROW_BYTES)).fetchone()
     envelope = row["snapshot"]
-    assert envelope["bounded"] and envelope["facts"] is None
-    assert json.loads(row["facts_json"]) == expected
-    assert len(row["facts_json"].encode()) == actual_bytes
-    assert actual_bytes <= envelope["estimated_bytes"] <= actual_bytes + 1024
+    assert envelope["bounded"] and envelope["facts"] == expected
+    assert len(json.dumps(envelope["facts"], sort_keys=True, separators=(",", ":"),
+        ensure_ascii=False).encode()) == actual_bytes
+    assert envelope["largest_row"] == storage.MAX_ROW_BYTES
+    assert actual_bytes <= envelope["estimated_bytes"]
     actual = storage.read_repertoire(connection, "rep")
-    assert actual == expected and actual["lines"][0]["name"] == name
-    after = project_repertoire(actual)
+    assert actual == expected and actual["lines"][0]["name"] == stored_name
+    after = PreparedPublishedRepertoire(actual).snapshot
     assert after.membership.digest == before.membership.digest
     assert after.membership.routes == before.membership.routes
     assert after.decision_presentations == before.decision_presentations
 
 
-def test_serialized_byte_accounting_still_refuses_true_byte_and_row_overflow(database, monkeypatch):
+def test_serialized_byte_accounting_still_refuses_true_byte_and_row_overflow(database):
     from app.repertoire import RepertoireSnapshotBoundExceeded
     connection, _ = database
     connection.execute("SET LOCAL statement_timeout='250ms'")
     connection.execute("SET LOCAL lock_timeout='100ms'")
-    facts = storage.read_repertoire(connection, "rep")
-    actual_bytes = len(json.dumps(facts, ensure_ascii=False).encode())
-    monkeypatch.setattr(storage, "MAX_SNAPSHOT_BYTES", actual_bytes - 1)
+    fixed = connection.execute("""SELECT octet_length(concat_ws('',id,repertoire_id,trained_color,
+        start_fen,moves_json)) fixed FROM repertoire_lines WHERE id='route'""").fetchone()["fixed"]
+    connection.execute("UPDATE repertoire_lines SET name=%s", ("x" * (storage.MAX_ROW_BYTES + 1 - fixed),))
+    envelope = connection.execute(storage.STATEMENT,
+        ("rep", storage.MAX_SOURCE_ROWS, storage.MAX_ROW_BYTES)).fetchone()["snapshot"]
+    assert not envelope["bounded"] and envelope["facts"] is None
+    assert envelope["largest_row"] == storage.MAX_ROW_BYTES + 1
     with pytest.raises(RepertoireSnapshotBoundExceeded) as caught:
         storage.read_repertoire(connection, "rep")
-    assert caught.value.diagnostic()["violations"][0]["dimension"] == "estimated_snapshot_bytes"
-    monkeypatch.setattr(storage, "MAX_SNAPSHOT_BYTES", 32 * 1024 * 1024)
-    connection.execute("UPDATE repertoire_lines SET moves_json=%s", ("x" * 65537,))
-    envelope = connection.execute(storage.STATEMENT, ("rep", 10000, 20000, storage.MAX_SNAPSHOT_BYTES, 65536)).fetchone()["snapshot"]
-    assert not envelope["bounded"] and envelope["facts"] is None and envelope["largest_row"] > 65536
-    with pytest.raises(RepertoireSnapshotBoundExceeded) as caught:
-        storage.read_repertoire(connection, "rep")
-    assert any(item["dimension"] == "row_bytes" for item in caught.value.diagnostic()["violations"])
+    assert caught.value.diagnostic()["violations"] == [dict(dimension="row_bytes",
+        observed=storage.MAX_ROW_BYTES + 1, limit=storage.MAX_ROW_BYTES, observation="exact")]
 
 
 @pytest.mark.parametrize("variant", ["full", "authored", "candidate"])
