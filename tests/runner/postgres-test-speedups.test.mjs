@@ -1097,7 +1097,8 @@ test("pr102 background restoration recovers API health before starting dependent
   assert.deepEqual(events, [["background-worker", "background-scheduler"], "original readiness passed",
     ["defense-engine", "maia-worker"], "verified all running"]);
   const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
-  assert.equal(source.match(/restoreConsumers: \(\) => restoreBackgroundWorkloadConsumers\(/g)?.length, 4);
+  // The retired priority benchmark no longer adds a restoration call site.
+  assert.equal(source.match(/restoreConsumers: \(\) => restoreBackgroundWorkloadConsumers\(/g)?.length, 3);
 });
 
 
