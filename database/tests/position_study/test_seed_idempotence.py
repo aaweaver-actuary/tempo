@@ -189,6 +189,7 @@ def test_native_seed_restart_clone_and_original_unchanged(monkeypatch, introduce
                     # without replaying preflight or resetting the namespace.
                     conn.execute("UPDATE cards SET fsrs_card_json='{}' WHERE id='physical'")
                     while True:
+                        conn.execute('SELECT 1')
                         result = seed_shadow_page(db, prepared, bad_request, epoch='e', now=now, page_size=1)
                         conn.commit()
                         if result['stage'] == 'complete': break
@@ -196,6 +197,7 @@ def test_native_seed_restart_clone_and_original_unchanged(monkeypatch, introduce
                     conn.execute("UPDATE cards SET fsrs_card_json=%s WHERE id='physical'", (blob,))
                     conn.commit()
                     for index in range(2):
+                        conn.execute('SELECT 1')
                         result = seed_shadow_page(db, prepared, request, epoch='e', now=now, page_size=1)
                         assert result['stage'] == ('recovering' if index == 0 else 'complete')
                         assert result['seeded'] == index + 1 and result['held'] == 1 - index
@@ -215,6 +217,7 @@ def test_native_seed_restart_clone_and_original_unchanged(monkeypatch, introduce
                     with pytest.raises(ValueError, match='position_owner_not_shadow'):
                         seed_shadow_page(db, prepared, request, epoch='e', now=now, page_size=1)
                     conn.rollback()
+                    conn.execute('SELECT 1')
                 while True:
                     result = seed_shadow_page(db, prepared, request, epoch='e', now=now, page_size=1)
                     conn.commit()
