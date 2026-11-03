@@ -91,12 +91,32 @@ it("pinned performance reruns retain raw artifacts in a chosen checkout director
   try {
     const fakeDockerPath = join(fakeCommandDirectory, "docker");
     const capturedArgumentsPath = join(fakeCommandDirectory, "docker-arguments.txt");
-    writeFileSync(fakeDockerPath, "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$TEMPO_TEST_DOCKER_CAPTURE\"\n");
+    writeFileSync(fakeDockerPath, [
+      "#!/bin/sh",
+      'case "$1" in',
+      '  info) echo "8 8589934592" ;;',
+      '  ps) exit 0 ;;',
+      '  container) echo "No such container: $3" >&2; exit 1 ;;',
+      '  run) printf \'%s\\n\' "$@" > "$TEMPO_TEST_DOCKER_CAPTURE" ;;',
+      '  *) exit 1 ;;',
+      "esac", "",
+    ].join("\n"));
     chmodSync(fakeDockerPath, 0o755);
+    // This fake allocates no host resources. Keep its admission journal and
+    // activity inputs separate from any real qualification running alongside it.
+    const fixtureEnvironment = {
+      ...process.env, PATH: `${fakeCommandDirectory}:${process.env.PATH ?? ""}`,
+      TEMPO_REAL_DOCKER: fakeDockerPath,
+      TEMPO_DEVELOPMENT_BUDGET_TOKEN: undefined,
+      TEMPO_DEVELOPMENT_BUDGET_DIRECTORY: join(fakeCommandDirectory, "budget"),
+      TEMPO_STUDY_ACTIVITY_LEGACY: "absent",
+      TEMPO_STUDY_ACTIVITY_DIRECTORY: join(fakeCommandDirectory, "activity"),
+      TEMPO_STUDY_ACTIVITY_EXPECTED_SOURCES: "[]",
+      TEMPO_TEST_DOCKER_CAPTURE: capturedArgumentsPath,
+    };
     const run = spawnSync(process.execPath, ["scripts/test-visual.mjs", "--performance-only"], {
       cwd: process.cwd(), encoding: "utf8",
-      env: { ...process.env, PATH: `${fakeCommandDirectory}:${process.env.PATH ?? ""}`,
-        TEMPO_TEST_DOCKER_CAPTURE: capturedArgumentsPath,
+      env: { ...fixtureEnvironment,
         TEMPO_TEST_TIMING_DIR: "test-results/performance/repeat-fixture" },
     });
     expect(run.status, run.stderr).toBe(0);
@@ -106,8 +126,7 @@ it("pinned performance reruns retain raw artifacts in a chosen checkout director
       .toContain("process.env.TEMPO_TEST_TIMING_DIR");
     const outsideCheckout = spawnSync(process.execPath, ["scripts/test-visual.mjs", "--performance-only"], {
       cwd: process.cwd(), encoding: "utf8",
-      env: { ...process.env, PATH: `${fakeCommandDirectory}:${process.env.PATH ?? ""}`,
-        TEMPO_TEST_DOCKER_CAPTURE: capturedArgumentsPath,
+      env: { ...fixtureEnvironment,
         TEMPO_TEST_TIMING_DIR: join(tmpdir(), "tempo-outside-checkout") },
     });
     expect(outsideCheckout.status).not.toBe(0);
