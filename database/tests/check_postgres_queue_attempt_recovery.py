@@ -903,7 +903,8 @@ def test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_r
     os.environ['TEMPO_DATABASE_READ_URL'] = dsn
     postgres_store.close_pools()
     from psycopg.errors import LockNotAvailable, TransactionTimeout
-    from app.services import durable_tasks, postgres_queue_refresh
+    from app.services import durable_tasks, postgres_queue_refresh, frozen_opening_order
+    from tempo_legacy_database.adapters.queue_refresh import foreground as refresh_requests
     identifier = f'queue-extraction-{uuid.uuid4()}'
     day = '2099-10-12'
     now = datetime.now(timezone.utc).isoformat()
@@ -921,7 +922,11 @@ def test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_r
             owned_database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,'synthetic',?)", (identifier, identifier, now))
             owned_database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES(?,?,'prefix',?,'[\"e2e4\"]','learning',?)", (identifier, identifier, 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', day))
             task = durable_tasks.enqueue_task_in_transaction(owned_database, 'daily_queue', identifier, payload)
-            owned_database.execute("UPDATE background_tasks SET state='leased',lease_token=?,lease_expires_at=? WHERE id=?", (identifier, '2099-10-13T00:00:00+00:00', task['id']))
+            # This synthetic task uses a non-singleton key, so record its real
+            # request after task creation, then persist the current owner fences.
+            payload['_refresh_cycle_epoch'] = refresh_requests.signal_queue_refresh_in_transaction(owned_database, day)
+            payload['frozen_token'] = list(frozen_opening_order.activation(owned_database))
+            owned_database.execute("UPDATE background_tasks SET payload_json=?,state='leased',lease_token=?,lease_expires_at=? WHERE id=?", (json.dumps(payload), identifier, '2099-10-13T00:00:00+00:00', task['id']))
             task = {**task, 'payload': payload, 'lease_token': identifier}
         def state():
             with postgres_store.connection(read_only=True) as observer:
