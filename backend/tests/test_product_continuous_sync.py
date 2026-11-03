@@ -190,8 +190,9 @@ def test_publication_reader_uses_published_owner_not_authored_counter(monkeypatc
     marker = object()
     active = False
     @contextmanager
-    def connections():
+    def connections(*, repertoire_snapshot=False):
         nonlocal active
+        assert repertoire_snapshot, 'Published source requires its whole-repertoire reader profile'
         active = True
         try:
             yield "borrowed-reader"

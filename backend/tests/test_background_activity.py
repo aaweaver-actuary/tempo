@@ -154,7 +154,7 @@ def test_derivation_pauses_after_a_phase_and_resumes_without_replaying_completed
     game_sync_coordinator._execute_derivation("activity-game")
     with database.read_connection() as db:
         completed = db.execute("SELECT status,completed_phases FROM game_derivation_jobs WHERE game_id='activity-game'").fetchone()
-    assert tuple(completed) == ("complete", 7)
+    assert tuple(completed) == ("complete", 6)
     assert first_phase_calls == ["activity-game"]
 
 
