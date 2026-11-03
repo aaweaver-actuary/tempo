@@ -145,6 +145,9 @@ def test_retained_head_omission_preserves_uncertain_source_state_and_protected_w
                    SELECT repertoire_id,generation,line_id,100,card_id,decision_fen_key,starting_fen,moves_json,trained_color FROM opening_graph_steps WHERE card_id='retained'""", ()),
                 ('accepted Games obligation', """INSERT INTO study_game_feedback(effect_key,identity_json,source_revision,card_id,decision_id,received_at,status,updated_at)
                    VALUES('fixture-owed','{}','fixture','retained','fixture',NOW(),'held',NOW())""", ()),
+                ('remapped Games obligation', """INSERT INTO study_game_feedback(effect_key,identity_json,source_revision,card_id,decision_id,received_at,status,updated_at,payload_json,payload_hash)
+                   VALUES('fixture-remapped','{}','fixture','different-original','fixture',NOW(),'held',NOW(),
+                     '{"owner":{"progress":{"target":{"card_id":"retained"}}}}','fixture')""", ()),
                 ('guided card', "UPDATE cards SET guided_review=1 WHERE id='retained'", ()),
                 ('evidence receipt', """INSERT INTO review_attempt_receipts(attempt_id,card_id,queue_entry_id,outcome,guided,scheduling_status,result_json)
                    VALUES('fixture-receipt','retained',%s,'correct',0,'pending','{}')""", (entry,)),

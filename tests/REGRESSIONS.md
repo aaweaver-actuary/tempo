@@ -1,7 +1,7 @@
 ## Italian queue issuance and pending recovery
 
 `backend/tests/test_queue_head_issuance_coalescing.py` owns exact-head receipt
-families, completed-hold retry throttling, terminal conflict preservation,
+families, completed-hold and typed head-preemption retry throttling, terminal conflict preservation,
 pending HTTP identity and current queue/plan readback. Existing
 `backend/tests/test_queue_attempt_issuance.py` preserves ordinary issuance and
 the queue's truthful 202 response. Timing-only cases live in
@@ -20,7 +20,8 @@ task-owned `tempo_position_test_n2*` database selected by
 `TEMPO_POSITION_N2_DSN`. It runs independent actual foreground task bodies
 against PostgreSQL: simultaneous initial arrivals, duplicate live leases,
 completed busy-hold retry, mid-preparation owner change and abandoned lease
-recovery. It does not establish broker transport or packaged HTTP/browser
+recovery, plus rollback and legitimate retry after a replacement head is issued
+and buried. Other failed receipts remain terminal. It does not establish broker transport or packaged HTTP/browser
 acceptance. Collecting or skipping these opt-in cases is not a native pass.
 
 `backend/tests/test_retained_position_availability.py` and the explicit native

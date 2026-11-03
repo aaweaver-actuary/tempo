@@ -68,8 +68,11 @@ Concurrent initial requests select the same generation. The existing worker
 attempt claim commits before expensive preparation, so duplicate deliveries
 share the live lease. A completed nonissued business hold may be revalidated in
 the next generation after a one-second cooldown; its original receipt remains
-immutable. Failed or blocked commands and genuine immutable-plan conflicts do
-not acquire fresh identities to conceal their outcomes. New attempts still run
+immutable. The sole failed-result exception is an explicitly typed, retryable
+`position_head_changed` 409: a replacement head can finish and let the original
+tuple become eligible again. It uses the same cooldown and preserves the old
+failure. Other failed or blocked commands and genuine immutable-plan conflicts
+do not acquire fresh identities to conceal their outcomes. New attempts still run
 all current source, owner, day and immutable-plan fences.
 
 ```mermaid
