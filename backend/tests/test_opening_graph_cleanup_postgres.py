@@ -1,9 +1,10 @@
 """Real SQL maintenance guard: preserve active work, allow retained completed history."""
 from datetime import timedelta
 import json
+import pytest
 
 from test_product_game_lapse_postgres import owned_postgres, case, NOW
-from test_queue_attempt_abandonment_postgres import _new_attempt, _apply_payload
+from test_queue_attempt_abandonment_postgres import _new_attempt, _apply_payload, _retarget_attempt
 from tempo_legacy_database.adapters.opening_graph import worker
 from tempo_legacy_database.adapters.lifecycle import queue_attempt_abandonment as abandonment
 from tempo_legacy_database.adapters.study.issuance import stamp_issued_head
@@ -50,3 +51,17 @@ def test_native_unissued_current_head_remains_protected(case):
         db.execute_native("INSERT INTO daily_queue(queue_date,card_id,position,status) VALUES(%s,%s,0,'queued')",(day,case.card_id))
         assert worker.protected_queue_entry(db,([case.card_id],day)) is not None
         assert worker.protected_queue_entry(db,([case.card_id],(NOW+timedelta(days=10)).date().isoformat())) is None
+
+
+@pytest.mark.parametrize('projection_absent',[False,True])
+def test_native_retained_unfinished_origin_protected_without_matching_projection(case,projection_absent):
+    payload,foreign = _retarget_attempt(case)
+    day=(NOW+timedelta(days=8)).date().isoformat()
+    with case.transaction() as db:
+        if projection_absent:
+            db.execute_native('DELETE FROM daily_queue WHERE id=%s',(payload['queue_entry_id'],))
+        assert worker.protected_queue_entry(db,([case.card_id],day)) is not None
+    approved=_apply_payload(case,payload)
+    with case.transaction() as db:
+        abandonment.abandon_in_writer(db,approved,now=NOW)
+        assert worker.protected_queue_entry(db,([case.card_id],day)) is None
