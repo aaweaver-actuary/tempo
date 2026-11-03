@@ -51,12 +51,16 @@ def test_missing_card_stops_before_membership_or_integrity_projection(monkeypatc
 def test_attempt_selection_maps_original_queue_facts_without_sql_fragments(monkeypatch,entry_id):
     events=[];row=dict(id=4,card_id='card',queue_date=DAY.isoformat(),cycle=1,admission_kind='review',
         revision=2,attempt_failed=0,status='queued',review_result_json=None)
+    from app.services import study_attempt_guard
     monkeypatch.setattr(review.storage,'configured',lambda: events.append('configured') or True)
     monkeypatch.setattr(review.storage,'attempt_by_id',lambda *_: events.append('identified') or row)
     monkeypatch.setattr(review.storage,'first_queued_attempt',lambda *_: events.append('first') or row)
+    monkeypatch.setattr(review.storage,'current_revision',lambda *_: events.append('revision') or {'revision':2})
+    monkeypatch.setattr(study_attempt_guard,'guard_current_attempt',
+        lambda database,attempt_id,card_id,revision: events.append(('guard',database,attempt_id,card_id,revision)))
     result=review.LearningReviewAdapter(None,None).find_attempt(SimpleNamespace(card_id='card',queue_entry_id=entry_id),SimpleNamespace(local_day=DAY))
     assert result.id==4 and result.revision==2 and result.recovered is False
-    assert events==['configured','identified' if entry_id else 'first']
+    assert events==['configured','identified' if entry_id else 'first','revision',('guard',None,4,'card',2)]
 
 
 @pytest.mark.parametrize('entry_id',[None,4])

@@ -1,9 +1,27 @@
 """Opening admissions must read bounded candidate pages before planning."""
 
+from contextlib import contextmanager
+import sqlite3
+
 from app.services import postgres_queue_refresh
 
 
 def test_postgres_opening_candidates_read_small_pages_before_planning(monkeypatch):
+    @contextmanager
+    def background_reader():
+        database = sqlite3.connect(":memory:")
+        try:
+            database.execute(
+                "CREATE TABLE frozen_opening_activation "
+                "(id INTEGER PRIMARY KEY, run_id TEXT, epoch INTEGER NOT NULL)"
+            )
+            database.execute(
+                "INSERT INTO frozen_opening_activation(id,run_id,epoch) VALUES(1,NULL,0)"
+            )
+            yield database
+        finally:
+            database.close()
+
     selected_pages = []
     identifiers = iter([[("a",), ("b",)], [("c",)], []])
 
@@ -27,6 +45,9 @@ def test_postgres_opening_candidates_read_small_pages_before_planning(monkeypatc
         raise AssertionError(statement[:100])
 
     monkeypatch.setattr(postgres_queue_refresh.read_storage, "_bounded_read", read_page)
+    # Keep the actual frozen annotation/page path, with the minimum owned
+    # background schema that says no frozen run is active.
+    monkeypatch.setattr(postgres_queue_refresh, "background_read_connection", background_reader)
     monkeypatch.setattr(
         postgres_queue_refresh, "plan_prioritized_opening_admissions",
         lambda candidates, _counts, _day, _limit, *, miss_reason: [

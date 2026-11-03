@@ -32,7 +32,8 @@ def test_backend_migration_50_registers_exact_12_table_module_without_runtime_co
     assert "CREATE TABLE cards" not in source and "CREATE TABLE reviews" not in source
     assert "CREATE TABLE settings" not in source and "CREATE TABLE instance" not in source
     files = sorted(migration.MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql"))
-    assert migration.validate_migration_history(files, list(range(1, 50)), expected_version=50) == 49
+    assert migration.validate_migration_history(files, list(range(1, migration.POSTGRES_SCHEMA_VERSION)),
+        expected_version=migration.POSTGRES_SCHEMA_VERSION) == migration.POSTGRES_SCHEMA_VERSION - 1
 
 
 @pytest.mark.parametrize("fault", ["version", "checksum", "registration"])
@@ -88,7 +89,8 @@ def test_noop_migration_still_verifies_installed_module_before_database_access(m
         def commit(self): events.append("read committed")
         def execute(self, statement):
             assert statement.lstrip().startswith("SELECT")
-            rows = [(True,)] if "to_regclass" in statement else [(i,) for i in range(1, 51)]
+            rows = ([(True,)] if "to_regclass" in statement else
+                    [(i,) for i in range(1, migration.POSTGRES_SCHEMA_VERSION + 1)])
             return SimpleNamespace(fetchone=lambda: rows[0], fetchall=lambda: rows)
     def connect(*args):
         events.append("database opened")
