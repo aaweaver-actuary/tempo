@@ -280,7 +280,8 @@ def test_postgres_queue_issuance_uses_worker_and_never_returns_unconfirmed_head(
     calls = []
     def pending_issuance(command, payload, **options):
         calls.append((command, payload, options))
-        return JSONResponse(status_code=202, content={'state': 'queued'})
+        return JSONResponse(status_code=202, content={'operation_id': 'synthetic-operation', 'state': 'queued'},
+                            headers={'Location': '/api/operations/synthetic-operation'})
     from contextlib import contextmanager
     import sqlite3
     @contextmanager
@@ -294,10 +295,11 @@ def test_postgres_queue_issuance_uses_worker_and_never_returns_unconfirmed_head(
     monkeypatch.setattr(main, 'read_connection', sqlite_reader)
     monkeypatch.setattr(main.postgres_store, 'configured', lambda: True)
     monkeypatch.setattr(command_dispatch, 'dispatch_command', pending_issuance)
-    with pytest.raises(main.HTTPException) as failure:
-        main._issue_returned_queue_head(date.today().isoformat(),
-            {'id': 'active-a', 'queue_entry_id': queued_attempts['active-a'], 'revision': 1})
-    assert failure.value.status_code == 503
+    response = main._issue_returned_queue_head(date.today().isoformat(),
+        {'id': 'active-a', 'queue_entry_id': queued_attempts['active-a'], 'revision': 1})
+    assert response.status_code == 202
+    assert response.headers['location'] == '/api/operations/synthetic-operation'
+    assert b'synthetic-operation' in response.body
     assert calls == [('queue.issue_head', {'queue_date': date.today().isoformat(),
         'entry_id': queued_attempts['active-a'], 'card_id': 'active-a', 'expected_revision': 1},
         {'idempotency_key': None})]

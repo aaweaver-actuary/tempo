@@ -32,5 +32,7 @@ def available_attempt_sql(miss_reason: str) -> str:
     # Frozen publications are PostgreSQL-authoritative. The optional legacy
     # exposure sources do not exist in SQLite's recovery compatibility schema.
     if postgres_store.configured():
-        return base_available_attempt_sql(miss_reason) + frozen_order.legacy_queue_predicate(miss_reason)
+        from .retained_position_availability import availability_predicate
+        return (base_available_attempt_sql(miss_reason) + frozen_order.legacy_queue_predicate(miss_reason)
+                + availability_predicate())
     return base_available_attempt_sql(miss_reason)

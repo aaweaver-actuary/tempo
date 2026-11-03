@@ -73,6 +73,7 @@ def current_study_day(database, *, now=None):
 def issue_queue_head(database, payload: dict[str, Any]) -> dict[str, Any]:
     """Commit one head's issuance before returning it; never stamp prefetch."""
     from .services.queue_next_card import PreparedQueueHead
+    from .services.background_runtime import training_timing_stage
     prepared = payload if isinstance(payload, PreparedQueueHead) else PreparedQueueHead(payload, 'legacy')
     payload = prepared.payload
     entry_id = int(payload["entry_id"])
@@ -88,11 +89,13 @@ def issue_queue_head(database, payload: dict[str, Any]) -> dict[str, Any]:
         from tempo_evidence_math.position_learning import Hold
         from tempo_legacy_database.adapters.authored_repertoires.position_study_source import fence_position_source
         from tempo_legacy_database.adapters.study.position_issued_plans import issue_in_borrowed_transaction
-        held = fence_position_source(database, prepared.proposal.source)
+        with training_timing_stage('position_source_fence'):
+            held = fence_position_source(database, prepared.proposal.source)
         if held is not None:
             return {'issued': False, 'position_study_mode': 'position',
                     'position_presentation': None, 'position_study_hold': held.reason}
-        position_plan = issue_in_borrowed_transaction(database, prepared.proposal)
+        with training_timing_stage('position_issue_apply'):
+            position_plan = issue_in_borrowed_transaction(database, prepared.proposal)
         if isinstance(position_plan, Hold):
             return {'issued': False, 'position_study_mode': 'position',
                     'position_presentation': None, 'position_study_hold': position_plan.reason}
@@ -120,19 +123,19 @@ def issue_queue_head(database, payload: dict[str, Any]) -> dict[str, Any]:
     if (not queue_storage.issued_origin(database, entry_id, payload['card_id'], payload['expected_revision'])
             and pending_next_card_preparation(database, payload['queue_date'],candidate_card_id=payload['card_id'])):
         if position_plan is not None:
-            raise HTTPException(409, 'Position head changed during issuance')
+            raise ReviewConflict('position_head_changed', 'Position head changed during issuance', retryable=True)
         return {'issued': False, 'reason': 'study_feedback_preparation_pending'}
     read_head = queue_storage.prepare_queue_head(database, queue_application.MISS_REASON)
     head = read_head(payload["queue_date"])
     if not head or head["id"] != entry_id:
         if position_plan is not None:
-            raise HTTPException(409, 'Position head changed during issuance')
+            raise ReviewConflict('position_head_changed', 'Position head changed during issuance', retryable=True)
         return {"issued": False}
     try:
         validate_available_attempt(database, entry_id, payload["card_id"], payload["expected_revision"])
     except ReviewConflict:
         if position_plan is not None:
-            raise HTTPException(409, 'Position head changed during issuance')
+            raise ReviewConflict('position_head_changed', 'Position head changed during issuance', retryable=True)
         return {"issued": False}
     if prepared.urgency is not None:
         from tempo_evidence_math.position_learning import Hold
@@ -154,7 +157,7 @@ def issue_queue_head(database, payload: dict[str, Any]) -> dict[str, Any]:
             from tempo_legacy_database.adapters.study.game_feedback import record_feedback_issuance
             record_feedback_issuance(database, entry_id, payload['card_id'], payload['expected_revision'])
     if not changed and position_plan is not None:
-        raise HTTPException(409, 'Position head changed during issuance')
+        raise ReviewConflict('position_head_changed', 'Position head changed during issuance', retryable=True)
     if position_plan is not None:
         return {'issued': bool(changed), 'position_study_mode': 'position',
                 'position_presentation': position_plan.to_wire(), 'position_study_hold': None}

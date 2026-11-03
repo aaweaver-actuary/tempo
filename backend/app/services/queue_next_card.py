@@ -111,6 +111,7 @@ def prepare_queue_head(payload):
     from app.study.position_learning.issued_plan_service import prepare_position_issuance
     from app.study.position_learning.route_planner import choose_plan
     from .position_queue_admission import select_carrier
+    from .background_runtime import training_timing_stage
 
     def held(reason):
         return PreparedQueueHead(payload, 'hold', reason=reason)
@@ -150,7 +151,8 @@ def prepare_queue_head(payload):
             return held('position_owner_' + owner['mode'])
         if origin['issued_as_head']:
             return held('position_issued_head_plan_missing')
-        source = _cached_position_source(db, rep, owner['epoch'], owner['source_digest'])
+        with training_timing_stage('position_source_prepare'):
+            source = _cached_position_source(db, rep, owner['epoch'], owner['source_digest'])
         if isinstance(source, Hold):
             return held(source.reason)
         if source.authored_token.authored_digest != owner['source_digest']:
@@ -167,50 +169,54 @@ def prepare_queue_head(payload):
             revision=payload['expected_revision'], repertoire_id=rep) if read_urgency else None)
         if isinstance(urgency, Hold):
             return held(urgency.reason)
-        target, cursor = None, None
-        if urgency is not None:
-            if (urgency.owner_epoch != owner['epoch'] or urgency.source_digest != owner['source_digest']
-                    or urgency.definition.key.repertoire_id != rep):
-                return held('position_urgency_scope_changed')
-            carrier = select_carrier(source, urgency.definition, card_id=payload['card_id'])
-            if isinstance(carrier, Hold) or carrier.presentation_revision != payload['expected_revision']:
-                return held('position_urgency_carrier_changed')
-            target = urgency.definition
-        else:
-            # Bound work independently of catalogue size; a larger backlog stays
-            # held rather than falling back to physical-card scheduling.
-            for _ in range(10):
-                page = reader.read_due_page(after=cursor, limit=100)
-                if isinstance(page, Hold):
-                    return held(page.reason)
-                for candidate in page.candidates:
-                    carrier = select_carrier(source, candidate.state.definition, card_id=payload['card_id'])
-                    if not isinstance(carrier, Hold) and carrier.presentation_revision == payload['expected_revision']:
-                        target = candidate.state.definition
+        with training_timing_stage('position_due_carrier_scan'):
+            target, cursor = None, None
+            if urgency is not None:
+                if (urgency.owner_epoch != owner['epoch'] or urgency.source_digest != owner['source_digest']
+                        or urgency.definition.key.repertoire_id != rep):
+                    return held('position_urgency_scope_changed')
+                carrier = select_carrier(source, urgency.definition, card_id=payload['card_id'])
+                if isinstance(carrier, Hold) or carrier.presentation_revision != payload['expected_revision']:
+                    return held('position_urgency_carrier_changed')
+                target = urgency.definition
+            else:
+                # Bound work independently of catalogue size; a larger backlog stays
+                # held rather than falling back to physical-card scheduling.
+                for _ in range(10):
+                    page = reader.read_due_page(after=cursor, limit=100)
+                    if isinstance(page, Hold):
+                        return held(page.reason)
+                    for candidate in page.candidates:
+                        carrier = select_carrier(source, candidate.state.definition, card_id=payload['card_id'])
+                        if not isinstance(carrier, Hold) and carrier.presentation_revision == payload['expected_revision']:
+                            target = candidate.state.definition
+                            break
+                    if target or page.next_cursor is None:
                         break
-                if target or page.next_cursor is None:
-                    break
-                cursor = page.next_cursor
+                    cursor = page.next_cursor
         if target is None:
             return held('position_due_target_unavailable')
-        proofs = []
-        prior = db.execute_native("""SELECT attempt_id FROM study_position_issued_plans
-            WHERE repertoire_id=%s AND owner_epoch=%s AND issue_study_day=%s
-            ORDER BY issued_at DESC,attempt_id LIMIT 20""", (rep, owner['epoch'], day)).fetchall()
-        for row in prior:
-            proof = read_clean_presentation_proof(db, row['attempt_id'])
-            if not isinstance(proof, Hold):
-                proofs.append(proof)
-        proofs = read_applicable_clean_proofs(db, [p.attempt_id for p in proofs],
-            target=target, owner_epoch=owner['epoch'], study_day=day)
+        with training_timing_stage('position_prior_clean_proofs'):
+            proofs = []
+            prior = db.execute_native("""SELECT attempt_id FROM study_position_issued_plans
+                WHERE repertoire_id=%s AND owner_epoch=%s AND issue_study_day=%s
+                ORDER BY issued_at DESC,attempt_id LIMIT 20""", (rep, owner['epoch'], day)).fetchall()
+            for row in prior:
+                proof = read_clean_presentation_proof(db, row['attempt_id'])
+                if not isinstance(proof, Hold):
+                    proofs.append(proof)
+            proofs = read_applicable_clean_proofs(db, [p.attempt_id for p in proofs],
+                target=target, owner_epoch=owner['epoch'], study_day=day)
         if isinstance(proofs, Hold):
             return held(proofs.reason)
-        route = choose_plan(target.key, source.routes, clean_proofs=proofs,
-                            study_day=day, owner_epoch=owner['epoch'])
+        with training_timing_stage('position_route_choice'):
+            route = choose_plan(target.key, source.routes, clean_proofs=proofs,
+                                study_day=day, owner_epoch=owner['epoch'])
         if isinstance(route, Hold):
             return held(route.reason)
         keys = tuple(dict.fromkeys(d.definition.key for d in route.decision_occurrences))
-        witnesses = reader.read_context(keys)
+        with training_timing_stage('position_context_witnesses'):
+            witnesses = reader.read_context(keys)
         if isinstance(witnesses, Hold):
             return held(witnesses.reason)
         # Only an absent future state may end a presentation. Every decision
@@ -237,6 +243,7 @@ def prepare_queue_head(payload):
                             (payload['entry_id'], payload['card_id'], payload['expected_revision'])))
         request = SelectionRequest(target, source.routes, tuple(witnesses), tuple(proofs),
             payload['card_id'], payload['expected_revision'], payload['entry_id'], attempt, end_ply=end_ply)
-        proposal = prepare_position_issuance(source, request)
+        with training_timing_stage('position_plan_proposal'):
+            proposal = prepare_position_issuance(source, request)
         return (held(proposal.reason) if isinstance(proposal, Hold) else
                 PreparedQueueHead(payload, 'position', proposal, urgency=urgency))

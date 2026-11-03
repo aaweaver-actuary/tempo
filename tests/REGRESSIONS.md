@@ -2,6 +2,41 @@
 
 `tests/browser/retired-jobs-saves.spec.ts::retired Jobs and Saves stay absent during navigation and debug export` checks the scoped browser-key retirement, retained navigation and debug export, and absence of retired UI and requests against a disposable installation.
 
+## Italian queue issuance and pending recovery
+
+`backend/tests/test_queue_head_issuance_coalescing.py` owns exact-head receipt
+families, completed-hold and typed head-preemption retry throttling, terminal conflict preservation,
+pending HTTP identity and current queue/plan readback. Existing
+`backend/tests/test_queue_attempt_issuance.py` preserves ordinary issuance and
+the queue's truthful 202 response. Timing-only cases live in
+`test_queue_head_preparation_timing.py` and `test_queue_issue_writer_timing.py`.
+
+`tests/unit/queue-issuance-pending-regressions.test.ts` follows the original
+operation, rejects malformed/failed/blocked receipts, rereads the authoritative
+queue, and preserves finite cancellation and saved phone preparation. Import
+admission's actual pending consumer is covered by `pgn-import-dialog-regressions.test.tsx`.
+Existing desktop and packaged `position-study-acceptance.spec.ts` cases retain
+active attempts, busy-head recovery and immutable server-issued plans.
+
+`database/tests/position_study/test_italian_issuance_concurrency.py` is the
+explicit opt-in native owner. Each named case requires a newly empty local
+task-owned `tempo_position_test_n2*` database selected by
+`TEMPO_POSITION_N2_DSN`. It runs independent actual foreground task bodies
+against PostgreSQL: simultaneous initial arrivals, duplicate live leases,
+completed busy-hold retry, mid-preparation owner change and abandoned lease
+recovery, plus rollback and legitimate retry after a replacement head is issued
+and buried. Other failed receipts remain terminal. It does not establish broker transport or packaged HTTP/browser
+acceptance. Collecting or skipping these opt-in cases is not a native pass.
+
+`backend/tests/test_retained_position_availability.py` and the explicit native
+`database/tests/position_study/test_retained_position_availability_postgres.py`
+cover the reported retained interior opponent-then-learner carrier with a
+completed no-donor hold and no logical state. Shared HTTP/writer availability
+omits only that certified unissued row, retains its diagnostic/history, and
+still fences the eligible successor. Uncertain source, longer carriers,
+multiple aliases, existing state in any epoch, urgency and protected attempts
+remain visible. Native cases each require a separate empty owned N2 database.
+
 ## Current queue refresh progress and freshness
 
 The existing busy-to-issued consumer case in

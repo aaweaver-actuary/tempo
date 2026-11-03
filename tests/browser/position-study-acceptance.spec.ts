@@ -153,8 +153,9 @@ function fixture<T>(project: string, action: "seed" | "read" | "legacy", identit
     "python", "-c", fixtureProgram, action, identity], { encoding: "utf8", timeout: 30_000 }));
 }
 
-// The only fault injection is a transaction-scoped advisory lock in the
-// already-owned disposable worker. It rolls back on release, EOF, or deadline.
+// The card-lock fault rolls back on release, EOF, or deadline. The browser
+// journey also briefly pauses its verified disposable foreground container to
+// force the actual queue202/operation-poll boundary before releasing delivery.
 const lockHolderProgram = String.raw`
 import os, select, sys, psycopg
 rep = sys.argv[1]
@@ -321,6 +322,7 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
       address.pathname !== "/" || address.username || address.password || address.search || address.hash)
     throw new Error("Disposable endpoint must be a loopback origin with an explicit port");
   const api = `${origin}/api`;
+  let foregroundContainer = "";
   for (const service of ["web", "api", "foreground-worker"]) {
     const container = execFileSync("docker", ["compose", "-p", project, "-f", "docker-compose.postgres.test.yml",
       "ps", "-q", service], { encoding: "utf8", timeout: 5_000 }).trim();
@@ -329,6 +331,7 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
       { encoding: "utf8", timeout: 5_000 })) as Record<string, string>;
     if (labels["com.docker.compose.project"] !== project || labels["com.docker.compose.service"] !== service || labels["tempo.resource-owner"] !== budgetToken)
       throw new Error(`Unowned ${service} service`);
+    if (service === "foreground-worker") foregroundContainer = container;
     if (service === "web") {
       const ports = JSON.parse(execFileSync("docker", ["inspect", "--format", "{{json .NetworkSettings.Ports}}", container],
         { encoding: "utf8", timeout: 5_000 }));
@@ -376,6 +379,7 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
   let unavailableAcceptedReviewTimingCount = 0;
   let timingCaptureErrorCount = 0;
   const contentionObservations: Array<{ status: number; hold: string | null; entry: number | null }> = [];
+  let pendingIssuanceProof: { queue_status: number; operation_id: string; observed_state: string; completed_state: string } | undefined;
   const acceptedReviewTimingTasks: Promise<void>[] = [];
   let settledReviewTimingCount = 0;
   const onTimingResponse = (response: Response) => {
@@ -460,7 +464,7 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
     };
     page.on("response", onResponse);
   });
-  const readAppQueue = async (pending: ReturnType<typeof nextAppQueue>): Promise<Queue> => {
+  const readAppQueue = async (pending: ReturnType<typeof nextAppQueue>, pendingReads = 0): Promise<Queue> => {
     const request = await pending;
     // Some aborted requests never settle request.response(); report failure and
     // bound response acquisition to the existing 30-second request wait.
@@ -499,6 +503,17 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
       unavailableQueueTimingCount += 1;
     }
     expect(response.ok(), body.toString()).toBe(true);
+    if (response.status() === 202) {
+      const issuance = JSON.parse(body.toString()) as { operation_id?: string; state?: string };
+      expect(issuance.operation_id).toMatch(/^queue\.issue_head:v1:[a-f0-9]{64}:\d{12}$/);
+      expect(["unknown", "queued", "pending", "executing", "retrying"]).toContain(issuance.state);
+      expect(pendingReads).toBeLessThan(20);
+      // Observe the actual app's operation-follow/refetch behavior. A fixture
+      // GET would itself issue work and conceal a missing frontend consumer.
+      return readAppQueue(page.waitForRequest(request => request.frame() === page.mainFrame() &&
+        isAppQueue(request.url(), request.method())), pendingReads + 1);
+    }
+    expect(response.status()).toBe(200);
     return JSON.parse(body.toString()) as Queue;
   };
   const positionHead = (queue: Queue, cardId: string): WirePlan => {
@@ -536,9 +551,62 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
   };
   page.on("framenavigated", onStartupNavigation);
   page.on("request", onStartupRequest);
+  let foregroundPauseAttempted = false;
+  const resumeForeground = () => {
+    if (!foregroundPauseAttempted) return;
+    if (execFileSync("docker", ["inspect", "--format", "{{.State.Paused}}", foregroundContainer],
+      { encoding: "utf8", timeout: 5_000 }).trim() === "true")
+      execFileSync("docker", ["unpause", foregroundContainer], { timeout: 5_000 });
+    foregroundPauseAttempted = false;
+  };
   try {
     await holder.ready;
+    // The exact immutable container ID was verified above. Recheck ownership
+    // and running state immediately before fault injection; never address a
+    // service name which could resolve to another stack or a replacement.
+    expect(foregroundContainer).toMatch(/^[a-f0-9]{64}$/);
+    const foreground = JSON.parse(execFileSync("docker", ["inspect", "--format",
+      '{"labels":{{json .Config.Labels}},"state":{{json .State}}}', foregroundContainer],
+      { encoding: "utf8", timeout: 5_000 })) as { labels: Record<string, string>; state: { Running: boolean; Paused: boolean } };
+    expect(foreground.labels["com.docker.compose.project"]).toBe(project);
+    expect(foreground.labels["com.docker.compose.service"]).toBe("foreground-worker");
+    expect(foreground.labels["tempo.resource-owner"]).toBe(budgetToken);
+    expect(foreground.state).toMatchObject({ Running: true, Paused: false });
+    foregroundPauseAttempted = true;
+    execFileSync("docker", ["pause", foregroundContainer], { timeout: 5_000 });
+    const pendingQueue = page.waitForResponse(response => response.status() === 202 &&
+      response.request().frame() === page.mainFrame() && isAppQueue(response.url(), response.request().method()), { timeout: 6_000 });
+    const operationRead = page.waitForRequest(request => request.method() === "GET" &&
+      request.frame() === page.mainFrame() &&
+      decodeURIComponent(new URL(request.url()).pathname).startsWith("/api/operations/queue.issue_head:v1:"), { timeout: 6_000 });
+    // Observe promise failures even when another startup assertion fails first.
+    void pendingQueue.catch(() => undefined);
+    void operationRead.catch(() => undefined);
     await prepareUI(page);
+    const pendingResponse = await pendingQueue;
+    expect(await takeStartupRequest()).toBe(pendingResponse.request());
+    const pending = await pendingResponse.json() as { operation_id: string; state: string };
+    expect(pending.operation_id).toMatch(/^queue\.issue_head:v1:[a-f0-9]{64}:\d{12}$/);
+    expect(["unknown", "queued", "pending", "executing", "retrying"]).toContain(pending.state);
+    const operationRequest = await operationRead;
+    expect(decodeURIComponent(new URL(operationRequest.url()).pathname)).toBe(`/api/operations/${pending.operation_id}`);
+    expect(operationRequest.headers()["x-tempo-work-class"]).not.toBe("background");
+    expect(requests).toHaveLength(0);
+    const operationComplete = page.waitForResponse(async response => {
+      if (response.status() !== 200 || response.request().method() !== "GET" ||
+          response.request().frame() !== page.mainFrame() ||
+          decodeURIComponent(new URL(response.url()).pathname) !== `/api/operations/${pending.operation_id}`) return false;
+      const receipt = await response.json();
+      return receipt.operation_id === pending.operation_id && receipt.state === "complete";
+    }, { timeout: 6_000 });
+    void operationComplete.catch(() => undefined);
+    resumeForeground();
+    const completed = await (await operationComplete).json();
+    expect(completed.response).toMatchObject({ issued: false, position_study_hold: "position_card_busy" });
+    pendingIssuanceProof = { queue_status: pendingResponse.status(), operation_id: pending.operation_id,
+      observed_state: pending.state, completed_state: completed.state };
+    // Continue through the application's authoritative queue refetch and the
+    // existing real advisory-lock release/retry proof below.
     let entry: number | undefined;
     let released = false;
     for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -548,7 +616,7 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
       const status = (await appRequest.response())!.status();
       const head = queue.cards[0];
       contentionObservations.push({ status, hold: head?.position_study_hold ?? null, entry: head?.queue_entry_id ?? null });
-      expect(status).toBe(200);
+      expect([200, 202]).toContain(status);
       expect(head?.id).toBe(`${identity}-card-a`);
       expect(head?.revision).toBe(1);
       expect(head?.position_study_mode).toBe("position");
@@ -582,7 +650,8 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
   } finally {
     page.off("framenavigated", onStartupNavigation);
     page.off("request", onStartupRequest);
-    await holder.finish();
+    try { resumeForeground(); }
+    finally { await holder.finish(); }
   }
   expect(first.moves_uci).toEqual(["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "g8f6", "f3g5", "d7d5", "e4d5"]);
   await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", String(first.queue_entry_id));
@@ -710,9 +779,8 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
   expect(settledLegacy.legacy_entries.find(entry => entry.id === legacyHead.queue_entry_id)).toMatchObject({
     card_id: legacy.card, status: "complete", attempt_state: "guided" });
   await page.reload();
-  const legacyWrongEvents = (await openingEvents(page, legacyAttempt)).filter(event =>
-    event.kind === "first_response" && event.disposition === "wrong");
-  expect(legacyWrongEvents).toEqual([legacyWrong]);
+  // Successful acknowledgement may remove the delivered local journal. The
+  // authoritative guided Again receipt must remain exact across reload.
   expect(fixture<Snapshot>(project, "read", identity).legacy_reviews).toEqual(settledLegacy.legacy_reviews);
   await Promise.all(acceptedReviewTimingTasks);
   } finally {
@@ -724,6 +792,7 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
       accepted_review_elapsed_boundary: "Playwright request.timing().responseEnd after response.finished(), relative to request start",
       samples: requestTimingSamples,
       contention_observations: contentionObservations,
+      pending_issuance_proof: pendingIssuanceProof,
       unavailable_queue_timing_count: unavailableQueueTimingCount,
       unavailable_accepted_review_timing_count: unavailableAcceptedReviewTimingCount,
       pending_accepted_review_timing_count: acceptedReviewTimingTasks.length - settledReviewTimingCount,

@@ -97,6 +97,37 @@ The full main source audit now finds zero inline SQL/predicate builders, DDL, dr
 
 ## Storage map
 
+### Retained position carriers without logical state
+
+The Italian issuance repair adds one conservative read-only predicate in
+[`retained_position_availability.py`](retained_position_availability.py), reused
+by shared API/writer availability and queue diagnostics. It omits only a clean,
+unissued ordinary review carrier with one learner decision, one matching current
+graph alias, an exact active admission owner, and a completed no-donor seed hold
+under unchanged full source-header/integrity certificates. The exact logical
+position must have no state in any epoch. Issued attempts, evidence, explicit or
+retry work, guided failures, accepted Games obligations and uncertain authority
+remain visible. All physical rows, held seed outcomes and history remain intact;
+the diagnostic reports `position_retained_carrier_without_logical_state`.
+The legacy physical reinforcement flag is retained too: it cannot create a
+position-owned obligation without logical state. Actual retry cycles and
+reinforcement attempts remain protected by the queue-attempt guards.
+
+```mermaid
+flowchart LR
+  API[Queue projection and count] --> Availability[One shared availability predicate]
+  Writer[Existing head validation] --> Availability
+  Availability --> Certificate[Current owner and completed held seed certificate]
+  Availability --> Protection[Retained attempts evidence and obligations]
+  Diagnostics[Read-only retained-hold diagnostic] --> Certificate
+  Availability --> Successor[Eligible successor]
+  Successor --> Fence[Unchanged full issuance and immutable-plan fences]
+```
+
+This exclusion grants no source, scheduling or issuance authority. It creates
+no table, queue status, connection or state writer. The view describes the repair
+candidate; native, packaged and installed qualification are separate evidence.
+
 The linked schema README views remain canonical for actual stored fields/types, primary/composite keys, enforced foreign keys and explicitly logical relationships. No constraints or ownership are inferred from this call graph.
 
 | Existing storage | Facts touched by this slice | Canonical source schema |

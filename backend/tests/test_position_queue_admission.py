@@ -415,6 +415,8 @@ def test_new_position_issue_fences_source_before_existing_queue_locks_and_rolls_
     with pytest.raises(HTTPException) as failure:
         queue_commands.issue_queue_head(object(), prepared)
     assert failure.value.status_code == 409
+    assert failure.value.code == 'position_head_changed'
+    assert failure.value.retryable is True
     assert calls == ['source', 'plan', 'card']
 
 
