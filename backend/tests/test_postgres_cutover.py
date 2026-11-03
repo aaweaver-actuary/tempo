@@ -2571,16 +2571,33 @@ def test_postgres_priority_opening_plan_preserves_gameplay_breadth_and_shared_ca
 
 def test_postgres_priority_opening_slice_checkpoints_one_item_and_rejects_stale_replay(monkeypatch):
     from app.services import postgres_queue_refresh
+    from app.services import position_queue_admission
+    from tempo_legacy_database.adapters.study import position_owner_epoch
 
     current_lease = "first"
     saved_phase = None
     saved_payload = None
     admitted = []
+    writer = object()
 
     @contextmanager
     def section(*, background):
         assert background
-        yield object()
+        yield writer
+
+    @contextmanager
+    def read_section():
+        yield writer
+
+    original_owner_mode = position_owner_epoch.owner_mode
+
+    def owner_mode(database, repertoire_id, expected_authored_digest):
+        if database is writer and repertoire_id == "white":
+            assert expected_authored_digest is None
+            return position_owner_epoch.OwnerDecision(
+                "legacy", "inactive", None, None, "position_owner_absent",
+            )
+        return original_owner_mode(database, repertoire_id, expected_authored_digest)
 
     def advance(database, task, *, next_phase, next_payload):
         nonlocal current_lease, saved_phase, saved_payload
@@ -2591,11 +2608,17 @@ def test_postgres_priority_opening_slice_checkpoints_one_item_and_rejects_stale_
     monkeypatch.setattr(postgres_queue_refresh.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(postgres_queue_refresh.activity_gate, "wait_for_foreground", lambda: None)
     monkeypatch.setattr(postgres_queue_refresh, "connection", section)
+    monkeypatch.setattr(postgres_queue_refresh, "background_read_connection", read_section)
     monkeypatch.setattr(postgres_queue_refresh, "lock_current_slice",
                         lambda database, task: task["lease_token"] == current_lease)
     monkeypatch.setattr(postgres_queue_refresh, "advance_task_slice_in_transaction", advance)
     monkeypatch.setattr(postgres_queue_refresh, "_admit_one_prioritized_opening",
                         lambda database, day, planned: admitted.append(planned["card_id"]))
+    monkeypatch.setattr(position_queue_admission, "prepare_opening_introduction",
+                        lambda database, planned: ("legacy", planned["repertoire_id"])
+                        if database is writer and planned["repertoire_id"] == "white"
+                        else (_ for _ in ()).throw(AssertionError("unexpected opening preparation")))
+    monkeypatch.setattr(position_owner_epoch, "owner_mode", owner_mode)
     plan = [{"card_id": "one", "repertoire_id": "white", "reason": None},
             {"card_id": "two", "repertoire_id": "white", "reason": None}]
     task = {"id": "queue-refresh", "generation": 4, "lease_token": "first",
