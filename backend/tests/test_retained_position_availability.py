@@ -38,4 +38,28 @@ def test_retained_position_guard_compiles_through_shared_sql_adapter(monkeypatch
     compiled = postgres_sql(availability.available_attempt_sql('real_game_miss'))
     assert 'study_position_seed_runs' in compiled
     assert compiled.count('%s') == 1
-    assert 'JSONB_EXTRACT_PATH_TEXT' in compiled
+    # The SQLite-to-PG adapter emits the json_* overloads. Their document
+    # argument must be JSON; JSONB here caused a real native undefined-function
+    # failure before any queue head could issue.
+    import sqlglot
+    from sqlglot import exp
+    tree = sqlglot.parse_one(compiled, read='postgres')
+    guarded_documents = [node.this for node in tree.walk()
+        if isinstance(node, (exp.JSONExtract, exp.JSONExtractScalar))
+        and isinstance(node.this, exp.Case)]
+    assert len(guarded_documents) == 3
+    for document in guarded_documents:
+        casts = list(document.find_all(exp.Cast))
+        assert len(casts) == 2
+        assert all(cast.args['to'].is_type('JSON') for cast in casts)
+    numeric_generation = next(node for node in tree.find_all(exp.JSONExtract)
+        if 'graph_generation' in node.expression.sql())
+    assert isinstance(numeric_generation.parent, exp.Cast)
+    assert numeric_generation.parent.args['to'].is_type('JSONB')
+    # Keep remapped accepted Games targets protected. A variadic native JSON
+    # helper is parsed as a two-argument SQLite function and loses later path
+    # components; explicit nested calls preserve the entire path.
+    effect_target = next(node for node in tree.find_all(exp.JSONExtractScalar)
+        if 'card_id' in node.expression.sql())
+    assert len(list(effect_target.find_all(exp.JSONExtract))) == 3
+    assert all(name in effect_target.sql() for name in ('owner', 'progress', 'target', 'card_id'))

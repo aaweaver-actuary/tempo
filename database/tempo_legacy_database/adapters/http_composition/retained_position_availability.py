@@ -68,10 +68,10 @@ _OMIT = """c.content_type='opening' AND q.status='queued'
      AND integrity.scan_error IS NULL AND integrity.scan_completed_sources=integrity.scan_total_sources
      AND integrity.scan_generation=scan_task.id||':'||scan_task.generation::text
      AND scan_task.state='complete'
-     AND jsonb_extract_path_text(CASE WHEN scan_task.payload_json IS JSON OBJECT
-       THEN scan_task.payload_json::jsonb ELSE '{}'::jsonb END,'repertoire_id')=repertoire.id
-     AND jsonb_extract_path(CASE WHEN scan_task.payload_json IS JSON OBJECT
-       THEN scan_task.payload_json::jsonb ELSE '{}'::jsonb END,'graph_generation')=to_jsonb(publication.generation)
+     AND json_extract_path_text(CASE WHEN scan_task.payload_json IS JSON OBJECT
+       THEN scan_task.payload_json::json ELSE '{}'::json END,'repertoire_id')=repertoire.id
+     AND json_extract_path(CASE WHEN scan_task.payload_json IS JSON OBJECT
+       THEN scan_task.payload_json::json ELSE '{}'::json END,'graph_generation')::jsonb=to_jsonb(publication.generation)
      AND EXISTS(SELECT 1 FROM repertoire_cards membership
        WHERE membership.repertoire_id=repertoire.id AND membership.card_id=c.id)
      AND NOT EXISTS(SELECT 1 FROM repertoire_cards other
@@ -107,8 +107,9 @@ _OMIT = """c.content_type='opening' AND q.status='queued'
  AND NOT EXISTS(SELECT 1 FROM teaching_states teaching WHERE teaching.card_id=c.id)
  AND NOT EXISTS(SELECT 1 FROM study_game_feedback effect WHERE effect.status IN ('pending','held','applied')
    AND (effect.card_id=c.id OR
-     jsonb_extract_path_text(CASE WHEN effect.payload_json IS JSON OBJECT THEN effect.payload_json::jsonb
-       ELSE '{}'::jsonb END,'owner','progress','target','card_id')=c.id))"""
+     json_extract_path_text(json_extract_path(json_extract_path(json_extract_path(
+       CASE WHEN effect.payload_json IS JSON OBJECT THEN effect.payload_json::json
+       ELSE '{}'::json END,'owner'),'progress'),'target'),'card_id')=c.id))"""
 
 
 def omission_predicate() -> str:
