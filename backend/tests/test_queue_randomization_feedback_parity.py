@@ -244,6 +244,13 @@ def test_native_actual_join_target_keeps_bounded_and_native_owed_urgency(feedbac
             effect = PostgresGameFeedbackStore(database).get(command.key)
             assert available.admission_status == 'available'
             assert effect.card_id == 'A' and effect.progress.target.card_id == target.presentation_id
+        day = observed.date().isoformat()
+        with transaction() as database:
+            database.execute_native("SET LOCAL transaction_timeout='250ms'")
+            database.execute_native("SET LOCAL lock_timeout='100ms'")
+            # Availability is not queue membership. Let the actual Study owner
+            # recover the owed current target and publish this day's queue.
+            queue_application.materialize_daily_queue(database, day)
         def bounded(statement, parameters=()):
             with reader() as database:
                 return database.execute(statement, parameters).fetchall()
@@ -255,11 +262,11 @@ def test_native_actual_join_target_keeps_bounded_and_native_owed_urgency(feedbac
             with reader() as database:
                 native_owed = owed_feedback_card_ids(database,(target.presentation_id,),include_regrouped=True)
                 native_priority = feedback_queue_priorities(database,(target.presentation_id,))
-                native_rows = [row for row in queue_application.presentation_rows(database,observed.date().isoformat())
+                native_rows = [row for row in queue_application.presentation_rows(database,day)
                     if row['card_id']==target.presentation_id]
             bounded_owed = owed_feedback_card_ids(None,(target.presentation_id,),read=bounded,include_regrouped=True)
             bounded_priority = feedback_queue_priorities(None,(target.presentation_id,),read=bounded)
-            bounded_rows = [row for row in queue_application.presentation_rows(None,observed.date().isoformat(),read=bounded)
+            bounded_rows = [row for row in queue_application.presentation_rows(None,day,read=bounded)
                 if row['card_id']==target.presentation_id]
             report.update(native_owed=sorted(native_owed),bounded_owed=sorted(bounded_owed),
                 native_priority=native_priority,bounded_priority=bounded_priority,
@@ -272,6 +279,10 @@ def test_native_actual_join_target_keeps_bounded_and_native_owed_urgency(feedbac
         assert native_owed == bounded_owed == {target.presentation_id}
         assert native_priority == bounded_priority and target.presentation_id in native_priority
         assert len(native_rows)==len(bounded_rows)==1
+        assert native_rows[0]['revision'] == effect.progress.target.card_revision
+        assert native_rows[0]['gameplay_priority_reason'] == 'product_game_encounter'
+        for field, value in native_priority[target.presentation_id].items():
+            assert native_rows[0][field] == value
         assert queue_ordering._queue_presentation_state(native_rows)==queue_ordering._queue_presentation_state(bounded_rows)
         assert report['first_difference'] is None, report
         assert source.store.delivery(delivery.operation_id).command.model_dump_json() == original_bytes
