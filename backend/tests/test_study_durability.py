@@ -25,6 +25,8 @@ def test_tactic_discovery_uses_local_day_after_utc_midnight(tmp_path, monkeypatc
     from app import queue_commands
     monkeypatch.setattr(queue_commands, "datetime", UtcClock)
     monkeypatch.setattr(main, "datetime", UtcClock)
+    from app.product_composition import compatibility_coordinator
+    monkeypatch.setattr(compatibility_coordinator, "date", LocalDate)
     with TestClient(app) as client:
         settings = client.get("/api/settings").json()
         settings["timezone"] = "America/New_York"
@@ -75,6 +77,8 @@ def install_clock(monkeypatch):
     from app import queue_commands
     monkeypatch.setattr(queue_commands, "datetime", ClockDatetime)
     monkeypatch.setattr(main, "datetime", ClockDatetime)
+    from app.product_composition import compatibility_coordinator
+    monkeypatch.setattr(compatibility_coordinator, "date", ClockDate)
     return clock
 
 def solve(client, card, outcome="correct"):
@@ -93,6 +97,9 @@ def test_study_reinforces_today_reviews_tomorrow_and_persists_unassisted_later_r
         imported = client.post("/api/imports/pgn", files={"file": ("durability.pgn", PGN)}, data={"initial_depth": 2})
         wait_for_integrity(client, imported.json()["repertoire_id"])
         first = client.get("/api/queue/today").json()["cards"][0]
+        with database.connection() as db:
+            assert db.execute("SELECT introduced_at FROM cards WHERE id=?", (first["id"],)).fetchone()[0] == "2026-09-16"
+            assert {row[0] for row in db.execute("SELECT DISTINCT queue_date FROM daily_queue")} == {"2026-09-16"}
         for ply in (0,):
             assert client.post(f"/api/cards/{first['id']}/teaching", json={"revision": 1, "ply": ply}).status_code == 200
         result = solve(client, first)
