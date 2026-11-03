@@ -13,7 +13,7 @@ import { browserActivityQuery, matchesContract, validateReview, receiptResponse 
 import { tacticalCatalogSchema } from "../../../app/lib/tactical-catalog";
 import { queueEnvelopeSchema, queueCardSchema, settingsResponseSchema, repertoiresResponseSchema,
   repertoireLinesResponseSchema, motifRecommendationsSchema, tacticProgressSchema, syncStatusSchema,
-  gamesSummarySchema, discoveriesFeedSchema, progressResponseSchema, teachingResponseSchema } from "../../../app/domain/schemas";
+  gamesSummarySchema, progressResponseSchema, teachingResponseSchema } from "../../../app/domain/schemas";
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
@@ -131,7 +131,6 @@ it("controlled_browser_legacy_fixtures_validate_current_consumers_without_python
   for (const card of fixture["/api/queue/window"].cards) queueCardSchema.parse(card);
   tacticalCatalogSchema.parse(fixture["/api/tactics/catalog"]);
   gamesSummarySchema.parse(fixture["/api/games/summary"]);
-  discoveriesFeedSchema.parse(fixture["/api/discoveries"]);
   progressResponseSchema.parse(fixture["/api/progress"]);
   expect(teachingResponseSchema.parse({ states: [] })).toEqual({ states: [] });
 

@@ -319,12 +319,6 @@
     "active_job": null,
     "providers": []
   },
-  "/api/discoveries": {
-    "discoveries": [],
-    "next_offset": null,
-    "total": 0,
-    "unread_count": 0
-  },
   "/api/games/summary": {
     "aggregates": {
       "page_count": 0

@@ -64,11 +64,10 @@ def produce_examples():
             "/api/tactics/catalog": catalog,
             "/api/tactics/progress": main.tactic_progress(),
             "/api/games/sync/status": sync_response.json(),
-            "/api/discoveries": main.discoveries_feed(offset=0, limit=100),
             "/api/games/summary": main.summary(),
             "/api/game-insights/motifs": main.game_motif_insights(),
             "/api/cards/visual-card/teaching": main.list_teaching_states("visual-card"),
-            "/api/system/browser-activity": main.record_browser_activity(),
+            "/api/system/browser-activity": main.record_browser_activity(session_id="legacy", expires_in_ms=3000),
         }
 
 
