@@ -176,7 +176,7 @@ def test_native_unseen_position_uses_canonical_encounter_exception_once(monkeypa
         assert (seed['disposition'],seed['hold_reason']) == ('hold','no_valid_current_introduced_donor')
         raw.commit()
         template = fixture('encounters/unintroduced-missed', GameEncounter)
-        key = template.key.model_copy(update={'decision_id':target[0].decision_id, 'occurrence_ply':0})
+        key = template.key.model_copy(update={'decision_id':target[0].decision_id, 'occurrence_ply':1})
         command = template.model_copy(update={'key':key, 'decision':target[0],
             'expected_uci':'d2d4', 'played_uci':'e2e4', 'detected_at':now.isoformat(),
             'occurred_at':(now-timedelta(days=1)).isoformat()})

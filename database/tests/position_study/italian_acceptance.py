@@ -54,10 +54,11 @@ def seed_disposable_source(raw, dsn, routes, labels, *, repertoire_id='italian',
             or raw.execute('SELECT current_database()').fetchone()[0] != params['dbname']):
         raise RuntimeError('refusing non-local or non-N2 fixture database')
     now = now or datetime.now(timezone.utc)
-    day = now.date().isoformat()
     _migrate(raw)
     db = PostgresConnection(raw)
     raw.execute('INSERT INTO settings(id) VALUES(1)')
+    from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
+    day = PostgresGameFeedbackStore(db).study_day(now).isoformat()
     raw.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,%s,'n2',%s)", (repertoire_id,repertoire_id+' fixture',now.isoformat()))
     raw.execute("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES(%s,3,'ready',%s)", (repertoire_id,now.isoformat()))
     physical = {}

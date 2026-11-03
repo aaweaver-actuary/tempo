@@ -70,12 +70,13 @@ def _run_schema_journey(monkeypatch, *, branches, verify_clean_proof=False):
     from app.services.position_queue_admission import prepare_due, admit_due
     dsn = _dsn()
     now = datetime.now(timezone.utc)
-    day = now.date().isoformat()
     moves = json.dumps(['e2e4', 'e7e5', 'g1f3'])
     fsrs = Card(card_id=42, due=now - timedelta(days=1)).to_json()
     with psycopg.connect(dsn, row_factory=tempo_row_factory) as raw:
         _migrate(raw)
         raw.execute('INSERT INTO settings(id) VALUES(1)')
+        from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
+        day = PostgresGameFeedbackStore(PostgresConnection(raw)).study_day(now).isoformat()
         raw.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('n2','N2 synthetic','fixture',%s)", (now.isoformat(),))
         raw.execute("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES('n2',3,'ready',%s)", (now.isoformat(),))
         raw.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES('route','n2','Legal route','white',%s,%s,%s)", (chess.STARTING_FEN,moves,now.isoformat()))
