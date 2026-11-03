@@ -10,7 +10,7 @@ from typing import Any
 
 from tempo_legacy_database.adapters.queue_refresh.reads import TransactionTimeout, _bounded_read
 
-from tempo_legacy_database.connections import background_read_connection, connection
+from tempo_legacy_database.connections import background_read_connection, connection, read_connection
 from tempo_legacy_database.adapters import postgres_store
 from tempo_legacy_database.adapters.queue_refresh import reads as read_storage
 from tempo_legacy_database.adapters.queue_refresh import admissions, openings as openings_storage, presentation as presentation_storage
@@ -656,7 +656,7 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     if phase == "admit_position_due":
         activity_gate.wait_for_foreground()
         from .position_queue_admission import prepare_due
-        with background_read_connection() as database:
+        with read_connection(repertoire_snapshot=True) as database:
             position_due = prepare_due(database, queue_date, payload)
     position_introduction = None
     planned_introduction = None
