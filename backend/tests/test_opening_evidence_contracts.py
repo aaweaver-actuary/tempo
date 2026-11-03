@@ -404,13 +404,16 @@ def test_review_completion_requires_a_resolved_actual_queue_binding(monkeypatch,
     completion={'attempt_id':'unbound-repeat','manifest':fixture,'origin_queue_entry_id':101,
       'queue_entry_id':None,'started_at':'2026-09-30T12:00:00Z','study_timezone':'UTC',
       'terminal':{'state':'complete','final_sequence':0,'ended_at':'2026-09-30T12:01:00Z'}}
+    def empty_query(statement, *_arguments):
+        assert statement.lstrip().startswith("SELECT"), "Unbound review attempted a data mutation"
+        return SimpleNamespace(fetchone=lambda: None)
     def native(statement, *_arguments):
+        if statement == "SELECT to_regclass('public.study_position_issued_plans') IS NOT NULL":
+            return SimpleNamespace(fetchone=lambda: (False,))
         if statement == "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))":
             assert _arguments == (("tempo:card-edit:shadow-card",),)
-            return SimpleNamespace(fetchone=lambda: None)
-        assert statement == "SELECT to_regclass('public.study_position_issued_plans') IS NOT NULL"
-        return SimpleNamespace(fetchone=lambda: (False,))
-    database = SimpleNamespace(execute=lambda *args:SimpleNamespace(fetchone=lambda:None), execute_native=native)
+        return empty_query(statement, *_arguments)
+    database = SimpleNamespace(execute=empty_query, execute_native=native)
     with pytest.raises(HTTPException) as rejected:
         review_commands.submit_review(database,
           {'card_id':'shadow-card','review':{'outcome':'correct','attempt_id':'unbound-repeat',
