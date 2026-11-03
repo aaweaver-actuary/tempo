@@ -6,7 +6,7 @@ import { move } from "./native-board";
 import { assertDisposableTarget } from "./disposable-target";
 import { resetPostgresDeletedCards, verifyPostgresFixtureTarget } from "./product-fixture-reset";
 import { prepareUI } from "./ui-fixtures";
-import type { Page } from "@playwright/test";
+import type { Page, Response } from "@playwright/test";
 // The existing runner owns this JavaScript resource-admission helper.
 import { validateDevelopmentBudgetOwner, waitForStudyQuiet } from "../../scripts/development-budget.mjs";
 
@@ -314,13 +314,35 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
   const before = fixture<Snapshot>(project, "read", identity);
   // This synthetic fixture observes the app's issuing requests. A separate
   // queue GET can itself issue the head and race the app's card-edit lock.
-  const nextAppQueue = () => page.waitForResponse(response => {
-    const url = new URL(response.url());
-    return response.request().method() === "GET" &&
-      url.origin + url.pathname === `${api}/queue/window`;
-  });
+  const isAppQueue = (url: string, method: string) => {
+    const parsed = new URL(url);
+    return method === "GET" && parsed.origin + parsed.pathname === `${api}/queue/window`;
+  };
+  // Match the request start, not an old response that finishes after navigation.
+  const nextAppQueue = () => page.waitForRequest(request => isAppQueue(request.url(), request.method()));
+  const nextQueueAfterReview = () => {
+    let accepted: Response | undefined;
+    const onResponse = (response: Response) => {
+      if (response.request().method() === "POST" && response.url() === `${api}/cards/${identity}-card-a/review` && response.ok())
+        accepted = response;
+    };
+    page.on("response", onResponse);
+    const pending = page.waitForRequest(request => accepted !== undefined && isAppQueue(request.url(), request.method()));
+    return (async () => {
+      try {
+        const next = await pending;
+        await accepted!.finished();
+        expect((await accepted!.json()).persisted).toBe(true);
+        return next;
+      } finally {
+        page.off("response", onResponse);
+      }
+    })();
+  };
   const readAppQueue = async (pending: ReturnType<typeof nextAppQueue>): Promise<Queue> => {
-    const response = await pending;
+    const request = await pending;
+    const response = await request.response();
+    if (!response) throw new Error("App queue request did not receive a response");
     await response.finished();
     const body = await response.body();
     const elapsedMs = response.request().timing().responseEnd;
@@ -350,18 +372,20 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
   await expect.poll(async () => position((await page.locator(".board-frame").first().getAttribute("data-fen")) ?? ""))
     .toBe(position(new Chess(first.starting_fen).fen()));
   const firstBoard = new Chess(first.starting_fen);
-  const successorQueue = nextAppQueue();
-  for (const uci of first.moves_uci) {
+  let successorQueue: ReturnType<typeof nextAppQueue> | undefined;
+  for (const [index, uci] of first.moves_uci.entries()) {
     if (firstBoard.turn() === "w") {
       await expect.poll(async () => position((await page.locator(".board-frame").first().getAttribute("data-fen")) ?? ""))
         .toBe(position(firstBoard.fen()));
+      if (index === first.moves_uci.length - 1) successorQueue = nextQueueAfterReview();
       await move(page, uci.slice(0, 2), uci.slice(2, 4));
     }
     firstBoard.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci.slice(4) || undefined });
   }
   await expect.poll(() => fixture<Snapshot>(project, "read", identity).reviews.some(r =>
     r.attempt_id === first.attempt_id && r.source_kind === "position_study" && r.outcome === "correct" && !r.guided), { timeout: 30_000, intervals: [1000, 2000] }).toBe(true);
-  const suffix = positionHead(await readAppQueue(successorQueue), `${identity}-card-b`);
+  expect(successorQueue).toBeDefined();
+  const suffix = positionHead(await readAppQueue(successorQueue!), `${identity}-card-b`);
   expect(suffix.attempt_id).not.toBe(first.attempt_id);
   expect(suffix.original_card_revision).toBe(1);
   expect(suffix.moves_uci).toEqual(["f8c5", "c2c3"]);
