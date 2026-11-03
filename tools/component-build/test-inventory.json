@@ -75,6 +75,7 @@
       "tests/unit/pending-review-recovery-regressions.test.tsx",
       "tests/unit/pgn-import-dialog-regressions.test.tsx",
       "tests/unit/pgn-import-pending-regressions.test.ts",
+      "tests/unit/queue-issuance-pending-regressions.test.ts",
       "tests/unit/phone-opening-study-regressions.test.tsx",
       "tests/unit/phone-queue-preparation-regressions.test.ts",
       "tests/unit/phone-recovery-messaging-regressions.test.tsx",
