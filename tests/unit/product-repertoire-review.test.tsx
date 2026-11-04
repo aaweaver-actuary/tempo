@@ -126,12 +126,12 @@ it("editing invalidates approval; owner revalidation returns a new preview requi
   expect(accepted.display_digest).not.toBe(original.display_digest);
 });
 
-it("audit can mount before an inline edit owner is available and keeps the manual-editor intent", async () => {
+it("audit can mount before an inline edit owner is available without a misleading editor", async () => {
   const api = fakeApi(); delete api.prepareEdit;
   const navigate = vi.fn(); await mount(api, { onNavigate: navigate });
   expect(screen.getByText(/Inline edit preview is unavailable/)).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Manual editor" }));
-  expect(navigate).toHaveBeenCalledWith({ kind: "manual_edit", repertoire_id: "white" });
+  expect(screen.queryByRole("button", { name: "Manual editor" })).toBeNull();
+  expect(navigate).not.toHaveBeenCalled();
   await previewAndApprove();
   expect((screen.getByRole("button", { name: "Accept displayed changes" }) as HTMLButtonElement).disabled).toBe(false);
   expect(api.decide).not.toHaveBeenCalled();
@@ -297,13 +297,13 @@ it("an old command acknowledgment cannot display success in another repertoire",
   expect(screen.queryByText("Owner status: accepted")).toBeNull();
 });
 
-it("import/manual editing/settings remain navigation intents and a failed read is retryable", async () => {
+it("import/settings remain navigation intents and a failed read is retryable", async () => {
   const navigate = vi.fn(); const api = fakeApi(); vi.mocked(api.review).mockRejectedValueOnce(new Error("owner down"));
   render(<RepertoireReviewView api={api} repertoireId="white" onNavigate={navigate} />);
   await screen.findByRole("alert");
-  fireEvent.click(screen.getByRole("button", { name: "Import lines" })); fireEvent.click(screen.getByRole("button", { name: "Manual editor" }));
+  fireEvent.click(screen.getByRole("button", { name: "Import lines" }));
   fireEvent.click(screen.getByRole("button", { name: "Likelihood settings" }));
-  expect(navigate.mock.calls.map(([intent]) => intent.kind)).toEqual(["import", "manual_edit", "settings"]);
+  expect(navigate.mock.calls.map(([intent]) => intent.kind)).toEqual(["import", "settings"]);
   fireEvent.click(screen.getByRole("button", { name: "Refresh review" }));
   await screen.findByRole("heading", { name: original.title }); expect(api.decide).not.toHaveBeenCalled();
 });

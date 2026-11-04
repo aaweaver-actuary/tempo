@@ -77,7 +77,7 @@ export function RepertoireAuditMount({ children, apiUrl, request, onNavigate }: 
       {error && <p role="alert">{error}</p>}
       {selected && <Suspense fallback={<p>Loading repertoire audit…</p>}>
         <Review key={`${selected}:${auditVersion}`} api={api} repertoireId={selected} session={session} onNavigate={intent=>{
-          if(intent.kind==="import"||intent.kind==="manual_edit"||intent.kind==="settings")setTab("authoring");
+          if(intent.kind==="import"||intent.kind==="settings")setTab("authoring");
           onNavigate(intent);
         }}/>
       </Suspense>}

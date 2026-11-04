@@ -33,7 +33,6 @@ const gameReviewApi = createGameReviewApi({ fetch, endpoints: {
 } });
 const IntegrityRepairStatus = lazy(() => import("../components/integrity-repair-status").then(module => ({ default: module.IntegrityRepairStatus })));
 const RepertoireIntegrityDialog = lazy(() => import("../components/repertoire-integrity-dialog").then(module => ({ default: module.RepertoireIntegrityDialog })));
-import { TreeBrowser } from "./tree_browser";
 
 export function prepareLegacyWorkspaceNavigation(view: View | "analysis"): View {
   return ["train", "tactics", "games", "repertoire", "settings"].includes(view)
@@ -52,7 +51,6 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
     addImportedRepertoire, renameLocalRepertoire, deleteLocalRepertoire,
     onCardSaved, finishPermanentDeletion } = props;
   const [showImport, setShowImport] = useState(false);
-  const [showTree, setShowTree] = useState(false);
   const [editorCard, setEditorCard] = useState<PracticeCard | null>(null);
   const [deletionRecoveryError, setDeletionRecoveryError] = useState("");
   const deletionRecoveryStarted = useRef(false);
@@ -204,7 +202,6 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
           <RepertoireAuditMount apiUrl={API_URL} request={fetch} onNavigate={intent => {
             if (intent.kind === "import") setShowImport(true);
             else if (intent.kind === "settings") changeWorkspace("settings");
-            else if (intent.kind === "manual_edit") setShowTree(true);
           }}>
           <RepertoireView
             theme={boardTheme}
@@ -265,13 +262,6 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
               );
             }
           }}
-        />
-      )}
-      {showTree && (
-        <TreeBrowser
-          onClose={() => setShowTree(false)}
-          theme={boardTheme}
-          pieceSet={pieceSet}
         />
       )}
       {editorCard && (

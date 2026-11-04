@@ -19,10 +19,9 @@ vi.mock('../../app/lib/study-connection', async importOriginal => ({
 vi.mock('../../app/utils/local', async importOriginal => ({ ...await importOriginal<typeof import('../../app/utils/local')>(), usesLocalApi: () => deletion.localApi }));
 vi.mock('../../app/ImportDialogBox', () => ({ ImportDialogBox: ({ onClose }: { onClose: () => void }) => <button onClick={onClose}>Close import</button> }));
 vi.mock('../../app/views/card_editor', () => ({ default: ({ practiceCard, onClose }: { practiceCard: { backendId: string }, onClose: () => void }) => { if (deletion.failEditor) throw new Error('workspace editor failed'); return <button onClick={onClose}>Editor {practiceCard.backendId}</button>; } }));
-vi.mock('../../app/views/tree_browser', () => ({ TreeBrowser: ({ onClose }: { onClose: () => void }) => <button onClick={onClose}>Close tree</button> }));
 let seenImported: unknown;
 vi.mock('../../app/views/repertoire_view', () => ({ default: ({ imported }: { imported: unknown }) => { seenImported = imported; return <div>Repertoire</div>; } }));
-vi.mock('../../app/features/product-api/RepertoireAuditMount', () => ({ RepertoireAuditMount: ({ children, onNavigate }: { children: React.ReactNode, onNavigate: (intent: { kind: string }) => void }) => <>{children}<button onClick={() => onNavigate({ kind: 'manual_edit' })}>Open tree</button></> }));
+vi.mock('../../app/features/product-api/RepertoireAuditMount', () => ({ RepertoireAuditMount: ({ children }: { children: React.ReactNode }) => <>{children}</> }));
 vi.mock('../../app/components/integrity-repair-status', () => ({ IntegrityRepairStatus: () => null }));
 const card = (id: string, entry: number) => mapQueueCardToPracticeCard({ id, revision: 1, queue_entry_id: entry,
   start_fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', moves: ['e2e4'], content_type: 'opening', repertoire_name: 'Fixture', repertoire_source: 'PGN' });
@@ -60,8 +59,8 @@ it('import_editor_state_is_workspace_owned_and_unmounting_preserves_active_attem
   fireEvent.click(await screen.findByRole('button', { name: 'Open local data menu' }));
   fireEvent.click(screen.getByRole('menuitem', { name: 'Import or transfer data' }));
   fireEvent.click(await screen.findByText('Close import'));
-  fireEvent.click(await screen.findByText('Open tree'));
-  fireEvent.click(screen.getByText('Close tree'));
+  expect(screen.queryByText('Open tree')).toBeNull();
+  expect(screen.queryByText('1. e4 Main Lines')).toBeNull();
   fireEvent.click(screen.getByText('Edit A'));
   fireEvent.click(await screen.findByText('Editor a'));
   mounted.unmount();
@@ -146,7 +145,7 @@ it('retired_jobs_and_saves_do_not_render_or_deliver_on_workspace_mount', async (
   mount();
   await act(async () => { await vi.dynamicImportSettled(); });
   expect(screen.getByRole('button', { name: 'Open local data menu' })).toBeTruthy();
-  expect(screen.getByText('Open tree')).toBeTruthy();
+  expect(screen.queryByText('Open tree')).toBeNull();
   expect(screen.queryByRole('button', { name: 'Analysis activity' })).toBeNull();
   expect(screen.queryByText('Background activity')).toBeNull();
   expect(screen.queryByText('Jobs')).toBeNull();
@@ -170,6 +169,6 @@ it('disabled_storage_does_not_block_workspace_mount', async () => {
   try {
     mount();
     expect(await screen.findByRole('button', { name: 'Open local data menu' })).toBeTruthy();
-    expect(await screen.findByText('Open tree')).toBeTruthy();
+    expect(await screen.findByText('Repertoire', { selector: 'div' })).toBeTruthy();
   } finally { remove.mockRestore(); }
 });
