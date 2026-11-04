@@ -315,3 +315,12 @@ def graph_cursor(database):
 
 def writer_connection():
     return postgres_store.connection(read_only=False, background=True)
+
+
+def try_lock_graph_read(database, repertoire_id):
+    """Do not wait on a graph publisher while holding a separate task lease."""
+    row = database.execute_native(
+        'SELECT pg_try_advisory_xact_lock_shared(hashtextextended(%s,0))',
+        (f'tempo:opening-graph:{repertoire_id}',),
+    ).fetchone()
+    return bool(row and row[0])

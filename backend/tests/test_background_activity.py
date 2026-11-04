@@ -197,3 +197,23 @@ def test_discovery_stale_envelope_does_not_complete_its_live_lease():
     assert not game_sync_coordinator._complete_after_handler('discovery_admission', True)
     assert game_sync_coordinator._complete_after_handler('discovery_admission', False)
     assert game_sync_coordinator._complete_after_handler('ordinary', True)
+
+
+def test_discovery_prerequisite_checkpoint_preserves_task_identity_and_generation(tmp_path, monkeypatch):
+    from app.services.durable_tasks import advance_task_slice_in_transaction
+    monkeypatch.setattr(database, 'DB_PATH', tmp_path / 'tempo.db')
+    database.initialize()
+    database_writer.start()
+    try:
+        task = enqueue_task('discovery_admission', 'intent', {'intent_id': 'intent'})
+        with database.connection() as db:
+            db.execute("UPDATE background_tasks SET state='leased',lease_token='lease' WHERE id=?", (task['id'],))
+        claimed = {**task, 'kind': 'discovery_admission', 'lease_token': 'lease', 'payload': {'intent_id': 'intent'}}
+        with database.connection() as db:
+            assert advance_task_slice_in_transaction(db, claimed, next_phase='queued', next_payload=claimed['payload'], eligible_at='2099-01-01T00:00:00+00:00')
+        with database.read_connection() as db:
+            row = db.execute('SELECT id,generation,state,lease_token,payload_json,next_attempt_at FROM background_tasks WHERE id=?', (task['id'],)).fetchone()
+            assert tuple(row) == (task['id'], task['generation'], 'queued', None, '{"intent_id":"intent"}', '2099-01-01T00:00:00+00:00')
+            assert db.execute("SELECT event FROM background_task_events WHERE task_id=? ORDER BY id DESC LIMIT 1", (task['id'],)).fetchone()[0] == 'slice_complete'
+    finally:
+        database_writer.stop()

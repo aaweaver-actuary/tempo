@@ -107,6 +107,9 @@ def test_postgres_discovery_admission_completes_published_card_without_replay(mo
     monkeypatch.setattr(discovery_admission, "connection", database_connection)
     monkeypatch.setattr(discovery_admission, "_materialize_admission_branch", lambda _task: None)
     monkeypatch.setattr(discovery_admission, "_recovery_identity", lambda *_a, **_k: ("accepted", intent))
+    from app.services import postgres_integrity
+    monkeypatch.setattr(postgres_integrity, "try_hold_current_integrity_certificate", lambda *_: {"current": True})
+    monkeypatch.setattr(discovery_admission.storage, "try_lock_admission_card", lambda *_: {"id": "card-one", "archived": 0, "pending_validation": 0})
     monkeypatch.setattr(discovery_admission, "lock_current_slice", lambda *_args: lease_current)
     monkeypatch.setattr(discovery_admission, "ensure_card_queued_after",
                         lambda _database, card_id, **_kwargs: queued_cards.append(card_id))
@@ -166,3 +169,22 @@ def test_recovery_stale_envelope_does_not_complete_but_missing_intent_does(monke
     assert completions == []
     assert discovery_admission.execute_admission_intent_slice(task) is False
     assert completions == ['task']
+
+
+def test_integrity_owner_holds_only_current_graph_certificate(monkeypatch):
+    from app.services import postgres_integrity
+    from tempo_legacy_database.adapters.opening_graph import worker
+    calls = []
+    monkeypatch.setattr(worker, 'try_lock_graph_read', lambda *_: calls.append('graph') or True)
+    monkeypatch.setattr(postgres_integrity.storage, 'try_hold_certificate_authority', lambda *_: calls.append('rows') or (7, 'ready'))
+    monkeypatch.setattr(postgres_integrity, 'current_integrity_certificate', lambda _db, _rid, gen: calls.append(('certificate', gen)) or {'generation': gen})
+    assert postgres_integrity.try_hold_current_integrity_certificate(object(), 'r') == {'generation': 7}
+    assert calls == ['graph', 'rows', ('certificate', 7)]
+    monkeypatch.setattr(worker, 'try_lock_graph_read', lambda *_: False)
+    assert postgres_integrity.try_hold_current_integrity_certificate(object(), 'r') is None
+    monkeypatch.setattr(worker, 'try_lock_graph_read', lambda *_: True)
+    monkeypatch.setattr(postgres_integrity.storage, 'try_hold_certificate_authority', lambda *_: (7, 'building'))
+    assert postgres_integrity.try_hold_current_integrity_certificate(object(), 'r') is None
+    monkeypatch.setattr(postgres_integrity.storage, 'try_hold_certificate_authority', lambda *_: (7, 'ready'))
+    monkeypatch.setattr(postgres_integrity, 'current_integrity_certificate', lambda *_: None)
+    assert postgres_integrity.try_hold_current_integrity_certificate(object(), 'r') is None

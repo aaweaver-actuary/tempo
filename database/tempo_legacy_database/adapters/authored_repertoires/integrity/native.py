@@ -284,3 +284,18 @@ def active_prefix_transition(database, values):
         "AND state IN ('publishing','recovery_required')",
         values,
     ).fetchone()
+
+
+def try_hold_certificate_authority(database, repertoire_id):
+    """Hold all current certificate owners, or return promptly on contention."""
+    return database.execute_native(
+        """SELECT publication.generation,publication.state
+        FROM repertoires repertoire CROSS JOIN repertoire_game_scope scope
+        JOIN opening_graph_publications publication ON publication.repertoire_id=repertoire.id
+        JOIN repertoire_integrity_state integrity ON integrity.repertoire_id=repertoire.id
+        JOIN background_tasks graph ON graph.kind='opening_graph_rebuild' AND graph.deduplication_key=repertoire.id
+        JOIN background_tasks scan ON scan.kind='integrity_scan' AND scan.deduplication_key=repertoire.id
+        WHERE repertoire.id=%s AND scope.id=1
+        FOR SHARE OF repertoire,scope,publication,integrity,graph,scan SKIP LOCKED""",
+        (repertoire_id,),
+    ).fetchone()

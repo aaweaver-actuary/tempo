@@ -275,20 +275,22 @@ def complete_opportunity_admission(database, values):
     )
 
 
-def requeue_task(database, values):
-    return database.execute(
-        """UPDATE background_tasks SET generation=generation+1,state='queued',phase='queued',
-                 payload_json=?,attempt_count=0,next_attempt_at=?,lease_token=NULL,
-                 lease_expires_at=NULL,updated_at=?
-               WHERE id=? AND generation=? AND lease_token=? AND state='leased'""",
-        values,
-    )
-
-
 def recovery_task(database, task_id, *, lock=False):
     """Read the persisted envelope; the owning transaction fences its lease."""
     suffix = ' FOR UPDATE' if lock and configured() else ''
     return database.execute(
         'SELECT id,kind,deduplication_key,payload_json,generation,lease_token,state '
         'FROM background_tasks WHERE id=?' + suffix, (task_id,),
+    ).fetchone()
+
+
+def try_lock_admission_card(database, card_id):
+    """Match graph/deletion card fencing without blocking the recovery lease."""
+    locked = database.execute_native(
+        "SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))", ("tempo:card-edit:" + card_id,),
+    ).fetchone()
+    if not locked or not locked[0]:
+        return None
+    return database.execute_native(
+        "SELECT id,archived,pending_validation FROM cards WHERE id=%s FOR UPDATE SKIP LOCKED", (card_id,),
     ).fetchone()

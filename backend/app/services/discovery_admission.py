@@ -20,7 +20,7 @@ from app.services.canonical_prefix import read_prefix, game_in_scope, line_origi
 from app.chess.position_identity import position_key
 from app.chess.cards import card_id
 from .durable_tasks import (
-    complete_task_slice_in_transaction,
+    advance_task_slice_in_transaction, complete_task_slice_in_transaction,
     enqueue_compact_postgres_task_in_transaction,
     enqueue_task,
     enqueue_task_in_transaction,
@@ -629,9 +629,12 @@ def execute_admission_intent_slice(task: dict) -> bool:
             return False
         if dict(current) != dict(intent):
             return True
-        if card_id_value and integrity_published:
-            card = storage.available_card(database, (card_id_value,))
-            blocked = storage.card_integrity_block(database, (current["repertoire_id"], card_id_value))
+        if card_id_value and integrity_published and storage.configured():
+            from .postgres_integrity import try_hold_current_integrity_certificate
+            certificate = try_hold_current_integrity_certificate(database, current["repertoire_id"])
+            current_step = storage.published_line_card(database, (current["repertoire_id"], current["line_id"])) if certificate else None
+            card = storage.try_lock_admission_card(database, card_id_value) if current_step and current_step["card_id"] == card_id_value else None
+            blocked = storage.card_integrity_block(database, (current["repertoire_id"], card_id_value)) if card else True
             if card and not card["archived"] and not card["pending_validation"] and not blocked:
                 today = date.today().isoformat()
                 storage.introduce_card(database, (today, card_id_value))
@@ -643,17 +646,9 @@ def execute_admission_intent_slice(task: dict) -> bool:
                 if storage.configured():
                     complete_task_slice_in_transaction(database, task)
                 return False
-        if storage.configured():
-            enqueue_compact_postgres_task_in_transaction(
-                database, "discovery_admission", task["payload"]["intent_id"],
-                task["payload"], priority=DISCOVERY_ADMISSION_PRIORITY,
-                delay_seconds=10,
-            )
-            return True
         retry_at = (datetime.now(timezone.utc) + timedelta(seconds=10)).isoformat()
-        storage.requeue_task(
-            database,
-            (json.dumps(task["payload"]), retry_at, _now(), task["id"],
-             task["generation"], task["lease_token"]),
-        )
+        if not advance_task_slice_in_transaction(
+            database, task, next_phase="queued", next_payload=task["payload"], eligible_at=retry_at,
+        ):
+            return True
     return True

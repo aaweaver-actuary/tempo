@@ -53,6 +53,17 @@ def current_integrity_certificate(database, repertoire_id: str, graph_generation
     return integrity_certificate_from_row(dict(row), repertoire_id, graph_generation) if row else None
 
 
+def try_hold_current_integrity_certificate(database, repertoire_id: str) -> dict | None:
+    """Fence the graph and scan without waiting while another task is held."""
+    from tempo_legacy_database.adapters.opening_graph import worker as graph_storage
+    if not graph_storage.try_lock_graph_read(database, repertoire_id):
+        return None
+    publication = storage.try_hold_certificate_authority(database, repertoire_id)
+    if not publication or publication[1] != "ready":
+        return None
+    return current_integrity_certificate(database, repertoire_id, int(publication[0]))
+
+
 @dataclass(frozen=True)
 class FeedbackIntegrityPrerequisite:
     """Readiness hint only: never a reusable write certificate."""
