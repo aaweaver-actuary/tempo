@@ -185,7 +185,7 @@ def prepare_cross_repertoire_authority_scope(database, *, prepared_origin: Prepa
         for (route_id, item), original in zip(expected, stored):
             identity = dict(repertoire_id=token.repertoire_id,route_id=route_id,ply=item.ply)
             key = (route_id,item.ply)
-            if key in seen or original['original_occurrence_id'] != identity or original['original_policy_version'] != item.definition.policy_version or original['original_six_field_fen'] != item.fen or original['original_position_identity'] != item.definition.key.position or original['expected_uci'] != item.definition.expected_uci or original['original_source_digest'] != token.original_source_digest or original['authored_digest'] != token.authored_digest or original['owner_epoch'] != owner['epoch']:
+            if key in seen or original['original_occurrence_id'] != identity or original['original_ply'] != item.ply or original['variant'] != item.definition.key.variant or item.definition.key.repertoire_id != token.repertoire_id or original['original_policy_version'] != item.definition.policy_version or original['original_six_field_fen'] != item.fen or original['original_position_identity'] != item.definition.key.position or original['expected_uci'] != item.definition.expected_uci or original['original_source_digest'] != token.original_source_digest or original['authored_digest'] != token.authored_digest or original['owner_epoch'] != owner['epoch']:
                 return Hold('AUTH_SCOPE_OCCURRENCE_MISMATCH')
             seen.add(key)
             anchor = by_route[route_id]
