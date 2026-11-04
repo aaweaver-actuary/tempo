@@ -242,3 +242,76 @@ def test_f01_retained_position_atomic_exact_replay_and_negative_cases(donor_revi
     finally:
         with psycopg.connect(admin, autocommit=True) as root:
             root.execute(sql.SQL("DROP DATABASE {}").format(sql.Identifier(name)))
+
+
+def test_warm_changed_final_requires_fresh_nonserving_target():
+    """Generation labels cannot overwrite warm rows; a fresh DB can copy changes.
+
+    This proves allocation/storage behavior only. No synthetic snapshot is
+    represented as a real source fence or a serving activation certificate.
+    """
+    if not os.environ.get("TEMPO_LEARNING_TEST_FIXTURE", "").startswith("tempo-learning-"):
+        pytest.fail("requires owned Learning PostgreSQL runner")
+    admin = os.environ["TEMPO_LEARNING_TEST_ADMIN"]
+    names = ["w02a_" + uuid4().hex for _ in range(2)]
+    allocated = []
+    try:
+        for name in names:
+            with psycopg.connect(admin, autocommit=True) as root:
+                root.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
+            allocated.append(name)
+        warm_dsn, final_dsn = [make_conninfo(admin, dbname=name) for name in names]
+        apply_migrations(warm_dsn)
+        migrate(warm_dsn, "fixture-workspace", "America/New_York")
+        migrate(final_dsn, "fixture-workspace", "America/New_York")
+        namespace = frozenset({42})
+        tables = ("retained_position_batches", "retained_position_states", "retained_position_facts")
+
+        def snapshot(conn):
+            return {table: conn.execute(sql.SQL(
+                "SELECT row_to_json(t)::text FROM {} t ORDER BY 1"
+            ).format(sql.Identifier(table))).fetchall() for table in tables}
+
+        with psycopg.connect(warm_dsn, autocommit=True) as warm, psycopg.connect(final_dsn, autocommit=True) as final:
+            with warm.transaction():
+                populate(warm)
+                _, original, receipt = capture(warm)
+            warm.execute("SET search_path TO learning")
+            final.execute("SET search_path TO learning")
+            with warm.transaction():
+                stage_position(warm, original, receipt, legacy_fsrs_ids=namespace)
+            before = snapshot(warm)
+            # A later synthetic source capture has a genuinely changed state row.
+            warm.execute("SET search_path TO public")
+            with warm.transaction():
+                warm.execute("UPDATE study_position_states SET source_digest='later-source',version=version+1")
+                rows, changed, _ = capture(warm)
+            changed_digest = record_digest(changed)
+            same_batch = receipt.model_copy(update={"manifest_digest": changed_digest, "batch_digest": changed_digest})
+            final_receipt = same_batch.model_copy(update={"batch_id": "final-batch", "receipt_id": "final-receipt", "target_generation": "final-generation"})
+            warm.execute("SET search_path TO learning")
+            for binding, reason in ((same_batch, "immutable batch conflict"), (final_receipt, "position identity conflict")):
+                with pytest.raises(RetainedPositionConflict, match=reason):
+                    with warm.transaction():
+                        stage_position(warm, changed, binding, legacy_fsrs_ids=namespace)
+                assert snapshot(warm) == before
+            assert all(not values for values in snapshot(final).values())
+            with final.transaction():
+                assert stage_position(final, changed, final_receipt, legacy_fsrs_ids=namespace) == final_receipt
+                assert stage_position(final, changed, final_receipt, legacy_fsrs_ids=namespace) == final_receipt
+            copied = read_position(final, "r", "standard", rows["study_position_states"][0]["position"])
+            assert copied[6:8] == ("later-source", 4)
+            actual = dict(final.execute("SELECT source_key,original_bytes FROM retained_position_facts"))
+            from tempo_learning_transfer_contracts.v1 import key_token
+            assert actual == {key_token(f.source): base64.b64decode(f.original_base64) for f in changed.facts}
+            assert len(snapshot(final)["retained_position_batches"]) == 1
+            assert snapshot(warm) == before
+            for conn in (warm, final):
+                assert conn.execute("SELECT count(*) FROM cards").fetchone() == (0,)
+                assert conn.execute("SELECT count(*) FROM daily_queue").fetchone() == (0,)
+            warm.execute("SET search_path TO public")
+            assert capture(warm)[1] == changed
+    finally:
+        for name in reversed(allocated):
+            with psycopg.connect(admin, autocommit=True) as root:
+                root.execute(sql.SQL("DROP DATABASE {}").format(sql.Identifier(name)))

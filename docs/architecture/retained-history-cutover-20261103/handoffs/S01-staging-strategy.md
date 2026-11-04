@@ -125,26 +125,17 @@ Reuse the owned Learning PostgreSQL runner and
 its existing `test_f01_retained_position_atomic_exact_replay_and_negative_cases`
 already covers changed-digest batch conflict, transaction rollback and namespace
 collision. Those historical facts are source inspection, not a new PASS.
-Coordinator/T02 should add named case
-`test_warm_changed_final_requires_fresh_nonserving_target` in that same suite:
-
-1. Use its existing `populate`, `capture`, `TARGET_DDL` and `stage_position` in the
-   runner-created disposable database; warm-stage and commit original manifest
-   into schema `warm`. Save all state/fact/batch rows for equality comparison.
-2. Reuse the existing test's altered `source_digest` fact construction, original
-   bytes/digest and recomputed store inventory. Validate the new manifest. Same
-   transfer/batch with changed digests must raise `immutable batch conflict` and
-   leave all warm rows unchanged after rollback.
-3. With the same altered valid manifest and a distinct batch ID/receipt ID and
-   final generation, the warm schema must raise `immutable position identity
-   conflict`, proving generation labels do not namespace physical state. Assert
-   no extra batch/fact rows committed. Changing transfer ID is equally unable to
-   evade the position PK; if tested, rebind manifest and receipt together.
-4. Apply unchanged TARGET_DDL to a second empty task-owned schema `final`, stage
-   the changed input, commit, replay it, and assert exact changed bytes/state,
-   one state, one batch and unchanged warm rows/source. Schemas are a bounded
-   storage-mechanism test only; actual release policy requires a fresh database.
-   Do not claim a synthetic manifest constitutes an enforceable source fence.
+Coordinator added named case
+`test_warm_changed_final_requires_fresh_nonserving_target` in that suite. It
+uses two runner-owned disposable databases and the registered Learning migration
+chain. After warm staging, it changes the synthetic source state, captures its
+actual bytes, and verifies that both the original batch and a new final-generation
+batch conflict without changing warm rows. The second, fresh database accepts
+and replays the changed capture with exact bytes and one receipt. Both serving
+card/queue tables stay empty, and neither staging operation changes the source.
+This is allocation/storage behavior; no claimed synthetic fence or final capture
+is promoted to operational proof. Actual execution is recorded in the coordinator
+repair handoff, separately from S01's design-only validation.
 
 Other required negatives: final verification rejects warm/final watermark or
 allocation mismatch (reuse contract suite); missing accepted-operation/store
