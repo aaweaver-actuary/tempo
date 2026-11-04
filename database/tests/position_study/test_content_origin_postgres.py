@@ -256,3 +256,26 @@ def test_authority_scope_stream_refuses_limit_and_incomplete_page():
             return Result([])
     assert _read_stream(Reader(10001), 'repertoires').reason == 'AUTH_SCOPE_LIMIT'
     assert _read_stream(Reader(1), 'repertoires').reason == 'AUTH_SCOPE_SOURCE_INCOMPLETE'
+
+
+def test_authority_scope_prefix_budget_precedes_expansion(monkeypatch):
+    """A small catalogue can otherwise repeat a large policy list at every ply."""
+    import json
+    from tempo_legacy_database.adapters.authored_repertoires import authority_scope as scope
+    policies = {f'policy-{i:05d}-é-\\"' for i in range(10000)}
+    root = {'policies': policies, 'children': {}}
+    node = root
+    for _ in range(100):
+        child = {'policies': policies, 'children': {}}
+        node['children']['m'] = child
+        node = child
+    # The pre-fix expansion would first sort/materialize 101 copies. A tiny
+    # budget proves refusal before even the first expanded list is constructed.
+    def forbidden_sort(_):
+        raise AssertionError('expanded policy list before budget check')
+    monkeypatch.setattr(scope, 'sorted', forbidden_sort, raising=False)
+    assert scope._bounded_prefixes(root, ['m'] * 100, 4096) is None
+    value = {'é': ['a"', '\\', 'é'], 'n': 2}
+    exact = len(json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8'))
+    assert scope._bounded_json_size(value, exact) == exact
+    assert scope._bounded_json_size(value, exact - 1) is None
