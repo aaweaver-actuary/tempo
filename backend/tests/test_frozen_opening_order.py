@@ -189,19 +189,20 @@ def test_override_replacement_restarts_eligibility_before_reusing_old_checkpoint
     from app.services import postgres_queue_refresh as worker, study_mode
     @contextmanager
     def connection(**kwargs):yield object()
-    captured={};unlocked=[]
+    captured={};unlocked=[]; locks=[]
     monkeypatch.setattr(worker.postgres_store,'configured',lambda:True)
     monkeypatch.setattr(worker,'background_read_connection',connection)
     monkeypatch.setattr(worker,'connection',connection)
     monkeypatch.setattr(order,'activation',lambda database,**kwargs:('new-run',2))
     monkeypatch.setattr(study_mode,'study_only_enabled',lambda:True)
-    monkeypatch.setattr(worker,'lock_current_slice',lambda *args:True)
+    monkeypatch.setattr(worker,'lock_current_slice',lambda *args:locks.append(True) or True)
     monkeypatch.setattr(worker.activity_gate,'wait_for_foreground',lambda:None)
     monkeypatch.setattr(worker.queue_application,'_unlock_eligible_opening_cards',lambda *args,**kwargs:unlocked.append(True))
     monkeypatch.setattr(worker,'advance_task_slice_in_transaction',lambda database,task,**kwargs:captured.update(kwargs) or True)
-    assert worker.execute_postgres_queue_refresh_slice({'payload':{'queue_date':'2026-10-14','_queue_phase':'study_opening_item','frozen_token':['old-run',1]}})
-    assert unlocked==[True] and captured['next_phase']=='block_opening'
+    assert worker.execute_postgres_queue_refresh_slice({'payload':{'queue_date':'2026-10-14','_queue_phase':'study_opening_item','frozen_token':['old-run',1], '_refresh_cycle_epoch':7}})
+    assert locks==[True] and unlocked==[True] and captured['next_phase']=='block_opening'
     assert captured['next_payload']['frozen_token']==['new-run',2]
+    assert captured['next_payload']['_refresh_cycle_epoch']==7
 
 
 def test_post_snapshot_unstarted_openings_follow_captured_slots_without_moving_reviews(database):
