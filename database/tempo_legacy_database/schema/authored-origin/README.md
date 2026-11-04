@@ -47,3 +47,8 @@ active Learning memberships: archived cards and retired target publications do
 not silently remove source competitors. No retirement, publication, persistence
 or currentness follows. The separately returned observation does not rewrite061
 receipts or fill their absent Content artifacts.
+
+Scope artifacts account escaped-UTF8 JSON prefix repetition and occurrence
+expansion before materializing/encoding over-limit output. A bounded source
+catalogue is not by itself a bound on its repeated policy-prefix representation;
+resource refusal remains AUTH_SCOPE_LIMIT and never becomes a guessed anchor.

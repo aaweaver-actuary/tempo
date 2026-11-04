@@ -6887,8 +6887,9 @@ uses the actual bounded owner catalogue in the same RO/RR snapshot as its sealed
 origin. It preserves delayed/pre-anchor/qualified/root-unique0 and ambiguous
 anchors, competitor routes outside selected export, opposite color/internal
 namespace rules and archived competitor inclusion; changed-family old/fresh
-snapshot distinction and old-origin rejection remain explicit. Three selected
-pure helpers retain limits/completeness/shape guards. This four-case selection
+snapshot distinction and old-origin rejection remain explicit. Four selected
+pure helpers retain limits/completeness/shape and pre-serialization escaped-UTF8
+expansion guards. This five-case selection
 passed on its exact source with cleanup; other standalone native cases were
 excluded/unrun. No Content publication, active-retirement union, physical
 currentness or activation authority is established by historical classification.
