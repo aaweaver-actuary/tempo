@@ -100,3 +100,31 @@ def test_unqualified_architecture_fails_before_ffi(monkeypatch):
         raise AssertionError('unqualified architecture must not invoke FFI')
     monkeypatch.setattr(archive.ctypes, 'CDLL', forbidden)
     assert archive._local_apfs(-1) is False
+
+
+def test_directory_fstat_failure_closes_new_descriptor(tmp_path, monkeypatch):
+    import os
+    import pytest
+
+    parent = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    opened = []
+    real_open, real_fstat = os.open, os.fstat
+    def tracked_open(path, *args, **kwargs):
+        fd = real_open(path, *args, **kwargs)
+        if path == 'blobs':
+            opened.append(fd)
+        return fd
+    def failed_fstat(fd):
+        if fd in opened:
+            raise OSError('injected fstat failure')
+        return real_fstat(fd)
+    try:
+        monkeypatch.setattr(archive.os, 'open', tracked_open)
+        monkeypatch.setattr(archive.os, 'fstat', failed_fstat)
+        with pytest.raises(OSError, match='injected fstat failure'):
+            archive._directory(parent, 'blobs')
+        assert len(opened) == 1
+        with pytest.raises(OSError):
+            real_fstat(opened[0])
+    finally:
+        os.close(parent)

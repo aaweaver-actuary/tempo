@@ -102,11 +102,14 @@ def _directory(parent, name):
     except FileExistsError:
         pass
     fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
-    s = os.fstat(fd)
-    if s.st_uid != os.geteuid() or s.st_mode & 0o077:
+    try:
+        s = os.fstat(fd)
+        if s.st_uid != os.geteuid() or s.st_mode & 0o077:
+            raise PermissionError('archive directory is not private')
+        return fd
+    except BaseException:
         os.close(fd)
-        raise PermissionError('archive directory is not private')
-    return fd
+        raise
 
 
 def _read(parent, name, expected_length):
