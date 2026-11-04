@@ -491,3 +491,13 @@ prove in-flight rollback and later connection denial, preserves committed data,
 and demonstrates administrator reopening. Prepared transactions, bounded-drain
 failure, actual old binaries, host/SQLite bypass and final capture remain
 operational F13 blockers.
+
+## Original full-plan occurrence mapping (pure)
+
+`tests/test_original_plan_mapping.py` owns LP01–LP04/LP09 synthetic full canonical
+plan mapping, ordered repeated/transposed occurrences, original due/day/ID
+preservation, missing/ambiguous/illegal slot and stale-source holds, and exact
+JSONB numeric semantics before accepted canonical-digest validation. The literal
+fixtures are accepted by the pinned original owner codec. No grade, native
+authority, original-row immutability or source fence is established by these
+pure cases; LP05–LP08/LP10 require their original-read/atomic-bridge owners.

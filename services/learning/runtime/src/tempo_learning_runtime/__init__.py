@@ -1,5 +1,6 @@
 """Learning runtime public capabilities; importing opens no infrastructure."""
 
+from . import original_plan_mapping
 from . import scheduling_review_application
 from . import scheduling_review_contracts
 from tempo_learning_database.adapters import scheduling_review_store
@@ -14,6 +15,7 @@ from . import study_contracts
 from . import opening_evidence_contracts
 
 __all__ = [
+    "original_plan_mapping",
     "scheduling_review_application",
     "scheduling_review_contracts",
     "scheduling_review_store",

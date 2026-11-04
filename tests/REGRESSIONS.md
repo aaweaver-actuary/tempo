@@ -6805,3 +6805,16 @@ This is passive held-data inspection, not server reconciliation or full F10.
 three-clean/failure/split evidence identity and Italian carrier/teaching/source
 holds. Position-owned cohorts retain the existing R11-inert contract. This is
 not seed transfer, native F03/F11, executable target ownership or activation proof.
+
+## Supplied Tactics asset inventory (T-ASSET pure subset)
+
+`backend/tests/test_tactics_asset_inventory.py` owns TA01–TA05 supplied-byte
+identity/order and raw-versus-canonical digest behavior, strict JSON/shape
+rejection, unsafe lexical paths, duplicate pack/path/PuzzleId, missing/extra
+asset guards and the explicit `UNPROVEN` historical authority result.
+`test_ta01_exact_order_and_ta04_root_independence_ta05_unproven` and
+`test_ta02_bytes_order_and_record_identity` preserve exact synthetic inventory
+identity. The `test_ta03_*` cases retain malformed/ambiguous-source rejection.
+These are pure inline-byte fixtures: no filesystem symlink containment,
+runtime cache/root identity, historical generation, DB watermark, browser
+authority or playable puzzle proof is claimed.
