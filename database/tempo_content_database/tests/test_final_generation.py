@@ -352,3 +352,29 @@ def test_content_final_generation_terminal_capture_race_never_revives_old_epoch(
             assert old[0] == 'accepted' and old[1] == evidence.capture_id and old[2]['activation_receipt'] == 'activation-receipt'
             assert current == ('reserved',2)
             assert bytes(stored[0]) == evidence.certificate_bytes and bytes(stored[1]) == evidence.export_bytes
+            # A second interleaving pauses preparation before its error hold.
+            # Abort the reserved epoch and start another before releasing it.
+            with ContentService(url,workspace) as third:
+                delayed_producer = make_final_generation(third)
+                next_handle = delayed_producer.execute(RecoverFinal('next-epoch',draft['source_id'])).handle
+                preparing, release_hold = Event(), Event()
+                def failed_selection(_row):
+                    preparing.set()
+                    assert release_hold.wait(15)
+                    raise ContentError('content_final_inventory_mismatch','injected selection mismatch')
+                delayed_producer._store.selected = failed_selection
+                future_hold = executor.submit(delayed_producer.execute,CaptureFinal(next_handle))
+                assert preparing.wait(10)
+                closer = make_final_generation(initial,Reader(ProvenNoTargetWrite('test-target','closed-allocation','next-epoch','closed-no-write')))
+                close_handle = closer.execute(RecoverFinal('next-epoch',draft['source_id'])).handle
+                assert closer.execute(ResolveFinal(close_handle,'abort')).status == 'ABORTED'
+                third_epoch = creator.execute(ReserveFinal('third-epoch',draft['source_id'],publication['publication_id'],publication['publication_generation'],operation['id']))
+                assert third_epoch.status == 'RESERVED' and third_epoch.epoch == 3
+                release_hold.set()
+                stale_hold = future_hold.result(timeout=10)
+                assert stale_hold.status == 'BLOCK' and stale_hold.code == 'content_final_handle_invalid' and stale_hold.state == 'aborted'
+                with psycopg.connect(url) as db:
+                    aborted = db.execute('SELECT state,resolution_json FROM content.final_generation_reservations WHERE reservation_id=%s',(newer.reservation_id,)).fetchone()
+                    active_third = db.execute('SELECT state,epoch FROM content.final_generation_reservations WHERE reservation_id=%s',(third_epoch.reservation_id,)).fetchone()
+                assert aborted[0] == 'aborted' and aborted[1]['closed_disposition'] == 'closed-no-write'
+                assert active_third == ('reserved',3)

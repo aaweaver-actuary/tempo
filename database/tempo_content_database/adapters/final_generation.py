@@ -46,6 +46,16 @@ def _bounded_contention(method):
     return wrapped
 
 
+def _mark_held(database, row):
+    updated = database.execute(
+        "UPDATE content.final_generation_reservations SET state='recovery-held',updated_at=now() "
+        "WHERE reservation_id=%s AND epoch=%s AND state IN ('reserved','captured','recovery-held') RETURNING state",
+        (row['reservation_id'],row['epoch'])).fetchone()
+    if not updated:
+        raise ContentError('content_final_handle_invalid', 'Reservation no longer permits a hold')
+    row['state'] = 'recovery-held'
+
+
 class FinalGenerationStore:
     def __init__(self, service):
         self.service = service
@@ -180,15 +190,17 @@ class FinalGenerationStore:
             if row['state'] == 'captured':
                 return 'existing'
             if row['state'] != 'reserved':
-                raise ContentError('content_final_source_changed', 'Reservation no longer admits this capture')
+                raise ContentError('content_final_handle_invalid', 'Reservation no longer admits this capture')
             publication = db.execute('SELECT digest,source_id,source_revision FROM content.publications WHERE publication_id=%s AND generation=%s', (row['publication_id'], row['generation'])).fetchone()
             operation = db.execute('SELECT o.state,d.digest FROM content.bridge_operations o JOIN content.bridge_drafts d ON d.id=o.draft_id WHERE o.id=%s FOR UPDATE OF o', (row['approved_operation_id'],)).fetchone()
             certificate = json.loads(blobs['certificate'])
             if (source['requested_revision'] != blobs['revision'] or source['last_complete_generation'] != row['generation'] or source['last_complete_revision'] != blobs['revision'] or not publication or publication['digest'] != certificate['publication_digest'] or publication['source_id'] != row['source_id'] or publication['source_revision'] != blobs['revision'] or not operation or operation['state'] != 'completed' or operation['digest'] != row['approved_draft_digest']):
-                db.execute("UPDATE content.final_generation_reservations SET state='recovery-held',updated_at=now() WHERE reservation_id=%s", (row['reservation_id'],))
+                _mark_held(db,row)
                 return None
             db.execute('INSERT INTO content.final_generation_captures(capture_id,reservation_id,certificate_bytes,export_bytes,inventory_bytes,proof_bytes,certificate_digest,export_sha256,inventory_sha256,proof_sha256,export_byte_length) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)', (blobs['capture_id'], row['reservation_id'], blobs['certificate'], blobs['export'], blobs['inventory'], blobs['proof'], blobs['certificate_digest'], blobs['export_sha256'], blobs['inventory_sha256'], blobs['proof_sha256'], len(blobs['export'])))
-            db.execute("UPDATE content.final_generation_reservations SET state='captured',capture_id=%s,updated_at=now() WHERE reservation_id=%s", (blobs['capture_id'], row['reservation_id']))
+            updated = db.execute("UPDATE content.final_generation_reservations SET state='captured',capture_id=%s,updated_at=now() WHERE reservation_id=%s AND epoch=%s AND state='reserved' RETURNING state", (blobs['capture_id'], row['reservation_id'], row['epoch'])).fetchone()
+            if not updated:
+                raise ContentError('content_final_handle_invalid', 'Reservation no longer admits this capture')
             return blobs
 
 
@@ -200,14 +212,21 @@ class FinalGenerationStore:
             row = db.execute('SELECT * FROM content.final_generation_reservations WHERE reservation_id=%s FOR UPDATE', (reservation['reservation_id'],)).fetchone()
             if not row or row['epoch'] != reservation['epoch']:
                 raise ContentError('content_final_handle_invalid', 'Reservation epoch changed')
+            if row['state'] not in ('reserved','captured','recovery-held'):
+                return row, None, 'content_final_handle_invalid'
             capture = db.execute('SELECT * FROM content.final_generation_captures WHERE reservation_id=%s', (row['reservation_id'],)).fetchone()
             if not capture:
+                if row['state'] == 'captured' or row['capture_id'] is not None:
+                    _mark_held(db,row)
+                    return row, None, 'content_final_immutable_conflict'
                 return row, None, None
             blobs = {key: bytes(capture[key + '_bytes']) for key in ('certificate', 'export', 'inventory', 'proof')}
             hashes_match = (hashlib.sha256(blobs['export']).hexdigest() == capture['export_sha256']
                             and hashlib.sha256(blobs['inventory']).hexdigest() == capture['inventory_sha256']
                             and hashlib.sha256(blobs['proof']).hexdigest() == capture['proof_sha256']
-                            and len(blobs['export']) == capture['export_byte_length'])
+                            and len(blobs['export']) == capture['export_byte_length']
+                            and row['capture_id'] == capture['capture_id']
+                            and row['state'] in ('captured','recovery-held'))
             try:
                 certificate = json.loads(blobs['certificate'])
                 proof = json.loads(blobs['proof'])
@@ -224,7 +243,7 @@ class FinalGenerationStore:
             except (ValueError, KeyError, TypeError):
                 hashes_match, current = False, False
             if not hashes_match or not current:
-                db.execute("UPDATE content.final_generation_reservations SET state='recovery-held',updated_at=now() WHERE reservation_id=%s", (row['reservation_id'],))
+                _mark_held(db,row)
                 return row, None, 'content_final_immutable_conflict' if not hashes_match else 'content_final_source_changed'
             return row, {**blobs, 'capture_id':capture['capture_id'], 'certificate_digest':capture['certificate_digest'], 'export_sha256':capture['export_sha256'], 'inventory_sha256':capture['inventory_sha256'], 'proof_sha256':capture['proof_sha256']}, None
 
@@ -249,7 +268,7 @@ class FinalGenerationStore:
         from types import SimpleNamespace
         row, previous, error = self._read_capture(reservation)
         if error:
-            return FinalGenerationResult('BLOCK', error, row['reservation_id'], row['epoch'], handle, state='recovery-held')
+            return FinalGenerationResult('BLOCK', error, row['reservation_id'], row['epoch'], handle, state=row['state'])
         if previous:
             if row['state'] == 'recovery-held':
                 return FinalGenerationResult('BLOCK','content_final_recovery_required',row['reservation_id'],row['epoch'],handle,state=row['state'])
@@ -362,12 +381,14 @@ class FinalGenerationStore:
         published = self.publish(row, blobs)
         if published is None:
             return FinalGenerationResult('BLOCK','content_final_source_changed',row['reservation_id'],row['epoch'],handle,state='recovery-held')
-        if published == 'existing':
-            current, original, error = self._read_capture(row)
-            if error or not original:
-                return FinalGenerationResult('BLOCK',error or 'content_final_immutable_conflict',row['reservation_id'],row['epoch'],handle,state='recovery-held')
-            return self._capture_result(current, handle, original)
-        return self._capture_result(row, handle, blobs)
+        # Re-read under the active epoch even for a newly inserted capture:
+        # resolution may have completed while preparation was outside the lock.
+        current, original, error = self._read_capture(row)
+        if error or not original:
+            return FinalGenerationResult('BLOCK',error or 'content_final_immutable_conflict',row['reservation_id'],row['epoch'],handle,state=current['state'])
+        if current['state'] == 'recovery-held':
+            return FinalGenerationResult('BLOCK','content_final_recovery_required',row['reservation_id'],row['epoch'],handle,state=current['state'])
+        return self._capture_result(current, handle, original)
 
     @_bounded_contention
     def _hold(self, reservation, handle, code):
@@ -376,9 +397,10 @@ class FinalGenerationStore:
             _scope(db, reservation['source_id'])
             db.execute('SELECT id FROM content.sources WHERE id=%s FOR UPDATE', (reservation['source_id'],)).fetchone()
             row = db.execute('SELECT * FROM content.final_generation_reservations WHERE reservation_id=%s FOR UPDATE', (reservation['reservation_id'],)).fetchone()
-            if row and row['epoch'] == reservation['epoch'] and row['state'] in ('reserved','captured','recovery-held'):
-                db.execute("UPDATE content.final_generation_reservations SET state='recovery-held',updated_at=now() WHERE reservation_id=%s", (row['reservation_id'],))
-        return FinalGenerationResult('BLOCK',code,reservation['reservation_id'],reservation['epoch'],handle,state='recovery-held')
+            if not row or row['epoch'] != reservation['epoch'] or row['state'] not in ('reserved','captured','recovery-held'):
+                return FinalGenerationResult('BLOCK','content_final_handle_invalid',reservation['reservation_id'],reservation['epoch'],handle,state=row['state'] if row else None)
+            _mark_held(db,row)
+        return FinalGenerationResult('BLOCK',code,reservation['reservation_id'],reservation['epoch'],handle,state=row['state'])
 
     def _capture_result(self, row, handle, blobs):
         from tempo_content.final_generation import ContentFinalCaptureEvidence, FinalGenerationResult
@@ -393,7 +415,7 @@ class FinalGenerationStore:
         from tempo_content.final_generation import AcceptedTarget, ProvenNoTargetWrite, FinalGenerationResult
         row, capture, error = self._read_capture(reservation)
         if error:
-            return FinalGenerationResult('BLOCK',error,row['reservation_id'],row['epoch'],handle,state='recovery-held')
+            return FinalGenerationResult('BLOCK',error,row['reservation_id'],row['epoch'],handle,state=row['state'])
         if reader is None or (not capture and intent == 'accept'):
             return self._hold(row,handle,'content_final_target_unknown')
         try:
