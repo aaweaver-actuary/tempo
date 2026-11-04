@@ -53,5 +53,13 @@
     "depends_on": [
       "learning.queue_epochs/0001"
     ]
+  },
+  {
+    "id": "learning.position_effect_owner/0001",
+    "owner": "#908/S02",
+    "path": "0007_position_effect_owner.sql",
+    "depends_on": [
+      "learning.retained_position_optional_donor/0001"
+    ]
   }
 ]
