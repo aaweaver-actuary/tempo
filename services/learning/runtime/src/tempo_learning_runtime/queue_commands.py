@@ -124,6 +124,7 @@ def ensure_current_queue(
         projection
         and projection["state"] == "ready"
         and not projection["refresh_pending"]
+        and projection["requested_refresh_epoch"] == projection["published_refresh_epoch"]
         and (not projection["has_queued_entries"]
              or (projection["presentation_membership_hash"] or "").startswith(PRESENTATION_VERSION + ":"))
     ):

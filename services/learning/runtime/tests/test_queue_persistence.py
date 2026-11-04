@@ -172,6 +172,6 @@ def test_queue_owner_preserves_bounded_legacy_today_and_prepared_window():
 
 
 def test_queue_refresh_projection_marks_only_the_borrowed_transaction():
-    db = ScriptedDatabase([None])
+    db = ScriptedDatabase([(1,)])
     assert queue_application.mark_queue_refresh_pending_in_transaction(db, "2026-10-20") is None
     assert db.parameters == [("2026-10-20",)]

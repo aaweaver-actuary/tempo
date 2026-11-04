@@ -181,6 +181,42 @@
       ],
       "data_ownership": "OWNERSHIP.md",
       "protocol_semantics": "README.md"
+    },
+    {
+      "root": "learning-transfer",
+      "distribution": "tempo-learning-transfer-contracts",
+      "artifact_version": "1.0.0",
+      "wire_version": 1,
+      "public_namespace": "tempo_learning_transfer_contracts.v1",
+      "authoritative_owner": "Learning / #908 W01",
+      "consumers": [
+        "learning-runtime",
+        "learning-database"
+      ],
+      "models": [
+        "SourceManifest",
+        "TransferPlan",
+        "StageReceipt",
+        "VerificationReceipt",
+        "FencingProof",
+        "ActivationReceipt",
+        "RuntimeProof"
+      ],
+      "schema_exports": [
+        "schemas/v1/SourceManifest.schema.json",
+        "schemas/v1/TransferPlan.schema.json",
+        "schemas/v1/StageReceipt.schema.json",
+        "schemas/v1/VerificationReceipt.schema.json",
+        "schemas/v1/FencingProof.schema.json",
+        "schemas/v1/ActivationReceipt.schema.json",
+        "schemas/v1/RuntimeProof.schema.json"
+      ],
+      "test_command": "python -m pytest contracts/learning-transfer/tests",
+      "runtime_dependencies": [
+        "pydantic==2.12.5"
+      ],
+      "data_ownership": "OWNERSHIP.md",
+      "protocol_semantics": "learning-transfer/README.md"
     }
   ]
 }

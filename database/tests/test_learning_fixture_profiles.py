@@ -24,6 +24,7 @@ SPECIFICATION.loader.exec_module(RUNNER)
 CORE_ROOTS = {
     "learning-remediation": "services/learning/remediation",
     "learning-review-application": "services/learning/application",
+    "evidence-math": "packages/evidence-math",
     "scheduling": "packages/scheduling",
     "chess-core": "packages/chess-core",
     "content-publication-contracts": "contracts/content-publication",

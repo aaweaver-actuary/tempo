@@ -7,8 +7,8 @@ version = "0.1.0"
 description = "Workspace-scoped Learning HTTP and PostgreSQL transaction authority"
 requires-python = ">=3.12,<3.15"
 dependencies = [
-  "tempo-learning-review==0.1.0", "tempo-scheduling==0.2.0", "tempo-chess-core==0.1.0",
-  "tempo-learning-remediation==0.1.0",
+  "tempo-learning-review==0.1.0", "tempo-evidence-math==0.1.0", "tempo-scheduling==0.2.0", "tempo-chess-core==0.1.0",
+  "tempo-learning-remediation==0.1.0", "tempo-learning-transfer-contracts==1.0.0",
   "tempo-content-publication-contracts==1.0.0", "tempo-game-evidence-contracts==3.0.0",
   "pydantic==2.12.5", "starlette==0.47.3", "fastapi==0.116.1", "uvicorn==0.35.0", "psycopg[binary]==3.3.6",
   "psycopg-pool==3.3.3", "sqlglot==30.19.0", "chess==1.11.2", "fsrs==6.3.2", "httpx==0.28.1"
@@ -18,6 +18,8 @@ tempo-learning = "tempo_learning_runtime.cli:main"
 [dependency-groups]
 dev = ["pytest==9.1.1", "build==1.4.0", "hatchling==1.27.0"]
 [tool.uv.sources]
+tempo-evidence-math = { path = "../../../packages/evidence-math" }
+tempo-learning-transfer-contracts = { path = "../../../contracts/learning-transfer" }
 tempo-learning-review = { path = "../application" }
 tempo-learning-remediation = { path = "../remediation" }
 tempo-scheduling = { path = "../../../packages/scheduling" }

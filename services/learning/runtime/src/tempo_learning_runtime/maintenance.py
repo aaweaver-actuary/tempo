@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 import json, logging
-from tempo_learning_database.adapters import maintenance as storage
+from tempo_learning_database.adapters import maintenance as storage, queue_refresh_epochs
 from tempo_learning_database.adapters.maintenance import psycopg, PoolTimeout
 from tempo_learning_remediation import RemediationError
 from tempo_learning_database.connections import connection
@@ -31,6 +31,13 @@ def finish_slice(database, task, payload, more):
             merged.update(after_card="", rescan_requested=False)
             more = True
         payload = merged
+    if task["kind"] == "daily_queue":
+        current = storage.leased_task_payload_for_update(database, task)
+        if current is None:
+            raise SupersededWork()
+        preserved = json.loads(current[0]).get("preserve_through_entry_id", 0)
+        if preserved:
+            payload["preserve_through_entry_id"] = max(payload.get("preserve_through_entry_id", 0), preserved)
     changed = storage.finish_task_slice(
         database, task, payload, "queued" if more else "complete", "queued" if more else "published",
     )
@@ -81,6 +88,23 @@ def apply_task(task):
             finish_slice(database, task, payload, more)
             return True
         day = payload["queue_date"]
+        source_token = list(frozen_opening_order.activation(database))
+        if "_refresh_cycle_epoch" not in payload or "_refresh_source_token" not in payload:
+            # Old checkpoints cannot certify work performed before epoch tracking.
+            if storage.leased_task_payload_for_update(database, task) is None:
+                raise SupersededWork()
+            epochs = queue_refresh_epochs.lock(database, day)
+            epoch = int(epochs[0]) if epochs is not None else queue_refresh_epochs.request(database, day)
+            payload.pop("after_order_key", None)
+            payload["_refresh_cycle_epoch"] = epoch
+            payload["_refresh_source_token"] = source_token
+            finish_slice(database, task, payload, True)
+            return True
+        if payload["_refresh_source_token"] != source_token:
+            payload.pop("after_order_key", None)
+            payload["_refresh_source_token"] = source_token
+            finish_slice(database, task, payload, True)
+            return True
         cursor = payload.get("after_order_key", [])
         candidates = next_candidates(database, day, cursor)
         # One candidate commits alongside its cursor; refreshes coalesce into a new generation.
@@ -94,6 +118,29 @@ def apply_task(task):
 
             token = frozen_opening_order.activation(database, lock=True)
             lock_queue_date_for_position(database, day)
+            # Foreground refreshes take the task before the projection. Lock and
+            # revalidate both before changing order, so a late preserve-through
+            # request cannot commit a stale plan even transiently.
+            current = storage.leased_task_payload_for_update(database, task)
+            if current is None:
+                raise SupersededWork()
+            latest = json.loads(current[0])
+            preserved = max(payload.get("preserve_through_entry_id", 0),
+                            latest.get("preserve_through_entry_id", 0))
+            if preserved:
+                payload["preserve_through_entry_id"] = preserved
+            epochs = queue_refresh_epochs.lock(database, day)
+            if epochs is None:
+                raise RuntimeError("Queue refresh request epoch is missing")
+            requested, cycle = int(epochs[0]), int(payload["_refresh_cycle_epoch"])
+            if requested < cycle:
+                raise RuntimeError("Queue refresh cycle is ahead of its durable request")
+            if requested != cycle or list(token) != payload["_refresh_source_token"]:
+                payload.pop("after_order_key", None)
+                payload["_refresh_cycle_epoch"] = requested
+                payload["_refresh_source_token"] = list(token)
+                finish_slice(database, task, payload, True)
+                return True
             rows = queue_application.presentation_rows(database, day)
             membership_hash = frozen_opening_order.queue_hash(queue_ordering._queue_membership_hash(rows), token)
             saved = storage.queue_day_order(database, day)
@@ -107,10 +154,11 @@ def apply_task(task):
                     if slot['position'] != row['position']:
                         storage.set_queue_position(database, slot['position'], row['id'])
                 storage.save_queue_day_order(database, day, seed, membership_hash, datetime.now(timezone.utc).isoformat())
-            # Match foreground task-before-projection order after card/queue
-            # locks, preventing ensure_current's projection lock from inverting it.
+            if not queue_refresh_epochs.publish_if_current(
+                database, day, cycle, datetime.now(timezone.utc).isoformat()
+            ):
+                raise SupersededWork()
             finish_slice(database, task, payload, False)
-            storage.mark_queue_projection_ready(database, day, datetime.now(timezone.utc).isoformat())
     return True
 
 

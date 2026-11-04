@@ -17,6 +17,7 @@ PACKAGES = (
     "services/learning/runtime",
     "services/learning/application",
     "services/learning/remediation",
+    "packages/evidence-math",
     "packages/scheduling",
     "packages/chess-core",
     "contracts/content-publication",
@@ -88,6 +89,7 @@ def main():
                         shutil.copytree(
                             source,
                             target,
+                            dirs_exist_ok=True,
                             ignore=shutil.ignore_patterns(
                                 "__pycache__",
                                 ".pytest_cache",

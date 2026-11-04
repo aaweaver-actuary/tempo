@@ -6789,3 +6789,19 @@ reply and bulk regressions retain notification/currentness/cancellation semantic
 - `tests/unit/workspace-study-boundary.test.tsx`: `retired_jobs_and_saves_do_not_render_or_deliver_on_workspace_mount` and `disabled_storage_does_not_block_workspace_mount` cover the retained workspace boundary.
 - `backend/tests/test_foreground_wake_congestion_regression.py`: `test_foreground_congestion_preserves_successor_and_fences_stale_delivery` and `test_foreground_failed_publication_releases_reservation_for_later_wake` exercise fake-broker ownership; they do not establish native broker or durable queue behavior.
 - Earlier entries for retired tray and discovery-save tests are historical, not current coverage.
+## Retained-history browser journal inspection (#908 W05A)
+
+`tests/unit/cutover-journal-inspection.test.ts` and
+`tests/browser/cutover-journal-inspection.spec.ts` preserve original inline and
+out-of-line IndexedDB keys and structured-clone values for pending, uncertain
+lost-acknowledgment, committed-receipt and offline records across reopen/reload.
+Caller-supplied inspection budgets reject incomplete captures without mutation.
+The browser case uses a disposable Chromium origin and the real IndexedDB API.
+This is passive held-data inspection, not server reconciliation or full F10.
+
+## Retained-history recombination fixture subset (#908 W02C)
+
+`backend/tests/test_cutover_position_recombination_fixtures.py` owns pure legacy
+three-clean/failure/split evidence identity and Italian carrier/teaching/source
+holds. Position-owned cohorts retain the existing R11-inert contract. This is
+not seed transfer, native F03/F11, executable target ownership or activation proof.

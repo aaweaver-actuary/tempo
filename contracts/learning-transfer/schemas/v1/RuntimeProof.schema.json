@@ -1,0 +1,97 @@
+{
+  "$id": "https://tempo.invalid/contracts/learning-transfer/v1/RuntimeProof.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "activation_id": {
+      "minLength": 1,
+      "title": "Activation Id",
+      "type": "string"
+    },
+    "fixture_evidence": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Fixture Evidence",
+      "type": "array"
+    },
+    "images": {
+      "items": {
+        "pattern": "^sha256:[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "title": "Images",
+      "type": "array"
+    },
+    "modes": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Modes",
+      "type": "array"
+    },
+    "one_writer_evidence": {
+      "minLength": 1,
+      "title": "One Writer Evidence",
+      "type": "string"
+    },
+    "saved_review_playable_next_evidence": {
+      "minLength": 1,
+      "title": "Saved Review Playable Next Evidence",
+      "type": "string"
+    },
+    "schema_identity": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Schema Identity",
+      "type": "string"
+    },
+    "scope": {
+      "enum": [
+        "disposable",
+        "installed"
+      ],
+      "title": "Scope",
+      "type": "string"
+    },
+    "source_sha": {
+      "pattern": "^[0-9a-f]{40}$",
+      "title": "Source Sha",
+      "type": "string"
+    },
+    "version": {
+      "const": 1,
+      "title": "Version",
+      "type": "integer"
+    },
+    "worker_identity": {
+      "minLength": 1,
+      "title": "Worker Identity",
+      "type": "string"
+    },
+    "workspace": {
+      "minLength": 1,
+      "title": "Workspace",
+      "type": "string"
+    }
+  },
+  "required": [
+    "version",
+    "activation_id",
+    "source_sha",
+    "images",
+    "schema_identity",
+    "workspace",
+    "worker_identity",
+    "modes",
+    "scope",
+    "fixture_evidence",
+    "one_writer_evidence",
+    "saved_review_playable_next_evidence"
+  ],
+  "title": "RuntimeProof",
+  "type": "object"
+}

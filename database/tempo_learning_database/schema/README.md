@@ -4,6 +4,7 @@ Tables are grouped for navigation, not split into new runtime owners. [Database 
 
 | View | Tables | Stored data |
 | --- | --- | --- |
+| [Retained position staging](retained-position/README.md) | `retained_position_batches`, `retained_position_facts`, `retained_position_states` | Non-serving original state/fact bytes and immutable batch receipts; no runtime authority or scheduling. |
 | [Authored Content](authored-content/README.md) | `logical_request_bindings`, `opening_card_schedule_seeds`, `repertoire_cards`, `repertoire_integrity_card_blocks`, `repertoire_lines`, `repertoires` | Repertoire/line/membership and annotation source data or related authored-content projections. |
 | [Opening Evidence](opening-evidence/README.md) | `frozen_opening_activation`, `frozen_opening_ranks`, `frozen_opening_runs`, `opening_evidence_attempts`, `opening_evidence_clean_days`, `opening_evidence_events`, `opening_evidence_observations`, `opening_evidence_presentations`, `opening_evidence_queue_contexts`, `opening_evidence_summaries` | Persisted opening decision evidence, presentation snapshots and attempts, segmentation and frozen ordering. |
 | [Opening Graph](opening-graph/README.md) | `opening_graph_publications`, `opening_graph_steps` | Versioned opening graph routes, source mappings, canonical prefixes, publication/transition state and diagnostics. |

@@ -411,3 +411,52 @@ keeps the original queued receipt and its identity after an injected execution
 failure, then runs a separate retained Study command through the real gateway.
 The fixture extends only the already-observed retry timestamp to avoid relying
 on host scheduling within the one-second deferral window.
+# Retained-history wire contract (#908 W01)
+
+The independent `contracts/learning-transfer/tests/test_retained_history_contracts.py`
+suite owns pure original-byte/large-ID
+round-trip, full canonical PK/codec/order, digest/reference/collision and
+capture-omission rejection, immutable batch replay, representative activation
+denial, final-watermark/generation binding and conservative forward recovery.
+These tests do not establish PostgreSQL transfer, browser recovery, actual
+evidence validity, installed state or complete migration acceptance.
+## Retained position staging (#908 W02A)
+
+`database/tests/position_study/test_retained_position_store_postgres.py` runs
+through the owning disposable Learning PostgreSQL runner with an explicit path.
+It captures original schema-59 rows, stages one position and all selected fact
+bytes/keys, and checks replay, conflicts, rollback, FSRS collision and unchanged
+source. `tests/test_retained_position_migration.py` verifies the registered owner
+migration/checksum and staging tables through the regular native fixture.
+These are representative non-serving mechanisms, not activation or complete
+migration certification. W02B owns the pinned future-review comparison.
+## Queue refresh epochs and preserved prefix (#908 W03A)
+
+`tests/test_queue_epochs_native.py` owns actual registered-migration checks,
+stale publication denial, atomic rollback, concurrent request increments,
+productive same-day task coalescing, frozen-token restart/quiet convergence and
+the reproduced late-preservation race. Its five native cases use only the
+owning disposable PostgreSQL fixture. `test_queue_persistence.py` and
+`test_queue_storage_separation.py` retain the affected public/storage boundary.
+This does not establish non-frozen invalidation, retained position issuance,
+Study-day conversion or full saved-review→playable-next-card acceptance.
+
+## Position grade decisions and retained next-review comparison (#908 W02B)
+
+`tests/test_position_daily_credit.py` and
+`tests/test_position_first_response_policy.py` own the pure legacy-compatible
+decision port: at-most-one Good per exact position/day across epochs, verified
+Again, original event replay/conflict and Observe without scheduler work.
+`database/tests/position_study/test_retained_position_store_postgres.py` compares
+the next pinned Good response from original and copied full FSRS without
+replaying history. These are proposals and representative retained-state proof;
+an accepted-grade transaction/receipt port and native uniqueness remain absent.
+
+## Complete bounded publication generation (#908 W09A)
+
+`tests/test_cutover_publication_generation.py` owns the native synthetic
+10,000-definition/fact/route/binding inactive generation, exact active identities,
+same-digest replay, changed-digest/incomplete rejection and stale predecessor
+denial. It uses the regular owning disposable PostgreSQL fixture. One-move
+synthetic routes do not establish real retained graph/alias capacity, source-edit
+fencing, paging beyond public limits or full F12 acceptance.

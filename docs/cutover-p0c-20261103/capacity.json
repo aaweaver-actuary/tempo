@@ -1,0 +1,115 @@
+{
+  "source_pin": "5d879ffce599af7a2eaf9627e9e1c7ea82e9af5a",
+  "entries": [
+    {
+      "name": "content_authored_exercises",
+      "value": 10000,
+      "unit": "definitions per SourceSnapshot",
+      "source": "services/content/src/tempo_content/models.py:120; services/content/src/tempo_content/bridge/application.py:21",
+      "status": "source validator maximum; not a measured capacity"
+    },
+    {
+      "name": "content_publication_definitions",
+      "value": 10000,
+      "unit": "executable definitions per publication",
+      "source": "contracts/content-publication/src/tempo_content_publication_contracts/v1.py:22",
+      "status": "source validator maximum"
+    },
+    {
+      "name": "v1_facts",
+      "value": 128,
+      "unit": "execution facts per v1 bundle",
+      "source": "services/learning/runtime/src/tempo_learning_runtime/publications.py:60",
+      "status": "source validator maximum"
+    },
+    {
+      "name": "v2_facts",
+      "value": 10000,
+      "unit": "execution facts per v2 bundle",
+      "source": "services/learning/runtime/src/tempo_learning_runtime/publication_bridge.py:23,114",
+      "status": "source validator maximum; complete one-to-one definition coverage required by inherited validator"
+    },
+    {
+      "name": "v2_routes",
+      "value": 10000,
+      "unit": "routes per bundle",
+      "source": "services/learning/runtime/src/tempo_learning_runtime/publication_bridge.py:116",
+      "status": "source validator maximum"
+    },
+    {
+      "name": "v2_aliases",
+      "value": 8192,
+      "unit": "authored-to-physical card aliases per bundle",
+      "source": "services/learning/runtime/src/tempo_learning_runtime/publication_bridge.py:24,117",
+      "status": "source validator maximum; blocks larger all-aliased sets"
+    },
+    {
+      "name": "v2_body",
+      "value": 16777216,
+      "unit": "UTF-8 bytes",
+      "source": "services/learning/runtime/src/tempo_learning_runtime/api.py:141; services/learning/runtime/src/tempo_learning_runtime/publication_bridge.py:25,198",
+      "status": "raw request and normalized model independently bounded"
+    },
+    {
+      "name": "bridge_snapshot",
+      "value": 134217728,
+      "unit": "canonical uncompressed document bytes",
+      "source": "services/content/src/tempo_content/bridge/application.py:232-250",
+      "status": "separate document guard"
+    },
+    {
+      "name": "content_export",
+      "value": 67108864,
+      "unit": "canonical export bytes",
+      "source": "services/content/src/tempo_content/bridge/application.py:586,628",
+      "status": "separate export guard"
+    },
+    {
+      "name": "pr718_largest",
+      "value": {
+        "lines": 2207,
+        "physical_cards": 9526,
+        "memberships": 9526,
+        "graph_rows": 27600,
+        "reported_wire_MB": 17.78
+      },
+      "unit": "legacy repertoire snapshot counts and MB as reported",
+      "source": "https://github.com/aaweaver-actuary/tempo/pull/718",
+      "status": "historical bc2b2b70; not this bundle or this run"
+    },
+    {
+      "name": "synthetic_v2",
+      "value": {
+        "definitions": 7258,
+        "facts": 7258,
+        "routes": 7258,
+        "bindings": 7258,
+        "canonical_stage_bytes": 7802643,
+        "normalized_bytes": 7802643,
+        "peak_rss_bytes_macos": 184500224,
+        "generation_seconds": 1.4033691249787807,
+        "validation_seconds": 1.428366084001027
+      },
+      "unit": "counts, bytes, seconds",
+      "source": "docs/cutover-p0c-20261103/probe.py; services/learning/runtime/tests/test_content_bridge.py:21",
+      "status": "pure model pass; no database or activation; one-move routes are not representative of complete graph"
+    },
+    {
+      "name": "synthetic_v2_max_count",
+      "value": {
+        "definitions": 10000,
+        "facts": 10000,
+        "routes": 10000,
+        "bindings": 10000,
+        "canonical_stage_bytes": 10751453,
+        "normalized_bytes": 10751453,
+        "peak_rss_bytes_macos": 217563136,
+        "generation_seconds": 2.0162479580612853,
+        "validation_seconds": 1.9887036250438541
+      },
+      "unit": "counts, bytes, seconds",
+      "source": "docs/cutover-p0c-20261103/probe.py; services/learning/runtime/tests/test_content_bridge.py:21",
+      "status": "pure model pass; no database or activation; single-move routes are not representative of complete graph"
+    }
+  ]
+}

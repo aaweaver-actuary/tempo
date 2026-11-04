@@ -4,17 +4,20 @@ This is the executable interface foundation for [#264](https://github.com/aaweav
 
 ## Public artifacts and catalog
 
-All five distributions start at **1.0.0** and require an explicit integer `contract_version: 1` in wire envelopes. Pydantic 2.12.5 models are authoritative. CPython 3.12 and 3.14 are qualified; metadata permits `>=3.12,<3.15`. JSON schemas use draft 2020-12 and are included in wheels. `tempo.invalid` schema IDs are identifiers, not hosted endpoints.
+The original five distributions start at **1.0.0** and require an explicit integer `contract_version: 1` in wire envelopes. Pydantic 2.12.5 models are authoritative. CPython 3.12 and 3.14 are qualified; metadata permits `>=3.12,<3.15`. JSON schemas use draft 2020-12 and are included in wheels. `tempo.invalid` schema IDs are identifiers, not hosted endpoints.
 
 | Root / distribution | Public import | Producer → consumers | Authority |
 |---|---|---|---|
+| `learning-transfer` / `tempo-learning-transfer-contracts` | `tempo_learning_transfer_contracts.v1` | Owner capture adapters → Learning runtime/database adapters | Learning; pure transfer claims only |
 | `learning` / `tempo-learning-contracts` | `tempo_learning_contracts.v1` | Study Web/Workbench/Game Evidence requests → Learning; Learning responses → web clients and domain clients | Learning |
 | `content-publication` / `tempo-content-publication-contracts` | `tempo_content_publication_contracts.v1` | Content → Learning; Learning acknowledgements → Content/Workbench | Content definitions; Learning acceptance/activation/fencing |
 | `game-evidence` / `tempo-game-evidence-contracts` | `tempo_game_evidence_contracts.v1` | Game Evidence → Learning, Intelligence, Workbench; Learning acknowledgement → Game Evidence | Game Evidence observations; Learning obligations |
 | `intelligence` / `tempo-intelligence-contracts` | `tempo_intelligence_contracts.v1` | Intelligence → Learning/Workbench | Advisory evidence only |
 | `analysis-jobs` / `tempo-analysis-jobs-contracts` | `tempo_analysis_jobs_contracts.v1` | Content/Game Evidence/Intelligence → Stockfish or Maia; worker → requesting domain | Requesting domain inputs; worker execution/provenance |
 
-Analysis jobs additionally exposes public `stockfish` and `maia` modules. Each `v1` namespace exposes `PUBLIC_MODELS`, `validate_contract(model, json)` and `serialize_contract(model)`. The [machine-readable catalog](catalog.json) lists every top-level interface, schema export and owning suite. There is no shared ORM, global registry, provider initialization or universal model package. Small wire primitives are intentionally package-local to avoid a sixth runtime dependency or coupled releases.
+Analysis jobs additionally exposes public `stockfish` and `maia` modules. Each `v1` namespace exposes `PUBLIC_MODELS`, `validate_contract(model, json)` and `serialize_contract(model)`. The [machine-readable catalog](catalog.json) lists every top-level interface, schema export and owning suite. There is no shared ORM, global registry, provider initialization or universal model package. Small wire primitives remain package-local to avoid coupled releases. The independent
+retained-history transfer contract is separately versioned and preserves its reviewed
+`version: 1` vocabulary; it does not change the original five contract envelopes.
 
 ## Learning interfaces and settlement
 

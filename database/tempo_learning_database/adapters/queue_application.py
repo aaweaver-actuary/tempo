@@ -1,11 +1,6 @@
 """Learning queue facts and bound persistence on the caller's transaction."""
-from . import frozen_order
+from . import frozen_order, queue_refresh_epochs
 from .postgres_store import PostgresConnection
-
-
-_QUEUE_REFRESH_PROJECTION_SQL = """INSERT INTO queue_projections(queue_date,state,generation,refresh_pending)
-           VALUES(?,'refreshing',0,1) ON CONFLICT(queue_date) DO UPDATE SET
-           state='refreshing',refresh_pending=1,last_error=NULL"""
 
 
 _AVAILABLE_ATTEMPT_WHERE_SQL = """WHERE q.queue_date=? AND q.status='queued' AND c.archived=0
@@ -121,7 +116,7 @@ def mark_queue_refresh_pending_in_transaction(
     database: PostgresConnection, queue_date: str,
 ) -> None:
     """Mark the projection last, borrowing the caller's refresh transaction."""
-    database.execute(_QUEUE_REFRESH_PROJECTION_SQL, (queue_date,))
+    queue_refresh_epochs.request(database, queue_date)
 
 
 def window_rows(database, queue_date, limit, miss_reason):
