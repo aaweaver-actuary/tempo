@@ -57,6 +57,9 @@ def retry_failed_task(database: PostgresConnection, payload: dict[str, Any]) -> 
     failed = storage.failed_task_for_update(database, task_id)
     if failed is None:
         raise HTTPException(404, "Terminal task not found")
+    from .contracts.command_registry import RETIRED_TASK_KINDS
+    if failed["kind"] in RETIRED_TASK_KINDS:
+        raise HTTPException(410, "Task retired")
     now = datetime.now(timezone.utc).isoformat()
     storage.reset_failed_task(database, task_id, now)
     if failed["kind"] == "daily_queue":
@@ -70,5 +73,4 @@ def retry_failed_task(database: PostgresConnection, payload: dict[str, Any]) -> 
     return serialize_task(retried)
 
 
-register_command("activity.progress", report_analysis_progress)
 register_command("activity.task.retry", retry_failed_task)

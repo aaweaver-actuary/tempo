@@ -15,6 +15,7 @@ from redis import RedisError
 from .celery_app import celery_app
 from .command_gateway import CommandConflict, read_operation
 from .contracts.command_identity import request_digest
+from .contracts.command_registry import is_retired_command
 
 
 def dispatch_command(
@@ -25,6 +26,8 @@ def dispatch_command(
     wait_seconds: float = 2.0,
     background: bool = False,
 ) -> Any | JSONResponse:
+    if is_retired_command(command_name):
+        raise HTTPException(410, "Command retired")
     if command_name == "queue.issue_head" and idempotency_key is None:
         from .command_gateway import select_queue_issuance_operation
         try:
