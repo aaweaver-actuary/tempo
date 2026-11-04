@@ -430,3 +430,13 @@ source. `tests/test_retained_position_migration.py` verifies the registered owne
 migration/checksum and staging tables through the regular native fixture.
 These are representative non-serving mechanisms, not activation or complete
 migration certification. W02B owns the pinned future-review comparison.
+## Queue refresh epochs and preserved prefix (#908 W03A)
+
+`tests/test_queue_epochs_native.py` owns actual registered-migration checks,
+stale publication denial, atomic rollback, concurrent request increments,
+productive same-day task coalescing, frozen-token restart/quiet convergence and
+the reproduced late-preservation race. Its five native cases use only the
+owning disposable PostgreSQL fixture. `test_queue_persistence.py` and
+`test_queue_storage_separation.py` retain the affected public/storage boundary.
+This does not establish non-frozen invalidation, retained position issuance,
+Study-day conversion or full saved-review→playable-next-card acceptance.

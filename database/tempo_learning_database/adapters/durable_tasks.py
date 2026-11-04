@@ -13,29 +13,46 @@ def enqueue_daily_task_in_transaction(
     delay_seconds=0,
     minimum_generation=0,
 ):
+    initial = json.dumps(payload)
     queued = database.execute_native(
         """INSERT INTO background_tasks(id,kind,deduplication_key,generation,payload_json,priority,max_attempts,next_attempt_at)
         VALUES(%s,%s,%s,%s,%s,%s,%s,NOW()+(%s * INTERVAL '1 second'))
-        ON CONFLICT(kind,deduplication_key) DO UPDATE SET
-          generation=GREATEST(background_tasks.generation+1,EXCLUDED.generation),payload_json=EXCLUDED.payload_json,
-          state='queued',phase='queued',priority=LEAST(background_tasks.priority,EXCLUDED.priority),
-          attempt_count=0,max_attempts=EXCLUDED.max_attempts,lease_token=NULL,lease_expires_at=NULL,
-          next_attempt_at=EXCLUDED.next_attempt_at,last_error=NULL,updated_at=NOW()
-        RETURNING *""",
-        (
-            str(uuid.uuid4()),
-            kind,
-            deduplication_key,
-            minimum_generation + 1,
-            json.dumps(payload),
-            priority,
-            max_attempts,
-            delay_seconds,
-        ),
+        ON CONFLICT(kind,deduplication_key) DO NOTHING RETURNING *""",
+        (str(uuid.uuid4()), kind, deduplication_key, minimum_generation + 1,
+         initial, priority, max_attempts, delay_seconds),
     ).fetchone()
+    event = "enqueued"
+    if queued is None:
+        queued = database.execute_native(
+            "SELECT * FROM background_tasks WHERE kind=%s AND deduplication_key=%s FOR UPDATE",
+            (kind, deduplication_key),
+        ).fetchone()
+        current = json.loads(queued["payload_json"])
+        if (queued["state"] in {"queued", "leased", "retrying"}
+                and current.get("queue_date") == payload.get("queue_date")):
+            # Keep productive work and its lease; publication observes the new
+            # request epoch and schedules a full follow-up scan.
+            preserve = max(current.get("preserve_through_entry_id", 0),
+                           payload.get("preserve_through_entry_id", 0))
+            if preserve:
+                current["preserve_through_entry_id"] = preserve
+            queued = database.execute_native(
+                "UPDATE background_tasks SET payload_json=%s WHERE id=%s RETURNING *",
+                (json.dumps(current), queued["id"]),
+            ).fetchone()
+            event = "refresh_requested"
+        else:
+            queued = database.execute_native(
+                """UPDATE background_tasks SET generation=GREATEST(generation+1,%s),
+                  payload_json=%s,state='queued',phase='queued',priority=LEAST(priority,%s),
+                  attempt_count=0,max_attempts=%s,lease_token=NULL,lease_expires_at=NULL,
+                  next_attempt_at=NOW()+(%s * INTERVAL '1 second'),last_error=NULL,updated_at=NOW()
+                  WHERE id=%s RETURNING *""",
+                (minimum_generation + 1, initial, priority, max_attempts, delay_seconds, queued["id"]),
+            ).fetchone()
     database.execute_native(
-        "INSERT INTO background_task_events(task_id,generation,event) VALUES(%s,%s,'enqueued')",
-        (queued["id"], queued["generation"]),
+        "INSERT INTO background_task_events(task_id,generation,event) VALUES(%s,%s,%s)",
+        (queued["id"], queued["generation"], event),
     )
     return dict(queued)
 

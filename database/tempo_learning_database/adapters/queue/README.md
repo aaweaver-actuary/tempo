@@ -1,6 +1,43 @@
 # Foreground Learning queue storage
 
-**Current source; deployment unverified.** This is a mechanical split of the existing queue application/command modules. Runtime retains presentation classification, bounded wire conversion, retry placement, retained-attempt/issuance conflicts, burial, and task/projection refresh decisions. Complete queries, cursor reads, dialect checks and locks live in the same owner's root database tree. No schema, constraints, stored values, migration, public request/response or transaction authority changes here.
+**Current source; deployment unverified.** Runtime retains presentation classification, bounded wire conversion, retry placement, retained-attempt/issuance conflicts, burial, and task/projection refresh decisions. Complete queries, cursor reads, dialect checks and locks live in the same owner's root database tree. The #908 epoch extension below adds freshness columns without moving transaction or queue authority.
+
+## Requested and published freshness (#908 W03A)
+
+Same-day requests lock the existing durable task before incrementing its
+projection request epoch. They preserve active generation, lease, scan cursor
+and the maximum preserved queue prefix. Each bounded worker cycle pins its
+request epoch and frozen-activation token; changes restart a full sweep without
+inventing another logical task. This token covers frozen activation, not every
+source invalidation channel. Finalization revalidates the current lease, newest
+preservation marker, request epoch and activation token before changing order.
+
+```mermaid
+sequenceDiagram
+  participant F as Foreground caller transaction
+  participant T as Durable daily task
+  participant P as Queue projection
+  participant W as Bounded maintenance transaction
+  F->>T: Lock / coalesce existing day; preserve cursor and lease
+  F->>P: Increment requested_refresh_epoch last
+  W->>T: Pin cycle epoch and source token; retain checkpoint
+  Note over W: Candidate slices retain existing card/queue lock order
+  W->>T: Final current lease and preservation marker
+  W->>P: Lock requested/published epoch after task
+  alt Epoch or source token changed
+    W->>T: Checkpoint full rescan; no queue reorder or READY
+  else Exact cycle still current
+    W->>P: Publish exact epoch + ready with final queue order
+    W->>T: Complete original task atomically in same transaction
+  end
+```
+
+Finalization retains the existing activation/queue-position lock order before
+the task/projection locks. No new broker or optional producer dependency is
+introduced. Native regressions reproduce a stale-cycle preserved-prefix reorder
+before its fix and verify rejection afterward. They do not certify retained
+position issuance, all non-frozen invalidations, Study-day conversion or lost
+post-commit wakes.
 
 ```mermaid
 flowchart LR
