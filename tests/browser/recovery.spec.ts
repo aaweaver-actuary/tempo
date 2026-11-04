@@ -3,6 +3,8 @@ import { prepareVisualUI } from "./visual-fixtures";
 import { test as productTest, api } from "./product-fixtures";
 import { heldDrag, prepareHeldDrag } from "./held-drag-fixtures";
 import type { Page } from "@playwright/test";
+import { execFileSync } from "node:child_process";
+import { postgresFixtureSqlArguments, verifyPostgresFixtureTarget } from "./product-fixture-reset";
 import { expectedPieces, renderedPieces, squareCenter } from "./keyboard-fixtures";
 
 const startFen =
@@ -626,7 +628,7 @@ test("discarding an unknown PGN import permits a different file after reload", a
 
 productTest("repair choices advance before a delayed save and survive reload through real PostgreSQL receipts", async ({ page, request }) => {
   // Allow setup plus the full eventual-recovery poll below.
-  productTest.setTimeout(120_000);
+  productTest.setTimeout(240_000);
   await prepareUI(page);
   // Await analysis from the retained passive Repertoire view so the active Train
   // workspace does not intentionally preempt the integrity slices this receipt test needs.
@@ -695,6 +697,49 @@ productTest("repair choices advance before a delayed save and survive reload thr
       const receipt = await (await request.get(`${api}/operations/${operationId}`)).json();
       expect(receipt.state).toBe("complete");
     }
+
+    // Reopen a real completed graph task as terminal in this verified disposable
+    // fixture; retain the accepted repair's original operation identity.
+    const health = await (await request.get(`${api}/health`)).json();
+    const postgresId = await verifyPostgresFixtureTarget({ health, apiUrl: api, project: process.env.TEMPO_TEST_COMPOSE_PROJECT });
+    const tasks = (await (await request.get(`${api}/system/tasks`)).json()).tasks;
+    const graph = tasks.find((task: { kind: string; deduplication_key: string; state: string }) =>
+      task.kind === "opening_graph_rebuild" && task.deduplication_key === repertoireId && task.state === "complete");
+    expect(graph).toBeTruthy();
+    expect(graph.id).toMatch(/^[a-zA-Z0-9_-]+$/);
+    const retiredId = `retired-${graph.id}`;
+    const sql = `UPDATE background_tasks SET state='failed', phase='failed', last_error='synthetic retry witness' WHERE id='${graph.id}';
+      INSERT INTO background_tasks(id,kind,deduplication_key,state,phase,payload_json,next_attempt_at,created_at,updated_at)
+      VALUES ('${retiredId}','game_analysis_followup','${retiredId}','failed','failed','{}',now()::text,now()::text,now()::text);`;
+    execFileSync("docker", postgresFixtureSqlArguments(postgresId, sql, 5000), { encoding: "utf8", timeout: 10_000 });
+    expect((await request.post(`${api}/system/tasks/${retiredId}/retry`, { headers: { "Idempotency-Key": `retired-${submittedKeys[0]}` } })).status()).toBe(404);
+    const terminal = (await (await request.get(`${api}/system/tasks`)).json()).tasks.find((task: { id: string }) => task.id === graph.id);
+    expect(terminal).toMatchObject({ state: "failed", generation: graph.generation });
+    await page.evaluate(({ repair, graphTask }) => {
+      const restored = { ...repair, phase: "validating", taskId: graphTask.id,
+        taskGeneration: graphTask.generation, retry: undefined, retryTaskId: undefined, retryOperationId: undefined };
+      localStorage.setItem(`tempo-pending-integrity-repairs-v3:${repair.operationId}`, JSON.stringify(restored));
+    }, { repair: savedChoices[0], graphTask: graph });
+    let retryId = "";
+    page.on("request", requestEvent => {
+      if (requestEvent.method() === "POST" && new URL(requestEvent.url()).pathname === `/api/system/tasks/${graph.id}/retry`)
+        retryId = requestEvent.headers()["idempotency-key"] ?? "";
+    });
+    await page.reload();
+    await page.locator(".integrity-repair-status").getByRole("button", { name: "Retry repair", exact: true }).click();
+    await expect.poll(() => retryId).not.toBe("");
+    await expect.poll(async () => (await (await request.get(`${api}/operations/${retryId}`)).json()).state,
+      { timeout: 60_000 }).toBe("complete");
+    const receiptBefore = await (await request.get(`${api}/operations/${retryId}`)).json();
+    const replay = await request.post(`${api}/system/tasks/${graph.id}/retry`, { headers: { "Idempotency-Key": retryId } });
+    expect(replay.ok()).toBe(true);
+    expect(await (await request.get(`${api}/operations/${retryId}`)).json()).toMatchObject({
+      operation_id: retryId, state: "complete", response: receiptBefore.response,
+    });
+    await expect.poll(async () => page.evaluate(id => localStorage.getItem(`tempo-pending-integrity-repairs-v3:${id}`), savedChoices[0].operationId),
+      { timeout: 60_000 }).toBeNull();
+    const recovered = (await (await request.get(`${api}/system/tasks`)).json()).tasks.find((task: { id: string }) => task.id === graph.id);
+    expect(recovered).toMatchObject({ state: "complete", generation: graph.generation });
   } finally { releaseSave?.(); }
 });
 
