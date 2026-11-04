@@ -108,6 +108,7 @@ def main(test_paths=None, additional_environment=None, extra_sources=(), evidenc
         "chess-core",
         "content-publication-contracts",
         "game-evidence-contracts",
+        "learning-transfer-contracts",
     }
     if fixture_profile == "full":
         owners.update({*components[1:], "browser-intents", "study-session"})
