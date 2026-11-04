@@ -24,6 +24,7 @@ def test_cut62_guard_retains_full_fixed_ledger_and_rejects_tamper(monkeypatch):
     monkeypatch.setattr(guard, '_cut62_versions', lambda database, version: None)
     monkeypatch.setattr(guard, '_cut62_profile_objects', lambda database, should_exist: None)
     monkeypatch.setattr(guard, '_cut62_catalog', lambda database, secret: {'count': 1, 'digest': 'catalog'})
+    monkeypatch.setattr(guard, '_cut62_sequences', lambda database, secret: {'count': 10, 'digest': 'sequences'})
     monkeypatch.setattr(guard, '_cut62_layout', lambda database, names: {name: layout[name] for name in names})
     monkeypatch.setattr(guard, '_cut62_table', lambda database, name, key, secret: state[name].copy())
     witness = guard.capture_cut62(FakeDatabase(), b'x' * 32)
@@ -78,3 +79,58 @@ def test_cut62_rejects_reintroduced_retired_relation(monkeypatch):
             return Result()
     with pytest.raises(RuntimeError, match='retired relation remains'):
         guard.verify_cut62(Database(), witness, b'x' * 32)
+
+
+def test_cut62_sequence_drift_is_rejected(monkeypatch):
+    source = guard.CUT62_PROTECTED_TABLES | guard.CUT62_RETIRED_TABLES | {guard.CUT62_LEDGER}
+    layout = {name: [['id'], [['id', 'text', True]]] for name in source}
+    monkeypatch.setattr(guard, '_cut62_session', lambda database: None)
+    monkeypatch.setattr(guard, '_cut62_versions', lambda database, version: None)
+    monkeypatch.setattr(guard, '_cut62_profile_objects', lambda database, should_exist: None)
+    monkeypatch.setattr(guard, '_cut62_layout', lambda database, names: {name: layout[name] for name in names})
+    monkeypatch.setattr(guard, '_cut62_table', lambda database, name, key, secret: {'count': 1, 'digest': name})
+    monkeypatch.setattr(guard, '_cut62_catalog', lambda database, secret: {'count': 1, 'digest': 'catalog'})
+    monkeypatch.setattr(guard, '_cut62_sequences', lambda database, secret: {'count': 10, 'digest': 'before'})
+    witness = guard.capture_cut62(FakeDatabase(), b'x' * 32)
+    monkeypatch.setattr(guard, '_cut62_sequences', lambda database, secret: {'count': 10, 'digest': 'after'})
+    with pytest.raises(RuntimeError, match='sequences changed'):
+        guard.verify_cut62(FakeDatabase(), witness, b'x' * 32)
+
+
+def test_cut62_native_schema61_to62(tmp_path):
+    """Explicitly allocated empty local DB only; never an ambient/serving DB."""
+    import os
+    from urllib.parse import urlparse
+    import psycopg
+    from database.tooling.apply_postgres_migrations import MIGRATIONS, apply_migrations, migration_source
+
+    dsn = os.environ.get('TEMPO_W07_NATIVE_REGRESSION_DSN')
+    if not dsn:
+        pytest.skip('W07 native disposable database not allocated')
+    parsed = urlparse(dsn)
+    if parsed.hostname != '127.0.0.1' or parsed.path != '/w07_regression':
+        raise ValueError('refusing non-W07 disposable database')
+    with psycopg.connect(dsn) as db:
+        assert db.execute("SELECT to_regclass('public.tempo_schema_migrations')").fetchone()[0] is None
+        for path in sorted(MIGRATIONS.glob('[0-9][0-9][0-9]_*.sql')):
+            if int(path.name[:3]) <= 61:
+                db.execute(migration_source(path), prepare=False)
+        db.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES ('synthetic','synthetic','synthetic','2026-01-01')")
+    path = tmp_path / 'cut62-original.json'
+    with psycopg.connect(dsn) as db:
+        guard.save_cut62_witness(path, db)
+    witness, secret = guard.load_cut62_witness(path)
+    apply_migrations(dsn)
+    with psycopg.connect(dsn) as db:
+        guard.verify_cut62(db, witness, secret)
+    apply_migrations(dsn)
+    with psycopg.connect(dsn) as db:
+        guard.verify_cut62(db, witness, secret)
+        db.execute("UPDATE repertoires SET name='tampered' WHERE id='synthetic'")
+        with pytest.raises(RuntimeError, match='retained rows changed'):
+            guard.verify_cut62(db, witness, secret)
+        db.rollback()
+        guard.verify_cut62(db, witness, secret)
+        db.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json) VALUES ('synthetic','lichess','synthetic','2026-01-01T00:00:00Z','rapid',1,'white','draw','synthetic','[]')")
+        assert db.execute("SELECT to_regclass('public.next_opponent_accounts')").fetchone()[0] is None
+        db.rollback()

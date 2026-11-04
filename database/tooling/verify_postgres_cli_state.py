@@ -246,6 +246,12 @@ CUT62_RETIRED_TABLES = frozenset(('defense_attempts', 'endgame_attempts',
                                   'next_opponent_accounts', 'next_opponent_snapshots'))
 CUT62_LEDGER = 'tempo_schema_migrations'
 CUT62_EVIDENCE_VERSION = 1
+CUT62_PROTECTED_SEQUENCES = frozenset((
+    'background_task_events_id_seq', 'card_revisions_id_seq', 'daily_queue_id_seq',
+    'game_analysis_position_errors_id_seq', 'opening_evidence_presentations_id_seq',
+    'reviews_id_seq', 'study_attempt_issuance_sequence', 'study_position_fsrs_id_seq',
+    'study_recombination_completions_sequence_seq', 'threat_analysis_report_history_id_seq',
+))
 
 
 def _cut62_mac(secret, domain, values):
@@ -320,6 +326,25 @@ def _cut62_catalog(database, secret):
                       (json.dumps(row, separators=(',', ':'), ensure_ascii=False) for row in rows))
 
 
+
+def _cut62_sequences(database, secret):
+    from psycopg import sql
+    definitions = database.execute("""
+        SELECT c.relname, pg_get_userbyid(c.relowner), COALESCE(c.relacl::text,''),
+               s.seqstart,s.seqincrement,s.seqmax,s.seqmin,s.seqcache,s.seqcycle
+        FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+        JOIN pg_sequence s ON s.seqrelid=c.oid
+        WHERE n.nspname='public' ORDER BY c.relname
+    """).fetchall()
+    if {row[0] for row in definitions} != CUT62_PROTECTED_SEQUENCES:
+        raise RuntimeError('cut62 sequence coverage changed')
+    states = []
+    for definition in definitions:
+        value = database.execute(sql.SQL('SELECT last_value,is_called FROM {}.{}').format(
+            sql.Identifier('public'), sql.Identifier(definition[0]))).fetchone()
+        states.append(json.dumps([*definition, *value], separators=(',', ':')))
+    return _cut62_mac(secret, 'cut62:sequences', states)
+
 def _cut62_profile_objects(database, should_exist):
     for name in ('idx_next_opponent_account_time', 'idx_next_opponent_speed_rating_time'):
         found = database.execute('SELECT to_regclass(%s)', ('public.' + name,)).fetchone()[0] is not None
@@ -366,7 +391,7 @@ def capture_cut62(database, secret):
     rows = {name: _cut62_table(database, name, layout[name][0], secret)
             for name in sorted(source_tables - {CUT62_LEDGER})}
     return {'version': CUT62_EVIDENCE_VERSION, 'from': 61, 'to': 62,
-            'layout': layout, 'rows': rows, 'catalog': _cut62_catalog(database, secret)}
+            'layout': layout, 'rows': rows, 'catalog': _cut62_catalog(database, secret), 'sequences': _cut62_sequences(database, secret)}
 
 
 def verify_cut62(database, witness, secret):
@@ -388,6 +413,8 @@ def verify_cut62(database, witness, secret):
     layout = _cut62_layout(database, target)
     if layout != {name: witness['layout'][name] for name in target}:
         raise RuntimeError('cut62 retained table layout changed')
+    if _cut62_sequences(database, secret) != witness.get('sequences'):
+        raise RuntimeError('cut62 retained sequences changed')
     if _cut62_catalog(database, secret) != witness.get('catalog'):
         raise RuntimeError('cut62 retained catalog changed')
     for name in sorted(CUT62_PROTECTED_TABLES):
