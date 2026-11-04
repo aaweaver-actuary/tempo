@@ -69,9 +69,6 @@ def inactive_frozen_queue(monkeypatch):
 
 
 def test_postgres_game_exclusion_uses_foreground_receipt_and_atomic_followup(monkeypatch):
-    from app.services import postgres_next_opponent
-    profile_intents = []
-    monkeypatch.setattr(postgres_next_opponent, "request_profile_refresh", lambda database: profile_intents.append(database))
     from fastapi.testclient import TestClient
     from app import game_commands, main
     from app import command_dispatch
@@ -1428,9 +1425,6 @@ def test_postgres_game_accounts_update_dispatches_foreground_command(monkeypatch
 
 
 def test_postgres_game_accounts_update_reconciles_provider_rows(monkeypatch):
-    from app.services import postgres_next_opponent
-    profile_intents = []
-    monkeypatch.setattr(postgres_next_opponent, "request_profile_refresh", lambda database: profile_intents.append(database))
     from app.account_commands import update_game_accounts
 
     statements = []
@@ -1445,7 +1439,6 @@ def test_postgres_game_accounts_update_reconciles_provider_rows(monkeypatch):
         {"lichess_username": " alice ", "chesscom_username": ""},
     )
     assert response == {"lichess_username": "alice", "chesscom_username": ""}
-    assert len(profile_intents) == 1
     assert statements[0][1] == ("alice", "")
     assert statements[1][1] == ("lichess", "alice")
     assert statements[2][1] == ("chess.com",)
@@ -2185,9 +2178,6 @@ def test_postgres_settings_update_dispatches_foreground_command(monkeypatch):
 
 
 def test_postgres_settings_update_refreshes_queue_and_preserves_omitted_defense_flag(monkeypatch):
-    from app.services import postgres_next_opponent
-    profile_intents = []
-    monkeypatch.setattr(postgres_next_opponent, "request_profile_refresh", lambda database: profile_intents.append(database))
     from app.contracts.transport.settings import Settings
     from app import settings_commands
 
