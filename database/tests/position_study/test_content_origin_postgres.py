@@ -279,3 +279,63 @@ def test_authority_scope_prefix_budget_precedes_expansion(monkeypatch):
     exact = len(json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8'))
     assert scope._bounded_json_size(value, exact) == exact
     assert scope._bounded_json_size(value, exact - 1) is None
+
+
+def test_origin_budget_refuses_large_epoch_before_full_encoding(monkeypatch):
+    """Oversized repeated source text is held before inventory or envelope encoding."""
+    import json
+    from tempo_legacy_database.adapters.authored_repertoires import content_origin as origin
+    source_db = setup(monkeypatch)
+    source = owner.prepare_position_source_with_facts(source_db, 'rep')
+    assert not isinstance(source, Hold)
+    token = source.prepared.authored_token
+    class Result:
+        def __init__(self, row): self.row = row
+        def fetchone(self): return self.row
+    class Reader:
+        in_transaction = True
+        read_only = True
+        epoch = 'é\\"' * 10000
+        def execute_native(self, statement, parameters=()):
+            if 'current_schema()' in statement:
+                return Result(dict(db='db',schema='public',isolation='repeatable read',ro='on',snapshot='snap',pid=1,started='now',version=61))
+            if 'legacy_learning_identity' in statement:
+                return Result(dict(target_id='target',workspace_id=json.loads(token.header_json)['workspace_id']))
+            if 'study_position_owners' in statement:
+                return Result(dict(mode='active',epoch=self.epoch if len(self.epoch.encode()) <= origin._MAX_BYTES else None,epoch_bytes=len(self.epoch.encode()),source_digest=token.authored_digest))
+            raise AssertionError(statement)
+    monkeypatch.setattr(origin, 'prepare_position_source_with_facts', lambda *_: source)
+    monkeypatch.setattr(origin, '_MAX_BYTES', 4096)
+    def forbidden_encode(_value):
+        raise AssertionError('full encoding occurred before budget refusal')
+    monkeypatch.setattr(origin, '_encode', forbidden_encode)
+    result = origin.prepare_content_origin(Reader(),repertoire_id='rep',content_workspace_id='cw',content_source_key='source')
+    assert result.reason == 'CORR_EXPORT_LIMIT'
+    # Repeated identifiers/epoch are charged per occurrence, not just once in
+    # the envelope. The synthetic decision sequence exercises early refusal.
+    from types import SimpleNamespace
+    route = source.prepared.routes[0]
+    decision = route.decisions[0]
+    many = tuple(SimpleNamespace(ply=i, definition=decision.definition, fen=decision.fen) for i in range(1000))
+    synthetic_route = SimpleNamespace(route_id=route.route_id, start_fen=route.start_fen,
+        moves_uci=route.moves_uci, learner_color=route.learner_color, decisions=many)
+    synthetic_source = SimpleNamespace(prepared=SimpleNamespace(authored_token=token, routes=(synthetic_route,)),
+        publication_facts=source.publication_facts)
+    monkeypatch.setattr(origin, 'prepare_position_source_with_facts', lambda *_: synthetic_source)
+    monkeypatch.setattr(origin, '_MAX_BYTES', 10000)
+    reader = Reader()
+    reader.epoch = 'epoch'
+    measure = origin._bounded_json_size
+    measured_records = []
+    def observe(value, limit):
+        if isinstance(value, dict) and 'original_occurrence_id' in value:
+            measured_records.append(value)
+        return measure(value, limit)
+    monkeypatch.setattr(origin, '_bounded_json_size', observe)
+    result = origin.prepare_content_origin(reader,repertoire_id='rep',content_workspace_id='cw',content_source_key='source')
+    assert result.reason == 'CORR_EXPORT_LIMIT'
+    assert 1 < len(measured_records) < len(many)
+    sample = {'x': ['é', '\\', '"', '\n', '\x00', '😀'], 'n': 2}
+    exact = len(json.dumps(sample, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8'))
+    assert origin._bounded_json_size(sample, exact) == exact
+    assert origin._bounded_json_size(sample, exact - 1) is None
