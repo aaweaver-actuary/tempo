@@ -1,6 +1,35 @@
 [
-  {"id":"0001_content","path":"0001_content.sql","depends_on":[]},
-  {"id":"0002_bridge","path":"0002_bridge.sql","depends_on":["0001_content"]},
-  {"id":"0003_bridge_failure","path":"0003_bridge_failure.sql","depends_on":["0002_bridge"]},
-  {"id":"0004_bridge_proposal_identity","path":"0004_bridge_proposal_identity.sql","depends_on":["0003_bridge_failure"]}
+  {
+    "id": "0001_content",
+    "path": "0001_content.sql",
+    "depends_on": []
+  },
+  {
+    "id": "0002_bridge",
+    "path": "0002_bridge.sql",
+    "depends_on": [
+      "0001_content"
+    ]
+  },
+  {
+    "id": "0003_bridge_failure",
+    "path": "0003_bridge_failure.sql",
+    "depends_on": [
+      "0002_bridge"
+    ]
+  },
+  {
+    "id": "0004_bridge_proposal_identity",
+    "path": "0004_bridge_proposal_identity.sql",
+    "depends_on": [
+      "0003_bridge_failure"
+    ]
+  },
+  {
+    "id": "0005_content_final_generations",
+    "path": "0005_content_final_generations.sql",
+    "depends_on": [
+      "0004_bridge_proposal_identity"
+    ]
+  }
 ]

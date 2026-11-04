@@ -282,3 +282,20 @@ completeness, approved provenance, historical assets or durable receipt replay.
 A self-consistent omitted source fact can remain envelope-valid. Content's
 durable final reservation and cross-owner source projection require separate
 producer/native proof; no activation follows from envelope validation.
+
+## Owner final-generation reservation
+
+The public `tempo_content.final_generation` module supplies
+`ContentFinalGeneration.execute(command)` with `ReserveFinal`, `CaptureFinal`,
+`RecoverFinal` and `ResolveFinal`. Opaque service-issued handles are revalidated
+against durable owner authority, source epoch and active reservation state.
+Supported source/publication/bridge writers respect the reservation; terminal
+accept/abort cannot be revived by late capture, hold or publish. Four immutable
+byte blobs and their hashes retain owner-selected capture evidence.
+
+Resolution requires an injected target-disposition capability; unavailable or
+unknown target state retains the source hold. Synthetic native target records
+do not provide a real Learning disposition adapter. This module establishes no
+legacy watermark, cross-owner source correspondence, administrator SQL fence,
+installed activation or serving authority. See the Content database
+[final-generation lifecycle](../../../database/tempo_content_database/schema/final-generations/README.md).

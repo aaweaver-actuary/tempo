@@ -1,6 +1,7 @@
 """Explicit Content-owned migration authority and runtime compatibility checks."""
 import hashlib
 import json
+import uuid
 from pathlib import Path
 
 import psycopg
@@ -12,9 +13,10 @@ DatabaseError = psycopg.Error
 # One ownership contract drives both owner grants and runtime verification.
 RUNTIME_TABLE_PRIVILEGES = {
     **{table: (('SELECT',), ('INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER'))
-       for table in ('migration_history','instance')},
+       for table in ('migration_history','instance','final_generation_authority')},
     **{table: (('SELECT','INSERT'), ('UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER'))
-       for table in ('input_items','input_manifests','source_revisions','exercise_identities','exercise_versions','publications','bridge_drafts')},
+       for table in ('input_items','input_manifests','source_revisions','exercise_identities','exercise_versions','publications','bridge_drafts','final_generation_captures')},
+    'final_generation_reservations': (('SELECT','INSERT','UPDATE'), ('DELETE','TRUNCATE','REFERENCES','TRIGGER')),
     **{table: (('SELECT','INSERT','UPDATE','DELETE'), ())
        for table in ('sources','tasks','artifacts','generation_routes','positions','legal_replies','occurrences','generation_exercises','responses','collector','bridge_operations')},
 }
@@ -53,6 +55,7 @@ def migrate(owner_url, workspace_id, runtime_role):
             else:
                 database.execute((directory / entry['path']).read_text(), prepare=False)
                 database.execute('INSERT INTO content.migration_history VALUES(%s,%s)', (identity,expected[identity]))
+        database.execute('INSERT INTO content.final_generation_authority VALUES(1,%s) ON CONFLICT (singleton) DO NOTHING',(uuid.uuid4(),))
         database.execute('INSERT INTO content.instance VALUES(1,%s) ON CONFLICT DO NOTHING',(workspace_id,))
         if database.execute('SELECT workspace_id FROM content.instance WHERE id=1').fetchone()[0] != workspace_id:
             raise ValueError('Cannot rebind Content workspace')

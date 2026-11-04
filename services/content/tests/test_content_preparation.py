@@ -168,12 +168,23 @@ def test_publication_preparation_stays_after_build_reservation_and_before_commit
     publication, provenance = object(), {'provenance': 'unchanged'}
 
     class Transaction:
-        def execute(self, *arguments):
-            events.append('database operation')
+        def execute(self, statement, *arguments):
+            if 'FROM content.final_generation_reservations' in statement:
+                events.append('reservation guard')
+                self.row = None
+            elif 'FROM content.sources' in statement:
+                events.append('source lock')
+                self.row = source
+            elif 'FROM content.tasks' in statement:
+                events.append('task lock')
+                self.row = {'built_at': NOW}
+            else:
+                events.append('database operation')
+                self.row = None
             return self
 
         def fetchone(self):
-            return {'built_at': NOW}
+            return self.row
 
     @contextmanager
     def section():
@@ -198,13 +209,13 @@ def test_publication_preparation_stays_after_build_reservation_and_before_commit
     service._one = lambda *arguments: next(reads)
     service._manifest = lambda *arguments: manifest
     service._transaction = section
-    service._lock_source = lambda *arguments: source
     service._snapshot = lambda supplied: events.append('snapshot') or snapshot
     service._exercise_revisions = lambda *arguments: events.append('revisions') or revisions
     service.store_publication = save
     monkeypatch.setattr(publication_application, 'prepare_publication', compute)
     assert service.publication_build('source-key', lambda event, context: events.append(event)) is publication
-    assert events == ['begin', 'database operation', 'database operation', 'commit',
+    assert events == ['begin', 'source lock', 'reservation guard', 'commit',
+                      'begin', 'source lock', 'reservation guard', 'task lock', 'database operation', 'commit',
                       'snapshot', 'revisions', 'compute', 'before_commit', 'store publication']
 
 

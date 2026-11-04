@@ -1,4 +1,5 @@
 """Missing replay/precondition boundaries around the moved publication workflows."""
+from contextlib import contextmanager
 import hashlib
 import json
 from pathlib import Path
@@ -18,12 +19,37 @@ def publication():
                              {exercise.key: 1 for exercise in snapshot.exercises})
 
 
-def build_case(state, *, replay=False, count=1):
+def build_case(state, *, replay=False, count=1, reserved=False):
     value = publication()
     events = []
     source = {'id': 'source-id', 'requested_revision': 3, 'publication_id': value.publication_id}
     task = {'generation': 7, 'revision': 3, 'state': state}
     service = ContentService.__new__(ContentService)
+
+    class Transaction:
+        def execute(self, statement, parameters):
+            if 'FROM content.sources' in statement:
+                assert parameters == ('source-id',)
+                events.append('source lock')
+                self.row = source
+            elif 'FROM content.final_generation_reservations' in statement:
+                assert parameters == ('source-id',)
+                events.append('reservation guard')
+                self.row = {'reserved': True} if reserved else None
+            else:
+                pytest.fail('Unexpected publication guard query: ' + statement)
+            return self
+
+        def fetchone(self):
+            return self.row
+
+    @contextmanager
+    def transaction():
+        events.append('begin guard')
+        yield Transaction()
+        events.append('end guard')
+
+    service._transaction = transaction
     service._source = lambda key: events.append('source') or source
     service._publication_task = lambda *arguments: events.append('task') or task
     service._publication_payload = lambda *arguments: events.append('payload') or (
@@ -44,7 +70,7 @@ def test_publication_build_replay_precedes_task_state_check_and_all_build_work()
     service, events, value = build_case('pending', replay=True)
     actual = service.publication_build('source-key', hook=lambda *arguments: pytest.fail('Replay cannot emit build hook'))
     assert serialize_contract(actual) == serialize_contract(value)
-    assert events == ['source', 'task', 'payload']
+    assert events == ['source', 'begin guard', 'source lock', 'reservation guard', 'end guard', 'source', 'task', 'payload']
 
 
 @pytest.mark.parametrize('state,count,code,events_expected', [
@@ -56,7 +82,15 @@ def test_publication_build_preconditions_reject_before_reservation_or_hydration(
     with pytest.raises(ContentError) as error:
         service.publication_build('source-key')
     assert error.value.code == code
-    assert events == events_expected
+    assert events == ['source', 'begin guard', 'source lock', 'reservation guard', 'end guard'] + events_expected
+
+
+def test_publication_build_reserved_source_fails_before_replay_or_preparation():
+    service, events, _ = build_case('pending', replay=True, reserved=True)
+    with pytest.raises(ContentError) as error:
+        service.publication_build('source-key')
+    assert error.value.code == 'content_source_final_reserved'
+    assert events == ['source', 'begin guard', 'source lock', 'reservation guard']
 
 
 def test_publication_admission_replay_still_invokes_original_atomic_conflict_guard():

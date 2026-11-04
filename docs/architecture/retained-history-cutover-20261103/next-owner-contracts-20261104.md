@@ -10,7 +10,7 @@ The [proposed contract packet](https://github.com/aaweaver-actuary/tempo/issues/
 
 The Content `learning` profile preserves authored routes, bindings and aliases while omitting optional legal-reply inventory; the existing export was reused. Legacy JSONB preserves semantic values and the accepted canonical digest, not unavailable original transport bytes. Its ASCII canonical codec differs from Content's UTF-8 canonical codec. Legacy original-source digest, row authored digest and Content source digest are distinct domains. A future verified projection must bind those domains and complete repertoire/route/policy/ply namespaces explicitly; equal route text or revision numerals are insufficient.
 
-Source reference is unmerged #929 `f811bcde7f060585d924cd04ed397c13b172cf84`. This integration preserves #930's qualifier invocation fix and the exact leaf source from #931/#932/#933/#936, adding declared module exports, public interface descriptions and regression ownership. No state owner, write-transaction behavior, schema, serving composition or lifecycle changes; no new architecture drawing is required.
+Original source reference was #929 `f811bcde7f060585d924cd04ed397c13b172cf84`, now included by ancestry in main through #935. This integration preserves #930's qualifier invocation fix and the exact leaf source from #931/#932/#933/#936, adding declared module exports, public interface descriptions and regression ownership. Those pure registrations changed no transaction or serving authority; subsequent producer milestones are recorded below.
 
 ## Focused evidence
 
@@ -20,6 +20,38 @@ Unchanged leaf semantic evidence is reused: #933 Content selected 123 pure tests
 
 ## Remaining gates
 
-C3 still needs Content's durable source reservation, complete writer/lease denial, original source-selected inventory and recoverable final capture. L3 original source readers are implemented in #936 at `4e863d689194c3c0173ca8470717a42efa818496` and integrated without source changes. One focused native case passed on PostgreSQL 18.6 / schema 59 / Python 3.14.8, covering actual original issuance/response/aggregate save, later mistakes, assistance, low-level fixture-origin alternatives, exact identity/precision, repeatable snapshots and explicit conflicts. The required pure decoder is injected from actual source composition in the fixture; no production wiring or clean-prefix weakening was introduced. Independent CM review found missing canonical scheduling and exact source-reference predicates; the unsafe committed result was reproduced before repair, and the expanded native selection passed afterward. The runner recorded prior parent revision `c09eb748`; both tested file SHA256s were independently matched to the final committed source. Owned container, volume and test data absence were verified for the failing and passing runs. Native receipts remain component evidence on their recorded source/dependencies, not an assembled target proof. Migration 057 does not establish post-commit original-response UPDATE/DELETE denial; prototype 0007 protects different tables, so LP07 and L4 remain blocked pending separately approved original-owner proof.
+C3's supported Content writer reservation, owner-selected immutable capture and recovery implementation passed independent review at `6c2981bde9ebc1059a273df9cfcea07ead6690d7`; source integration and its package qualification are separate from the original pure envelope. Actual target disposition, legacy correspondence and installed authority remain absent. L3 original source readers are implemented in #936 at `4e863d689194c3c0173ca8470717a42efa818496` and integrated without source changes. One focused native case passed on PostgreSQL 18.6 / schema 59 / Python 3.14.8, covering actual original issuance/response/aggregate save, later mistakes, assistance, low-level fixture-origin alternatives, exact identity/precision, repeatable snapshots and explicit conflicts. The required pure decoder is injected from actual source composition in the fixture; no production wiring or clean-prefix weakening was introduced. Independent CM review found missing canonical scheduling and exact source-reference predicates; the unsafe committed result was reproduced before repair, and the expanded native selection passed afterward. The runner recorded prior parent revision `c09eb748`; both tested file SHA256s were independently matched to the final committed source. Owned container, volume and test data absence were verified for the failing and passing runs. Native receipts remain component evidence on their recorded source/dependencies, not an assembled target proof. Migration 057 does not establish post-commit original-response UPDATE/DELETE denial; prototype 0007 protects different tables, so LP07 and L4 remain blocked pending separately approved original-owner proof.
 
-T3 historical binding cannot recover unrecorded served catalog generations by archiving today's bytes. Original process/cache/root or immutable release evidence and archive readback are required; browser-local authority remains separate. C3/L4/T3, assembled saved-review → playable-next, H5 recovery rehearsal and hosted merge qualification remain unproved. No live data/service changes, migration, installation or activation occurred; cutover remains **NO-GO**.
+T3 historical binding cannot recover unrecorded served catalog generations by archiving today's bytes. Original process/cache/root or immutable release evidence and archive readback are required; browser-local authority remains separate. Full cross-owner C-FENCE/L4/T3, assembled saved-review → playable-next, H5 recovery rehearsal and hosted merge qualification remain unproved. No live data/service changes, migration, installation or activation occurred; cutover remains **NO-GO**.
+
+## Reviewed source delivery, November 4 continuation
+
+Main #935 merge `df9f35943af7a15a55cb8b417ee83ad0d5464e3e` includes the
+reviewed pure subsets, L3 reader and #937 qualification repair. Runtime installed
+qualification passed three cases in each Python 3.12/3.14 wheel/sdist combination;
+Content passed 364 in each corresponding source-removed combination plus one
+installed interoperability case and probe. Main merge tree matched the tested
+Content qualifier head. These are component artifact proofs, not installed Tempo.
+Actions was disabled and main had no effective enforced branch rules: merges are
+recorded `ci-disabled`, with no hosted success or release-gate waiver inferred.
+
+Main #941 merge `1e7840c9e977332d49d16454cdcfcacdf372c484` delivers #938's
+fixture-only prospective asset archive (5 generation/7 archive owner tests) and
+#939's six-table native read-only row inventory (one schema-59 PostgreSQL case).
+Independent Sol review accepted corrected archive descriptor/ABI handling and
+verified native receipt source hashes and cleanup. Their canonical owner views
+retain unselected activation, historical `UNPROVEN` and `PRELIMINARY_UNBOUND`.
+
+C3 #940's original terminal-state race was reproduced before repair (95 passed,
+one named failure), then its exact corrected owner selection passed 96/96 native
+and 98/98 pure cases. Independent review confirmed locked terminal checks and
+epoch CAS prevent late capture/hold/publish reviving accepted or aborted epochs;
+owned fixtures were removed. This is supported Content-owner authority only.
+The integrated public module candidate is undergoing separate source-free
+package qualification; this record does not assert its main delivery yet.
+
+Full contract proposals remain proposals beyond these explicit frozen subsets.
+The next owner mapping must bind original legacy plan/source digest domains to
+Content capture and exact route/policy/ply identities without guessed history.
+LP07 original response immutability, real target receipts and atomic Learning
+effect/receipt/checkpoint remain separately owned gates. No live operations.

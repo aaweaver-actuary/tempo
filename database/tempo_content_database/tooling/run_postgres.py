@@ -139,7 +139,7 @@ def main(arguments=None):
             TEMPO_CONTENT_TEST_FOREIGN_DATABASES=json.dumps({name: make_conninfo(runtime_url, dbname=name)
                                                            for name in ("learning", "game_evidence", "intelligence")}),
         )
-        result = run_pytest([DATABASE / "tests/test_postgres.py"], evidence / "cases",
+        result = run_pytest([DATABASE / "tests/test_postgres.py", DATABASE / "tests/test_final_generation.py"], evidence / "cases",
                             cwd=SERVICE, environment=environment, external_junit=external_junit,
                             redactions=passwords)
         report.update(result)
