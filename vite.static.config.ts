@@ -1,4 +1,3 @@
-import { workbenchUrlForBuild } from "./app/lib/workbench-navigation";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/postcss";
 import { defineConfig } from "vite";
@@ -16,7 +15,7 @@ export default defineConfig({
   base: localOrStudy ? "/" : "/tempo/",
   publicDir: "../public",
   server: { headers: { "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Embedder-Policy": "require-corp" }, proxy: { "/api": { target: process.env.TEMPO_PROXY_API ?? "http://127.0.0.1:8000", changeOrigin: true } } },
-  define: { __TEMPO_STUDY__: JSON.stringify(studyTarget), __TEMPO_WORKBENCH_URL__: JSON.stringify(workbenchUrlForBuild(process.env.TEMPO_WORKBENCH_URL)), __TEMPO_DEMO__: JSON.stringify(!localOrStudy), __TEMPO_API_URL__: JSON.stringify("") },
+  define: { __TEMPO_STUDY__: JSON.stringify(studyTarget), __TEMPO_DEMO__: JSON.stringify(!localOrStudy), __TEMPO_API_URL__: JSON.stringify("") },
   css: { postcss: { plugins: [tailwindcss()] } },
   plugins: [react(), ...(studyTarget ? [studyComposition()] : []), offlineShellAssets()],
   build: {
