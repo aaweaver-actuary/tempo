@@ -1,5 +1,5 @@
 // One host-wide owner for newly managed heavy work. Never stop another task's resources.
-import { mkdir, mkdtemp, readFile, writeFile, rm, rmdir, readdir } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile, rm, rmdir, rename, readdir } from 'node:fs/promises';
 import { readFileSync, writeFileSync, rmSync, mkdirSync, existsSync } from 'node:fs';
 import { tmpdir, setPriority } from 'node:os';
 import { join } from 'node:path';
@@ -49,6 +49,8 @@ export async function acquireDevelopmentAdmission({ directory = budgetDirectory(
   }
   return { release: async () => { await requireBudgetOwner(directory, token); await rm(lane, { recursive: true }); } };
 }
+
+async function rmdirIfEmpty(path) { try { await rmdir(path); } catch { /* Retain any evidence. */ } }
 
 const defaultDocker = async args => (await execute('docker', args, { maxBuffer: 1024 * 1024 })).stdout;
 
@@ -397,8 +399,9 @@ export async function reconcileDevelopmentBudget({ directory = budgetDirectory()
   if (ownerAlive(owner.pid)) throw new Error('Development owner is still running; do not reclaim its resources');
   const resourceDirectory = join(directory, 'resources');
   const files = await readdir(resourceDirectory);
-  const records = await Promise.all(files.map(async filename => ({filename,
-    ...JSON.parse(await readFile(join(resourceDirectory, filename), 'utf8'))})));
+  const snapshots = await Promise.all(files.map(async filename => ({filename,
+    contents: await readFile(join(resourceDirectory, filename), 'utf8')})));
+  const records = snapshots.map(({filename,contents}) => ({...JSON.parse(contents),filename}));
   const compose = records.filter(record => record.key?.startsWith('compose:'));
   const startups = records.filter(record => record.key?.startsWith('startup:'));
   if (compose.length || startups.length) {
@@ -416,19 +419,34 @@ export async function reconcileDevelopmentBudget({ directory = budgetDirectory()
     const laneFiles = await readdir(lane);
     if (laneFiles.length !== 1 || laneFiles[0] !== 'startup-owner.json')
       throw new Error('Compose startup admission is unverified');
-    const admission = JSON.parse(await readFile(join(lane, 'startup-owner.json'), 'utf8'));
+    const admissionText = await readFile(join(lane, 'startup-owner.json'), 'utf8');
+    const admission = JSON.parse(admissionText);
     if (admission.token !== token || admission.project !== project || admission.pid !== claim.pid)
       throw new Error('Compose startup ownership mismatch; retain admission and journal');
     for (const args of [ ['ps','-aq'], ['volume','ls','-q'], ['network','ls','-q'] ]) {
       if ((await docker([...args,'--filter',`label=com.docker.compose.project=${project}`])).trim())
         throw new Error('Compose project resources remain; retain admission and journal');
     }
-    await requireBudgetOwner(directory, token);
-    if (ownerAlive(owner.pid) || ownerAlive(claim.pid)) throw new Error('Compose startup owner is still running');
-    await rm(join(lane, 'startup-owner.json'));
-    await rmdir(lane);
-    await rm(join(resourceDirectory, startup.filename));
-    await rm(join(resourceDirectory, claim.filename));
+    const quarantine = await mkdtemp(`${directory}.reconciled-${token}-`);
+    try {
+      const currentOwner = await requireBudgetOwner(directory, token);
+      if (JSON.stringify(currentOwner) !== JSON.stringify(owner) || ownerAlive(owner.pid) || ownerAlive(claim.pid))
+        throw new Error('Compose startup owner changed or is still running');
+      if (JSON.stringify((await readdir(resourceDirectory)).sort()) !== JSON.stringify(files.sort()) ||
+          JSON.stringify(await readdir(lane)) !== JSON.stringify(laneFiles) ||
+          await readFile(join(lane, 'startup-owner.json'), 'utf8') !== admissionText)
+        throw new Error('Compose startup journal changed; retain admission and journal');
+      for (const snapshot of snapshots)
+        if (await readFile(join(resourceDirectory, snapshot.filename), 'utf8') !== snapshot.contents)
+          throw new Error('Compose startup journal changed; retain admission and journal');
+      // One atomic rename releases the active lock only after every proof; the
+      // complete journal remains available for audit if the process is interrupted.
+      await rename(directory, join(quarantine, 'journal'));
+    } catch (error) {
+      await rmdirIfEmpty(quarantine);
+      throw error;
+    }
+    return;
   } else {
     for (const resource of records) {
       if (resource.token !== token || !resource.key.startsWith('builder:'))

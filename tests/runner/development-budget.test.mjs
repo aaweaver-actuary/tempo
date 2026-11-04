@@ -1133,8 +1133,21 @@ test('orphaned compose startup requires matching dead owners and absent project 
     const laneOwner = join(directory, 'admission-lane', 'startup-owner.json');
     await writeFile(laneOwner, JSON.stringify({token:'foreign',project,pid}));
     await assert.rejects(reconcileDevelopmentBudget({directory,token:lease.token,docker,ownerAlive:()=>false}), /ownership mismatch/);
-    await writeFile(laneOwner, JSON.stringify({token:lease.token,project,pid}));
+    const originalLane = JSON.stringify({token:lease.token,project,pid});
+    await writeFile(laneOwner, originalLane);
+    const changedDuringCheck = async args => {
+      if (args[0] === 'network') await writeFile(laneOwner, JSON.stringify({token:'foreign',project,pid}));
+      return '';
+    };
+    await assert.rejects(reconcileDevelopmentBudget({directory,token:lease.token,docker:changedDuringCheck,ownerAlive:()=>false}), /journal changed/);
+    assert.equal((await readdir(join(directory,'resources'))).length, 2);
+    await writeFile(laneOwner, originalLane);
     await reconcileDevelopmentBudget({directory,token:lease.token,docker,ownerAlive:()=>false});
     await assert.rejects(lstat(directory), {code:'ENOENT'});
+    const archives = (await readdir(parent)).filter(name => name.startsWith(`lock.reconciled-${lease.token}-`));
+    assert.equal(archives.length, 1);
+    const archived = join(parent, archives[0]);
+    assert.equal((await readdir(join(archived,'journal','resources'))).length, 2);
+    assert.equal(await readFile(join(archived,'journal','admission-lane','startup-owner.json'),'utf8'), originalLane);
   } finally { await rm(parent,{recursive:true,force:true}); }
 });
