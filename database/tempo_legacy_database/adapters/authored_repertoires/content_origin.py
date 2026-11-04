@@ -22,6 +22,54 @@ def _encode(value):
     return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False).encode('utf-8')
 
 
+def _bounded_json_size(value, limit):
+    """Measure canonical JSON as escaped UTF-8, stopping before overflow.
+
+    In particular, do not encode an arbitrarily long source string merely to
+    discover that it exceeds the envelope limit.
+    """
+    remaining = limit
+    def take(count):
+        nonlocal remaining
+        remaining -= count
+        return remaining >= 0
+    def string(text):
+        if not take(2): return False
+        for char in text:
+            code = ord(char)
+            if char in ('"', '\\') or code in (8, 9, 10, 12, 13): size = 2
+            elif code < 32: size = 6
+            elif 0xD800 <= code <= 0xDFFF: raise UnicodeError('invalid surrogate')
+            elif code < 0x80: size = 1
+            elif code < 0x800: size = 2
+            elif code < 0x10000: size = 3
+            else: size = 4
+            if not take(size): return False
+        return True
+    def walk(obj):
+        if isinstance(obj, str): return string(obj)
+        if obj is None: return take(4)
+        if obj is True: return take(4)
+        if obj is False: return take(5)
+        if isinstance(obj, (int, float)):
+            return take(len(json.dumps(obj, allow_nan=False)))
+        if isinstance(obj, (list, tuple)):
+            if not take(2): return False
+            for index, item in enumerate(obj):
+                if index and not take(1): return False
+                if not walk(item): return False
+            return True
+        if isinstance(obj, dict):
+            if not take(2): return False
+            for index, key in enumerate(sorted(obj)):
+                if not isinstance(key, str): raise TypeError('non-string JSON key')
+                if index and not take(1): return False
+                if not string(key) or not take(1) or not walk(obj[key]): return False
+            return True
+        raise TypeError('unsupported JSON value')
+    return limit - remaining if walk(value) else None
+
+
 def _sha(value):
     return hashlib.sha256(value).hexdigest()
 
@@ -74,9 +122,13 @@ def prepare_content_origin(database, *, repertoire_id: str, content_workspace_id
     token = prepared.authored_token
     if json.loads(token.header_json)['workspace_id'] != actual['workspace_id']:
         return Hold('CORR_AUTHORITY_MISMATCH')
-    owner = database.execute_native("""SELECT o.mode,o.epoch,e.source_digest FROM public.study_position_owners o
+    owner = database.execute_native("""SELECT o.mode,
+        CASE WHEN octet_length(o.epoch)<=%s THEN o.epoch END AS epoch,
+        octet_length(o.epoch) AS epoch_bytes,e.source_digest FROM public.study_position_owners o
         JOIN public.study_position_epochs e ON e.repertoire_id=o.repertoire_id AND e.epoch=o.epoch
-        WHERE o.repertoire_id=%s""", (repertoire_id,)).fetchone()
+        WHERE o.repertoire_id=%s""", (_MAX_BYTES, repertoire_id)).fetchone()
+    if owner and owner['epoch_bytes'] > _MAX_BYTES:
+        return Hold('CORR_EXPORT_LIMIT')
     if not owner or owner['mode'] != 'active' or not owner['epoch'] or owner['source_digest'] != token.authored_digest:
         return Hold('CORR_OWNER_EPOCH_UNAVAILABLE')
     try:
@@ -89,27 +141,7 @@ def prepare_content_origin(database, *, repertoire_id: str, content_workspace_id
             return Hold('CORR_SOURCE_FACTS_MISMATCH')
         occurrences = []
         routes = []
-        seen = set()
-        for route in prepared.routes:
-            routes.append(dict(route_id=route.route_id, starting_fen=route.start_fen,
-                               moves=list(route.moves_uci), learner_color=route.learner_color,
-                               authority_start_ply=None, authority_scope='UNQUALIFIED'))
-            for item in route.decisions:
-                identity = (repertoire_id, route.route_id, item.ply)
-                if identity in seen or item.definition.key.repertoire_id != repertoire_id:
-                    return Hold('CORR_OCCURRENCE_MISMATCH')
-                seen.add(identity)
-                occurrences.append(dict(original_occurrence_id=dict(repertoire_id=repertoire_id, route_id=route.route_id, ply=item.ply),
-                    original_ply=item.ply, original_policy_version=item.definition.policy_version,
-                    variant=item.definition.key.variant, original_six_field_fen=item.fen,
-                    original_position_identity=item.definition.key.position, expected_uci=item.definition.expected_uci,
-                    original_source_digest=token.original_source_digest, authored_digest=token.authored_digest,
-                    owner_epoch=owner['epoch']))
-                if len(occurrences) > _MAX_OCCURRENCES:
-                    return Hold('CORR_EXPORT_LIMIT')
-        archive = _encode(facts)
-        inventory = _encode(occurrences)
-        payload = _encode(dict(contract_version='LEGACY_CONTENT_HISTORICAL_ORIGIN.v1',
+        envelope = dict(contract_version='LEGACY_CONTENT_HISTORICAL_ORIGIN.v1',
             evidence_scope='historical-repeatable-read', historical_snapshot_consistency='owner-verified',
             physical_currentness='UNQUALIFIED', physical_instance_qualification='UNQUALIFIED',
             activation_eligible=False, final_legacy_fence_receipt=None,
@@ -117,16 +149,51 @@ def prepare_content_origin(database, *, repertoire_id: str, content_workspace_id
             legacy_workspace_id=actual['workspace_id'], repertoire_id=repertoire_id, owner_epoch=owner['epoch'],
             original_token=token.as_dict(), original_token_codec='AuthoredSourceToken.as_dict.v1',
             source_snapshot_codec='legacy-published-source-facts-semantic.v1',
-            source_facts=facts, source_facts_sha256=_sha(archive),
+            source_facts=facts, source_facts_sha256='0' * 64,
             original_source_digest_codec='current_published_repertoire_snapshot.fingerprint.v1',
             source_observation=dict(database=scope['db'],schema=scope['schema'],schema_version=scope['version'],
                 snapshot=scope['snapshot'],backend_pid=scope['pid'],transaction_started_at=scope['started']),
-            routes=routes, occurrences=occurrences, occurrence_sha256=_sha(inventory),
+            routes=routes, occurrences=occurrences, occurrence_sha256='0' * 64,
             content_workspace_expectation=content_workspace_id, content_source_key_expectation=content_source_key,
             content_projection_status='BLOCKED_AUTHORITY_SCOPE', missing=['cross_repertoire_authority_anchor'],
-            content_source_bytes=None, content_source_sha256=None, base_manifest_bytes=None, base_manifest_sha256=None))
-        if len(payload) > _MAX_BYTES:
+            content_source_bytes=None, content_source_sha256=None, base_manifest_bytes=None, base_manifest_sha256=None)
+        output_bytes = _bounded_json_size(envelope, _MAX_BYTES)
+        if output_bytes is None:
             return Hold('CORR_EXPORT_LIMIT')
+        seen = set()
+        for route in prepared.routes:
+            route_record = dict(route_id=route.route_id, starting_fen=route.start_fen,
+                moves=route.moves_uci, learner_color=route.learner_color,
+                authority_start_ply=None, authority_scope='UNQUALIFIED')
+            size = _bounded_json_size(route_record, _MAX_BYTES - output_bytes - bool(routes))
+            if size is None:
+                return Hold('CORR_EXPORT_LIMIT')
+            output_bytes += size + bool(routes)
+            routes.append(route_record)
+            for item in route.decisions:
+                identity = (repertoire_id, route.route_id, item.ply)
+                if identity in seen or item.definition.key.repertoire_id != repertoire_id:
+                    return Hold('CORR_OCCURRENCE_MISMATCH')
+                if len(occurrences) >= _MAX_OCCURRENCES:
+                    return Hold('CORR_EXPORT_LIMIT')
+                record = dict(original_occurrence_id=dict(repertoire_id=repertoire_id, route_id=route.route_id, ply=item.ply),
+                    original_ply=item.ply, original_policy_version=item.definition.policy_version,
+                    variant=item.definition.key.variant, original_six_field_fen=item.fen,
+                    original_position_identity=item.definition.key.position, expected_uci=item.definition.expected_uci,
+                    original_source_digest=token.original_source_digest, authored_digest=token.authored_digest,
+                    owner_epoch=owner['epoch'])
+                size = _bounded_json_size(record, _MAX_BYTES - output_bytes - bool(occurrences))
+                if size is None:
+                    return Hold('CORR_EXPORT_LIMIT')
+                output_bytes += size + bool(occurrences)
+                seen.add(identity)
+                occurrences.append(record)
+        # The entire envelope, including repeated strings and digest fields, is
+        # already bounded before any of these full encodings are materialized.
+        envelope['source_facts_sha256'] = _sha(_encode(facts))
+        envelope['occurrence_sha256'] = _sha(_encode(occurrences))
+        payload = _encode(envelope)
+        assert len(payload) == output_bytes
         return PreparedContentOrigin(_SEAL, prepared, payload)
     except (ValueError, TypeError, KeyError, UnicodeError) as exc:
         return Hold('CORR_SOURCE_FACTS_UNSUPPORTED', str(exc))
