@@ -20,6 +20,8 @@ def lock_writable_source(database, source_id):
 import hashlib
 import json
 import uuid
+from functools import wraps
+import psycopg
 
 
 def _canonical(value):
@@ -34,10 +36,21 @@ def _scope(database, source_id):
     database.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", ('content:scope:' + source_id,))
 
 
+def _bounded_contention(method):
+    @wraps(method)
+    def wrapped(*args, **kwargs):
+        try:
+            return method(*args, **kwargs)
+        except (psycopg.errors.LockNotAvailable, psycopg.errors.QueryCanceled, psycopg.errors.DeadlockDetected) as error:
+            raise ContentError('content_final_contention', 'Content final generation transaction could not acquire bounded capacity') from error
+    return wrapped
+
+
 class FinalGenerationStore:
     def __init__(self, service):
         self.service = service
 
+    @_bounded_contention
     def reserve(self, command):
         request = {'transfer_id': command.transfer_id, 'source_id': command.source_id,
                    'publication_id': command.publication_id, 'generation': command.generation,
@@ -81,12 +94,14 @@ class FinalGenerationStore:
             db.execute('UPDATE content.tasks SET lease_token=NULL,lease_until=NULL WHERE source_id=%s AND lease_token IS NOT NULL', (command.source_id,))
             return db.execute("INSERT INTO content.final_generation_reservations(reservation_id,source_id,workspace_id,transfer_id,epoch,publication_id,generation,approved_operation_id,approved_draft_digest,request_digest,state) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'reserved') RETURNING *", (reservation_id, command.source_id, self.service.workspace_id, command.transfer_id, epoch, command.publication_id, command.generation, command.approved_operation_id, operation['draft_digest'], request_digest)).fetchone()
 
+    @_bounded_contention
     def recover(self, transfer_id, source_id):
         with self.service._transaction() as db:
             _scope(db, source_id)
             db.execute('SELECT id FROM content.sources WHERE id=%s FOR UPDATE', (source_id,)).fetchone()
             return db.execute('SELECT * FROM content.final_generation_reservations WHERE source_id=%s AND transfer_id=%s FOR UPDATE', (source_id, transfer_id)).fetchone()
 
+    @_bounded_contention
     def selected(self, reservation):
         """Read the selected immutable owner records on one repeatable-read snapshot."""
         with self.service._read_snapshot() as db:
@@ -101,6 +116,7 @@ class FinalGenerationStore:
             if not revision or revision['manifest_source_id'] != reservation['source_id'] or revision['manifest_digest'] != revision['digest']:
                 raise ContentError('content_final_inventory_mismatch', 'Revision manifest identity differs')
             payload = dict(revision['header'])
+            prepared_bytes = len(_canonical(payload))
             for kind in ('repertoires', 'policies', 'routes', 'memberships', 'exercises', 'bindings'):
                 rows = []
                 offset = 0
@@ -108,6 +124,9 @@ class FinalGenerationStore:
                     page = db.execute('SELECT ordinal,payload FROM content.input_items WHERE stage_id=%s AND kind=%s AND ordinal >= %s ORDER BY ordinal LIMIT 256', (revision['stage_id'], kind, offset)).fetchall()
                     if any(item['ordinal'] != offset + index for index, item in enumerate(page)):
                         raise ContentError('content_final_inventory_mismatch', 'Source item order has a gap')
+                    prepared_bytes += sum(len(_canonical(item['payload'])) for item in page)
+                    if prepared_bytes > 64*1024*1024:
+                        raise ContentError('content_final_capture_limit', 'Selected source exceeds the capture bound')
                     rows.extend(item['payload'] for item in page)
                     offset += len(page)
                     if len(page) < 256:
@@ -120,6 +139,9 @@ class FinalGenerationStore:
                 rows, offset = [], 0
                 while True:
                     page = db.execute('SELECT * FROM content.' + table + ' WHERE source_id=%s AND generation=%s ORDER BY ' + order + ' LIMIT 256 OFFSET %s', (reservation['source_id'], reservation['generation'], offset)).fetchall()
+                    prepared_bytes += sum(len(_canonical(item)) for item in page)
+                    if prepared_bytes > 64*1024*1024:
+                        raise ContentError('content_final_capture_limit', 'Selected generation exceeds the capture bound')
                     rows.extend(page)
                     offset += len(page)
                     if len(page) < 256:
@@ -139,6 +161,7 @@ class FinalGenerationStore:
                     'source': source, 'task': task, 'publication': publication, 'operation': operation,
                     'revision': revision, 'snapshot': payload, 'generation': generation}
 
+    @_bounded_contention
     def publish(self, reservation, blobs):
         with self.service._transaction() as db:
             _scope(db, reservation['source_id'])
@@ -161,6 +184,7 @@ class FinalGenerationStore:
             return blobs
 
 
+    @_bounded_contention
     def _read_capture(self, reservation):
         with self.service._transaction() as db:
             _scope(db, reservation['source_id'])
@@ -214,7 +238,12 @@ class FinalGenerationStore:
             return self._capture_result(row, handle, previous)
         if row['state'] != 'reserved':
             return FinalGenerationResult('BLOCK', 'content_final_immutable_conflict', row['reservation_id'], row['epoch'], handle, state=row['state'])
-        selected = self.selected(row)
+        try:
+            selected = self.selected(row)
+        except ContentError as error:
+            if error.code in ('content_final_inventory_mismatch','content_final_capture_limit'):
+                return self._hold(row,handle,error.code)
+            raise
         source, task, publication, operation, revision = (selected[k] for k in ('source', 'task', 'publication', 'operation', 'revision'))
         snapshot = SourceSnapshot.model_validate(selected['snapshot'])
         canonical_source_bytes = canonical_source(snapshot).encode()
@@ -301,6 +330,7 @@ class FinalGenerationStore:
             return self._capture_result(current, handle, original)
         return self._capture_result(row, handle, blobs)
 
+    @_bounded_contention
     def _hold(self, reservation, handle, code):
         from tempo_content.final_generation import FinalGenerationResult
         with self.service._transaction() as db:
@@ -317,6 +347,7 @@ class FinalGenerationStore:
         evidence = ContentFinalCaptureEvidence('C-FENCE.PRODUCER.v1',cert['database_authority_id'],row['workspace_id'],row['source_id'],row['transfer_id'],row['reservation_id'],row['epoch'],blobs['capture_id'],blobs['certificate_digest'],blobs['export_sha256'],blobs['inventory_sha256'],blobs['proof_sha256'],'captured',blobs['certificate'],blobs['export'],blobs['inventory'],blobs['proof'])
         return FinalGenerationResult('CONTENT_CAPTURE_VERIFIED','content_final_captured',row['reservation_id'],row['epoch'],handle,evidence,'captured')
 
+    @_bounded_contention
     def resolve(self, reservation, handle, intent, reader):
         from dataclasses import asdict
         from psycopg.types.json import Jsonb

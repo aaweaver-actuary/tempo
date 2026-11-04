@@ -181,19 +181,24 @@ class ContentService:
             admit_source=self._admit_source,notify=_hook)
 
     def _preflight_source(self,source_id,digest,expected_revision):
-        with self._transaction() as database:
-            from .bridge import source_scope_lock
-            source_scope_lock(database, source_id)
-            source = self._lock_source(database, source_id)
-            if source:
-                assert_source_writable(database, source_id)
-            current = database.execute('SELECT s.requested_revision,r.digest,t.generation,t.state FROM content.sources s LEFT JOIN content.source_revisions r ON r.source_id=s.id AND r.revision=s.requested_revision LEFT JOIN LATERAL (SELECT generation,state FROM content.tasks WHERE source_id=s.id AND revision=s.requested_revision ORDER BY generation DESC LIMIT 1) t ON true WHERE s.id=%s',(source_id,)).fetchone()
-            if current and (current['digest'] is None or current['generation'] is None):
-                raise ContentError('inventory_incomplete','Current source revision or task is missing')
-            if current and current['digest']==digest:
-                return current
-            if (current['requested_revision'] if current else 0)!=expected_revision:
-                raise ContentError('stale_source_revision','Expected source revision differs')
+        query = 'SELECT s.requested_revision,r.digest,t.generation,t.state FROM content.sources s LEFT JOIN content.source_revisions r ON r.source_id=s.id AND r.revision=s.requested_revision LEFT JOIN LATERAL (SELECT generation,state FROM content.tasks WHERE source_id=s.id AND revision=s.requested_revision ORDER BY generation DESC LIMIT 1) t ON true WHERE s.id=%s'
+        with self._read_snapshot() as database:
+            current = database.execute(query,(source_id,)).fetchone()
+        if current and (current['digest'] is None or current['generation'] is None):
+            raise ContentError('inventory_incomplete','Current source revision or task is missing')
+        if current and current['digest']==digest:
+            # Only the same-digest early return needs to linearize with a final
+            # reservation. Distinct input continues to stage before admission.
+            with self._transaction() as database:
+                from .bridge import source_scope_lock
+                source_scope_lock(database,source_id)
+                current = database.execute(query,(source_id,)).fetchone()
+                if current and (current['digest'] is None or current['generation'] is None):
+                    raise ContentError('inventory_incomplete','Current source revision or task is missing')
+                if current and current['digest']==digest:
+                    return current
+        if (current['requested_revision'] if current else 0)!=expected_revision:
+            raise ContentError('stale_source_revision','Expected source revision differs')
 
     def _stage_source_page(self,stage_id,kind,payload,offset):
         with self._transaction() as database:

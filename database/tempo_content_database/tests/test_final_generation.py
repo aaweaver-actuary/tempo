@@ -1,7 +1,7 @@
 """Native C-FENCE producer checks against the Content-owned disposable runner."""
 from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
-from threading import Barrier
+from threading import Barrier, Event
 import hashlib
 import json
 import os
@@ -58,6 +58,15 @@ def test_content_final_generation_cf01_cf07_supported_writer_and_restart():
         competing_manifest['provenance']['description'] = 'competing approval'
         competing = bridge.draft(source,competing_manifest,1)
         barrier = Barrier(2)
+        before_commit, release_commit = Event(), Event()
+        original_commit = service._commit_publication
+        def delayed_commit(*args, **kwargs):
+            before_commit.set()
+            assert release_commit.wait(15)
+            return original_commit(*args, **kwargs)
+        service._commit_publication = delayed_commit
+        with psycopg.connect(url) as db:
+            publication_provenance = db.execute('SELECT provenance FROM content.publications WHERE publication_id=%s AND generation=%s', (publication['publication_id'],publication['publication_generation'])).fetchone()[0]
         def reserve_race():
             barrier.wait(timeout=5)
             return producer.execute(command)
@@ -67,17 +76,26 @@ def test_content_final_generation_cf01_cf07_supported_writer_and_restart():
                 return bridge.approve(competing['id'],competing['digest'])
             except ContentError as error:
                 return error.code
-        with ThreadPoolExecutor(max_workers=2) as executor:
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            stale_publication = executor.submit(service.store_publication, publication, draft['source_id'], publication_provenance)
+            assert before_commit.wait(10)
             reserve_future = executor.submit(reserve_race)
             approve_future = executor.submit(approve_race)
             reserved = reserve_future.result(timeout=15)
             competing_result = approve_future.result(timeout=15)
-        if isinstance(competing_result,dict):
-            assert reserved.code == 'content_final_operation_unsettled'
-            assert bridge.cancel(competing_result['id'])['cancelled'] is True
-            reserved = producer.execute(command)
-        else:
-            assert competing_result == 'content_source_final_reserved'
+            if isinstance(competing_result,dict):
+                assert reserved.code == 'content_final_operation_unsettled'
+                assert bridge.cancel(competing_result['id'])['cancelled'] is True
+                reserved = producer.execute(command)
+            else:
+                assert competing_result == 'content_source_final_reserved'
+            try:
+                assert reserved.status == 'RESERVED'
+            finally:
+                release_commit.set()
+            with pytest.raises(ContentError,match='reservation'):
+                stale_publication.result(timeout=15)
+        service._commit_publication = original_commit
         assert (reserved.status,reserved.epoch) == ('RESERVED',1)
         with pytest.raises(TypeError): ContentFinalReservationHandle()
         assert producer.execute(ReserveFinal('transfer-a',draft['source_id'],publication['publication_id'],2,operation['id'])).code == 'content_final_request_conflict'
@@ -110,11 +128,16 @@ def test_content_final_generation_cf01_cf07_supported_writer_and_restart():
         assert held.state == 'recovery-held' and held.handle is not None
         assert recovered.execute(ResolveFinal(held.handle,'accept')).status == 'ACCEPTED'
         assert restarted.load_source(source,0)['replayed'] is True
+        # A trusted fake owner port can prove closure before any capture.
+        closer = make_final_generation(restarted, Reader(ProvenNoTargetWrite('test-target','closed-allocation','transfer-b','closed-no-write')))
+        to_abort = closer.execute(ReserveFinal('transfer-b',draft['source_id'],publication['publication_id'],publication['publication_generation'],operation['id']))
+        assert to_abort.status == 'RESERVED' and to_abort.epoch == 2
+        assert closer.execute(ResolveFinal(to_abort.handle,'abort')).status == 'ABORTED'
         # A new epoch holds the same source while the native selected-response
         # inventory is deliberately changed with the owner credential.
-        next_command = ReserveFinal('transfer-b',draft['source_id'],publication['publication_id'],publication['publication_generation'],operation['id'])
+        next_command = ReserveFinal('transfer-c',draft['source_id'],publication['publication_id'],publication['publication_generation'],operation['id'])
         second = recovered.execute(next_command)
-        assert second.status == 'RESERVED' and second.epoch == 2
+        assert second.status == 'RESERVED' and second.epoch == 3
         owner_url = os.environ['TEMPO_CONTENT_MIGRATION_DATABASE_URL']
         with psycopg.connect(owner_url) as db:
             db.execute("UPDATE content.responses SET exercise_key='changed' WHERE source_id=%s AND policy_key='one'",(draft['source_id'],))
