@@ -469,12 +469,6 @@ def fail_task(task_id: str, generation: int, lease_token: str, error: Exception)
         if terminal and row["kind"] in {"coverage_seed", "coverage_explorer"}:
             coverage_payload = json.loads(row["payload_json"])
             storage.fail_coverage_run(database, (sanitized_error, _iso(now), coverage_payload["run_id"]))
-        if terminal and row["kind"] == "game_analysis_publish":
-            publication_payload = json.loads(row["payload_json"])
-            game_id = publication_payload["game_id"]
-            storage.fail_analysis_publication(database, (sanitized_error, _iso(now), game_id))
-            storage.fail_analysis_job(database, (sanitized_error, _iso(now), game_id))
-            storage.fail_imported_game(database, (game_id,))
         if terminal and postgres_store.configured():
             from .prefix_transition_application import record_linked_failure
             record_linked_failure(database, task_id, generation, sanitized_error)

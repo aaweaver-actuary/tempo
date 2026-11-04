@@ -699,3 +699,39 @@ def test_restart_preserves_retired_leases_and_recovers_other_kinds(diagnostic_da
             else:
                 assert tuple(row) == ('queued', None)
                 assert events[-2:] == ['reclaimed', 'restarted']
+
+
+def test_retired_analysis_failure_does_not_touch_removed_engine_tables(diagnostic_database, monkeypatch):
+    statements = []
+    original = database.background_connection
+    @contextmanager
+    def traced_connection(**options):
+        with original(**options) as connection:
+            connection.set_trace_callback(statements.append)
+            yield connection
+    monkeypatch.setattr(database, 'background_connection', traced_connection)
+    retired = durable_tasks.enqueue_task('game_analysis_publish', 'old', {'game_id': 'old'}, max_attempts=1)
+    with database.connection() as connection:
+        connection.execute("UPDATE background_tasks SET state='leased',lease_token='old-lease',attempt_count=1 WHERE id=?", (retired['id'],))
+    result = durable_tasks.fail_task(retired['id'], retired['generation'], 'old-lease', RuntimeError('old delivery'))
+    assert result['state'] == 'failed'
+    assert any('background_tasks' in sql for sql in statements)
+    assert not any('game_analysis_jobs' in sql or 'game_analysis_publications' in sql
+                   or 'UPDATE imported_games' in sql for sql in statements)
+
+
+def test_local_game_ingest_and_replay_do_not_create_analysis_jobs(diagnostic_database):
+    from dataclasses import replace
+    from app.games.records import GameRecord
+    from app.services.game_sync import _persist_game_once
+    record = GameRecord(provider='lichess', username='test', provider_game_id='one',
+        played_at='2026-10-07T08:00:00+00:00', speed='rapid', rated=True,
+        color='white', result='1-0',
+        start_fen='rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+        uci_moves=['e2e4'], content_hash='first')
+    assert _persist_game_once(record) == 'inserted'
+    assert _persist_game_once(record) == 'duplicate'
+    assert _persist_game_once(replace(record, content_hash='changed')) == 'updated'
+    with database.read_connection() as connection:
+        assert connection.execute("SELECT content_hash FROM imported_games WHERE id='lichess:one'").fetchone()[0] == 'changed'
+        assert connection.execute('SELECT COUNT(*) FROM game_analysis_jobs').fetchone()[0] == 0
