@@ -47,3 +47,23 @@ def try_lock_discovery_queue_position(database: PostgresConnection, queue_date: 
         "SELECT 1 FROM queue_attempt_origins WHERE issued_as_head=1 AND queue_entry_id=ANY(%s::bigint[]) LIMIT 1",
         ([row[0] for row in targets],),
     ).fetchone())
+
+
+def mark_discovery_admission(database: PostgresConnection, entry_id: int, queue_date: str,
+                             card_id: str, source: str) -> bool:
+    """Update only the fenced target; never replace another admission's source."""
+    return database.execute_native(
+        "UPDATE daily_queue SET admission_kind='explicit',admission_source=%s "
+        "WHERE id=%s AND queue_date=%s AND card_id=%s AND status='queued' "
+        "AND (admission_source IS NULL OR admission_source=%s) "
+        "AND (admission_kind IS DISTINCT FROM 'explicit' OR admission_source=%s)",
+        (source, entry_id, queue_date, card_id, source, source),
+    ).rowcount == 1
+
+
+def discovery_queue_exceeds_bound(database: PostgresConnection, queue_date: str, maximum: int) -> bool:
+    """Bound receipt preparation before reading the queue into application memory."""
+    return bool(database.execute_native(
+        "SELECT 1 FROM daily_queue WHERE queue_date=%s AND status='queued' OFFSET %s LIMIT 1",
+        (queue_date, maximum),
+    ).fetchone())

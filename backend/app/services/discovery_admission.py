@@ -26,7 +26,7 @@ from .durable_tasks import (
     enqueue_task_in_transaction,
     lock_current_slice,
 )
-from app.study.queue_placement import ensure_discovery_card_queued
+from app.study.queue_placement import ensure_discovery_card_queued, DiscoveryQueueCapacityExceeded
 from tempo_learning_runtime.defense_decode import ENGINE_VERSION, NETWORK_VERSION, report_from_json, validate_analysis_report
 from .threat_validation import AnalysisRequest
 
@@ -604,6 +604,17 @@ def _materialize_admission_branch(task: dict) -> None:
             )
 
 
+def _checkpoint_recovery_hold(database, task, intent, reason):
+    from .redis_admission_gate import BackgroundAdmissionDeferred
+    if storage.mark_recovery_hold(database, intent["id"], reason, _now()) != 1:
+        raise BackgroundAdmissionDeferred("Discovery hold identity changed")
+    retry_at = ((datetime.now(timezone.utc) + timedelta(seconds=60)).isoformat()
+                if reason == "graph_authority_busy" else "9999-12-31T23:59:59+00:00")
+    if not advance_task_slice_in_transaction(database, task, next_phase="queued",
+            next_payload=task["payload"], eligible_at=retry_at):
+        raise BackgroundAdmissionDeferred("Discovery hold lease changed")
+
+
 def execute_admission_intent_slice(task: dict) -> bool:
     """Materialize one branch or wait for publication, then admit one card."""
     activity_gate.wait_for_foreground()
@@ -615,7 +626,8 @@ def execute_admission_intent_slice(task: dict) -> bool:
         if identity in {"stale", "held"}:
             return True
         if identity in {"invalid", "completed"}:
-            complete_task_slice_in_transaction(database, task)
+            if not complete_task_slice_in_transaction(database, task):
+                raise RuntimeError("Discovery task lease changed during completion")
             return False
     if not storage.configured():
         hold_reason = "sqlite_current_authority_unavailable"
@@ -648,16 +660,13 @@ def execute_admission_intent_slice(task: dict) -> bool:
         if identity in {"stale", "held"}:
             return True
         if identity in {"invalid", "completed"}:
-            complete_task_slice_in_transaction(database, task)
+            if not complete_task_slice_in_transaction(database, task):
+                raise RuntimeError("Discovery task lease changed during completion")
             return False
         if dict(current) != dict(intent):
             return True
         if hold_reason:
-            if storage.mark_recovery_hold(database, current["id"], hold_reason, _now()) != 1:
-                return True
-            retry_at = (datetime.now(timezone.utc) + timedelta(seconds=60)).isoformat()
-            advance_task_slice_in_transaction(database, task, next_phase="queued",
-                next_payload=task["payload"], eligible_at=retry_at)
+            _checkpoint_recovery_hold(database, task, current, hold_reason)
             return True
         if card_id_value and integrity_published and storage.configured():
             from .postgres_integrity import try_hold_current_integrity_certificate
@@ -670,9 +679,15 @@ def execute_admission_intent_slice(task: dict) -> bool:
             if (_admission_witness_matches(current, line, current_step, card)
                     and not card["archived"] and not card["pending_validation"] and not blocked):
                 today = date.today().isoformat()
-                storage.introduce_card(database, (today, card_id_value))
-                ensure_discovery_card_queued(database, card_id_value, today)
-                storage.mark_intent_queued(database, (card_id_value, _now(), current["id"]))
+                try:
+                    ensure_discovery_card_queued(database, card_id_value, today, f"discovery:{current['opportunity_id']}",
+                        on_admitted=lambda: storage.introduce_card(database, (today, card_id_value)))
+                except DiscoveryQueueCapacityExceeded:
+                    _checkpoint_recovery_hold(database, task, current, "queue_receipt_capacity_exceeded")
+                    return True
+                if storage.mark_intent_queued(database, (card_id_value, _now(), current["id"])) != 1:
+                    from .redis_admission_gate import BackgroundAdmissionDeferred
+                    raise BackgroundAdmissionDeferred("Discovery intent changed; retain original intent")
                 if storage.complete_opportunity_admission(database, (card_id_value, card_id_value, _now(), current["opportunity_id"], current["evidence_fingerprint"])) != 1:
                     from .redis_admission_gate import BackgroundAdmissionDeferred
                     raise BackgroundAdmissionDeferred("Discovery opportunity changed; retain original intent")

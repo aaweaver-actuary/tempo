@@ -253,9 +253,10 @@ def introduce_card(database, values):
 
 def mark_intent_queued(database, values):
     return database.execute(
-        """UPDATE discovery_admission_intents SET state='queued',card_id=?,updated_at=? WHERE id=?""",
+        """UPDATE discovery_admission_intents SET state='queued',card_id=?,last_error=NULL,updated_at=?
+           WHERE id=? AND state='preparing'""",
         values,
-    )
+    ).rowcount
 
 
 def complete_opportunity_admission(database, values):

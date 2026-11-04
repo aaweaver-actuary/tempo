@@ -236,10 +236,20 @@ def test_sqlite_discovery_recovery_records_specific_hold_without_changing_identi
         claimed = {**task, 'kind': 'discovery_admission', 'lease_token': 'lease', 'payload': {'intent_id': 'intent'}}
         assert discovery_admission.execute_admission_intent_slice(claimed) is True
         with database.read_connection() as db:
-            row = db.execute('SELECT id,generation,state,lease_token FROM background_tasks WHERE id=?', (task['id'],)).fetchone()
-            assert tuple(row) == (task['id'], task['generation'], 'queued', None)
+            row = db.execute('SELECT id,generation,state,lease_token,next_attempt_at FROM background_tasks WHERE id=?', (task['id'],)).fetchone()
+            assert tuple(row) == (task['id'], task['generation'], 'queued', None, '9999-12-31T23:59:59+00:00')
             intent = db.execute("SELECT state,last_error,line_id FROM discovery_admission_intents WHERE id='intent'").fetchone()
             assert tuple(intent) == ('preparing', 'sqlite_current_authority_unavailable', 'line')
             assert db.execute("SELECT 1 FROM repertoire_lines WHERE id='line'").fetchone() is None
+        # A lost checkpoint must roll back the diagnostic update as well.
+        with database.connection() as db:
+            db.execute("UPDATE background_tasks SET state='leased',lease_token='lease' WHERE id=?", (task['id'],))
+            db.execute("UPDATE discovery_admission_intents SET last_error='prior' WHERE id='intent'")
+        monkeypatch.setattr(discovery_admission, 'advance_task_slice_in_transaction', lambda *a, **k: False)
+        from app.services.redis_admission_gate import BackgroundAdmissionDeferred
+        with pytest.raises(BackgroundAdmissionDeferred):
+            discovery_admission.execute_admission_intent_slice(claimed)
+        with database.read_connection() as db:
+            assert db.execute("SELECT last_error FROM discovery_admission_intents WHERE id='intent'").fetchone()[0] == 'prior'
     finally:
         database_writer.stop()

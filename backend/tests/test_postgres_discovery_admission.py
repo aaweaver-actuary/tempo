@@ -119,7 +119,7 @@ def test_postgres_discovery_admission_completes_published_card_without_replay(mo
     monkeypatch.setattr(discovery_admission.storage, "deleted_card", lambda *_: None)
     monkeypatch.setattr(discovery_admission, "lock_current_slice", lambda *_args: lease_current)
     monkeypatch.setattr(discovery_admission, "ensure_discovery_card_queued",
-                        lambda _database, card_id, _day: queued_cards.append(card_id))
+                        lambda _database, card_id, _day, _source, **_kw: queued_cards.append(card_id))
     monkeypatch.setattr(discovery_admission, "complete_task_slice_in_transaction",
                         lambda _database, _task: completed.append(True) or True)
 
@@ -128,7 +128,8 @@ def test_postgres_discovery_admission_completes_published_card_without_replay(mo
     assert not discovery_admission.execute_admission_intent_slice(task)
     assert queued_cards == ["card-one"]
     assert completed == [True]
-    assert any("UPDATE discovery_admission_intents" in statement for statement, _ in writes)
+    intent_write = next(statement for statement, _ in writes if "UPDATE discovery_admission_intents" in statement)
+    assert "last_error=NULL" in intent_write
     opportunity_write = next((statement, parameters) for statement, parameters in writes
                              if "UPDATE repertoire_opportunities" in statement)
     assert "WHERE id=? AND evidence_fingerprint=?" in opportunity_write[0]
@@ -179,7 +180,7 @@ def test_recovery_stale_envelope_does_not_complete_but_missing_intent_does(monke
     monkeypatch.setattr(discovery_admission.storage, 'intent', lambda *a, **k: None)
     monkeypatch.setattr(discovery_admission.activity_gate, 'wait_for_foreground', lambda: None)
     monkeypatch.setattr(discovery_admission, '_materialize_admission_branch', lambda *_: (_ for _ in ()).throw(AssertionError('materialized')))
-    monkeypatch.setattr(discovery_admission, 'complete_task_slice_in_transaction', lambda _db, item: completions.append(item['id']))
+    monkeypatch.setattr(discovery_admission, 'complete_task_slice_in_transaction', lambda _db, item: completions.append(item['id']) or True)
     assert discovery_admission.execute_admission_intent_slice({**task, 'payload': {'intent_id': 'other'}}) is True
     assert completions == []
     assert discovery_admission.execute_admission_intent_slice(task) is False
@@ -258,6 +259,8 @@ def test_discovery_queue_appends_guided_ordinary_without_reordering(monkeypatch)
     from tempo_legacy_database.adapters import queue_position_lock
     calls = []
     monkeypatch.setattr(queue_position_lock, 'try_lock_discovery_queue_position', lambda *_: True)
+    monkeypatch.setattr(queue_position_lock, 'mark_discovery_admission', lambda *_: True)
+    monkeypatch.setattr(queue_position_lock, 'discovery_queue_exceeds_bound', lambda *_: False)
     monkeypatch.setattr(queue_placement, 'capture_daily_queue_order', lambda *_: 'receipt')
     monkeypatch.setattr(queue_placement.storage, 'queued_entry', lambda *_: None)
     monkeypatch.setattr(queue_placement.storage, 'next_cycle', lambda *_: 0)
@@ -265,5 +268,32 @@ def test_discovery_queue_appends_guided_ordinary_without_reordering(monkeypatch)
     monkeypatch.setattr(queue_placement.storage, 'classify_entry', lambda _db, entry: calls.append(('classify', entry)))
     monkeypatch.setattr(queue_placement.storage, 'set_position', lambda *_: (_ for _ in ()).throw(AssertionError('reordered')))
     monkeypatch.setattr(queue_placement, 'preserve_daily_queue_order', lambda _db, day, previous: calls.append(('receipt', day, previous)))
-    queue_placement.ensure_discovery_card_queued(object(), 'card', '2026-01-01')
-    assert calls == [('2026-01-01', 'card', 0, True, 'guided', None), ('classify', 9), ('receipt', '2026-01-01', 'receipt')]
+    queue_placement.ensure_discovery_card_queued(object(), 'card', '2026-01-01', 'discovery:op', on_admitted=lambda: calls.append(('introduced',)))
+    assert calls == [('2026-01-01', 'card', 0, True, 'guided', None), ('classify', 9), ('introduced',), ('receipt', '2026-01-01', 'receipt')]
+
+
+def test_discovery_queue_conflicting_provenance_fails_before_receipt(monkeypatch):
+    import pytest
+    from app.study import queue_placement
+    from app.services.redis_admission_gate import BackgroundAdmissionDeferred
+    from tempo_legacy_database.adapters import queue_position_lock
+    monkeypatch.setattr(queue_position_lock, 'try_lock_discovery_queue_position', lambda *_: True)
+    monkeypatch.setattr(queue_position_lock, 'mark_discovery_admission', lambda *_: False)
+    monkeypatch.setattr(queue_position_lock, 'discovery_queue_exceeds_bound', lambda *_: False)
+    monkeypatch.setattr(queue_placement, 'capture_daily_queue_order', lambda *_: 'receipt')
+    monkeypatch.setattr(queue_placement.storage, 'queued_entry', lambda *_: {'id': 9})
+    monkeypatch.setattr(queue_placement.storage, 'classify_entry', lambda *_: (_ for _ in ()).throw(AssertionError('classified')))
+    monkeypatch.setattr(queue_placement, 'preserve_daily_queue_order', lambda *_a, **_k: (_ for _ in ()).throw(AssertionError('receipt')))
+    with pytest.raises(BackgroundAdmissionDeferred):
+        queue_placement.ensure_discovery_card_queued(object(), 'card', '2026-01-01', 'discovery:op', on_admitted=lambda: None)
+
+
+def test_discovery_queue_capacity_declines_before_receipt_or_insertion(monkeypatch):
+    import pytest
+    from app.study import queue_placement
+    from tempo_legacy_database.adapters import queue_position_lock
+    monkeypatch.setattr(queue_position_lock, 'try_lock_discovery_queue_position', lambda *_: True)
+    monkeypatch.setattr(queue_position_lock, 'discovery_queue_exceeds_bound', lambda *_: True)
+    monkeypatch.setattr(queue_placement, 'capture_daily_queue_order', lambda *_: (_ for _ in ()).throw(AssertionError('unbounded read')))
+    with pytest.raises(queue_placement.DiscoveryQueueCapacityExceeded):
+        queue_placement.ensure_discovery_card_queued(object(), 'card', '2026-01-01', 'discovery:op', on_admitted=lambda: None)

@@ -58,12 +58,19 @@ def ensure_card_queued_after(
         preserve_daily_queue_order(database, day, previous=previous_order)
 
 
-def ensure_discovery_card_queued(database, card_id: str, queue_date: str) -> None:
+class DiscoveryQueueCapacityExceeded(RuntimeError):
+    """Receipt proof exceeds the bounded background admission budget."""
+
+
+def ensure_discovery_card_queued(database, card_id: str, queue_date: str, source: str, *, on_admitted) -> None:
     """Queue a retained admission without waiting on or moving issued work."""
-    from tempo_legacy_database.adapters.queue_position_lock import try_lock_discovery_queue_position
+    from tempo_legacy_database.adapters.queue_position_lock import (try_lock_discovery_queue_position,
+        mark_discovery_admission, discovery_queue_exceeds_bound)
     from app.services.redis_admission_gate import BackgroundAdmissionDeferred
     if not try_lock_discovery_queue_position(database, queue_date, card_id):
         raise BackgroundAdmissionDeferred("Study queue is busy or target already issued")
+    if discovery_queue_exceeds_bound(database, queue_date, 4095):
+        raise DiscoveryQueueCapacityExceeded("Discovery queue receipt exceeds bounded capacity")
     # The existing insert capability chooses MAX(position)+1 when protected.
     # Do not recalculate or rewrite any other entry's position.
     previous = capture_daily_queue_order(database, queue_date)
@@ -71,5 +78,8 @@ def ensure_discovery_card_queued(database, card_id: str, queue_date: str) -> Non
     if not entry:
         cycle = storage.next_cycle(database, queue_date, card_id)
         entry = storage.insert_entry(database, queue_date, card_id, cycle, True, "guided", None)
+    if not mark_discovery_admission(database, entry["id"], queue_date, card_id, source):
+        raise BackgroundAdmissionDeferred("Discovery admission provenance conflicts")
     storage.classify_entry(database, entry["id"])
+    on_admitted()
     preserve_daily_queue_order(database, queue_date, previous=previous)
