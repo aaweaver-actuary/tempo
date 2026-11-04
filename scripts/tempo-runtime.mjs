@@ -47,9 +47,16 @@ export function cut62WitnessName(guard) {
   return `cut62-${guard.attempt_id}.json`;
 }
 
+export function cut62MountDirectory(stateDirectory, witnessName) {
+  if (!isAbsolute(stateDirectory) || /[:,\n\r]/.test(stateDirectory))
+    throw new Error('Cannot mount private migration state safely; preserve the original guard.');
+  if (!/^cut62-[0-9a-f-]{36}\.json$/i.test(witnessName ?? '')) throw new Error('Invalid schema 62 witness identity.');
+  return join(stateDirectory, witnessName.replace(/\.json$/, ''));
+}
+
 export function requirePrivateCut62Witness(path) {
   let info;
-  try { info = lstatSync(path); } catch { throw new Error('Schema 62 original witness is missing; keep writers stopped.'); }
+  try { info = lstatSync(path); } catch { throw new Error('Schema 62 original witness is missing; keep writers stopped. Preserve the guard and verified backup for manual recovery; never recapture after an interrupted attempt.'); }
   if (!info.isFile() || (info.mode & 0o077)) throw new Error('Schema 62 witness is not a private regular file; keep writers stopped.');
 }
 
@@ -454,11 +461,10 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   }
 
   async function maintenance(script, args = [], options = {}) {
-    const { cut62Mount = false, ...runOptions } = options;
-    if (cut62Mount && (!isAbsolute(stateDirectory) || stateDirectory.includes(',')))
-      throw new Error('Cannot mount private migration state safely; preserve the original guard.');
+    const { cut62Mount = null, ...runOptions } = options;
+    const mountDirectory = cut62Mount ? cut62MountDirectory(stateDirectory, cut62Mount) : null;
     return compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T",
-      ...(cut62Mount ? ["--mount", `type=bind,src=${stateDirectory},dst=/cut62`] : []),
+      ...(mountDirectory ? ["--volume", `${mountDirectory}:/cut62`] : []),
       "migration", script, ...args], runOptions);
   }
 
@@ -572,6 +578,9 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     const witnessName = cut62WitnessName(migrationGuard);
     if (witnessName && migrationGuard.cut62_witness !== undefined && migrationGuard.cut62_witness !== witnessName)
       throw new Error('Schema 62 witness identity changed; preserve the original guard.');
+    // Persisting this pending identity before capture deliberately fences a crash.
+    // A missing witness requires manual recovery from the original guard/verified
+    // backup; retry must never infer that recapture is safe.
     if (witnessName && newGuard) migrationGuard.cut62_witness = witnessName;
     if (witnessName && !newGuard && migrationGuard.cut62_witness !== witnessName)
       throw new Error('Schema 62 original witness is missing from the guard; keep writers stopped.');
@@ -585,11 +594,19 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
       const directory = lstatSync(stateDirectory);
       if (!directory.isDirectory() || (directory.mode & 0o077))
         throw new Error('Schema 62 migration state must be a private directory; keep writers stopped.');
-      const witnessPath = join(stateDirectory, witnessName);
+      const witnessDirectory = cut62MountDirectory(stateDirectory, witnessName);
+      if (newGuard) mkdirSync(witnessDirectory, { mode: 0o700 });
+      let witnessDirectoryStat;
+      try { witnessDirectoryStat = lstatSync(witnessDirectory); } catch {
+        throw new Error('Schema 62 witness directory is missing; keep writers stopped.');
+      }
+      if (!witnessDirectoryStat.isDirectory() || (witnessDirectoryStat.mode & 0o077))
+        throw new Error('Schema 62 witness directory must be private; keep writers stopped.');
+      const witnessPath = join(witnessDirectory, witnessName);
       if (newGuard) {
         if (existsSync(witnessPath)) throw new Error('Schema 62 witness already exists; refusing to recapture.');
-        await maintenance("database/tooling/verify_postgres_cli_state.py", ["--cut62-capture", `/cut62/${witnessName}`], { cut62Mount: true });
-        const directoryFd = openSync(stateDirectory, "r");
+        await maintenance("database/tooling/verify_postgres_cli_state.py", ["--cut62-capture", `/cut62/${witnessName}`], { cut62Mount: witnessName });
+        const directoryFd = openSync(witnessDirectory, "r");
         try { fsyncSync(directoryFd); } finally { closeSync(directoryFd); }
       }
       requirePrivateCut62Witness(witnessPath);
@@ -597,7 +614,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     if (status.pending_versions.length) await maintenance("database/tooling/apply_postgres_migrations.py", [], { echo: true });
     try {
       if (witnessName) await maintenance("database/tooling/verify_postgres_cli_state.py",
-        ["--cut62-verify", `/cut62/${witnessName}`], { cut62Mount: true });
+        ["--cut62-verify", `/cut62/${witnessName}`], { cut62Mount: witnessName });
       else await maintenance("database/tooling/verify_postgres_cli_state.py", ["--expected", JSON.stringify(migrationGuard.study_invariants)]);
       originalHistoryVerified = true;
     } catch (error) {
