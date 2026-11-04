@@ -8,9 +8,6 @@
     "background-worker": {
       "memoryMiB": 448
     },
-    "defense-engine": {
-      "memoryMiB": 384
-    },
     "maia-worker": {
       "memoryMiB": 1024
     },
@@ -43,9 +40,6 @@
     },
     "background-scheduler": {
       "memoryMiB": 64
-    },
-    "defense-engine": {
-      "memoryMiB": 224
     },
     "maia-worker": {
       "memoryMiB": 512

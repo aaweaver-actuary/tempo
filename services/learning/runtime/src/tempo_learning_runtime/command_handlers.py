@@ -8,10 +8,8 @@ from . import gateway, queue_commands, study_attempt_commands
 from . import study_bootstrap, teaching_commands, opening_evidence as evidence, publication_bridge
 from .review_adapter import submit_legacy_review
 from .review_conflicts import ReviewConflict
-from .models import DefenseRecognitionRequest
 from .publications import activate, retire
 from .tactic_commands import submit_tactic_attempt
-from .defense import submit_defense_attempt, submit_defense_recognition
 
 
 def reconcile(database, payload):
@@ -51,17 +49,6 @@ def register_handlers():
         "cards.review": submit_legacy_review,
         "cards.review.reconcile": reconcile,
         "tactics.attempt.submit": submit_tactic_attempt,
-        "defense.attempt.submit": lambda db, p: submit_defense_attempt(
-            p["candidate_id"],
-            write_database=db,
-            **p["request"],
-            light_first_interval_days=storage.light_first_interval_days(db),
-        ),
-        "defense.recognition.submit": lambda db, p: submit_defense_recognition(
-            p["candidate_id"],
-            DefenseRecognitionRequest.model_validate(p["request"]),
-            write_database=db,
-        ),
         "opening_evidence.checkpoint": lambda db, p: evidence.persist_checkpoint(db, p),
         "endgames.attempt.create": save_endgame_attempt,
         "publication.activate": activate,

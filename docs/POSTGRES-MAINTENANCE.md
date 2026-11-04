@@ -45,8 +45,8 @@ verified, read-only SQLite snapshot.
 
 ```sh
 docker compose -f docker-compose.yml -f docker-compose.postgres-maintenance.yml build migration
-docker compose build api foreground-worker background-worker background-scheduler web defense-engine maia-worker
-docker compose stop web defense-engine maia-worker api foreground-worker background-worker background-scheduler
+docker compose build api foreground-worker background-worker background-scheduler web maia-worker
+docker compose stop web maia-worker api foreground-worker background-worker background-scheduler
 docker compose up -d postgres redis postgres-backup
 ```
 
@@ -80,7 +80,7 @@ then start workers before the API because readiness requires both queues:
 ```sh
 docker compose up -d foreground-worker background-worker background-scheduler api
 curl --silent --show-error --include --max-time 10 http://127.0.0.1:8000/api/health
-docker compose up -d web defense-engine maia-worker
+docker compose up -d web maia-worker
 docker compose ps -a
 ```
 

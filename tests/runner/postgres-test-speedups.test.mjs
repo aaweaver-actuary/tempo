@@ -476,7 +476,7 @@ test("repertoire limit recreation fixture survives backup then leaves unrelated 
   const context = {
     measureScenario: { poll() {}, wait: async () => {} },
     assert, compose: ['compose'], randomBytes: () => Buffer.from('fixture'),
-    workloadConsumers: ['background-worker','background-scheduler','defense-engine'],
+    workloadConsumers: ['background-worker','background-scheduler'],
     runPrefixApplicationProof: () => {},
     repertoireLimitRecreationPgn, limitRecreationRepertoireId: null,
     console: { log() {} },
@@ -792,7 +792,7 @@ test("nested timing write failures propagate and cleanup executes even when its 
 test("PostgreSQL command timings classify fixed operations without retaining arguments or credentials", () => {
   for (const [args, expected] of [
     [["compose", "build", "secret-canary"], { label: "image_build", category: "build" }],
-    [["compose", "stop", "defense-engine"], { label: "compose_shutdown", category: "restart" }],
+    [["compose", "stop", "maia-worker"], { label: "compose_shutdown", category: "restart" }],
     [["compose", "up", "--force-recreate"], { label: "compose_recreation", category: "startup" }],
     [["compose", "up", "--no-recreate", "--wait", "--wait-timeout", "180", "postgres"],
       { label: "postgres_ready", category: "readiness" }],
@@ -916,14 +916,14 @@ test("disposable PostgreSQL backup handles INT and TERM while waiting on its sle
   assert.equal(syntaxCheck.status, 0, syntaxCheck.stderr);
 });
 
-test("both PostgreSQL product definitions and the disposable definition enable init for both workers", () => {
+test("PostgreSQL compositions omit the retired defense engine and enable init for Maia", () => {
   for (const file of ["docker-compose.yml", "docker-compose.postgres.yml", "docker-compose.postgres.test.yml"]) {
     const source = readFileSync(join(root, file), "utf8");
-    for (const worker of ["defense-engine", "maia-worker"]) {
-      const service = source.match(new RegExp(`^  ${worker}:\\r?\\n([\\s\\S]*?)(?=^  \\S|^\\S)`, "m"))?.[1];
-      assert(service, `${file} must define ${worker}`);
-      assert.match(service, /^    init: true$/m, `${file}: ${worker} must forward shutdown signals`);
-    }
+    assert.doesNotMatch(source, /^  defense-engine:$/m);
+    const worker = "maia-worker";
+    const service = source.match(new RegExp(`^  ${worker}:\\r?\\n([\\s\\S]*?)(?=^  \\S|^\\S)`, "m"))?.[1];
+    assert(service, `${file} must define ${worker}`);
+    assert.match(service, /^    init: true$/m, `${file}: ${worker} must forward shutdown signals`);
   }
 });
 
@@ -931,13 +931,13 @@ test("real worker signal verification retains the existing stop boundary and rej
   for (const fault of [null, "forced_kill", "missing", "already_stopped", "no_init"]) {
     let stopped = false;
     let stops = 0;
-    const containers = ["defense-engine", "maia-worker"].map(service => ({
+    const containers = ["maia-worker"].map(service => ({
       Config: { Labels: { "com.docker.compose.service": service } }, HostConfig: { Init: fault !== "no_init" },
       State: { Running: true, ExitCode: 0 },
     }));
     const proof = stopApplicationsAndVerifyWorkerSignals({
       runtime: { stopApplications: async () => { stopped = true; stops += 1; } },
-      compose: async () => ({ stdout: fault === "missing" ? "engine\n" : "engine\nmaia\n" }),
+      compose: async () => ({ stdout: fault === "missing" ? "" : "maia\n" }),
       docker: async () => ({ stdout: JSON.stringify(containers.map(container => ({ ...container,
         State: { Running: !stopped && fault !== "already_stopped", ExitCode: stopped ? fault === "forced_kill" ? 137 : 143 : 0 },
       }))) }),
@@ -1013,7 +1013,7 @@ test("defensive pause native stage isolates consumers and preserves cleanup afte
 });
 
 test("background workload prevents scheduler claims and restores dispatch after failure", async () => {
-  const runningConsumers = new Set(["defense-engine", "background-worker", "background-scheduler"]);
+  const runningConsumers = new Set(["background-worker", "background-scheduler"]);
   const queuedFixture = { state: "queued" };
   const dispatchQueuedFixture = () => {
     if (runningConsumers.has("background-scheduler")) queuedFixture.state = "leased";
@@ -1034,7 +1034,7 @@ test("background workload prevents scheduler claims and restores dispatch after 
   }), error => error === measurementFailure);
   dispatchQueuedFixture();
   assert.equal(queuedFixture.state, "leased", "normal dispatch resumes after fixture cleanup");
-  assert.deepEqual([...runningConsumers].sort(), ["background-scheduler", "background-worker", "defense-engine", "maia-worker"]);
+  assert.deepEqual([...runningConsumers].sort(), ["background-scheduler", "background-worker", "maia-worker"]);
 });
 
 for (const failWorkload of [false, true]) {
@@ -1099,7 +1099,7 @@ test("pr102 background restoration recovers API health before starting dependent
   const events = [];
   await restoreBackgroundWorkloadConsumers({
     startConsumers: (services) => {
-      if (services.includes("defense-engine")) assert(apiHealthy, "Compose rejects an unhealthy API dependency");
+      if (services.includes("maia-worker")) assert(apiHealthy, "Compose rejects an unhealthy API dependency");
       for (const service of services) runningConsumers.add(service);
       events.push(services);
     },
@@ -1116,7 +1116,7 @@ test("pr102 background restoration recovers API health before starting dependent
     },
   });
   assert.deepEqual(events, [["background-worker", "background-scheduler"], "original readiness passed",
-    ["defense-engine", "maia-worker"], "verified all running"]);
+    ["maia-worker"], "verified all running"]);
   const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
   // The retired priority benchmark no longer adds a restoration call site.
   assert.equal(source.match(/restoreConsumers: \(\) => restoreBackgroundWorkloadConsumers\(/g)?.length, 3);
@@ -1142,7 +1142,7 @@ test("study_opening_server_restart_quiesces_all_database_clients_before_restart"
   assert(restartProof.includes("executeIsolatedBackgroundWorkload"),
     "The new database restart must use the existing stop/work/restore boundary");
   for (const client of ["api", "foreground-worker", "background-worker", "background-scheduler",
-    "defense-engine", "maia-worker"]) assert(restartProof.includes(`"${client}"`),
+    "maia-worker"]) assert(restartProof.includes(`"${client}"`),
     `${client} can retain a stale database connection or submit work during restart`);
   assert(restartProof.includes('"stop", ...postgresClients'));
   assert(restartProof.includes('"up", "--no-build", "-d", "--no-deps", ...postgresClients'));
@@ -1198,7 +1198,7 @@ test('study_priority_allocated_native_entry_preserves_sibling_imports_and_cgroup
 
 test('study_priority_restoration_captures_output_and_checks_every_owned_consumer',async()=>{
   const {verifyRestoredPostgresConsumers}=await import('../../database/tests/postgres-maintenance-proof.mjs');
-  const clients=['api','foreground-worker','background-worker','background-scheduler','defense-engine','maia-worker','web'];
+  const clients=['api','foreground-worker','background-worker','background-scheduler','maia-worker','web'];
   const execute=present=>(command,args,options)=>{
     assert.equal(command,'docker');assert.deepEqual(args,['compose','-p','owned','ps','--format','json']);
     return spawnSync(process.execPath,['-e',`for(const Service of ${JSON.stringify(present)})console.log(JSON.stringify({Service,State:'running'}));`],options);
@@ -1241,7 +1241,7 @@ test('study_priority_background_isolation_stops_maia_and_restores_it_after_api_r
   await restoreBackgroundWorkloadConsumers({startConsumers:services=>events.push(services),
     waitForReady:()=>events.push('api ready'),verifyConsumers:()=>events.push('all restored')});
   assert.deepEqual(events,[['background-worker','background-scheduler'],'api ready',
-    ['defense-engine','maia-worker'],'all restored']);
+    ['maia-worker'],'all restored']);
 });
 
 test('study_priority_profile_selection_cannot_understate_diagnostic_native_caps', async () => {

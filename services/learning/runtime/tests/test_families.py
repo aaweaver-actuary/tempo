@@ -1,22 +1,7 @@
-from dataclasses import asdict
 from datetime import datetime, timezone
 import json, uuid
 import chess, pytest
 from tempo_learning_database.connections import connection
-from tempo_learning_runtime.threat_detection import defensive_fork_geometry
-from tempo_learning_runtime.threat_models import (
-    ExerciseAnchor,
-    PositionContext,
-    ThreatSeed,
-    SourceLine,
-    ThreatPolicy,
-)
-from tempo_learning_runtime.threat_validation import (
-    AnalysisLine,
-    AnalysisReport,
-    EngineScore,
-    make_validation_plan,
-)
 from test_runtime import activate, bundle, head, review_payload, submit
 
 SPECIFICATIONS = [
@@ -172,125 +157,11 @@ def test_tactical_discovery_attempt_binding_and_clean_retry(case):
     assert case.query("SELECT COUNT(*) FROM learning.daily_queue")[0][0] == 1
 
 
-def defense_definition():
-    fen = "4k3/8/8/8/1n6/8/P7/R3K3 w Q - 0 1"
-    position = chess.Board(fen)
-    position.push_uci("a2a3")
-    geometry = defensive_fork_geometry(position, "b4c2")
-    seed = ThreatSeed(
-        "seed-a",
-        "game-a",
-        1,
-        SourceLine("engine", 1, ("b4c2", "e1d2", "c2a1", "d2c1")),
-        0,
-        geometry,
-    )
-    anchor = ExerciseAnchor("seed-a", 0, PositionContext(fen, (), "white"), "a2a3", 0)
-    policy = ThreatPolicy()
-    plan = make_validation_plan(
-        anchor, engine_version="sf19", network_version="nnue", policy=policy
-    )
-    best = AnalysisReport(
-        plan.best_request,
-        (
-            AnalysisLine("e1f2", ("e1f2", "e8e7"), EngineScore(cp=0), 14),
-            AnalysisLine("e1d2", ("e1d2", "e8e7"), EngineScore(cp=-20), 14),
-        ),
-        True,
-    )
-    historical = AnalysisReport(
-        plan.historical_request,
-        (
-            AnalysisLine(
-                "a2a3",
-                ("a2a3", "b4c2", "e1d2", "c2a1", "d2c1"),
-                EngineScore(cp=-180),
-                14,
-            ),
-        ),
-        True,
-    )
-    return {
-        "candidate_id": "candidate-a",
-        "finding_id": "finding-a",
-        "game_id": "game-a",
-        "exercise_revision": 1,
-        "anchor": asdict(anchor),
-        "seed": asdict(seed),
-        "policy": asdict(policy),
-        "reports": [asdict(best), asdict(historical)],
-        "refutation_uci": list(historical.lines[0].pv_uci),
-        "validation_state": "engine_supported",
-        "source_game_url": "https://example.invalid/game-a",
-    }
-
-
-def test_defense_uses_retained_rubric_and_durably_requests_uncovered_move(case):
-    definition = defense_definition()
-    payload = bundle(
-        [
-            (
-                "defense",
-                {
-                    "type": "move_line",
-                    "accepted_lines": [["e1f2"]],
-                    "mode": "single",
-                    "grading_policy": "reference",
-                },
-            )
-        ]
-    )
-    payload["publication"]["definitions"][0]["starting_fen"] = definition["anchor"][
-        "position"
-    ]["start_fen"]
-    payload["facts"][0]["defense"] = definition
-    activate(case, payload)
-    card = head(case)
-    assert case.client.get("/api/defense-exercises/candidate-a").status_code == 200
-    assert card["source_ref"] == "candidate-a", "The production Study adapter needs the accepted candidate identity"
-    recognition = {
-        "attempt_id": uuid.uuid4().hex,
-        "exercise_revision": 1,
-        "rubric_version": 3,
-        "queue_entry_id": card["queue_entry_id"],
-        "dangerous_piece_square": "b4",
-        "destination_square": "c2",
-        "king_square": "e1",
-        "major_square": "a1",
-        "consequence": "checking_fork",
-    }
-    recognized = case.client.post(
-        "/api/defense-exercises/candidate-a/recognition", json=recognition
-    )
-    assert recognized.status_code == 200, recognized.text
-    assert recognized.json()["recognition_correct"] is True
-    uncovered = {
-        "attempt_id": uuid.uuid4().hex,
-        "exercise_revision": 1,
-        "queue_entry_id": card["queue_entry_id"],
-        "move_uci": "a2a4",
-        "recognition_attempt_id": recognition["attempt_id"],
-    }
-    needed = case.client.post(
-        "/api/defense-exercises/candidate-a/attempt", json=uncovered
-    )
-    assert needed.status_code == 200, needed.text
-    assert needed.json()["status"] == "needs_analysis"
-    assert case.query("SELECT COUNT(*) FROM learning.analysis_obligations")[0][0] == 1
-    assert case.query("SELECT COUNT(*) FROM learning.reviews")[0][0] == 0
-    covered = {**uncovered, "attempt_id": uuid.uuid4().hex, "move_uci": "e1f2"}
-    result = case.client.post(
-        "/api/defense-exercises/candidate-a/attempt", json=covered
-    )
-    assert result.status_code == 200, result.text
-    assert result.json()["status"] == "correct"
-    assert case.query("SELECT COUNT(*) FROM learning.reviews")[0][0] == 1
-    assert (
-        case.client.post(
-            "/api/defense-exercises/candidate-a/attempt", json=covered
-        ).json()
-        == result.json()
-    )
+def test_retired_defense_routes_are_absent(case):
+    root = "/api/defense-exercises/candidate-a"
+    assert case.client.get(root).status_code == 404
+    for suffix in ("recognition", "attempt"):
+        assert case.client.post(f"{root}/{suffix}", json={}).status_code == 404
 
 
 def test_tactic_retained_progress_and_original_attempt_replay(case):

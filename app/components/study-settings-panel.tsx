@@ -3,12 +3,12 @@ import { LEARNING_URL, learningFetch, studyConnection, studySettingsSchema } fro
 import { executeStudyRequest, retainedStudyRequest } from "../lib/study-command-client";
 import type { z } from "zod";
 type Settings = z.infer<typeof studySettingsSchema>;
-const labels: Record<keyof Settings, string> = {
+const labels = {
   study_only_mode: "Pause optional background work",
   new_cards_per_day: "New opening cards per day", study_new_per_day: "New Study exercises per day",
-  tactics_new_per_day: "New tactics per day", include_defensive_cards_in_daily_stack: "Include defensive cards",
+  tactics_new_per_day: "New tactics per day",
   light_first_interval_days: "Light first interval in days",
-};
+} satisfies Partial<Record<keyof Settings, string>>;
 export default function StudySettingsPanel() {
   const [settings, setSettings] = useState<Settings>();
   const [error, setError] = useState("");
@@ -37,7 +37,7 @@ export default function StudySettingsPanel() {
         window.dispatchEvent(new Event("tempo:study-mode-changed"));
       } catch (error) { setError(String(error)); } finally { setSaving(false); }
     }}>
-      {(Object.keys(labels) as (keyof Settings)[]).map(field => <label key={field}>{labels[field]}
+      {(Object.keys(labels) as (keyof typeof labels)[]).map(field => <label key={field}>{labels[field]}
         {typeof settings[field] === "boolean" ? <input type="checkbox" disabled={saving} checked={Boolean(settings[field])}
           onChange={event => setSettings({ ...settings, [field]: event.target.checked })} />
           : <input type="number" required disabled={saving} min={field === "light_first_interval_days" ? 1 : 0}

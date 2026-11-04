@@ -7,7 +7,7 @@ import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { TempoProblem, verificationProblem } from "./tempo-guidance.mjs";
 
 export const productVolumes = Object.fromEntries(["tempo-postgres-data", "tempo-postgres-backups",
-  "tempo-redis-data", "tempo-engine-operations"].map(name => [name, { name, external: true }]));
+  "tempo-redis-data"].map(name => [name, { name, external: true }]));
 
 // Persistent data has exactly one owner and destination. Test aliases retain
 // the same ownership contract on their independently scoped disposable volumes.
@@ -15,7 +15,6 @@ const persistentMounts = {
   postgres: { source: "tempo-postgres-data", disposableSource: "postgres-test-data", destination: "/var/lib/postgresql" },
   "postgres-backup": { source: "tempo-postgres-backups", disposableSource: "postgres-test-backups", destination: "/backups" },
   redis: { source: "tempo-redis-data", disposableSource: "redis-test-data", destination: "/data" },
-  "defense-engine": { source: "tempo-engine-operations", disposableSource: "engine-test-operations", destination: "/state" },
 };
 
 export function schemaVersionFromSource(source) {
@@ -73,6 +72,8 @@ export function validateTarget(config, target) {
   if (JSON.stringify(portsFromConfig(config)) !== JSON.stringify(target.ports))
     throw new Error(`Compose ports differ from the registered Tempo target: configured ${JSON.stringify(portsFromConfig(config))}; registered ${JSON.stringify(target.ports)}. Correct the registered port mapping before maintenance.`);
   for (const [key, expected] of Object.entries(target.volumes)) {
+    if (!target.disposable && key === "tempo-engine-operations" &&
+        expected.name === key && expected.external === true && !config.volumes?.[key]) continue;
     const actual = config.volumes?.[key];
     if (!actual || actual.name !== expected.name || Boolean(actual.external) !== Boolean(expected.external))
       throw new Error(`Unexpected Tempo volume mapping: ${key}.`);
@@ -81,7 +82,9 @@ export function validateTarget(config, target) {
     .filter(volume => volume.type === "volume").map(volume => volume.source);
   if (mountedVolumes.some(key => !target.volumes[key])) throw new Error("Unregistered data volume in the Tempo target.");
   for (const [serviceName, service] of Object.entries(config.services)) {
-    const expected = persistentMounts[serviceName];
+    // Frozen pre-retirement releases may still describe the old external journal.
+    const expected = !target.disposable && serviceName === "defense-engine"
+      ? { source: "tempo-engine-operations", destination: "/state" } : persistentMounts[serviceName];
     const source = target.disposable ? expected?.disposableSource : expected?.source;
     const mounts = (service.volumes ?? []).filter(mount => mount.type === "volume");
     if (mounts.some(mount => !expected || mount.source !== source || mount.target !== expected.destination)
@@ -132,6 +135,8 @@ export function validateContainers(containers, target) {
       const workingDirectory = labels["com.docker.compose.project.working_dir"];
       if (workingDirectory && resolve(workingDirectory) !== resolve(target.root))
         throw new Error("Registered Compose project belongs to another checkout.");
+      if (labels["com.docker.compose.service"] === "defense-engine" && container.State?.Running)
+        throw new Error("Stop and remove the retired defense-engine container for this registered Tempo project before updating.");
       for (const mount of container.Mounts ?? []) {
         // Older backup containers inherit PostgreSQL's unused anonymous image
         // volume. It contains no cluster; new configurations use tmpfs here.
@@ -208,8 +213,12 @@ export function acquireTargetLock(directory) {
 }
 
 export function targetKey(target) {
+  const names = Object.values(target.volumes).map(volume => volume.name);
+  // Keep v1 production locks, migration guards and deployment receipts at their original address.
+  if (!target.disposable && target.project === "tempo" && names.length === 3 &&
+      Object.keys(productVolumes).every(name => names.includes(name))) names.push("tempo-engine-operations");
   return createHash("sha256").update(JSON.stringify([target.daemonId ?? target.context,
-    Object.values(target.volumes).map(volume => volume.name).sort()])).digest("hex").slice(0, 24);
+    names.sort()])).digest("hex").slice(0, 24);
 }
 
 const requiredVerificationJobs = ["plan", "frontend / verify", "backend / verify", "build / verify",

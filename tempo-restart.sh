@@ -32,16 +32,16 @@ if [ "$PYTHON_SCHEMA_VERSION" != "$DB_SCHEMA_VERSION" ]; then
 fi
 
 # 5. Build the Docker images for the services
-docker compose build api foreground-worker background-worker background-scheduler web defense-engine maia-worker
+docker compose build api foreground-worker background-worker background-scheduler web maia-worker
 
 # 6. Stop the old services before updating
-docker compose stop web defense-engine maia-worker api foreground-worker background-worker background-scheduler
+docker compose stop web maia-worker api foreground-worker background-worker background-scheduler
 
 # 7. Start workers and API services
 docker compose up -d --no-build --wait --wait-timeout 180 foreground-worker background-worker background-scheduler api
 
 # 8. Start the database and cache services
-docker compose up -d --no-build web defense-engine maia-worker postgres-backup
+docker compose up -d --no-build web maia-worker postgres-backup
 
 # 9. Verify that the services are running
 docker compose ps -a

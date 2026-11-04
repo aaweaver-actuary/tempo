@@ -269,8 +269,8 @@ fails closed on a dependency mismatch and directs you to `tempo start` first.
 Before the first verified deployment, a blocked update is an error.
 
 Persistent volumes have fixed owners and destinations: PostgreSQL data belongs
-to `postgres:/var/lib/postgresql`, backups to `postgres-backup:/backups`, Redis
-data to `redis:/data`, and engine operations to `defense-engine:/state`. Extra,
+to `postgres:/var/lib/postgresql`, backups to `postgres-backup:/backups`, and Redis
+data to `redis:/data`. Extra,
 swapped, relocated, and missing persistent mounts block maintenance. Secrets
 and temporary memory mounts are separate from persistent data.
 

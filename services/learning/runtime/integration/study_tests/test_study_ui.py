@@ -8,7 +8,7 @@ import hmac, json, os, subprocess, time, uuid
 import pytest
 from test_restart import server
 from test_runtime import activate, bundle
-from test_families import SPECIFICATIONS, defense_definition
+from test_families import SPECIFICATIONS
 from test_endgames import endgame_bundle
 
 
@@ -19,12 +19,6 @@ def publication_for(scenario):
         return bundle([("study_exercise", specification)])
     if scenario in ["tactic-review", "middlegame"]:
         return bundle([("tactic" if scenario == "tactic-review" else "middlegame", SPECIFICATIONS[0][0])])
-    if scenario.startswith("defense"):
-        definition = defense_definition()
-        payload = bundle([("defense", {**SPECIFICATIONS[0][0], "accepted_lines": [["e1f2"]]})])
-        payload["publication"]["definitions"][0]["starting_fen"] = definition["anchor"]["position"]["start_fen"]
-        payload["facts"][0]["defense"] = definition
-        return payload
     return endgame_bundle() if scenario.startswith("endgame") else bundle()
 
 
@@ -68,7 +62,7 @@ def study_assets(control=None, control_key=None):
         thread.join(timeout=5)
 
 
-@pytest.mark.parametrize("scenario", ["normal", "teaching", "guided-failure", "lost-response", "before-commit", "next-load", "two-tabs", "storage-denied", "origin-transition", "offline-shell", "tactic-review", "middlegame", "typed-move_line", "typed-square_set", "typed-knight_path", "typed-choice", "typed-explanation", "typed-explanation-loss", "defense", "defense-uncovered", "endgame-saved-line", "endgame-material-unavailable", "settings", "wrong-credential", "wrong-workspace", "disallowed-origin", "quota", "aborted-storage", "incompatible-storage", "tactics-discovery", "tactics-discovery-loss", "delayed-replacement", "authority-reconnect", "service-unavailable-browser-online", "multi-authority-resume", "registered-authority-recovery", "study-authoring-boundary", "bootstrap-body-interruption-browser-online"])
+@pytest.mark.parametrize("scenario", ["normal", "teaching", "guided-failure", "lost-response", "before-commit", "next-load", "two-tabs", "storage-denied", "origin-transition", "offline-shell", "tactic-review", "middlegame", "typed-move_line", "typed-square_set", "typed-knight_path", "typed-choice", "typed-explanation", "typed-explanation-loss", "endgame-saved-line", "endgame-material-unavailable", "settings", "wrong-credential", "wrong-workspace", "disallowed-origin", "quota", "aborted-storage", "incompatible-storage", "tactics-discovery", "tactics-discovery-loss", "delayed-replacement", "authority-reconnect", "service-unavailable-browser-online", "multi-authority-resume", "registered-authority-recovery", "study-authoring-boundary", "bootstrap-body-interruption-browser-online"])
 def test_production_study_learning_native(case, tmp_path, scenario):
     activate(case, publication_for(scenario))
     extra = {}
@@ -98,7 +92,7 @@ def test_production_study_learning_native(case, tmp_path, scenario):
         assert proof["complete"] is True
         assert not proof["unexpected_requests"]
     reviews = case.query("SELECT COUNT(*) FROM learning.reviews")[0][0]
-    assert reviews == (0 if scenario in ["storage-denied", "origin-transition", "defense-uncovered", "endgame-material-unavailable", "settings", "wrong-credential", "wrong-workspace", "disallowed-origin", "quota", "aborted-storage", "incompatible-storage", "tactics-discovery", "tactics-discovery-loss", "multi-authority-resume", "registered-authority-recovery", "study-authoring-boundary"] else 1)
+    assert reviews == (0 if scenario in ["storage-denied", "origin-transition", "endgame-material-unavailable", "settings", "wrong-credential", "wrong-workspace", "disallowed-origin", "quota", "aborted-storage", "incompatible-storage", "tactics-discovery", "tactics-discovery-loss", "multi-authority-resume", "registered-authority-recovery", "study-authoring-boundary"] else 1)
     if scenario in ["multi-authority-resume", "registered-authority-recovery"]:
         # The two browser authorities forward to one installed Learning database;
         # this proves origin isolation and real receipt recovery, not two DBs.
@@ -110,20 +104,16 @@ def test_production_study_learning_native(case, tmp_path, scenario):
         assert case.client.get("/api/study/settings").json()["tactics_new_per_day"] == 3
     if scenario == "teaching":
         assert case.query("SELECT COUNT(*) FROM learning.teaching_states")[0][0] == 1
-    if reviews and not scenario.startswith(("typed-", "defense")):
+    if reviews and not scenario.startswith("typed-"):
         assert case.query("SELECT COUNT(*) FROM learning.review_attempt_receipts")[0][0] == 1
     if scenario.startswith("typed-"):
         assert case.query("SELECT COUNT(*) FROM learning.study_attempts")[0][0] == 1
-    if scenario == "defense":
-        assert case.query("SELECT COUNT(*) FROM learning.defense_attempts")[0][0] == 1
     if scenario == "guided-failure":
         assert tuple(case.query("SELECT rating,guided FROM learning.reviews")[0]) == ("again", 1)
     if scenario.startswith("tactics-discovery"):
         assert case.query("SELECT COUNT(*) FROM learning.tactic_discovery_attempts")[0][0] == 1
     if scenario in ["settings", "authority-reconnect"]:
         assert case.client.get("/api/study/settings").json()["tactics_new_per_day"] == 3
-    if scenario == "defense-uncovered":
-        assert case.query("SELECT COUNT(*) FROM learning.analysis_obligations")[0][0] == 1
 
 
 @pytest.mark.parametrize("late", [False, True], ids=["producer-stopped-before-study", "late-after-issued-attempt"])

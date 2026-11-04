@@ -2373,18 +2373,15 @@ def test_postgres_game_sync_admission_preserves_provider_rate_limit(monkeypatch)
     assert error.value.status_code == 429
 
 
-def test_postgres_game_sync_publishes_one_game_and_followup_intents_atomically(monkeypatch):
+def test_postgres_game_sync_publishes_one_game_without_legacy_analysis_work():
     from app.games.records import GameRecord
     from app.services import postgres_game_sync
 
     statements = []
-    enqueued = []
 
     class RecordingConnection:
         def execute(self, statement, parameters=()):
             statements.append((statement, parameters))
-            if "SELECT derivation_version FROM game_derivation_jobs" in statement:
-                return SimpleNamespace(fetchone=lambda: {"derivation_version": 1})
             return SimpleNamespace(fetchone=lambda: None)
 
     database = RecordingConnection()
@@ -2396,21 +2393,14 @@ def test_postgres_game_sync_publishes_one_game_and_followup_intents_atomically(m
         start_fen="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
         uci_moves=["e2e4"], content_hash="hash-1",
     )
-    monkeypatch.setattr(postgres_game_sync, "enqueue_compact_postgres_task_in_transaction",
-                        lambda _database, kind, key, payload, *, priority:
-                        enqueued.append((kind, key, payload, priority)))
     assert postgres_game_sync.persist_game_record_in_transaction(database, record) == (
         "inserted", "lichess:game-1",
     )
     assert statements[0][0].startswith("SELECT pg_advisory_xact_lock")
     assert any("INSERT INTO imported_games" in statement for statement, _ in statements)
-    assert any("INSERT INTO game_analysis_jobs" in statement for statement, _ in statements)
-    assert any("INSERT INTO game_derivation_jobs" in statement for statement, _ in statements)
-    assert enqueued == [("game_derivation_positions", "lichess:game-1",
-                         {"game_id": "lichess:game-1", "derivation_version": 1,
-                          "cursor": 0}, 125)]
-    assert not any("daily_chess_snapshots" in statement or "daily_chess_insights" in statement
-                   for statement, _ in statements)
+    writes = [sql for sql, _ in statements if sql.startswith(("INSERT", "UPDATE", "DELETE"))]
+    assert len(writes) == 1
+    assert writes[0].startswith("INSERT INTO imported_games")
 
 
 def test_postgres_game_sync_record_waits_for_foreground_and_discards_stale_replay(monkeypatch):

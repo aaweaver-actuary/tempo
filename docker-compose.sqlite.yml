@@ -30,17 +30,6 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  defense-engine:
-    mem_limit: 384m
-    build:
-      context: .
-      dockerfile: Dockerfile.engine
-    environment:
-      TEMPO_API_URL: http://api:8000
-    depends_on:
-      - api
-    restart: unless-stopped
-
   analysis-worker:
     mem_limit: 640m
     build:

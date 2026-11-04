@@ -13,7 +13,7 @@ import { isTimingPublicationFailure } from "./test-scenario-timings.mjs";
 import { probeLifecycleRedis } from "../database/tooling/cli/probes.mjs";
 import { createBackupRestoreDatabase, createPostgresBackup, removeBackupRestoreDatabase, restorePostgresBackup } from "../database/tooling/cli/backup.mjs";
 
-export const applicationServices = ["web", "defense-engine", "maia-worker", "api",
+export const applicationServices = ["web", "maia-worker", "api",
   "foreground-worker", "background-worker", "background-scheduler"];
 
 function applicationIdentitiesMatch(running, target, services, images, hashes) {
@@ -204,7 +204,9 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     await config();
     containers = await inspectContainerInventory();
     validateContainers(containers, target);
+    // Old registrations retain their deployment key, but the retired journal is no longer a runtime dependency.
     for (const expected of Object.values(target.volumes)) {
+      if (expected.name === "tempo-engine-operations" && !target.disposable) continue;
       const result = await docker(["volume", "inspect", expected.name], { allowFailure: true });
       if (result.code !== 0) throw new Error(`Existing Tempo volume ${expected.name} is missing. It will not be replaced with empty data.`);
     }
@@ -580,7 +582,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     stage("starting_services");
     const workers = ["foreground-worker", "background-worker", "background-scheduler", "api"].filter(name => configuration.services[name]);
     await compose(["up", "-d", "--no-build", "--no-deps", ...(recreate ? ["--force-recreate"] : []), "--wait", "--wait-timeout", "180", ...workers], { echo: true });
-    const consumers = ["web", "defense-engine", "maia-worker", "postgres-backup"].filter(name => configuration.services[name]);
+    const consumers = ["web", "maia-worker", "postgres-backup"].filter(name => configuration.services[name]);
     await compose(["up", "-d", "--no-build", "--no-deps", ...(recreate ? ["--force-recreate"] : []), "--wait", "--wait-timeout", "180", ...consumers], { echo: true });
   }
 

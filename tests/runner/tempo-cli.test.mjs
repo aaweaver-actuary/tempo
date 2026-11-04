@@ -59,7 +59,6 @@ function fixture(t) {
       volumes: [{ type: "volume", source: "tempo-postgres-data", target: "/var/lib/postgresql" }] }, web: { ports: [{ host_ip: "127.0.0.1", published: "3000", target: 80 }] },
       redis: { volumes: [{ type: "volume", source: "tempo-redis-data", target: "/data" }] },
       "postgres-backup": { volumes: [{ type: "volume", source: "tempo-postgres-backups", target: "/backups" }], tmpfs: ["/var/lib/postgresql"] },
-      "defense-engine": { volumes: [{ type: "volume", source: "tempo-engine-operations", target: "/state" }] },
       api: { environment: { TEMPO_DATABASE_READ_URL: "postgresql://tempo_reader@postgres:5432/tempo" } } } };
   for (const name of ["foreground-worker", "background-worker"]) config.services[name] = {
     environment: { TEMPO_DATABASE_WRITE_URL: "postgresql://tempo_writer@postgres:5432/tempo",
@@ -70,6 +69,18 @@ function fixture(t) {
   config.services["background-scheduler"] = { environment: { TEMPO_REDIS_URL: "redis://redis:6379/0" } };
   return { path, secret, target, config };
 }
+
+test("retired engine journal is optional and retains the existing production deployment identity", t => {
+  const {target, config} = fixture(t);
+  const old = structuredClone(target);
+  old.volumes["tempo-engine-operations"] = {name: "tempo-engine-operations", external: true};
+  assert.equal(targetKey(old), targetKey(target));
+  assert.doesNotThrow(() => validateTarget(config, old));
+  const engine = { Config: { Labels: { "com.docker.compose.project": target.project, "com.docker.compose.service": "defense-engine" } },
+    State: { Running: true }, Mounts: [] };
+  assert.throws(() => validateContainers([engine], old), /retired defense-engine/);
+  assert.doesNotThrow(() => validateContainers([engine], {...old, project: "other"}));
+});
 
 test("restart compares numeric PostgreSQL schema versions rather than Python source or psql formatting", () => {
   assert.equal(schemaVersionFromSource('"""Schema."""\nPOSTGRES_SCHEMA_VERSION = 29\n'), 29);
@@ -895,7 +906,7 @@ for (const [name, alter] of [
   ["Redis cannot additionally mount registered PostgreSQL data", config => config.services.redis.volumes.push({ type: "volume", source: "tempo-postgres-data", target: "/data" })],
   ["Redis cannot move its registered data to another destination", config => { config.services.redis.volumes[0].target = "/wrong-data"; }],
   ["PostgreSQL cannot substitute registered Redis data", config => { config.services.postgres.volumes[0].source = "tempo-redis-data"; }],
-  ["defense engine cannot mount registered PostgreSQL data", config => config.services["defense-engine"].volumes.push({ type: "volume", source: "tempo-postgres-data", target: "/state" })],
+  ["web cannot mount registered PostgreSQL data", config => { config.services.web.volumes = [{ type: "volume", source: "tempo-postgres-data", target: "/state" }]; }],
   ["required backup persistent mount cannot be removed", config => { config.services["postgres-backup"].volumes = []; }],
 ]) test(`CLI volume ownership: ${name}`, t => {
   const { config, target } = fixture(t);

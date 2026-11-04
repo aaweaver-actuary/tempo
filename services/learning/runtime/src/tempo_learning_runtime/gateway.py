@@ -105,11 +105,7 @@ def execute(operation_id, *, background=False, publication=None):
         payload = json.loads(row["payload_json"])
         storage.begin_command_handler(database)
         try:
-            if row["command_name"] in (
-                "tactics.attempt.submit",
-                "defense.attempt.submit",
-                "defense.recognition.submit",
-            ):
+            if row["command_name"] == "tactics.attempt.submit":
                 attempt_id = payload["request"]["attempt_id"]
                 digest = request_digest(row["command_name"], payload)
                 storage.bind_logical_request(database, row["command_name"], attempt_id, digest)

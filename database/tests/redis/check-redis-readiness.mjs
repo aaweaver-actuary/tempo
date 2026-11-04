@@ -7,10 +7,10 @@ import { applicationServices, configurationFingerprint, createRuntime, executeLi
 
 // Observe the existing lifecycle stop boundary; do not add a restart or alter its deadline.
 export async function stopApplicationsAndVerifyWorkerSignals({ runtime, compose, docker }) {
-  const workerServices = ["defense-engine", "maia-worker"];
+  const workerServices = ["maia-worker"];
   const inspectWorkers = async () => {
     const ids = (await compose(["ps", "-aq", ...workerServices])).stdout.trim().split(/\s+/).filter(Boolean);
-    assert.equal(ids.length, workerServices.length, "Both real workers must exist at the lifecycle stop boundary");
+    assert.equal(ids.length, workerServices.length, "The real worker must exist at the lifecycle stop boundary");
     const containers = JSON.parse((await docker(["inspect", ...ids])).stdout);
     assert.deepEqual(containers.map(container => container.Config.Labels["com.docker.compose.service"]).sort(), [...workerServices].sort());
     return containers;

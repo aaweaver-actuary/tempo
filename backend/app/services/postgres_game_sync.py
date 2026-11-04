@@ -7,11 +7,9 @@ import json
 from typing import Any
 
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection, connection
-from tempo_legacy_database.adapters.games.mutations import restart_derivation
 from tempo_legacy_database.adapters.games.sync import records as storage
 from .durable_tasks import (
-    complete_task_slice_in_transaction, enqueue_compact_postgres_task_in_transaction,
-    lock_current_slice,
+    complete_task_slice_in_transaction, lock_current_slice,
 )
 from app.games.records import GameRecord
 from .postgres_game_sync_completion import finish_game_sync_if_complete
@@ -21,7 +19,7 @@ from .redis_admission_gate import background_lease
 def persist_game_record_in_transaction(
     database: PostgresConnection, record: GameRecord,
 ) -> tuple[str, str]:
-    """Publish one normalized game with its follow-up intents atomically."""
+    """Publish one normalized game to the local library."""
 
     identity = f"{record.provider}:{record.provider_game_id}"
     storage.lock_import_identity(database, identity)
@@ -37,7 +35,6 @@ def persist_game_record_in_transaction(
         record.game_url, record.opening_name, record.player_rating,
         record.opponent_rating, record.rating_change, record.time_control,
     )
-    now = datetime.now(timezone.utc).isoformat()
     if existing:
         game_id = existing["id"]
         changed = any(existing[column_name] != value for column_name, value in zip(
@@ -50,15 +47,6 @@ def persist_game_record_in_transaction(
         game_id = identity
         storage.insert_imported_game(database, game_id, record.provider, values)
         outcome = "inserted"
-    storage.ensure_analysis_job(database, game_id, now)
-    if outcome != "duplicate":
-        derivation = restart_derivation(database, game_id, now)
-        enqueue_compact_postgres_task_in_transaction(
-            database, "game_derivation_positions", game_id,
-            {"game_id": game_id, "derivation_version": derivation["derivation_version"],
-             "cursor": 0},
-            priority=125,
-        )
     return outcome, game_id
 
 

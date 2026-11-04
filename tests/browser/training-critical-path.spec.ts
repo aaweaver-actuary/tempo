@@ -388,7 +388,7 @@ test(`opening_evidence_remains_durable_during_prepared_progression: ${condition}
     await page.evaluate(() => (Reflect.get(window, "releaseMeasuredRecovery") as (() => void) | undefined)?.()).catch(() => undefined);
     await page.close();
     // Keep API/proxy addressing stable; no UI requests survive page.close().
-    const ownedConsumers = ["background-worker", "background-scheduler", "defense-engine", "maia-worker"];
+    const ownedConsumers = ["background-worker", "background-scheduler", "maia-worker"];
     docker("stop", ...ownedConsumers);
     try {
       const cleanup = JSON.parse(fixture("cleanup", JSON.stringify(displacedQueuePositions)));

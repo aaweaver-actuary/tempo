@@ -22,13 +22,13 @@ export function postgresTestStages({ mode, nativeChecks = [] }) {
   ];
 }
 
-export const backgroundWorkloadConsumers = ["defense-engine", "maia-worker", "background-worker", "background-scheduler"];
+export const backgroundWorkloadConsumers = ["maia-worker", "background-worker", "background-scheduler"];
 
 export async function restoreBackgroundWorkloadConsumers({ startConsumers, waitForReady, verifyConsumers }) {
   // Broker consumers restore API readiness before its dependent engine starts.
   await startConsumers(["background-worker", "background-scheduler"]);
   await waitForReady();
-  await startConsumers(["defense-engine", "maia-worker"]);
+  await startConsumers(["maia-worker"]);
   await verifyConsumers("running");
 }
 

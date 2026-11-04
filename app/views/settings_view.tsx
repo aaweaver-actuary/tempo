@@ -32,16 +32,12 @@ type SettingsValues = {
   new_cards_per_day: number;
   study_new_per_day: number;
   tactics_new_per_day: number;
-  defense_new_cards_per_day: number;
-  include_defensive_cards_in_daily_stack: boolean;
-  defensive_analysis_enabled: boolean;
   study_only_mode: boolean;
   discovery_window_days: 30 | 90;
   lichess_username: string;
   chesscom_username: string;
   auto_sync_minutes: number;
   engine_line_window_cp: number;
-  major_mistake_cp: number;
   light_first_interval_days: number;
   draw_hold_user_moves: number;
   coverage_reply_denominator: number;
@@ -83,16 +79,12 @@ export default function SettingsView({
     new_cards_per_day: 10,
     study_new_per_day: 2,
     tactics_new_per_day: 5,
-    defense_new_cards_per_day: 5,
-    include_defensive_cards_in_daily_stack: true,
-    defensive_analysis_enabled: false,
     study_only_mode: false,
     discovery_window_days: 90,
     lichess_username: "",
     chesscom_username: "",
     auto_sync_minutes: 3,
     engine_line_window_cp: 30,
-    major_mistake_cp: 100,
     light_first_interval_days: 7,
     draw_hold_user_moves: 20,
     coverage_reply_denominator: 100,
@@ -230,16 +222,12 @@ export default function SettingsView({
         new_cards_per_day: values.new_cards_per_day,
         study_new_per_day: values.study_new_per_day,
         tactics_new_per_day: values.tactics_new_per_day,
-        defense_new_cards_per_day: values.defense_new_cards_per_day,
-        include_defensive_cards_in_daily_stack: values.include_defensive_cards_in_daily_stack,
-        defensive_analysis_enabled: values.defensive_analysis_enabled,
         study_only_mode: values.study_only_mode,
         discovery_window_days: values.discovery_window_days,
         lichess_username: values.lichess_username.trim(),
         chesscom_username: values.chesscom_username.trim(),
         auto_sync_minutes: values.auto_sync_minutes,
         engine_line_window_cp: values.engine_line_window_cp,
-        major_mistake_cp: values.major_mistake_cp,
         light_first_interval_days: values.light_first_interval_days,
         draw_hold_user_moves: values.draw_hold_user_moves,
         coverage_reply_denominator: values.coverage_reply_denominator,
@@ -440,24 +428,6 @@ export default function SettingsView({
               checked={values.study_only_mode}
               onChange={(event) => update("study_only_mode", event.target.checked)} />
           </label>}
-          <label>
-            <span>Defensive analysis<small>Generate defensive exercises in the background. Turning off preserves your work; game analysis and repertoire recommendations continue.</small></span>
-            <TextInput disabled={!settingsLoaded} type="checkbox"
-              checked={values.defensive_analysis_enabled}
-              onChange={(event) => update("defensive_analysis_enabled", event.target.checked)} />
-          </label>
-          <label>
-            <span>New defensive exercises per day<small>Verified threats and false alarms; due reviews are additional</small></span>
-            <TextInput disabled={!settingsLoaded} type="number" min="0" max="100"
-              value={values.defense_new_cards_per_day}
-              onChange={(event) => update("defense_new_cards_per_day", Number(event.target.value))} />
-          </label>
-          <label>
-            <span>Defensive cards in daily stack<small>Turn off to hide them now; your cards and review history are kept</small></span>
-            <TextInput disabled={!settingsLoaded} type="checkbox"
-              checked={values.include_defensive_cards_in_daily_stack}
-              onChange={(event) => update("include_defensive_cards_in_daily_stack", event.target.checked)} />
-          </label>
           <label>
             <span>Discovery evidence window<small>How far back Tempo counts analyzed games</small></span>
             <SelectInput disabled={!settingsLoaded} value={values.discovery_window_days}
@@ -699,22 +669,6 @@ export default function SettingsView({
           {activeSection === "games" && <CurrentGameSyncSettings />}
           <p>Configured game sync uses the saved account, UTC date range, game speeds, rated policy, and repertoires selected above.</p>
           <p>Save provider settings with the “Save game sync settings” button above.</p>
-          <h3>Existing imported-game analysis</h3>
-          <p>Controls existing imported-game analysis and finding classification, not provider synchronization or Game Review admission. Save this threshold with the page’s “Save settings” button.</p>
-          <label>
-            <span>
-              Major mistake threshold<small>Centipawn loss</small>
-            </span>
-            <TextInput disabled={!settingsLoaded}
-              type="number"
-              min="25"
-              max="1000"
-              value={values.major_mistake_cp}
-              onChange={(event) =>
-                update("major_mistake_cp", Number(event.target.value))
-              }
-            />
-          </label>
         </section>
         <section id="settings-section-data" className="settings-card" role="tabpanel" aria-labelledby="settings-tab-data" hidden={activeSection !== "data"}>
           <h2>Data &amp; backup</h2>

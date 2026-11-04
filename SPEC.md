@@ -16,6 +16,10 @@ For product scope and delivery order, this document takes precedence over confli
 
 The first useful feature must not depend on completing an independent Learning replacement, full history migration, the code-reduction target, a services framework, or a general-purpose analysis system. Preserve current content and learning history in place; do not migrate them merely to add optional workflows. Small owning-component changes are allowed when needed for a feature.
 
+### November 4 retirement decision
+
+Retire Defense practice and generation, legacy per-position Game engine analysis, and the old repertoire-recommendation request pipeline. Delete the data owned by those features, including issued Defense exercises, reviews, pending grades, requests, and worker journals. Cancel their outstanding work. These data have no migration or replay requirement. Keep current PGN import, first-departure feedback, opening Study, captured Tactics, and their own data when cutting shared storage. Additional legacy-only functionality and its data are subject to removal. Any future engine project starts with a specific product requirement. [Retirement assignment #971](https://github.com/aaweaver-actuary/tempo/issues/971)
+
 ## 2. Required outcomes
 
 | ID | Outcome |
@@ -201,7 +205,7 @@ identity but target exact position state: an introduced own departure earns one
 Again, an unseen eligible target is introduced without a fabricated review, and
 urgent delivery settles only through legitimate compatible Study evidence.
 Opponent-first departures cause no recall failure. Legacy card-owned openings,
-Tactics, Endgames and Defense retain their existing policies. The R11 rules below
+Tactics and Endgames retain their existing policies. The R11 rules below
 continue to apply to legacy card-owned cohorts.
 
 ### C01 — Earn eligibility through clean recall

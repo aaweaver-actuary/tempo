@@ -117,9 +117,6 @@ def _execute_job(job: dict) -> None:
             request = GameSyncRequest.model_validate_json(job["request_json"])
             emit_progress("sync", job["id"], job["id"], "Fetching provider games")
             result = asyncio.run(sync_providers(request))
-            changed_game_ids = result.pop("_changed_game_ids", [])
-            for game_id in changed_game_ids:
-                _retry_sync_database_write(lambda game_id=game_id: enqueue_game_derivation(game_id, background=True))
             _retry_sync_database_write(lambda: _finish_job(job["id"], result))
             emit_progress("sync", job["id"], job["id"], f"Imported {result['imported']} games")
         except Exception as error:  # The job error must not overwrite provider state.
