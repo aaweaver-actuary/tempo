@@ -1,5 +1,4 @@
 """Concrete retained-history intake and independent Study pickup, no live data."""
-from datetime import datetime, timedelta
 from threading import Event
 
 from test_product_game_lapse_postgres import owned_postgres, case as current_card, NOW
@@ -8,10 +7,7 @@ from test_study_encounter_intake_boundary import (representative, state,
 
 
 def test_real_shape_history_intake_commits_pending_then_study_refresh_without_games(current_card, monkeypatch):
-    from app.contracts.product_v02.games import GameWindow
-    from app.games.feedback.history import HistorySelection
-    from app.product_composition.game_history import current_retained_history_receiver
-    from app.product_composition.game_history_current import POLICY_IDENTITY
+    from app.product_composition.encounters import receive_admitted_encounter
     from app.product_composition import feedback_maintenance
     from app.services import durable_tasks, queue_priority_promotion
     from tempo_legacy_database.adapters import postgres_store
@@ -20,19 +16,7 @@ def test_real_shape_history_intake_commits_pending_then_study_refresh_without_ga
 
     monkeypatch.setattr(postgres_store, "configured", lambda: True)
     stopped = Event()
-    receiver = current_retained_history_receiver(policy_identity=POLICY_IDENTITY,
-        operation_stopped=stopped.is_set, clock=lambda: NOW)
     with representative(current_card) as (capture, snapshot, command):
-        raw = capture["game"]
-        occurred = datetime.fromisoformat(raw["played_at"].replace("Z", "+00:00"))
-        with current_card.transaction() as database:
-            account, speed, rated = database.execute_native(
-                "SELECT username,speed,rated FROM imported_games WHERE id=%s", (command.key.game_id,)).fetchone()
-        selection = HistorySelection(workspace_id=command.key.workspace_id, provider=command.key.provider,
-            account=account, repertoire_ids=(command.decision.repertoire_id,),
-            window=GameWindow(start_at=(occurred-timedelta(days=1)).isoformat(),
-                              end_at=(occurred+timedelta(days=1)).isoformat(), precision="second"),
-            speeds=(speed,), rated=bool(rated), maximum_games=1)
         with current_card.transaction() as database:
             before = state(database, current_card)
             assert len(before["reviews"]) == len(before["receipts"]) == 9
@@ -44,14 +28,14 @@ def test_real_shape_history_intake_commits_pending_then_study_refresh_without_ga
             intake_guard.setattr(PostgresGameFeedbackStore, "promote_encounter", unavailable)
             with current_card.transaction() as database:
                 database.execute_native("SET LOCAL transaction_timeout='250ms'")
-                accepted = receiver.accept_retained_encounter(database, command, capture, snapshot,
-                    selection=selection)
+                accepted = receive_admitted_encounter(database, command=command, capture=capture, snapshot=snapshot,
+                    operation_stopped=stopped.is_set, clock=lambda: NOW)
                 assert accepted.observation_recorded and accepted.reason == "first_departure_qualification_pending"
                 assert accepted.progress is None
                 assert accepted.admission_status == "pending" and accepted.available_by is None
             with current_card.transaction() as database:
-                replay = receiver.accept_retained_encounter(database, command, capture, snapshot,
-                    selection=selection)
+                replay = receive_admitted_encounter(database, command=command, capture=capture, snapshot=snapshot,
+                    operation_stopped=stopped.is_set, clock=lambda: NOW)
                 assert replay.owner_receipt_id == accepted.owner_receipt_id and replay.outcome == "duplicate"
                 assert state(database, current_card) == before
                 assert PostgresGameFeedbackStore(database).get(command.key).status == "pending"

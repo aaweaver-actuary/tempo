@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import uuid
 import json
 
+import chess
 import httpx
 import pytest
 
@@ -176,7 +177,9 @@ def test_native_one_off_fetch_runs_with_collector_off_and_preserves_study(stores
     monkeypatch.setattr(redis_admission_gate, "background_lease", nullcontext)
     monkeypatch.setattr(study_priority, "control_snapshot", lambda: dict(available=True, active=False, study_only_mode=False))
     calls = []
-    pgn = '[Event "Synthetic"]\n[White "Learner"]\n[Black "Opponent"]\n[Result "1-0"]\n\n1. e4 e5 2. Nf3 Nc6 1-0\n'
+    starting_fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 12"
+    pgn = ('[Event "Synthetic"]\n[White "Learner"]\n[Black "Opponent"]\n[Result "1-0"]\n'
+        f'[SetUp "1"]\n[FEN "{starting_fen}"]\n\n12... e5 13. Nf3 Nc6 1-0\n')
     game_id = "refresh" + stores.workspace[-12:]
     def http(request):
         calls.append(str(request.url))
@@ -215,6 +218,46 @@ def test_native_one_off_fetch_runs_with_collector_off_and_preserves_study(stores
         assert saved.status == "complete", saved
     if scenario == "fresh-game-paginated":
         assert saved.pages_committed >= 2
+        from app.product_composition.game_review import CurrentGameReviewOperations, create_game_review
+        with stores.connections() as database:
+            assert database.execute("SELECT COUNT(*) FROM imported_games WHERE provider_game_id=%s", (game_id,)).fetchone()[0] == 1
+        # Reconstruct the serving reader from its production facade and store.
+        def reader():
+            operations = CurrentGameReviewOperations(workspace=stores.workspace)
+            operations._services[False] = create_game_review(workspace=stores.workspace,
+                connections=stores.connections, learning=None, clock=SystemClock())
+            return operations
+        operations = reader()
+        summaries = operations.recent_games().games
+        assert len(summaries) == 1 and summaries[0].provider == provider
+        canonical_id = summaries[0].game_id
+        source = PostgresReviewStore(stores.connections).source_detail(stores.workspace, provider, canonical_id)
+        assert source.original.source_game_id == game_id and source.original.pgn == pgn
+        detail = operations.game_detail(provider=provider, game_id=canonical_id, repertoire_id=None)
+        assert detail.starting_fen == starting_fen and detail.moves == ("e7e5", "g1f3", "b8c6")
+        board = chess.Board(detail.starting_fen)
+        for move in detail.moves:
+            board.push_uci(move)
+        assert board.fullmove_number == 14 and board.turn == chess.WHITE
+        assert reader().game_detail(provider=provider, game_id=canonical_id, repertoire_id=None) == detail
+        # A later refresh rediscovers the same provider record, not another game.
+        calls_before_duplicate = len(calls)
+        duplicate, _ = stores.request(config, "duplicate", NOW + 1)
+        with stores.transaction() as database:
+            duplicate_task = durable_tasks.enqueue_task_in_transaction(database, TASK_KIND, duplicate.spec.job_id,
+                dict(workspace_id=stores.workspace, job_id=duplicate.spec.job_id), priority=80)
+            database.execute_native("UPDATE background_tasks SET state='leased',lease_token='native-duplicate' WHERE id=%s", (duplicate_task["id"],))
+        duplicate_task = {**duplicate_task, "lease_token": "native-duplicate",
+            "payload": dict(workspace_id=stores.workspace, job_id=duplicate.spec.job_id)}
+        for _ in range(4):
+            if not game_refresh.execute_refresh_slice(duplicate_task):
+                break
+            with stores.transaction() as database:
+                database.execute_native("UPDATE background_tasks SET state='leased',lease_token='native-duplicate' WHERE id=%s", (duplicate_task["id"],))
+        assert stores.games.load_job(duplicate.spec.job_id).status == "complete"
+        assert len(calls) > calls_before_duplicate
+        assert reader().game_detail(provider=provider, game_id=canonical_id, repertoire_id=None) == detail
+        assert len(reader().recent_games().games) == 1
         with stores.connections() as database:
             assert database.execute("SELECT COUNT(*) FROM imported_games WHERE provider_game_id=%s", (game_id,)).fetchone()[0] == 1
     assert calls
