@@ -327,3 +327,29 @@ stop/cancellation/relaunch cases), its regular Vitest wrapper, and the read-only
 cases. The settled candidate additionally runs the real disposable PostgreSQL
 durability gate, lint, and typecheck. CI owns final complete candidate and merge
 validation; no runtime gate is run against the live study installation.
+
+## Inspecting a parked accepted discovery hold
+
+`tempo discovery-recovery status` lists at most 50 exact parked task, generation,
+intent and hold-reason tuples. When `truncated` is true, pass the returned
+`next_after` value as `--after-task-id` to inspect the next page. It uses the registered local Docker target and its
+recorded reader; it does not expose the old Jobs interface or inspect raw task
+payloads. An invalid or unavailable target is reported as unavailable.
+
+To request a retry of one listed hold, retain a unique operation ID and run:
+
+```text
+tempo discovery-recovery retry --task-id TASK --generation GENERATION --intent-id INTENT --hold-reason REASON --operation-id OPERATION
+```
+
+Repeat the exact same tuple and operation ID if the result is pending or
+unavailable. The foreground command rechecks the original task, generation,
+intent, hold reason, and current authority before it changes a checkpoint.
+A held or stale result is not a successful retry. This action can only requeue
+the existing accepted task; the retired discovery worker remains disabled, so
+requeueing is not evidence that recovery executed or completed.
+
+The local CLI requires access to the registered Mac account and Docker daemon,
+a verified frozen deployment, one matching API and foreground worker, and no
+unfinished maintenance. It adds no network operator endpoint. Do not invoke it
+against a live installation without the separate authorization for that action.

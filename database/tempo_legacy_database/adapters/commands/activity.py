@@ -55,3 +55,21 @@ def wake_parked_discovery(database, task_id, generation, intent_id, parked_at, n
         "AND state='queued' AND lease_token IS NULL AND next_attempt_at=%s",
         (now, now, task_id, generation, intent_id, parked_at),
     ).rowcount
+
+
+def parked_discovery_tuples(database, limit: int, after_task_id: str):
+    """Bounded operator projection; never return an intent or task payload."""
+    return database.execute_native(
+        """SELECT task.id AS task_id, task.generation, task.deduplication_key AS intent_id,
+                  intent.last_error AS hold_reason,
+                  CASE WHEN pg_input_is_valid(task.payload_json, 'jsonb')
+                    THEN task.payload_json::jsonb = jsonb_build_object('intent_id', task.deduplication_key)
+                    ELSE false END AS identity_valid
+           FROM background_tasks task JOIN discovery_admission_intents intent
+             ON intent.id=task.deduplication_key
+           WHERE task.kind='discovery_admission' AND task.state='queued'
+             AND task.lease_token IS NULL AND task.next_attempt_at=%s
+             AND intent.state='preparing' AND task.id > %s
+           ORDER BY task.id LIMIT %s""",
+        ('9999-12-31T23:59:59+00:00', after_task_id, limit),
+    ).fetchall()

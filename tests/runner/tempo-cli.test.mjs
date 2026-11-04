@@ -10,7 +10,7 @@ import { schemaVersionFromSource, validateTarget, validateContainers, deployment
   acquireTargetLock, assessMainVerification, assessCandidate, qualityEvidence, atomicJson, selectCandidate, productVolumes, targetKey,
   CommandExecutionError, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, sourceFingerprint, sourceMatchesFingerprint } from "../../scripts/tempo-deployment.mjs";
 import { assessMigrationRecovery, cut62WitnessName, cut62MountDirectory, requirePrivateCut62Witness, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
-import { parseArguments, ensureDocker } from "../../scripts/tempo-cli.mjs";
+import { parseArguments, ensureDocker, assertDiscoveryRecoveryServices } from "../../scripts/tempo-cli.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
 
@@ -2631,4 +2631,30 @@ test("schema 62 interrupted capture leaves original guard fenced and never rebas
   assert.equal(guard.state, "pending");
   await assert.rejects(runtime.migrate(), /witness is missing/);
   assert.equal(captures, 1);
+});
+
+test("discovery recovery accepts only the exact finite local operator grammar", () => {
+  assert.deepEqual(parseArguments(["discovery-recovery", "status"]).recoveryArgs, ["status"]);
+  const args = ["discovery-recovery", "retry", "--task-id", "task", "--generation", "3",
+    "--intent-id", "intent", "--hold-reason", "current_integrity_stale", "--operation-id", "original-op"];
+  assert.deepEqual(parseArguments(args).recoveryArgs, args.slice(1));
+  assert.throws(() => parseArguments([...args, "--unknown", "x"]), /exact tuple/);
+  assert.throws(() => parseArguments(args.map(value => value === "3" ? "0" : value)), /Invalid discovery/);
+  assert.throws(() => parseArguments(args.map(value => value === "original-op" ? "bad id" : value)), /Invalid discovery/);
+});
+
+
+test("discovery recovery requires exactly the recorded owned API and foreground worker", () => {
+  const revision = "a".repeat(40), target = { project: "tempo" };
+  const previous = { revision, images: { api: "api-image", "foreground-worker": "worker-image" } };
+  const container = (service, image) => ({ State: { Running: true }, Image: image,
+    Config: { Labels: { "com.docker.compose.project": "tempo", "com.docker.compose.service": service } } });
+  const active = [container("api", "api-image"), container("foreground-worker", "worker-image")];
+  const identity = { status: "consistent", detail: revision + " across services",
+    receipt: "matches immutable images and configuration of inspected running services" };
+  assert.doesNotThrow(() => assertDiscoveryRecoveryServices(target, previous, active, identity));
+  assert.throws(() => assertDiscoveryRecoveryServices(target, previous, [active[0]], identity), /foreground-worker/);
+  assert.throws(() => assertDiscoveryRecoveryServices(target, previous, [...active, active[0]], identity), /api/);
+  assert.throws(() => assertDiscoveryRecoveryServices(target, previous, active, {...identity, receipt: "unverified"}), /unverified/);
+  assert.throws(() => assertDiscoveryRecoveryServices(target, previous, active, {...identity, detail: "b".repeat(40) + " across services"}), /unverified/);
 });

@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 import { TempoProblem, classifyRedisReply, phaseGuidance, assertInstallationUnchanged, inspectMaintenance, installationFingerprint, recoveryAssessment, verificationProblem, waitForVerification } from "./tempo-guidance.mjs";
 import { acquireTargetLock, assessCandidate, assessMainVerification, atomicJson, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, portsFromConfig, productVolumes,
   redact, schemaVersionFromSource, selectCandidate, sourceFingerprint, sourceMatchesFingerprint, targetKey, validateTarget } from "./tempo-deployment.mjs";
@@ -19,6 +20,7 @@ const help = `Tempo — manage the existing Docker/PostgreSQL installation
   tempo logs [service]       Show recent logs (add --follow to follow)
   tempo backup               Create and restore-verify a backup of the deployed version
   tempo migrate              Run the checked update/migration workflow without opening a browser
+  tempo discovery-recovery status|retry  Inspect or retry an accepted parked hold
 
 Options: --plan previews maintenance without changing services or source;
          --verbose shows technical evidence and underlying command output;
@@ -30,6 +32,19 @@ Options: --plan previews maintenance without changing services or source;
 After a merge, the normal command is: tempo start
 `;
 
+export function assertDiscoveryRecoveryServices(target, previous, containers, identity) {
+  for (const service of ["api", "foreground-worker"]) {
+    const running = containers.filter(container => container.State?.Running &&
+      container.Config?.Labels?.["com.docker.compose.project"] === target.project &&
+      container.Config?.Labels?.["com.docker.compose.service"] === service);
+    if (running.length !== 1 || running[0].Image !== previous.images?.[service])
+      throw new Error(`The recorded ${service} image is not the sole active owned instance.`);
+  }
+  if (identity.status !== "consistent" || !identity.detail.startsWith(previous.revision + " ") ||
+      !identity.receipt.startsWith("matches immutable images"))
+    throw new Error("Running image revision or frozen configuration is unverified.");
+}
+
 export function parseArguments(argumentsList) {
   const args = [...argumentsList];
   let configPath = process.env.TEMPO_CLI_CONFIG ?? join(homedir(), ".config", "tempo", "config.json");
@@ -39,6 +54,27 @@ export function parseArguments(argumentsList) {
     configPath = resolve(args[configIndex + 1]); args.splice(configIndex, 2);
   }
   const command = args.shift() ?? "help";
+  if (command === "discovery-recovery") {
+    const action = args.shift();
+    if (action === "status" && (args.length === 0 ||
+        (args.length === 2 && args[0] === "--after-task-id" && /^[A-Za-z0-9_.:-]{1,128}$/.test(args[1]))))
+      return { command, configPath, flags: new Set(), services: [], recoveryArgs: ["status", ...args] };
+    const required = ["--task-id", "--generation", "--intent-id", "--hold-reason", "--operation-id"];
+    if (action !== "retry" || args.length !== required.length * 2) throw new Error("Use discovery-recovery status or retry with the exact tuple and operation ID.");
+    const values = new Map();
+    for (let i = 0; i < args.length; i += 2) {
+      if (!required.includes(args[i]) || values.has(args[i])) throw new Error("Invalid discovery recovery arguments.");
+      values.set(args[i], args[i + 1]);
+    }
+    const id = /^[A-Za-z0-9_.:-]{1,128}$/;
+    const generation = values.get("--generation");
+    if (!["--task-id", "--intent-id", "--operation-id"].every(key => id.test(values.get(key) ?? "")) ||
+        !/^[a-z0-9_]{1,96}$/.test(values.get("--hold-reason") ?? "") ||
+        !/^[1-9][0-9]*$/.test(generation ?? "") || !Number.isSafeInteger(Number(generation)))
+      throw new Error("Invalid discovery recovery identity, generation or hold reason.");
+    return { command, configPath, flags: new Set(), services: [],
+      recoveryArgs: ["retry", ...required.flatMap(key => [key, values.get(key)])] };
+  }
   const flags = new Set(args.filter(argument => argument.startsWith("--")));
   const services = args.filter(argument => !argument.startsWith("--"));
   if (["--help", "-h", "help"].includes(command)) return { command: "help", configPath, flags, services };
@@ -254,6 +290,7 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
     throw new Error("Registered target differs from TEMPO_UPGRADE_EXPECTED_PROJECT; maintenance was not started.");
   // Select the public Study boundary before loading any legacy runtime, schema,
   // backup or Redis adapter. A blocked v2 target never falls back to v1.
+  if (target?.version === 2 && options.command === "discovery-recovery") throw new Error("Discovery recovery is unsupported for this Study runtime.");
   if (target?.version === 2) {
     let installed = studyLauncher;
     if (installed === undefined) {
@@ -291,6 +328,45 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
     throw error;
   }
   secrets.push(...runtime.secretValues);
+
+  if (options.command === "discovery-recovery") {
+    const release = acquireTargetLock(stateDirectory);
+    try {
+      if (!isDeepStrictEqual(readJson(options.configPath), target) ||
+          !isDeepStrictEqual(readJson(join(stateDirectory, "deployment.json")), previous))
+        throw new Error("Registered target or deployment receipt changed before the operator lock.");
+      if (!previous?.verified_at || previous?.evidence?.commit !== previous?.revision ||
+          !/^[a-f0-9]{40}$/.test(previous?.revision ?? "") || !previous?.composeFiles?.length || !previous?.imageOverride)
+        throw new Error("A verified frozen deployment receipt is required.");
+      const inspected = await runtime.inspectTarget();
+      const maintenance = readJson(join(stateDirectory, "operation.json"));
+      if (maintenance && !["ready", "ready_previous_version", "backup_verified"].includes(maintenance.phase))
+        throw new Error("Maintenance is incomplete; inspect tempo doctor first.");
+      const recovery = assessMigrationRecovery({ guard: readJson(join(stateDirectory, "migration-guard.json")),
+        operation: maintenance, target, configuration: inspected.configuration });
+      if (recovery.status !== "clear") throw new Error("Database maintenance is incomplete; inspect tempo doctor first.");
+      assertDiscoveryRecoveryServices(target, previous, inspected.containers, await runtime.inspectRunningRevision());
+      const unavailable = () => {
+        const operationIndex = options.recoveryArgs.indexOf("--operation-id");
+        log(JSON.stringify({ status: options.recoveryArgs[0] === "retry" ? "pending_or_unavailable" : "unavailable",
+          ...(operationIndex >= 0 ? { operation_id: options.recoveryArgs[operationIndex + 1] } : {}), worker: "disabled" }));
+        return 2;
+      };
+      let output;
+      try {
+        output = await runtime.compose(["exec", "-T", "api", "python", "-B", "-m",
+          "app.product_composition.discovery_recovery_operator", ...options.recoveryArgs],
+          { allowFailure: true, timeout: 15_000 });
+      } catch { return unavailable(); }
+      if (Buffer.byteLength(output.stdout ?? "") > 16384) return unavailable();
+      let result;
+      try { result = JSON.parse(output.stdout); } catch { return unavailable(); }
+      if (!result || typeof result !== "object" || Array.isArray(result) || typeof result.status !== "string")
+        return unavailable();
+      log(JSON.stringify(result));
+      return output.code === 0 ? 0 : 2;
+    } finally { release(); }
+  }
 
   if (readOnly) {
     await reportDiagnostics({ options, target, run, runtime, previous, stateDirectory, secrets, log });
