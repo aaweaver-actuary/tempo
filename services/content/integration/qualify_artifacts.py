@@ -49,7 +49,7 @@ def qualify_consumers(workspace, destination, run, report, producer_python, prod
             target = context / component["root"] / name
             target.parent.mkdir(parents=True, exist_ok=True)
             if source.is_dir():
-                shutil.copytree(source, target, ignore=shutil.ignore_patterns(*IGNORED))
+                shutil.copytree(source, target, dirs_exist_ok=True, ignore=shutil.ignore_patterns(*IGNORED))
             else:
                 shutil.copy2(source, target)
         for path in (context / component["root"]).rglob("*"):
@@ -163,6 +163,8 @@ def main(arguments=None):
                             ignore=shutil.ignore_patterns("__pycache__"))
             shutil.copytree(build_service / "fixtures", test_inputs / "fixtures")
             shutil.copy2(build_service / "run_suite.py", test_inputs / "run_suite.py")
+            (test_inputs / "integration").mkdir()
+            shutil.copy2(build_service / "integration/qualify_artifacts.py", test_inputs / "integration/qualify_artifacts.py")
             shutil.rmtree(context)
             report["build_sources_removed"] = not context.exists()
             required_identities = None
@@ -180,6 +182,7 @@ def main(arguments=None):
                     shutil.copytree(test_inputs / DATABASE_UNIT_RELATIVE, consumer / DATABASE_UNIT_RELATIVE)
                     shutil.copytree(test_inputs / "fixtures", consumer / "fixtures")
                     shutil.copy2(test_inputs / "run_suite.py", consumer / "run_suite.py")
+                    shutil.copytree(test_inputs / "integration", consumer / "integration")
                     guard = ("import pathlib,sys,tempo_content; "
                              "assert 'site-packages' in pathlib.Path(tempo_content.__file__).parts; "
                              "assert not any(pathlib.Path(p).is_relative_to(" + repr(str(ROOT)) + ") for p in sys.path if p); "
