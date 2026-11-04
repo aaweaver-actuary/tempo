@@ -115,13 +115,21 @@ def test_historical_origin_native(monkeypatch):
             raw.execute('UPDATE legacy_content_historical_origins SET export_id=export_id')
         raw.rollback()
         # Tampering with detached prepared payload never authorizes publication.
-        object.__setattr__(historical, 'payload', historical.payload + b' ')
+        original_payload = historical.payload
+        object.__setattr__(historical, 'payload', original_payload + b' ')
         raw.execute('BEGIN')
         assert capture_content_origin(port, prepared=historical, export_id='tampered').reason == 'CORR_SOURCE_FACTS_MISMATCH'
         raw.rollback()
+        object.__setattr__(historical, 'payload', original_payload)
         changed = prepare()
         with psycopg.connect(dsn) as writer:
             writer.execute("UPDATE repertoire_lines SET moves_json='[\"d2d4\"]' WHERE id='route'")
+        raw.execute('BEGIN')
+        assert capture_content_origin(port, prepared=historical, export_id='one') == first
+        raw.commit()
+        raw.execute('BEGIN')
+        assert capture_content_origin(port, prepared=changed, export_id='one').reason == 'CORR_IMMUTABLE_CONFLICT'
+        raw.rollback()
         raw.execute('BEGIN')
         held = capture_content_origin(port, prepared=changed, export_id='stale')
         assert isinstance(held, Hold)

@@ -133,7 +133,11 @@ def prepare_content_origin(database, *, repertoire_id: str, content_workspace_id
 
 
 def capture_content_origin(database, *, prepared: PreparedContentOrigin, export_id: str) -> OriginalContentExportReceipt | Hold:
-    """Insert or replay one immutable historical receipt; never commit."""
+    """Insert or replay exact prepared bytes; never commit.
+
+    Replay includes the original snapshot observation, including timestamp. A
+    fresh preparation is not claimed to reproduce those bytes after recreation.
+    """
     if not isinstance(prepared, PreparedContentOrigin) or prepared._seal is not _SEAL:
         return Hold('CORR_OWNER_PREPARATION_REQUIRED')
     if not isinstance(export_id, str) or not export_id:
@@ -146,16 +150,26 @@ def capture_content_origin(database, *, prepared: PreparedContentOrigin, export_
     token = prepared.source.authored_token
     if payload.get('original_token') != token.as_dict():
         return Hold('CORR_SOURCE_FACTS_MISMATCH')
+    actual = database.execute_native('SELECT target_id,workspace_id FROM public.legacy_learning_identity WHERE id=1').fetchone()
+    if not actual or (actual['target_id'], actual['workspace_id']) != (payload['legacy_target_id'], payload['legacy_workspace_id']):
+        return Hold('CORR_AUTHORITY_MISMATCH')
+    digest = _sha(prepared.payload)
+    existing = database.execute_native("""SELECT receipt_id,payload,receipt_digest FROM public.legacy_content_historical_origins
+        WHERE legacy_target_id=%s AND legacy_workspace_id=%s AND export_id=%s""",
+        (actual['target_id'], actual['workspace_id'], export_id)).fetchone()
+    if existing is not None:
+        if bytes(existing['payload']) != prepared.payload or existing['receipt_digest'] != digest:
+            return Hold('CORR_IMMUTABLE_CONFLICT')
+        return OriginalContentExportReceipt(existing['receipt_id'], export_id, bytes(existing['payload']), digest)
     held = fence_position_source(database, prepared.source)
     if held is not None:
         return held
-    actual = database.execute_native('SELECT target_id,workspace_id FROM public.legacy_learning_identity WHERE id=1 FOR SHARE').fetchone()
-    if not actual or (actual['target_id'], actual['workspace_id']) != (payload['legacy_target_id'], payload['legacy_workspace_id']):
+    locked_actual = database.execute_native('SELECT target_id,workspace_id FROM public.legacy_learning_identity WHERE id=1 FOR SHARE').fetchone()
+    if not locked_actual or (locked_actual['target_id'], locked_actual['workspace_id']) != (actual['target_id'], actual['workspace_id']):
         return Hold('CORR_AUTHORITY_MISMATCH')
     owner = owner_mode(database, token.repertoire_id, token.authored_digest)
     if owner.disposition != 'position' or owner.epoch != payload['owner_epoch']:
         return Hold('CORR_OWNER_EPOCH_UNAVAILABLE')
-    digest = _sha(prepared.payload)
     receipt_id = str(uuid.uuid4())
     row = database.execute_native("""INSERT INTO public.legacy_content_historical_origins
         (legacy_target_id,legacy_workspace_id,export_id,receipt_id,payload,receipt_digest)
