@@ -1182,11 +1182,6 @@ def initialize() -> None:
             control_streak INTEGER NOT NULL DEFAULT 0 CHECK(control_streak>=0 AND control_streak<=2)
         )""",
         "INSERT OR IGNORE INTO background_scheduling_turns(lane) VALUES('durable')",
-        """CREATE TABLE IF NOT EXISTS engine_scheduling_state (
-            id INTEGER PRIMARY KEY CHECK(id=1),
-            automated_streak INTEGER NOT NULL DEFAULT 0 CHECK(automated_streak BETWEEN 0 AND 3)
-        )""",
-        "INSERT OR IGNORE INTO engine_scheduling_state(id) VALUES(1)",
         """CREATE TABLE IF NOT EXISTS analysis_refresh_requests (
             kind TEXT NOT NULL CHECK(kind IN ('repertoire_priority','repertoire_opportunity')),
             repertoire_id TEXT NOT NULL REFERENCES repertoires(id) ON DELETE CASCADE,
@@ -1449,12 +1444,6 @@ def initialize() -> None:
                 "position_fen": "TEXT",
             },
             "game_move_analysis_candidates": {"score_text": "TEXT"},
-            "game_analysis_jobs": {
-                "age_origin_estimated": "INTEGER NOT NULL DEFAULT 0",
-                "pending_since": "TEXT",
-                "generation_started_at": "TEXT",
-                "analysis_evidence_version": "INTEGER NOT NULL DEFAULT 1"
-            },
             "game_findings": {"source_opportunity_id": "TEXT", "review_after": "TEXT"},
             "repertoire_integrity_state": {
                 "scan_status": "TEXT NOT NULL DEFAULT 'idle'",
@@ -1633,31 +1622,6 @@ def initialize() -> None:
                 "INSERT INTO internal_migrations(name,applied_at) VALUES(?,?)",
                 (hybrid_depth_backfill_name, now),
             )
-        database.execute(
-            """INSERT OR IGNORE INTO game_analysis_jobs(game_id,analysis_version,status,updated_at)
-               SELECT id,1,CASE WHEN analysis_state IN ('ready','complete') THEN 'complete' WHEN analysis_state='failed' THEN 'failed' ELSE 'queued' END,?
-               FROM imported_games""",
-            (now,),
-        )
-        # Candidate lines are an additive evidence upgrade. Queue only completed
-        # analyses that predate it; cards, reviews, and sync metadata remain intact.
-        database.execute(
-            """UPDATE game_analysis_jobs
-               SET analysis_version=(
-                       SELECT MAX(1,g.analysis_version + 1)
-                       FROM imported_games g
-                       WHERE g.id=game_analysis_jobs.game_id
-                   ),
-                   status='queued',lease_id=NULL,lease_expires_at=NULL,
-                   analysis_evidence_version=2,updated_at=?
-               WHERE status='complete' AND analysis_evidence_version < 2
-                 AND EXISTS(
-                     SELECT 1 FROM imported_games g
-                     WHERE g.id=game_analysis_jobs.game_id
-                       AND g.analysis_evidence_version < 2
-                 )""",
-            (now,),
-        )
         database.execute("""INSERT OR IGNORE INTO repertoire_cards(repertoire_id,card_id,canonical_route_source)
                             SELECT card.repertoire_id,card.id,card.canonical_route_source FROM cards card
                             WHERE card.content_type='opening' AND card.archived=0
@@ -1737,7 +1701,6 @@ def initialize() -> None:
             'imported_games': ('played_at','speed','color','adaptive_excluded'),
             'game_position_occurrences': ('game_id','fen_key','move_uci'),
             'game_findings': ('status','evidence_json','card_id','analysis_version'),
-            'game_analysis_jobs': ('analysis_version','analysis_evidence_version'),
             'repertoire_decision_events': ('game_id','repertoire_id','card_id','outcome','played_at'),
         }
         for source_table, source_columns in refresh_source_columns.items():

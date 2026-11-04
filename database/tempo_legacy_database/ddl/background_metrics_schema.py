@@ -62,18 +62,5 @@ def install(database):
         age_origin_estimated=CASE WHEN OLD.state IN ('complete','superseded') THEN 0 ELSE OLD.age_origin_estimated END
         WHERE id=NEW.id;
     END""")
-    database.execute("UPDATE game_analysis_jobs SET pending_since=updated_at,generation_started_at=updated_at,age_origin_estimated=1 WHERE pending_since IS NULL")
-    database.execute("CREATE INDEX IF NOT EXISTS idx_game_analysis_diagnostic_state ON game_analysis_jobs(status,pending_since,game_id)")
-    database.execute("CREATE INDEX IF NOT EXISTS idx_threat_analysis_diagnostic_state ON threat_analysis_requests(state,created_at,id)")
-    database.execute("""CREATE TRIGGER IF NOT EXISTS game_age_insert AFTER INSERT ON game_analysis_jobs BEGIN
-        UPDATE game_analysis_jobs SET pending_since=COALESCE(NEW.pending_since,NEW.updated_at),
-        generation_started_at=COALESCE(NEW.generation_started_at,NEW.updated_at) WHERE game_id=NEW.game_id;
-    END""")
-    database.execute("""CREATE TRIGGER IF NOT EXISTS game_age_generation AFTER UPDATE OF analysis_version,analysis_evidence_version ON game_analysis_jobs
-        WHEN NEW.analysis_version<>OLD.analysis_version OR NEW.analysis_evidence_version<>OLD.analysis_evidence_version BEGIN
-        UPDATE game_analysis_jobs SET pending_since=CASE WHEN OLD.status='complete' THEN NEW.updated_at ELSE OLD.pending_since END,
-        generation_started_at=NEW.updated_at,
-        age_origin_estimated=CASE WHEN OLD.status='complete' THEN 0 ELSE OLD.age_origin_estimated END WHERE game_id=NEW.game_id;
-    END""")
     database.execute("CREATE TABLE IF NOT EXISTS background_diagnostic_metadata(id INTEGER PRIMARY KEY CHECK(id=1),collection_started_at TEXT NOT NULL)")
     database.execute("INSERT OR IGNORE INTO background_diagnostic_metadata(id,collection_started_at) VALUES(1,?)",(datetime.now(timezone.utc).isoformat(),))
