@@ -572,3 +572,59 @@ def test_status_distinguishes_priority_pending_actual_application_queue_and_fres
     public = _encode(dict(identity={}, selected_game=dict(progress=facts)))
     assert "existing-physical-card" not in public and "current-composite-b" not in public
     assert json.loads(public)["selected_game"]["progress"]["again"]["review_id"] == 41
+
+
+@pytest.mark.parametrize(('condition', 'stage', 'diagnostic'), [
+    ('no_capability', 'unknown', 'receipt_not_observed'),
+    ('read_error', 'unknown', 'owner_receipt_read_unavailable'),
+    ('missing', 'not_accepted', 'not_delivered'),
+    ('observation_error', 'accepted_pending', None),
+])
+def test_selected_game_owner_receipt_uses_current_owner_facts(stored, capsys, condition, stage, diagnostic):
+    from psycopg.types.json import Jsonb
+    case = scenario()
+    delivery = case.delivery.model_dump(mode='json')
+    delivery.update(operation_id=stored.identity, source_key=stored.identity)
+    assert delivery['state'] == 'acknowledged'
+    assert delivery['receipt']['admission_status'] == 'available'
+    with stored.database.admin() as database:
+        database.execute_native("INSERT INTO product_feedback_deliveries(operation_id,source_key,effect_key,command_kind,state,next_attempt_at,payload) VALUES(%s,%s,%s,'encounter','acknowledged',0,%s)",
+                                (stored.identity, stored.identity, stored.identity, Jsonb(delivery)))
+    calls = []
+    marker = 'synthetic-secret-owner-read-marker'
+    def encounter_status(key):
+        calls.append(key)
+        if condition == 'read_error':
+            raise RuntimeError(marker)
+        return case.receipt if condition == 'observation_error' else None
+    def observe(key):
+        calls.append(key)
+        raise RuntimeError(marker)
+    def forbidden(key):
+        pytest.fail('encounter must use the encounter owner')
+    if condition != 'no_capability':
+        stored.reader.receipts = lambda: SimpleNamespace(encounter_status=encounter_status,
+            effect_status=forbidden, feedback_observation=observe)
+    assert main(['--workspace', stored.identity, '--provider', 'chesscom', '--game-id', stored.identity],
+                reader_factory=lambda: stored.reader) == 0
+    output = capsys.readouterr().out
+    assert marker not in output
+    report = json.loads(output)
+    assert report['collection']['availability'] == 'available'
+    assert report['selected_game']['availability'] == 'available'
+    row, = report['selected_game']['receipts']
+    assert row['delivery_state'] == 'acknowledged'
+    assert row['diagnostic'] == diagnostic
+    assert row['progress']['stage'] == stage
+    assert row['progress']['queue']['availability'] == 'unavailable'
+    if condition == 'observation_error':
+        assert row['receipt']['admission_status'] == 'pending'
+        assert row['receipt']['status'] == case.receipt.status
+        assert row['progress']['owner_receipt_status'] == case.receipt.status
+        assert row['progress']['owner_reported_admission'] == 'pending'
+        expected = json.loads(_encode({'owner_receipt_id': case.receipt.owner_receipt_id}))['owner_receipt_id']
+        assert row['receipt']['owner_receipt_id'] == expected
+        assert calls == [case.command.key, case.command.key]
+    else:
+        assert row['receipt'] is None
+        assert calls == ([] if condition == 'no_capability' else [case.command.key])
