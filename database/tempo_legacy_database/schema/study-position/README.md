@@ -70,7 +70,9 @@ erDiagram
   identity, position scope, original payload/digest and observation/acceptance
   times; it can exist before terminal aggregate completion. Migration 060 rejects
   every update and deletion, including no-op updates, and truncation; inserts and
-  existing rows are unchanged. Privileged DDL remains outside this guard.
+  existing rows are unchanged. A single-table TRUNCATE can be rejected by the
+  existing grade foreign key before the trigger; a CASCADE form reaches the
+  reject-only trigger. Privileged DDL remains outside this guard.
 - `study_position_grades`: final accepted effect and digest, owner day, policy,
   source, complete before/after FSRS and versions. Human effects reference their
   exact first-response scope; Games Again instead keeps its original effect key
