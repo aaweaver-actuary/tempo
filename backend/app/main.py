@@ -34,7 +34,6 @@ from tempo_legacy_database.adapters.http_composition import (
     queue_maintenance as queue_maintenance_storage,
     queue_projection as queue_projection_storage,
     repertoires as repertoire_http_storage,
-    snapshots as snapshot_http_storage,
     line_authoring as line_authoring_storage,
     card_authoring as card_authoring_storage,
     practice as practice_storage,
@@ -298,10 +297,6 @@ async def prioritize_foreground_requests(request: Request, call_next):
         operation_retry_command = (len(path_parts) == 4
                                    and path_parts[:2] == ["api", "operations"]
                                    and path_parts[3] == "retry" and request.method == "POST")
-        legacy_evidence_command = request.method == "POST" and (
-            path_parts == ["api", "game-evidence", "legacy", "deliveries"]
-            or (len(path_parts) == 6 and path_parts[:4] == ["api", "game-evidence", "legacy", "cards"]
-                and path_parts[5] == "queue"))
         product_feedback_command = (request.method == "POST" and
             path_parts == ["api", "game-evidence", "product", "feedback"])
         product_review_command = (request.method == "POST" and request.url.path in {
@@ -334,7 +329,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
             repertoire_rename_command, repertoire_settings_command, repertoire_delete_command,
             browser_activity, tactic_attempt_command, tactic_capture_command,
             tactic_activation_command, settings_command, operation_retry_command,
-            legacy_evidence_command, product_feedback_command, product_review_command,
+            product_feedback_command, product_review_command,
             branch_add_command, branch_remove_command, pgn_import_command,
             analysis_paste_command, integrity_resolution_command, card_validation,
         )):
@@ -350,7 +345,6 @@ async def prioritize_foreground_requests(request: Request, call_next):
             "/api/health", "/api/system/foreground-active",
             "/api/system/foreground-requests-active", "/api/system/tasks",
         })
-        or (request.method == "POST" and request.url.path == "/api/game-evidence/legacy/deliveries")
         or (request.method == "POST" and request.url.path == "/api/game-evidence/product/feedback")
         or (request.method == "GET" and request.url.path == "/api/game-evidence/product/effect")
         or request.url.path.startswith("/api/product/game-review/")

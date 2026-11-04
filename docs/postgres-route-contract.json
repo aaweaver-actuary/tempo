@@ -337,27 +337,6 @@
   },
   {
     "method": "POST",
-    "path": "/api/game-evidence/legacy/deliveries",
-    "handler": "receive_legacy_evidence",
-    "treatment": "foreground_command",
-    "state": "staged"
-  },
-  {
-    "method": "POST",
-    "path": "/api/game-evidence/legacy/cards/{card_id}/queue",
-    "handler": "queue_legacy_evidence_card",
-    "treatment": "foreground_command",
-    "state": "staged"
-  },
-  {
-    "method": "GET",
-    "path": "/api/game-evidence/legacy/cards/{card_id}",
-    "handler": "legacy_card_status",
-    "treatment": "reader",
-    "state": "staged"
-  },
-  {
-    "method": "POST",
     "path": "/api/game-evidence/product/feedback",
     "handler": "receive_product_feedback",
     "treatment": "foreground_command",
