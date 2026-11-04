@@ -31,6 +31,13 @@ def finish_slice(database, task, payload, more):
             merged.update(after_card="", rescan_requested=False)
             more = True
         payload = merged
+    if task["kind"] == "daily_queue":
+        current = storage.leased_task_payload_for_update(database, task)
+        if current is None:
+            raise SupersededWork()
+        preserved = json.loads(current[0]).get("preserve_through_entry_id", 0)
+        if preserved:
+            payload["preserve_through_entry_id"] = max(payload.get("preserve_through_entry_id", 0), preserved)
     changed = storage.finish_task_slice(
         database, task, payload, "queued" if more else "complete", "queued" if more else "published",
     )
@@ -81,7 +88,8 @@ def apply_task(task):
             finish_slice(database, task, payload, more)
             return True
         day = payload["queue_date"]
-        if "_refresh_cycle_epoch" not in payload:
+        source_token = list(frozen_opening_order.activation(database, lock=True))
+        if "_refresh_cycle_epoch" not in payload or "_refresh_source_token" not in payload:
             # Old checkpoints cannot certify work performed before epoch tracking.
             if storage.leased_task_payload_for_update(database, task) is None:
                 raise SupersededWork()
@@ -89,6 +97,12 @@ def apply_task(task):
             epoch = int(epochs[0]) if epochs is not None else queue_refresh_epochs.request(database, day)
             payload.pop("after_order_key", None)
             payload["_refresh_cycle_epoch"] = epoch
+            payload["_refresh_source_token"] = source_token
+            finish_slice(database, task, payload, True)
+            return True
+        if payload["_refresh_source_token"] != source_token:
+            payload.pop("after_order_key", None)
+            payload["_refresh_source_token"] = source_token
             finish_slice(database, task, payload, True)
             return True
         cursor = payload.get("after_order_key", [])

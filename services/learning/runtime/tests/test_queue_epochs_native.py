@@ -70,3 +70,40 @@ def test_worker_restarts_stale_cycle_and_publishes_only_after_quiet(schema59, mo
             task = durable_tasks.claim(db)
         maintenance.apply_task(task)
     assert tuple(schema59.query('SELECT state,requested_refresh_epoch,published_refresh_epoch FROM queue_projections WHERE queue_date=%s', (day,))[0]) == ('ready', 2, 2)
+
+
+def test_daily_requests_preserve_live_cursor_lease_and_frozen_source_change_restarts(schema59, monkeypatch):
+    import json
+    from tempo_learning_runtime import durable_tasks, maintenance
+
+    day = '2026-11-06'
+    monkeypatch.setattr(maintenance, 'next_candidates', lambda *_: [])
+    with schema59.database.scope():
+        with schema59.database.transaction() as db:
+            original = durable_tasks.enqueue_task_in_transaction(db, 'daily_queue', 'current', {'queue_date': day})
+            epochs.request(db, day)
+        with schema59.database.transaction() as db:
+            task = durable_tasks.claim(db)
+        maintenance.apply_task(task)
+        with schema59.database.transaction() as db:
+            task = durable_tasks.claim(db)
+        for entry_id in (4, 7, 5):
+            with schema59.database.transaction() as db:
+                again = durable_tasks.enqueue_task_in_transaction(db, 'daily_queue', 'current', {'queue_date': day, 'preserve_through_entry_id': entry_id})
+                epochs.request(db, day)
+                assert (again['id'], again['generation'], again['lease_token']) == (original['id'], task['generation'], task['lease_token'])
+        maintenance.apply_task(task)
+        row = schema59.query("SELECT payload_json,state FROM background_tasks WHERE id=%s", (original['id'],))[0]
+        payload = json.loads(row[0])
+        assert row[1] == 'queued' and payload['preserve_through_entry_id'] == 7
+        assert payload['_refresh_cycle_epoch'] == 4
+        with schema59.database.transaction() as db:
+            db.execute_native('UPDATE frozen_opening_activation SET epoch=epoch+1 WHERE id=1')
+        with schema59.database.transaction() as db:
+            task = durable_tasks.claim(db)
+        maintenance.apply_task(task)
+        assert schema59.query('SELECT state FROM queue_projections WHERE queue_date=%s', (day,))[0][0] == 'refreshing'
+        with schema59.database.transaction() as db:
+            task = durable_tasks.claim(db)
+        maintenance.apply_task(task)
+    assert tuple(schema59.query('SELECT state,requested_refresh_epoch,published_refresh_epoch FROM queue_projections WHERE queue_date=%s', (day,))[0]) == ('ready', 4, 4)
