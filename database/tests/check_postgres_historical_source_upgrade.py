@@ -19,16 +19,15 @@ FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
 
 def apply_through(database, boundary):
+    exists = database.execute("SELECT to_regclass('public.tempo_schema_migrations')").fetchone()[0]
+    current = (database.execute("SELECT COALESCE(MAX(version), 0) FROM tempo_schema_migrations").fetchone()[0]
+               if exists else 0)
     for migration in sorted(MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql")):
         version = int(migration.name[:3])
         if version > boundary:
             break
-        if version > 1:
-            current = database.execute(
-                "SELECT COALESCE(MAX(version), 0) FROM tempo_schema_migrations"
-            ).fetchone()[0]
-            if version <= current:
-                continue
+        if version <= current:
+            continue
         database.execute(migration.read_text(), prepare=False)
         database.commit()
 
