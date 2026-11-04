@@ -135,7 +135,7 @@ def read_original_completion(tx: NativeEvidenceReadScope, *, attempt_id: str) ->
     plan = read_original_plan(tx, attempt_id=attempt_id)
     if isinstance(plan, EvidenceReadBlocked): return plan
     row = tx.execute_native('''SELECT a.*, rr.card_id AS receipt_card, rr.queue_entry_id AS receipt_queue,
-        rr.review_id AS receipt_review, rr.outcome, rr.guided, rr.result_json AS receipt_result_json,
+        rr.review_id AS receipt_review, rr.outcome, rr.guided, rr.scheduling_status, rr.result_json AS receipt_result_json,
         r.card_id AS review_card, r.source_kind, r.source_ref, r.invalidated_at
         FROM public.opening_evidence_attempts a
         LEFT JOIN public.review_attempt_receipts rr ON rr.attempt_id=a.attempt_id
@@ -155,12 +155,13 @@ def read_original_completion(tx: NativeEvidenceReadScope, *, attempt_id: str) ->
                 and type(terminal.get('final_sequence')) is int and terminal['final_sequence'] == row['contiguous_sequence']
                 and events['n'] == row['contiguous_sequence'] and (events['n'] == 0 or (events['first'] == 1 and events['last'] == events['n']))
                 and row['review_id'] is not None and row['review_id'] == row['receipt_review']
+                and row['scheduling_status'] == 'canonical'
                 and (row['card_id'], row['card_revision'], row['queue_entry_id'], row['repertoire_id']) ==
                     (plan.card_id, plan.card_revision, plan.queue_entry_id, plan.repertoire_id)
                 and (row['receipt_card'], row['receipt_queue'], row['review_card']) ==
                     (plan.card_id, plan.queue_entry_id, plan.card_id)
                 and row['source_kind'] in ('study', 'position_study')
-                and (row['source_kind'] != 'position_study' or row['source_ref'] == 'attempt:' + attempt_id)
+                and row['source_ref'] == 'attempt:' + attempt_id
                 and row['completed_at'] is not None and row['review_result_json'] is not None
                 and row['receipt_result_json'] is not None)
         except (TypeError, ValueError): valid = False
