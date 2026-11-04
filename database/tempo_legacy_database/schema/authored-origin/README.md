@@ -10,6 +10,10 @@ not serialize the archive; retention is explicitly opt-in.
 ```mermaid
 flowchart LR
   reader["Owner RO/RR snapshot"] --> prepared["Sealed historical source facts and occurrences"]
+  reader --> catalogue["Complete bounded native catalogue"]
+  prepared --> scope["Same-snapshot ordered-prefix scope observer"]
+  catalogue --> scope
+  scope --> map["Total historical anchor classifications; no publication"]
   prepared --> writer["Borrowed writer: authored and epoch fences"]
   writer --> receipts["Immutable historical origin receipt"]
   retry["Exact prepared-byte retry"] -->|before new currentness checks| receipts
@@ -33,3 +37,18 @@ An exact accepted retry returns the original receipt even if authored state
 subsequently changes; a new insertion must still pass its actual owner fences.
 No scheduling, grade, queue, current correspondence or installed authority is
 created. Full legacy physical fencing and Content approval binding remain gates.
+
+The read-only `authored_repertoires.authority_scope` observer pairs ONLY that
+same transaction's sealed prepared origin with the complete non-internal native
+repertoire/line family. Its existing ordered-prefix rule classifies every
+original occurrence as before-anchor, ambiguous or qualified-in-snapshot; root0
+is allowed only when actually unique. Raw authored scope is not the union of
+active Learning memberships: archived cards and retired target publications do
+not silently remove source competitors. No retirement, publication, persistence
+or currentness follows. The separately returned observation does not rewrite061
+receipts or fill their absent Content artifacts.
+
+Scope artifacts account escaped-UTF8 JSON prefix repetition and occurrence
+expansion before materializing/encoding over-limit output. A bounded source
+catalogue is not by itself a bound on its repeated policy-prefix representation;
+resource refusal remains AUTH_SCOPE_LIMIT and never becomes a guessed anchor.
