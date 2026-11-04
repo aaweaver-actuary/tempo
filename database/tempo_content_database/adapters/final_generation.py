@@ -60,7 +60,7 @@ class FinalGenerationStore:
             _scope(db, command.source_id)
             source = db.execute('SELECT * FROM content.sources WHERE id=%s FOR UPDATE', (command.source_id,)).fetchone()
             if not source:
-                raise ContentError('content_final_source_changed', 'Source is unavailable')
+                raise ContentError('content_final_authority_mismatch', 'Source is unavailable in this Content authority')
             previous = db.execute('SELECT * FROM content.final_generation_reservations WHERE source_id=%s AND transfer_id=%s FOR UPDATE', (command.source_id, command.transfer_id)).fetchone()
             if previous:
                 if previous['request_digest'] != request_digest:
@@ -109,6 +109,8 @@ class FinalGenerationStore:
             authority = str(db.execute('SELECT database_authority_id FROM content.final_generation_authority WHERE singleton=1').fetchone()['database_authority_id'])
             schema = db.execute('SELECT id,checksum FROM content.migration_history ORDER BY id').fetchall()
             source = db.execute('SELECT * FROM content.sources WHERE id=%s', (reservation['source_id'],)).fetchone()
+            if not source:
+                raise ContentError('content_final_source_changed', 'Reserved source is unavailable')
             task = db.execute('SELECT * FROM content.tasks WHERE source_id=%s AND generation=%s', (reservation['source_id'], reservation['generation'])).fetchone()
             publication = db.execute('SELECT * FROM content.publications WHERE publication_id=%s AND generation=%s', (reservation['publication_id'], reservation['generation'])).fetchone()
             operation = db.execute('SELECT o.*,d.digest AS draft_digest,d.document AS draft FROM content.bridge_operations o JOIN content.bridge_drafts d ON d.id=o.draft_id WHERE o.id=%s', (reservation['approved_operation_id'],)).fetchone()
@@ -153,7 +155,12 @@ class FinalGenerationStore:
                 artifact_id = row['artifact_id']
                 if artifact_id not in artifacts:
                     artifacts[artifact_id] = db.execute('SELECT * FROM content.artifacts WHERE id=%s', (artifact_id,)).fetchone()
-                    occurrences[artifact_id] = db.execute('SELECT * FROM content.occurrences WHERE artifact_id=%s ORDER BY ply', (artifact_id,)).fetchall()
+                    occurrences[artifact_id] = db.execute('SELECT * FROM content.occurrences WHERE artifact_id=%s ORDER BY ply LIMIT 1002', (artifact_id,)).fetchall()
+                    if len(occurrences[artifact_id]) > 1001:
+                        raise ContentError('content_final_capture_limit', 'Selected route exceeds its occurrence bound')
+                    prepared_bytes += sum(len(_canonical(item)) for item in occurrences[artifact_id])
+                    if prepared_bytes > 64*1024*1024:
+                        raise ContentError('content_final_capture_limit', 'Selected route occurrences exceed the capture bound')
             versions = {}
             for row in generation['generation_exercises']:
                 versions[row['exercise_key']] = db.execute('SELECT * FROM content.exercise_versions WHERE source_id=%s AND exercise_key=%s AND revision=%s', (reservation['source_id'], row['exercise_key'], row['exercise_revision'])).fetchone()
@@ -220,9 +227,19 @@ class FinalGenerationStore:
                 return row, None, 'content_final_immutable_conflict' if not hashes_match else 'content_final_source_changed'
             return row, {**blobs, 'capture_id':capture['capture_id'], 'certificate_digest':capture['certificate_digest'], 'export_sha256':capture['export_sha256'], 'inventory_sha256':capture['inventory_sha256'], 'proof_sha256':capture['proof_sha256']}, None
 
+    @_bounded_contention
     def capture(self, reservation, handle):
+        try:
+            return self._capture(reservation, handle)
+        except ContentError:
+            raise
+        except (KeyError, TypeError, ValueError, UnicodeError, OverflowError) as error:
+            return self._hold(reservation,handle,'content_final_inventory_mismatch')
+
+    def _capture(self, reservation, handle):
         from tempo_content.final_generation import FinalGenerationResult
-        from tempo_content.domain import canonical_source, build_publication
+        import chess
+        from tempo_content.domain import canonical_source, canonical_position, build_publication
         from tempo_content.models import SourceSnapshot
         from tempo_content.policy.source import binding_responses
         from tempo_content.bridge.application import BridgeApplication
@@ -241,11 +258,16 @@ class FinalGenerationStore:
         try:
             selected = self.selected(row)
         except ContentError as error:
-            if error.code in ('content_final_inventory_mismatch','content_final_capture_limit'):
+            if error.code in ('content_final_inventory_mismatch','content_final_capture_limit','content_final_source_changed'):
                 return self._hold(row,handle,error.code)
             raise
         source, task, publication, operation, revision = (selected[k] for k in ('source', 'task', 'publication', 'operation', 'revision'))
-        snapshot = SourceSnapshot.model_validate(selected['snapshot'])
+        if not all((source, task, publication, operation, revision)):
+            return self._hold(row,handle,'content_final_source_changed')
+        try:
+            snapshot = SourceSnapshot.model_validate(selected['snapshot'])
+        except ValueError:
+            return self._hold(row,handle,'content_final_inventory_mismatch')
         canonical_source_bytes = canonical_source(snapshot).encode()
         digest_source = hashlib.sha256(canonical_source_bytes).hexdigest()
         if (source['requested_revision'] != task['revision'] or source['last_complete_revision'] != task['revision'] or source['last_complete_generation'] != row['generation'] or task['state'] != 'complete' or publication['source_id'] != row['source_id'] or publication['source_revision'] != task['revision'] or revision['digest'] != digest_source or publication['provenance']['snapshot'] != snapshot.model_dump(mode='json') or operation['state'] != 'completed' or operation['draft_digest'] != row['approved_draft_digest'] or _hash(operation['draft']) != row['approved_draft_digest'] or operation['draft']['source'] != json.loads(canonical_source_bytes)):
@@ -272,6 +294,22 @@ class FinalGenerationStore:
             artifact = selected['artifacts'][item['artifact_id']]
             expected_artifact = _hash(['content-legal-v1/chess-1.11.2', route.starting_fen, route.moves, color])
             if not artifact or item['artifact_id'] != expected_artifact or not artifact['complete'] or artifact['starting_fen'] != route.starting_fen or artifact['moves'] != route.moves or artifact['learner_color'] != color:
+                return self._hold(row, handle, 'content_final_inventory_mismatch')
+            occurrences = selected['occurrences'][item['artifact_id']]
+            if len(occurrences) != len(route.moves)+1:
+                return self._hold(row, handle, 'content_final_inventory_mismatch')
+            try:
+                board = chess.Board(route.starting_fen)
+                for ply, occurrence in enumerate(occurrences):
+                    move = route.moves[ply] if ply < len(route.moves) else None
+                    if (occurrence['ply'] != ply or occurrence['fen'] != board.fen() or occurrence['position_key'] != canonical_position(board.fen()) or occurrence['opponent'] != (board.turn != (color == 'white')) or occurrence['authored_move'] != move):
+                        return self._hold(row, handle, 'content_final_inventory_mismatch')
+                    if move is not None:
+                        parsed = chess.Move.from_uci(move)
+                        if parsed not in board.legal_moves:
+                            return self._hold(row, handle, 'content_final_inventory_mismatch')
+                        board.push(parsed)
+            except (ValueError, TypeError):
                 return self._hold(row, handle, 'content_final_inventory_mismatch')
         for key, exercise in exercises.items():
             data = exercise.model_dump(mode='json')

@@ -297,6 +297,10 @@ class ContentService:
         if source_key:
             query += ' AND s.source_key=%s'
             parameters = (source_key,)
+        else:
+            # A held source must not occupy the generic worker's selection;
+            # a specifically requested held source still gets the guard reason.
+            query += " AND NOT EXISTS (SELECT 1 FROM content.final_generation_reservations f WHERE f.source_id=t.source_id AND f.state IN ('reserved','captured','recovery-held'))"
         query += ' ORDER BY t.source_id,t.generation DESC LIMIT 1'
         selected = self._one(query,parameters)
         if not selected:

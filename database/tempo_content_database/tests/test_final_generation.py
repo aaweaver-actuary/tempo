@@ -112,12 +112,35 @@ def test_content_final_generation_cf01_cf07_supported_writer_and_restart():
         with pytest.raises(ContentError,match='reservation'):
             service.publication_build(source['source_key'])
         assert producer.execute(CaptureFinal(reserved.handle)).capture == evidence
+        task = service._one('SELECT * FROM content.tasks WHERE source_id=%s AND generation=%s',(draft['source_id'],publication['publication_generation']))
+        with service._transaction() as db:
+            with pytest.raises(ContentError,match='reservation'):
+                service._fence(db,task)
+            with pytest.raises(ContentError,match='source fence'):
+                service._advance(db,task)
     with ContentService(url,workspace) as restarted:
         restored = make_final_generation(restarted)
         assert restored.execute(CaptureFinal(reserved.handle)).code == 'content_final_handle_invalid'
         recovered = restored.execute(RecoverFinal('transfer-a',draft['source_id']))
         assert recovered.capture == evidence and recovered.epoch == 1
-        unknown = restored.execute(ResolveFinal(recovered.handle,'accept'))
+        # Deliberately bypass the immutable trigger with this disposable owner to
+        # demonstrate readback conflict; restore exact original bytes immediately.
+        owner_url = os.environ['TEMPO_CONTENT_MIGRATION_DATABASE_URL']
+        with psycopg.connect(owner_url) as db:
+            db.execute('ALTER TABLE content.final_generation_captures DISABLE TRIGGER final_capture_immutable')
+            db.execute('UPDATE content.final_generation_captures SET export_bytes=%s WHERE capture_id=%s',(evidence.export_bytes+b' ',evidence.capture_id))
+            db.execute('ALTER TABLE content.final_generation_captures ENABLE TRIGGER final_capture_immutable')
+        try:
+            damaged = restored.execute(CaptureFinal(recovered.handle))
+            assert damaged.code == 'content_final_immutable_conflict' and damaged.state == 'recovery-held'
+        finally:
+            with psycopg.connect(owner_url) as db:
+                db.execute('ALTER TABLE content.final_generation_captures DISABLE TRIGGER final_capture_immutable')
+                db.execute('UPDATE content.final_generation_captures SET export_bytes=%s WHERE capture_id=%s',(evidence.export_bytes,evidence.capture_id))
+                db.execute('ALTER TABLE content.final_generation_captures ENABLE TRIGGER final_capture_immutable')
+        held_original = restored.execute(RecoverFinal('transfer-a',draft['source_id']))
+        assert held_original.state == 'recovery-held' and held_original.handle is not None
+        unknown = restored.execute(ResolveFinal(held_original.handle,'accept'))
         assert unknown.code == 'content_final_target_unknown' and unknown.state == 'recovery-held'
         with pytest.raises(ContentError,match='reservation'):
             restarted.load_source(source,0)
@@ -148,3 +171,90 @@ def test_content_final_generation_cf01_cf07_supported_writer_and_restart():
             with psycopg.connect(owner_url) as db:
                 db.execute("UPDATE content.responses SET exercise_key='one' WHERE source_id=%s AND policy_key='one'",(draft['source_id'],))
         assert recovered.execute(ResolveFinal(second.handle,'abort')).code == 'content_final_target_unknown'
+
+
+def test_content_final_generation_cf02_stale_source_is_not_reserved():
+    assert os.environ.get('TEMPO_CONTENT_TEST_CONTAINER','').startswith('tempo-content-')
+    url, workspace = os.environ['TEMPO_CONTENT_DATABASE_URL'], os.environ['TEMPO_CONTENT_WORKSPACE']
+    source = _source(workspace)
+    manifest = {'schema_version':1,'kind':'authored_import','workspace_id':workspace,'source_key':source['source_key'],
+        'title':source['title'],'complete':True,'export_profile':'learning',
+        'provenance':{'kind':'synthetic','source_sha256':hashlib.sha256(json.dumps(source).encode()).hexdigest(),'description':'stale source test'}}
+    with ContentService(url,workspace) as service:
+        bridge = Bridge(service)
+        draft = bridge.draft(source,manifest,0)
+        operation = bridge.prepare(bridge.approve(draft['id'],draft['digest'])['id'],100)
+        publication = operation['document']['export']['publication']
+        bridge.record(operation['id'], {'transport':'authenticated_learning_http','endpoint':'synthetic-owner-test','acknowledgement':{
+            'contract_version':1,'workspace_id':workspace,'activation_id':operation['id']+':activate',
+            'publication_id':publication['publication_id'],'publication_generation':publication['publication_generation'],
+            'activation_revision':1,'status':'activated','reason':None}})
+        # A separately approved default/full manifest cannot be relabelled as learning.
+        full_manifest = deepcopy(manifest)
+        full_manifest.pop('export_profile')
+        full_draft = bridge.draft(source,full_manifest,1)
+        full_operation = bridge.prepare(bridge.approve(full_draft['id'],full_draft['digest'])['id'],100)
+        bridge.record(full_operation['id'], {'transport':'authenticated_learning_http','endpoint':'synthetic-owner-test','acknowledgement':{
+            'contract_version':1,'workspace_id':workspace,'activation_id':full_operation['id']+':activate',
+            'publication_id':publication['publication_id'],'publication_generation':publication['publication_generation'],
+            'activation_revision':1,'status':'activated','reason':None}})
+        full_result = make_final_generation(service).execute(ReserveFinal('full-transfer',draft['source_id'],publication['publication_id'],publication['publication_generation'],full_operation['id']))
+        assert full_result.status == 'BLOCK' and full_result.code == 'content_final_profile_not_approved'
+        edited = deepcopy(source)
+        edited['title'] = 'Changed after warm export'
+        assert service.load_source(edited,1)['source_revision'] == 2
+        producer = make_final_generation(service)
+        result = producer.execute(ReserveFinal('stale-transfer',draft['source_id'],publication['publication_id'],publication['publication_generation'],operation['id']))
+        assert result.status == 'BLOCK' and result.code == 'content_final_source_changed'
+        with psycopg.connect(url) as db:
+            assert db.execute('SELECT count(*) FROM content.final_generation_reservations WHERE source_id=%s',(draft['source_id'],)).fetchone()[0] == 0
+
+
+def test_content_final_generation_cf06_separate_authority_namespace():
+    from psycopg import sql
+    from psycopg.conninfo import make_conninfo
+    from tempo_content_database.ddl.migrate import migrate
+    assert os.environ.get('TEMPO_CONTENT_TEST_CONTAINER','').startswith('tempo-content-')
+    admin_url = os.environ['TEMPO_CONTENT_TEST_ADMIN_URL']
+    owner_url = os.environ['TEMPO_CONTENT_MIGRATION_DATABASE_URL']
+    runtime_url = os.environ['TEMPO_CONTENT_DATABASE_URL']
+    first_workspace = os.environ['TEMPO_CONTENT_WORKSPACE']
+    second_workspace = 'second-'+uuid.uuid4().hex
+    database_name = 'content_final_'+uuid.uuid4().hex
+    with psycopg.connect(admin_url,autocommit=True) as db:
+        db.execute(sql.SQL('CREATE DATABASE {} OWNER content_owner').format(sql.Identifier(database_name)))
+        db.execute(sql.SQL('REVOKE ALL ON DATABASE {} FROM PUBLIC').format(sql.Identifier(database_name)))
+        db.execute(sql.SQL('GRANT CONNECT ON DATABASE {} TO content_runtime').format(sql.Identifier(database_name)))
+    second_owner = make_conninfo(owner_url,dbname=database_name)
+    second_runtime = make_conninfo(runtime_url,dbname=database_name)
+    migrate(second_owner,second_workspace,'content_runtime')
+    with ContentService(runtime_url,first_workspace) as first, ContentService(second_runtime,second_workspace) as second:
+        source = _source(first_workspace)
+        shared_key = source['source_key']
+        first_id = first.load_source(source,0)['source_id']
+        source['workspace_id'] = second_workspace
+        second_id = second.load_source(source,0)['source_id']
+        assert first_id != second_id and source['source_key'] == shared_key
+        first_authority = first._one('SELECT database_authority_id FROM content.final_generation_authority WHERE singleton=1')['database_authority_id']
+        second_authority = second._one('SELECT database_authority_id FROM content.final_generation_authority WHERE singleton=1')['database_authority_id']
+        assert first_authority != second_authority
+        mismatch = make_final_generation(second).execute(ReserveFinal('wrong-workspace',first_id,'missing',1,'missing'))
+        assert mismatch.status == 'BLOCK' and mismatch.code == 'content_final_authority_mismatch'
+
+
+def test_content_final_generation_public_import_is_inert():
+    import subprocess
+    import sys
+    code = '''
+import sys
+from importlib.abc import MetaPathFinder
+class Guard(MetaPathFinder):
+ def find_spec(self, fullname, path=None, target=None):
+  if fullname.startswith(('tempo_content_database','tempo_content.bridge','psycopg')):
+   raise AssertionError(fullname)
+sys.meta_path.insert(0, Guard())
+from tempo_content.final_generation import ContentFinalGeneration, ReserveFinal
+assert ContentFinalGeneration and ReserveFinal
+'''
+    result = subprocess.run([sys.executable,'-I','-c',code],capture_output=True,text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
