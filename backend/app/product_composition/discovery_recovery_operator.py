@@ -7,7 +7,7 @@ import re
 
 _ID = re.compile(r'^[A-Za-z0-9_.:-]{1,128}$')
 _REASON = re.compile(r'^[a-z0-9_]{1,96}$')
-_LIMIT = 50
+_LIMIT = 20
 _RETRY_REASONS = frozenset({
     'graph_prerequisite_missing', 'graph_authority_busy_retry_exhausted',
     'current_integrity_missing', 'current_integrity_stale', 'current_integrity_busy_retry_exhausted',
@@ -23,9 +23,10 @@ def _identity(value: str) -> str:
 
 
 def list_parked(reader, after_task_id=""):
-    from tempo_legacy_database.adapters.commands.activity import parked_discovery_tuples
+    from tempo_legacy_database.adapters.commands.activity import parked_discovery_tuples, malformed_parked_discovery_count
     with reader() as database:
         rows = parked_discovery_tuples(database, _LIMIT + 1, after_task_id)
+        malformed_keys = malformed_parked_discovery_count(database)
     result = []
     invalid = 0
     for row in rows[:_LIMIT]:
@@ -42,8 +43,8 @@ def list_parked(reader, after_task_id=""):
     valid_cursor = cursor is None or bool(_ID.fullmatch(cursor))
     return {'status': 'ok' if valid_cursor else 'incomplete', 'parked': result,
             'truncated': len(rows) > _LIMIT, 'next_after': cursor if valid_cursor else None,
-            'unavailable_count': invalid,
-            'worker': 'disabled', 'note': 'Retry can requeue the original task; recovery execution is unavailable.'}
+            'unavailable_count': invalid, 'malformed_key_count': malformed_keys,
+            'worker': 'disabled', 'note': 'Recovery execution is unavailable while the worker is disabled.'}
 
 
 def main(argv=None):

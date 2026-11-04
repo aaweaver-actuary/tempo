@@ -330,9 +330,9 @@ validation; no runtime gate is run against the live study installation.
 
 ## Inspecting a parked accepted discovery hold
 
-`tempo discovery-recovery status` lists at most 50 exact parked task, generation,
+`tempo discovery-recovery status` lists at most 20 exact parked task, generation,
 intent and hold-reason tuples. When `truncated` is true, pass the returned
-`next_after` value as `--after-task-id` to inspect the next page. It uses the registered local Docker target and its
+`next_after` value as `--after-task-id` to inspect the next page. Counts identify malformed keys and unavailable rows without exposing their contents. It uses the registered local Docker target and its
 recorded reader; it does not expose the old Jobs interface or inspect raw task
 payloads. An invalid or unavailable target is reported as unavailable.
 

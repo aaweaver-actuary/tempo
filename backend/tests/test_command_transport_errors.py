@@ -266,3 +266,34 @@ def test_opening_checkpoint_http_semantic_rejection_preserves_terminal_receipt(r
                        headers={'Idempotency-Key': 'transport-regression'}).json() == {'detail': detail}
     assert transport.handler_calls == 0, 'Invalid evidence reached publication'
     assert json.loads(transport.receipts['transport-regression']['error_json']) == receipt['error']
+
+@pytest.mark.parametrize('state', ['complete', 'pending', 'failed', 'blocked'])
+def test_public_operation_hides_discovery_retry_but_local_receipt_remains(state, monkeypatch):
+    payload = {'task_id': 'task', 'generation': 1, 'intent_id': 'intent', 'hold_reason': 'current_integrity_stale'}
+    row = ('activity.task.retry', 'hash', state, json.dumps({'id': 'task'}),
+           json.dumps({'detail': 'private'}), 1, None, None, None, json.dumps(payload), 0, 1)
+    monkeypatch.setattr(command_gateway.storage, 'foreground_receipt_reader', lambda: nullcontext(object()))
+    monkeypatch.setattr(command_gateway.storage, 'operation_status', lambda *_: row)
+    assert command_gateway.read_operation('op', public=True)['state'] == 'unknown'
+    assert command_gateway.read_operation('op')['state'] == state
+    ordinary = list(row)
+    ordinary[9] = json.dumps({'task_id': 'task'})
+    monkeypatch.setattr(command_gateway.storage, 'operation_status', lambda *_: ordinary)
+    assert command_gateway.read_operation('op', public=True) == command_gateway.read_operation('op')
+
+
+def test_public_retry_denies_discovery_without_broker_and_preserves_ordinary(monkeypatch):
+    from app import main
+    monkeypatch.setattr(main.postgres_store, 'configured', lambda: True)
+    operation = {'command_name': 'activity.task.retry', 'payload': {'task_id': 'task', 'generation': 1,
+                 'intent_id': 'intent', 'hold_reason': 'current_integrity_stale'},
+                 'background': False, 'retry_cycle': 0}
+    monkeypatch.setattr(main, 'load_blocked_operation', lambda _: operation)
+    calls = []
+    monkeypatch.setattr(main.celery_app, 'send_task', lambda *args, **kwargs: calls.append((args, kwargs)))
+    with pytest.raises(HTTPException) as error:
+        main.retry_blocked_operation('op')
+    assert error.value.status_code == 409 and calls == []
+    operation['payload'] = {'task_id': 'task'}
+    assert main.retry_blocked_operation('op')['operation_id'] == 'op'
+    assert calls[0][1]['args'][0] == 'op'

@@ -156,6 +156,13 @@ def select_queue_issuance_operation(payload: dict[str, Any]) -> str:
         return operation_id
     return issuance_operation_id(payload, generation + 1)
 
+def _local_discovery_retry(command_name, payload):
+    # The ordinary retained task retry has only task_id. Any discovery tuple
+    # component makes this a local operator envelope, including malformed ones.
+    return (command_name == "activity.task.retry" and isinstance(payload, dict)
+            and bool({"generation", "intent_id", "hold_reason"} & payload.keys()))
+
+
 def load_blocked_operation(operation_id: str) -> dict[str, Any] | None:
     with storage.foreground_receipt_reader() as database:
         row = storage.blocked_operation(database, operation_id)
@@ -321,7 +328,7 @@ def _execute_command(
 def read_operation(
     operation_id: str, *, command_name: str | None = None, request_hash: str | None = None,
     background: bool = False,
-    position_claim_request_payload: dict[str, Any] | None = None,
+    position_claim_request_payload: dict[str, Any] | None = None, public: bool = False,
 ) -> dict[str, Any]:
     if background:
         from tempo_legacy_database.connections import background_read_connection
@@ -337,6 +344,13 @@ def read_operation(
         if receipt and receipt[0] == 'repertoire.prefix_transition.apply':
             progress = storage.transition_progress(database, operation_id)
             transition_progress = dict(progress) if progress else None
+    if receipt is not None and public and receipt[9] is not None:
+        try:
+            payload = json.loads(receipt[9])
+        except (TypeError, ValueError):
+            payload = None
+        if _local_discovery_retry(receipt[0], payload):
+            receipt = None
     if receipt is None:
         return {"operation_id": operation_id, "state": "unknown",
                 "message": "No durable receipt exists yet. Retry with the same Idempotency-Key."}

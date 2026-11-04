@@ -17,13 +17,16 @@ def reader():
 
 def test_status_is_bounded_and_only_exposes_exact_parked_tuples(monkeypatch):
     rows = [dict(task_id=f'task-{i}', generation=1, intent_id=f'intent-{i}',
-                 hold_reason='current_integrity_stale', identity_valid=True) for i in range(51)]
+                 hold_reason='current_integrity_stale', identity_valid=True) for i in range(21)]
     rows[1]['identity_valid'] = False
     rows[2]['hold_reason'] = 'private payload with spaces'
     monkeypatch.setattr(activity, 'parked_discovery_tuples', lambda database, limit, after: rows[:limit])
+    monkeypatch.setattr(activity, 'malformed_parked_discovery_count', lambda database: 2)
+    rows[3]['intent_id'] = None
     result = operator.list_parked(reader)
-    assert result['truncated'] is True and result['next_after'] == 'task-49' and result['worker'] == 'disabled'
-    assert len(result['parked']) == 48
+    assert result['truncated'] is True and result['next_after'] == 'task-19' and result['worker'] == 'disabled'
+    assert len(result['parked']) == 17
+    assert result['unavailable_count'] == 3 and result['malformed_key_count'] == 2
     assert result['parked'][0] == dict(task_id='task-0', generation=1, intent_id='intent-0',
                                        hold_reason='current_integrity_stale', status='held')
     assert 'payload' not in json.dumps(result)
@@ -64,3 +67,13 @@ def test_retry_does_not_expose_error_and_invalid_tuple_never_dispatches(monkeypa
     with pytest.raises(ValueError):
         operator.main(args[:-1] + ['bad id'])
     assert len(calls) == 1
+
+
+def test_maximum_page_fits_cli_output_cap(monkeypatch):
+    rows = [dict(task_id=f"{i:03}" + "t" * 125, generation=9223372036854775807,
+                 intent_id="i" * 128, hold_reason="r" * 96, identity_valid=True) for i in range(21)]
+    monkeypatch.setattr(activity, 'parked_discovery_tuples', lambda database, limit, after: rows[:limit])
+    monkeypatch.setattr(activity, 'malformed_parked_discovery_count', lambda database: 0)
+    result = operator.list_parked(reader)
+    assert result['truncated'] and len(json.dumps(result).encode()) < 16384
+    assert result['next_after'] == rows[19]['task_id']

@@ -63,13 +63,25 @@ def parked_discovery_tuples(database, limit: int, after_task_id: str):
         """SELECT task.id AS task_id, task.generation, task.deduplication_key AS intent_id,
                   intent.last_error AS hold_reason,
                   CASE WHEN pg_input_is_valid(task.payload_json, 'jsonb')
-                    THEN task.payload_json::jsonb = jsonb_build_object('intent_id', task.deduplication_key)
+                    THEN intent.state='preparing' AND task.payload_json::jsonb = jsonb_build_object('intent_id', task.deduplication_key)
                     ELSE false END AS identity_valid
-           FROM background_tasks task JOIN discovery_admission_intents intent
+           FROM background_tasks task LEFT JOIN discovery_admission_intents intent
              ON intent.id=task.deduplication_key
            WHERE task.kind='discovery_admission' AND task.state='queued'
              AND task.lease_token IS NULL AND task.next_attempt_at=%s
-             AND intent.state='preparing' AND task.id > %s
+             AND task.id > %s
+             AND task.id ~ '^[A-Za-z0-9_.:-]{1,128}$'
            ORDER BY task.id LIMIT %s""",
         ('9999-12-31T23:59:59+00:00', after_task_id, limit),
     ).fetchall()
+
+
+def malformed_parked_discovery_count(database):
+    """Count inaccessible keys without returning their contents."""
+    row = database.execute_native(
+        "SELECT count(*) FROM background_tasks WHERE kind='discovery_admission' "
+        "AND state='queued' AND lease_token IS NULL AND next_attempt_at=%s "
+        "AND (id IS NULL OR id !~ '^[A-Za-z0-9_.:-]{1,128}$')",
+        ('9999-12-31T23:59:59+00:00',),
+    ).fetchone()
+    return int(row[0])

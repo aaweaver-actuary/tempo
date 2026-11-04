@@ -46,7 +46,7 @@ from tempo_legacy_database.adapters.foreground_controls import repertoires as re
 from tempo_legacy_database.adapters.projections import repertoire_statistics as repertoire_projection_storage
 from tempo_legacy_database.adapters.foreground_controls import prefix_splits as prefix_split_storage
 from tempo_legacy_database.adapters.authored_repertoires.opening_mutations import prefix_splits as opening_card_storage
-from .command_gateway import CommandConflict, load_blocked_operation, read_operation
+from .command_gateway import CommandConflict, load_blocked_operation, read_operation, _local_discovery_retry
 from .celery_app import celery_app
 from .product_composition.compatibility_coordinator import compose_compatibility_coordinator, enqueue_daily_queue_refresh
 from app.contracts.transport.tactics import TacticActivationRequest
@@ -213,7 +213,7 @@ def operation_status(operation_id: str, request: Request):
         raise HTTPException(404, "Operations are available after PostgreSQL cutover")
     receipt = read_operation(
         operation_id,
-        background=request.headers.get("x-tempo-work-class", "").casefold() == "background",
+        background=request.headers.get("x-tempo-work-class", "").casefold() == "background", public=True,
     )
     return receipt
 
@@ -223,7 +223,7 @@ def retry_blocked_operation(operation_id: str):
     if not postgres_store.configured():
         raise HTTPException(404, "Operations are available after PostgreSQL cutover")
     operation = load_blocked_operation(operation_id)
-    if operation is None:
+    if operation is None or _local_discovery_retry(operation["command_name"], operation["payload"]):
         raise HTTPException(409, "Only a durable blocked operation can be retried")
     task_is_background = operation["background"]
     try:
