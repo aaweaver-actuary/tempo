@@ -32,11 +32,3 @@ services:
       - ${TEMPO_TEST_DATA}:/data
     depends_on:
       - api
-  maia-worker:
-    build:
-      context: .
-      dockerfile: Dockerfile.maia
-    environment:
-      TEMPO_API_URL: http://api:8000
-    depends_on:
-      - api

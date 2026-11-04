@@ -48,17 +48,6 @@ services:
       - api
     restart: unless-stopped
 
-  maia-worker:
-    mem_limit: 1024m
-    build:
-      context: .
-      dockerfile: Dockerfile.maia
-    environment:
-      TEMPO_API_URL: http://api:8000
-    depends_on:
-      - api
-    restart: unless-stopped
-
 volumes:
   tempo-data:
     external: true

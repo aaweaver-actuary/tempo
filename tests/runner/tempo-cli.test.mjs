@@ -79,6 +79,9 @@ test("retired engine journal is optional and retains the existing production dep
   const engine = { Config: { Labels: { "com.docker.compose.project": target.project, "com.docker.compose.service": "defense-engine" } },
     State: { Running: true }, Mounts: [] };
   assert.throws(() => validateContainers([engine], old), /retired defense-engine/);
+  const maia = structuredClone(engine);
+  maia.Config.Labels["com.docker.compose.service"] = "maia-worker";
+  assert.throws(() => validateContainers([maia], old), /retired maia-worker/);
   assert.doesNotThrow(() => validateContainers([engine], {...old, project: "other"}));
 });
 

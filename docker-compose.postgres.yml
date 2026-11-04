@@ -121,18 +121,6 @@ services:
       api: {condition: service_healthy}
     restart: unless-stopped
 
-  maia-worker:
-    mem_limit: 1024m
-    init: true
-    build:
-      context: .
-      dockerfile: Dockerfile.maia
-    environment:
-      TEMPO_API_URL: http://api:8000
-    depends_on:
-      api: {condition: service_healthy}
-    restart: unless-stopped
-
   postgres-backup:
     mem_limit: 96m
     image: postgres:18.6-trixie

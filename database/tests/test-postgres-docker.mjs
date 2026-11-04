@@ -63,7 +63,7 @@ const maintenanceHelpContainer = `${project}-maintenance-help`;
 const compose = ["compose", "-p", project, "-f", "docker-compose.postgres.test.yml"];
 const resourceLimits = join(secretsDirectory, 'resource-limits.json');
 writeFileSync(resourceLimits, JSON.stringify(composeResourceLimits(['postgres', 'redis', 'api',
-  'foreground-worker', 'background-worker', 'background-scheduler', 'maia-worker', 'web', 'schema'],
+  'foreground-worker', 'background-worker', 'background-scheduler', 'web', 'schema'],
   process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN)), { mode: 0o600 });
 compose.push('-f', resourceLimits);
 const priorityResourceLimits = join(secretsDirectory,'priority-resource-limits.json');
@@ -90,7 +90,7 @@ const commitResult = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" 
 const candidateRevision = commitResult.stdout.trim();
 const buildLabels = join(secretsDirectory, "image-labels.json");
 writeFileSync(buildLabels, JSON.stringify({ services: Object.fromEntries([
-  "schema", "api", "foreground-worker", "background-worker", "background-scheduler", "web", "maia-worker",
+  "schema", "api", "foreground-worker", "background-worker", "background-scheduler", "web",
 ].map(name => [name, { build: { labels: { "org.opencontainers.image.revision": candidateRevision } } }])) }));
 compose.push("-f", buildLabels);
 const measureScenario = createScenarioTimer(timingPath, {
@@ -123,9 +123,8 @@ async function verifyStudyOpeningAdmission() {
   // server invalidates API/worker pools. Quiesce the invocation's clients and
   // restore fresh pools before subsequent foreground durability assertions.
   const postgresClients = ["api", "foreground-worker", "background-worker", "background-scheduler"];
-  const analysisClients = ["maia-worker"];
   await executeIsolatedBackgroundWorkload({
-    stopConsumers: () => run("docker", [...compose, "stop", ...postgresClients, ...analysisClients]),
+    stopConsumers: () => run("docker", [...compose, "stop", ...postgresClients]),
     measureWorkload: () => run("docker", [...compose, "restart", "postgres"]),
     restoreConsumers: async () => {
       run("docker", [...compose, "up", "--no-build", "-d", "--no-deps", ...postgresClients]);
@@ -133,7 +132,7 @@ async function verifyStudyOpeningAdmission() {
       // receive different addresses even though their service names persist.
       run("docker", [...compose, "restart", "web"]);
       await waitForReady();
-      run("docker", [...compose, "up", "--no-build", "-d", "--no-deps", ...analysisClients]);
+      run("docker", [...compose, "up", "--no-build", "-d", "--no-deps"]);
     },
   });
   run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python", nativeProofPath,
@@ -141,7 +140,7 @@ async function verifyStudyOpeningAdmission() {
 }
 
 async function withPriorityMaintenanceAllocation(proof) {
-  const clients=['api','foreground-worker','background-worker','background-scheduler','maia-worker','web'];
+  const clients=['api','foreground-worker','background-worker','background-scheduler','web'];
   await executeIsolatedBackgroundWorkload({
     stopConsumers: () => run('docker',[...compose,'stop',...clients]),
     measureWorkload: proof,
@@ -241,7 +240,7 @@ function run(command, argumentsList, options = {}) {
   }
   if (command === 'docker' && ['up', 'start', 'run'].some(operation => argumentsList.includes(operation))) {
     const names = ['postgres', 'redis', 'api', 'foreground-worker', 'background-worker',
-      'background-scheduler', 'maia-worker', 'web', 'schema'];
+      'background-scheduler', 'web', 'schema'];
     const requested = names.filter(name => argumentsList.includes(name));
     return withDevelopmentStartup(requested.length ? requested : names.filter(name => name !== 'schema'),project,execute,
       {oneOff:argumentsList.includes('run'),allocations:postgresProofAllocations(argumentsList,
@@ -1016,7 +1015,7 @@ const actions = {
     assert.equal(defaultConfig.status, 0, defaultConfig.stderr);
     const defaultStack = JSON.parse(defaultConfig.stdout);
     for (const resolvedStack of [stack, defaultStack])
-      assert.equal(resolvedStack.services["maia-worker"].init, true, "Maia must forward stop signals through Docker init");
+      assert.equal(resolvedStack.services["maia-worker"], undefined, "retired Maia service must not be packaged");
     assert(defaultStack.services.postgres && defaultStack.services["foreground-worker"]);
     assert.equal(defaultStack.services.api.environment.TEMPO_DATABASE_WRITE_URL, undefined);
     assert.equal(defaultStack.services.api.environment.TEMPO_DB_PATH, undefined);
@@ -1062,7 +1061,7 @@ const actions = {
       .filter(container => container.State === "running")
       .map(container => container.Service));
     for (const service of ["api", "foreground-worker", "background-worker",
-      "background-scheduler", "maia-worker", "web"])
+      "background-scheduler", "web"])
       assert(runningServices.has(service), `${service} exited during PostgreSQL startup`);
   },
   game_review_reader: async () => {
@@ -1104,7 +1103,7 @@ const actions = {
       await verifyLifecycle();
       return;
     }
-    const consumers = ["postgres", "redis", "api", "foreground-worker", "background-worker", "background-scheduler", "web", "maia-worker"];
+    const consumers = ["postgres", "redis", "api", "foreground-worker", "background-worker", "background-scheduler", "web"];
     run("docker", [...compose, "stop", ...consumers]);
     try {
       await verifyLifecycle();
@@ -1226,7 +1225,7 @@ const actions = {
   },
   backup_restore: async () => {
     run("docker", [...compose, "stop", "api", "foreground-worker", "background-worker",
-      "background-scheduler", "maia-worker", "web"]);
+      "background-scheduler", "web"]);
     runPrefixApplicationProof("--seed-retained");
     run("docker", [...compose, "exec", "-T", "postgres", "sh", "-ec",
       "pg_dump -U postgres -d tempo -Fc -f /tmp/tempo-test.dump && " +

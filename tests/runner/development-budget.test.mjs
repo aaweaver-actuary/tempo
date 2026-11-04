@@ -44,7 +44,7 @@ test('study budget treats active and unavailable control as deferral and admits 
 
 test('aggregate development limits include all services and reject an additional concurrent stack', () => {
   const limits = composeResourceLimits(Object.keys(resourceBudgets.developmentServices).filter(name=>name!=='game-feedback-worker'),'owner');
-  assert.equal(Object.keys(limits.services).length,9);
+  assert.equal(Object.keys(limits.services).length,8);
   const existing = [{HostConfig:{NanoCpus:2e9,Memory:2*1024**3},Config:{Labels:{
     'com.docker.compose.project':'another-project','com.docker.compose.service':'postgres'}}}];
   assert.throws(() => assertDevelopmentCapacity(['postgres'],'this-project',args =>
@@ -55,7 +55,7 @@ test('aggregate development limits include all services and reject an additional
 
 test('optional inventory has unrestricted CPU and retains existing memory plus the Games allocation', () => {
   const {['game-feedback-worker']:games,...existing}=resourceBudgets.optionalServices;
-  assert.equal(Object.values(existing).reduce((sum,item)=>sum+item.memoryMiB,0),1664);
+  assert.equal(Object.values(existing).reduce((sum,item)=>sum+item.memoryMiB,0),640);
   assert.deepEqual(games,{memoryMiB:2048,pidsLimit:96});
   assert(Object.values(resourceBudgets.optionalServices).every(item=>!Object.hasOwn(item,'cpus')));
   assert.throws(()=>composeResourceLimits(Object.keys(resourceBudgets.optionalServices),'owner',resourceBudgets.optionalServices),/aggregate.*memory budget/);

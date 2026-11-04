@@ -8,9 +8,6 @@
     "background-worker": {
       "memoryMiB": 448
     },
-    "maia-worker": {
-      "memoryMiB": 1024
-    },
     "background-scheduler": {
       "memoryMiB": 96
     },
@@ -41,9 +38,6 @@
     "background-scheduler": {
       "memoryMiB": 64
     },
-    "maia-worker": {
-      "memoryMiB": 512
-    },
     "web": {
       "memoryMiB": 64
     },
@@ -64,9 +58,6 @@
     },
     "analysis-worker": {
       "memoryMiB": 448
-    },
-    "maia-worker": {
-      "memoryMiB": 1024
     }
   },
   "priorityRehearsalServices": {

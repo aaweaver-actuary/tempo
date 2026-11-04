@@ -168,17 +168,6 @@ services:
     depends_on:
       api: {condition: service_healthy}
 
-  maia-worker:
-    init: true
-    build:
-      context: .
-      dockerfile: Dockerfile.maia
-    environment:
-      TEMPO_API_URL: http://api:8000
-    depends_on:
-      api: {condition: service_healthy}
-    mem_limit: 768m
-
 volumes:
   postgres-test-backups:
   postgres-test-data:
