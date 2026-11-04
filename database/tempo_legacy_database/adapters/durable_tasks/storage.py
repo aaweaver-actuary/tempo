@@ -202,14 +202,16 @@ def prepare_manual_retry():
     return write_retry
 
 
-def prepare_interrupted_requeue():
+def prepare_interrupted_requeue(excluded_kinds=()):
+    excluded_kinds = tuple(excluded_kinds)
+    exclusion = (' AND kind NOT IN (' + ','.join('?' for _ in excluded_kinds) + ')') if excluded_kinds else ''
     interrupted_phase = '' if postgres_store.configured() else ",phase='reclaimed'"
 
     def write_interrupted(database, values):
         return database.execute(
             f"""UPDATE background_tasks SET state='queued'{interrupted_phase},
-                   lease_token=NULL,lease_expires_at=NULL,updated_at=? WHERE state='leased'""",
-            values,
+                   lease_token=NULL,lease_expires_at=NULL,updated_at=? WHERE state='leased'{exclusion}""",
+            (*values, *excluded_kinds),
         )
 
     return write_interrupted
@@ -453,9 +455,12 @@ def reset_activity_progress(database, values):
     )
 
 
-def interrupted_tasks(database):
+def interrupted_tasks(database, excluded_kinds=()):
+    excluded_kinds = tuple(excluded_kinds)
+    exclusion = (' AND kind NOT IN (' + ','.join('?' for _ in excluded_kinds) + ')') if excluded_kinds else ''
     return database.execute(
-        "SELECT id,generation,kind FROM background_tasks WHERE state='leased'",
+        "SELECT id,generation,kind FROM background_tasks WHERE state='leased'" + exclusion,
+        excluded_kinds,
     ).fetchall()
 
 

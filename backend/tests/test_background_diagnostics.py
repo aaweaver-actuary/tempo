@@ -755,3 +755,25 @@ def test_background_postgres_snapshot_disables_jit_before_budgeted_classificatio
     assert result.available, result
     assert statements[0] == ("SELECT set_config('jit', 'off', true)", ())
     assert any('FROM threat_analysis_requests' in statement for statement, _ in statements)
+
+
+def test_restart_preserves_retired_leases_and_recovers_other_kinds(diagnostic_database):
+    retired = durable_tasks.enqueue_task('defensive_threat_scan', 'retired', {})
+    retained = durable_tasks.enqueue_task('daily_queue', 'retained', {})
+    unknown = durable_tasks.enqueue_task('future_kind', 'unknown', {})
+    with database.connection() as connection:
+        for item in (retired, retained, unknown):
+            connection.execute("UPDATE background_tasks SET state='leased',lease_token=?,lease_expires_at=? WHERE id=?",
+                               ('original-lease', '2099-01-01', item['id']))
+        before = connection.execute('SELECT COUNT(*) FROM background_task_events WHERE task_id=?', (retired['id'],)).fetchone()[0]
+    durable_tasks.requeue_interrupted_tasks()
+    with database.read_connection() as connection:
+        for item in (retired, retained, unknown):
+            row = connection.execute('SELECT state,lease_token FROM background_tasks WHERE id=?', (item['id'],)).fetchone()
+            events = [r[0] for r in connection.execute('SELECT event FROM background_task_events WHERE task_id=? ORDER BY id', (item['id'],))]
+            if item is retired:
+                assert tuple(row) == ('leased', 'original-lease')
+                assert len(events) == before
+            else:
+                assert tuple(row) == ('queued', None)
+                assert events[-2:] == ['reclaimed', 'restarted']
