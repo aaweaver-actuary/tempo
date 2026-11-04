@@ -111,7 +111,7 @@ def test_postgres_discovery_admission_completes_published_card_without_replay(mo
     monkeypatch.setattr(discovery_admission, "_materialize_admission_branch", lambda _task: None)
     monkeypatch.setattr(discovery_admission, "_recovery_identity", lambda *_a, **_k: ("accepted", intent))
     from app.services import postgres_integrity
-    monkeypatch.setattr(postgres_integrity, "try_hold_current_integrity_certificate", lambda *_: {"current": True})
+    monkeypatch.setattr(postgres_integrity, "try_inspect_retained_integrity", lambda *_: postgres_integrity.RetainedIntegrityStatus("current", {"current": True}))
     monkeypatch.setattr(discovery_admission.storage, "try_lock_admission_card", lambda *_: {"id": "card-one", "archived": 0, "pending_validation": 0,
         "content_type": "opening", "revision": 1, "start_fen": chess.STARTING_FEN,
         "moves_json": '["e2e4"]', "trained_color": "white", "superseded_by": None})
@@ -191,6 +191,7 @@ def test_integrity_owner_holds_only_current_graph_certificate(monkeypatch):
     from app.services import postgres_integrity
     from tempo_legacy_database.adapters.opening_graph import worker
     calls = []
+    monkeypatch.setattr(postgres_integrity.storage, 'feedback_prerequisite_facts', lambda *_: {'graph_task_state': 'complete', 'scan_task_state': 'complete', 'graph_state': 'ready', 'integrity_repertoire_id': 'r'})
     monkeypatch.setattr(worker, 'try_lock_graph_read', lambda *_: calls.append('graph') or True)
     monkeypatch.setattr(postgres_integrity.storage, 'try_hold_certificate_authority', lambda *_: calls.append('rows') or (7, 'ready'))
     monkeypatch.setattr(postgres_integrity, 'current_integrity_certificate', lambda _db, _rid, gen: calls.append(('certificate', gen)) or {'generation': gen})
@@ -297,3 +298,53 @@ def test_discovery_queue_capacity_declines_before_receipt_or_insertion(monkeypat
     monkeypatch.setattr(queue_placement, 'capture_daily_queue_order', lambda *_: (_ for _ in ()).throw(AssertionError('unbounded read')))
     with pytest.raises(queue_placement.DiscoveryQueueCapacityExceeded):
         queue_placement.ensure_discovery_card_queued(object(), 'card', '2026-01-01', 'discovery:op', on_admitted=lambda: None)
+
+
+def test_retained_integrity_distinguishes_missing_pending_busy_stale_current(monkeypatch):
+    from app.services import postgres_integrity as owner
+    from tempo_legacy_database.adapters.opening_graph import worker
+    facts = {'graph_task_state': None, 'scan_task_state': None}
+    monkeypatch.setattr(owner.storage, 'feedback_prerequisite_facts', lambda *_: facts)
+    assert owner.try_inspect_retained_integrity(object(), 'r').state == 'missing'
+    facts.update(graph_task_state='queued', scan_task_state='complete')
+    assert owner.try_inspect_retained_integrity(object(), 'r').state == 'pending'
+    facts.update(graph_task_state='complete', graph_state='ready', integrity_repertoire_id='r')
+    monkeypatch.setattr(worker, 'try_lock_graph_read', lambda *_: False)
+    assert owner.try_inspect_retained_integrity(object(), 'r').state == 'busy'
+    monkeypatch.setattr(worker, 'try_lock_graph_read', lambda *_: True)
+    monkeypatch.setattr(owner.storage, 'try_hold_certificate_authority', lambda *_: (7, 'ready'))
+    monkeypatch.setattr(owner, 'current_integrity_certificate', lambda *_: None)
+    assert owner.try_inspect_retained_integrity(object(), 'r').state == 'stale'
+    monkeypatch.setattr(owner, 'current_integrity_certificate', lambda *_: {'proof': 7})
+    result = owner.try_inspect_retained_integrity(object(), 'r')
+    assert result.state == 'current' and result.certificate == {'proof': 7}
+
+
+def test_owner_retry_requires_exact_identity_and_current_authority(monkeypatch):
+    import json
+    import pytest
+    from fastapi import HTTPException
+    from app import activity_commands as commands
+    from app.services import postgres_integrity
+    task = {'id': 'task', 'generation': 4, 'deduplication_key': 'intent',
+            'payload_json': json.dumps({'intent_id': 'intent'}),
+            'next_attempt_at': commands._DISCOVERY_PARKED_AT}
+    intent = {'id': 'intent', 'state': 'preparing', 'last_error': 'graph_prerequisite_missing', 'repertoire_id': 'r'}
+    payload = {'task_id': 'task', 'generation': 4, 'intent_id': 'intent', 'hold_reason': 'graph_prerequisite_missing'}
+    calls = []
+    monkeypatch.setattr(commands.storage, 'parked_discovery_for_update', lambda *_: task)
+    monkeypatch.setattr(commands.storage, 'parked_intent_for_update', lambda *_: intent)
+    monkeypatch.setattr(commands.storage, 'wake_parked_discovery', lambda *args: calls.append(('wake', args)) or 1)
+    monkeypatch.setattr(commands.storage, 'record_manual_retry', lambda *args: calls.append(('event', args)) or {'id': 'task'})
+    monkeypatch.setattr(commands, 'serialize_task', lambda row: row)
+    monkeypatch.setattr(postgres_integrity, 'try_inspect_retained_integrity', lambda *_: postgres_integrity.RetainedIntegrityStatus('pending'))
+    with pytest.raises(HTTPException) as error:
+        commands._retry_retained_discovery(object(), payload)
+    assert error.value.status_code == 409 and calls == []
+    monkeypatch.setattr(postgres_integrity, 'try_inspect_retained_integrity', lambda *_: postgres_integrity.RetainedIntegrityStatus('current', {'proof': 7}))
+    with pytest.raises(HTTPException):
+        commands._retry_retained_discovery(object(), {**payload, 'generation': 5})
+    assert calls == []
+    assert commands._retry_retained_discovery(object(), payload) == {'id': 'task'}
+    assert [call[0] for call in calls] == ['wake', 'event']
+    assert calls[0][1][2:4] == (4, 'intent')

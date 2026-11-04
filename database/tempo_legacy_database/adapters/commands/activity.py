@@ -33,3 +33,25 @@ def record_manual_retry(database, task_id: str, generation: int, now: str):
     return database.execute_native(
         "SELECT * FROM background_tasks WHERE id=%s", (task_id,),
     ).fetchone()
+
+
+def parked_discovery_for_update(database, task_id: str):
+    return database.execute_native(
+        "SELECT * FROM background_tasks WHERE id=%s AND kind='discovery_admission' "
+        "AND state='queued' AND lease_token IS NULL FOR UPDATE SKIP LOCKED", (task_id,),
+    ).fetchone()
+
+
+def parked_intent_for_update(database, intent_id: str):
+    return database.execute_native(
+        "SELECT * FROM discovery_admission_intents WHERE id=%s FOR UPDATE SKIP LOCKED", (intent_id,),
+    ).fetchone()
+
+
+def wake_parked_discovery(database, task_id, generation, intent_id, parked_at, now):
+    return database.execute_native(
+        "UPDATE background_tasks SET next_attempt_at=%s,updated_at=%s "
+        "WHERE id=%s AND generation=%s AND kind='discovery_admission' AND deduplication_key=%s "
+        "AND state='queued' AND lease_token IS NULL AND next_attempt_at=%s",
+        (now, now, task_id, generation, intent_id, parked_at),
+    ).rowcount

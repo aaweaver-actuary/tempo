@@ -53,15 +53,42 @@ def current_integrity_certificate(database, repertoire_id: str, graph_generation
     return integrity_certificate_from_row(dict(row), repertoire_id, graph_generation) if row else None
 
 
-def try_hold_current_integrity_certificate(database, repertoire_id: str) -> dict | None:
-    """Fence the graph and scan without waiting while another task is held."""
+@dataclass(frozen=True)
+class RetainedIntegrityStatus:
+    state: str
+    certificate: dict | None = None
+
+
+def try_inspect_retained_integrity(database, repertoire_id: str) -> RetainedIntegrityStatus:
+    """Classify authority without waiting; current includes held owner fences."""
     from tempo_legacy_database.adapters.opening_graph import worker as graph_storage
+    row = storage.feedback_prerequisite_facts(database, (repertoire_id,))
+    facts = dict(row) if row else {}
+    if not facts.get("graph_task_state"):
+        return RetainedIntegrityStatus("missing")
+    active = {"queued", "leased", "retrying"}
+    if facts.get("graph_task_state") in active:
+        return RetainedIntegrityStatus("pending")
+    if not facts.get("scan_task_state"):
+        return RetainedIntegrityStatus("missing")
+    if facts.get("scan_task_state") in active:
+        return RetainedIntegrityStatus("pending")
+    if not facts.get("graph_state") or not facts.get("integrity_repertoire_id"):
+        return RetainedIntegrityStatus("missing")
     if not graph_storage.try_lock_graph_read(database, repertoire_id):
-        return None
+        return RetainedIntegrityStatus("busy")
     publication = storage.try_hold_certificate_authority(database, repertoire_id)
-    if not publication or publication[1] != "ready":
-        return None
-    return current_integrity_certificate(database, repertoire_id, int(publication[0]))
+    if not publication:
+        return RetainedIntegrityStatus("busy")
+    if publication[1] != "ready":
+        return RetainedIntegrityStatus("stale")
+    certificate = current_integrity_certificate(database, repertoire_id, int(publication[0]))
+    return RetainedIntegrityStatus("current", certificate) if certificate else RetainedIntegrityStatus("stale")
+
+
+def try_hold_current_integrity_certificate(database, repertoire_id: str) -> dict | None:
+    """Compatibility wrapper; only a held, current certificate grants authority."""
+    return try_inspect_retained_integrity(database, repertoire_id).certificate
 
 
 @dataclass(frozen=True)

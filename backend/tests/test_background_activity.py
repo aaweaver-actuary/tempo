@@ -253,3 +253,25 @@ def test_sqlite_discovery_recovery_records_specific_hold_without_changing_identi
             assert db.execute("SELECT last_error FROM discovery_admission_intents WHERE id='intent'").fetchone()[0] == 'prior'
     finally:
         database_writer.stop()
+
+
+def test_discovery_transient_waits_are_bounded_and_keep_original_generation(tmp_path, monkeypatch):
+    from app.services import discovery_admission
+    monkeypatch.setattr(database, 'DB_PATH', tmp_path / 'tempo.db')
+    database.initialize()
+    database_writer.start()
+    try:
+        task = enqueue_task('discovery_admission', 'intent', {'intent_id': 'intent'})
+        claimed = {**task, 'kind': 'discovery_admission', 'lease_token': 'lease', 'payload': {'intent_id': 'intent'}}
+        reasons = []
+        monkeypatch.setattr(discovery_admission.storage, 'mark_recovery_hold', lambda _db, _id, reason, _now: reasons.append(reason) or 1)
+        for _ in range(6):
+            with database.connection() as db:
+                db.execute("UPDATE background_tasks SET state='leased',lease_token='lease' WHERE id=?", (task['id'],))
+                discovery_admission._checkpoint_recovery_hold(db, claimed, {'id': 'intent'}, 'current_integrity_pending')
+        with database.read_connection() as db:
+            row = db.execute('SELECT id,generation,state,next_attempt_at FROM background_tasks WHERE id=?', (task['id'],)).fetchone()
+            assert tuple(row) == (task['id'], task['generation'], 'queued', '9999-12-31T23:59:59+00:00')
+        assert reasons == ['current_integrity_pending'] * 5 + ['current_integrity_pending_retry_exhausted']
+    finally:
+        database_writer.stop()

@@ -606,11 +606,18 @@ def _materialize_admission_branch(task: dict) -> None:
 
 def _checkpoint_recovery_hold(database, task, intent, reason):
     from .redis_admission_gate import BackgroundAdmissionDeferred
+    from tempo_legacy_database.adapters.durable_tasks import storage as task_storage
+    transient = reason in {"graph_authority_busy", "current_integrity_busy", "current_integrity_pending"}
+    phase = "discovery_wait_" + reason if transient else "queued"
+    if transient and task_storage.bounded_phase_checkpoints(database, task["id"], task["generation"], phase, 5) >= 5:
+        reason += "_retry_exhausted"
+        transient = False
+        phase = "queued"
     if storage.mark_recovery_hold(database, intent["id"], reason, _now()) != 1:
         raise BackgroundAdmissionDeferred("Discovery hold identity changed")
     retry_at = ((datetime.now(timezone.utc) + timedelta(seconds=60)).isoformat()
-                if reason == "graph_authority_busy" else "9999-12-31T23:59:59+00:00")
-    if not advance_task_slice_in_transaction(database, task, next_phase="queued",
+                if transient else "9999-12-31T23:59:59+00:00")
+    if not advance_task_slice_in_transaction(database, task, next_phase=phase,
             next_payload=task["payload"], eligible_at=retry_at):
         raise BackgroundAdmissionDeferred("Discovery hold lease changed")
 
@@ -623,7 +630,13 @@ def execute_admission_intent_slice(task: dict) -> bool:
         if not storage.configured():
             storage.begin_write(database)
         identity, _intent = _recovery_identity(database, task, lock=True)
-        if identity in {"stale", "held"}:
+        if identity == "stale":
+            return True
+        if identity == "held":
+            from tempo_legacy_database.adapters.durable_tasks import storage as task_storage
+            from .redis_admission_gate import BackgroundAdmissionDeferred
+            if task_storage.park_unknown_discovery(database, task["id"], task["generation"], task["lease_token"], _now()) != 1:
+                raise BackgroundAdmissionDeferred("Discovery hold lease changed")
             return True
         if identity in {"invalid", "completed"}:
             if not complete_task_slice_in_transaction(database, task):
@@ -657,7 +670,13 @@ def execute_admission_intent_slice(task: dict) -> bool:
                     or lease["lease_token"] != task["lease_token"]):
                 return True
         identity, current = _recovery_identity(database, task, lock=True)
-        if identity in {"stale", "held"}:
+        if identity == "stale":
+            return True
+        if identity == "held":
+            from tempo_legacy_database.adapters.durable_tasks import storage as task_storage
+            from .redis_admission_gate import BackgroundAdmissionDeferred
+            if task_storage.park_unknown_discovery(database, task["id"], task["generation"], task["lease_token"], _now()) != 1:
+                raise BackgroundAdmissionDeferred("Discovery hold lease changed")
             return True
         if identity in {"invalid", "completed"}:
             if not complete_task_slice_in_transaction(database, task):
@@ -668,10 +687,16 @@ def execute_admission_intent_slice(task: dict) -> bool:
         if hold_reason:
             _checkpoint_recovery_hold(database, task, current, hold_reason)
             return True
-        if card_id_value and integrity_published and storage.configured():
-            from .postgres_integrity import try_hold_current_integrity_certificate
-            certificate = try_hold_current_integrity_certificate(database, current["repertoire_id"])
-            current_step = storage.published_line_card(database, (current["repertoire_id"], current["line_id"])) if certificate else None
+        if storage.configured():
+            from .postgres_integrity import try_inspect_retained_integrity
+            authority = try_inspect_retained_integrity(database, current["repertoire_id"])
+            if authority.state != "current":
+                _checkpoint_recovery_hold(database, task, current, "current_integrity_" + authority.state)
+                return True
+            if not card_id_value or not integrity_published:
+                _checkpoint_recovery_hold(database, task, current, "published_card_unavailable")
+                return True
+            current_step = storage.published_line_card(database, (current["repertoire_id"], current["line_id"]))
             card = storage.try_lock_admission_card(database, card_id_value) if current_step and current_step["card_id"] == card_id_value else None
             line = storage.locked_source_line(database, current["line_id"]) if card else None
             blocked = (storage.card_integrity_block(database, (current["repertoire_id"], card_id_value))
@@ -694,6 +719,8 @@ def execute_admission_intent_slice(task: dict) -> bool:
                 if not complete_task_slice_in_transaction(database, task):
                     raise RuntimeError("Discovery task lease changed during admission")
                 return False
+            _checkpoint_recovery_hold(database, task, current, "discovery_target_unavailable")
+            return True
         retry_at = (datetime.now(timezone.utc) + timedelta(seconds=10)).isoformat()
         if not advance_task_slice_in_transaction(
             database, task, next_phase="queued", next_payload=task["payload"], eligible_at=retry_at,

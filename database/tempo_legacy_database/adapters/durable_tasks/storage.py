@@ -522,3 +522,23 @@ def update_locked_queue_task_payload(database, *, task_id, generation, payload_j
              AND deduplication_key='current' AND state IN ('queued','leased','retrying')""",
         (payload_json, task_id, generation),
     ).rowcount == 1
+
+
+def bounded_phase_checkpoints(database, task_id, generation, phase, limit):
+    """Count only a bounded number of same-generation prerequisite checkpoints."""
+    rows = database.execute(
+        "SELECT id FROM background_task_events WHERE task_id=? AND generation=? "
+        "AND event='slice_complete' AND phase=? ORDER BY id DESC LIMIT ?",
+        (task_id, generation, phase, limit),
+    ).fetchall()
+    return len(rows)
+
+
+def park_unknown_discovery(database, task_id, generation, lease_token, now):
+    """Retain an unsupported intent state without silently retrying it."""
+    return database.execute(
+        "UPDATE background_tasks SET state='queued',phase='queued',lease_token=NULL,lease_expires_at=NULL,"
+        "last_error='discovery_intent_state_unrecognized',next_attempt_at='9999-12-31T23:59:59+00:00',updated_at=? "
+        "WHERE id=? AND generation=? AND lease_token=? AND state='leased' AND kind='discovery_admission'",
+        (now, task_id, generation, lease_token),
+    ).rowcount
