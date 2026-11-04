@@ -59,7 +59,4 @@ def finish_game_sync_if_complete(database: PostgresConnection, job_id: str) -> b
     storage.complete_sync_job(
         database, job_id, json.dumps(result, separators=(",", ":")), now,
     )
-    if "lichess" in providers:
-        from .postgres_next_opponent import request_profile_refresh
-        request_profile_refresh(database)
     return True

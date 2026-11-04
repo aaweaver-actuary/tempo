@@ -21,6 +21,7 @@ import httpx
 from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import PlainTextResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.routing import Match
 
 from app.product_composition.database_infrastructure import bind_database_infrastructure
 bind_database_infrastructure()
@@ -37,7 +38,6 @@ from tempo_legacy_database.adapters.http_composition import (
     line_authoring as line_authoring_storage,
     card_authoring as card_authoring_storage,
     practice as practice_storage,
-    coverage as http_coverage_storage,
 )
 from tempo_legacy_database.adapters.commands import accounts as account_storage
 from tempo_legacy_database.adapters.tactics import attempts as tactic_attempt_storage
@@ -112,10 +112,6 @@ from .services.opening_graph import (
 
 
 
-
-def enqueue_coverage_refresh(repertoire_id: str, *, automatic: bool = False, background: bool = False) -> str:
-    from .services.repertoire_coverage import enqueue_coverage_refresh as owner
-    return owner(repertoire_id, automatic=automatic, background=background)
 
 
 
@@ -258,84 +254,17 @@ app.add_middleware(
 async def prioritize_foreground_requests(request: Request, call_next):
     request.state.started_monotonic = time.monotonic()
     request_path_parts = request.url.path.strip("/").split("/")
-    if (request_path_parts[:2] in (["api", "defensive-threats"], ["api", "defense-exercises"],
-                                   ["api", "discovery-admissions"])
-            or request_path_parts[:3] == ["api", "games", "analysis"]
-            or (request_path_parts[:2] == ["api", "discoveries"]
-                and request_path_parts[-1] in {"accept", "recommendations"})
-            or (request.method == "POST" and request_path_parts[:2] == ["api", "games"]
-                and (request_path_parts[-1] == "analysis" or
-                     request_path_parts[-2:] == ["defensive-threats", "refresh"]))):
-        return JSONResponse(status_code=410, content={"detail": "This legacy analysis feature was retired."})
-    prefix_evaluation_read = (
-        len(request_path_parts) == 5 and request_path_parts[:2] == ["api", "repertoires"]
-        and ((request_path_parts[3] == "prefix-evaluation"
-              and ((request.method == "GET" and request_path_parts[4] == "source")
-                   or (request.method == "POST" and request_path_parts[4] == "evaluate")))
-             or (request.method == "POST" and request_path_parts[3:] == ["prefix-transition", "plan"]))
-    )
-    read_only_post = (
-        request.method == "POST"
-        and (
-            request.url.path in {
-                "/api/repertoire/paste/preview",
-                "/api/endgames/probe",
-                "/api/cards/validate",
-                "/api/product/game-history/preview",
-            }
-            or (len(request_path_parts) == 5
-                and request_path_parts[:2] == ["api", "studies"]
-                and request_path_parts[3:] == ["import", "preview"])
-            or prefix_evaluation_read
-        )
-    )
-    if postgres_store.configured() and request.method not in {"GET", "HEAD", "OPTIONS"}:
+    read_only_post = request.method == "POST" and request.url.path in {
+        "/api/repertoire/paste/preview", "/api/cards/validate",
+    }
+    if (postgres_store.configured() and request.method not in {"GET", "HEAD", "OPTIONS"}
+            and any(route.matches(request.scope)[0] == Match.FULL for route in app.routes)):
         path_parts = request.url.path.strip("/").split("/")
-        study_root = path_parts[:2] == ["api", "studies"]
-        study_create = study_root and len(path_parts) == 2 and request.method == "POST"
-        study_update = study_root and len(path_parts) == 3 and request.method == "PATCH"
-        study_archive = (study_root and len(path_parts) == 4
-                         and path_parts[3] in {"archive", "unarchive"}
-                         and request.method == "POST")
-        study_import_commit = (study_root and len(path_parts) == 5
-                               and path_parts[3:] == ["import", "commit"]
-                               and request.method == "POST")
-        study_bundle_import = (study_root and path_parts[2:] == ["import-bundle"]
-                               and request.method == "POST")
-        exercise_create = (study_root and len(path_parts) == 4
-                           and path_parts[3] == "exercises" and request.method == "POST")
-        exercise_revise = (study_root and len(path_parts) == 5
-                           and path_parts[3] == "exercises" and request.method == "PUT")
-        exercise_enroll = (study_root and len(path_parts) == 6
-                           and path_parts[3] == "exercises" and path_parts[5] == "enroll"
-                           and request.method == "POST")
-        exercise_attempt = (study_root and len(path_parts) == 6
-                            and path_parts[3] == "exercises" and path_parts[5] == "attempts"
-                            and request.method == "POST")
-        exercise_self_assess = (study_root and len(path_parts) == 8
-                                and path_parts[3] == "exercises" and path_parts[5] == "attempts"
-                                and path_parts[7] == "self-assess" and request.method == "POST")
-        exercise_availability_command = (
-            study_root and len(path_parts) == 6 and path_parts[3] == "exercises"
-            and path_parts[5] in {"suspend", "resume", "archive", "train-now"}
-            and request.method == "POST"
-        )
-        chapter_create = (study_root and len(path_parts) == 4
-                          and path_parts[3] == "chapters" and request.method == "POST")
-        chapter_reorder = (study_root and len(path_parts) == 5
-                           and path_parts[3:] == ["chapters", "order"]
-                           and request.method == "PUT")
-        chapter_rename = (study_root and len(path_parts) == 5
-                          and path_parts[3] == "chapters" and request.method == "PATCH")
-        link_create = (study_root and len(path_parts) == 4
-                       and path_parts[3] == "links" and request.method == "POST")
         queue_entry_command = (len(path_parts) == 5 and path_parts[:3] == ["api", "queue", "entries"]
                                and path_parts[4] in {"fail", "bury"} and request.method == "POST")
         card_review_command = (path_parts[:2] == ["api", "cards"]
                                and path_parts[3:] in (["review"], ["review", "reconcile"])
                                and request.method == "POST")
-        opening_evidence_command = (path_parts == ["api", "opening-evidence", "checkpoints"]
-                                    and request.method == "POST")
         card_revision_command = (len(path_parts) == 3 and path_parts[:2] == ["api", "cards"]
                                  and request.method == "PUT")
         card_archive_command = (len(path_parts) == 3 and path_parts[:2] == ["api", "cards"]
@@ -357,48 +286,14 @@ async def prioritize_foreground_requests(request: Request, call_next):
         repertoire_delete_command = (len(path_parts) == 3
                                      and path_parts[:2] == ["api", "repertoires"]
                                      and request.method == "DELETE")
-        coverage_refresh_command = (
-            len(path_parts) == 5 and path_parts[:2] == ["api", "repertoires"]
-            and path_parts[3:] == ["coverage", "refresh"]
-            and request.method == "POST"
-        )
-        coverage_maia_command = (
-            len(path_parts) == 4 and path_parts[:3] == ["api", "repertoire-coverage", "maia"]
-            and path_parts[3] in {"claim", "submit", "heartbeat", "release", "failure"}
-            and request.method == "POST"
-        )
-        coverage_explorer_session = (
-            path_parts == ["api", "repertoire-coverage", "explorer-session"]
-            and request.method == "POST"
-        )
         browser_activity = (path_parts == ["api", "system", "browser-activity"]
                             and request.method == "POST")
-        activity_control_command = (path_parts == ["api", "system", "activity", "control"]
-                                    and request.method == "POST")
-        activity_progress_command = (path_parts == ["api", "system", "activity", "progress"]
-                                     and request.method == "POST")
-        task_retry_command = (len(path_parts) == 5 and path_parts[:3] == ["api", "system", "tasks"]
-                              and path_parts[4] == "retry" and request.method == "POST")
         tactic_capture_command = (path_parts == ["api", "tactics", "captures"]
                                   and request.method == "POST")
         tactic_attempt_command = (path_parts == ["api", "tactics", "attempt"]
                                   and request.method == "POST")
         tactic_activation_command = (path_parts == ["api", "tactics", "activation"]
                                      and request.method == "PUT")
-        game_accounts_command = (path_parts == ["api", "games", "accounts"]
-                                 and request.method == "PUT")
-        game_sync_command = (path_parts == ["api", "games", "sync"]
-                             and request.method == "POST")
-        game_exclusion_command = (len(path_parts) >= 4 and path_parts[:2] == ["api", "games"]
-                                  and path_parts[-1] == "exclusion" and request.method == "POST")
-        game_finding_decision_command = (
-            len(path_parts) == 4 and path_parts[:2] == ["api", "game-findings"]
-            and path_parts[-1] in {"curation", "decision"} and request.method == "POST"
-        )
-        game_finding_card_command = (
-            len(path_parts) == 4 and path_parts[:2] == ["api", "game-findings"]
-            and path_parts[-1] == "card" and request.method == "POST"
-        )
         settings_command = (path_parts == ["api", "settings"] and request.method == "PUT")
         operation_retry_command = (len(path_parts) == 4
                                    and path_parts[:2] == ["api", "operations"]
@@ -413,16 +308,6 @@ async def prioritize_foreground_requests(request: Request, call_next):
             "/api/product/game-review/configuration", "/api/product/game-review/sync",
             "/api/product/game-review/refresh",
             "/api/product/game-review/feedback/retry"})
-        product_history_command = (request.method == "POST" and len(path_parts) == 4
-            and path_parts[:3] == ["api", "product", "game-history"]
-            and path_parts[3] in {"preview", "start", "run-ready", "resume"})
-        endgame_probe = (path_parts == ["api", "endgames", "probe"]
-                         and request.method == "POST")
-        endgame_template_command = (path_parts == ["api", "endgames", "templates"]
-                                    and request.method == "POST")
-        endgame_attempt_command = (len(path_parts) == 5
-                                   and path_parts[:3] == ["api", "endgames", "templates"]
-                                   and path_parts[4] == "attempt" and request.method == "POST")
         branch_add_command = (path_parts == ["api", "repertoire", "branches"]
                               and request.method == "POST")
         branch_remove_command = (path_parts == ["api", "repertoire", "branches", "remove"]
@@ -440,80 +325,34 @@ async def prioritize_foreground_requests(request: Request, call_next):
         )
         card_validation = (path_parts == ["api", "cards", "validate"]
                            and request.method == "POST")
-        segmentation_command = (
-            request.method == "POST" and path_parts[:2] == ["api", "repertoires"]
-            and ((len(path_parts) == 5 and path_parts[3:] == ["segmentation", "refresh"])
-                 or (len(path_parts) == 6 and path_parts[3] == "segmentation" and path_parts[5] == "preference"))
-        )
-        prefix_split_command = (
-            len(path_parts) in {4, 5}
-            and path_parts[:2] == ["api", "cards"]
-            and path_parts[3] == "prefix-split"
-            and (len(path_parts) == 4 or path_parts[4] == "reject")
-            and request.method == "POST"
-        )
-        prefix_transition_command = (request.method == 'POST' and len(path_parts) == 5 and path_parts[:2] == ['api','repertoires'] and path_parts[3:] == ['prefix-transition','apply'])
-        canonical_prefix_command = (path_parts[:2] == ["api", "repertoires"]
-            and len(path_parts) in {4, 5} and path_parts[3] == "canonical-prefix"
-            and request.method in {"POST", "PUT"})
         product_repertoire_command = is_repertoire_command_path(request.method, path_parts)
         next_card_preparation = request.method == 'POST' and path_parts == ['api','queue','prepare-next']
-        if not read_only_post and not any((next_card_preparation, product_repertoire_command, prefix_transition_command, canonical_prefix_command, study_create, study_update, study_archive,
-                    study_import_commit, study_bundle_import,
-                    exercise_create, exercise_revise,
-                    exercise_enroll, exercise_attempt, exercise_self_assess,
-                    exercise_availability_command,
-                    chapter_create, chapter_reorder,
-                    chapter_rename, link_create, queue_entry_command, card_review_command,
-                    card_revision_command, card_archive_command,
-                    card_teaching_command,
-                    main_repertoire_command, annotation_command, repertoire_rename_command,
-                    repertoire_settings_command,
-                    repertoire_delete_command,
-                    coverage_refresh_command,
-                    coverage_maia_command, coverage_explorer_session,
-                    browser_activity, activity_control_command, activity_progress_command,
-                    task_retry_command, tactic_attempt_command, tactic_capture_command,
-                    tactic_activation_command, game_accounts_command, game_sync_command,
-                    game_exclusion_command,
-                    game_finding_decision_command, game_finding_card_command,
-                    settings_command,
-                    operation_retry_command,
-                    legacy_evidence_command, product_feedback_command, product_history_command, product_review_command,
-                    endgame_probe, endgame_template_command,
-                    endgame_attempt_command, branch_add_command, branch_remove_command,
-                    pgn_import_command,
-                    analysis_paste_command,
-                    integrity_resolution_command,
-                    card_validation, prefix_split_command, segmentation_command, opening_evidence_command,
-                    prefix_transition_command)):
+        if not read_only_post and not any((
+            next_card_preparation, product_repertoire_command, queue_entry_command,
+            card_review_command, card_revision_command, card_archive_command,
+            card_teaching_command, main_repertoire_command, annotation_command,
+            repertoire_rename_command, repertoire_settings_command, repertoire_delete_command,
+            browser_activity, tactic_attempt_command, tactic_capture_command,
+            tactic_activation_command, settings_command, operation_retry_command,
+            legacy_evidence_command, product_feedback_command, product_review_command,
+            branch_add_command, branch_remove_command, pgn_import_command,
+            analysis_paste_command, integrity_resolution_command, card_validation,
+        )):
             return JSONResponse(
                 status_code=503,
                 content={"detail": "This write route is awaiting its Celery cutover; use the current local Docker service."},
             )
-    prefix_diagnostics_read = (
-        request.method == "GET" and len(request_path_parts) in {4, 5}
-        and request_path_parts[:2] == ["api", "repertoires"]
-        and request_path_parts[3] == "prefix-diagnostics"
-    )
     is_background = (
-        prefix_diagnostics_read or prefix_evaluation_read or request.headers.get("x-tempo-work-class", "").casefold() == "background"
+        request.headers.get("x-tempo-work-class", "").casefold() == "background"
         # Monitoring observes learner activity; it must not mint a learner
         # lease itself. Older clients and Docker health probes omit headers.
         or (request.method == "GET" and request.url.path in {
             "/api/health", "/api/system/foreground-active",
             "/api/system/foreground-requests-active", "/api/system/tasks",
         })
-        or (request.method == 'POST' and len(request_path_parts) == 5
-            and request_path_parts[:2] == ['api', 'repertoires']
-            and request_path_parts[3:] == ['prefix-transition', 'apply'])
-        # Its receipt read uses background admission too; a foreground request
-        # lease would wait on itself, including for older clients without headers.
-        or (request.method == "POST" and request.url.path == "/api/opening-evidence/checkpoints")
         or (request.method == "POST" and request.url.path == "/api/game-evidence/legacy/deliveries")
         or (request.method == "POST" and request.url.path == "/api/game-evidence/product/feedback")
         or (request.method == "GET" and request.url.path == "/api/game-evidence/product/effect")
-        or request.url.path.startswith("/api/product/game-history/")
         or request.url.path.startswith("/api/product/game-review/")
         or request.url.path.startswith("/api/product/repertoires/")
     )
@@ -691,13 +530,6 @@ def put_settings(s: Settings,
             {"settings": s.model_dump(mode="json"), "supplied_fields": sorted(s.model_fields_set)},
             idempotency_key=idempotency_key,
         )
-    coverage_fields = (
-        "coverage_reply_denominator",
-        "coverage_cumulative_target",
-        "coverage_horizon_fullmoves",
-        "coverage_path_floor",
-        "coverage_maia_elo",
-    )
     def persist_settings(db):
         previous_settings = settings_storage.previous_settings(db)
         settings_storage.save_settings(
@@ -733,33 +565,8 @@ def put_settings(s: Settings,
                 account_storage.save_game_account(db, provider, username)
             else:
                 account_storage.delete_game_account(db, provider)
-        coverage_changed = previous_settings is None or any(
-            previous_settings[field] != getattr(s, field) for field in coverage_fields
-        )
-        eligible_repertoires = [
-            row["id"]
-            for row in settings_storage.clean_repertoires(db)
-        ] if coverage_changed else []
-        return eligible_repertoires
-
-    repertoire_ids = submit_foreground_write(
-        persist_settings,
-        label="settings-update",
-    )
+    submit_foreground_write(persist_settings, label="settings-update")
     enqueue_daily_queue_refresh()
-    enqueued_coverage = False
-    for repertoire_id in repertoire_ids:
-        try:
-            enqueue_coverage_refresh(
-                repertoire_id,
-                automatic=True,
-                background=False,
-            )
-            enqueued_coverage = True
-        except (KeyError, sqlite3.OperationalError):
-            continue
-    if enqueued_coverage:
-        _compatibility_coordinator().wake()
     from .services.study_priority import refresh_policy
     refresh_policy()
     return get_settings()
@@ -1143,7 +950,6 @@ async def import_pgn(
     try:
         enqueue_opening_graph_rebuild(rid, local_day=date.today().isoformat())
         enqueue_integrity_scans(rid)
-        enqueue_coverage_refresh(rid, automatic=True)
         _compatibility_coordinator().wake()
     except (KeyError, sqlite3.OperationalError):
         enqueue_status = "failed"
@@ -1621,7 +1427,6 @@ def commit_analysis_paste(request: AnalysisPasteCommitRequest,
     for repertoire_id in result["affected_repertoire_ids"]:
         enqueue_opening_graph_rebuild(repertoire_id, local_day=date.today().isoformat())
         enqueue_integrity_scans(repertoire_id)
-        enqueue_coverage_refresh(repertoire_id, automatic=True)
     if result["affected_repertoire_ids"]:
         _compatibility_coordinator().wake()
     return result
@@ -1682,7 +1487,6 @@ def branch(request: BranchRequest,
             request.repertoire_id, local_day=date.today().isoformat()
         )
         enqueue_integrity_scans(request.repertoire_id)
-        enqueue_coverage_refresh(request.repertoire_id, automatic=True)
         _compatibility_coordinator().wake()
     except (KeyError, sqlite3.OperationalError):
         pass
@@ -1743,7 +1547,6 @@ def remove_branch(request: RemoveBranchRequest,
             request.repertoire_id, local_day=date.today().isoformat()
         )
         enqueue_integrity_scans(request.repertoire_id)
-        enqueue_coverage_refresh(request.repertoire_id, automatic=True)
         _compatibility_coordinator().wake()
     except (KeyError, sqlite3.OperationalError):
         pass

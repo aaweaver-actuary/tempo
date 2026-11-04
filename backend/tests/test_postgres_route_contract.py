@@ -152,6 +152,7 @@ def test_retired_routes_do_not_dispatch_or_match_game_wildcard(monkeypatch):
         raise AssertionError("retired request dispatched a command")
 
     monkeypatch.setattr(command_dispatch, "dispatch_command", unexpected_dispatch)
+    monkeypatch.setattr(postgres_store, "configured", lambda: True)
     client = TestClient(main.app)
     for method, path in (
         ("GET", "/api/games/example/analysis"),
