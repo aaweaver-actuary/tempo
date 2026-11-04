@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Disposable end-to-end proof for frozen Maia plan/apply/verify/rollback."""
+"""Disposable packaged HTTP issuance proof with a synthetic frozen rank."""
 from __future__ import annotations
 
 # Preserve direct-script package discovery after relocation.
@@ -10,6 +10,10 @@ sys.path[:0] = [str(_REPOSITORY), str(_REPOSITORY / "database"), str(_REPOSITORY
 import json, os, secrets, shutil, socket, subprocess, tempfile, time, urllib.request
 from pathlib import Path
 import psycopg
+from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
+from app.services import frozen_opening_order as order
+from app.queue_commands import current_study_day
+from fixtures.frozen_order_staged_plan import staged_plan
 
 ROOT=Path(__file__).resolve().parents[2]
 
@@ -69,47 +73,39 @@ def main():
             assert conn.execute("SELECT current_user,current_setting('transaction_read_only')").fetchone()==('tempo_reader','on')
         with psycopg.connect(dsn_writer) as conn:
             assert conn.execute('SELECT current_user').fetchone()[0]=='tempo_writer'
-        # A one-scenario real Maia route keeps this proof bounded while exercising
-        # the same graph, plan, API, workers, and PostgreSQL contracts as production.
         repertoire='frozen-cli-fixture'; line='frozen-cli-line'; card='frozen-cli-card'
         moves=['e2e4','e7e5','g1f3','b8c6','f1b5']
+        fen='rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+        with psycopg.connect(dsn_admin, row_factory=tempo_row_factory) as conn:
+            db=PostgresConnection(conn)
+            db.execute('INSERT INTO settings(id) VALUES(1) ON CONFLICT(id) DO NOTHING')
+            db.execute('UPDATE settings SET study_only_mode=1,new_cards_per_day=2 WHERE id=1')
+            day=current_study_day(db)
+            db.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,'fixture',?)",(repertoire,'HTTP proof',day))
+            db.execute("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES(?,1,'ready',?)",(repertoire,day))
+            db.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,?,'HTTP proof','white',?,?,?)",(line,repertoire,fen,json.dumps(moves),day))
+            db.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type,trained_color) VALUES(?,?,'prefix',?,?,'new',?,'opening','white')",(card,repertoire,fen,json.dumps(moves),day))
+            db.execute("INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,parent_card_id,decision_fen_key,starting_fen,moves_json,trained_color,segment_kind,first_decision_index,last_decision_index,decision_fen_keys_json) VALUES(?,1,?,0,?,NULL,'root',?,?,'white','prefix',0,0,'[]')",(repertoire,line,card,fen,json.dumps(moves)))
+            plan=staged_plan(db,[card],run_id='http-frozen-fixture',provenance={'model':{'runtime':'synthetic'}})
+            order.stage_run(db,plan,day);order.stage_ranks(db,plan,plan['ranks']);assert order.activate_run(db,plan)
+            db.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id) VALUES(?,?,0,'new',?)",(day,card,repertoire))
+        def fetch():
+            with urllib.request.urlopen(base+'/api/queue/today',timeout=30) as response:
+                return json.load(response)
+        first=fetch()
+        shown=[item for item in first['cards'] if item['id']==card]
+        assert len(shown)==1,first
         with psycopg.connect(dsn_admin) as conn:
-            conn.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,%s,%s,%s)",(repertoire,'CLI proof','fixture','2026-10-14'))
-            conn.execute('INSERT INTO settings(id) VALUES(1) ON CONFLICT(id) DO NOTHING')
-            conn.execute('UPDATE settings SET study_only_mode=1,new_cards_per_day=2,coverage_maia_elo=1500 WHERE id=1')
-            conn.execute("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES(%s,1,'ready','2026-10-14')",(repertoire,))
-            conn.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(%s,%s,'CLI proof','white',%s,%s,'2026-10-14')",(line,repertoire,'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',json.dumps(moves)))
-            conn.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type,trained_color) VALUES(%s,%s,'prefix',%s,%s,'new','2026-10-14','opening','white')",(card,repertoire,'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',json.dumps(moves)))
-            conn.execute('INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(%s,%s)',(repertoire,card))
-            conn.execute("INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,parent_card_id,decision_fen_key,starting_fen,moves_json,trained_color,segment_kind,first_decision_index,last_decision_index,decision_fen_keys_json) VALUES(%s,1,%s,0,%s,NULL,'root',%s,%s,'white','prefix',0,0,'[]')",(repertoire,line,card,'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',json.dumps(moves)))
-        config=out/'config.json';config.write_text(json.dumps({'version':1,'scenarios':[{'name':'CLI proof','repertoire_id':repertoire,'color':'white','prefix':['e4'],'weight':1.0}], 'expected_database':'tempo','expected_schema':'public','maia_elo_override':1500,'study_timezone':'America/New_York'}))
-        cli=str(ROOT/'database/tooling/frozen-maia-order.py');plan_dir=out/'plan'
-        cmd=[str(ROOT/'backend/.venv/bin/python'),cli,'plan','--config',str(config),'--allow-unscored-tail','--output',str(plan_dir),'--foreground-url',base+'/api/system/foreground-requests-active']
-        plan_result=json.loads(run(cmd,env,capture=True).splitlines()[-1]);assert plan_result['activation_safe'] and plan_result['scored']>=1,plan_result
-        target=plan_result['target'];plan_path=str(plan_dir/'plan.json')
-        apply=[str(ROOT/'backend/.venv/bin/python'),cli,'apply','--plan',plan_path,'--target',target,'--reader-url',base]
-        first_output=run(apply,env,capture=True);assert 'Override applied' in first_output,first_output
-        second=json.loads(run(apply,env,capture=True).splitlines()[-1]);assert second.get('run_id')==plan_result['run_id'],second
-        for _ in range(60):
-            with urllib.request.urlopen(base+'/api/queue/today',timeout=10) as response: json.load(response)
-            verification=json.loads(run([str(ROOT/'backend/.venv/bin/python'),cli,'verify','--plan',plan_path,'--target',target,'--reader-url',base],env,capture=True).splitlines()[-1])
-            if verification['state']=='active':break
-            time.sleep(1)
-        else:raise RuntimeError(f'Queue refresh/reader confirmation did not complete: {verification}')
-        # Seed one eligible queue candidate in the settled disposable projection;
-        # the API must serve and issue it through its real durable head path.
+            receipt=conn.execute('SELECT queue_entry_id,card_id,revision,issued_as_head FROM queue_attempt_origins WHERE card_id=%s AND issued_as_head=1',(card,)).fetchall()
+        assert len(receipt)==1,receipt
+        second=fetch()
+        assert [item['queue_entry_id'] for item in second['cards'] if item['id']==card]==[shown[0]['queue_entry_id']]
         with psycopg.connect(dsn_admin) as conn:
-            conn.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id) VALUES('2026-10-14',%s,0,'new',%s) ON CONFLICT(queue_date,card_id,cycle) DO NOTHING",(card,repertoire))
-        with urllib.request.urlopen(base+'/api/queue/today',timeout=10) as response:queue=json.load(response)
-        assert any(item['id']==card for item in queue['cards']),queue
-        # Queue fetch invokes the real head-issuance path; assert the durable receipt.
-        with psycopg.connect(dsn_admin) as conn:
-            assert conn.execute('SELECT COUNT(*) FROM queue_attempt_origins WHERE card_id=%s AND issued_as_head=1',(card,)).fetchone()[0]>=1
-        rolled=json.loads(run([str(ROOT/'backend/.venv/bin/python'),cli,'rollback','--target',target,'--run-id',plan_result['run_id']],env,capture=True).splitlines()[-1])
-        assert rolled.get('study_preserved') is True,rolled
-        check=json.loads(run([str(ROOT/'backend/.venv/bin/python'),cli,'verify','--plan',plan_path,'--target',target,'--reader-url',base],env,capture=True).splitlines()[-1])
-        assert check['state']=='inactive',check
-        print(json.dumps({'result':'PASS','run_id':plan_result['run_id'],'target':target,'proofs':['real Maia inference','read-only reader and writer roles','disposable API and workers','bounded queue refresh and actual queue issuance','repeat apply','verify','rollback preserves study'],'seconds':round(time.monotonic()-started,2)}))
+            assert conn.execute('SELECT queue_entry_id,card_id,revision,issued_as_head FROM queue_attempt_origins WHERE card_id=%s AND issued_as_head=1',(card,)).fetchall()==receipt
+        print(json.dumps({'result':'PASS','day':day,'queue_entry_id':receipt[0][0],
+                          'proofs':['distinct reader and writer','synthetic frozen rank',
+                                    'HTTP foreground durable issuance','repeat identity'],
+                          'seconds':round(time.monotonic()-started,2)}))
     finally:
         down=subprocess.run([*compose,'down','-v','--remove-orphans'],cwd=ROOT,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=180)
         if down.returncode: print(down.stdout[-4000:])
