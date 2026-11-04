@@ -3,21 +3,16 @@ import { independentStudy } from "../lib/study-connection";
 import { Button } from "./buttons/BaseButton";
 import { useRef, useState } from "react";
 import type { View } from "@/app/domain/shared";
-import { preloadView } from "../lib/workspace-data";
 
 import { usePopupKeyboard } from "../lib/keyboard-shortcuts";
 
 export const WORKSPACES: { id: View; label: string }[] = [
   { id: "train", label: "Train" },
   { id: "tactics", label: "Tactics" },
-  { id: "endgames", label: "Endgames" },
-  { id: "repertoire", label: "Repertoire" },
-  { id: "games", label: "Games" },
-  { id: "studies", label: "Studies" },
-  { id: "settings", label: "Settings" },
+  { id: "games", label: "Game Review" },
 ];
 const workspaces = WORKSPACES.filter(item => canOpenWorkspace(item.id, independentStudy));
-const PHONE_PRIMARY: View[] = ["train", "tactics", "endgames"];
+const PHONE_PRIMARY: View[] = ["train", "tactics", "games"];
 export default function Navbar({
   view,
   setView,
@@ -46,8 +41,6 @@ export default function Navbar({
       key={item.id}
       className={className}
       aria-current={view === item.id ? "page" : undefined}
-      onPointerEnter={() => { if (!independentStudy) void preloadView(item.id).catch(() => undefined); }}
-      onFocus={() => { if (!independentStudy) void preloadView(item.id).catch(() => undefined); }}
       onClick={() => select(item.id)}
     >
       {item.label}
@@ -66,14 +59,6 @@ export default function Navbar({
         {workspaces.filter((item) => PHONE_PRIMARY.includes(item.id)).map(
           (item) => destination(item),
         )}
-        <Button
-          aria-expanded={menuOpen}
-          aria-controls="workspace-menu"
-          aria-current={!PHONE_PRIMARY.includes(view) ? "page" : undefined}
-          onClick={() => setMenuOpen(!menuOpen)}
-        >
-          More
-        </Button>
       </div>
       <Button
         className="tablet-navigation"

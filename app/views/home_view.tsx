@@ -50,7 +50,6 @@ import { trainedColor } from "../utils/cards";
 import { buryQueuedCard } from "../domain/training-session";
 import { rememberBrowserTrainingBurial, restoreBrowserTrainingBurials } from "../lib/browser-training-burials";
 import { buryTrainingEntry, finishTrainingBurial, hasPendingTrainingBurial, pendingTrainingBurialEntry, recoverTrainingBurial } from "../lib/training-bury-command";
-import EndgamesView from "./endgames_view";
 import { hasSavedEndgameLine } from "../lib/saved-endgame-practice";
 import TacticsView from "./tactics_view";
 import { loadPositionAnnotation } from "../utils/position-annotations";
@@ -137,7 +136,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
     return () => window.removeEventListener("tempo:update-ready", showUpdate);
   }, []);
   const changeWorkspace = useCallback((view: View) => {
-    if (!canOpenWorkspace(view, independentStudy)) return;
+    if (!canOpenWorkspace(view, independentStudy)) view = "train";
     const finished = measureTempoOperation("view-switch");
     optionalController.current?.deferRepair();
     setCurrentView(optionalController.current?.prepareNavigation(view) ?? view);
@@ -1510,8 +1509,6 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
   const boardWorkspace = [
     "train",
     "tactics",
-    "endgames",
-    "studies",
     "games",
   ].includes(currentView);
 
@@ -1559,6 +1556,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
         {slots.trainingNotice}
         {currentView === "train" && (
           <>
+            {slots.trainingActions}
             {studyOnlyMode === true && <div className="ui-notice" role="status">Study-only mode pauses optional analysis and imports handled by the task scheduler. Review saves and the daily queue remain available. Games collection is controlled separately.</div>}
             <OfflineReviewConflicts />
             {queueReconciliationError && <div role="status">
@@ -1678,16 +1676,6 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
         {currentView === "tactics" && (
           <>
             <TacticsView
-              theme={boardTheme}
-              pieceSet={pieceSet}
-              onQueueChanged={() => void refreshDatabaseQueue()}
-              useSharedBoard
-            />
-          </>
-        )}
-        {currentView === "endgames" && (
-          <>
-            <EndgamesView
               theme={boardTheme}
               pieceSet={pieceSet}
               onQueueChanged={() => void refreshDatabaseQueue()}
