@@ -294,3 +294,27 @@ flowchart LR
   Fence --> Producer["Threat producer slice"]
   Callback["Accepted engine callback"] --> Codec["Shared defense codecs"]
 ```
+
+## Prospective Tactics asset generation
+
+The explicit fixture-only [generation producer](tactics_asset_generation.py)
+reads bounded descriptor-selected bytes and owns a fresh cache backed by the
+[immutable archive](tactics_asset_archive.py). It does not replace
+`tactical_catalog.py` or select serving authority. Archive support is qualified
+only for Darwin arm64 local APFS, excluding FSKit; other environments return
+`ARCHIVE_UNSUPPORTED`. Historical generation and installed authority remain
+`UNPROVEN`, and files observed during capture are not an atomic filesystem snapshot.
+
+```mermaid
+flowchart LR
+  fixture["Explicit disposable fixture caller"] --> capture["Fresh generation producer"]
+  capture -->|bounded descriptor reads| source["Configured fixture assets"]
+  capture -->|create-if-absent and verified readback| archive["Private immutable byte archive"]
+  capture --> object["Unselected generation object"]
+  object -->|archive closure only| archive
+  legacy["Existing serving catalog and caches: unchanged"]
+```
+
+Archive conflicts fail closed without repair or deletion. Generation/cache
+identity is prospective; it cannot recover a previously unrecorded served
+generation or bind a database watermark.

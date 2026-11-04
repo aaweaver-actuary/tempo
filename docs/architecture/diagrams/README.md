@@ -284,3 +284,8 @@ assign unrelated extraction or waive safeguards.
 Task G collection operator: [canonical managed lifecycle view](../../../scripts/README.md#games-collection-operator).
 This proposed/unmerged source view distinguishes the Games-only switch from
 Study's independent lifecycle; installed resource isolation is unverified.
+
+The [prospective Tactics asset generation view](../../../backend/app/services/README.md#prospective-tactics-asset-generation)
+records the explicit fixture producer, immutable byte archive and unselected
+fresh cache. Existing serving catalog globals remain unchanged; historical and
+installed authority are unproved.

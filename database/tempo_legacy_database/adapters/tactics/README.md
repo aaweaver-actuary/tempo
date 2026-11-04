@@ -33,3 +33,14 @@ The [practice-family diagrams/dictionary](../../schema/practice-families-1/READM
 Shared legacy reads/writes are explicitly retained: [cards/daily queue](../../schema/study-queue-review-1/README.md) hold tactic executable FEN/moves, state/schedule/source and queue position/guided attempt state; [settings](../../schema/runtime-metadata/README.md) holds the existing light interval/daily quota; [repertoires](../../schema/authored-content-3/README.md) and [memberships](../../schema/authored-content-2/README.md) hold repertoire metadata/card links. Capture card and queue statements are Study-owned operations; the Tactics receipt and Study effects still use the same supplied writer. The Study implementation reuses the existing `review_service.ensure_card_queued_after` and the command retains its queue-refresh handoff. This does not establish deployed resource isolation.
 
 Focused existing capture/task-SQLite checks and one-time old/new synthetic traces cover borrowed transaction, advisory/row/queue lock order, replay before clocks/writes, grading/due/queue decisions, capture conflicts/reuse, catalog activation/rotation/deletion/quota and exact statement/parameter/state results. Native-style locks in traces are fakes; no native PostgreSQL, live data/schema, API lifecycle, provider, deployment or full-system check is claimed.
+
+## Preliminary read-only row snapshot
+
+[`row_snapshot.py`](row_snapshot.py) enumerates the six original Tactics-owned
+progress, activation, rotation, introduction, discovery-attempt and capture-receipt
+tables in one caller-owned PostgreSQL read-only repeatable-read transaction.
+It bounds row/text reads and preserves original keys, raw TEXT and NULLs.
+`PRELIMINARY_UNBOUND` is intentional: assets are `UNPROVEN`, browser journals
+are `UNRECONCILED`, and no writer fence or final watermark is supplied. Shared
+Study cards, queues and reviews remain outside this reader's closure. This is
+no new writer, migration or scheduling authority.
