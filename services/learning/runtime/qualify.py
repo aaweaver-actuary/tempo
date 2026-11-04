@@ -118,6 +118,7 @@ def main():
                     json.dumps(component["dependencies"]),
                     json.dumps(component["publicExports"]),
                     json.dumps(component["artifact"]),
+                    json.dumps(component["buildInputs"]),
                 ],
                 context,
             )
