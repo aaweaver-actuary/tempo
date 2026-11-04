@@ -195,6 +195,8 @@ from .services.background_runtime import StudyResponseTiming
 app.add_middleware(StudyResponseTiming)
 from .game_evidence_routes import router as game_evidence_router
 app.include_router(game_evidence_router)
+from .opening_evidence_api import router as opening_evidence_router
+app.include_router(opening_evidence_router)
 from .product_composition.game_review import current_game_review_router
 app.include_router(current_game_review_router())
 from .product_composition.repertoire_runtime import current_repertoire_router, is_repertoire_command_path
@@ -300,6 +302,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
         operation_retry_command = (len(path_parts) == 4
                                    and path_parts[:2] == ["api", "operations"]
                                    and path_parts[3] == "retry" and request.method == "POST")
+        opening_checkpoint_command = (request.method == "POST" and path_parts == ["api", "opening-evidence", "checkpoints"])
         product_feedback_command = (request.method == "POST" and
             path_parts == ["api", "game-evidence", "product", "feedback"])
         product_review_command = (request.method == "POST" and request.url.path in {
@@ -332,7 +335,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
             repertoire_rename_command, repertoire_settings_command, repertoire_delete_command,
             browser_activity, task_retry_command, tactic_attempt_command, tactic_capture_command,
             tactic_activation_command, settings_command, operation_retry_command,
-            product_feedback_command, product_review_command,
+            opening_checkpoint_command, product_feedback_command, product_review_command,
             branch_add_command, branch_remove_command, pgn_import_command,
             analysis_paste_command, integrity_resolution_command, card_validation,
         )):
@@ -348,6 +351,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
             "/api/health", "/api/system/foreground-active",
             "/api/system/foreground-requests-active", "/api/system/tasks",
         })
+        or (request.method == "POST" and request.url.path == "/api/opening-evidence/checkpoints")
         or (request.method == "POST" and request.url.path == "/api/game-evidence/product/feedback")
         or (request.method == "GET" and request.url.path == "/api/game-evidence/product/effect")
         or request.url.path.startswith("/api/product/game-review/")

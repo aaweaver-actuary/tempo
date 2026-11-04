@@ -63,6 +63,11 @@ print(json.dumps([
     } else "reader") for row in declared_routes if row["method"] == "GET")
     assert all(row["treatment"] != "reader" for row in declared_routes
                if row["method"] != "GET")
+    assert {(row['method'], row['path']) for row in declared_routes
+            if row['path'].startswith('/api/opening-evidence/')} == {
+        ('POST', '/api/opening-evidence/checkpoints'),
+        ('GET', '/api/opening-evidence/attempts/{attempt_id}'),
+    }
     assert {(row["method"], row["path"], row["handler"], row["treatment"], row["state"])
             for row in declared_routes
             if row["path"].startswith("/api/product/repertoires/")} == {

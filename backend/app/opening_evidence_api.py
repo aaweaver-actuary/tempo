@@ -1,12 +1,12 @@
 """Background checkpoint delivery and internal reads for optional shadow facts."""
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, Header, HTTPException
 from tempo_legacy_database.adapters import postgres_store
 from tempo_legacy_database.adapters.controls import opening_evidence as storage
 from tempo_legacy_database.connections import background_read_connection
 from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
 from .services.activity_gate import activity_gate
 from .services.postgres_opening_evidence import (
-    decision_evidence, evidence_error, prepare_standalone_checkpoint, commit_standalone_checkpoint,
+    evidence_error,
 )
 
 router = APIRouter()
@@ -21,16 +21,6 @@ def opening_evidence_checkpoint(request: OpeningEvidenceCheckpoint,
     return dispatch_command('opening_evidence.checkpoint',
                             {'checkpoint':request.model_dump(mode='json')},
                             idempotency_key=idempotency_key, background=True)
-
-
-@router.get('/api/opening-evidence/decisions/{decision_id}')
-def opening_decision_evidence(decision_id: str, offset: int = Query(default=0, ge=0), limit: int = Query(default=20, ge=1, le=100)):
-    if not postgres_store.configured():
-        raise HTTPException(503, 'Opening shadow evidence requires PostgreSQL')
-    with postgres_store.connection(read_only=True) as database:
-        return decision_evidence(database, decision_id, offset=offset, limit=limit)
-
-
 
 
 @router.get('/api/opening-evidence/attempts/{attempt_id}')
