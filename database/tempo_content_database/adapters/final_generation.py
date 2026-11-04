@@ -64,7 +64,8 @@ class FinalGenerationStore:
             previous = db.execute('SELECT * FROM content.final_generation_reservations WHERE source_id=%s AND transfer_id=%s FOR UPDATE', (command.source_id, command.transfer_id)).fetchone()
             if previous:
                 if previous['request_digest'] != request_digest:
-                    raise ContentError('content_final_request_conflict', 'Original transfer request differs')
+                    from tempo_content.final_generation import FinalGenerationConflict
+                    raise FinalGenerationConflict('content_final_request_conflict', 'Original transfer request differs',previous['reservation_id'],previous['epoch'])
                 return previous
             if db.execute("SELECT 1 FROM content.final_generation_reservations WHERE source_id=%s AND state IN ('reserved','captured','recovery-held')", (command.source_id,)).fetchone():
                 raise ContentError('content_source_final_reserved', 'Another final transfer holds this source')

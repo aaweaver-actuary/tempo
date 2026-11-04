@@ -121,7 +121,8 @@ def test_content_final_generation_cf01_cf07_supported_writer_and_restart():
             with psycopg.connect(owner_url) as db:
                 db.execute('UPDATE content.sources SET requested_revision=1 WHERE id=%s',(draft['source_id'],))
         with pytest.raises(TypeError): ContentFinalReservationHandle()
-        assert producer.execute(ReserveFinal('transfer-a',draft['source_id'],publication['publication_id'],2,operation['id'])).code == 'content_final_request_conflict'
+        conflict = producer.execute(ReserveFinal('transfer-a',draft['source_id'],publication['publication_id'],2,operation['id']))
+        assert (conflict.code,conflict.reservation_id,conflict.epoch) == ('content_final_request_conflict',reserved.reservation_id,reserved.epoch)
         captured = producer.execute(CaptureFinal(reserved.handle))
         assert (captured.status,captured.code) == ('CONTENT_CAPTURE_VERIFIED','content_final_captured')
         evidence = captured.capture

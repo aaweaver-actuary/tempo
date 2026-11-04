@@ -5,6 +5,13 @@ from typing import Literal
 from .domain import ContentError
 
 
+class FinalGenerationConflict(ContentError):
+    def __init__(self, code, message, reservation_id, epoch):
+        super().__init__(code, message)
+        self.reservation_id = reservation_id
+        self.epoch = epoch
+
+
 @dataclass(frozen=True)
 class ReserveFinal:
     transfer_id: str
@@ -115,7 +122,7 @@ class ContentFinalGeneration:
                 return self._store.resolve(row, command.handle, command.intent, self._target)
             raise ContentError('content_final_handle_invalid', 'Unknown final generation command')
         except ContentError as error:
-            return FinalGenerationResult('BLOCK', error.code, row['reservation_id'] if row else None, row['epoch'] if row else None, handle if row else None, state=row['state'] if row else None)
+            return FinalGenerationResult('BLOCK', error.code, row['reservation_id'] if row else getattr(error,'reservation_id',None), row['epoch'] if row else getattr(error,'epoch',None), handle if row else None, state=row['state'] if row else None)
 
 
 @dataclass(frozen=True)
