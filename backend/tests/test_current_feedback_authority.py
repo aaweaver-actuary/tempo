@@ -165,3 +165,54 @@ def test_native_current_qualified_target_changes_hold_original_delivery(native_h
     assert actual.operation_id == case.original.operation_id and actual.receipt is None
     assert actual.attempts == 0
     print('TARGET_FENCE_OBSERVATION', change, reached, result.held_reason)
+
+
+def test_current_target_read_without_integrity_service_import():
+    """The real selected read validates certificates without loading the worker service."""
+    import subprocess
+    import sys
+    import textwrap
+
+    probe = textwrap.dedent('''
+        import importlib.abc
+        import json
+        import sys
+        from types import SimpleNamespace
+
+        name = 'app.services.postgres_integrity'
+        assert name not in sys.modules
+        class Poison(importlib.abc.MetaPathFinder):
+            def find_spec(self, fullname, path=None, target=None):
+                if fullname == name:
+                    raise ImportError('forbidden integrity service')
+        sys.meta_path.insert(0, Poison())
+        from tempo_legacy_database.adapters.study.current_feedback_authority import read_current_feedback_target
+        from tempo_legacy_database.adapters.study.game_feedback_authority import CurrentDecisionUnavailable
+        assert name not in sys.modules
+        header = dict(scope_source_revision=1, canonical_prefix_revision=1,
+            graph_state='ready', graph_generation=7, integrity_status='clean',
+            scan_status='idle', scan_generation='scan:1', checked_at='2026-10-16T12:00:00Z',
+            scan_completed_sources=3, scan_total_sources=3, scan_error=None,
+            graph_task_generation=7, graph_task_state='complete', scan_task_id='scan',
+            scan_task_generation=1, scan_task_state='complete',
+            payload_json=json.dumps(dict(repertoire_id='ruy', graph_generation=7)))
+        class Database:
+            def __init__(self, row): self.results = iter([row, {'id':'card'}, [], []])
+            def execute_native(self, sql, parameters):
+                result = next(self.results)
+                return SimpleNamespace(fetchone=lambda: result, fetchall=lambda: result)
+        target = SimpleNamespace(repertoire_id='ruy', presentation_id='card')
+        for status in ('clean', 'needs_repair'):
+            result = read_current_feedback_target(Database(header | {'integrity_status': status}), target)
+            assert result['certificate']['integrity_status'] == status
+            assert 'payload_json' not in result['certificate']
+        for changes in ({'payload_json':'{'}, {'graph_task_generation':8}, {'scan_task_state':'queued'}):
+            try:
+                read_current_feedback_target(Database(header | changes), target)
+            except CurrentDecisionUnavailable as exc:
+                assert 'current_owner_integrity_unavailable' in str(exc)
+            else:
+                raise AssertionError('unsafe certificate accepted')
+        assert name not in sys.modules
+    ''')
+    subprocess.run([sys.executable, '-c', probe], check=True)
