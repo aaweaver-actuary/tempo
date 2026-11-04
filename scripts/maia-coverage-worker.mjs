@@ -1,5 +1,4 @@
 import { createCancellableMaia, StudyPreemptedError, MaiaTerminationUnverifiedError } from "./cancellable-maia.mjs";
-import { analyzeMaiaPosition } from "./maia-inference.mjs";
 import { PendingMaiaCommandError, requestMaiaApi, createMaiaRelease } from "./maia-coverage-client.mjs";
 const apiUrl = process.env.TEMPO_API_URL ?? "http://api:8000";
 const sleep = (milliseconds) => new Promise((done) => setTimeout(done, milliseconds));
@@ -8,6 +7,7 @@ async function request(path, options = {}) {
 }
 
 if (process.env.TEMPO_MAIA_SMOKE === "1") {
+  const { analyzeMaiaPosition } = await import("./maia-inference.mjs");
   const fen = process.env.TEMPO_MAIA_FIXTURE_FEN ?? "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
   const moves = await analyzeMaiaPosition(fen, 1500);
   if (!moves.length || Math.abs(moves.reduce((sum, move) => sum + move.probability, 0) - 1) > 0.0001)
