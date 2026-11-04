@@ -276,11 +276,10 @@ precedes application shutdown, so faster builds do not directly shorten that out
 ## General qualification CPU allocation
 
 The [qualification window](qualification-window.mjs) composes the existing
-Study-aware budget and admitted managed Docker `run` lifecycle for Maia and
+Study-aware budget and admitted managed Docker `run` lifecycle for
 frozen-order qualification:
 
 ```sh
-node scripts/qualification-window.mjs maia /path/to/existing/python --source /task/checkout --evidence /task/evidence
 node scripts/qualification-window.mjs frozen /path/to/existing/python
 ```
 
@@ -295,9 +294,8 @@ and record observed kernel limits without claiming CPU reservation.
 The small [Python allocation adapter](qualification_cpu.py) owns CPU argument,
 environment and cgroup translation. Existing qualification owners retain memory,
 swap, PID/tmpfs limits, finite deadlines, source staging, permissions, image
-identity and cleanup. Maia's qualification-owner label remains distinct from
-the central resource-owner label. This source change does not qualify model
-inference, artifact installation, provider connectivity or installed services.
+identity and cleanup. This source change does not qualify artifact installation,
+provider connectivity or installed services.
 
 Root and lane Vitest configurations and the generic Node test runner use
 [`unitWorkerAllocation`](unit-worker-allocation.mjs). An omitted
@@ -535,8 +533,6 @@ verifies every Dockerfile COPY input and rejects untracked runtime additions. No
 source is mounted into that image; only synthetic qualification inputs are mounted.
 
 ### Engine job-family routing
-
-The file-scoped engine image packaging proof is `node tools/component-build/test-lane.mjs runners engine-image-packaging` (also registered as the `engine-image-packaging` component suite). It checks Docker COPY inputs and declared proof inputs for literal relative static imports and `new URL()` child paths; computed or dynamic dependencies and actual image startup require separate proof. Affected-path selection is not automatically wired to this suite.
 
 
 The engine cycle processes at most one recovered or newly claimed job. Its

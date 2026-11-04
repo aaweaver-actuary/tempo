@@ -485,99 +485,6 @@
       "testInventory": "REGRESSIONS.md"
     },
     {
-      "id": "maia",
-      "type": "worker",
-      "maintainer": "Tempo / #110",
-      "status": "implemented",
-      "root": "workers/maia",
-      "publicExports": [
-        "PROBABILITY_TOLERANCE",
-        "SUPPORTED_RATINGS",
-        "VOCABULARY_SIZE",
-        "createModel",
-        "decodePredictions",
-        "inspectModel",
-        "mirrorFen",
-        "mirrorMove",
-        "mirrorSquare",
-        "preparePosition",
-        "validatePosition",
-        "validateRating",
-        "validateVocabularies"
-      ],
-      "dependencies": [
-        "ajv",
-        "chess.js",
-        "onnxruntime-web"
-      ],
-      "buildInputs": [
-        "package.json",
-        "package-lock.json",
-        "index.mjs",
-        "core.mjs",
-        "model.mjs",
-        "errors.mjs",
-        "model-descriptor.json",
-        "build-inputs.json",
-        "build.mjs",
-        "qualify.mjs",
-        "fixtures",
-        "tests",
-        "test.mjs",
-        "README.md",
-        "REGRESSIONS.md"
-      ],
-      "buildCommand": "node qualify.mjs restricted",
-      "artifact": {
-        "name": "@tempo/maia-worker",
-        "version": "1.0.0",
-        "qualifier": "qualify.mjs",
-        "formats": [
-          "npm-tarball"
-        ],
-        "contract": "Low-level offline inference API; shared schema fixtures retained",
-        "immutableInputs": "build-inputs.json",
-        "modelDescriptor": "model-descriptor.json"
-      },
-      "tests": [
-        {
-          "owner": "maia",
-          "kind": "node",
-          "command": "node test.mjs pure",
-          "inputs": [
-            "tests",
-            "fixtures",
-            "test.mjs",
-            "core.mjs",
-            "model.mjs",
-            "model-descriptor.json",
-            "build-inputs.json"
-          ]
-        },
-        {
-          "owner": "maia",
-          "kind": "python",
-          "command": "python -I -m pytest tests/contracts/test_exchange.py --import-mode=importlib -q",
-          "inputs": [
-            "tests/contracts"
-          ]
-        }
-      ],
-      "toolchain": {
-        "node": "26.10.0",
-        "runtime": "onnxruntime-web/wasm 1.23.0",
-        "chess": "chess.js 1.4.0",
-        "normalConcurrency": 1,
-        "resourcePolicy": "Low-level computation only; caller owns admission, cancellation and process limits."
-      },
-      "dataOwnership": {
-        "authority": "#110 model computation; root coverage scripts retain process lifecycle",
-        "databases": [],
-        "migrations": []
-      },
-      "testInventory": "REGRESSIONS.md"
-    },
-    {
       "id": "tempo-cli",
       "type": "tool",
       "maintainer": "Tempo",
@@ -1879,33 +1786,6 @@
     }
   ],
   "suites": [
-    {
-      "id": "engine-image-packaging",
-      "owner": "engine worker",
-      "kind": "node",
-      "cwd": ".",
-      "command": "node tools/component-build/test-lane.mjs runners engine-image-packaging",
-      "inputs": [
-        "Dockerfile.engine",
-        ".dockerignore",
-        "components.json",
-        "package.json",
-        "tests/runner/engine-image-packaging.test.mjs",
-        "scripts/defense-engine-worker.mjs",
-        "scripts/stockfish-process.mjs",
-        "scripts/stockfish-child.mjs",
-        "scripts/engine-search.mjs",
-        "scripts/engine-worker-cycle.mjs",
-        "scripts/engine-attempt-diagnostics.mjs",
-        "scripts/maia-coverage-client.mjs",
-        "scripts/durable-engine-request.mjs",
-        "scripts/engine-job-recovery.mjs",
-        "scripts/engine-job-families.mjs",
-        "public/engines/sf_19_smallnet.js",
-        "public/engines/sf_19_smallnet.wasm",
-        "public/engines/nn-61e7af4bb97d.nnue"
-      ]
-    },
     {
       "id": "postgres-backup-lifecycle",
       "owner": "database backup tooling",

@@ -35,7 +35,7 @@ flowchart LR
     R --> S[(Legacy database)]
 ```
 
-The direct tooling entrypoints `frozen-maia-order`, `writer_latency` and
+The direct tooling entrypoints `writer_latency` and
 `recover-opening-publication.py` bind explicitly. The recovery CLI binds after
 argument parsing and before either mode enters owner preflight or execution;
 importing it remains inert. The same binding is supplied by the standalone background workload, engine fairness,
