@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import secrets
 import sys
-import threading
+import json
 
 import psycopg
 import pytest
@@ -14,13 +14,17 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 ROOT = Path(__file__).resolve().parents[3]
 for directory in [ROOT, ROOT / 'backend', ROOT / 'database', *ROOT.glob('packages/*/src'),
                   *ROOT.glob('services/*/src'), *ROOT.glob('services/learning/*/src'),
-                  *ROOT.glob('contracts/*/src'), *ROOT.glob('services/learning/runtime/.venv/lib/python*/site-packages')]:
+                  *ROOT.glob('contracts/*/src')]:
     sys.path.insert(0, str(directory))
+sys.path.extend(str(path) for path in ROOT.glob('services/learning/runtime/.venv/lib/python*/site-packages'))
 from database.tests.position_study import acceptance
-from tempo_legacy_database.adapters.postgres_store import tempo_row_factory
+from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
 
 
 def test_lp07_original_response_native_migration_and_immutability(monkeypatch):
+    from app.services import queue_next_card
+    with queue_next_card._source_cache_lock:
+        prior_cache = {key: value for key, value in queue_next_card._source_cache.items() if key[0] == 'n2'}
     admin = os.environ.get('TEMPO_LEARNING_TEST_ADMIN')
     assert admin and os.environ.get('TEMPO_LEARNING_TEST_FIXTURE', '').startswith('tempo-learning-')
     params = conninfo_to_dict(admin)
@@ -35,6 +39,20 @@ def test_lp07_original_response_native_migration_and_immutability(monkeypatch):
     dsn = make_conninfo(admin, dbname=name)
     monkeypatch.setenv('TEMPO_POSITION_N2_DSN', dsn)
     from tooling import apply_postgres_migrations as migration
+    empty_name = 'tempo_position_test_n2_' + secrets.token_hex(12)
+    with psycopg.connect(admin, autocommit=True) as conn:
+        assert not conn.execute('SELECT 1 FROM pg_database WHERE datname=%s', (empty_name,)).fetchone()
+        conn.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(empty_name)))
+    try:
+        empty_dsn = make_conninfo(admin, dbname=empty_name)
+        migration.apply_migrations(empty_dsn)
+        with psycopg.connect(empty_dsn) as empty:
+            assert empty.execute('SELECT max(version) FROM tempo_schema_migrations').fetchone()[0] == 60
+            assert empty.execute('SELECT count(*) FROM study_position_first_responses').fetchone()[0] == 0
+    finally:
+        with psycopg.connect(admin, autocommit=True) as conn:
+            conn.execute(sql.SQL('DROP DATABASE {}').format(sql.Identifier(empty_name)))
+            assert not conn.execute('SELECT 1 FROM pg_database WHERE datname=%s', (empty_name,)).fetchone()
     def migrate_to_59(raw):
         assert raw.execute("SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p','v','S')").fetchone()[0] == 0
         paths = sorted(migration.MIGRATIONS.glob('[0-9][0-9][0-9]_*.sql'))
@@ -52,6 +70,10 @@ def test_lp07_original_response_native_migration_and_immutability(monkeypatch):
     def run_checks(raw, port, dsn, monkeypatch, plan, entry, card_id, fsrs):
         from app.services import postgres_opening_evidence as source
         journey(raw, port, dsn, monkeypatch, plan, entry, card_id, fsrs)
+        # Simulate pre-existing corrupt legacy evidence before the new migration.
+        second = raw.execute('SELECT event_id FROM study_position_first_responses ORDER BY decision_index OFFSET 1 LIMIT 1').fetchone()
+        assert second is not None
+        raw.execute("UPDATE study_position_first_responses SET payload_json='{}'::jsonb WHERE event_id=%s", (second['event_id'],))
         before = [dict(row) for row in raw.execute('SELECT * FROM study_position_first_responses ORDER BY decision_index').fetchall()]
         assert len(before) >= 2
         raw.commit()
@@ -67,6 +89,8 @@ def test_lp07_original_response_native_migration_and_immutability(monkeypatch):
         assert [dict(row) for row in raw.execute('SELECT * FROM study_position_first_responses ORDER BY decision_index').fetchall()] == before
         raw.commit()
         first = before[0]
+        with pytest.raises(ValueError):
+            source.decode_position_first_response(before[1]['payload_json'], before[1]['payload_digest'], plan)
         calls = []
         raw.execute('BEGIN')
         retry = source.persist_position_first_response(port, plan, first['payload_json'], first['accepted_at'],
@@ -77,16 +101,27 @@ def test_lp07_original_response_native_migration_and_immutability(monkeypatch):
         with pytest.raises(source.EvidenceConflict):
             source.persist_position_first_response(port, plan, changed, first['accepted_at'], apply_grade=lambda *args: calls.append(args))
         raw.rollback()
+        with pytest.raises(psycopg.errors.CheckViolation, match='study_position_first_response_immutable'):
+            raw.execute("UPDATE study_position_first_responses SET payload_json='{}'::jsonb,payload_digest='replacement' WHERE event_id=%s", (first['event_id'],))
+        raw.rollback()
         columns = ('event_id','attempt_id','decision_index','repertoire_id','variant','position','owner_epoch',
                    'payload_digest','payload_json','observed_at','accepted_at')
         for column in columns:
             with pytest.raises(psycopg.errors.CheckViolation, match='study_position_first_response_immutable'):
                 raw.execute(sql.SQL('UPDATE study_position_first_responses SET {c}={c} WHERE event_id=%s').format(c=sql.Identifier(column)), (first['event_id'],))
             raw.rollback()
-        for statement in ('DELETE FROM study_position_first_responses', 'TRUNCATE study_position_first_responses'):
-            with pytest.raises(psycopg.errors.CheckViolation, match='study_position_first_response_immutable'):
-                raw.execute(statement)
-            raw.rollback()
+        with pytest.raises(psycopg.errors.CheckViolation, match='study_position_first_response_immutable'):
+            raw.execute('DELETE FROM study_position_first_responses')
+        raw.rollback()
+        # PostgreSQL can reject the single-table form at its existing FK check
+        # before the trigger. The legal CASCADE form must reach our guard.
+        with pytest.raises((psycopg.errors.FeatureNotSupported, psycopg.errors.CheckViolation)) as error:
+            raw.execute('TRUNCATE study_position_first_responses')
+        assert error.value.sqlstate in ('0A000', '23514')
+        raw.rollback()
+        with pytest.raises(psycopg.errors.CheckViolation, match='study_position_first_response_immutable'):
+            raw.execute('TRUNCATE study_position_first_responses CASCADE')
+        raw.rollback()
         assert [dict(row) for row in raw.execute('SELECT * FROM study_position_first_responses ORDER BY decision_index').fetchall()] == before
         raw.commit()
         with psycopg.connect(dsn) as holder:
@@ -100,10 +135,83 @@ def test_lp07_original_response_native_migration_and_immutability(monkeypatch):
         raw.rollback()
         assert [dict(row) for row in raw.execute('SELECT * FROM study_position_first_responses ORDER BY decision_index').fetchall()] == before
         raw.commit()
+        # Actual second issuance and checkpoint: a post-effect failure rolls the
+        # original receipt and real grade back together, then retry succeeds.
+        from app.services.position_queue_admission import prepare_due, admit_due
+        from app.services.queue_next_card import prepare_queue_head
+        from app.queue_commands import issue_queue_head
+        from app.services.opening_decision_evidence import decision_manifest
+        from tempo_legacy_database.adapters.study import position_grade_effects
+        from datetime import datetime, timezone
+        import chess
+        day = plan.local_day.isoformat()
+        assert admit_due(port, day, prepare_due(port, day, {})) is None
+        raw.commit()
+        next_row = raw.execute("SELECT id,card_id FROM daily_queue WHERE status='queued' ORDER BY position,id").fetchone()
+        assert next_row is not None
+        next_entry, next_card = next_row['id'], next_row['card_id']
+        raw.commit()
+        head = {'queue_date': day, 'entry_id': next_entry, 'card_id': next_card, 'expected_revision': 1}
+        assert issue_queue_head(port, prepare_queue_head(head))['issued']
+        raw.commit()
+        second_plan = prepare_queue_head(head).proposal
+        scope = raw.execute("""SELECT snapshot.*,context.effective_trained_color FROM opening_evidence_presentations snapshot
+            JOIN opening_evidence_queue_contexts context ON context.presentation_snapshot_id=snapshot.id
+            WHERE context.queue_entry_id=%s AND context.repertoire_id='n2'""", (next_entry,)).fetchone()
+        manifest = source.issued_position_manifest(second_plan, decision_manifest(source._manifest_snapshot(dict(scope)), 'n2'))
+        decision = manifest['decisions'][0]
+        alternative = next(move.uci() for move in chess.Board(decision['fen']).legal_moves if move.uci() != decision['expected_uci'])
+        now = datetime.now(timezone.utc).isoformat()
+        checkpoint = dict(attempt_id=second_plan.attempt_id, manifest=manifest, origin_queue_entry_id=next_entry,
+            queue_entry_id=next_entry, started_at=now, study_timezone='UTC', source='live', events=[
+                dict(sequence=1, decision_index=0, decision_id=decision['decision_id'], expected_uci=decision['expected_uci'],
+                     kind='first_response', observed_at=now, response_uci=alternative, disposition='wrong')])
+        raw.commit()
+        real_apply = position_grade_effects.apply_in_borrowed_transaction
+        def fail_after_grade(*args, **kwargs):
+            real_apply(*args, **kwargs)
+            raise RuntimeError('fixture after grade')
+        prepared = source.prepare_standalone_checkpoint({'checkpoint': checkpoint})
+        with monkeypatch.context() as scoped:
+            scoped.setattr(position_grade_effects, 'apply_in_borrowed_transaction', fail_after_grade)
+            raw.execute('BEGIN')
+            with pytest.raises(RuntimeError, match='fixture after grade'):
+                source.commit_standalone_checkpoint(port, prepared)
+            raw.rollback()
+        assert raw.execute('SELECT count(*) FROM study_position_first_responses WHERE attempt_id=%s', (second_plan.attempt_id,)).fetchone()[0] == 0
+        assert raw.execute('SELECT count(*) FROM study_position_grades WHERE attempt_id=%s', (second_plan.attempt_id,)).fetchone()[0] == 0
+        raw.commit()
+        prepared = source.prepare_standalone_checkpoint({'checkpoint': checkpoint})
+        raw.execute('BEGIN')
+        assert source.commit_standalone_checkpoint(port, prepared)['persisted']
+        # The duplicate is attempted while the real original insert and grade
+        # are uncommitted; owner locks bound the wait before any second insert.
+        with psycopg.connect(dsn, row_factory=tempo_row_factory) as contender:
+            contender.execute("SET LOCAL lock_timeout='100ms'")
+            with pytest.raises(psycopg.errors.LockNotAvailable):
+                source.commit_standalone_checkpoint(PostgresConnection(contender), prepared)
+        raw.commit()
+        assert raw.execute('SELECT count(*) FROM study_position_first_responses WHERE attempt_id=%s', (second_plan.attempt_id,)).fetchone()[0] == 1
+        assert raw.execute('SELECT count(*) FROM study_position_grades WHERE attempt_id=%s', (second_plan.attempt_id,)).fetchone()[0] == 1
+        raw.commit()
+        prepared = source.prepare_standalone_checkpoint({'checkpoint': checkpoint})
+        raw.execute('BEGIN')
+        assert source.commit_standalone_checkpoint(port, prepared)['persisted']
+        raw.commit()
+        assert raw.execute('SELECT count(*) FROM study_position_first_responses WHERE attempt_id=%s', (second_plan.attempt_id,)).fetchone()[0] == 1
+        assert raw.execute('SELECT count(*) FROM study_position_grades WHERE attempt_id=%s', (second_plan.attempt_id,)).fetchone()[0] == 1
+        raw.commit()
     monkeypatch.setattr(acceptance, '_real_review_journey', run_checks)
+    monkeypatch.setattr(acceptance, '_real_daily_credit_followup', lambda *args, **kwargs: None)
     try:
-        acceptance._run_schema_journey(monkeypatch, branches=False)
+        acceptance._run_schema_journey(monkeypatch, branches=True)
     finally:
+        # This process-local hint is keyed without database identity. Restore only
+        # the N2 entries owned by this disposable test before another N2 DB runs.
+        with queue_next_card._source_cache_lock:
+            for key in list(queue_next_card._source_cache):
+                if key[0] == 'n2': del queue_next_card._source_cache[key]
+            queue_next_card._source_cache.update(prior_cache)
         with psycopg.connect(admin, autocommit=True) as conn:
             conn.execute(sql.SQL('DROP DATABASE {}').format(sql.Identifier(name)))
             assert not conn.execute('SELECT 1 FROM pg_database WHERE datname=%s', (name,)).fetchone()
