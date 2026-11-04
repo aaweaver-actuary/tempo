@@ -68,27 +68,16 @@ def inactive_frozen_queue(monkeypatch):
                         lambda _database, **_options: (None, 0))
 
 
-def test_postgres_game_exclusion_uses_foreground_receipt_and_atomic_followup(monkeypatch):
-    from app.services import postgres_next_opponent
-    profile_intents = []
-    monkeypatch.setattr(postgres_next_opponent, "request_profile_refresh", lambda database: profile_intents.append(database))
+def test_retired_exclusion_route_and_legacy_command_atomic_followup(monkeypatch):
     from fastapi.testclient import TestClient
     from app import game_commands, main
-    from app import command_dispatch
-
-    dispatched = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(command_dispatch, "dispatch_command",
-                        lambda name, payload, *, idempotency_key:
-                        dispatched.append((name, payload, idempotency_key)) or
-                        {"game_id": payload["game_id"], "excluded": payload["excluded"]})
+    # The retired HTTP entry point is no longer mounted. The legacy command's
+    # atomic storage behavior remains covered below while its callers retire.
     response = TestClient(main.app).post(
         "/api/games/provider:one/exclusion", json={"excluded": True},
         headers={"Idempotency-Key": "exclude-one"},
     )
-    assert response.status_code == 200, response.text
-    assert dispatched == [("games.exclusion.set",
-                           {"game_id": "provider:one", "excluded": True}, "exclude-one")]
+    assert response.status_code == 404
 
     statements = []
     followups = []
@@ -1428,9 +1417,6 @@ def test_postgres_game_accounts_update_dispatches_foreground_command(monkeypatch
 
 
 def test_postgres_game_accounts_update_reconciles_provider_rows(monkeypatch):
-    from app.services import postgres_next_opponent
-    profile_intents = []
-    monkeypatch.setattr(postgres_next_opponent, "request_profile_refresh", lambda database: profile_intents.append(database))
     from app.account_commands import update_game_accounts
 
     statements = []
@@ -1445,7 +1431,6 @@ def test_postgres_game_accounts_update_reconciles_provider_rows(monkeypatch):
         {"lichess_username": " alice ", "chesscom_username": ""},
     )
     assert response == {"lichess_username": "alice", "chesscom_username": ""}
-    assert len(profile_intents) == 1
     assert statements[0][1] == ("alice", "")
     assert statements[1][1] == ("lichess", "alice")
     assert statements[2][1] == ("chess.com",)
@@ -2185,9 +2170,6 @@ def test_postgres_settings_update_dispatches_foreground_command(monkeypatch):
 
 
 def test_postgres_settings_update_refreshes_queue_and_preserves_omitted_defense_flag(monkeypatch):
-    from app.services import postgres_next_opponent
-    profile_intents = []
-    monkeypatch.setattr(postgres_next_opponent, "request_profile_refresh", lambda database: profile_intents.append(database))
     from app.contracts.transport.settings import Settings
     from app import settings_commands
 

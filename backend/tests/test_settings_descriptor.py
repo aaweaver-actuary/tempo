@@ -9,7 +9,7 @@ from fastapi import HTTPException
 
 from app import command_gateway as gateway, settings_commands as settings
 from app.contracts.transport.settings import Settings
-from app.services import postgres_next_opponent, queue_refresh_wakeup, study_priority
+from app.services import queue_refresh_wakeup, study_priority
 
 
 @pytest.fixture
@@ -37,7 +37,6 @@ def runtime(monkeypatch):
     monkeypatch.setattr(settings.storage, 'store_settings', lambda *_: effects.append('settings'))
     monkeypatch.setattr(settings.storage, 'store_provider_account', lambda _db, provider, name: effects.append((provider, name)))
     monkeypatch.setattr(settings.storage, 'remove_provider_account', lambda _db, provider: effects.append(('remove', provider)))
-    monkeypatch.setattr(postgres_next_opponent, 'request_profile_refresh', lambda _: effects.append('profile'))
     def request_queue(*_):
         effects.append('queue')
         queue_refresh_wakeup.mark_queue_refresh_requested()

@@ -187,7 +187,6 @@ def test_checkpoint_http_proof_isolates_receipt_setup_from_parent_foreground(
 
 @pytest.mark.parametrize("proof_script,scope_name", [
     ("check_postgres_queue_attempt_recovery.py", "_owned_queue_refresh_admission"),
-    ("check_postgres_next_opponent.py", "_owned_profile_admission"),
 ])
 @pytest.mark.parametrize("fail_proof", [False, True], ids=["complete", "failure-cleanup"])
 def test_real_game_queue_proof_isolates_parent_admission_but_retains_own_foreground_denial(

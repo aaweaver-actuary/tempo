@@ -34,7 +34,7 @@ import importlib.abc, sys
 class Deny(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
         if fullname in {'app.services.postgres_game_sync', 'app.services.postgres_game_sync_windows',
-            'app.services.postgres_next_opponent', 'app.services.postgres_game_derivation',
+            'app.services.postgres_game_derivation',
             'app.services.postgres_game_repertoire', 'app.services.postgres_game_findings',
             'app.services.postgres_game_misses', 'app.services.postgres_game_events',
             'app.services.postgres_game_features', 'app.services.postgres_game_priorities'}:
@@ -99,7 +99,6 @@ assert events == [('fence', claimed), ('failed', 'retained', 9, 'original-lease'
 
 
 SLICES = [
-    ('next_opponent_profile', 'postgres_next_opponent'),
     ('game_derivation_positions', 'postgres_game_derivation'),
     ('game_derivation_compare', 'postgres_game_repertoire'),
     ('game_derivation_findings', 'postgres_game_findings'),
@@ -120,7 +119,6 @@ owner.connection = lambda **_: nullcontext(object())
 owner.background_lease = lambda: nullcontext()
 owner.background_read_connection = lambda: nullcontext(object())
 owner.lock_current_slice = lambda db, task: observed.append(task) or False
-if '{module}' == 'postgres_next_opponent': owner._load_inputs = lambda *_: None
 if '{module}' == 'postgres_game_derivation': owner.storage.game_moves = lambda *_: None
 if '{module}' == 'postgres_game_repertoire':
     owner.game_scope_generation = lambda *_a, **_kw: 1
