@@ -100,8 +100,7 @@ assumed here.
 | [Study connection](lib/study-connection.ts) | `connectStudy(origin, workspace, credential)`, `disconnectStudy()` and `studyWorkspace()` manage the selected Learning authority. In independent Study, `learningFetch(input, options)` restricts authenticated API delivery to that authority and allowed paths; the full legacy build delegates to ordinary fetch. Disconnect clears the session connection, not durable Study work. The internal path allowlist/authenticated-fetch helper is not a plugin API. |
 | [Study session](../packages/study-session/src/index.ts) | `createStudySession({store, learning, ...})` exposes `start`, `submit`, `checkSave`, `retrySave`, `retryNext`, `getSnapshot`, `subscribe` and `dispose`. Injected `IntentStore` and `LearningClient` (required `deliver`, optional `checkReceipt`) separate durable intent storage and delivery; the session never invents server settlement. |
 | [Optional workspace contract](components/optional-workspace.ts) | `LegacyWorkspaceProps`, `LegacyWorkspaceSlots` and `LegacyWorkspaceController` exchange named facts, callbacks and presentation slots. Legacy composition owns optional state/imports; the shared shell does not hand over its store. |
-| [Workspace policy](lib/study-workspace-policy.ts) | `canOpenWorkspace(view, study)` permits Train, Tactics, Endgames and Settings in Study, including direct navigation intents. This is a fixed composition policy, not dynamic plugin discovery. |
-| [Saved endgame guard](lib/saved-endgame-practice.ts) | `hasSavedEndgameLine(card)` validates the persisted legal line. It performs no generation, provider call, review write or automatic grading. |
+| [Workspace policy](lib/study-workspace-policy.ts) | `canOpenWorkspace(view, study)` permits Train, Tactics and Settings in Study, including direct navigation intents. This is a fixed composition policy, not dynamic plugin discovery. |
 
 **Coupling is reduced, not eliminated.** The independent Study entry excludes
 the optional legacy workspace implementation; the full local/demo build still
@@ -139,33 +138,8 @@ sample data into an implicit fallback for a failed service.
 
 ### Saved endgame practice after calculation removal
 
-**MAIN implemented removal; deployment unverified:** on-demand generation and tablebase calls are removed from
-both independent Study and the legacy Endgames screen. The canonical Learning
-[request/resource drawing](../services/learning/runtime/README.md#shared-learning-request-execution-gaps-main)
-owns the server view; this browser view owns dispatch and user-visible behavior.
-
-```mermaid
-flowchart TB
-  Card["Persisted endgame card"] --> Gate["hasSavedEndgameLine: legal stored FEN and nonempty legal line"]
-  Gate -->|"yes"| Ordinary["Existing TrainingView board / move / review flow"]
-  Ordinary -->|"unchanged review intent and receipt"| Learning["Learning queue and review owner"]
-  Gate -->|"no"| Saved["Saved position + explicit unavailable notice / Bury"]
-  Standalone["Standalone Endgames"] --> Notice["Calculation removed notice; no request or automatic generation"]
-  Saved -->|"existing Bury command only"| Learning
-```
-
-[`saved-endgame-practice.ts`](lib/saved-endgame-practice.ts) rejects empty,
-placeholder and illegal lines. [`practice-card-adapters.ts`](domain/adapters/practice-card-adapters.ts) preserves
-the server-provided legal line; [`home_view.tsx`](views/home_view.tsx) and
-[`training_view.tsx`](views/training_view.tsx) use the same saved-line guard so
-valid saved endgames follow the actual ordinary move/review caller.
-[`endgames_view.tsx`](views/endgames_view.tsx) shows material-only saved cards
-without fabricating a solution, move defense or review; their saved state/history
-is retained and Bury remains available. The standalone view has no template
-admission, generation or provider request. The compatibility probe helper fails
-locally and never falls back to an external provider. Existing operation-ID
-recovery remains server-owned. No stored card, attempt, history or study is deleted.
-
-This preserves ordinary saved-line practice; a historical material-only template
-cannot provide calculated practice after the calculator is removed. Its explicit
-unavailable notice is the safe fallback, with no automatic grade or completion.
+Standalone Endgames and legacy Defense training have been retired. If a stale
+retired card reaches Training, it is held visibly without issuing a grade,
+advancing the queue, or changing its existing attempt. The shared board is
+read-only during the hold. Stored history and journals remain under their
+existing owners.

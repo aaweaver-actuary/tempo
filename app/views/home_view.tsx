@@ -50,7 +50,6 @@ import { trainedColor } from "../utils/cards";
 import { buryQueuedCard } from "../domain/training-session";
 import { rememberBrowserTrainingBurial, restoreBrowserTrainingBurials } from "../lib/browser-training-burials";
 import { buryTrainingEntry, finishTrainingBurial, hasPendingTrainingBurial, pendingTrainingBurialEntry, recoverTrainingBurial } from "../lib/training-bury-command";
-import { hasSavedEndgameLine } from "../lib/saved-endgame-practice";
 import TacticsView from "./tactics_view";
 import { loadPositionAnnotation } from "../utils/position-annotations";
 import { Chess, Move, Square } from "chess.js";
@@ -891,7 +890,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
       isLocked ||
       step >= card.moves.length ||
       currentTurn !== trainedColor(card) ||
-      (card.kind === "endgame" && !hasSavedEndgameLine(card))
+      (card.kind === "endgame" || card.kind === "defense")
     )
       return;
     const position = new Chess(currentFenString);
@@ -1615,11 +1614,6 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
               onBury={buryCurrentCard}
               burialPending={pendingBurialEntryId !== undefined}
               burialRecoveryError={burialRecoveryError}
-              onDefenseGraded={async () => {
-                await refreshDatabaseQueue(true);
-                setReviewed((count) => count + 1);
-                setSafeBreakCounter((count) => count + 1);
-              }}
               reviewPersistenceState={reviewPersistenceState}
               reviewSaveError={reviewSaveError}
               reviewPersistenceIdentity={reviewSaveDiagnosticIdentity.current ?? reviewPersistenceIdentity}
