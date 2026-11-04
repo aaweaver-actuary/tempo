@@ -2,13 +2,14 @@
 
 Blobs are immutable raw bytes under blobs/<sha256>; generations/<inventory_id>.json
 contains the canonical T2 inventory. The owner supplies and protects the root.
-Only local macOS APFS is qualified here; other filesystems fail closed.
+Only local macOS arm64 APFS is qualified here; other platforms fail closed.
 """
 from dataclasses import asdict, dataclass
 import ctypes
 import errno
 import json
 import os
+import platform
 from pathlib import Path
 import stat
 import sys
@@ -72,8 +73,9 @@ def _open_absolute(path):
 
 
 def _local_apfs(fd):
-    # Darwin statfs64 ABI as defined by sys/mount.h. No I/O at import time.
-    if sys.platform != 'darwin':
+    # Only the 64-bit Darwin arm64 statfs64 ABI has been qualified here.
+    # Fail before loading libc on every other architecture.
+    if sys.platform != 'darwin' or platform.machine() != 'arm64' or ctypes.sizeof(ctypes.c_void_p) != 8:
         return False
     class StatFS(ctypes.Structure):
         _fields_ = [('bsize', ctypes.c_uint32), ('iosize', ctypes.c_int32),
@@ -87,7 +89,7 @@ def _local_apfs(fd):
                     ('reserved', ctypes.c_uint32 * 7)]
     info = StatFS()
     libc = ctypes.CDLL(None, use_errno=True)
-    fstatfs = libc.fstatfs
+    fstatfs = libc.fstatfs64
     fstatfs.argtypes = [ctypes.c_int, ctypes.POINTER(StatFS)]
     fstatfs.restype = ctypes.c_int
     return fstatfs(fd, ctypes.byref(info)) == 0 and bool(info.flags & 0x1000) and info.fstype == b'apfs' and not (info.flags_ext & 2)
@@ -171,7 +173,8 @@ def archive_tactics_generation(*, archive_root: Path, catalog_bytes: bytes,
         if root_stat.st_uid != os.geteuid() or root_stat.st_mode & 0o077 or not _local_apfs(root):
             return blocked('ARCHIVE_UNSUPPORTED', inventory=inventory_id)
         identity = ArchiveRootIdentity(str(archive_root), root_stat.st_dev, root_stat.st_ino)
-        blobs, generations = _directory(root, 'blobs'), _directory(root, 'generations')
+        blobs = _directory(root, 'blobs')
+        generations = _directory(root, 'generations')
         by_path = dict(pack_assets)
         raw_values = (catalog_bytes,) + tuple(by_path[p.asset.logical_path] for p in inventory.packs)
         asset_values = (inventory.catalog,) + tuple(p.asset for p in inventory.packs)

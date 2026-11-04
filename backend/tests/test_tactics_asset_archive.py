@@ -66,3 +66,37 @@ def test_unsupported_root_and_inventory_mismatch(tmp_path, monkeypatch):
     monkeypatch.setattr(archive, '_local_apfs', lambda fd: False)
     assert run(root).code == 'ARCHIVE_UNSUPPORTED'
     assert archive.archive_tactics_generation(archive_root=root, catalog_bytes=C + b' ', pack_assets=ASSETS, inventory=INV).code == 'IMMUTABLE_CONFLICT'
+
+
+def test_failed_second_directory_open_closes_first_on_retry(tmp_path, monkeypatch):
+    import os
+    import pytest
+
+    root = tmp_path / 'archive'
+    root.mkdir(mode=0o700)
+    actual = archive._directory
+    opened = []
+
+    def fail_second(parent, name):
+        if name == 'generations':
+            raise OSError('injected directory open failure')
+        fd = actual(parent, name)
+        opened.append(fd)
+        return fd
+
+    monkeypatch.setattr(archive, '_directory', fail_second)
+    for _ in range(20):
+        assert run(root).code == 'ARCHIVE_IO_FAILED'
+        with pytest.raises(OSError):
+            os.fstat(opened[-1])
+    monkeypatch.setattr(archive, '_directory', actual)
+    assert run(root).status == 'ARCHIVED_READBACK'
+
+
+def test_unqualified_architecture_fails_before_ffi(monkeypatch):
+    monkeypatch.setattr(archive.sys, 'platform', 'darwin')
+    monkeypatch.setattr(archive.platform, 'machine', lambda: 'x86_64')
+    def forbidden(*args, **kwargs):
+        raise AssertionError('unqualified architecture must not invoke FFI')
+    monkeypatch.setattr(archive.ctypes, 'CDLL', forbidden)
+    assert archive._local_apfs(-1) is False
