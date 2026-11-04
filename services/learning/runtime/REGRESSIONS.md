@@ -419,4 +419,3 @@ capture-omission rejection, immutable batch replay, representative activation
 denial, final-watermark/generation binding and conservative forward recovery.
 These tests do not establish PostgreSQL transfer, browser recovery, actual
 evidence validity, installed state or complete migration acceptance.
-
