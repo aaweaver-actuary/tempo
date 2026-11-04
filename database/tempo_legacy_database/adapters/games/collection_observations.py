@@ -393,15 +393,19 @@ class CollectionObservations:
                         owner = self.receipts()
                         receipt = (owner.encounter_status(delivery.command.key) if delivery.encounter or row["original_encounter"] or delivery.qualification is not None
                                    else owner.effect_status(delivery.command.key))
-                        diagnostic = None if receipt else "not_delivered"
-                        observe = getattr(owner, "feedback_observation", None)
-                        if receipt is not None and callable(observe):
-                            try:
-                                observation = observe(delivery.command.key)
-                            except Exception:
-                                observation = None  # Missing queue facts cannot erase an actual receipt.
+                        diagnostic = None if receipt is not None else "not_delivered"
                     except Exception:
                         diagnostic = "owner_receipt_read_unavailable"
+                    if receipt is not None:
+                        try:
+                            observe = getattr(owner, "feedback_observation", None)
+                            if callable(observe):
+                                observation = observe(delivery.command.key)
+                        except Exception:
+                            observation = None  # Missing queue facts cannot erase an actual receipt.
+                progress = (study_receipt_progress(receipt, observation)
+                            if diagnostic not in {"receipt_not_observed", "owner_receipt_read_unavailable"}
+                            else {"stage": "unknown", "queue": {"availability": "unavailable"}})
                 receipts.append({"operation_id": delivery.operation_id, "delivery_state": delivery.state,
                     "command_kind": delivery.command_kind,
                     "delivery_qualification": {"status": delivery.qualification_status,
@@ -410,7 +414,7 @@ class CollectionObservations:
                         "determined_at": delivery.determined_at, "stream": delivery.stream},
                     "occurred_at": delivery.command.model_dump(mode="json").get("occurred_at"),
                     "receipt": receipt.model_dump(mode="json") if receipt else None,
-                    "progress": study_receipt_progress(receipt, observation),
+                    "progress": progress,
                     "diagnostic": diagnostic})
             retained = [row["finding"] for row in findings[:1000]]
             return {"provider": provider, "provider_game_id": game_id, **source,
