@@ -158,6 +158,9 @@ def test_retired_routes_do_not_dispatch_or_match_game_wildcard(monkeypatch):
         ("GET", "/api/games/example/analysis"),
         ("GET", "/api/games/next-opponent-profile"),
         ("POST", "/api/endgames/probe"),
+        ("POST", "/api/game-evidence/legacy/deliveries"),
+        ("POST", "/api/game-evidence/legacy/cards/example/queue"),
+        ("GET", "/api/game-evidence/legacy/cards/example"),
         ("POST", "/api/product/game-history/start"),
         ("POST", "/api/repertoire-coverage/maia/claim"),
     ):
