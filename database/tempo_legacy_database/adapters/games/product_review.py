@@ -5,7 +5,7 @@ import hashlib
 from app.contracts.product_v02.games import Finding, GameSummary
 from app.games.feedback.ports import ConcurrentUpdate, Delivery, JobState, SourceState
 from app.games.feedback.continuous import ContinuousProviderState, stream_prefix
-from app.games.feedback.review import ReviewUnavailable, SyncConfiguration
+from app.games.feedback.review import JobStatus, ReviewUnavailable, SyncConfiguration
 from .product_feedback import PostgresGamesStore
 
 REVIEW_SCHEMA_SQL = """
@@ -178,6 +178,22 @@ class PostgresReviewStore:
                 ORDER BY request.requested_at DESC,request.operation_id DESC LIMIT 1""",
                 (workspace, provider)).fetchone()
         return JobState.model_validate_json(row[0]) if row else None
+
+    def latest_job_status(self, workspace, provider):
+        with self._transaction() as database:
+            row = database.execute("""SELECT job.payload->'spec'->'job_id',
+                job.payload->'status', job.payload ? 'status', job.payload->'error'
+                FROM product_feedback_sync_requests request
+                JOIN product_feedback_jobs job ON job.job_id=request.job_id
+                WHERE request.workspace_id=%s AND request.provider=%s
+                ORDER BY request.requested_at DESC,request.operation_id DESC LIMIT 1""",
+                (workspace, provider)).fetchone()
+        if row is None:
+            return None
+        values = {"job_id": row[0], "error": row[3]}
+        if row[2]:
+            values["status"] = row[1]
+        return JobStatus.model_validate(values)
 
     def refresh_job(self, workspace, operation_id):
         with self._transaction() as database:
