@@ -176,6 +176,7 @@ def test_recovery_task_routes_scope_status_and_preserve_retry_identity(monkeypat
     tasks = [
         {'id': 'repair', 'kind': 'integrity_repair', 'state': 'failed', 'age_seconds': 0},
         {'id': 'queue', 'kind': 'daily_queue', 'state': 'queued', 'age_seconds': 3},
+        {'id': 'scan', 'kind': 'integrity_scan', 'state': 'failed', 'age_seconds': 0},
         {'id': 'retired', 'kind': 'game_analysis', 'state': 'failed', 'age_seconds': 0},
     ]
     @contextmanager
@@ -194,11 +195,14 @@ def test_recovery_task_routes_scope_status_and_preserve_retry_identity(monkeypat
     client = TestClient(main.app)
     status = client.get('/api/system/tasks')
     assert status.status_code == 200
-    assert [task['id'] for task in status.json()['tasks']] == ['repair', 'queue']
-    assert status.json()['counts']['failed'] == 1
+    assert [task['id'] for task in status.json()['tasks']] == ['repair', 'queue', 'scan']
+    assert status.json()['counts']['failed'] == 2
     assert client.post('/api/system/tasks/retired/retry', headers={'Idempotency-Key': 'retired-op'}).status_code == 404
     assert calls == []
     for _ in range(2):
         response = client.post('/api/system/tasks/repair/retry', headers={'Idempotency-Key': 'original-retry'})
         assert response.status_code == 200 and response.json()['operation_id'] == 'original-retry'
     assert calls == [('activity.task.retry', {'task_id': 'repair'}, {'idempotency_key': 'original-retry'})] * 2
+    response = client.post('/api/system/tasks/scan/retry', headers={'Idempotency-Key': 'scan-retry'})
+    assert response.status_code == 200
+    assert calls[-1] == ('activity.task.retry', {'task_id': 'scan'}, {'idempotency_key': 'scan-retry'})
