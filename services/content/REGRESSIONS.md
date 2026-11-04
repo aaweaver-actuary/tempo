@@ -209,3 +209,5 @@ fence and a self-consistent omission remain `UNVERIFIED`. These cases do not
 prove an actual writer fence, source-selected completeness or historical replay.
 The existing `run_suite.run_pytest` owner reconciles collection, execution and
 JUnit identities; native CF07 recovery remains a separate producer gate.
+
+The Content native runner selects `database/tempo_content_database/tests/test_final_generation.py` for the final-generation reservation, immutable source-selected capture, replay and target-unknown hold. Its synthetic target reader does not establish a real target receipt or installed writer fence.
