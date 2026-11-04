@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { schemaVersionFromSource, validateTarget, validateContainers, deploymentCanStart,
   acquireTargetLock, assessMainVerification, assessCandidate, qualityEvidence, atomicJson, selectCandidate, productVolumes, targetKey,
   CommandExecutionError, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, sourceFingerprint, sourceMatchesFingerprint } from "../../scripts/tempo-deployment.mjs";
-import { assessMigrationRecovery, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
+import { assessMigrationRecovery, cut62WitnessName, requirePrivateCut62Witness, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
 import { parseArguments, ensureDocker } from "../../scripts/tempo-cli.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
@@ -2549,4 +2549,23 @@ test('Docker availability uses bounded server endpoint without optional info dia
   },false,() => assert.fail('unexpected Docker launch'));
   assert.equal(calls.length,1);
   await assert.rejects(ensureDocker({context:'owned-context'}, async () => ({code:1}),false,() => {}),/Docker is unavailable/);
+});
+
+test("schema 62 comparator accepts only the exact guarded crossing", () => {
+  const guard = { starting_schema: 61, intended_schema: 62, attempt_id: "01234567-89ab-cdef-0123-456789abcdef" };
+  assert.equal(cut62WitnessName(guard), `cut62-${guard.attempt_id}.json`);
+  assert.equal(cut62WitnessName({ ...guard, starting_schema: 62, intended_schema: 62 }), null);
+  assert.equal(cut62WitnessName({ ...guard, starting_schema: 59, intended_schema: 61 }), null);
+  for (const change of [{ starting_schema: 60 }, { intended_schema: 63 }, { attempt_id: "../witness" }])
+    assert.throws(() => cut62WitnessName({ ...guard, ...change }), /Unsupported/);
+});
+
+test("schema 62 retry requires an existing private regular witness", t => {
+  const path = join(directory(t), "original.json");
+  assert.throws(() => requirePrivateCut62Witness(path), /missing/);
+  writeFileSync(path, "original", { mode: 0o644 });
+  assert.throws(() => requirePrivateCut62Witness(path), /private regular/);
+  fs.chmodSync(path, 0o600);
+  assert.doesNotThrow(() => requirePrivateCut62Witness(path));
+  assert.equal(readFileSync(path, "utf8"), "original");
 });
