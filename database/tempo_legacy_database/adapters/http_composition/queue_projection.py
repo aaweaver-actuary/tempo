@@ -145,6 +145,7 @@ def queue_rows(database, day: str, limit: int | None, *, miss_reason: str):
             "LEFT JOIN repertoires r ON r.id=COALESCE(choice.repertoire_id,c.repertoire_id) "
         )
         candidate_window = availability.available_attempt_sql(miss_reason).replace("SELECT q.id FROM", "SELECT q.* FROM", 1)
+        candidate_window += availability.RETIRED_QUEUE_PREDICATE
         candidate_window += " ORDER BY q.position,q.id" + (" LIMIT ?" if limit is not None else "")
         queue_sql = (
             "WITH active_queue AS MATERIALIZED "
