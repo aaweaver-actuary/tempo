@@ -149,3 +149,56 @@ def verify_three_journey_rows(expected, actual_rows):
     for name, item in expected['tables'].items():
         if actual['tables'][name]['retained'] != item['retained']:
             raise ValueError(f'retained or deleted rows differ in {name}')
+
+
+def three_journey_digest_witness(source_rows, primary_keys, proposed_keys, secret):
+    """Produce keyed source-derived witnesses without disclosing keys or contents.
+
+    Retain the same secret and original witness across the cut and all retries.
+    This draft does not select deletion keys or connect itself to the CLI guard.
+    """
+    import hashlib
+    import hmac
+
+    if not isinstance(secret, bytes) or len(secret) < 32:
+        raise ValueError('witness secret must contain at least 32 bytes')
+    if set(source_rows) != set(primary_keys) or set(proposed_keys) - set(source_rows):
+        raise ValueError('table coverage differs')
+
+    def encode(value):
+        return json.dumps(value, sort_keys=True, separators=(',', ':'),
+                          ensure_ascii=False, default=str).encode('utf-8')
+
+    def digest(domain, value):
+        return hmac.new(secret, domain.encode() + b'\x00' + encode(value), hashlib.sha256).hexdigest()
+
+    result = {}
+    for table, rows in source_rows.items():
+        indexed = {}
+        for row in rows:
+            key = tuple(row[column] for column in primary_keys[table])
+            if key in indexed:
+                raise ValueError(f'duplicate key in {table}')
+            indexed[key] = row
+        deleted = {tuple(key) for key in proposed_keys.get(table, [])}
+        if not deleted <= indexed.keys():
+            raise ValueError(f'unknown proposed key in {table}')
+        retained = indexed.keys() - deleted
+        def fingerprint(keys):
+            entries = sorted((digest(table + ':key', key), digest(table + ':row', indexed[key]))
+                             for key in keys)
+            return {'count': len(entries), 'digest': digest(table + ':set', entries)}
+        result[table] = {'retained': fingerprint(retained), 'deleted': fingerprint(deleted),
+                         'source': fingerprint(indexed.keys())}
+    return {'version': THREE_JOURNEY_EVIDENCE_VERSION, 'tables': result}
+
+
+def verify_three_journey_digest(expected, actual_rows, primary_keys, secret):
+    if expected.get('version') != THREE_JOURNEY_EVIDENCE_VERSION:
+        raise ValueError('unsupported evidence version')
+    if set(expected['tables']) != set(actual_rows):
+        raise ValueError('table coverage changed')
+    actual = three_journey_digest_witness(actual_rows, primary_keys, {}, secret)
+    for table in expected['tables']:
+        if actual['tables'][table]['source'] != expected['tables'][table]['retained']:
+            raise ValueError(f'retained or deleted rows differ in {table}')
