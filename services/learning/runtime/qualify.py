@@ -22,6 +22,7 @@ PACKAGES = (
     "packages/chess-core",
     "contracts/content-publication",
     "contracts/game-evidence",
+    "contracts/learning-transfer",
 )
 
 
