@@ -1,0 +1,223 @@
+{
+  "certificate": {
+    "alias_count": 1,
+    "approved_manifest_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "binding_count": 1,
+    "certificate_digest": "14d810b1b07d09fffaae3522128725b825437e3c16a71898d0f6114598a9257d",
+    "complete_generation": 1,
+    "complete_revision": 1,
+    "contract_version": "C-FENCE.v1",
+    "database_authority_id": "synthetic-content-database-a",
+    "definition_count": 1,
+    "export_byte_length": 1754,
+    "export_digest": "c32e1802990c154a391146e39126d13abc12ca4c5e15ff66de9c2bd20ad57b20",
+    "export_profile": "learning",
+    "export_sha256": "61305012e3554698510fb15f85e0135c5c2d5562e98e2c50a8ff748d630ed47f",
+    "fence_id": "synthetic-unverified-fence-a",
+    "fence_owner": "Content",
+    "generation": 1,
+    "inventory": {
+      "aliases": [
+        {
+          "card_id": "card-a",
+          "legacy_id": "legacy-card-a"
+        }
+      ],
+      "bindings": [
+        {
+          "binding": {
+            "card_id": "card-a",
+            "ply": 0,
+            "reentry": false
+          },
+          "policy_id": "policy-a",
+          "repertoire_id": "repertoire-a",
+          "route_id": "route-a"
+        }
+      ],
+      "definitions": [
+        {
+          "card_id": "card-a",
+          "decision_id": "decision-a",
+          "exercise_revision": 1,
+          "policy_id": "policy-a",
+          "prompt": "Play e4",
+          "publication_generation": 1,
+          "publication_id": "publication-a",
+          "source_revision": 1,
+          "specification": {
+            "accepted_lines": [
+              [
+                "e2e4"
+              ]
+            ],
+            "grading_policy": "reference",
+            "mode": "single",
+            "type": "move_line"
+          },
+          "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+        }
+      ],
+      "memberships": [
+        {
+          "policy_id": "policy-a",
+          "repertoire_id": "repertoire-a",
+          "route_id": "route-a"
+        }
+      ],
+      "provenance": [
+        {
+          "digest": "b71f0144b46df915999c6dd8f81c5677c69e9fdbc7c9593e77361c5241c9ac58",
+          "identity": {
+            "source_id": "source-a",
+            "source_key": "opening-a",
+            "workspace_id": "workspace-a"
+          },
+          "kind": "export_provenance"
+        },
+        {
+          "digest": "d37c1e112be3622768394e47f67fd283b035d8356ed5258065b9a20b7dc5251b",
+          "identity": {
+            "generation": 1,
+            "publication_id": "publication-a",
+            "workspace_id": "workspace-a"
+          },
+          "kind": "export_publication"
+        },
+        {
+          "digest": "13ccc2a89ad4da509df208533ee47dba74b63aad48f1cc49a884774df7ef17b7",
+          "identity": {
+            "source_id": "source-a",
+            "source_key": "opening-a",
+            "workspace_id": "workspace-a"
+          },
+          "kind": "export_source"
+        }
+      ],
+      "routes": [
+        {
+          "bindings": [
+            {
+              "card_id": "card-a",
+              "ply": 0,
+              "reentry": false
+            }
+          ],
+          "learner_color": "white",
+          "moves": [
+            "e2e4"
+          ],
+          "policy_id": "policy-a",
+          "policy_key": "policy-a",
+          "repertoire_id": "repertoire-a",
+          "repertoire_key": "repertoire-a",
+          "repertoire_title": "Golden repertoire",
+          "route_id": "route-a",
+          "route_key": "line-a",
+          "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+        }
+      ]
+    },
+    "membership_count": 1,
+    "publication_digest": "d37c1e112be3622768394e47f67fd283b035d8356ed5258065b9a20b7dc5251b",
+    "publication_id": "publication-a",
+    "receipt_id": "synthetic-receipt-a",
+    "requested_revision": 1,
+    "route_count": 1,
+    "snapshot_id": "synthetic-snapshot-a",
+    "snapshot_schema_identity": "synthetic-schema-a",
+    "source_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "source_id": "source-a",
+    "source_key": "opening-a",
+    "source_revision": 1,
+    "transfer_id": "transfer-a",
+    "workspace_id": "workspace-a"
+  },
+  "export": {
+    "complete": true,
+    "export_digest": "c32e1802990c154a391146e39126d13abc12ca4c5e15ff66de9c2bd20ad57b20",
+    "export_profile": "learning",
+    "historical_mapping_unknown": [],
+    "kind": "content_bridge_export",
+    "legacy_aliases": {
+      "card-a": "legacy-card-a"
+    },
+    "legal_replies_omitted": true,
+    "provenance": {
+      "description": "Synthetic envelope golden; never source authority",
+      "evidence_refs": [],
+      "kind": "synthetic",
+      "source_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "publication": {
+      "built_at": "2026-10-14T12:00:00Z",
+      "contract_version": 1,
+      "definitions": [
+        {
+          "card_id": "card-a",
+          "decision_id": "decision-a",
+          "exercise_revision": 1,
+          "policy_id": "policy-a",
+          "prompt": "Play e4",
+          "publication_generation": 1,
+          "publication_id": "publication-a",
+          "source_revision": 1,
+          "specification": {
+            "accepted_lines": [
+              [
+                "e2e4"
+              ]
+            ],
+            "grading_policy": "reference",
+            "mode": "single",
+            "type": "move_line"
+          },
+          "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+        }
+      ],
+      "publication_generation": 1,
+      "publication_id": "publication-a",
+      "source_revision": 1,
+      "workspace_id": "workspace-a"
+    },
+    "publication_digest": "d37c1e112be3622768394e47f67fd283b035d8356ed5258065b9a20b7dc5251b",
+    "routes": [
+      {
+        "bindings": [
+          {
+            "card_id": "card-a",
+            "ply": 0,
+            "reentry": false
+          }
+        ],
+        "learner_color": "white",
+        "moves": [
+          "e2e4"
+        ],
+        "policy_id": "policy-a",
+        "policy_key": "policy-a",
+        "repertoire_id": "repertoire-a",
+        "repertoire_key": "repertoire-a",
+        "repertoire_title": "Golden repertoire",
+        "route_id": "route-a",
+        "route_key": "line-a",
+        "starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+      }
+    ],
+    "schema_version": 1,
+    "source": {
+      "inventory_version": "golden-declaration",
+      "source_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "source_id": "source-a",
+      "source_key": "opening-a",
+      "source_revision": 1
+    },
+    "workspace_id": "workspace-a"
+  },
+  "expected": {
+    "status": "ENVELOPE_VALID",
+    "code": "content_generation_envelope_valid",
+    "authority": "UNVERIFIED",
+    "certificate_digest": "14d810b1b07d09fffaae3522128725b825437e3c16a71898d0f6114598a9257d"
+  }
+}
