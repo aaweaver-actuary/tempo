@@ -122,7 +122,8 @@ async def run():
         assert result['local_date'] == '2026-01-01' and result['cards'] == [] and result['count'] == 0
         calls.append('serving')
 asyncio.run(run())
-assert {'/api/game-evidence/product/feedback', '/api/product/game-history/preview', '/api/repertoires/{identifier}/coverage'} <= {route.path for route in main.app.routes}
+assert '/api/game-evidence/product/feedback' in {route.path for route in main.app.routes}
+assert not {'/api/product/game-history/preview', '/api/repertoires/{identifier}/coverage'} & {route.path for route in main.app.routes}
 assert calls[0] == 'initialize'
 assert calls[1][0:2] == ('dispatch','queue.ensure_current') and calls[1][2]['queue_date'] and calls[1][3] is None
 assert calls[2:] == ['policy-enter','serving','policy-exit']
