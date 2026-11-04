@@ -19,6 +19,10 @@
 !services/learning/remediation/src/
 !services/learning/remediation/src/**
 !packages/
+!packages/evidence-math/
+!packages/evidence-math/pyproject.toml
+!packages/evidence-math/src/
+!packages/evidence-math/src/**
 !packages/scheduling/
 !packages/scheduling/pyproject.toml
 !packages/scheduling/src/
