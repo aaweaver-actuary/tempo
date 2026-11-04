@@ -214,7 +214,7 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     // schema-62 guard intentionally rejects a direct 39-to-62 crossing.
     await repairedRetry.stopApplications();
     await compose(["exec", "-T", "postgres", "psql", "-U", "postgres", "-d", "tempo", "-c",
-      "CREATE TABLE cli_lifecycle_ledger_backup AS SELECT * FROM tempo_schema_migrations WHERE version >= 40"]);
+      "CREATE TABLE cli_lifecycle_ledger_backup (LIKE tempo_schema_migrations INCLUDING ALL); INSERT INTO cli_lifecycle_ledger_backup SELECT * FROM tempo_schema_migrations WHERE version >= 40"]);
     await forgetMigrationSuffix(repairedRetry);
     const rejected61 = makeRuntime(target, { run, stateDirectory, revision: schema61Revision,
       evidence: { commit: schema61Revision, disposable_runner: childProject },
