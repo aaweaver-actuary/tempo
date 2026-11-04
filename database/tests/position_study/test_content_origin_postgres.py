@@ -219,7 +219,13 @@ def test_native_cross_repertoire_scope_preserves_complete_family_and_anchor(monk
             assert changed_route['authority_start_ply'] is None and changed_route['anchor_status'] == 'AMBIGUOUS_FAMILY'
             assert all(x['status'] == 'AMBIGUOUS_FAMILY' for x in changed['occurrence_map'])
         with psycopg.connect(dsn) as writer:
-            writer.execute("UPDATE repertoire_lines SET moves_json='not json' WHERE id='other'")
+            writer.execute("DELETE FROM repertoire_lines WHERE id IN ('other','empty')")
+        with psycopg.connect(dsn, row_factory=tempo_row_factory) as reader:
+            reader.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+            _, _, unique = prepare(reader)
+            assert unique['route_scopes'][0]['authority_start_ply'] == 0
+        with psycopg.connect(dsn) as writer:
+            writer.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES ('other','competitor','other','white',%s,'not json','now')", (fen,))
         with psycopg.connect(dsn, row_factory=tempo_row_factory) as reader:
             reader.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
             scope = PostgresConnection(reader, read_only=True)
