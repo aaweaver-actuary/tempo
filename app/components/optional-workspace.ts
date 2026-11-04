@@ -27,6 +27,7 @@ export type LegacyWorkspaceController = {
 };
 export type LegacyWorkspaceSlots = {
   topActions?: ReactNode;
+  trainingActions?: ReactNode;
   banner?: ReactNode;
   trainingNotice?: ReactNode;
   repairNotice?: ReactNode;
