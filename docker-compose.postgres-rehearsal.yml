@@ -113,14 +113,8 @@ services:
 
 volumes:
   tempo-postgres-rehearsal:
-    external: true
-    name: tempo-pg-rehearsal-data
   tempo-redis-rehearsal:
-    external: true
-    name: tempo-redis-rehearsal-data
   tempo-postgres-backups:
-    external: true
-    name: tempo-postgres-backups
 
 secrets:
   postgres_admin_password:
