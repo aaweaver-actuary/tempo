@@ -6,7 +6,7 @@ First-departure encounter amendment · October 30, 2026 · Approved targets, not
 
 ## 1. Purpose and authority
 
-Tempo helps Andy recall his repertoire, learn from his games, prepare for likely opponent replies and common mistakes, and develop longer connected sequences without losing focused practice on difficult moves.
+Tempo helps Andy recall his repertoire, practice tactics, and review the first repertoire departure in his games.
 
 **Keep working Study and Tactics in place. Restart unfinished workflows selectively when that is faster than salvaging their orchestration. Deliver useful behavior before completing a replacement architecture.**
 
@@ -16,9 +16,11 @@ For product scope and delivery order, this document takes precedence over confli
 
 The first useful feature must not depend on completing an independent Learning replacement, full history migration, the code-reduction target, a services framework, or a general-purpose analysis system. Preserve current content and learning history in place; do not migrate them merely to add optional workflows. Small owning-component changes are allowed when needed for a feature.
 
-### November 4 retirement decision
+### November 4 three-journey release
 
-Retire Defense practice and generation, legacy per-position Game engine analysis, and the old repertoire-recommendation request pipeline. Delete the data owned by those features, including issued Defense exercises, reviews, pending grades, requests, and worker journals. Cancel their outstanding work. These data have no migration or replay requirement. Keep current PGN import, first-departure feedback, opening Study, captured Tactics, and their own data when cutting shared storage. Additional legacy-only functionality and its data are subject to removal. Any future engine project starts with a specific product requirement. [Retirement assignment #971](https://github.com/aaweaver-actuary/tempo/issues/971)
+Ship opening Study, Tactics, and repertoire-based Game Review on the existing PostgreSQL authority, foreground writer, and browser origin. Keep existing repertoire import and correction, Study settings, browser journals, exact-once review saving, queue recovery, current scheduling and protected attempts. Keep Tactics captures, pack activation and progress, including puzzles with a defensive theme. Keep raw PGN and configured provider intake, legal replay, selected repertoire scope, operating mode, and accepted Game Review feedback.
+
+Remove standalone Endgames, legacy Defense generation and practice, legacy Game analysis and findings, recommendation and discovery workflows, Analysis Workbench, Intelligence-only features, Stockfish including the standalone evaluator, Maia and Explorer compute, coverage and statistics dashboards, next-opponent profiles, unused chapter authoring, and obsolete Jobs and Saves. Remove their exclusive code, assets, registrations and storage. Delete retired Defense exercises and reviews, engine and recommendation jobs and their outstanding requests under #971. Use exact feature ownership in shared records and keep ambiguous rows until their ownership can be established. Preserve frozen introduction ranks and supported Study, Tactics and Game Review history and obligations.
 
 ## 2. Required outcomes
 
@@ -27,13 +29,9 @@ Retire Defense practice and generation, legacy per-position Game engine analysis
 | R01 | Preserve responsive Study, existing learning history, and reliable review saving. |
 | R02 | Import Lichess and Chess.com games; select the first departure from the applicable authored repertoire. For an own departure with an exact eligible target, apply ordinary Study Again once if introduced at first authoritative acceptance, or canonically introduce an unseen target. Issue the introduced target at the next safe unissued head and the isolated eligible unseen live target within five new issuances. |
 | R03 | Report uncovered opponent responses separately from recall failures. |
-| R04 | Find likely missing repertoire moves using rating-appropriate Explorer and Maia evidence. |
-| R05 | Prefer exact repertoire continuations and familiar responses from similar positions when repairing gaps. |
 | R06 | Allow at most one own response per exact position within each repertoire; block conflicting material until manually resolved. |
-| R07 | Find inconsistent own responses among similar positions and propose an acceptable, more familiar response. |
 | R08 | Preserve current tactics: capture, validation, collection/pack controls, solving, and Study integration. |
-| R09 | Introduce approved, unstudied opening cards according to encounter likelihood, updating priorities as personal-game evidence changes. |
-| R10 | Prepare for common opponent blunders, including effective responses already in the repertoire but not yet learned. |
+| R09 | Introduce approved, unstudied opening cards in current frozen priority order, subject to eligibility, budgets and the live Game Review exception. |
 | R11 | Progressively rejoin learned fragments into longer training sequences after three consecutive clean reviews, while retaining repeated-failure splitting. |
 
 ## 3. Game feedback
@@ -123,43 +121,17 @@ Audit existing content and validate imports and accepted edits. Show competing m
 
 Preserve evidence and unrelated memberships. If a newly detected conflict invalidates an active attempt's target, suspend that affected attempt without manufacturing a recall failure; unrelated attempts continue.
 
-## 5. Coverage, introductions, and repairs
+## 5. Opening introductions and repertoire corrections
 
-### S01 — Likelihood evidence
+### S02 — Frozen introductions
 
-Use Explorer first; add Maia through the same probability-provider boundary. Choose the rating population and time controls before using likelihoods for ranking. Store provider, settings, observation date, and sample counts where available; mark unavailable counts rather than inventing them.
+Deduplicate shared decisions and transpositions. Among reorderable queue slots, admitted urgent game misses come first, then eligible, admitted, untouched new repertoire cards in their frozen relative order, then ordinary reviews and other ordinary work. Apply this presentation order on daily construction, safe refresh after new-card admission, and adoption by an existing ready day. Active, issued, presented or teaching attempts, explicit work, unavailable rows and positioned retries retain their protected positions.
 
-Preserve missing/unknown probability mass. Do not renormalize a partial Explorer response or a subset of Maia moves into apparent full coverage. Rank gaps using both position reach and opponent-reply likelihood. Personal games should update encounter priorities without erasing population provenance.
-
-### S02 — Probability-driven introductions
-
-Rank eligible, approved, unintroduced opening decisions by expected encounter likelihood, evidence support, and uncertainty—not a statistical-significance test. Deduplicate shared decisions and transpositions. Among reorderable queue slots, admitted urgent game misses come first, then eligible, admitted, untouched new repertoire cards in their frozen relative order, then ordinary reviews and other ordinary work. Apply this presentation order on daily construction, safe refresh after new-card admission, and adoption by an existing ready day. Active, issued, presented or teaching attempts, explicit work, unavailable rows and positioned retries retain their protected positions.
-
-For discretionary introductions, use one global opening introduction budget with user-selected relative repertoire weights. G03 governs the real-game encounter exception. Depth should follow likely useful encounters rather than requiring every ancestor to reach an arbitrary maturity threshold. Changes to this policy belong to Study's introduction owner; optional analysis supplies rankings, not direct queue writes. Retain the last usable ranking or the existing safe order when evidence is unavailable.
-
-### S03 — Familiar candidates first, engine-checked in the actual position
-
-For a gap or inconsistent response:
-
-1. Look for an exact repertoire continuation, then comparable repertoire positions.
-2. Retrieve familiar responses and check their legality in the target position.
-3. Evaluate those candidates alongside the engine's preferred move; do not restrict familiarity to the engine's initial top-five list.
-4. Prefer a familiar response that meets the configured acceptability policy.
-5. Present a proposal with supporting examples, evaluation tradeoff, and uncertainty.
-
-The default maximum loss is **30 centipawns**, evaluated from Andy's perspective: `loss_cp = best_evaluation_cp - candidate_evaluation_cp`, using comparable settings and position context. Record engine version, depth/budget, candidate score, best score, and threshold. Any context-specific adjustment must be explicit and consistent; do not silently widen the threshold to approve a proposal. Handle mate separately. Missing or inconclusive evaluation is not acceptance evidence.
-
-A repertoire-wide consistency audit applies this process to already-covered positions as well as gaps. Explain what makes the examples similar and where they differ. Count distinct positions rather than repeated copies of the same line as independent support.
-
-### S04 — Common-blunder preparation
-
-Identify frequently played opponent errors and an effective response using frequency and engine evidence. The branch may already be covered. Surface its existing unintroduced or under-practiced response, or propose an addition when needed. Keep the opponent-blunder criterion separate from the 30 CP own-candidate tolerance.
+For discretionary introductions, use one global opening introduction budget with user-selected relative repertoire weights. G03 governs the real-game encounter exception. Depth should follow likely useful encounters rather than requiring every ancestor to reach an arbitrary maturity threshold.
 
 ### S05 — Deliberate content changes
 
-Provide accept, edit, and dismiss actions. Revalidate edits and the one-own-response invariant before publication. Acceptance must show both the repertoire change and any associated new cards; accepting that proposal authorizes those displayed additions. No unapproved repertoire edits or new training content.
-
-R11's automatic regrouping of already-approved moves is not a repertoire edit or an introduction of new content.
+Keep the ability to import and correct an existing repertoire and resolve blocking own-response conflicts. Revalidate edits and the one-own-response invariant before publication. R11 regroups previously approved moves for practice.
 
 ## 6. R11 — Adaptive card recombination
 
@@ -204,8 +176,7 @@ join/split scheduling is inert. Games effects retain their original occurrence
 identity but target exact position state: an introduced own departure earns one
 Again, an unseen eligible target is introduced without a fabricated review, and
 urgent delivery settles only through legitimate compatible Study evidence.
-Opponent-first departures cause no recall failure. Legacy card-owned openings,
-Tactics and Endgames retain their existing policies. The R11 rules below
+Opponent-first departures cause no recall failure. Legacy card-owned openings and Tactics retain their existing policies. The R11 rules below
 continue to apply to legacy card-owned cohorts.
 
 ### C01 — Earn eligibility through clean recall
@@ -251,12 +222,8 @@ Logical modules need not be separate services, deployments, or databases. Use na
 | PGN normalizer and comparer | Typed games and pure, provenance-bearing repertoire findings. |
 | Game-feedback coordinator | Import/comparison/admission workflow and retries through owning interfaces. |
 | Background-job runner | When optional jobs execute, checkpoints, and bounded retries—not learning schedules. |
-| Probability providers | Explorer/Maia likelihoods and their provenance. |
-| Similarity matcher | Comparable positions and candidate responses—not identity or move-quality decisions. |
-| Stockfish evaluator | Bounded candidate evaluation and evidence—not content edits. |
-| Suggestion coordinator | Combines findings and evidence into proposals; Repertoire applies approved changes. |
 
-Keep **Study**, **Tactics**, **Game review**, **Repertoire**, and small **Settings**. Coverage, conflicts, similarity, and repairs belong within Repertoire. Reuse the shared board and existing useful UI. Retire an old view only after preserving its useful capability elsewhere; simpler navigation is not permission to remove working behavior.
+Keep **Study**, **Tactics**, and **Game Review**. Keep essential repertoire import, correction, conflict resolution, and Study settings accessible from the retained product. Reuse the shared board.
 
 ### Jobs and discovery Saves retirement — November 3, 2026
 
@@ -274,7 +241,7 @@ is part of this retirement. Source cleanup alone makes no Study latency claim.
 
 ## 8. Delivery and bounded acceptance
 
-Deliver through the current product, one useful slice at a time. R11 is a separate Study slice and does not block game feedback. Exact-conflict work can proceed independently. Maia refines a useful Explorer-based path; engines are unnecessary for the first game miss.
+Deliver through the current product, one useful slice at a time. R11 is a separate Study slice and does not block game feedback. Keep existing exact-conflict controls available.
 
 The first-departure delivery bundle reuses collection and the owning Study path for introduced Again, unseen introduction and retained history. #618 freezes shared semantics; #619–#623 deliver components, #581 supplies compatible canonical unseen admission, and #624 owns the assembled ordinary Study and installed feedback checkpoint. The earlier collection-only checkpoint remains valid and inactive until its authorized operator enables it; it proves no feedback activation. New UI and engines are unnecessary. Acceptance distinguishes determination, acceptance, scheduling/admission, actual issuance and genuine settlement, with preserved history and no duplicate effect on resume.
 
@@ -283,8 +250,7 @@ The first-departure delivery bundle reuses collection and the owning Study path 
 | A — One game to Study | **A01:** An exact own first departure receives ordinary Again and next-safe-head issuance if introduced, or canonical introduction and actual issuance within D01 if unseen, with ordinary allowance zero and Study-only on. **A02:** Replay has one effect; an already-issued target saves normally without settling an unapplied reset, and a genuine subsequent compatible completion settles the debt. Off-day/restart preserves outstanding obligations. |
 | B — Continuous game feedback | **A03:** Both providers import incrementally without silent truncation; surviving authored alternatives cover valid moves, opponent-first gaps block later effects, and retained mixed work is qualified under one stable key. **A04:** Continuous Study advances determined work without a quiet window; optional provider/worker failure leaves Study/Tactics issuing/saving and accepted obligations recoverable. |
 | C — Exact repertoire audit | **A05:** A same-position own-response conflict blocks affected Study, is resolved manually, and leaves opponent branches and other memberships intact. Detectors do not mutate inputs. |
-| D — Introductions | **A06:** With other eligibility equal, a 20%-reach decision precedes a 2%-reach decision; a transposed duplicate gets no extra slot. Personal evidence can change ordering; budget/weights and unavailable-provider fallback are respected. |
-| E — Repairs and common blunders | **A07:** Show a familiar legal candidate checked against the 30 CP policy, plus supporting positions and provenance. No content changes before approval. Demonstrate both a missing reply and a common-blunder response that was already covered. Maia may follow independently. |
+| D — Introductions | **A06:** With other eligibility equal, frozen relative order is preserved and a transposed duplicate gets no extra slot. Respect current budget and repertoire weights. |
 | F — Connected practice | **A08:** Eligible A/B join to AB at 0/3; AB cannot join C until three new clean reviews. Failure resets eligibility, repeated misses retain split eligibility, and no active attempt/history/obligation is lost. |
 
 Acceptance is attached to the changed behavior. Use focused owner tests and the smallest relevant integration demonstration. Preserve retry safety, history, active-attempt protection, and permission boundaries. Do not require a full migration, whole-repository cleanup, or repeated full-system testing for an unrelated feature or documentation-only edit.
@@ -298,15 +264,13 @@ Existing actual required checks are not silently waived. If an obsolete gate no 
 | D01 | Decided | From durable actionable determination: introduced target at the next safe unissued head after Again; isolated eligible unseen live target by the fifth new issuance. G03 states holds, capacity, history and durable overdue recovery. This measures actual issuance, not forced completion or a 48-hour wait. |
 | D02 | Decided outcome | Exact own first departure: current-state ordinary Again once when introduced at first authoritative acceptance, canonical fresh introduction when unseen, and a durable urgent obligation. No introduction-before-game gate, fake human review or priority-only substitute for Again. G02 owns identity/disposition/settlement semantics. |
 | D03 | Decided | Strict one-own-response rule within a repertoire; affected material is blocked until manual resolution. |
-| D04 | Open for likelihood ranking | Select rating band and time controls. Does not block game feedback or exact audits. |
-| D05 | Corrected and decided | Default candidate tolerance is **30 CP, not 300 CP**. Record any explicit contextual policy. |
 | D06 | Decided | Manual acceptance of repertoire changes and their displayed associated additions. R11 changes presentation only. |
 | D07 | Decided | Resolve own-response conflicts manually; preserve evidence and unrelated content. |
 | D08 | Open correction policy | Define corrected/withdrawn-game handling. Bounded proposed default: quarantine changed evidence, revise/cancel unapplied obligations, and do not automatically reverse historical learning effects. |
 | D09 | Agreed recombination policy | Three consecutive clean reviews per participant; automatic safe-boundary joins; new combination starts at zero; existing repeated-failure splitting remains. |
 | D10 | Delegated implementation detail | Define conservative combined-presentation scheduling and late-import ordering within Study ownership. No invented combined successes or new scheduling authority. |
 
-Do not turn a locally unresolved parameter into a blocker for independent slices. Do not silently make D04 or D08 a user decision by selecting an undocumented value.
+Do not turn a locally unresolved parameter into a blocker for independent slices. Do not silently make D08 a user decision by selecting an undocumented value.
 
 ## 10. Concrete reuse map
 
@@ -321,11 +285,5 @@ This map records candidates from the source review at `24ec4c06f666f50104c979840
 | Repertoire comparison | [comparison](packages/repertoire-comparison/src/tempo_repertoire_comparison/comparison.py), [frontier](packages/repertoire-comparison/src/tempo_repertoire_comparison/frontier.py) | Reuse traversal; add the agreed classifications/reentry behavior. |
 | Exact identity / conflicts | [identity](packages/evidence-math/src/tempo_evidence_math/_identity.py), [conflict scanner](backend/app/studies/repertoire_conflicts.py) | Reuse pure logic; expose invalid-input diagnostics and enforce blocks through the owning service. |
 | Scheduling / feedback | [scheduler](packages/scheduling/src/tempo_scheduling/_scheduler.py), [current-owner evidence routes](backend/app/game_evidence_routes.py), [remediation adapter](backend/app/services/legacy_study_remediation.py) | Reuse Study scheduling and admission. Current bridge still needs the lapse effect and durable later-day admission; replace narrowly if integration becomes a framework exercise. |
-| Explorer / reach math | [Explorer provider](services/intelligence/src/tempo_intelligence/provider.py), [move probabilities](packages/evidence-math/src/tempo_evidence_math/_move_probability.py), [policy reach](packages/evidence-math/src/tempo_evidence_math/_policy_reach.py) | Reuse adapters and calculations without requiring the old Intelligence runtime. Write the small introduction-selection policy. |
-| Familiarity | [discovery admission](backend/app/services/discovery_admission.py) | Extract comparable-position helpers; do not import the old opportunity orchestration. Evaluate familiar candidates even outside engine top-five output. |
-| Stockfish | [process adapter](scripts/stockfish-process.mjs), [search wrapper](scripts/engine-search.mjs) | Reuse execution, separate old polling/leases, or replace with a small adapter if cheaper. |
-| Maia | [model](workers/maia/model.mjs), [core](workers/maia/core.mjs) | Reuse inference/assets. Request all legal moves for coverage; subset normalization is not full-board probability. |
 | Tactic capture | [capture owner](backend/app/services/tactic_capture.py), [puzzle PGN parser](app/lib/tactic-capture-pgn.ts) | Preserve existing capture API and content. Do not rebuild tactics to deliver game feedback. |
 | Split/rejoin | [prefix split](backend/app/services/prefix_split.py), [split commands](backend/app/prefix_split_commands.py) | Reuse legal split/lineage concepts and the current owner; implement the missing reverse join. The old [adaptive design](docs/ADAPTIVE-OPENING-SEGMENTATION.md) is reference, not a required rollout. |
-
-New product work is principally the small import/feedback coordinator, a reusable repertoire-position index, introduction selection, reviewable proposal orchestration, two review surfaces, and the R11 join operation. No new per-module services or blanket database redesign are implied.
