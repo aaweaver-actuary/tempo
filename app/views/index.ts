@@ -1,6 +1,5 @@
 export * from "./home_view";
 export * from "./card_editor";
-export * from "./endgames_view";
 export * from "./repertoire_view";
 export * from "./settings_view";
 export * from "./tactics_view";

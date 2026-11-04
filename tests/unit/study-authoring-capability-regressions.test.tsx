@@ -1,9 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { TacticalCatalogPanel } from "../../app/components/tactical-catalog";
-vi.mock("../../app/components/chessboard", () => ({ Chessboard: () => <div data-testid="endgame-board" /> }));
 vi.mock("../../app/utils/local", () => ({ usesLocalApi: () => true }));
-vi.mock("../../app/utils/tablebase", () => ({ probeTablebase: vi.fn(async () => ({ category: "draw", moves: [] })) }));
 beforeEach(() => { vi.resetModules(); vi.stubGlobal("__TEMPO_STUDY__", true); localStorage.clear(); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 it.each(["capture", "delete"])("pr291 R3 unsupported %s rejects before reading retained data, storage mutation or network", async kind => {
@@ -22,13 +20,4 @@ it("pr291 R3 read-only catalog preserves pack selection without activation actio
   render(<TacticalCatalogPanel catalog={{ version: 1, groups: [{ id: "basic", name: "Basic" }], themes: [{ id: "fork", name: "Fork", group: "basic" }], packs: [pack] }} progress={{}} selectedPackId="pack" onSelect={select} busy={false} />);
   expect(screen.queryByRole("button", { name: /activate/i })).toBeNull(); expect(screen.queryByText(/Activate packs to introduce/)).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: /Easy.*Pack 1/ })); expect(select).toHaveBeenCalledWith(pack);
-});
-
-it("independent Endgames preserves saved practice without calculation or authoring requests", async () => {
-  const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
-  const { default: Endgames } = await import("../../app/views/endgames_view");
-  render(<Endgames theme="brown" pieceSet="cburnett" onQueueChanged={vi.fn()} />);
-  expect(screen.getByRole("status").textContent).toContain("calculation has been removed");
-  expect(screen.queryByRole("button", { name: /Add to daily training|Edit material|Practice material/ })).toBeNull();
-  expect(fetcher).not.toHaveBeenCalled();
 });
