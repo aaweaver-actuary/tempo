@@ -167,6 +167,23 @@ def test_original_evidence_real_saved_later_mistake_and_repeatable_snapshot(monk
             fresh.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
             invalidated = read_original_completion(PostgresConnection(fresh, read_only=True), attempt_id=plan.attempt_id)
             assert invalidated.status == 'invalidated' and invalidated.review_id == complete.review_id
+        # A complete attempt is committed only with the canonical receipt and
+        # exact source reference for either allowed review source kind.
+        with psycopg.connect(dsn) as writer:
+            writer.execute('UPDATE reviews SET invalidated_at=NULL WHERE id=%s', (complete.review_id,))
+            writer.execute("UPDATE review_attempt_receipts SET scheduling_status='deferred' WHERE attempt_id=%s", (plan.attempt_id,))
+        def fresh_completion():
+            with psycopg.connect(dsn, row_factory=tempo_row_factory) as fresh:
+                fresh.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+                return read_original_completion(PostgresConnection(fresh, read_only=True), attempt_id=plan.attempt_id)
+        assert fresh_completion().status == 'conflict'
+        with psycopg.connect(dsn) as writer:
+            writer.execute("UPDATE review_attempt_receipts SET scheduling_status='canonical' WHERE attempt_id=%s", (plan.attempt_id,))
+            writer.execute("UPDATE reviews SET source_kind='study', source_ref='unrelated' WHERE id=%s", (complete.review_id,))
+        assert fresh_completion().status == 'conflict'
+        with psycopg.connect(dsn) as writer:
+            writer.execute('UPDATE reviews SET source_ref=%s WHERE id=%s', ('attempt:' + plan.attempt_id, complete.review_id))
+        assert fresh_completion().status == 'committed'
         # A malformed receipt is a conflict; retirement preserves its exact identity.
         with psycopg.connect(dsn) as writer:
             writer.execute('UPDATE reviews SET invalidated_at=NULL WHERE id=%s', (complete.review_id,))
