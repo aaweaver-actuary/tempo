@@ -1,66 +1,5 @@
 # One imported game to ordinary Study (#488)
 
-## One-time historical Games scripts
-
-`game_history_scripts.py` composes finite manual history import and offline
-first-departure processing. Its two [script entry points](../../../scripts/README.md#one-time-historical-import-and-repertoire-checks)
-share a private immutable local manifest containing saved scope and a frozen
-three-calendar-month window. Database jobs own checkpoints and retry delays;
-the manifest owns neither credentials nor executable Study commands.
-
-```mermaid
-flowchart LR
-  Manifest["Frozen local run manifest<br/>accounts, filters, window, selected repertoires"] --> Import["Finite history import"]
-  Import --> Providers["Existing bounded provider adapters"]
-  Providers --> Commit["Games canonical page commit<br/>sources, original pages, captures, cursor"]
-  Providers --> Oversized["Over-limit response<br/>validate full ordering and bounded page"]
-  Oversized --> Commit
-  Commit --> Recovery["Explicit precision recovery<br/>owner revalidates held source and saved page"]
-  Commit --> DailyRecovery["Daily-game recovery<br/>owner fences source and entire saved page"]
-  DailyRecovery --> Import
-  Recovery --> Commit
-  Commit --> Replay["Offline history comparison<br/>requires complete import"]
-  Manifest --> Replay
-  Scope["Current complete authored scope<br/>and current target preparation"] --> Replay
-  Replay --> Selector["Existing global first-departure selector"]
-  Selector --> Facts["Games findings and original outbox"]
-  Facts --> Intake["Qualified Study intake<br/>existing active managed-mode fences"]
-  Intake --> Study["Study-owned Again / introduction<br/>priority, issuance and settlement"]
-  Gate["Background admission / foreground priority<br/>bounded units and retained retries<br/>optional worker: 2048 MiB / 96 PIDs"] --> Import
-  Gate --> Replay
-```
-
-Historical jobs use `purpose=history`, exact-job claims and manual provenance.
-They cannot become automatic network jobs or Refresh-now checkpoints. Import
-defers repertoire reads and own-miss command generation; existing correction
-quarantine/control behavior remains. Unchanged previously compared sources retain
-their existing findings and first departure during collection. Replay reads the exact original provider
-page subtype and cursor, preserving metadata and canonical source identity.
-It commits comparisons through the existing Games page transaction, then delivers
-only outbox entries attached to the imported source set after the full traversal.
-Original commands, owner receipts and determination clocks survive retries.
-
-Missing scope remains unresolved; a later invocation can revisit a completed
-unresolved traversal. Opponent-first games produce no own-miss consequence.
-An explicit precision recovery handles only a quarantined first Lichess history
-page whose legacy PGN UTC-second matches the provider millisecond instant. Games
-storage locks and revalidates the original page, source version, sole capture,
-canonical game and absence of deliveries for each source before recording a new
-resolution capture. It preserves the original quarantine capture. The original
-page is replayed once with the same page key before provider pagination resumes;
-unproved or changed sources remain quarantined.
-An explicit provider-limit retry fences the same saved configuration, failed
-job, exact prior checkpoint and absence of a committed page at the failed
-cursor. It retains a typed failure receipt on the job before requeueing. A
-saved-page replay may increment the commit counter without adding a page;
-status treats a missing pending cursor as incomplete and still rejects an
-ambiguous page or a missing page for a completed job.
-Provider I/O/replay never enters Study's short writer. Background admission,
-full pause, source quarantine, configuration fences and active managed feedback
-identity retain their existing owners. These scripts do not activate a service,
-modify recurrence, migrate storage or change ordinary Study startup. Their
-reports distinguish saved acknowledgment receipts from current Study progress.
-
 ## Durable Game Review commands and Settings recovery (#590)
 
 The goal is to compare retained/provider games with the user's repertoire and
@@ -630,12 +569,6 @@ Focused regressions: `test_product_game_refresh.py`,
 `game-refresh.spec.ts`. Native provider transport is synthetic; this is not an
 installation or an authorized live provider run.
 
-## Chess.com daily historical recovery
-
-The one-time history operator delegates the daily mapping recovery to Games,
-then uses the saved replay cursor to read the immutable page before resuming
-provider acquisition. Study queue effects remain with the Study owner.
-
 ### Cheap feedback prerequisite observation (#661)
 
 Before retrying a retained target, composition may borrow one bounded read of
@@ -686,7 +619,7 @@ flowchart LR
   dispatch -->|"other commands"| registry
 ```
 
-Games sync, derivation and next-opponent slices are selected at their existing
+Games sync and derivation slices are selected at their existing
 worker handler seams only after the retained task passes admission and its lease
 fence. The essential queue path does not import these ten slice implementations;
 other optional worker imports remain outside this cut.
@@ -694,7 +627,7 @@ other optional worker imports remain outside this cut.
 ```mermaid
 flowchart LR
   task["Retained worker slice"] --> fence["Existing admission and lease fence"]
-  fence -->|"Games sync / derivation / profile kind"| load["Load matching owner slice"]
+  fence -->|"Games sync / derivation kind"| load["Load matching owner slice"]
   fence -->|"daily queue"| queue["Existing Study queue slice"]
 ```
 
