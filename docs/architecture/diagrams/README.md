@@ -65,6 +65,37 @@ views now describe merged PR322 source, while operational activation is unverifi
 Study revision `86d11afe` is outside this inspection and was not touched.
 
 
+## Three-journey release candidate
+
+The normal web entry mounts Train, Tactics, and Game Review on the existing browser origin. This source map describes the integration candidate. Packaged verification and installed readback are separate release gates.
+
+```mermaid
+flowchart LR
+  Browser["Tempo web · Train, Tactics, Game Review"]
+  Journal["Browser journals · attempts and pending operations"]
+  API["FastAPI · reads and command admission"]
+  Foreground["Foreground worker · Study and Tactics writes"]
+  Background["Background worker · provider refresh and feedback maintenance"]
+  Broker["Redis · command and task delivery"]
+  DB[("PostgreSQL · existing serving authority")]
+  Backup["PostgreSQL backup"]
+  Provider["Chess.com and Lichess"]
+
+  Browser --> Journal
+  Browser --> API
+  API -->|"read profile"| DB
+  API --> Broker
+  Broker --> Foreground
+  Broker --> Background
+  Foreground -->|"effects, receipts, and checkpoints"| DB
+  Background -->|"PGN ingestion and retained work"| DB
+  Background --> Provider
+  Background -->|"typed feedback handoff"| Foreground
+  DB --> Backup
+```
+
+A provider outage can hold new acquisition or evidence preparation. The foreground writer and periodic recovery preserve playable Study, accepted obligations, and replay identity. The candidate removes the legacy engine and Maia services from default Compose. The existing repertoire refresh and derivation projection chain stays in scope until its retained evidence consumers are resolved.
+
 ## Current public surfaces and coupling limits
 
 **Reduced, not eliminated.** Stable public-contract dependencies are intentional;
