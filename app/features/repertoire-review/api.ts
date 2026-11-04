@@ -61,6 +61,6 @@ export interface RepertoireReviewClient extends RepertoireReviewApi {
 }
 
 export type RepertoireNavigationIntent =
-  | { readonly kind: "import" | "manual_edit" | "settings"; readonly repertoire_id: string }
+  | { readonly kind: "import" | "settings"; readonly repertoire_id: string }
   | { readonly kind: "practice_existing" | "introduce_existing"; readonly repertoire_id: string;
       readonly presentation_id: string; readonly expected_revision: number };

@@ -115,7 +115,7 @@ export function ProposalPanel({ proposal, read, api, session, position, finding 
       </Field>)}
       <Button disabled={!dirty || responses.some(value => !/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(value))} onClick={() => { void editPreview(); }}>Validate edited preview</Button>
     </fieldset>
-    {!api.prepareEdit && <p>Inline edit preview is unavailable. Use the Manual editor.</p>}
+    {!api.prepareEdit && <p>Inline edit preview is unavailable. Import corrected lines or resolve the conflict in Repertoire.</p>}
     {dirty && <p>Edited content needs a new validated preview and fresh approval.</p>}
     {stale && <p role="alert">Stale proposal: refresh the source before approving.</p>}
     {error && <p role="alert">{error}</p>}

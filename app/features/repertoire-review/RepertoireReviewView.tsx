@@ -47,7 +47,6 @@ export function RepertoireReviewView({ api, repertoireId, repertoires, onReperto
         </select></Field>}
         <Button onClick={() => { setLoaded(null); setFailure(null); setRequest(value => value + 1); }}>Refresh review</Button>
         {onNavigate && <><Button onClick={() => onNavigate({ kind: "import", repertoire_id: repertoireId })}>Import lines</Button>
-          <Button onClick={() => onNavigate({ kind: "manual_edit", repertoire_id: repertoireId })}>Manual editor</Button>
           <Button onClick={() => onNavigate({ kind: "settings", repertoire_id: repertoireId })}>Likelihood settings</Button></>}
       </div>
     </header>

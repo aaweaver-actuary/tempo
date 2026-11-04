@@ -4,6 +4,5 @@ export * from "./repertoire_view";
 export * from "./settings_view";
 export * from "./tactics_view";
 export * from "./training_view";
-export * from "./tree_browser";
 export * from "./fetchAndInitializeQueue";
 export * from "./getFeedbackCopy";
