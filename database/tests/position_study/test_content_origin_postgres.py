@@ -122,6 +122,8 @@ def test_historical_origin_native(monkeypatch):
         raw.rollback()
         object.__setattr__(historical, 'payload', original_payload)
         changed = prepare()
+        original_moves = raw.execute("SELECT moves_json FROM repertoire_lines WHERE id='route'").fetchone()[0]
+        raw.commit()
         with psycopg.connect(dsn) as writer:
             writer.execute("UPDATE repertoire_lines SET moves_json='[\"d2d4\"]' WHERE id='route'")
         raw.execute('BEGIN')
@@ -136,7 +138,7 @@ def test_historical_origin_native(monkeypatch):
         assert raw.execute("SELECT count(*) FROM legacy_content_historical_origins WHERE export_id='stale'").fetchone()[0] == 0
         raw.rollback()
         with psycopg.connect(dsn) as writer:
-            writer.execute("UPDATE repertoire_lines SET moves_json='[\"e2e4\",\"e7e5\",\"g1f3\"]' WHERE id='route'")
+            writer.execute("UPDATE repertoire_lines SET moves_json=%s WHERE id='route'", (original_moves,))
         rollback_value = prepare()
         raw.execute('BEGIN')
         result = capture_content_origin(port, prepared=rollback_value, export_id='rollback')
