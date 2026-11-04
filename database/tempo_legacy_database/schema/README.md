@@ -63,3 +63,6 @@ C1 migration [054](../ddl/migrations/054_product_repertoire_review.sql) adds the
 Repertoire-owned [preview/approval dictionary](../../../backend/app/repertoire/changes/README.md)
 and Study-owned [conflict hold/receipt dictionary](../adapters/study/CONFLICTS.md).
 Their exact logical queue/card references do not grant cross-owner writes.
+
+[Historical authored origin receipts](authored-origin/README.md) describes the
+source061 immutable, noncurrent observation archive and its authority limits.

@@ -116,3 +116,8 @@ migration has been run by the feature implementation.
 - [059_queue_refresh_epochs.sql](059_queue_refresh_epochs.sql)
 
 - [060_position_first_response_immutable.sql](060_position_first_response_immutable.sql)
+
+Migration [061](061_content_origin_receipts.sql) retains immutable historical
+authored source observations at readiness61. It confers no Content projection,
+physical currentness or serving authority. See the
+[historical origin dictionary](../../schema/authored-origin/README.md).
