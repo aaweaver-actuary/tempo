@@ -5,7 +5,7 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from tempo_learning_runtime.retained_history_contracts import (
+from tempo_learning_transfer_contracts.v1 import (
     FAMILIES, ActivationReceipt, CaptureInventory, FencingProof, KeyPart, SourceKey, SourceManifest, StageReceipt, StoreShape,
     StateFact, VerificationReceipt, activation_blockers, digest_bytes,
     facts_digest, plan_transfer, record_digest, recovery_path, replay_batch,

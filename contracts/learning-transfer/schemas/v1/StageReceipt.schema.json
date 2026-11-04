@@ -1,0 +1,65 @@
+{
+  "$id": "https://tempo.invalid/contracts/learning-transfer/v1/StageReceipt.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "batch_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Batch Digest",
+      "type": "string"
+    },
+    "batch_id": {
+      "minLength": 1,
+      "title": "Batch Id",
+      "type": "string"
+    },
+    "cursor": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Cursor"
+    },
+    "manifest_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Manifest Digest",
+      "type": "string"
+    },
+    "receipt_id": {
+      "minLength": 1,
+      "title": "Receipt Id",
+      "type": "string"
+    },
+    "target_generation": {
+      "minLength": 1,
+      "title": "Target Generation",
+      "type": "string"
+    },
+    "transfer_id": {
+      "minLength": 1,
+      "title": "Transfer Id",
+      "type": "string"
+    },
+    "version": {
+      "const": 1,
+      "title": "Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "version",
+    "transfer_id",
+    "manifest_digest",
+    "batch_id",
+    "batch_digest",
+    "cursor",
+    "target_generation",
+    "receipt_id"
+  ],
+  "title": "StageReceipt",
+  "type": "object"
+}

@@ -11,6 +11,9 @@ COPY packages/scheduling/pyproject.toml packages/scheduling/pyproject.toml
 COPY packages/scheduling/src packages/scheduling/src
 COPY packages/chess-core/pyproject.toml packages/chess-core/pyproject.toml
 COPY packages/chess-core/src packages/chess-core/src
+COPY contracts/learning-transfer/pyproject.toml contracts/learning-transfer/pyproject.toml
+COPY contracts/learning-transfer/src contracts/learning-transfer/src
+COPY contracts/learning-transfer/schemas contracts/learning-transfer/schemas
 COPY contracts/content-publication/pyproject.toml contracts/content-publication/pyproject.toml
 COPY contracts/content-publication/src contracts/content-publication/src
 COPY contracts/content-publication/schemas contracts/content-publication/schemas

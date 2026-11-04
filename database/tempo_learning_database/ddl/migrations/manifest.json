@@ -27,5 +27,11 @@
     "owner": "#193/A",
     "path": "0003_content_bridge.sql",
     "depends_on": ["learning.remediation/0001"]
+  },
+  {
+    "id": "learning.retained_position/0001",
+    "owner": "#908/W02A",
+    "path": "0004_retained_position.sql",
+    "depends_on": ["learning.bridge/0001"]
   }
 ]

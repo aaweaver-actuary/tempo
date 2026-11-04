@@ -1,0 +1,53 @@
+{
+  "$id": "https://tempo.invalid/contracts/learning-transfer/v1/TransferPlan.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "blockers": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Blockers",
+      "type": "array"
+    },
+    "manifest_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Manifest Digest",
+      "type": "string"
+    },
+    "mapping_version": {
+      "minLength": 1,
+      "title": "Mapping Version",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "staging_only",
+        "BLOCK"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "transfer_id": {
+      "minLength": 1,
+      "title": "Transfer Id",
+      "type": "string"
+    },
+    "version": {
+      "const": 1,
+      "title": "Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "version",
+    "transfer_id",
+    "manifest_digest",
+    "mapping_version",
+    "status",
+    "blockers"
+  ],
+  "title": "TransferPlan",
+  "type": "object"
+}

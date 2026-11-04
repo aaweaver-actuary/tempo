@@ -93,9 +93,9 @@ def check_package(source_root: Path):
 if __name__ == "__main__":
     root = Path(__file__).resolve().parent
     source_roots = [path.parent / "src" for path in root.glob("*/pyproject.toml")]
-    if len(source_roots) != 5:
-        raise SystemExit("expected exactly five contract package inputs")
+    if len(source_roots) != 6:
+        raise SystemExit("expected exactly six contract package inputs")
     errors = [error for directory in source_roots for error in check_package(directory)]
     if errors:
         raise SystemExit("\n".join(errors))
-    print("Five contract packages: declared imports only; no dynamic source loading")
+    print("Six contract packages: declared imports only; no dynamic source loading")

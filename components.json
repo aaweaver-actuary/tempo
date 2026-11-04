@@ -176,7 +176,8 @@
         "chess",
         "fsrs",
         "httpx",
-        "tempo_learning_remediation"
+        "tempo_learning_remediation",
+        "tempo_learning_transfer_contracts"
       ],
       "buildInputs": [
         "../../../database/tempo_learning_database",
@@ -665,6 +666,65 @@
         "migrations": [],
         "documents": [
           "contracts/OWNERSHIP.md"
+        ],
+        "productionAdoption": false
+      },
+      "catalog": "contracts/catalog.json",
+      "testInventory": "REGRESSIONS.md"
+    },
+    {
+      "id": "learning-transfer-contracts",
+      "type": "contract",
+      "maintainer": "Tempo / #908 W01",
+      "status": "implemented",
+      "root": "contracts/learning-transfer",
+      "publicExports": [
+        "tempo_learning_transfer_contracts.v1",
+        "schemas/v1/*.json"
+      ],
+      "dependencies": [
+        "pydantic"
+      ],
+      "buildInputs": [
+        "pyproject.toml",
+        "src",
+        "schemas",
+        "fixtures",
+        "examples",
+        "tests",
+        "README.md",
+        "REGRESSIONS.md"
+      ],
+      "buildCommand": "python -m build --no-isolation",
+      "artifact": {
+        "name": "tempo-learning-transfer-contracts",
+        "version": "1.0.0",
+        "format": "wheel + sdist + packaged JSON schema"
+      },
+      "tests": [
+        {
+          "owner": "learning-transfer-contracts",
+          "kind": "python",
+          "cwd": "contracts/learning-transfer",
+          "command": "python -m pytest tests --import-mode=importlib -q",
+          "inputs": [
+            "tests"
+          ]
+        }
+      ],
+      "toolchain": {
+        "python": ">=3.12,<3.15",
+        "qualificationPython": [
+          "3.13"
+        ]
+      },
+      "dataOwnership": {
+        "authority": "#908 W01",
+        "databases": [],
+        "migrations": [],
+        "documents": [
+          "contracts/OWNERSHIP.md",
+          "contracts/learning-transfer/README.md"
         ],
         "productionAdoption": false
       },

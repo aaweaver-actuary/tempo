@@ -413,9 +413,20 @@ The fixture extends only the already-observed retry timestamp to avoid relying
 on host scheduling within the one-second deferral window.
 # Retained-history wire contract (#908 W01)
 
-`tests/test_retained_history_contracts.py` owns pure original-byte/large-ID
+The independent `contracts/learning-transfer/tests/test_retained_history_contracts.py`
+suite owns pure original-byte/large-ID
 round-trip, full canonical PK/codec/order, digest/reference/collision and
 capture-omission rejection, immutable batch replay, representative activation
 denial, final-watermark/generation binding and conservative forward recovery.
 These tests do not establish PostgreSQL transfer, browser recovery, actual
 evidence validity, installed state or complete migration acceptance.
+## Retained position staging (#908 W02A)
+
+`database/tests/position_study/test_retained_position_store_postgres.py` runs
+through the owning disposable Learning PostgreSQL runner with an explicit path.
+It captures original schema-59 rows, stages one position and all selected fact
+bytes/keys, and checks replay, conflicts, rollback, FSRS collision and unchanged
+source. `tests/test_retained_position_migration.py` verifies the registered owner
+migration/checksum and staging tables through the regular native fixture.
+These are representative non-serving mechanisms, not activation or complete
+migration certification. W02B owns the pinned future-review comparison.

@@ -301,3 +301,30 @@ def recovery_path(target_acceptance: Literal["none", "accepted", "uncertain"],
     if target_acceptance == "none" and original_return_proven:
         return "verified_original_return"
     return "forward_repair"
+
+
+PUBLIC_MODELS = (
+    SourceManifest, TransferPlan, StageReceipt, VerificationReceipt,
+    FencingProof, ActivationReceipt, RuntimeProof,
+)
+
+
+def validate_contract(model: type[Record], payload: str | bytes) -> Record:
+    return model.model_validate_json(payload)
+
+
+def serialize_contract(value: Record) -> str:
+    """The unchanged v1 envelope encoding used by record_digest."""
+    return json.dumps(value.model_dump(mode="json"), sort_keys=True,
+                      separators=(",", ":"), ensure_ascii=False)
+
+
+__all__ = [
+    "Identifier", "Digest", "Family", "FAMILIES", "Record", "KeyPart",
+    "SourceKey", "StoreShape", "CaptureInventory", "StateFact",
+    "SourceManifest", "TransferPlan", "StageReceipt", "VerificationReceipt",
+    "FencingProof", "ActivationReceipt", "RuntimeProof", "digest_bytes",
+    "record_digest", "key_token", "validate_key", "facts_digest",
+    "plan_transfer", "replay_batch", "activation_blockers", "recovery_path",
+    "PUBLIC_MODELS", "validate_contract", "serialize_contract",
+]
