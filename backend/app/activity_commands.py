@@ -29,6 +29,7 @@ def control_activity(database: PostgresConnection, payload: dict[str, Any]) -> d
 register_command("activity.control", control_activity)
 
 
+_DISCOVERY_RECOVERY_QUALIFIED = False
 _DISCOVERY_PARKED_AT = "9999-12-31T23:59:59+00:00"
 _DISCOVERY_RETRY_REASONS = frozenset({
     "graph_prerequisite_missing", "graph_authority_busy_retry_exhausted",
@@ -45,6 +46,10 @@ def _retry_retained_discovery(database, payload):
     if (not isinstance(task_id, str) or not task_id or type(generation) is not int or generation < 1
             or not isinstance(intent_id, str) or not intent_id or not isinstance(reason, str)):
         raise HTTPException(422, "Exact discovery task, generation, intent and hold reason required")
+    # No worker claims this retained kind yet. A successful wake would strand
+    # the original accepted operation, so the owner stays status-only.
+    if not _DISCOVERY_RECOVERY_QUALIFIED:
+        raise HTTPException(409, {"code": "discovery_recovery_disabled"})
     task = storage.parked_discovery_for_update(database, task_id)
     if task is None:
         raise HTTPException(409, "Discovery task is missing, busy or no longer parked")

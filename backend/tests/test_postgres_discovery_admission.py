@@ -332,6 +332,7 @@ def test_owner_retry_requires_exact_identity_and_current_authority(monkeypatch):
     intent = {'id': 'intent', 'state': 'preparing', 'last_error': 'graph_prerequisite_missing', 'repertoire_id': 'r'}
     payload = {'task_id': 'task', 'generation': 4, 'intent_id': 'intent', 'hold_reason': 'graph_prerequisite_missing'}
     calls = []
+    monkeypatch.setattr(commands, '_DISCOVERY_RECOVERY_QUALIFIED', True)
     monkeypatch.setattr(commands.storage, 'parked_discovery_for_update', lambda *_: task)
     monkeypatch.setattr(commands.storage, 'parked_intent_for_update', lambda *_: intent)
     monkeypatch.setattr(commands.storage, 'wake_parked_discovery', lambda *args: calls.append(('wake', args)) or 1)
@@ -348,3 +349,16 @@ def test_owner_retry_requires_exact_identity_and_current_authority(monkeypatch):
     assert commands._retry_retained_discovery(object(), payload) == {'id': 'task'}
     assert [call[0] for call in calls] == ['wake', 'event']
     assert calls[0][1][2:4] == (4, 'intent')
+
+
+def test_disabled_discovery_owner_retry_never_wakes_parked_task(monkeypatch):
+    import pytest
+    from fastapi import HTTPException
+    from app import activity_commands as commands
+    monkeypatch.setattr(commands, '_DISCOVERY_RECOVERY_QUALIFIED', False)
+    monkeypatch.setattr(commands.storage, 'parked_discovery_for_update', lambda *_: pytest.fail('disabled retry touched storage'))
+    payload = {'task_id': 'task', 'generation': 4, 'intent_id': 'intent', 'hold_reason': 'graph_prerequisite_missing'}
+    with pytest.raises(HTTPException) as error:
+        commands.retry_failed_task(object(), payload)
+    assert error.value.status_code == 409
+    assert error.value.detail == {'code': 'discovery_recovery_disabled'}
