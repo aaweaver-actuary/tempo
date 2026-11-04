@@ -282,3 +282,12 @@ def requeue_task(database, values):
                WHERE id=? AND generation=? AND lease_token=? AND state='leased'""",
         values,
     )
+
+
+def recovery_task(database, task_id, *, lock=False):
+    """Read the persisted envelope; the owning transaction fences its lease."""
+    suffix = ' FOR UPDATE' if lock and configured() else ''
+    return database.execute(
+        'SELECT id,kind,deduplication_key,payload_json,generation,lease_token,state '
+        'FROM background_tasks WHERE id=?' + suffix, (task_id,),
+    ).fetchone()

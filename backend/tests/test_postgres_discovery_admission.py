@@ -127,3 +127,20 @@ def test_postgres_discovery_admission_completes_published_card_without_replay(mo
     assert not discovery_admission.execute_admission_intent_slice(task)
     assert queued_cards == ["card-one"]
     assert completed == [True]
+
+
+def test_recovery_identity_rejects_forged_and_missing_intents(monkeypatch):
+    import json
+    row = {'id': 'task', 'kind': 'discovery_admission', 'deduplication_key': 'intent',
+           'payload_json': json.dumps({'intent_id': 'intent'}), 'generation': 2,
+           'lease_token': 'lease', 'state': 'leased'}
+    task = {**row, 'payload': {'intent_id': 'intent'}}
+    monkeypatch.setattr(discovery_admission.storage, 'recovery_task', lambda *a, **k: row)
+    monkeypatch.setattr(discovery_admission.storage, 'intent', lambda *a: {'id': 'intent', 'state': 'preparing'})
+    assert discovery_admission._recovery_identity(None, task)[0] == 'accepted'
+    assert discovery_admission._recovery_identity(None, {**task, 'payload': {'intent_id': 'other'}})[0] == 'stale'
+    row['deduplication_key'] = 'other'
+    assert discovery_admission._recovery_identity(None, {**task, 'deduplication_key': 'other'})[0] == 'invalid'
+    row['deduplication_key'] = 'intent'
+    monkeypatch.setattr(discovery_admission.storage, 'intent', lambda *a: None)
+    assert discovery_admission._recovery_identity(None, task)[0] == 'invalid'

@@ -480,6 +480,28 @@ def enqueue_admission_intent(intent_id: str) -> None:
                  priority=DISCOVERY_ADMISSION_PRIORITY, foreground=False)
 
 
+def _recovery_identity(database, task: dict, *, lock=False):
+    """Distinguish stale envelope, invalid durable identity and accepted intent."""
+    row = storage.recovery_task(database, task.get("id"), lock=lock)
+    if not row or row["state"] != "leased" or row["generation"] != task.get("generation") or row["lease_token"] != task.get("lease_token"):
+        return "stale", None
+    try:
+        payload = json.loads(row["payload_json"])
+    except (TypeError, ValueError):
+        return "invalid", None
+    if task.get("kind") != row["kind"] or task.get("deduplication_key") != row["deduplication_key"] or task.get("payload") != payload:
+        return "stale", None
+    if row["kind"] != "discovery_admission" or not isinstance(payload, dict) or set(payload) != {"intent_id"}:
+        return "invalid", None
+    intent_id = payload["intent_id"]
+    if not isinstance(intent_id, str) or not intent_id or row["deduplication_key"] != intent_id:
+        return "invalid", None
+    intent = storage.intent(database, (intent_id,))
+    if not intent or intent["id"] != intent_id:
+        return "invalid", None
+    return ("completed" if intent["state"] == "queued" else "accepted"), intent
+
+
 def _materialize_admission_branch(task: dict) -> None:
     """Write one selected branch and its rebuild request in a short transaction."""
     read_section = background_read_connection if storage.configured() else read_connection
