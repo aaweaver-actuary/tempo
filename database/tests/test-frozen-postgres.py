@@ -121,23 +121,11 @@ def main():
             database.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES('missing-line','fixture','missing','white',?,?,?)",(missing_fen,json.dumps(unknown_moves),day+'missing'))
             database.execute("INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,parent_card_id,decision_fen_key,starting_fen,moves_json,trained_color,segment_kind,first_decision_index,last_decision_index,decision_fen_keys_json) VALUES('fixture',1,'missing-line',0,?,NULL,?, ?,?,'white','prefix',0,0,'[]')",(unknown_id,' '.join(missing_fen.split()[:4]),missing_fen,json.dumps(unknown_moves)))
 
-        # Construct a persisted plan fixture from exact current definitions. The
-        # saved provenance is synthetic; no model or planning code is executed.
-        from app.study.openings.frozen_math import content_fingerprint, VERSION, READER_VERSION
+        from fixtures.frozen_order_staged_plan import staged_plan
         with psycopg.connect(url,row_factory=tempo_row_factory) as raw:
-            database=PostgresConnection(raw)
-            ranks=[]
-            for rank, identifier in enumerate([*scored_ids, unknown_id], 1):
-                card=dict(database.execute('SELECT * FROM cards WHERE id=?',(identifier,)).fetchone())
-                ranks.append({'id':identifier,'rank':rank,'memberships':['fixture'],
-                              'fingerprint':content_fingerprint(card,['fixture'])})
-        deferred={'id':unknown_id,'rank':len(ranks),'memberships':['fixture'],
-                  'scoring_status':'deferred','marginal_score':None}
-        plan={'run_id':'synthetic-frozen-plan','checksum':'synthetic-frozen-plan',
-              'version':VERSION,'required_reader_version':READER_VERSION,
-              'provenance':model_provenance(),'ranks':ranks,'activation_safe':True,
-              'scoring_policy':'allow_unscored_tail','scored_count':100,'deferred_count':1,
-              'deferred_fraction':1/101,'lineage_diagnostic_count':1,'deferred_cards':[deferred]}
+            plan=staged_plan(PostgresConnection(raw), [*scored_ids, unknown_id],
+                             run_id='synthetic-frozen-plan', provenance=model_provenance(),
+                             deferred_id=unknown_id)
         assert plan['deferred_fraction']<=0.01 and plan['deferred_cards'][0]['id']==unknown_id
         ids=[plan['ranks'][1]['id'],plan['ranks'][0]['id']]
         run_id=plan['run_id']
