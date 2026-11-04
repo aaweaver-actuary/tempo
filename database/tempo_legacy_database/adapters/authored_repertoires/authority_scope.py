@@ -14,6 +14,7 @@ from .content_origin import PreparedContentOrigin, _SEAL as _ORIGIN_SEAL
 from .position_study_source import _owner_header
 
 _SEAL = object()
+_MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
 _FIELDS = {
     'repertoires': ('id', 'name', 'is_main', 'scope_source_revision', 'canonical_prefix_revision', 'canonical_prefix_moves_json', 'canonical_prefix_preview_id'),
     'repertoire_lines': ('id', 'repertoire_id', 'trained_color', 'start_fen', 'moves_json'),
@@ -22,6 +23,38 @@ _FIELDS = {
 
 def _encode(value):
     return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False).encode('utf-8')
+
+
+def _bounded_json_size(value, limit):
+    """Count canonical escaped UTF-8 incrementally without building output."""
+    total = 0
+    for chunk in json.JSONEncoder(sort_keys=True, separators=(',', ':'), ensure_ascii=False,
+                                  allow_nan=False).iterencode(value):
+        total += len(chunk.encode('utf-8'))
+        if total > limit:
+            return None
+    return total
+
+
+def _bounded_prefixes(root, moves, limit):
+    """Bound repeated policies before sorting or appending each expanded list."""
+    node, prefixes, size = root, [], 2
+    for index in range(len(moves) + 1):
+        if index:
+            node = node['children'][moves[index - 1]]
+            size += 1
+        size += 2
+        for policy in node['policies']:
+            encoded = json.encoder.encode_basestring(policy).encode('utf-8')
+            size += len(encoded) + 1
+            if size - 1 > limit:
+                return None
+        if node['policies']:
+            size -= 1
+        if size > limit:
+            return None
+        prefixes.append(sorted(node['policies']))
+    return prefixes
 
 
 def _sha(value):
@@ -152,7 +185,20 @@ def prepare_cross_repertoire_authority_scope(database, *, prepared_origin: Prepa
                 node = node['children'].setdefault(text, {'policies': set(), 'children': {}})
                 node['policies'].add(row['repertoire_id'])
             parsed[row['id']] = (moves, root)
-        scopes, by_route, scope_bytes = [], {}, 0
+        scopes, by_route = [], {}
+        mapped, seen = [], set()
+        artifact = dict(contract_version='LEGACY_CROSS_REPERTOIRE_SCOPE.v1',evidence_scope='historical-repeatable-read',
+            authority_family='legacy_authored_catalogue_snapshot',authority_rule='legacy-ordered-prefix-unique-repertoire.v1',
+            legacy_authority_kind='legacy_logical_backend',legacy_target_id=actual['target_id'],legacy_workspace_id=actual['workspace_id'],
+            physical_currentness='UNQUALIFIED',physical_instance_qualification='UNQUALIFIED',activation_eligible=False,final_legacy_fence_receipt=None,
+            original_origin_payload_sha256=prepared_origin.payload_digest,original_source_token=token.as_dict(),original_owner_epoch=owner['epoch'],
+            observation=dict(snapshot_id=scope['snapshot'],backend_pid=scope['pid'],transaction_started_at=scope['started'],schema_version=scope['version'],catalogue_generation=scope['generation']),
+            catalogue=dict(repertoires=repertoires,lines=line_rows,repertoire_count=len(repertoires),line_count=len(line_rows),
+                repertoire_highwater=rep_high,line_highwater=line_high,repertoire_stream_digest=_sha(_encode(repertoires)),
+                line_stream_digest=_sha(_encode(line_rows)),selection='all-non-internal-native-authored-lines'),
+            route_scopes=scopes,occurrence_map=mapped,artifact_sha256='0' * 64)
+        output_bytes = _bounded_json_size(artifact, _MAX_ARTIFACT_BYTES)
+        if output_bytes is None: return Hold('AUTH_SCOPE_LIMIT')
         for route in source.routes:
             row = selected_native.get(route.route_id)
             if not row: return Hold('AUTH_SCOPE_OCCURRENCE_MISMATCH')
@@ -160,17 +206,16 @@ def prepare_cross_repertoire_authority_scope(database, *, prepared_origin: Prepa
             if (row['start_fen'],row['trained_color'],tuple(moves)) != (route.start_fen,route.learner_color,route.moves_uci):
                 return Hold('AUTH_SCOPE_OCCURRENCE_MISMATCH')
             node = trees[(route.learner_color, root)]
-            prefixes = [sorted(node['policies'])]
-            for move in moves:
-                node = node['children'][move]
-                prefixes.append(sorted(node['policies']))
+            prefixes = _bounded_prefixes(node, moves, _MAX_ARTIFACT_BYTES - output_bytes)
+            if prefixes is None: return Hold('AUTH_SCOPE_LIMIT')
             anchor = next((i for i, policies in enumerate(prefixes) if policies == [token.repertoire_id]), None)
             record = dict(original_repertoire_id=token.repertoire_id,original_route_id=route.route_id,
                 learner_color=route.learner_color,original_starting_fen=route.start_fen,ordered_moves=moves,
                 root_policy_key=root,prefix_policies=prefixes,authority_start_ply=anchor,
                 anchor_status='UNIQUE_PREFIX' if anchor is not None else 'AMBIGUOUS_FAMILY')
-            scope_bytes += len(_encode(record))
-            if scope_bytes > 64 * 1024 * 1024: return Hold('AUTH_SCOPE_LIMIT')
+            size = _bounded_json_size(record, _MAX_ARTIFACT_BYTES - output_bytes - bool(scopes))
+            if size is None: return Hold('AUTH_SCOPE_LIMIT')
+            output_bytes += size + bool(scopes)
             scopes.append(record)
             by_route[route.route_id] = anchor
         if len(by_route) != len(selected_native): return Hold('AUTH_SCOPE_OCCURRENCE_MISMATCH')
@@ -181,7 +226,6 @@ def prepare_cross_repertoire_authority_scope(database, *, prepared_origin: Prepa
         stored = origin['occurrences']
         if len(expected) > 100000: return Hold('AUTH_SCOPE_LIMIT')
         if len(expected) != len(stored): return Hold('AUTH_SCOPE_OCCURRENCE_MISMATCH')
-        mapped, seen = [], set()
         for (route_id, item), original in zip(expected, stored):
             identity = dict(repertoire_id=token.repertoire_id,route_id=route_id,ply=item.ply)
             key = (route_id,item.ply)
@@ -189,26 +233,21 @@ def prepare_cross_repertoire_authority_scope(database, *, prepared_origin: Prepa
                 return Hold('AUTH_SCOPE_OCCURRENCE_MISMATCH')
             seen.add(key)
             anchor = by_route[route_id]
-            mapped.append(dict(original_occurrence_id=identity,original_policy_version=item.definition.policy_version,
+            record = dict(original_occurrence_id=identity,original_policy_version=item.definition.policy_version,
                 original_source_digest=token.original_source_digest,authored_digest=token.authored_digest,owner_epoch=owner['epoch'],
                 original_six_field_fen=item.fen,original_position_identity=item.definition.key.position,expected_uci=item.definition.expected_uci,
                 content_repertoire_key=token.repertoire_id,content_policy_key=token.repertoire_id,content_route_key=route_id,
                 content_route_ply=item.ply,content_authority_start_ply=anchor,
-                status='AMBIGUOUS_FAMILY' if anchor is None else ('BEFORE_AUTHORITY_ANCHOR' if item.ply < anchor else 'QUALIFIED_IN_SNAPSHOT')))
-        artifact = dict(contract_version='LEGACY_CROSS_REPERTOIRE_SCOPE.v1',evidence_scope='historical-repeatable-read',
-            authority_family='legacy_authored_catalogue_snapshot',authority_rule='legacy-ordered-prefix-unique-repertoire.v1',
-            legacy_authority_kind='legacy_logical_backend',legacy_target_id=actual['target_id'],legacy_workspace_id=actual['workspace_id'],
-            physical_currentness='UNQUALIFIED',physical_instance_qualification='UNQUALIFIED',activation_eligible=False,final_legacy_fence_receipt=None,
-            original_origin_payload_sha256=prepared_origin.payload_digest,original_source_token=token.as_dict(),original_owner_epoch=owner['epoch'],
-            observation=dict(snapshot_id=scope['snapshot'],backend_pid=scope['pid'],transaction_started_at=scope['started'],schema_version=scope['version'],catalogue_generation=scope['generation']),
-            catalogue=dict(repertoires=repertoires,lines=line_rows,repertoire_count=len(repertoires),line_count=len(line_rows),
-                repertoire_highwater=rep_high,line_highwater=line_high,repertoire_stream_digest=_sha(_encode(repertoires)),
-                line_stream_digest=_sha(_encode(line_rows)),selection='all-non-internal-native-authored-lines'),
-            route_scopes=scopes,occurrence_map=mapped)
+                status='AMBIGUOUS_FAMILY' if anchor is None else ('BEFORE_AUTHORITY_ANCHOR' if item.ply < anchor else 'QUALIFIED_IN_SNAPSHOT'))
+            size = _bounded_json_size(record, _MAX_ARTIFACT_BYTES - output_bytes - bool(mapped))
+            if size is None: return Hold('AUTH_SCOPE_LIMIT')
+            output_bytes += size + bool(mapped)
+            mapped.append(record)
+        del artifact['artifact_sha256']
         digest = _sha(_encode(artifact))
         artifact['artifact_sha256'] = digest
         payload = _encode(artifact)
-        if len(payload) > 64 * 1024 * 1024: return Hold('AUTH_SCOPE_LIMIT')
+        assert len(payload) == output_bytes
         return PreparedCrossRepertoireAuthorityScope(_SEAL, payload, digest)
     except (ValueError, TypeError, KeyError, UnicodeError, AttributeError):
         return Hold('AUTH_SCOPE_CATALOGUE_INVALID')
