@@ -1,3 +1,9 @@
+> Current repair evidence (2026-11-04): [PR #920 repair handoff](pr920-repair-20261104.md)
+> and [independent Sol review](pr920-independent-review-20261104.md) record source
+> `acfb14be`, 113 combined cases plus 9 Node cases, full qualifier BLOCK, and no
+> installation/activation. The historical receipt below is retained as dated
+> evidence; full retained-history cutover remains NO-GO.
+
 # Retained-history component handoff — 2026-11-03
 
 **Initial representative mechanism: PASS. Programme cutover readiness: NO-GO.**
