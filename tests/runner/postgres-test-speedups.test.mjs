@@ -1161,10 +1161,10 @@ test("study_opening_server_restart_refreshes_proxy_before_public_readiness", () 
     "The proxy must resolve the restored API address before public readiness is tested");
 });
 
-test("issue107 process restart and foreground profile proof runs in regular durability upgrade stage", () => {
+test("historical source upgrade proof runs in regular durability upgrade stage", () => {
   const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
   const upgradeAction = source.slice(source.indexOf("  schema_migrations: async () => {"), source.indexOf("  background_diagnostics: async () => {"));
-  assert(upgradeAction.includes("check_postgres_next_opponent.py"));
+  assert(upgradeAction.includes("check_postgres_historical_source_upgrade.py"));
   for (const mode of ["durability", "full"]) assert(postgresTestStages({ mode }).includes("schema_migrations"));
   assert(!postgresTestStages({ mode: "browser" }).includes("schema_migrations"));
 });

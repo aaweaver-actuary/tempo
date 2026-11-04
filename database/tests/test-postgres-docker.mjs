@@ -1090,7 +1090,7 @@ const actions = {
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
       "/source/database/tests/check_postgres_upgrade.py"]);
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
-      "/source/database/tests/check_postgres_next_opponent.py"]);
+      "/source/database/tests/check_postgres_historical_source_upgrade.py"]);
   },
   background_diagnostics: async () => {
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
