@@ -453,5 +453,19 @@
     "handler": "enforce",
     "treatment": "foreground_command",
     "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/system/tasks",
+    "handler": "system_tasks",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/system/tasks/{task_id}/retry",
+    "handler": "retry_system_task",
+    "treatment": "foreground_command",
+    "state": "staged"
   }
 ]

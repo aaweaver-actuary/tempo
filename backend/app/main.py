@@ -39,6 +39,7 @@ from tempo_legacy_database.adapters.http_composition import (
     practice as practice_storage,
 )
 from tempo_legacy_database.adapters.commands import accounts as account_storage
+from tempo_legacy_database.adapters.durable_tasks import storage as durable_task_storage
 from tempo_legacy_database.adapters.tactics import attempts as tactic_attempt_storage
 from tempo_legacy_database.adapters.commands import annotations as annotation_command_storage
 from tempo_legacy_database.adapters.foreground_controls import repertoires as repertoire_control_storage
@@ -287,6 +288,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
                                      and request.method == "DELETE")
         browser_activity = (path_parts == ["api", "system", "browser-activity"]
                             and request.method == "POST")
+        task_retry_command = (len(path_parts) == 5 and path_parts[:3] == ["api", "system", "tasks"]
+                              and path_parts[4] == "retry" and request.method == "POST")
         tactic_capture_command = (path_parts == ["api", "tactics", "captures"]
                                   and request.method == "POST")
         tactic_attempt_command = (path_parts == ["api", "tactics", "attempt"]
@@ -327,7 +330,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
             card_review_command, card_revision_command, card_archive_command,
             card_teaching_command, main_repertoire_command, annotation_command,
             repertoire_rename_command, repertoire_settings_command, repertoire_delete_command,
-            browser_activity, tactic_attempt_command, tactic_capture_command,
+            browser_activity, task_retry_command, tactic_attempt_command, tactic_capture_command,
             tactic_activation_command, settings_command, operation_retry_command,
             product_feedback_command, product_review_command,
             branch_add_command, branch_remove_command, pgn_import_command,
@@ -505,6 +508,51 @@ def record_browser_activity(session_id: str = Query(default='legacy', pattern=r'
 
 
 
+
+
+# Task identities are retained for repair journals and queue/graph recovery;
+# retired Jobs and optional producer tasks are not a public control surface.
+_RECOVERY_TASK_KINDS = frozenset({
+    "daily_queue", "opening_graph_rebuild", "integrity_repair", "canonical_prefix_preview",
+})
+
+
+@app.get("/api/system/tasks")
+def system_tasks():
+    tasks = [task for task in list_tasks() if task["kind"] in _RECOVERY_TASK_KINDS]
+    with read_connection() as database:
+        projections = [dict(row) for row in system_storage.recent_queue_projections(database)]
+    result = {
+        "tasks": tasks,
+        "counts": {
+            "queued": sum(task["state"] in {"queued", "retrying"} for task in tasks),
+            "active": sum(task["state"] == "leased" for task in tasks),
+            "failed": sum(task["state"] == "failed" for task in tasks),
+            "oldest_queued_age_seconds": max((task["age_seconds"] for task in tasks
+                                              if task["state"] in {"queued", "retrying"}), default=0),
+        },
+        "queue_projections": annotate_queue_projection_workers(projections, tasks, date.today().isoformat()),
+    }
+    if not postgres_store.configured():
+        result["writer"] = {"healthy": database_writer.healthy, **database_writer.queued_counts}
+    return result
+
+
+@app.post("/api/system/tasks/{task_id}/retry")
+def retry_system_task(task_id: str, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    with read_connection() as database:
+        task = durable_task_storage.read_task(database, (task_id,))
+    if task is None or task["kind"] not in _RECOVERY_TASK_KINDS:
+        raise HTTPException(404, "Recovery task not found")
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command("activity.task.retry", {"task_id": task_id}, idempotency_key=idempotency_key)
+    retried = retry_task(task_id)
+    if retried is None:
+        raise HTTPException(404, "Terminal task not found")
+    set_control("durable", task_id, "resume", allow_settings_blocked_resume=True)
+    _compatibility_coordinator().wake()
+    return retried
 
 
 @app.get("/api/settings", response_model=Settings)
