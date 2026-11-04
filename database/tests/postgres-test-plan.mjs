@@ -22,18 +22,16 @@ export function postgresTestStages({ mode, nativeChecks = [] }) {
   ];
 }
 
-export const backgroundWorkloadConsumers = ["maia-worker", "background-worker", "background-scheduler"];
+export const backgroundWorkloadConsumers = ["background-worker", "background-scheduler"];
 
 export async function restoreBackgroundWorkloadConsumers({ startConsumers, waitForReady, verifyConsumers }) {
-  // Broker consumers restore API readiness before its dependent engine starts.
   await startConsumers(["background-worker", "background-scheduler"]);
   await waitForReady();
-  await startConsumers(["maia-worker"]);
   await verifyConsumers("running");
 }
 
 // The benchmark owns its synthetic rows until its cleanup completes. Real
-// engine callbacks otherwise enqueue claims against those same eligible rows.
+// background consumers otherwise enqueue claims against those same eligible rows.
 export async function executeIsolatedBackgroundWorkload({ stopConsumers, measureWorkload, restoreConsumers }) {
   let failure;
   try {
@@ -88,4 +86,24 @@ export async function executeDiagnosticCleanup(captureDiagnostics, cleanup) {
     throw error;
   }
   if (diagnosticFailure) throw diagnosticFailure;
+}
+
+// Resolve and validate every persistent target before a disposable stack mutates data.
+export function assertDisposableVolumes(stack, project, volumes, mounts) {
+  if (!/^tempo-pg-regressions-[a-z0-9-]+$/.test(project) || stack.name !== project)
+    throw new Error("Disposable Compose project identity is invalid");
+  const expected = new Set();
+  for (const key of volumes) {
+    const volume = stack.volumes?.[key];
+    const name = `${project}_${key}`;
+    if (!volume || volume.external || volume.name !== name || expected.has(name))
+      throw new Error(`Unsafe disposable volume: ${key}`);
+    expected.add(name);
+  }
+  if (Object.keys(stack.volumes ?? {}).length !== volumes.length) throw new Error("Unexpected disposable volume");
+  for (const [service, target, source] of mounts) {
+    const entries = (stack.services?.[service]?.volumes ?? []).filter(v => v.target === target);
+    if (entries.length !== 1 || entries[0].type !== "volume" || entries[0].source !== source)
+      throw new Error(`Unsafe disposable mount: ${service}:${target}`);
+  }
 }
