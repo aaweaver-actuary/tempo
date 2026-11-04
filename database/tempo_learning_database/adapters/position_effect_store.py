@@ -97,7 +97,9 @@ def apply_position_effect(database, *, decide, current_state_type, attempt_id,
     plan = _row(database, 'SELECT * FROM position_effect_attempts WHERE attempt_id=%s FOR UPDATE', (attempt_id,))
     if plan is None:
         return PositionHold('original_issued_attempt_missing')
-    response = _row(database, 'SELECT * FROM position_effect_responses WHERE event_id=%s', (event_id,))
+    # Freeze original evidence before any source/state wait. Insert-only storage
+    # also preserves this binding after commit; locks alone cannot do that.
+    response = _row(database, 'SELECT * FROM position_effect_responses WHERE event_id=%s FOR SHARE', (event_id,))
     if response is None:
         return PositionHold('durable_first_response_missing')
     if response['attempt_id'] != attempt_id:

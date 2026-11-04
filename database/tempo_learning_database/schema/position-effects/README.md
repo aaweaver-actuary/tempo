@@ -28,8 +28,15 @@ occupied `(attempt_id, decision_index)` conflicts. Replays never increment the
 checkpoint. An incomplete correct response remains pending under its original
 identity and may complete later; independently saved wrong evidence earns Again.
 
-Locks are operation advisory, original attempt FOR UPDATE, source/owner authority
-FOR SHARE, exact position FOR UPDATE. The isolated fixture has no card/day/queue
+Locks are operation advisory, original attempt FOR UPDATE, first response FOR
+SHARE, source/owner authority FOR SHARE, exact position FOR UPDATE. The response
+lock precedes source/state waits and protects all original evidence bytes and
+timestamps during acceptance. An owner SQL trigger rejects every UPDATE/DELETE
+of a persisted first response, so its original binding also survives commit.
+The supported writer is insert-only; it introduces no reverse updater lock order.
+Database superusers capable of disabling enforcement remain outside this
+prototype's restricted application authority boundary.
+The isolated fixture has no card/day/queue
 writers. Future serving integration must retain the existing original
 card/day/queue/attempt locks before source and position locks; this prototype
 grants no replacement lock protocol. Receipt lookups are bounded by event,
@@ -71,6 +78,9 @@ Learning essential native runner covers one legal established position's exact
 pinned next-state/due, replay with lost ACK/new transport, corruption/stale holds,
 completion retry, transaction crash rollback, racing Good, cross-epoch Good,
 human Again, midnight/DST owner day and operation/first-response collisions.
+The response race regression observes real `pg_blocking_pids` edges for
+acceptance waiting on source and an updater waiting on acceptance; it then
+verifies immutable-clock/payload/delete rejection and exact receipt replay.
 It verifies the complete normal migration receipt map and, when registered,
 0007's exact stored SQL checksum. Before coordinator registration only, it
 directly applies 0007 after asserting the prototype table absent. Manifest
