@@ -107,3 +107,34 @@ def test_daily_requests_preserve_live_cursor_lease_and_frozen_source_change_rest
             task = durable_tasks.claim(db)
         maintenance.apply_task(task)
     assert tuple(schema59.query('SELECT state,requested_refresh_epoch,published_refresh_epoch FROM queue_projections WHERE queue_date=%s', (day,))[0]) == ('ready', 4, 4)
+
+
+def test_late_preserve_through_request_cannot_reorder_stale_cycle(schema59, monkeypatch):
+    """A request committed after claim protects its issued prefix immediately."""
+    from tempo_learning_runtime import durable_tasks, maintenance
+
+    day = '2026-11-07'
+    with schema59.database.scope(), schema59.database.transaction() as db:
+        db.execute_native("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('rep','rep','test','now')")
+        for card in ('a', 'b'):
+            db.execute_native("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date) VALUES(%s,'rep','checkpoint','fen','[]',%s)", (card, day))
+        rows = [db.execute_native("INSERT INTO daily_queue(queue_date,card_id,position) VALUES(%s,%s,%s) RETURNING id", (day, card, pos)).fetchone()[0] for pos, card in enumerate(('a', 'b'))]
+        durable_tasks.enqueue_task_in_transaction(db, 'daily_queue', 'current', {'queue_date': day})
+        epochs.request(db, day)
+    monkeypatch.setattr(maintenance, 'next_candidates', lambda *_: [])
+    monkeypatch.setattr(maintenance.queue_application, 'presentation_rows', lambda *_: [dict(id=rows[0], position=0), dict(id=rows[1], position=1)])
+    monkeypatch.setattr(maintenance.queue_ordering, '_queue_membership_hash', lambda *_: 'members')
+    monkeypatch.setattr(maintenance.queue_ordering, '_plan_daily_queue_order', lambda entries, *_args, **_kwargs: (1, None, list(reversed(entries))))
+    with schema59.database.scope():
+        with schema59.database.transaction() as db:
+            task = durable_tasks.claim(db)
+        maintenance.apply_task(task)
+        with schema59.database.transaction() as db:
+            stale_task = durable_tasks.claim(db)
+        with schema59.database.transaction() as db:
+            durable_tasks.enqueue_task_in_transaction(db, 'daily_queue', 'current', {'queue_date': day, 'preserve_through_entry_id': rows[1]})
+            epochs.request(db, day)
+        maintenance.apply_task(stale_task)
+    actual = schema59.query('SELECT id,position FROM daily_queue WHERE queue_date=%s ORDER BY id', (day,))
+    assert [tuple(row) for row in actual] == [(rows[0], 0), (rows[1], 1)]
+    assert schema59.query('SELECT state FROM queue_projections WHERE queue_date=%s', (day,))[0][0] == 'refreshing'

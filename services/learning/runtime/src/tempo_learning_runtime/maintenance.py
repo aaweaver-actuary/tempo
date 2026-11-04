@@ -88,7 +88,7 @@ def apply_task(task):
             finish_slice(database, task, payload, more)
             return True
         day = payload["queue_date"]
-        source_token = list(frozen_opening_order.activation(database, lock=True))
+        source_token = list(frozen_opening_order.activation(database))
         if "_refresh_cycle_epoch" not in payload or "_refresh_source_token" not in payload:
             # Old checkpoints cannot certify work performed before epoch tracking.
             if storage.leased_task_payload_for_update(database, task) is None:
@@ -118,6 +118,29 @@ def apply_task(task):
 
             token = frozen_opening_order.activation(database, lock=True)
             lock_queue_date_for_position(database, day)
+            # Foreground refreshes take the task before the projection. Lock and
+            # revalidate both before changing order, so a late preserve-through
+            # request cannot commit a stale plan even transiently.
+            current = storage.leased_task_payload_for_update(database, task)
+            if current is None:
+                raise SupersededWork()
+            latest = json.loads(current[0])
+            preserved = max(payload.get("preserve_through_entry_id", 0),
+                            latest.get("preserve_through_entry_id", 0))
+            if preserved:
+                payload["preserve_through_entry_id"] = preserved
+            epochs = queue_refresh_epochs.lock(database, day)
+            if epochs is None:
+                raise RuntimeError("Queue refresh request epoch is missing")
+            requested, cycle = int(epochs[0]), int(payload["_refresh_cycle_epoch"])
+            if requested < cycle:
+                raise RuntimeError("Queue refresh cycle is ahead of its durable request")
+            if requested != cycle or list(token) != payload["_refresh_source_token"]:
+                payload.pop("after_order_key", None)
+                payload["_refresh_cycle_epoch"] = requested
+                payload["_refresh_source_token"] = list(token)
+                finish_slice(database, task, payload, True)
+                return True
             rows = queue_application.presentation_rows(database, day)
             membership_hash = frozen_opening_order.queue_hash(queue_ordering._queue_membership_hash(rows), token)
             saved = storage.queue_day_order(database, day)
@@ -131,26 +154,11 @@ def apply_task(task):
                     if slot['position'] != row['position']:
                         storage.set_queue_position(database, slot['position'], row['id'])
                 storage.save_queue_day_order(database, day, seed, membership_hash, datetime.now(timezone.utc).isoformat())
-            # Match foreground task-before-projection order after card/queue
-            # locks, preventing ensure_current's projection lock from inverting it.
-            if storage.leased_task_payload_for_update(database, task) is None:
+            if not queue_refresh_epochs.publish_if_current(
+                database, day, cycle, datetime.now(timezone.utc).isoformat()
+            ):
                 raise SupersededWork()
-            epochs = queue_refresh_epochs.lock(database, day)
-            if epochs is None:
-                raise RuntimeError("Queue refresh request epoch is missing")
-            requested, cycle = int(epochs[0]), int(payload["_refresh_cycle_epoch"])
-            if requested < cycle:
-                raise RuntimeError("Queue refresh cycle is ahead of its durable request")
-            if requested != cycle:
-                payload.pop("after_order_key", None)
-                payload["_refresh_cycle_epoch"] = requested
-                finish_slice(database, task, payload, True)
-            else:
-                if not queue_refresh_epochs.publish_if_current(
-                    database, day, cycle, datetime.now(timezone.utc).isoformat()
-                ):
-                    raise SupersededWork()
-                finish_slice(database, task, payload, False)
+            finish_slice(database, task, payload, False)
     return True
 
 
