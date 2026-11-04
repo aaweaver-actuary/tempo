@@ -1110,3 +1110,44 @@ test('A31 qualification window leaves ordinary CPU unrestricted and validates ex
     await assert.rejects(readFile(log),{code:'ENOENT'});
   } finally {await lease.release();await rm(directory,{recursive:true,force:true});}
 });
+
+test('orphaned compose startup requires matching dead owners and absent project resources', async () => {
+  const parent = await mkdtemp(join(tmpdir(), 'tempo-orphan-compose-test-'));
+  const directory = join(parent, 'lock');
+  try {
+    const lease = await acquireDevelopmentBudget({ directory });
+    const project = 'tempo-pg-regressions-12-aabbccdd';
+    const pid = 123456;
+    const record = { token: lease.token, project, pid, key: `startup:${project}` };
+    const resources = join(directory, 'resources');
+    await writeFile(join(resources, encodeURIComponent(record.key)), JSON.stringify(record));
+    await writeFile(join(resources, encodeURIComponent(`compose:${project}`)), JSON.stringify({token:lease.token,pid,key:`compose:${project}`}));
+    await mkdir(join(directory, 'admission-lane'));
+    await writeFile(join(directory, 'admission-lane', 'startup-owner.json'), JSON.stringify({token:lease.token,project,pid}));
+    let live = true, leftover = true;
+    const docker = async args => leftover && args[0] === 'volume' ? 'owned-volume\n' : '';
+    await assert.rejects(reconcileDevelopmentBudget({directory,token:lease.token,docker,ownerAlive:p => p === pid && live}), /still running/);
+    live = false;
+    await assert.rejects(reconcileDevelopmentBudget({directory,token:lease.token,docker,ownerAlive:()=>false}), /resources remain/);
+    leftover = false;
+    const laneOwner = join(directory, 'admission-lane', 'startup-owner.json');
+    await writeFile(laneOwner, JSON.stringify({token:'foreign',project,pid}));
+    await assert.rejects(reconcileDevelopmentBudget({directory,token:lease.token,docker,ownerAlive:()=>false}), /ownership mismatch/);
+    const originalLane = JSON.stringify({token:lease.token,project,pid});
+    await writeFile(laneOwner, originalLane);
+    const changedDuringCheck = async args => {
+      if (args[0] === 'network') await writeFile(laneOwner, JSON.stringify({token:'foreign',project,pid}));
+      return '';
+    };
+    await assert.rejects(reconcileDevelopmentBudget({directory,token:lease.token,docker:changedDuringCheck,ownerAlive:()=>false}), /journal changed/);
+    assert.equal((await readdir(join(directory,'resources'))).length, 2);
+    await writeFile(laneOwner, originalLane);
+    await reconcileDevelopmentBudget({directory,token:lease.token,docker,ownerAlive:()=>false});
+    await assert.rejects(lstat(directory), {code:'ENOENT'});
+    const archives = (await readdir(parent)).filter(name => name.startsWith(`lock.reconciled-${lease.token}-`));
+    assert.equal(archives.length, 1);
+    const archived = join(parent, archives[0]);
+    assert.equal((await readdir(join(archived,'journal','resources'))).length, 2);
+    assert.equal(await readFile(join(archived,'journal','admission-lane','startup-owner.json'),'utf8'), originalLane);
+  } finally { await rm(parent,{recursive:true,force:true}); }
+});
