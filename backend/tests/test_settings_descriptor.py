@@ -60,7 +60,7 @@ def test_settings_descriptor_replay_preserves_original_identity_and_effects(runt
     first = gateway.execute_command('settings-op', 'settings.update', original)
     assert original == snapshot
     assert first['new_cards_per_day'] == 12
-    assert effects == ['settings', ('lichess', 'user'), ('remove', 'chess.com'), 'profile', 'queue']
+    assert effects == ['settings', ('lichess', 'user'), ('remove', 'chess.com'), 'queue']
     assert wakes == ['wake']
     original_prepare = gateway._preparers['settings.update']
     def changed_preparation(value):

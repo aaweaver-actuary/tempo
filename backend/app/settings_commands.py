@@ -66,9 +66,6 @@ def apply_settings(database: PostgresConnection, request: SettingsRequest) -> di
             storage.store_provider_account(database, provider, username)
         else:
             storage.remove_provider_account(database, provider)
-    from .services.postgres_next_opponent import request_profile_refresh
-    if not values['study_only_mode']:
-        request_profile_refresh(database)
     request_queue_refresh_in_transaction(database, date.today().isoformat())
     return {**values, "include_defensive_cards_in_daily_stack": bool(
         values["include_defensive_cards_in_daily_stack"]
