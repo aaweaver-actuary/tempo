@@ -86,6 +86,41 @@ def study_only_enabled(database=None):
     return study_mode.study_only_enabled() if database is None else study_mode.study_only_enabled(database)
 
 
+def execute_game_position_index_slice(claimed_task):
+    from .services.postgres_game_derivation import execute_game_position_index_slice as execute
+    return execute(claimed_task)
+
+
+def execute_game_repertoire_comparison_slice(claimed_task):
+    from .services.postgres_game_repertoire import execute_game_repertoire_comparison_slice as execute
+    return execute(claimed_task)
+
+
+def execute_game_findings_slice(claimed_task):
+    from .services.postgres_game_findings import execute_game_findings_slice as execute
+    return execute(claimed_task)
+
+
+def execute_game_miss_slice(claimed_task):
+    from .services.postgres_game_misses import execute_game_miss_slice as execute
+    return execute(claimed_task)
+
+
+def execute_game_event_slice(claimed_task):
+    from .services.postgres_game_events import execute_game_event_slice as execute
+    return execute(claimed_task)
+
+
+def execute_game_feature_slice(claimed_task):
+    from .services.postgres_game_features import execute_game_feature_slice as execute
+    return execute(claimed_task)
+
+
+def execute_game_priority_handoff_slice(claimed_task):
+    from .services.postgres_game_priorities import execute_game_priority_handoff_slice as execute
+    return execute(claimed_task)
+
+
 def execute_game_sync_record_slice(claimed_task):
     from .services.postgres_game_sync import execute_game_sync_record_slice as execute
     return execute(claimed_task)
@@ -104,6 +139,9 @@ _CONTROL_BACKGROUND_COMMANDS = frozenset()
 _SUPPORTED_BACKGROUND_KINDS = (
     "product_game_refresh", "daily_queue", "repertoire_game_refresh",
     "game_sync_record", "game_sync_window", "opening_graph_rebuild",
+    "game_derivation_positions", "game_derivation_compare", "game_derivation_findings",
+    "game_derivation_misses", "game_derivation_events", "game_derivation_features",
+    "game_derivation_priorities",
     prefix_transition_application.TASK_KIND, "integrity_scan",
     "opening_segmentation", "canonical_prefix_preview",
 )
@@ -462,6 +500,13 @@ def _execute_claimed_background_slice(
         "product_game_refresh": refresh_slice,
         "daily_queue": execute_postgres_queue_refresh_slice,
         "repertoire_game_refresh": execute_repertoire_game_refresh_slice,
+        "game_derivation_positions": execute_game_position_index_slice,
+        "game_derivation_compare": execute_game_repertoire_comparison_slice,
+        "game_derivation_findings": execute_game_findings_slice,
+        "game_derivation_misses": execute_game_miss_slice,
+        "game_derivation_events": execute_game_event_slice,
+        "game_derivation_features": execute_game_feature_slice,
+        "game_derivation_priorities": execute_game_priority_handoff_slice,
         "game_sync_record": execute_game_sync_record_slice,
         "game_sync_window": execute_game_sync_window_slice,
         "opening_graph_rebuild": execute_postgres_opening_graph_slice,

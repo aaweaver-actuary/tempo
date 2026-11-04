@@ -97,9 +97,7 @@ RETIRED_COMMANDS = frozenset({
 RETIRED_TASK_KINDS = frozenset({
     'defensive_rubric_audit', 'defensive_admission', 'defensive_threat_report_audit',
     'defensive_threat_scan', 'defensive_threat_backfill', 'defensive_threat_validate',
-    'next_opponent_profile', 'game_derivation_positions', 'game_derivation_compare',
-    'game_derivation_findings', 'game_derivation_misses', 'game_derivation_events',
-    'game_derivation_features', 'game_derivation_priorities', 'discovery_recommendation',
+    'next_opponent_profile', 'discovery_recommendation',
     'discovery_admission', 'coverage_seed', 'coverage_explorer',
     'game_analysis_publish', 'game_analysis_followup',
 })

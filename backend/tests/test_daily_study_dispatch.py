@@ -512,3 +512,14 @@ def test_retired_durable_task_cannot_be_claimed_or_manually_retried(dispatch_sto
     assert task_row(retired['id'])['state'] == 'failed'
     live = enqueue_daily()
     assert durable_tasks.claim_task(allowed_kinds=('defensive_threat_scan', 'daily_queue'))['id'] == live['id']
+
+
+def test_held_game_projection_chain_remains_claimable():
+    # Retain the entire current chain until accepted-obligation replacement is proven.
+    stages = {
+        'game_derivation_positions', 'game_derivation_compare', 'game_derivation_findings',
+        'game_derivation_misses', 'game_derivation_events', 'game_derivation_features',
+        'game_derivation_priorities', 'repertoire_game_refresh',
+    }
+    assert stages <= set(tasks._SUPPORTED_BACKGROUND_KINDS)
+    assert stages.isdisjoint(tasks.RETIRED_TASK_KINDS)
