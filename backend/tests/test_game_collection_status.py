@@ -628,3 +628,58 @@ def test_selected_game_owner_receipt_uses_current_owner_facts(stored, capsys, co
     else:
         assert row['receipt'] is None
         assert calls == ([] if condition == 'no_capability' else [case.command.key])
+
+
+@pytest.mark.parametrize('mismatch', ['key', 'revision', 'digest'])
+def test_selected_game_identity_mismatch_rejects_owner_receipt_before_observation(stored, mismatch):
+    from psycopg.types.json import Jsonb
+    case = scenario()
+    delivery = case.delivery.model_dump(mode='json')
+    delivery.update(operation_id=stored.identity, source_key=stored.identity)
+    with stored.database.admin() as database:
+        database.execute_native("INSERT INTO product_feedback_deliveries(operation_id,source_key,effect_key,command_kind,state,next_attempt_at,payload) VALUES(%s,%s,%s,'encounter','acknowledged',0,%s)",
+                                (stored.identity, stored.identity, stored.identity, Jsonb(delivery)))
+        before = database.raw.execute('SELECT payload FROM product_feedback_deliveries WHERE operation_id=%s', (stored.identity,)).fetchone()[0]
+    changes = {'key': case.receipt.key.model_copy(update={'decision_id': 'unrelated-decision'})} if mismatch == 'key' else (
+        {'source_revision': 8} if mismatch == 'revision' else {'source_digest': 'e' * 64})
+    calls = []
+    def owner(key):
+        calls.append(key)
+        return case.receipt.model_copy(update=changes)
+    def forbidden(key):
+        pytest.fail('untrusted receipt must not trigger optional observation')
+    stored.reader.receipts = lambda: SimpleNamespace(encounter_status=owner, effect_status=forbidden, feedback_observation=forbidden)
+    detail = stored.reader.selected_game(stored.identity, 'chesscom', stored.identity)
+    row, = detail['receipts']
+    assert calls == [case.command.key]
+    assert row['operation_id'] == stored.identity and row['delivery_state'] == 'acknowledged'
+    assert row['receipt'] is None and row['diagnostic'] == 'owner_receipt_identity_mismatch'
+    assert row['progress'] == {'stage': 'unknown', 'queue': {'availability': 'unavailable'}}
+    with stored.database.admin() as database:
+        after = database.raw.execute('SELECT payload FROM product_feedback_deliveries WHERE operation_id=%s', (stored.identity,)).fetchone()[0]
+    assert before == after
+
+
+@pytest.mark.parametrize('kind', ['matching', 'control_digest', 'legacy'])
+def test_selected_game_identity_matching_receipts_remain_visible(stored, kind):
+    from psycopg.types.json import Jsonb
+    case = scenario(legacy=kind == 'legacy', control=kind == 'control_digest')
+    delivery = case.delivery.model_dump(mode='json')
+    delivery.update(operation_id=stored.identity, source_key=stored.identity)
+    receipt = (case.receipt.model_copy(update={'source_digest': 'e' * 64})
+               if kind == 'control_digest' else case.receipt)
+    with stored.database.admin() as database:
+        database.execute_native("INSERT INTO product_feedback_deliveries(operation_id,source_key,effect_key,command_kind,state,next_attempt_at,payload) VALUES(%s,%s,%s,%s,'acknowledged',0,%s)",
+                                (stored.identity, stored.identity, stored.identity, case.delivery.command_kind, Jsonb(delivery)))
+    calls = []
+    def owner(key):
+        calls.append(key)
+        return receipt
+    def observe(key):
+        calls.append(key)
+        return None
+    stored.reader.receipts = lambda: SimpleNamespace(encounter_status=owner, effect_status=owner, feedback_observation=observe)
+    row, = stored.reader.selected_game(stored.identity, 'chesscom', stored.identity)['receipts']
+    assert calls == [case.command.key, case.command.key]
+    assert row['receipt'] == receipt.model_dump(mode='json') and row['diagnostic'] is None
+    assert row['delivery_state'] == 'acknowledged'
