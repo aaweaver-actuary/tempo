@@ -1,0 +1,56 @@
+"""Native identity fence proof on a parent-owned disposable fixture.
+
+This is only the stale/missing boundary, not the graph-to-card journey.
+"""
+import json
+import os
+import re
+import uuid
+from datetime import datetime, timezone
+
+import psycopg
+import pytest
+from psycopg.conninfo import conninfo_to_dict
+
+from app.services.discovery_admission import _recovery_identity
+from tempo_legacy_database.adapters import postgres_store
+
+
+@pytest.fixture
+def owned_database():
+    name = os.environ.get('TEMPO_DISCOVERY_ACCEPTANCE_FIXTURE', '')
+    if not re.fullmatch(r'tempo_discovery_acceptance_[0-9a-f]{32}', name):
+        raise RuntimeError('Parent-owned disposable discovery fixture required')
+    urls = [os.environ[key] for key in ('TEMPO_DISCOVERY_ACCEPTANCE_ADMIN',
+                                         'TEMPO_DATABASE_READ_URL', 'TEMPO_DATABASE_WRITE_URL')]
+    targets = [conninfo_to_dict(url) for url in urls]
+    if (os.environ.get('TEMPO_TEST_INSTANCE') != 'disposable'
+            or any(item.get('dbname') != name or item.get('host') not in {'127.0.0.1', 'localhost'} for item in targets)
+            or len({(item['host'], item.get('port', '5432')) for item in targets}) != 1):
+        raise RuntimeError('Only the named disposable loopback fixture is permitted')
+    with psycopg.connect(urls[0]) as database:
+        assert database.execute('SELECT current_database()').fetchone()[0] == name
+    postgres_store.close_pools()
+    yield
+    postgres_store.close_pools()
+
+
+def test_native_missing_intent_and_forged_envelope_are_distinct(owned_database):
+    token = uuid.uuid4().hex
+    task_id, intent_id, lease = 'test-task-' + token, 'test-intent-' + token, 'lease-' + token
+    now = datetime.now(timezone.utc).isoformat()
+    payload = {'intent_id': intent_id}
+    with postgres_store.connection(read_only=False) as database:
+        database.execute_native(
+            "INSERT INTO background_tasks(id,kind,deduplication_key,generation,priority,state,phase,"
+            "payload_version,payload_json,attempt_count,max_attempts,next_attempt_at,lease_token,"
+            "lease_expires_at,created_at,updated_at) VALUES(%s,'discovery_admission',%s,1,80,'leased',"
+            "'queued',1,%s,1,5,%s,%s,%s,%s,%s)",
+            (task_id, intent_id, json.dumps(payload), now, lease, '2099-01-01T00:00:00+00:00', now, now))
+    task = {'id': task_id, 'kind': 'discovery_admission', 'deduplication_key': intent_id,
+            'generation': 1, 'lease_token': lease, 'payload': payload}
+    with postgres_store.connection(read_only=False) as database:
+        assert _recovery_identity(database, {**task, 'payload': {'intent_id': 'other'}}, lock=True)[0] == 'stale'
+        assert _recovery_identity(database, task, lock=True)[0] == 'invalid'
+        row = database.execute_native('SELECT state,lease_token FROM background_tasks WHERE id=%s', (task_id,)).fetchone()
+        assert tuple(row) == ('leased', lease)
