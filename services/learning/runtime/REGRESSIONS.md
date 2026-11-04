@@ -451,3 +451,12 @@ Again, original event replay/conflict and Observe without scheduler work.
 the next pinned Good response from original and copied full FSRS without
 replaying history. These are proposals and representative retained-state proof;
 an accepted-grade transaction/receipt port and native uniqueness remain absent.
+
+## Complete bounded publication generation (#908 W09A)
+
+`tests/test_cutover_publication_generation.py` owns the native synthetic
+10,000-definition/fact/route/binding inactive generation, exact active identities,
+same-digest replay, changed-digest/incomplete rejection and stale predecessor
+denial. It uses the regular owning disposable PostgreSQL fixture. One-move
+synthetic routes do not establish real retained graph/alias capacity, source-edit
+fencing, paging beyond public limits or full F12 acceptance.
