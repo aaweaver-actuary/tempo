@@ -26,7 +26,7 @@ from .durable_tasks import (
     enqueue_task_in_transaction,
     lock_current_slice,
 )
-from app.study.queue_placement import ensure_card_queued_after
+from app.study.queue_placement import ensure_discovery_card_queued
 from tempo_learning_runtime.defense_decode import ENGINE_VERSION, NETWORK_VERSION, report_from_json, validate_analysis_report
 from .threat_validation import AnalysisRequest
 
@@ -506,6 +506,25 @@ def _recovery_identity(database, task: dict, *, lock=False):
     return "accepted", intent
 
 
+def _admission_witness_matches(intent, line, step, card):
+    """A reused identifier grants nothing unless the executable still matches."""
+    if not line or not step or not card:
+        return False
+    try:
+        expected_color = "white" if chess.Board(intent["starting_fen"]).turn else "black"
+        return (line["repertoire_id"] == intent["repertoire_id"]
+                and line["start_fen"] == intent["starting_fen"]
+                and line["trained_color"] == expected_color
+                and json.loads(line["moves_json"]) == json.loads(intent["preview_moves_json"])
+                and card["content_type"] == "opening" and card["revision"] == 1
+                and card["superseded_by"] is None
+                and card["start_fen"] == step["starting_fen"]
+                and card["trained_color"] == step["trained_color"]
+                and json.loads(card["moves_json"]) == json.loads(step["moves_json"]))
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
 def _materialize_admission_branch(task: dict) -> None:
     """Write one selected branch and its rebuild request in a short transaction."""
     read_section = background_read_connection if storage.configured() else read_connection
@@ -541,8 +560,8 @@ def _materialize_admission_branch(task: dict) -> None:
     from .repertoire_game_refresh import refreshing_game_scope
     with connection(background=True) as database, refreshing_game_scope(database):
         if storage.configured():
-            read_prefix(database, intent["repertoire_id"], lock=True)
-            canonical_scope_freshness.game_scope_generation(database, lock=True)
+            if not storage.try_materialization_fence(database, intent["repertoire_id"]):
+                return
             if not lock_current_slice(database, task):
                 return
         else:
@@ -634,17 +653,21 @@ def execute_admission_intent_slice(task: dict) -> bool:
             certificate = try_hold_current_integrity_certificate(database, current["repertoire_id"])
             current_step = storage.published_line_card(database, (current["repertoire_id"], current["line_id"])) if certificate else None
             card = storage.try_lock_admission_card(database, card_id_value) if current_step and current_step["card_id"] == card_id_value else None
-            blocked = storage.card_integrity_block(database, (current["repertoire_id"], card_id_value)) if card else True
-            if card and not card["archived"] and not card["pending_validation"] and not blocked:
+            line = storage.locked_source_line(database, current["line_id"]) if card else None
+            blocked = (storage.card_integrity_block(database, (current["repertoire_id"], card_id_value))
+                       or storage.deleted_card(database, card_id_value)) if card else True
+            if (_admission_witness_matches(current, line, current_step, card)
+                    and not card["archived"] and not card["pending_validation"] and not blocked):
                 today = date.today().isoformat()
                 storage.introduce_card(database, (today, card_id_value))
-                ensure_card_queued_after(database, card_id_value, after_cards=0,
-                                         attempt_state="guided", priority_reason="Discovery · added continuation")
+                ensure_discovery_card_queued(database, card_id_value, today)
                 storage.mark_explicit_admission(database, (f"discovery:{current['opportunity_id']}", today, card_id_value))
                 storage.mark_intent_queued(database, (card_id_value, _now(), current["id"]))
-                storage.complete_opportunity_admission(database, (card_id_value, card_id_value, _now(), current["opportunity_id"], current["evidence_fingerprint"]))
-                if storage.configured():
-                    complete_task_slice_in_transaction(database, task)
+                if storage.complete_opportunity_admission(database, (card_id_value, card_id_value, _now(), current["opportunity_id"], current["evidence_fingerprint"])) != 1:
+                    from .redis_admission_gate import BackgroundAdmissionDeferred
+                    raise BackgroundAdmissionDeferred("Discovery opportunity changed; retain original intent")
+                if not complete_task_slice_in_transaction(database, task):
+                    raise RuntimeError("Discovery task lease changed during admission")
                 return False
         retry_at = (datetime.now(timezone.utc) + timedelta(seconds=10)).isoformat()
         if not advance_task_slice_in_transaction(

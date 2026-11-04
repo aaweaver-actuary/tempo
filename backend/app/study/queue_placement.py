@@ -56,3 +56,14 @@ def ensure_card_queued_after(
     storage.classify_entry(database, entry["id"])
     if preserve_order:
         preserve_daily_queue_order(database, day, previous=previous_order)
+
+
+def ensure_discovery_card_queued(database, card_id: str, queue_date: str) -> None:
+    """Queue a retained admission without waiting on or moving issued work."""
+    from tempo_legacy_database.adapters.queue_position_lock import try_lock_discovery_queue_position
+    from app.services.redis_admission_gate import BackgroundAdmissionDeferred
+    if not try_lock_discovery_queue_position(database, queue_date, card_id):
+        raise BackgroundAdmissionDeferred("Study queue is busy or target already issued")
+    ensure_card_queued_after(database, card_id, after_cards=0, attempt_state="guided",
+                            priority_reason="Discovery · added continuation", queue_date=queue_date,
+                            protect_presented=True)

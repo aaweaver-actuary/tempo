@@ -74,7 +74,8 @@ def test_postgres_discovery_branch_rebuild_is_admitted_once_under_lease(monkeypa
 def test_postgres_discovery_admission_completes_published_card_without_replay(monkeypatch):
     intent = {"id": "intent-one", "state": "preparing", "line_id": "line-one",
               "repertoire_id": "repertoire-one", "opportunity_id": "opportunity-one",
-              "evidence_fingerprint": "revision-one", "created_at": "2026-01-01T00:00:00+00:00"}
+              "evidence_fingerprint": "revision-one", "created_at": "2026-01-01T00:00:00+00:00",
+              "starting_fen": chess.STARTING_FEN, "preview_moves_json": '["e2e4"]'}
     writes = []
     queued_cards = []
     completed = []
@@ -85,7 +86,8 @@ def test_postgres_discovery_admission_completes_published_card_without_replay(mo
             if "FROM discovery_admission_intents" in statement:
                 return Cursor(intent)
             if "FROM opening_graph_steps" in statement:
-                return Cursor({"card_id": "card-one"})
+                return Cursor({"card_id": "card-one", "starting_fen": chess.STARTING_FEN,
+                               "moves_json": '["e2e4"]', "trained_color": "white"})
             if "FROM repertoire_integrity_state" in statement:
                 return Cursor({"checked_at": "2026-01-02T00:00:00+00:00",
                                "scan_status": "idle", "status": "ready"})
@@ -94,6 +96,7 @@ def test_postgres_discovery_admission_completes_published_card_without_replay(mo
                                "pending_validation": 0})
             if statement.lstrip().startswith("UPDATE"):
                 writes.append((statement, parameters))
+                return Cursor(rowcount=1)
             return Cursor()
 
     @contextmanager
@@ -109,10 +112,14 @@ def test_postgres_discovery_admission_completes_published_card_without_replay(mo
     monkeypatch.setattr(discovery_admission, "_recovery_identity", lambda *_a, **_k: ("accepted", intent))
     from app.services import postgres_integrity
     monkeypatch.setattr(postgres_integrity, "try_hold_current_integrity_certificate", lambda *_: {"current": True})
-    monkeypatch.setattr(discovery_admission.storage, "try_lock_admission_card", lambda *_: {"id": "card-one", "archived": 0, "pending_validation": 0})
+    monkeypatch.setattr(discovery_admission.storage, "try_lock_admission_card", lambda *_: {"id": "card-one", "archived": 0, "pending_validation": 0,
+        "content_type": "opening", "revision": 1, "start_fen": chess.STARTING_FEN,
+        "moves_json": '["e2e4"]', "trained_color": "white", "superseded_by": None})
+    monkeypatch.setattr(discovery_admission.storage, "locked_source_line", lambda *_: {"repertoire_id": "repertoire-one", "trained_color": "white", "start_fen": chess.STARTING_FEN, "moves_json": '["e2e4"]'})
+    monkeypatch.setattr(discovery_admission.storage, "deleted_card", lambda *_: None)
     monkeypatch.setattr(discovery_admission, "lock_current_slice", lambda *_args: lease_current)
-    monkeypatch.setattr(discovery_admission, "ensure_card_queued_after",
-                        lambda _database, card_id, **_kwargs: queued_cards.append(card_id))
+    monkeypatch.setattr(discovery_admission, "ensure_discovery_card_queued",
+                        lambda _database, card_id, _day: queued_cards.append(card_id))
     monkeypatch.setattr(discovery_admission, "complete_task_slice_in_transaction",
                         lambda _database, _task: completed.append(True) or True)
 
@@ -126,6 +133,14 @@ def test_postgres_discovery_admission_completes_published_card_without_replay(mo
                              if "UPDATE repertoire_opportunities" in statement)
     assert "WHERE id=? AND evidence_fingerprint=?" in opportunity_write[0]
     assert opportunity_write[1][-1] == "revision-one"
+
+    from app.services.redis_admission_gate import BackgroundAdmissionDeferred
+    monkeypatch.setattr(discovery_admission.storage, "complete_opportunity_admission", lambda *_: 0)
+    import pytest
+    with pytest.raises(BackgroundAdmissionDeferred):
+        discovery_admission.execute_admission_intent_slice(task)
+    assert completed == [True]
+    queued_cards.pop()  # The fake list is outside the transaction that would roll back.
 
     lease_current = False
     assert not discovery_admission.execute_admission_intent_slice(task)
@@ -188,3 +203,51 @@ def test_integrity_owner_holds_only_current_graph_certificate(monkeypatch):
     monkeypatch.setattr(postgres_integrity.storage, 'try_hold_certificate_authority', lambda *_: (7, 'ready'))
     monkeypatch.setattr(postgres_integrity, 'current_integrity_certificate', lambda *_: None)
     assert postgres_integrity.try_hold_current_integrity_certificate(object(), 'r') is None
+
+
+def test_discovery_witness_holds_retyped_or_revised_card():
+    intent = {"repertoire_id": "r", "starting_fen": chess.STARTING_FEN, "preview_moves_json": '["e2e4"]'}
+    line = {"repertoire_id": "r", "trained_color": "white", "start_fen": chess.STARTING_FEN, "moves_json": '["e2e4"]'}
+    step = {"starting_fen": chess.STARTING_FEN, "moves_json": '["e2e4"]', "trained_color": "white"}
+    card = {"content_type": "opening", "revision": 1, "superseded_by": None,
+            "start_fen": chess.STARTING_FEN, "moves_json": '["e2e4"]', "trained_color": "white"}
+    assert discovery_admission._admission_witness_matches(intent, line, step, card)
+    for change in ({"content_type": "tactic"}, {"revision": 2}, {"superseded_by": "new"}, {"moves_json": '["d2d4"]'}):
+        assert not discovery_admission._admission_witness_matches(intent, line, step, {**card, **change})
+
+
+def test_materialization_fence_uses_graph_owner_order_and_holds_on_contention():
+    calls = []
+    class Database:
+        def execute_native(self, statement, parameters=()):
+            calls.append(statement)
+            return Cursor((True,))
+    assert discovery_admission.storage.try_materialization_fence(Database(), 'r')
+    assert 'opening_graph_rebuild' in calls[0] and 'SKIP LOCKED' in calls[0]
+    assert 'prefix-transition:reservations' in calls[1]
+    assert 'pg_try_advisory_xact_lock(' in calls[2]
+    assert 'FROM repertoires' in calls[3] and 'SKIP LOCKED' in calls[3]
+    assert 'FROM repertoire_game_scope' in calls[4] and 'SKIP LOCKED' in calls[4]
+    class BusyGraph(Database):
+        def execute_native(self, statement, parameters=()):
+            calls.append(statement)
+            return Cursor(None)
+    calls.clear()
+    assert not discovery_admission.storage.try_materialization_fence(BusyGraph(), 'r')
+    assert len(calls) == 1
+
+
+def test_discovery_queue_fence_declines_issued_target():
+    from tempo_legacy_database.adapters.queue_position_lock import try_lock_discovery_queue_position
+    class QueueCursor:
+        def __init__(self, rows): self.rows = rows
+        def fetchone(self): return self.rows[0] if self.rows else None
+        def fetchall(self): return self.rows
+    class Database:
+        def execute_native(self, statement, parameters=()):
+            if 'pg_try_advisory' in statement: return QueueCursor([(True,)])
+            if 'COUNT(*)' in statement: return QueueCursor([(1,)])
+            if 'FOR UPDATE SKIP LOCKED' in statement: return QueueCursor([(42,)])
+            if 'queue_attempt_origins' in statement: return QueueCursor([(1,)])
+            return QueueCursor([])
+    assert not try_lock_discovery_queue_position(Database(), '2026-01-01', 'card')

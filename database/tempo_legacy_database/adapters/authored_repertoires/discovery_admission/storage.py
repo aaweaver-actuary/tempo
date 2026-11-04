@@ -210,7 +210,7 @@ def insert_training_depth(database, values):
 
 def published_line_card(database, values):
     return database.execute(
-        """SELECT step.card_id FROM opening_graph_steps step
+        """SELECT step.card_id,step.starting_fen,step.moves_json,step.trained_color FROM opening_graph_steps step
                JOIN opening_graph_publications publication
                  ON publication.repertoire_id=step.repertoire_id
                 AND publication.generation=step.generation
@@ -272,7 +272,7 @@ def complete_opportunity_admission(database, values):
                          handled_evidence_json=evidence_json,card_id=COALESCE(card_id,?),
                          admitted_card_id=?,updated_at=? WHERE id=? AND evidence_fingerprint=?""",
         values,
-    )
+    ).rowcount
 
 
 def recovery_task(database, task_id, *, lock=False):
@@ -292,5 +292,45 @@ def try_lock_admission_card(database, card_id):
     if not locked or not locked[0]:
         return None
     return database.execute_native(
-        "SELECT id,archived,pending_validation FROM cards WHERE id=%s FOR UPDATE SKIP LOCKED", (card_id,),
+        "SELECT id,archived,pending_validation,content_type,revision,start_fen,moves_json,trained_color,superseded_by FROM cards WHERE id=%s FOR UPDATE SKIP LOCKED", (card_id,),
     ).fetchone()
+
+
+def locked_source_line(database, line_id):
+    return database.execute_native(
+        "SELECT repertoire_id,trained_color,start_fen,moves_json FROM repertoire_lines WHERE id=%s FOR SHARE SKIP LOCKED",
+        (line_id,),
+    ).fetchone()
+
+
+def deleted_card(database, card_id):
+    return database.execute_native("SELECT 1 FROM deleted_cards WHERE card_id=%s", (card_id,)).fetchone()
+
+
+def try_materialization_fence(database, repertoire_id):
+    """Follow graph owner order; contention or absent prerequisite remains held."""
+    graph = database.execute_native(
+        "SELECT id FROM background_tasks WHERE kind='opening_graph_rebuild' "
+        "AND deduplication_key=%s FOR UPDATE SKIP LOCKED", (repertoire_id,),
+    ).fetchone()
+    if not graph:
+        return False
+    reservations = database.execute_native(
+        "SELECT pg_try_advisory_xact_lock_shared(hashtextextended('tempo:prefix-transition:reservations',0))",
+    ).fetchone()
+    if not reservations or not reservations[0]:
+        return False
+    graph_lock = database.execute_native(
+        "SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))", ("tempo:opening-graph:" + repertoire_id,),
+    ).fetchone()
+    if not graph_lock or not graph_lock[0]:
+        return False
+    repertoire = database.execute_native(
+        "SELECT id FROM repertoires WHERE id=%s FOR UPDATE SKIP LOCKED", (repertoire_id,),
+    ).fetchone()
+    if not repertoire:
+        return False
+    scope = database.execute_native(
+        "SELECT id FROM repertoire_game_scope WHERE id=1 FOR UPDATE SKIP LOCKED",
+    ).fetchone()
+    return bool(scope)
