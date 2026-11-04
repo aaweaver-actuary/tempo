@@ -28,6 +28,12 @@
 !packages/chess-core/src/
 !packages/chess-core/src/**
 !contracts/
+!contracts/learning-transfer/
+!contracts/learning-transfer/pyproject.toml
+!contracts/learning-transfer/src/
+!contracts/learning-transfer/src/**
+!contracts/learning-transfer/schemas/
+!contracts/learning-transfer/schemas/**
 !contracts/content-publication/
 !contracts/content-publication/pyproject.toml
 !contracts/content-publication/src/

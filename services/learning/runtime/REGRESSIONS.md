@@ -413,7 +413,8 @@ The fixture extends only the already-observed retry timestamp to avoid relying
 on host scheduling within the one-second deferral window.
 # Retained-history wire contract (#908 W01)
 
-`tests/test_retained_history_contracts.py` owns pure original-byte/large-ID
+The independent `contracts/learning-transfer/tests/test_retained_history_contracts.py`
+suite owns pure original-byte/large-ID
 round-trip, full canonical PK/codec/order, digest/reference/collision and
 capture-omission rejection, immutable batch replay, representative activation
 denial, final-watermark/generation binding and conservative forward recovery.

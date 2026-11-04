@@ -10,6 +10,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGES = [
     "learning",
+    "learning-transfer",
     "content-publication",
     "game-evidence",
     "intelligence",
@@ -36,6 +37,9 @@ def test_python_v1_producers_exchange_with_independent_python_v1_consumers(packa
     if package == "learning":
         assert decisions["review-pending"] == "keep_unconfirmed"
         assert decisions["review-committed"] == "confirm_review"
+    elif package == "learning-transfer":
+        assert decisions["example-position-representative"] == "stage_representative_only"
+        assert decisions["example-blocked-identity"] == "retain_blocked_identity"
     elif package == "content-publication":
         assert decisions["publication"] == "offer_to_learning"
         assert decisions["acceptance-accepted_pending"] == "await_activation"

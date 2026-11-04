@@ -3,7 +3,8 @@
 Source baseline: `5d879ffce599af7a2eaf9627e9e1c7ea82e9af5a`, schema 59 source
 definition. This is a pure wire contract and representative mechanism input,
 not a complete migration implementation or an installed authority declaration.
-The implementation is `services/learning/runtime/src/tempo_learning_runtime/retained_history_contracts.py`.
+The implementation is `contracts/learning-transfer/src/tempo_learning_transfer_contracts/v1.py`
+(distribution `tempo-learning-transfer-contracts==1.0.0`).
 The generated JSON schema and two examples are siblings of this document.
 
 ## Identity and original representation
@@ -93,11 +94,13 @@ advance without pretending those UNKNOWNs are settled.
 
 ## Proof and limitations
 
-Owning regression `test_retained_history_contracts.py` exercises schema
+Owning regression `contracts/learning-transfer/tests/test_retained_history_contracts.py` exercises schema
 round-trip, byte retention, PK/codec/order/collision negatives, omitted captured
 rows, original batch replay/conflict, warm/final-watermark mismatch, generation
 binding, and accepted/uncertain forward recovery. Examples use synthetic
 identities and are not valid source-qualified history or scheduling parity.
 F01 next-review parity, F10 browser and F13 database fences require their native
-owners. No dependency direction, durable writer, startup or transaction changes
-occur in W01; architecture impact: none beyond this uninstalled wire contract.
+owners. The pure models live in an independent contracts distribution so runtime and
+database owners consume the same v1 API without importing each other. The
+[package dependency view](../../../contracts/learning-transfer/README.md#dependency-direction)
+records this boundary; no writer, startup or transaction is introduced.

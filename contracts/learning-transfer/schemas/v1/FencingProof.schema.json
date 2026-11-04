@@ -1,0 +1,83 @@
+{
+  "$id": "https://tempo.invalid/contracts/learning-transfer/v1/FencingProof.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "credential_denial": {
+      "minLength": 1,
+      "title": "Credential Denial",
+      "type": "string"
+    },
+    "denied_writer_inventory_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Denied Writer Inventory Digest",
+      "type": "string"
+    },
+    "evidence": {
+      "minLength": 1,
+      "title": "Evidence",
+      "type": "string"
+    },
+    "fence_id": {
+      "minLength": 1,
+      "title": "Fence Id",
+      "type": "string"
+    },
+    "lock_identity": {
+      "minLength": 1,
+      "title": "Lock Identity",
+      "type": "string"
+    },
+    "restart_denial": {
+      "minLength": 1,
+      "title": "Restart Denial",
+      "type": "string"
+    },
+    "source_authority": {
+      "minLength": 1,
+      "title": "Source Authority",
+      "type": "string"
+    },
+    "source_watermark": {
+      "minLength": 1,
+      "title": "Source Watermark",
+      "type": "string"
+    },
+    "stale_session_denial": {
+      "minLength": 1,
+      "title": "Stale Session Denial",
+      "type": "string"
+    },
+    "target_authority": {
+      "minLength": 1,
+      "title": "Target Authority",
+      "type": "string"
+    },
+    "transfer_id": {
+      "minLength": 1,
+      "title": "Transfer Id",
+      "type": "string"
+    },
+    "version": {
+      "const": 1,
+      "title": "Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "version",
+    "transfer_id",
+    "fence_id",
+    "source_authority",
+    "target_authority",
+    "source_watermark",
+    "denied_writer_inventory_digest",
+    "stale_session_denial",
+    "credential_denial",
+    "restart_denial",
+    "lock_identity",
+    "evidence"
+  ],
+  "title": "FencingProof",
+  "type": "object"
+}
