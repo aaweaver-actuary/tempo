@@ -190,7 +190,7 @@ class FinalGenerationStore:
             if row['state'] == 'captured':
                 return 'existing'
             if row['state'] != 'reserved':
-                raise ContentError('content_final_handle_invalid', 'Reservation no longer admits this capture')
+                return ('unavailable',row['state'])
             publication = db.execute('SELECT digest,source_id,source_revision FROM content.publications WHERE publication_id=%s AND generation=%s', (row['publication_id'], row['generation'])).fetchone()
             operation = db.execute('SELECT o.state,d.digest FROM content.bridge_operations o JOIN content.bridge_drafts d ON d.id=o.draft_id WHERE o.id=%s FOR UPDATE OF o', (row['approved_operation_id'],)).fetchone()
             certificate = json.loads(blobs['certificate'])
@@ -381,6 +381,8 @@ class FinalGenerationStore:
         published = self.publish(row, blobs)
         if published is None:
             return FinalGenerationResult('BLOCK','content_final_source_changed',row['reservation_id'],row['epoch'],handle,state='recovery-held')
+        if isinstance(published,tuple) and published[0] == 'unavailable':
+            return FinalGenerationResult('BLOCK','content_final_handle_invalid',row['reservation_id'],row['epoch'],handle,state=published[1])
         # Re-read under the active epoch even for a newly inserted capture:
         # resolution may have completed while preparation was outside the lock.
         current, original, error = self._read_capture(row)

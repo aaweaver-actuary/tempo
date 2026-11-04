@@ -378,3 +378,29 @@ def test_content_final_generation_terminal_capture_race_never_revives_old_epoch(
                     active_third = db.execute('SELECT state,epoch FROM content.final_generation_reservations WHERE reservation_id=%s',(third_epoch.reservation_id,)).fetchone()
                 assert aborted[0] == 'aborted' and aborted[1]['closed_disposition'] == 'closed-no-write'
                 assert active_third == ('reserved',3)
+                # A prepared capture must also recheck the locked row at
+                # publish if its reservation becomes terminal meanwhile.
+                with ContentService(url,workspace) as fourth:
+                    publishing = make_final_generation(fourth)
+                    third_handle = publishing.execute(RecoverFinal('third-epoch',draft['source_id'])).handle
+                    publish_entered, release_publish = Event(), Event()
+                    original_publish = publishing._store.publish
+                    def delayed_publish(row, blobs):
+                        publish_entered.set()
+                        assert release_publish.wait(15)
+                        return original_publish(row,blobs)
+                    publishing._store.publish = delayed_publish
+                    future_publish = executor.submit(publishing.execute,CaptureFinal(third_handle))
+                    assert publish_entered.wait(10)
+                    third_closer = make_final_generation(initial,Reader(ProvenNoTargetWrite('test-target','closed-third','third-epoch','closed-no-write')))
+                    close_third = third_closer.execute(RecoverFinal('third-epoch',draft['source_id'])).handle
+                    assert third_closer.execute(ResolveFinal(close_third,'abort')).status == 'ABORTED'
+                    fourth_epoch = creator.execute(ReserveFinal('fourth-epoch',draft['source_id'],publication['publication_id'],publication['publication_generation'],operation['id']))
+                    assert fourth_epoch.status == 'RESERVED' and fourth_epoch.epoch == 4
+                    release_publish.set()
+                    stale_publish = future_publish.result(timeout=10)
+                    assert stale_publish.status == 'BLOCK' and stale_publish.code == 'content_final_handle_invalid' and stale_publish.state == 'aborted'
+                    with psycopg.connect(url) as db:
+                        terminal_third = db.execute('SELECT state,capture_id FROM content.final_generation_reservations WHERE reservation_id=%s',(third_epoch.reservation_id,)).fetchone()
+                        active_fourth = db.execute('SELECT state,epoch FROM content.final_generation_reservations WHERE reservation_id=%s',(fourth_epoch.reservation_id,)).fetchone()
+                    assert terminal_third == ('aborted',None) and active_fourth == ('reserved',4)
