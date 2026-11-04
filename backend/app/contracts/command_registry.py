@@ -80,7 +80,7 @@ RETIRED_COMMANDS = frozenset({
     'defense.recognition.submit', 'defense.attempt.submit', 'defense.candidate.change',
     'endgames.template.create', 'endgames.attempt.create',
     'game_findings.curate', 'game_findings.decide', 'game_findings.card.save',
-    'analysis.paste.commit', 'defensive.audit', 'defensive.backfill',
+    'analysis.paste.commit', 'activity.progress', 'defensive.audit', 'defensive.backfill',
     'coverage.refresh.request', 'discovery.accept',
     'coverage.maia.claim', 'coverage.maia.heartbeat', 'coverage.maia.release',
     'coverage.maia.failure', 'coverage.maia.submit',
@@ -91,7 +91,6 @@ RETIRED_COMMANDS = frozenset({
     'games.analysis.position.release', 'games.analysis.failure', 'games.analysis.heartbeat',
     'games.analysis.release', 'games.analysis.retry', 'games.analysis.repair_timeout',
     'games.analysis.repair_provenance', 'games.analysis.finalize.admit', 'games.analysis.manual.admit',
-    'game_evidence.receive_legacy', 'game_evidence.admit_legacy',
     'opening.segmentation.refresh', 'opening.segmentation.preference',
     'studies.chapters.create', 'studies.chapters.reorder', 'studies.chapters.rename',
 })

@@ -27,6 +27,7 @@ from .contracts.command_registry import RETIRED_COMMANDS, RETIRED_TASK_KINDS, is
 from .celery_app import celery_app
 from .product_composition.worker_game_sync import resolve_worker_game_sync_command
 from .product_composition.worker_game_commands import resolve_worker_game_command
+from .product_composition.worker_legacy_evidence import resolve_worker_legacy_evidence
 from .product_composition.worker_product_feedback import resolve_worker_product_feedback
 from .command_gateway import (
     claim_recoverable_operation, execute_command, record_operation_attempt,
@@ -190,6 +191,7 @@ def _execute_foreground_command(self, operation_id, command_name, payload, expec
                 return None
             resolve_worker_game_sync_command(command_name)
             resolve_worker_game_command(command_name)
+            resolve_worker_legacy_evidence(command_name)
             resolve_worker_product_feedback(command_name)
             result = execute_command(operation_id, command_name, saved_payload,
                                      attempt_token=attempt_token)
@@ -240,6 +242,7 @@ def execute_background_command(
                 activity_gate.check_background_admission()
                 resolve_worker_game_sync_command(command_name)
                 resolve_worker_game_command(command_name)
+                resolve_worker_legacy_evidence(command_name)
                 resolve_worker_product_feedback(command_name)
                 return execute_command(operation_id, command_name, saved_payload,
                                        background=True, attempt_token=attempt_token)

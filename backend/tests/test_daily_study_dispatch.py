@@ -290,7 +290,11 @@ def test_foreground_arriving_after_claim_preserves_checkpoint_and_resumes(dispat
 def test_foreground_deferral_cannot_overwrite_new_generation(dispatch_store):
     queued = enqueue_daily()
     stale_claim = durable_tasks.claim_task('daily_queue')
-    replacement = enqueue_daily()
+    # A same-day refresh coalesces into the existing lease; the next day
+    # actually replaces the generation and exercises the stale-lease fence.
+    replacement = durable_tasks.enqueue_task('daily_queue', 'current',
+        {'queue_date': '2026-10-08'}, priority=10, foreground=False)
+    assert replacement['generation'] > stale_claim['generation']
     with tasks.activity_gate.foreground():
         assert durable_tasks.defer_task_for_foreground(stale_claim) is False
     current = task_row(queued['id'])
@@ -496,3 +500,15 @@ def test_generic_receipt_recovery_reserves_only_background_identity(monkeypatch,
     assert deliveries[0][0] == ('app.tasks.execute_background_command',)
     assert deliveries[0][1]['task_id']=='original-background'
     assert deliveries[0][1]['args']==['original-background','game_evidence.product_accept',{'original':'bytes'}]
+
+
+def test_retired_durable_task_cannot_be_claimed_or_manually_retried(dispatch_store, monkeypatch):
+    monkeypatch.setattr(durable_tasks, "submit_foreground_write", durable_tasks.submit_background_write)
+    retired = durable_tasks.enqueue_task('defensive_threat_scan', 'old', {}, foreground=False)
+    assert durable_tasks.claim_task('defensive_threat_scan') is None
+    with database.connection(background=True) as connection:
+        connection.execute("UPDATE background_tasks SET state='failed' WHERE id=?", (retired['id'],))
+    assert durable_tasks.retry_task(retired['id']) is None
+    assert task_row(retired['id'])['state'] == 'failed'
+    live = enqueue_daily()
+    assert durable_tasks.claim_task(allowed_kinds=('defensive_threat_scan', 'daily_queue'))['id'] == live['id']

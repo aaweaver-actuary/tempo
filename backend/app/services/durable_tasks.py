@@ -267,6 +267,13 @@ def claim_task(
     kind: str | None = None, *, allowed_kinds: tuple[str, ...] | None = None,
     lease_seconds: int = 60, explicit_imports_only: bool = False,
 ) -> dict | None:
+    from ..contracts.command_registry import RETIRED_TASK_KINDS
+    if kind in RETIRED_TASK_KINDS:
+        return None
+    if allowed_kinds is not None:
+        allowed_kinds = tuple(item for item in allowed_kinds if item not in RETIRED_TASK_KINDS)
+        if not allowed_kinds:
+            return None
     if explicit_imports_only and (kind is not None or allowed_kinds is not None):
         raise ValueError("Explicit import claims use only their receipt-bound scope")
     if kind is not None and allowed_kinds is not None:
@@ -577,6 +584,9 @@ def retry_task(task_id: str) -> dict | None:
     def operation(database: sqlite3.Connection) -> dict | None:
         row = storage.failed_task(database, (task_id,))
         if not row:
+            return None
+        from ..contracts.command_registry import RETIRED_TASK_KINDS
+        if row["kind"] in RETIRED_TASK_KINDS:
             return None
         now = _iso()
         write_retry = storage.prepare_manual_retry()
