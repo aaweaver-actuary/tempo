@@ -44,6 +44,12 @@ _durable_task_handlers: dict[str, Callable[[dict], None]] = {}
 _maintenance_handlers: list[Callable[[], None]] = []
 
 
+def _complete_after_handler(kind: str, advanced: bool) -> bool:
+    """Self-checkpointing tasks retain their current lease when work advances."""
+    return kind not in {"defensive_threat_scan", "defensive_rubric_audit",
+                        "repertoire_game_refresh", "discovery_admission"} or not advanced
+
+
 class _DerivationStopped(Exception):
     pass
 
@@ -387,7 +393,7 @@ class GameSyncCoordinator:
                                 )
                             else:
                                 advanced = await asyncio.to_thread(handler, item)
-                            if item["kind"] not in {"defensive_threat_scan", "defensive_rubric_audit", "repertoire_game_refresh"} or not advanced:
+                            if _complete_after_handler(item["kind"], advanced):
                                 await asyncio.to_thread(
                                     complete_task,
                                     item["id"],

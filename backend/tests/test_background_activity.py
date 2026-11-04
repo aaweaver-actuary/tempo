@@ -191,3 +191,9 @@ def test_sqlite_restart_preserves_old_engine_rows_without_bootstrapping_new_work
         assert db.execute("SELECT COUNT(*) FROM imported_games WHERE id IN ('old','new')").fetchone()[0] == 2
         assert db.execute("SELECT 1 FROM sqlite_master WHERE name='game_age_insert'").fetchone() is None
         assert db.execute("SELECT 1 FROM sqlite_master WHERE name='idx_background_tasks_diagnostic_state'").fetchone()
+
+
+def test_discovery_stale_envelope_does_not_complete_its_live_lease():
+    assert not game_sync_coordinator._complete_after_handler('discovery_admission', True)
+    assert game_sync_coordinator._complete_after_handler('discovery_admission', False)
+    assert game_sync_coordinator._complete_after_handler('ordinary', True)
