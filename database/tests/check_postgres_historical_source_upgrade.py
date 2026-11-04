@@ -34,6 +34,9 @@ def apply_through(database, boundary):
 
 def seed(database):
     database.execute("INSERT INTO settings(id,lichess_username) VALUES(1,'historical')")
+    database.execute("INSERT INTO studies(id,title,created_at,updated_at) VALUES('pgn-study','PGN','2026-01-01','2026-01-01')")
+    database.execute("INSERT INTO study_chapters(id,study_id,title,position) VALUES('pgn-chapter','pgn-study','PGN',0)")
+    database.execute("INSERT INTO study_sources(id,chapter_id,source_group_id,version,raw_pgn,sha256,filename,record_index,headers_json,diagnostics_json,valid,created_at) VALUES('pgn-source','pgn-chapter','pgn-group',1,%s,'synthetic','fixture.pgn',0,'{}','[]',1,'2026-01-01')", ('[Event "Synthetic"]\n\n1. e4 e5 *',))
     for identifier, timestamp in (
         ("offset", "2026-01-01T00:00:00-05:00"),
         ("naive", "2026-01-01T00:00:00"),
@@ -64,6 +67,11 @@ def check_boundary_44(database):
         "JOIN pg_class c ON c.oid=i.indexrelid WHERE c.relname IN "
         "('idx_next_opponent_account_time','idx_next_opponent_speed_rating_time')").fetchall()
     assert len(indexes) == 2 and all(valid and ready for _, valid, ready in indexes)
+    for table in ('next_opponent_accounts', 'next_opponent_snapshots'):
+        assert database.execute('SELECT to_regclass(%s)', (table,)).fetchone()[0] == table
+    for function in ('invalidate_next_opponent_inputs()', 'next_opponent_game_time(text)', 'protect_next_opponent_snapshot()'):
+        assert database.execute('SELECT to_regprocedure(%s)', (function,)).fetchone()[0] is not None
+    assert database.execute("SELECT 1 FROM pg_trigger WHERE tgrelid='imported_games'::regclass AND tgname='next_opponent_input_change' AND NOT tgisinternal").fetchone()
 
 
 def check_upgrade(boundary):
@@ -80,6 +88,7 @@ def check_upgrade(boundary):
                 "SELECT version FROM tempo_schema_migrations ORDER BY version")] == list(range(1, boundary + 1))
             assert database.execute("SELECT to_regclass('next_opponent_accounts')").fetchone()[0] is None
             sources = database.execute("SELECT * FROM imported_games ORDER BY id").fetchall()
+            pgns = database.execute("SELECT * FROM study_sources ORDER BY id").fetchall()
             cursor = database.execute("SELECT * FROM settings ORDER BY id")
             columns = sql.SQL(',').join(sql.Identifier(column.name) for column in cursor.description)
             settings = cursor.fetchall()
@@ -94,13 +103,19 @@ def check_upgrade(boundary):
                 assert [row[0] for row in database.execute(
                     "SELECT version FROM tempo_schema_migrations ORDER BY version")] == list(range(1, POSTGRES_SCHEMA_VERSION + 1))
                 assert database.execute("SELECT * FROM imported_games ORDER BY id").fetchall() == sources
+                assert database.execute("SELECT * FROM study_sources ORDER BY id").fetchall() == pgns
                 assert database.execute(sql.SQL("SELECT {} FROM settings ORDER BY id").format(columns)).fetchall() == settings
                 if turns is not None:
                     assert database.execute("SELECT * FROM background_scheduling_turns").fetchall() == turns
                 for index in ('idx_opening_graph_current_roots', 'idx_opening_graph_mature_parent_candidates',
-                              'idx_cards_locked_openings', 'idx_cards_mature_parent',
-                              'next_opponent_accounts', 'next_opponent_snapshots'):
+                              'idx_cards_locked_openings', 'idx_cards_mature_parent'):
                     assert database.execute('SELECT to_regclass(%s)', (index,)).fetchone()[0] == index
+                for retired in ('next_opponent_accounts', 'next_opponent_snapshots',
+                                'idx_next_opponent_account_time', 'idx_next_opponent_speed_rating_time'):
+                    assert database.execute('SELECT to_regclass(%s)', (retired,)).fetchone()[0] is None
+                for function in ('invalidate_next_opponent_inputs()', 'next_opponent_game_time(text)', 'protect_next_opponent_snapshot()'):
+                    assert database.execute('SELECT to_regprocedure(%s)', (function,)).fetchone()[0] is None
+                assert database.execute("SELECT 1 FROM pg_trigger WHERE tgrelid='imported_games'::regclass AND tgname='next_opponent_input_change' AND NOT tgisinternal").fetchone() is None
                 assert {row[0] for row in database.execute(
                     "SELECT column_name FROM information_schema.columns WHERE table_name='background_tasks' "
                     "AND column_name IN ('transaction_timeout_count','transaction_timeout_checkpoint')")} == {
