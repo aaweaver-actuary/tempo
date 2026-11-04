@@ -5,10 +5,12 @@ Mutations borrow the supplied transaction; only existing service read helpers op
 """
 from psycopg.types.json import Jsonb
 from tempo_content.domain import ContentError
+from .final_generation import lock_writable_source
 
 
 def lock_scope(database, source_id, operation_id=None):
     database.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", ("content:scope:" + source_id,))
+    lock_writable_source(database, source_id)
     reservation = database.execute("SELECT id FROM content.bridge_operations WHERE source_id=%s AND state IN ('approved','applying')", (source_id,)).fetchone()
     if reservation and reservation["id"] != operation_id:
         raise ContentError("source_reserved", "An approved operation owns this source; inspect/reconcile it first")
@@ -16,6 +18,7 @@ def lock_scope(database, source_id, operation_id=None):
 
 def source_scope_lock(database, source_id):
     database.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", ("content:scope:" + source_id,))
+    lock_writable_source(database, source_id)
 
 
 class BridgeStore:
@@ -24,6 +27,7 @@ class BridgeStore:
 
     lock_scope = staticmethod(lock_scope)
     source_scope_lock = staticmethod(source_scope_lock)
+    lock_writable_source = staticmethod(lock_writable_source)
 
     def insert_draft(self, database, identifier, source_id, source_key, expected_revision, fingerprint, document):
         database.execute("INSERT INTO content.bridge_drafts VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",

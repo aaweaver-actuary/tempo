@@ -18,6 +18,7 @@ from tempo_content.publication import build_source_publication, admit_publicatio
 from tempo_content.source import load_source_snapshot
 from tempo_content.domain import ContentError, stable_id, canonical_source, canonical_position
 from tempo_content_database.ddl.migrate import readiness
+from .final_generation import assert_source_writable
 
 INVENTORY_VERSION = 'content-legal-v1/chess-1.11.2'
 KINDS = ('repertoires','policies','routes','memberships','exercises','bindings')
@@ -180,7 +181,12 @@ class ContentService:
             admit_source=self._admit_source,notify=_hook)
 
     def _preflight_source(self,source_id,digest,expected_revision):
-        with self._read_snapshot() as database:
+        with self._transaction() as database:
+            from .bridge import source_scope_lock
+            source_scope_lock(database, source_id)
+            source = self._lock_source(database, source_id)
+            if source:
+                assert_source_writable(database, source_id)
             current = database.execute('SELECT s.requested_revision,r.digest,t.generation,t.state FROM content.sources s LEFT JOIN content.source_revisions r ON r.source_id=s.id AND r.revision=s.requested_revision LEFT JOIN LATERAL (SELECT generation,state FROM content.tasks WHERE source_id=s.id AND revision=s.requested_revision ORDER BY generation DESC LIMIT 1) t ON true WHERE s.id=%s',(source_id,)).fetchone()
             if current and (current['digest'] is None or current['generation'] is None):
                 raise ContentError('inventory_incomplete','Current source revision or task is missing')
@@ -218,6 +224,7 @@ class ContentService:
                     raise ContentError('application_not_authorized', 'Source admission requires the original still-applying operation')
             database.execute('INSERT INTO content.sources(id,source_key,publication_id) VALUES(%s,%s,%s) ON CONFLICT DO NOTHING',(source_id,snapshot.source_key,publication_id))
             source = self._lock_source(database,source_id,hook)
+            assert_source_writable(database, source_id)
             previous = database.execute('SELECT digest FROM content.source_revisions WHERE source_id=%s AND revision=%s',(source_id,source['requested_revision'])).fetchone()
             task = database.execute('SELECT * FROM content.tasks WHERE source_id=%s ORDER BY generation DESC LIMIT 1 FOR UPDATE',(source_id,)).fetchone()
             if previous and previous['digest']==digest:
@@ -291,6 +298,7 @@ class ContentService:
             return None
         with self._transaction() as database:
             source = self._lock_source(database,selected['source_id'],hook)
+            assert_source_writable(database, selected['source_id'])
             task = database.execute('SELECT *,lease_until>clock_timestamp() AS leased FROM content.tasks WHERE source_id=%s AND generation=%s FOR UPDATE',(selected['source_id'],selected['generation'])).fetchone()
             if source['requested_revision']!=task['revision'] or task['state'] not in ('pending','working') or task['leased']:
                 return None
@@ -300,12 +308,17 @@ class ContentService:
 
     def _fence(self,database,task,hook=None):
         source = self._lock_source(database,task['source_id'],hook)
+        assert_source_writable(database, task['source_id'])
         current = database.execute('SELECT *,lease_until>clock_timestamp() AS leased FROM content.tasks WHERE source_id=%s AND generation=%s FOR UPDATE',(task['source_id'],task['generation'])).fetchone()
         if source['requested_revision']!=task['revision'] or current['lease_token']!=task['lease_token'] or current['state']!='working' or not current['leased']:
             raise ContentError('stale_generation','Reconciliation delivery lost authority')
+        database.execute("SELECT set_config('tempo.content_fenced_source', %s, true)", (task['source_id'],))
         return current
 
     def _advance(self,database,task,phase=None,cursor=None,exercise_state=None,state='pending'):
+        fenced = database.execute("SELECT current_setting('tempo.content_fenced_source', true) AS source_id").fetchone()
+        if not fenced or fenced['source_id'] != task['source_id']:
+            raise ContentError('stale_generation', 'Task advance requires its source fence in this transaction')
         database.execute('UPDATE content.tasks SET phase=%s,cursor=%s,exercise_state=%s,state=%s,lease_token=NULL,lease_until=NULL WHERE source_id=%s AND generation=%s',(phase or task['phase'],task['cursor'] if cursor is None else cursor,Jsonb(exercise_state),state,task['source_id'],task['generation']))
 
     def work_once(self,source_key=None,hook=None):
@@ -451,7 +464,7 @@ class ContentService:
                 return {'worked':False,'status':'idle','phase':'collect'}
             # Remove only a bounded set of superseded memberships first. Old
             # publication attachments do not reference this disposable cache.
-            obsolete = database.execute('SELECT r.source_id,r.generation,r.route_key,r.policy_key FROM content.generation_routes r JOIN content.tasks t USING(source_id,generation) JOIN content.sources s ON s.id=r.source_id WHERE t.revision<>s.requested_revision ORDER BY r.source_id,r.generation,r.route_key,r.policy_key LIMIT 64').fetchall()
+            obsolete = database.execute('SELECT r.source_id,r.generation,r.route_key,r.policy_key FROM content.generation_routes r JOIN content.tasks t USING(source_id,generation) JOIN content.sources s ON s.id=r.source_id WHERE t.revision<>s.requested_revision AND NOT EXISTS (SELECT 1 FROM content.final_generation_reservations f WHERE f.source_id=r.source_id AND f.generation=r.generation AND f.state IN (\'reserved\',\'captured\',\'recovery-held\')) ORDER BY r.source_id,r.generation,r.route_key,r.policy_key LIMIT 64').fetchall()
             if obsolete:
                 for row in obsolete:
                     database.execute('DELETE FROM content.generation_routes WHERE source_id=%s AND generation=%s AND route_key=%s AND policy_key=%s',tuple(row.values()))
@@ -477,6 +490,10 @@ class ContentService:
             return {'worked':False,'status':'pending' if remains else 'idle','phase':'collect'}
 
     def publication_build(self,source_key,hook=None):
+        source = self._source(source_key)
+        with self._transaction() as database:
+            self._lock_source(database,source['id'])
+            assert_source_writable(database,source['id'])
         return build_source_publication(source_key,hook,inventory_version=INVENTORY_VERSION,
             read_source=self._source,read_task=self._publication_task,read_payload=self._publication_payload,
             read_manifest=self._manifest,reserve_build=self._reserve_publication_build,read_snapshot=self._snapshot,
@@ -491,6 +508,7 @@ class ContentService:
     def _reserve_publication_build(self,source,task):
         with self._transaction() as database:
             current = self._lock_source(database,source['id'])
+            assert_source_writable(database, source['id'])
             if current['requested_revision']!=task['revision']:
                 raise ContentError('stale_generation','Source changed before build')
             locked = database.execute('SELECT * FROM content.tasks WHERE source_id=%s AND generation=%s FOR UPDATE',(source['id'],task['generation'])).fetchone()
@@ -507,6 +525,7 @@ class ContentService:
         """Immutable insert boundary; complete source authority remains mandatory."""
         with self._transaction() as database:
             source = self._lock_source(database,source_id,hook)
+            assert_source_writable(database, source_id)
             existing = database.execute('SELECT payload,digest,source_id,provenance FROM content.publications WHERE publication_id=%s AND generation=%s',(publication.publication_id,publication.publication_generation)).fetchone()
             if existing:
                 if existing['payload']!=payload or existing['digest']!=digest or existing['source_id']!=source_id or existing['provenance']!=provenance:

@@ -403,3 +403,7 @@ flowchart LR
   C[Service consumer] -->|ContentService on demand| R
   R -.-> S[Content database adapter]
 ```
+
+## Final generation handoff
+
+The explicit Content owner final-generation capability reserves a complete, approved Learning-profile source generation before capturing its source-selected immutable export and proof. Supported source writers are held while the reservation remains active. Recovery uses the original transfer and epoch; a missing or uncertain target disposition keeps the source held. A separately qualified target disposition and legacy final watermark are required for resolution. This Content capture is not itself Learning activation, legacy-source correspondence, or installed administrator-bypass proof. See the [owner ledger and lifecycle](../../database/tempo_content_database/schema/final-generations/README.md).

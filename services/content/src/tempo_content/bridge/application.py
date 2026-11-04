@@ -420,6 +420,7 @@ class BridgeApplication:
         else:
             prepared = {"pending": True, **loaded}
         with self.service._transaction() as database:
+            self.storage.lock_scope(database, operation["source_id"], identifier)
             self.storage.merge_prepared_document(database, identifier, prepared)
         return self.operation(identifier)
 
