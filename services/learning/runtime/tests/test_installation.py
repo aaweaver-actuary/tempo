@@ -17,6 +17,9 @@ def test_installed_artifact_has_migrations_and_no_optional_services():
     assert "site-packages" in tempo_evidence_math.__file__
     assert "site-packages" in position_grade_policy.__file__
     assert metadata.version("tempo-game-evidence-contracts") == "3.0.0"
+    assert metadata.version("tempo-learning-transfer-contracts") == "1.0.0"
+    import tempo_learning_transfer_contracts
+    assert "site-packages" in tempo_learning_transfer_contracts.__file__
     for distribution in ("celery", "redis", "torch", "onnxruntime", "transformers"):
         with pytest.raises(metadata.PackageNotFoundError):
             metadata.distribution(distribution)

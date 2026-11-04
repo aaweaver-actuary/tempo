@@ -478,3 +478,16 @@ new transport, epoch/source/payload/FSRS holds, atomic schedule + receipt +
 checkpoint rollback, racing and cross-epoch one-Good/day, and owner IANA day.
 It does not establish real Content/completion authority, stage adoption, accepted
 Games debt or HTTP saved-review → playable-next-card acceptance.
+
+`tests/test_qualification_transfer_inputs.py` halts existing qualifiers before
+builds/allocation to prove actual isolated-context contract copying and native
+receipt input fingerprints. These deterministic tooling tests are not native
+PostgreSQL or full wheel/sdist qualification passes.
+`tests/test_cutover_position_effect_native.py` independently challenges logical
+replay under concurrent transports, fixture authority constraints and separation
+of unsupported Game lapse from genuine human Again.
+`tests/test_disposable_writer_fence_postgres.py` uses owned roles/sessions to
+prove in-flight rollback and later connection denial, preserves committed data,
+and demonstrates administrator reopening. Prepared transactions, bounded-drain
+failure, actual old binaries, host/SQLite bypass and final capture remain
+operational F13 blockers.
