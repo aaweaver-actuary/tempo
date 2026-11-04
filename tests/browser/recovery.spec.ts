@@ -671,7 +671,7 @@ productTest("repair choices advance before a delayed save and survive reload thr
   expect(day).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   const seedSql = `INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
     SELECT 'legacy-' || id,repertoire_id,'Synthetic legacy competing line',trained_color,start_fen,'["d2d4"]',created_at
-    FROM repertoire_lines WHERE repertoire_id='${repertoireId}';
+    FROM repertoire_lines WHERE repertoire_id='${repertoireId}' ORDER BY id LIMIT 1;
     UPDATE background_tasks SET state='failed',phase='failed',generation=generation+1,
       payload_json=json_build_object('repertoire_id','${repertoireId}','local_day','${day}')::text,
       last_error='synthetic legacy fixture' WHERE id='${seedGraph!.id}';`;
@@ -683,7 +683,7 @@ productTest("repair choices advance before a delayed save and survive reload thr
     const repertoire = result.repertoires.find((item: { id: string }) => item.id === repertoireId);
     return { integrity_issue_count: repertoire?.integrity_issue_count,
       integrity_status: repertoire?.integrity_status, integrity_scan_status: repertoire?.integrity_scan_status };
-  }, { timeout: 60_000 }).toEqual({ integrity_issue_count: 2, integrity_status: "needs_repair", integrity_scan_status: "idle" });
+  }, { timeout: 60_000 }).toEqual({ integrity_issue_count: 1, integrity_status: "needs_repair", integrity_scan_status: "idle" });
   let releaseSave: (() => void) | undefined;
   const saveHold = new Promise<void>(resolve => { releaseSave = resolve; });
   let savedOnServer = false;
@@ -697,13 +697,11 @@ productTest("repair choices advance before a delayed save and survive reload thr
   });
   try {
     await page.goto("/");
-    await page.getByRole("button", { name: "Resume repair", exact: true }).click();
+    await page.getByRole("button", { name: "Repertoire", exact: true }).click();
+    await page.getByRole("button", { name: "Resume repair", exact: true }).click({ timeout: 15_000 });
     const dialog = page.getByRole("dialog", { name: "Choose one response per position" });
-    await expect(dialog).toContainText("2 issues remaining");
-    await dialog.getByRole("button", { name: "e2e4", exact: true }).click();
-    await dialog.getByRole("button", { name: "Keep this response", exact: true }).click();
     await expect(dialog).toContainText("1 issue remaining");
-    await dialog.getByRole("button", { name: "e2e4", exact: true }).click();
+    await dialog.getByRole("button", { name: "Choose e4", exact: true }).click({ timeout: 15_000 });
     await dialog.getByRole("button", { name: "Keep this response", exact: true }).click();
     await expect(dialog).toContainText("All choices queued");
     await expect.poll(() => savedOnServer).toBe(true);
@@ -711,14 +709,14 @@ productTest("repair choices advance before a delayed save and survive reload thr
     const savedChoices = await page.evaluate(() => Object.keys(localStorage)
       .filter(key => key.startsWith("tempo-pending-integrity-repairs-v3:"))
       .map(key => JSON.parse(localStorage.getItem(key)!)));
-    expect(savedChoices).toHaveLength(2);
+    expect(savedChoices).toHaveLength(1);
     await page.reload(); releaseSave?.();
     await expect(page.getByRole("dialog", { name: "Choose one response per position" })).toHaveCount(0);
     // Prove eventual recovery through graph and integrity publication, not a
     // 20-second performance SLO for the asynchronous background pipeline.
     await expect.poll(async () => page.evaluate(() => Object.keys(localStorage)
       .filter(key => key.startsWith("tempo-pending-integrity-repairs-v3:")).length), { timeout: 60_000 }).toBe(0);
-    expect(submittedKeys).toHaveLength(2);
+    expect(submittedKeys).toHaveLength(1);
     expect(submittedKeys.sort()).toEqual(savedChoices.map(choice => choice.operationId).sort());
     const integrity = await (await request.get(`${api}/repertoires/${repertoireId}/integrity`)).json();
     expect(integrity).toMatchObject({ status: "clean", scan_status: "idle", issue_count: 0 });

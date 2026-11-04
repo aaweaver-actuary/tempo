@@ -679,3 +679,23 @@ def test_retained_reader_is_the_published_snapshot_owner_callable():
     from tempo_legacy_database.adapters.authored_repertoires import product_snapshot
     assert retained.current_snapshot is product_snapshot.current_snapshot
     assert retained._shared_snapshot_reader is product_snapshot.current_snapshot
+
+
+def test_integrity_repair_allows_one_existing_conflict_to_clear_but_rejects_new_or_worsened():
+    from app.repertoire.changes.application import validate_repair_source_rows
+    other_fen = 'rnbqkb1r/pppppppp/5n2/8/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 2 2'
+    def row(name, fen, move):
+        return dict(source_id=name, start_fen=fen, moves_json=json.dumps([move]), trained_color='white')
+    before = (row('a', chess.STARTING_FEN, 'e2e4'), row('b', chess.STARTING_FEN, 'd2d4'),
+              row('c', other_fen, 'e2e4'), row('d', other_fen, 'd2d4'))
+    one_repaired = (before[0], row('b', chess.STARTING_FEN, 'e2e4'), before[2], before[3])
+    validate_repair_source_rows('rep', before, one_repaired)
+    with pytest.raises(ChangeError, match='pending_resolution'):
+        validate_repair_source_rows('rep', before, before)
+    with pytest.raises(ChangeError, match='pending_resolution'):
+        validate_repair_source_rows('rep', before, one_repaired + (row('e', other_fen, 'c2c4'),))
+    new_fen = 'rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2'
+    with pytest.raises(ChangeError, match='pending_resolution'):
+        validate_repair_source_rows('rep', before, one_repaired + (row('f', new_fen, 'g1f3'), row('g', new_fen, 'f1c4')))
+    with pytest.raises(ChangeError, match='invalid_source'):
+        validate_repair_source_rows('rep', before, one_repaired + (dict(before[0], source_id='bad', moves_json='broken'),))
