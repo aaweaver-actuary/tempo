@@ -184,7 +184,8 @@ limited. A partial native/browser pass does not close its full row.
    repair. The Node wrapper lacked task-local TypeScript; underlying selected
    Python checks passed. Optional legacy test collection lacked `redis`; pure
    comparator cases passed, not the unavailable legacy runner.
-6. **Image / rehearsal:** image build was not run with roughly 3 GiB free disk.
+6. **Image / rehearsal:** image build was not run when roughly 3 GiB was free
+   before task cleanup; no image-build failure or packaged pass is asserted.
    Qualified runtime image, full saved-review/playable-next, F13/F14 restore and
    browser acceptance remain future delivery work, before any live go/no-go.
 
@@ -193,3 +194,10 @@ changed in the installed product. No deployment, authority switch, downtime,
 live privilege mutation, legacy retirement/deletion or backup/volume deletion
 was performed. Native fixtures removed only their own identified resources;
 reproduction evidence and source branches remain retained for review.
+Eleven redundant task checkouts were removed after verifying clean state,
+published/integrated commits and retained external evidence. Shared stashes and
+feature branches were preserved. The coordinator checkout remains at
+`/private/tmp/tempo-cutover-components-20261103`; cleanup receipts are
+`/private/tmp/tempo-cutover-worktree-cleanup-20261103.json` and
+`/private/tmp/tempo-cutover-clone-cleanup-20261103.json`. Available disk was
+approximately 5.1 GiB afterward; no shared cache or unrelated checkout was pruned.
