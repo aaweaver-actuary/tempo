@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { expect, it, vi } from "vitest";
 import { readWorkspaceData } from "../../app/lib/workspace-data";
+import { OFFLINE_SHELL_VERSION } from "../../app/lib/offline-shell";
 
 it("workspace persistence excludes live API responses and bounds static data", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => Response.json({ payload: "x".repeat(150_000) })));
@@ -100,7 +101,7 @@ it("Pages service worker caches scoped static assets and bypasses API and extern
   const waitUntil = vi.fn();
   onMessage!({ data: { type: "tempo:offline-shell-status" }, ports: [{ postMessage }], waitUntil });
   await waitUntil.mock.calls[0][0];
-  expect(postMessage).toHaveBeenCalledWith({ version: "tempo-static-v7", ready: false });
+  expect(postMessage).toHaveBeenCalledWith({ version: OFFLINE_SHELL_VERSION, ready: false });
 
   for (const path of ["favicon.svg", "tempo-icon.png", "manifest.webmanifest",
     ...["w", "b"].flatMap((color) => ["P", "N", "B", "R", "Q", "K"]
@@ -108,12 +109,12 @@ it("Pages service worker caches scoped static assets and bypasses API and extern
     cached.set(`https://tempo.test/tempo/${path}`, new Response(path));
   onMessage!({ data: { type: "tempo:offline-shell-status" }, ports: [{ postMessage }], waitUntil });
   await waitUntil.mock.calls[1][0];
-  expect(postMessage).toHaveBeenLastCalledWith({ version: "tempo-static-v7", ready: false });
+  expect(postMessage).toHaveBeenLastCalledWith({ version: OFFLINE_SHELL_VERSION, ready: false });
   cached.set("https://tempo.test/tempo/assets/study.worker.js", new Response("worker"));
   cached.set("https://tempo.test/tempo/assets/shared.js", new Response("shared dependency"));
   onMessage!({ data: { type: "tempo:offline-shell-status" }, ports: [{ postMessage }], waitUntil });
   await waitUntil.mock.calls[2][0];
-  expect(postMessage).toHaveBeenLastCalledWith({ version: "tempo-static-v7", ready: true });
+  expect(postMessage).toHaveBeenLastCalledWith({ version: OFFLINE_SHELL_VERSION, ready: true });
 
   for (let index = 125; index < 250; index++) {
     const asset = dispatch(`https://tempo.test/tempo/assets/${index}.js`, "script");
