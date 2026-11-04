@@ -48,18 +48,6 @@ def insert_imported_game(database, game_id, provider, values):
     )
 
 
-def ensure_analysis_job(database, game_id, now):
-    database.execute(
-        "INSERT INTO game_analysis_jobs(game_id,updated_at) VALUES(?,?) "
-        "ON CONFLICT(game_id) DO NOTHING",
-        (game_id, now),
-    )
-
-
-
-
-
-
 def lock_sync_progress(database, job_id):
     return database.execute(
         "SELECT status,result_json FROM game_sync_jobs WHERE id=? FOR UPDATE",

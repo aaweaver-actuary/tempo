@@ -387,29 +387,6 @@ def fail_coverage_run(database, values):
     )
 
 
-def fail_analysis_publication(database, values):
-    return database.execute(
-        "UPDATE game_analysis_publications SET status='failed',last_error=?,updated_at=? "
-                "WHERE game_id=? AND status IN ('queued','publishing')",
-        values,
-    )
-
-
-def fail_analysis_job(database, values):
-    return database.execute(
-        "UPDATE game_analysis_jobs SET status='failed',last_error=?,updated_at=? "
-                "WHERE game_id=? AND status='publishing'",
-        values,
-    )
-
-
-def fail_imported_game(database, values):
-    return database.execute(
-        "UPDATE imported_games SET analysis_state='failed' WHERE id=?",
-        values,
-    )
-
-
 def defer_for_foreground(database, values):
     return database.execute(
         """UPDATE background_tasks SET state='retrying',
