@@ -106,7 +106,6 @@ def test_postgres_discovery_admission_completes_published_card_without_replay(mo
     monkeypatch.setattr(discovery_admission, "background_read_connection", database_connection)
     monkeypatch.setattr(discovery_admission, "connection", database_connection)
     monkeypatch.setattr(discovery_admission, "_materialize_admission_branch", lambda _task: None)
-    monkeypatch.setattr(discovery_admission, "_ensure_admission_coverage_refresh", lambda _task: None)
     monkeypatch.setattr(discovery_admission, "lock_current_slice", lambda *_args: lease_current)
     monkeypatch.setattr(discovery_admission, "ensure_card_queued_after",
                         lambda _database, card_id, **_kwargs: queued_cards.append(card_id))

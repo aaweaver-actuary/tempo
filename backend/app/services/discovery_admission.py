@@ -15,7 +15,7 @@ from tempo_legacy_database.adapters import postgres_store
 from tempo_legacy_database.adapters.authored_repertoires.discovery_admission import storage
 from .activity_gate import activity_gate
 from . import canonical_scope_freshness
-from .canonical_scope_freshness import opportunity_is_current, coverage_run_is_current, coverage_scope_predicate
+from .canonical_scope_freshness import opportunity_is_current, coverage_run_is_current
 from app.services.canonical_prefix import read_prefix, game_in_scope, line_origin, validate_scoped_line, store_positions
 from app.chess.position_identity import position_key
 from app.chess.cards import card_id
@@ -555,43 +555,10 @@ def _materialize_admission_branch(task: dict) -> None:
             )
 
 
-def _ensure_admission_coverage_refresh(task: dict) -> None:
-    """Resume the existing coverage pipeline after branch materialization."""
-    read_section = background_read_connection if storage.configured() else read_connection
-    with read_section() as database:
-        intent = storage.coverage_intent(database, (task["payload"]["intent_id"],))
-        if not intent or intent["state"] == "queued":
-            return
-        line = storage.source_line_created_at(database, (intent["line_id"],))
-        if not line:
-            return
-        run = storage.coverage_started_since_line(database, intent, line)
-        lease = None if storage.configured() else storage.task_lease(database, (task["id"],))
-    if run:
-        return
-    if storage.configured():
-        from .coverage_seed_request import request_coverage_seed_in_transaction
-
-        activity_gate.wait_for_foreground()
-        with connection(background=True) as database:
-            if lock_current_slice(database, task):
-                request_coverage_seed_in_transaction(
-                    database, intent["repertoire_id"], automatic=True,
-                )
-        return
-    if not lease or lease["generation"] != task["generation"] or lease["lease_token"] != task["lease_token"]:
-        return
-    activity_gate.wait_for_foreground()
-    from .repertoire_coverage import enqueue_coverage_refresh
-
-    enqueue_coverage_refresh(intent["repertoire_id"], automatic=True, background=True)
-
-
 def execute_admission_intent_slice(task: dict) -> bool:
     """Materialize one branch or wait for publication, then admit one card."""
     activity_gate.wait_for_foreground()
     _materialize_admission_branch(task)
-    _ensure_admission_coverage_refresh(task)
     activity_gate.wait_for_foreground()
     read_section = background_read_connection if storage.configured() else read_connection
     with read_section() as database:

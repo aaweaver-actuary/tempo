@@ -1,7 +1,6 @@
 """Existing discovery recommendation/admission SQL; caller owns policy and transaction."""
 
 from ... import postgres_store
-from ...repertoire_scope.freshness import coverage_scope_predicate
 
 
 def configured() -> bool:
@@ -206,28 +205,6 @@ def insert_training_depth(database, values):
                      line_id,learner_decision_count) VALUES(?,?)""",
         values,
     )
-
-
-def coverage_intent(database, values):
-    return database.execute(
-        "SELECT repertoire_id,line_id,state FROM discovery_admission_intents WHERE id=?",
-        values,
-    ).fetchone()
-
-
-def source_line_created_at(database, values):
-    return database.execute(
-        "SELECT created_at FROM repertoire_lines WHERE id=?",
-        values,
-    ).fetchone()
-
-
-def coverage_started_since_line(database, intent, line):
-    return database.execute(
-        f"""SELECT 1 FROM repertoire_coverage_runs r
-               WHERE repertoire_id=? AND created_at>=? AND {coverage_scope_predicate(database, repertoire_id="r.repertoire_id")} LIMIT 1""",
-        (intent["repertoire_id"], line["created_at"]),
-    ).fetchone()
 
 
 def published_line_card(database, values):
