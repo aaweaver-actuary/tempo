@@ -6831,3 +6831,20 @@ The canonical scheduling and exact review source-reference negatives reproduce
 the rejected unsafe committed classification. Only native owned fixtures count;
 no durable original-row immutability, source finality or target grade proof is
 claimed. See the Study database adapter README for scope and decoder injection.
+
+## Prospective Tactics archive and preliminary DB inventory (#938/#939)
+
+`backend/tests/test_tactics_asset_generation.py` and
+`backend/tests/test_tactics_asset_archive.py` own fixture-only descriptor capture,
+immutable archive/readback, fresh-cache closure, malformed assets and unsupported
+filesystem refusal. Repeated failed directory-open and post-open fstat failures
+assert descriptor closure; unqualified architecture refuses before FFI loading.
+The accepted owner selections passed 5 generation and 7 archive cases. Serving
+activation and historical authority remain unproved.
+
+`database/tests/tactics/test_tactics_row_snapshot_postgres.py` owns one disposable
+PostgreSQL schema-59 case covering six-table original keys/raw text/NULLs,
+repeatable snapshot versus fresh-reader changes, row/text bounds, transaction
+refusal and empty tables. Native receipt is hash-bound to the committed adapter
+and test despite its precommit revision label. This proves only
+`PRELIMINARY_UNBOUND`, not asset correspondence, finality or Study closure.
