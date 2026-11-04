@@ -13,7 +13,7 @@ import { isTimingPublicationFailure } from "./test-scenario-timings.mjs";
 import { probeLifecycleRedis } from "../database/tooling/cli/probes.mjs";
 import { createBackupRestoreDatabase, createPostgresBackup, removeBackupRestoreDatabase, restorePostgresBackup } from "../database/tooling/cli/backup.mjs";
 
-export const applicationServices = ["web", "maia-worker", "api",
+export const applicationServices = ["web", "api",
   "foreground-worker", "background-worker", "background-scheduler"];
 
 function applicationIdentitiesMatch(running, target, services, images, hashes) {
@@ -582,7 +582,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     stage("starting_services");
     const workers = ["foreground-worker", "background-worker", "background-scheduler", "api"].filter(name => configuration.services[name]);
     await compose(["up", "-d", "--no-build", "--no-deps", ...(recreate ? ["--force-recreate"] : []), "--wait", "--wait-timeout", "180", ...workers], { echo: true });
-    const consumers = ["web", "maia-worker", "postgres-backup"].filter(name => configuration.services[name]);
+    const consumers = ["web", "postgres-backup"].filter(name => configuration.services[name]);
     await compose(["up", "-d", "--no-build", "--no-deps", ...(recreate ? ["--force-recreate"] : []), "--wait", "--wait-timeout", "180", ...consumers], { echo: true });
   }
 

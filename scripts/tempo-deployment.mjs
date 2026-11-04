@@ -135,8 +135,8 @@ export function validateContainers(containers, target) {
       const workingDirectory = labels["com.docker.compose.project.working_dir"];
       if (workingDirectory && resolve(workingDirectory) !== resolve(target.root))
         throw new Error("Registered Compose project belongs to another checkout.");
-      if (labels["com.docker.compose.service"] === "defense-engine" && container.State?.Running)
-        throw new Error("Stop and remove the retired defense-engine container for this registered Tempo project before updating.");
+      if (["defense-engine", "maia-worker"].includes(labels["com.docker.compose.service"]) && container.State?.Running)
+        throw new Error(`Stop and remove the retired ${labels["com.docker.compose.service"]} container for this registered Tempo project before updating.`);
       for (const mount of container.Mounts ?? []) {
         // Older backup containers inherit PostgreSQL's unused anonymous image
         // volume. It contains no cluster; new configurations use tmpfs here.

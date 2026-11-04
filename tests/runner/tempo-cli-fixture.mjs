@@ -10,7 +10,7 @@ export function cliFixture(mode = "upgrade") {
   mkdirSync(join(root, "database/tempo_legacy_database/ddl"), { recursive: true }); mkdirSync(bin);
   writeFileSync(join(root, "database/tempo_legacy_database/ddl/schema_version.py"), "POSTGRES_SCHEMA_VERSION = 29\n");
   const secret = join(directory, "password"); writeFileSync(secret, "canary-private-password", { mode: 0o600 });
-  const names = ["postgres", "redis", "api", "foreground-worker", "background-worker", "background-scheduler", "web", "maia-worker", "postgres-backup", "migration"];
+  const names = ["postgres", "redis", "api", "foreground-worker", "background-worker", "background-scheduler", "web", "postgres-backup", "migration"];
   const volumes = Object.fromEntries(["tempo-postgres-data", "tempo-postgres-backups", "tempo-redis-data"].map(name => [name, { name, external: true }]));
   const services = Object.fromEntries(names.map(name => [name, { image: `fixture-${name}`, ...(name !== "postgres" && name !== "redis" && name !== "postgres-backup" ? { build: { context: root } } : {}) }]));
   services.postgres = { image: "postgres:18.6-trixie", environment: { POSTGRES_USER: "tempo", POSTGRES_DB: "tempo" },

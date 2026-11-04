@@ -82,7 +82,7 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     validateTarget(productConfig, { root, project: "tempo", ports: portsFromConfig(productConfig),
       volumes: productVolumes, postgresVolumeKey: "tempo-postgres-data" });
     assert.equal(productConfig.services["defense-engine"], undefined);
-    assert.equal(productConfig.services["maia-worker"].init, true, "Product worker must match qualification shutdown behavior");
+    assert.equal(productConfig.services["maia-worker"], undefined, "Retired Maia worker must not ship");
     console.log("PASS current product Compose persistent-volume and API/worker PostgreSQL, passfile/secret, Redis contracts (read-only configuration)");
   } finally { rmSync(productSecrets, { recursive: true, force: true }); }
   const composeArguments = ["compose", "--project-directory", root, "-p", childProject,
@@ -423,7 +423,7 @@ await executeLifecycle({ recreate: false }, runtime);
     await rejected.inspectTarget();
     await assert.rejects(lifecycle("migration_rejected", { recreate: true }, rejected), /already exists/);
     const running = await rejected.runningServices();
-    assert(!running.some(name => ["api", "foreground-worker", "background-worker", "web", "maia-worker"].includes(name)));
+    assert(!running.some(name => ["api", "foreground-worker", "background-worker", "web"].includes(name)));
     assert.deepEqual(await readHistory(), expected, "rejected DDL preserves original study history");
     console.log("PASS Tempo CLI populated 16-to-current upgrade permits migration 025 normalization, verifies actual PostgreSQL image major, retains original H0 through committed-schema failure/retry/repair, restores backup, quiesces before dependencies, corrects uncommitted/missing fallback dependencies, and preserves repeat/restart/rejected-migration history");
   } catch (error) { failure = error; }
