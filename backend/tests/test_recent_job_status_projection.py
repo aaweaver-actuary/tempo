@@ -76,3 +76,36 @@ def test_recent_games_uses_status_projection_in_provider_order():
     assert [(item.provider, item.status, item.operation_id) for item in result.sync] == [
         ("lichess", "pending", "job"), ("chesscom", "idle", None)
     ]
+
+
+def test_recent_games_get_uses_only_injected_status_projection(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from app.games.feedback.http import create_game_review_router
+    from app.games.feedback.ports import JobState
+
+    calls = []
+    class Store:
+        def recent(self, workspace, limit):
+            calls.append(("recent", workspace, limit))
+            return ()
+        def latest_job_status(self, workspace, provider):
+            calls.append(("status", workspace, provider))
+            return JobStatus(job_id="actual", status="retryable", error="saved") if provider == "lichess" else None
+        def __getattr__(self, name):
+            pytest.fail(f"unexpected full reader, provider or writer capability: {name}")
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("full JobState parsing on GET")
+    monkeypatch.setattr(JobState, "model_validate_json", forbidden)
+    review = GameReview(workspace="w", store=Store(), learning=None, build_job=forbidden,
+                        deliver=forbidden, now=forbidden)
+    app = FastAPI()
+    app.include_router(create_game_review_router(review))
+    response = TestClient(app).get("/api/product/game-review/games")
+    assert response.status_code == 200
+    assert response.json() == {"games": [], "sync": [
+        {"provider": "lichess", "operation_id": "actual", "status": "failed", "error": "saved"},
+        {"provider": "chesscom", "operation_id": None, "status": "idle", "error": None},
+    ]}
+    assert calls == [("recent", "w", 50), ("status", "w", "lichess"), ("status", "w", "chesscom")]

@@ -184,3 +184,97 @@ def test_native_continuous_stream_selection_conditional_enqueue_and_alias_readba
     from app.games.feedback.review import ReviewUnavailable
     with pytest.raises(ReviewUnavailable, match="ambiguous_stored_game"):
         review.source_detail(config.workspace_id, "chesscom", "task-d-game-a")
+
+
+def test_native_recent_job_projection_matches_full_reader_without_transferring_payload(owned_postgres, monkeypatch):
+    """Tied aliases, isolation and scalar wire size on one disposable dataset."""
+    from contextlib import contextmanager
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from pydantic import ValidationError
+    from app.contracts.product_v02.games import GameRejection
+    from app.games.feedback.http import create_game_review_router
+    from app.games.feedback.ports import JobState
+    from app.games.feedback.review import GameReview, sync_status
+    from tempo_legacy_database.adapters.games.product_review import PostgresReviewStore
+    from test_product_feedback_jobs import spec
+
+    workspace = "j2-projection-native"
+    captured = []
+    @contextmanager
+    def connections():
+        with owned_postgres() as database:
+            class Capture:
+                def transaction(self):
+                    return database.raw.transaction()
+                def execute(self, sql, params=None):
+                    result = database.raw.execute(sql, params)
+                    if "FROM product_feedback_sync_requests request" not in sql:
+                        return result
+                    class CapturedResult:
+                        def fetchone(self):
+                            row = result.fetchone()
+                            captured.append((sql, row))
+                            return row
+                    return CapturedResult()
+            yield Capture()
+
+    store = PostgresReviewStore(connections)
+    def make(job_id, ws, provider, status="queued"):
+        job_spec = spec(job_id, provider).model_copy(update={"workspace_id": ws})
+        return JobState(spec=job_spec, status=status, continuation="PRIVATE-CONTINUATION-SENTINEL",
+            rejections=tuple(GameRejection(source_game_id=f"game-{i}", source_revision=1,
+                reason="filtered_speed") for i in range(100)))
+    jobs = [make("j2-old", workspace, "lichess"), make("j2-actual", workspace, "lichess", "retryable"),
+            make("j2-other-provider", workspace, "chesscom"), make("j2-other-workspace", workspace+"-other", "lichess")]
+    with owned_postgres() as db:
+        for job in jobs:
+            db.execute_native("INSERT INTO product_feedback_jobs (job_id,version,status,next_attempt_at,lease_until,attempts,payload) VALUES(%s,0,%s,0,0,0,%s::jsonb)",
+                              (job.spec.job_id, job.status, job.model_dump_json()))
+        for ws, alias, provider, job_id in [(workspace,"a","lichess","j2-old"), (workspace,"z","lichess","j2-actual"),
+                (workspace,"other","chesscom","j2-other-provider"), (workspace+"-other","z","lichess","j2-other-workspace")]:
+            db.execute_native("INSERT INTO product_feedback_sync_requests (workspace_id,operation_id,provider,job_id,requested_at) VALUES(%s,%s,%s,%s,100)", (ws,alias,provider,job_id))
+    try:
+        assert store.last_job(workspace, "lichess") == jobs[1]
+        assert store.last_job(workspace+"-other", "lichess") == jobs[3]
+        assert store.last_job(workspace, "chesscom") == jobs[2]
+        assert store.last_job(workspace+"-empty", "chesscom") is None
+        for status in ("queued", "running", "complete", "retryable", "failed", "quarantined"):
+            with owned_postgres() as db:
+                db.execute_native("UPDATE product_feedback_jobs SET payload=jsonb_set(payload,'{status}',to_jsonb(%s::text)) WHERE job_id='j2-actual'", (status,))
+            old = sync_status("lichess", store.last_job(workspace, "lichess"))
+            assert sync_status("lichess", store.latest_job_status(workspace, "lichess")) == old
+        with owned_postgres() as db:
+            payload_bytes = db.execute_native("SELECT octet_length(payload::text) FROM product_feedback_jobs WHERE job_id='j2-actual'").fetchone()[0]
+        captured.clear()
+        monkeypatch.setattr(JobState, "model_validate_json", lambda *a, **k: pytest.fail("full job parsed on GET"))
+        review = GameReview(workspace=workspace, store=store, learning=None, build_job=None, deliver=None, now=None)
+        app = FastAPI()
+        app.include_router(create_game_review_router(review))
+        result = TestClient(app).get("/api/product/game-review/games")
+        assert result.status_code == 200
+        assert result.json()["sync"][0]["operation_id"] == "j2-actual"
+        assert "PRIVATE-CONTINUATION-SENTINEL" not in result.text
+        assert len(captured) == 2
+        for sql, row in captured:
+            assert len(json.dumps(tuple(row)).encode()) * 10 < payload_bytes
+            assert "job.payload::text" not in sql
+            assert "job.payload->'spec'->'job_id'" in sql and "job.payload ? 'status'" in sql
+        with owned_postgres() as db:
+            row = db.execute_native("SELECT payload->'spec'->'job_id',payload->'status',payload ? 'status',payload->'error' FROM product_feedback_jobs WHERE job_id='j2-actual'").fetchone()
+        assert len(json.dumps(tuple(row)).encode()) * 10 < payload_bytes
+        with owned_postgres() as db:
+            db.execute_native("UPDATE product_feedback_jobs SET payload=payload-'status' WHERE job_id='j2-actual'")
+        assert store.latest_job_status(workspace, "lichess").status == "queued"
+        for expression in ("jsonb_set(payload,'{status}','null'::jsonb)", "jsonb_set(payload,'{status}','1'::jsonb)",
+                           "jsonb_set(payload,'{status}', '\"unknown\"'::jsonb)", "payload #- '{spec,job_id}'"):
+            with owned_postgres() as db:
+                db.execute_native("UPDATE product_feedback_jobs SET payload=" + expression + " WHERE job_id='j2-actual'")
+            with pytest.raises(ValidationError):
+                store.latest_job_status(workspace, "lichess")
+            with owned_postgres() as db:
+                db.execute_native("UPDATE product_feedback_jobs SET payload=%s::jsonb WHERE job_id='j2-actual'", (jobs[1].model_dump_json(),))
+    finally:
+        with owned_postgres() as db:
+            db.execute_native("DELETE FROM product_feedback_sync_requests WHERE workspace_id IN (%s,%s)", (workspace,workspace+"-other"))
+            db.execute_native("DELETE FROM product_feedback_jobs WHERE job_id = ANY(%s)", ([job.spec.job_id for job in jobs],))
