@@ -165,3 +165,29 @@ def test_activity_progress_keeps_foreground_settings_read_responsive(tmp_path, m
         client = TestClient(app)
         assert client.get("/api/settings").status_code == 200
         writer.result(timeout=5)
+
+
+def test_sqlite_restart_preserves_old_engine_rows_without_bootstrapping_new_work(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, 'DB_PATH', tmp_path / 'tempo.db')
+    database.initialize()
+    now = datetime.now(timezone.utc).isoformat()
+    with database.connection() as db:
+        assert db.execute("SELECT 1 FROM sqlite_master WHERE name='engine_scheduling_state'").fetchone() is None
+        for game_id in ('old', 'new'):
+            db.execute("""INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json)
+                VALUES(?,'lichess','test',?,'rapid',1,'white','win',?,'[\"e2e4\"]')""", (game_id, now, START_FEN))
+        db.execute("ALTER TABLE game_analysis_jobs ADD COLUMN pending_since TEXT")
+        db.execute("ALTER TABLE game_analysis_jobs ADD COLUMN generation_started_at TEXT")
+        db.execute("ALTER TABLE game_analysis_jobs ADD COLUMN age_origin_estimated INTEGER NOT NULL DEFAULT 0")
+        db.execute("CREATE TABLE engine_scheduling_state(id INTEGER PRIMARY KEY, automated_streak INTEGER)")
+        db.execute("INSERT INTO engine_scheduling_state VALUES(1,3)")
+        db.execute("INSERT INTO game_analysis_jobs(game_id,analysis_version,status,updated_at) VALUES('old',3,'complete',?)", (now,))
+        before = tuple(db.execute("SELECT * FROM game_analysis_jobs WHERE game_id='old'").fetchone())
+    database.initialize()
+    with database.read_connection() as db:
+        rows = db.execute('SELECT * FROM game_analysis_jobs').fetchall()
+        assert len(rows) == 1 and tuple(rows[0]) == before
+        assert tuple(db.execute("SELECT * FROM engine_scheduling_state").fetchone()) == (1, 3)
+        assert db.execute("SELECT COUNT(*) FROM imported_games WHERE id IN ('old','new')").fetchone()[0] == 2
+        assert db.execute("SELECT 1 FROM sqlite_master WHERE name='game_age_insert'").fetchone() is None
+        assert db.execute("SELECT 1 FROM sqlite_master WHERE name='idx_background_tasks_diagnostic_state'").fetchone()
