@@ -2,7 +2,7 @@
 
 Accepted cards/exercises, queue membership and presentation, teaching progress, review/attempt receipts and scheduling history.
 
-**Current source schema, deployment unverified.** Owner: Learning runtime; SQL schema `learning`. Derived from checked-in DDL at the `14ad5754` baseline with file relocation only. No live database was queried. [Database index](../../README.md).
+**Current source schema, deployment unverified.** Owner: Learning runtime; SQL schema `learning`. The relocated `14ad5754` baseline is extended by the #908 queue freshness migration described below. No live database was queried. [Database index](../../README.md).
 
 Charts show primary/foreign key columns; the dictionary lists **every stored field and its SQL type**. `PK` means primary key (all marked fields form one composite key); `FK` means an enforced SQL foreign key. Parent `||`/`o|` means a required/optional parent; child `o{` means zero or more children and `o|` zero or one (a unique referencing tuple). Edges describe allowed SQL cardinality, not an obligation to create children. Nullable components of a composite FK can leave the tuple unlinked under PostgreSQL MATCH SIMPLE. No edge is inferred from a similar field name.
 
@@ -34,6 +34,8 @@ erDiagram
     text card_id PK
   }
   queue_projections {
+    bigint requested_refresh_epoch
+    bigint published_refresh_epoch
     text queue_date PK
   }
   review_attempt_receipts {
@@ -194,6 +196,8 @@ Primary key: (`queue_date`, `card_id`). DDL: [0001_core.sql](../../ddl/migration
 ### `learning.queue_projections`
 
 Primary key: (`queue_date`). DDL: [0001_core.sql](../../ddl/migrations/0001_core.sql).
+Freshness columns: [0005_queue_refresh_epochs.sql](../../ddl/migrations/0005_queue_refresh_epochs.sql).
+Both epochs default to zero; `0 <= published_refresh_epoch <= requested_refresh_epoch`.
 
 | Field | SQL type | Null allowed | Keys |
 | --- | --- | --- | --- |
@@ -204,6 +208,8 @@ Primary key: (`queue_date`). DDL: [0001_core.sql](../../ddl/migrations/0001_core
 | `refresh_pending` | `bigint` | no |  |
 | `last_error` | `text` | yes |  |
 | `blocked_count` | `bigint` | no |  |
+| `requested_refresh_epoch` | `bigint` | no | Requested freshness boundary |
+| `published_refresh_epoch` | `bigint` | no | Last completely published boundary |
 
 ### `learning.review_attempt_receipts`
 

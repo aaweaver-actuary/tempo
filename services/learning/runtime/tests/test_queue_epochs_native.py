@@ -1,6 +1,7 @@
 """Native queue epoch fences on an invocation-owned Learning database."""
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+import hashlib
 
 import psycopg
 import pytest
@@ -9,14 +10,10 @@ from tempo_learning_database.adapters import queue_refresh_epochs as epochs
 
 @pytest.fixture
 def schema59(case):
-    # Until the integration owner registers 0005, install its exact DDL only in
-    # this fixture's isolated database; never mutate an existing target.
-    ddl = (Path(__file__).resolve().parents[4] / 'database/tempo_learning_database/ddl/migrations/0005_queue_refresh_epochs.sql').read_text()
-    with psycopg.connect(case.admin) as raw:
-        raw.execute("SET LOCAL search_path=learning,pg_catalog")
-        exists = raw.execute("SELECT 1 FROM information_schema.columns WHERE table_schema='learning' AND table_name='queue_projections' AND column_name='requested_refresh_epoch'").fetchone()
-        if not exists:
-            raw.execute(ddl)
+    # The actual owning manifest must apply the exact DDL before API startup.
+    ddl = (Path(__file__).resolve().parents[4] / 'database/tempo_learning_database/ddl/migrations/0005_queue_refresh_epochs.sql').read_bytes()
+    applied = case.query("SELECT checksum FROM migration_history WHERE id=%s", ("learning.queue_epochs/0001",))
+    assert len(applied) == 1 and applied[0][0] == hashlib.sha256(ddl).hexdigest()
     return case
 
 
