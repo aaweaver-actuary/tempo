@@ -547,6 +547,9 @@ def _materialize_admission_branch(task: dict) -> None:
             if (not lease or lease["generation"] != task["generation"]
                     or lease["lease_token"] != task["lease_token"]):
                 return
+        identity, locked_intent = _recovery_identity(database, task, lock=True)
+        if identity != "accepted" or dict(locked_intent) != dict(intent):
+            return
         current_prefix = read_prefix(database, intent["repertoire_id"], lock=True)
         if current_prefix["revision"] != prefix["revision"]:
             raise ValueError("The canonical prefix changed; refresh this discovery before adding it")
@@ -580,6 +583,16 @@ def _materialize_admission_branch(task: dict) -> None:
 def execute_admission_intent_slice(task: dict) -> bool:
     """Materialize one branch or wait for publication, then admit one card."""
     activity_gate.wait_for_foreground()
+    # Classify under the durable lease before any source or card mutation.
+    with connection(background=True) as database:
+        if not storage.configured():
+            storage.begin_write(database)
+        identity, _intent = _recovery_identity(database, task, lock=True)
+        if identity == "stale":
+            return True
+        if identity in {"invalid", "completed"}:
+            complete_task_slice_in_transaction(database, task)
+            return False
     _materialize_admission_branch(task)
     activity_gate.wait_for_foreground()
     read_section = background_read_connection if storage.configured() else read_connection
@@ -604,9 +617,14 @@ def execute_admission_intent_slice(task: dict) -> bool:
             if (not lease or lease["generation"] != task["generation"]
                     or lease["lease_token"] != task["lease_token"]):
                 return True
-        current = storage.intent(database, (task["payload"]["intent_id"],))
-        if not current or current["state"] == "queued":
+        identity, current = _recovery_identity(database, task, lock=True)
+        if identity == "stale":
+            return True
+        if identity in {"invalid", "completed"}:
+            complete_task_slice_in_transaction(database, task)
             return False
+        if dict(current) != dict(intent):
+            return True
         if card_id_value and integrity_published:
             card = storage.available_card(database, (card_id_value,))
             blocked = storage.card_integrity_block(database, (current["repertoire_id"], card_id_value))

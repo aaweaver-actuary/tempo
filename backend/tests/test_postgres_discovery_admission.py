@@ -106,6 +106,7 @@ def test_postgres_discovery_admission_completes_published_card_without_replay(mo
     monkeypatch.setattr(discovery_admission, "background_read_connection", database_connection)
     monkeypatch.setattr(discovery_admission, "connection", database_connection)
     monkeypatch.setattr(discovery_admission, "_materialize_admission_branch", lambda _task: None)
+    monkeypatch.setattr(discovery_admission, "_recovery_identity", lambda *_a, **_k: ("accepted", intent))
     monkeypatch.setattr(discovery_admission, "lock_current_slice", lambda *_args: lease_current)
     monkeypatch.setattr(discovery_admission, "ensure_card_queued_after",
                         lambda _database, card_id, **_kwargs: queued_cards.append(card_id))
@@ -144,3 +145,24 @@ def test_recovery_identity_rejects_forged_and_missing_intents(monkeypatch):
     row['deduplication_key'] = 'intent'
     monkeypatch.setattr(discovery_admission.storage, 'intent', lambda *a: None)
     assert discovery_admission._recovery_identity(None, task)[0] == 'invalid'
+
+
+def test_recovery_stale_envelope_does_not_complete_but_missing_intent_does(monkeypatch):
+    from contextlib import nullcontext
+    import json
+    row = {'id': 'task', 'kind': 'discovery_admission', 'deduplication_key': 'intent',
+           'payload_json': json.dumps({'intent_id': 'intent'}), 'generation': 2,
+           'lease_token': 'lease', 'state': 'leased'}
+    task = {**row, 'payload': {'intent_id': 'intent'}}
+    completions = []
+    monkeypatch.setattr(discovery_admission.storage, 'configured', lambda: True)
+    monkeypatch.setattr(discovery_admission, 'connection', lambda **_: nullcontext(object()))
+    monkeypatch.setattr(discovery_admission.storage, 'recovery_task', lambda *a, **k: row)
+    monkeypatch.setattr(discovery_admission.storage, 'intent', lambda *a: None)
+    monkeypatch.setattr(discovery_admission.activity_gate, 'wait_for_foreground', lambda: None)
+    monkeypatch.setattr(discovery_admission, '_materialize_admission_branch', lambda *_: (_ for _ in ()).throw(AssertionError('materialized')))
+    monkeypatch.setattr(discovery_admission, 'complete_task_slice_in_transaction', lambda _db, item: completions.append(item['id']))
+    assert discovery_admission.execute_admission_intent_slice({**task, 'payload': {'intent_id': 'other'}}) is True
+    assert completions == []
+    assert discovery_admission.execute_admission_intent_slice(task) is False
+    assert completions == ['task']
