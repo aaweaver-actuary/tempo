@@ -158,7 +158,8 @@
         "Configuration",
         "create_app",
         "register_evidence_receiver",
-        "register_settlement"
+        "register_settlement",
+        "original_plan_mapping"
       ],
       "dependencies": [
         "tempo_learning_review",
@@ -252,7 +253,7 @@
       "maintainer": "Tempo / #108",
       "status": "implemented",
       "root": "services/content",
-      "publicExports": ["SourceSnapshot", "ContentService", "ContentError", "stable_id", "canonical_source", "canonical_position", "inventory_segment", "validate_exercise_step", "build_publication"],
+      "publicExports": ["SourceSnapshot", "ContentService", "ContentError", "stable_id", "canonical_source", "canonical_position", "inventory_segment", "validate_exercise_step", "build_publication", "generation_envelope"],
       "dependencies": ["chess", "tempo_chess_core", "tempo_content_publication_contracts", "pydantic", "psycopg", "psycopg_pool"],
       "buildInputs": [
         "../../database/tempo_content_database",

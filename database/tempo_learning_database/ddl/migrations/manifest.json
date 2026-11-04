@@ -26,18 +26,40 @@
     "id": "learning.bridge/0001",
     "owner": "#193/A",
     "path": "0003_content_bridge.sql",
-    "depends_on": ["learning.remediation/0001"]
+    "depends_on": [
+      "learning.remediation/0001"
+    ]
   },
   {
     "id": "learning.retained_position/0001",
     "owner": "#908/W02A",
     "path": "0004_retained_position.sql",
-    "depends_on": ["learning.bridge/0001"]
+    "depends_on": [
+      "learning.bridge/0001"
+    ]
   },
   {
     "id": "learning.queue_epochs/0001",
     "owner": "#908/W03A",
     "path": "0005_queue_refresh_epochs.sql",
-    "depends_on": ["learning.retained_position/0001"]
+    "depends_on": [
+      "learning.retained_position/0001"
+    ]
+  },
+  {
+    "id": "learning.retained_position_optional_donor/0001",
+    "owner": "#908/T02",
+    "path": "0006_retained_position_optional_donor.sql",
+    "depends_on": [
+      "learning.queue_epochs/0001"
+    ]
+  },
+  {
+    "id": "learning.position_effect_owner/0001",
+    "owner": "#908/S02",
+    "path": "0007_position_effect_owner.sql",
+    "depends_on": [
+      "learning.retained_position_optional_donor/0001"
+    ]
   }
 ]

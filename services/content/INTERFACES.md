@@ -267,3 +267,18 @@ are bounded at 16 MiB. The enclosing comparison snapshot is separately bounded a
 contains the export plus publication/routes/activation evidence. Large immutable internal bridge checkpoints use bounded,
 hash-verified compression; public operation/export/snapshot documents retain their
 original canonical contents. Existing inline checkpoints remain readable.
+
+## Declared generation envelope
+
+The public `tempo_content.generation_envelope` module exposes
+`validate_content_generation_envelope(certificate_json=..., export_bytes=..., expected_transfer_id=...)`.
+Its immutable result is `ENVELOPE_VALID` or `BLOCK`; authority is always
+`UNVERIFIED`. It checks the existing `learning` export profile's declared
+identities, raw/canonical digests and complete declared route/binding/alias
+inventories. Optional legal replies remain omitted by that profile.
+
+This pure boundary does not establish an actual source fence, source-selected
+completeness, approved provenance, historical assets or durable receipt replay.
+A self-consistent omitted source fact can remain envelope-valid. Content's
+durable final reservation and cross-owner source projection require separate
+producer/native proof; no activation follows from envelope validation.

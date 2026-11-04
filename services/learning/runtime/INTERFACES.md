@@ -259,3 +259,21 @@ The expanded validated bundle and HTTP body both retain a hard 12 MiB bound;
 rejection does not permit an operator to reuse a terminal failed command.
 Replacement revision checks likewise index physical-card revisions, rather than
 searching the full replacement list once per accepted historical card.
+
+## Original plan mapping
+
+The public `tempo_learning_runtime.original_plan_mapping` module exposes
+`map_original_plan_to_slots(plan, content, position_owner)` and its immutable
+evidence/projection types. It validates the pinned legacy full-plan canonical
+codec, legally replays the complete issued route, and returns every original
+decision occurrence in order or one explicit `BLOCK`. Distinct occurrences may
+share one exact position schedule; no grade or issuance occurs here.
+
+Legacy JSONB evidence preserves the stored semantic value and original accepted
+canonical digest, not unrecoverable original transport bytes. Constructing the
+Content/position projection dataclasses does not establish their authority.
+Content canonical digests, legacy original source digests and authored digests
+are distinct domains requiring an owner-reviewed projection. Native original
+read capabilities, durable source immutability/fencing and an atomic grade bridge
+remain separate gates. Normal runtime import retains its existing bundled
+adapter imports; this module does not claim an independent pure artifact.

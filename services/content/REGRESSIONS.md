@@ -198,3 +198,14 @@ both actual packed persistence and exact public export/replay after the repair.
 ## Source staging/admission workflow separation
 
 `tests/test_source_application.py` adds four missing boundary cases: preflight replay skips staging/seal/hooks/admission, ordered 64-item pages before sealing and the staging hook, normal versus in-transaction replay receipts, and staging-hook failure before admission. Existing selected source-policy cases retain canonical payload/digest/stable identity and validation-before-canonicalization/hash behavior. One-time exact source comparison reconstructs the full original `load_source` workflow and its four native sections, including inside-transaction page slicing, late bridge scope import and all native queries/locks/guards/hooks. The regular native source concurrency, reservation/CAS, staged-input conflict and manifest/rollback contracts remain in `database/tempo_content_database/tests/test_postgres.py`; they were not rerun or replaced by these synthetic cases.
+
+## Declared C-FENCE envelope (pure)
+
+`tests/test_generation_envelope.py` owns synthetic CF01–CF06 envelope identity,
+raw/canonical digest and exact declared inventory checks, strict JSON/schema
+rejection, transfer/profile/currentness declarations and distinct namespaces.
+Its pure-import guard excludes bridge/database composition; a synthetic CF07
+fence and a self-consistent omission remain `UNVERIFIED`. These cases do not
+prove an actual writer fence, source-selected completeness or historical replay.
+The existing `run_suite.run_pytest` owner reconciles collection, execution and
+JUnit identities; native CF07 recovery remains a separate producer gate.

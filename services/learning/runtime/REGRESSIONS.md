@@ -435,7 +435,8 @@ migration certification. W02B owns the pinned future-review comparison.
 `tests/test_queue_epochs_native.py` owns actual registered-migration checks,
 stale publication denial, atomic rollback, concurrent request increments,
 productive same-day task coalescing, frozen-token restart/quiet convergence and
-the reproduced late-preservation race. Its five native cases use only the
+the reproduced late-preservation race, and expired-worker replacement-lease
+denial with an untouched issued row. Its six native cases use only the
 owning disposable PostgreSQL fixture. `test_queue_persistence.py` and
 `test_queue_storage_separation.py` retain the affected public/storage boundary.
 This does not establish non-frozen invalidation, retained position issuance,
@@ -460,3 +461,43 @@ same-digest replay, changed-digest/incomplete rejection and stale predecessor
 denial. It uses the regular owning disposable PostgreSQL fixture. One-move
 synthetic routes do not establish real retained graph/alias capacity, source-edit
 fencing, paging beyond public limits or full F12 acceptance.
+
+## PR #920 repairs and bounded successor proofs (#908)
+
+`tests/test_installation.py` checks the immutable migration prefix through 0005
+and each append-only resource/dependency. The qualifier copies the transfer
+contract; native evidence fingerprints that owner's build inputs.
+`database/tests/position_study/test_retained_position_store_postgres.py` covers
+legal donor-backed/donor-free positions, the full legacy donor revision domain,
+all-or-none donor provenance, original bytes/receipts and the warm/fresh-target
+collision boundary. These copies remain non-serving.
+
+`tests/test_position_effect_owner_native.py` owns F01/F04/F08's synthetic,
+non-serving position-effect transaction: immutable logical receipt replay with a
+new transport, epoch/source/payload/FSRS holds, atomic schedule + receipt +
+checkpoint rollback, racing and cross-epoch one-Good/day, and owner IANA day.
+It does not establish real Content/completion authority, stage adoption, accepted
+Games debt or HTTP saved-review → playable-next-card acceptance.
+
+`tests/test_qualification_transfer_inputs.py` halts existing qualifiers before
+builds/allocation to prove actual isolated-context contract copying and native
+receipt input fingerprints. These deterministic tooling tests are not native
+PostgreSQL or full wheel/sdist qualification passes.
+`tests/test_cutover_position_effect_native.py` independently challenges logical
+replay under concurrent transports, fixture authority constraints and separation
+of unsupported Game lapse from genuine human Again.
+`tests/test_disposable_writer_fence_postgres.py` uses owned roles/sessions to
+prove in-flight rollback and later connection denial, preserves committed data,
+and demonstrates administrator reopening. Prepared transactions, bounded-drain
+failure, actual old binaries, host/SQLite bypass and final capture remain
+operational F13 blockers.
+
+## Original full-plan occurrence mapping (pure)
+
+`tests/test_original_plan_mapping.py` owns LP01–LP04/LP09 synthetic full canonical
+plan mapping, ordered repeated/transposed occurrences, original due/day/ID
+preservation, missing/ambiguous/illegal slot and stale-source holds, and exact
+JSONB numeric semantics before accepted canonical-digest validation. The literal
+fixtures are accepted by the pinned original owner codec. No grade, native
+authority, original-row immutability or source fence is established by these
+pure cases; LP05–LP08/LP10 require their original-read/atomic-bridge owners.

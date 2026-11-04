@@ -257,3 +257,31 @@ Matching retries return the original grade receipt. Position Study completion
 settlement verifies the saved plan, exact unassisted first response, completed
 review receipt and accepted grade; the original issuance fence and, where
 present, the position reset version also apply.
+
+### Original position evidence snapshot reads
+
+`original_position_evidence.read_original_plan`,
+`read_original_first_responses(..., decode_response=...)` and
+`read_original_completion` expose owner-local immutable row evidence from the
+caller's actual read-only PostgreSQL repeatable-read transaction. The adapter
+verifies the server scope, preserves JSONB semantic transport and distinct
+original/authored digests, and never opens or commits a connection. The required
+pure response decoder is injected by source composition; the native fixture
+uses the existing source codec, without a database-to-runtime dependency.
+Production decoder wiring is not supplied by this leaf.
+
+A committed completion requires the original terminal/contiguous events,
+canonical scheduling receipt and exact `attempt:<id>` review reference for both
+allowed source kinds. A later wrong/guided aggregate is distinct from clean
+prefix eligibility; invalidation, retirement, pending work and conflict remain
+truthful noncommitted states. No grade, source fence, final watermark or
+durable original-row immutability is established by these readers.
+
+The focused native owner selection is
+`database/tests/position_study/test_original_position_evidence_postgres.py`,
+run through the existing `run_postgres.main` explicit-file `essential` fixture.
+It creates only a unique empty local N2 database inside that invocation-owned
+container, applies the original schema, and removes its owned resources. Never
+supply an ambient/live N2 DSN. The low-level source API alternative fixture uses
+an explicitly synthetic source adjudicator; it does not prove the high-level
+checkpoint emits alternative history.

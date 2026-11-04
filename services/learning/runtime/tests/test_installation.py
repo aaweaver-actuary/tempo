@@ -2,7 +2,7 @@
 
 from importlib import metadata
 from pathlib import Path
-import json, subprocess, sys
+import hashlib, json, subprocess, sys
 import pytest
 import tempo_learning_runtime
 import tempo_learning_database
@@ -17,23 +17,39 @@ def test_installed_artifact_has_migrations_and_no_optional_services():
     assert "site-packages" in tempo_evidence_math.__file__
     assert "site-packages" in position_grade_policy.__file__
     assert metadata.version("tempo-game-evidence-contracts") == "3.0.0"
+    assert metadata.version("tempo-learning-transfer-contracts") == "1.0.0"
+    import tempo_learning_transfer_contracts
+    assert "site-packages" in tempo_learning_transfer_contracts.__file__
     for distribution in ("celery", "redis", "torch", "onnxruntime", "transformers"):
         with pytest.raises(metadata.PackageNotFoundError):
             metadata.distribution(distribution)
     package = Path(tempo_learning_database.__file__).parent
     assert (package / "ddl/migrations/manifest.json").is_file()
     migrations = json.loads((package / "ddl/migrations/manifest.json").read_text())
-    assert [entry["id"] for entry in migrations] == [
-        "learning.runtime/0001",
-        "learning.runtime/0002",
-        "learning.remediation/0001",
-        "learning.bridge/0001",
+    expected = [
+        ("learning.runtime/0001", "#224/#194", [], "0dc465b03c6cd0e2487744bdbb58d9a21d1db8e4aa4037323295fe507d0df26e"),
+        ("learning.runtime/0002", "#224/#194", ["learning.runtime/0001"], "c3a1b03b8f4aad7e026be8a45eaf4ccd6a567ce5da23c9c42390ae6d623ef4ab"),
+        ("learning.remediation/0001", "#224/F1", ["learning.runtime/0002"], "96907361dc003e78703dc57182bd020f96e82532bcea6724083326171242da0d"),
+        ("learning.bridge/0001", "#193/A", ["learning.remediation/0001"], "c4cde173083334cee565a125daa79e0e111d3b0498c87ca9151a61ac3679be91"),
+        ("learning.retained_position/0001", "#908/W02A", ["learning.bridge/0001"], "7db5bc140c4f7b3de29df24a57f298fa931792e438a468097c80f0ebf4ebbfc0"),
+        ("learning.queue_epochs/0001", "#908/W03A", ["learning.retained_position/0001"], "29c7370a3287c9b8b765987221ef8723be8137baec86a907304be98e5af25061"),
     ]
-    assert migrations[1]["depends_on"] == ["learning.runtime/0001"]
-    assert all(
-        __import__("tempo_learning_database.ddl.migrate", fromlist=["migration_source"]).migration_source(entry)
-        for entry in migrations
-    )
+    from tempo_learning_database.ddl.migrate import migration_source
+    assert [entry["id"] for entry in migrations[:len(expected)]] == [row[0] for row in expected]
+    seen = set()
+    for index, entry in enumerate(migrations):
+        assert entry["id"] not in seen
+        assert isinstance(entry["owner"], str) and entry["owner"].strip()
+        assert isinstance(entry["depends_on"], list)
+        assert set(entry["depends_on"]) <= seen
+        source = migration_source(entry)
+        assert source
+        if index < len(expected):
+            _, owner, dependencies, checksum = expected[index]
+            assert entry["owner"] == owner
+            assert entry["depends_on"] == dependencies
+            assert hashlib.sha256(source).hexdigest() == checksum
+        seen.add(entry["id"])
     assert (
         json.loads((Path(tempo_learning_runtime.__file__).parent / "fixtures/legacy-protocol.json").read_text())["protocol"]
         == "legacy-learning-http"

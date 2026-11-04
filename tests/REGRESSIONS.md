@@ -6805,3 +6805,29 @@ This is passive held-data inspection, not server reconciliation or full F10.
 three-clean/failure/split evidence identity and Italian carrier/teaching/source
 holds. Position-owned cohorts retain the existing R11-inert contract. This is
 not seed transfer, native F03/F11, executable target ownership or activation proof.
+
+## Supplied Tactics asset inventory (T-ASSET pure subset)
+
+`backend/tests/test_tactics_asset_inventory.py` owns TA01–TA05 supplied-byte
+identity/order and raw-versus-canonical digest behavior, strict JSON/shape
+rejection, unsafe lexical paths, duplicate pack/path/PuzzleId, missing/extra
+asset guards and the explicit `UNPROVEN` historical authority result.
+`test_ta01_exact_order_and_ta04_root_independence_ta05_unproven` and
+`test_ta02_bytes_order_and_record_identity` preserve exact synthetic inventory
+identity. The `test_ta03_*` cases retain malformed/ambiguous-source rejection.
+These are pure inline-byte fixtures: no filesystem symlink containment,
+runtime cache/root identity, historical generation, DB watermark, browser
+authority or playable puzzle proof is claimed.
+
+## Original position evidence reader (native source boundary)
+
+`database/tests/position_study/test_original_position_evidence_postgres.py::test_original_evidence_real_saved_later_mistake_and_repeatable_snapshot`
+is the explicit-file invocation-owned PostgreSQL selection for source schema 59.
+It preserves full original plan/response/completion identity, later-wrong and
+assisted facts, a low-level synthetic source alternative, large review IDs and
+microseconds; it rejects row/receipt/response conflicts and propagates contention.
+A repeatable reader retains its snapshot while a fresh one observes invalidation.
+The canonical scheduling and exact review source-reference negatives reproduce
+the rejected unsafe committed classification. Only native owned fixtures count;
+no durable original-row immutability, source finality or target grade proof is
+claimed. See the Study database adapter README for scope and decoder injection.

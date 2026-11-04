@@ -60,7 +60,7 @@ logical target keys; they are not rows in active target review/receipt tables.
 
 ## Field dictionary
 
-Source DDL: [0004_retained_position.sql](../../ddl/migrations/0004_retained_position.sql).
+Source DDL: [0004_retained_position.sql](../../ddl/migrations/0004_retained_position.sql), amended by [0006_retained_position_optional_donor.sql](../../ddl/migrations/0006_retained_position_optional_donor.sql). The four donor columns are either all NULL for donor-free introductions or all present; partial donor provenance is rejected.
 The states table has primary key `(repertoire_id, variant, position)`, a unique
 positive `fsrs_internal_card_id`, and positive `version`. Fact `source_key` is
 the primary key and `target_key` unique; facts reference batch composite keys.
@@ -93,10 +93,10 @@ the primary key and `target_key` unique; facts reference batch composite keys.
 | `fsrs_json` | `text` | no |
 | `due_at` | `timestamptz` | no |
 | `introduced_at` | `timestamptz` | yes |
-| `donor_card_id` | `text` | no |
-| `donor_card_revision` | `bigint` | no |
-| `donor_fingerprint` | `text` | no |
-| `donor_selection_policy` | `text` | no |
+| `donor_card_id` | `text` | yes (all four together) |
+| `donor_card_revision` | `bigint` | yes (all four together) |
+| `donor_fingerprint` | `text` | yes (all four together) |
+| `donor_selection_policy` | `text` | yes (all four together) |
 | `source_fact_digest` | `text` | no |
 
 ### `learning.retained_position_facts`
