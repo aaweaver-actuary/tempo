@@ -64,3 +64,88 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# Preliminary cutover evidence contract. This does not replace study_fingerprints
+# or authorize a migration: the delivery owner must first approve the cohort and
+# connect this contract to a stopped-writer, pre-cut PostgreSQL snapshot.
+THREE_JOURNEY_EVIDENCE_VERSION = 1
+
+
+def propose_three_journey_card_deletes(cards, retired_references, retained_references, origins):
+    """Classify only exact defense ownership; preserve conflicting/unknown evidence.
+
+    References are explicit card IDs supplied by the respective owners. Original
+    issued content type is an independent witness and cannot be overwritten by a
+    later card edit. A reference to an absent card is reported, not discarded.
+    """
+    by_id = {card['id']: card for card in cards}
+    if len(by_id) != len(cards):
+        raise ValueError('duplicate card identity')
+    retired = set(retired_references)
+    retained = set(retained_references)
+    original_types = {}
+    for origin in origins:
+        original_types.setdefault(origin['card_id'], set()).add(origin['content_type'])
+    proposals, ambiguous = [], {}
+    for card_id, card in by_id.items():
+        types = original_types.get(card_id, set())
+        reasons = []
+        if card_id in retained:
+            reasons.append('retained reference')
+        if types - {'defense'}:
+            reasons.append('non-defense or unknown issued origin')
+        if card['content_type'] != 'defense':
+            if card_id in retired or 'defense' in types:
+                reasons.append('conflicting current card type')
+        elif reasons:
+            pass
+        else:
+            proposals.append(card_id)
+        if reasons:
+            ambiguous[card_id] = sorted(reasons)
+    for card_id in (retired | retained | set(original_types)) - set(by_id):
+        ambiguous[card_id] = ['reference to missing card']
+    return {'version': THREE_JOURNEY_EVIDENCE_VERSION,
+            'proposed_card_ids': sorted(proposals), 'ambiguous': ambiguous}
+
+
+def three_journey_expected_rows(source_rows, primary_keys, proposed_keys):
+    """Build a pre-cut witness from exact composite keys and complete row content.
+
+    The caller supplies independently reviewed deletion keys for each table;
+    unmentioned tables and rows are retained. No payload/name matching is used.
+    This JSON-compatible draft includes synthetic row contents and is not suitable
+    for logging real user data. Production evidence must use protected digests.
+    """
+    result = {}
+    for table, rows in source_rows.items():
+        columns = primary_keys[table]
+        indexed = {}
+        for row in rows:
+            key = tuple(row[column] for column in columns)
+            if key in indexed:
+                raise ValueError(f'duplicate key in {table}')
+            indexed[key] = row
+        deletes = {tuple(key) for key in proposed_keys.get(table, [])}
+        if not deletes <= indexed.keys():
+            raise ValueError(f'unknown proposed key in {table}')
+        result[table] = {'primary_key': list(columns),
+                         'retained': [indexed[key] for key in sorted(indexed.keys() - deletes)],
+                         'deleted_keys': [list(key) for key in sorted(deletes)]}
+    if set(proposed_keys) - set(source_rows):
+        raise ValueError('proposed deletion for unknown table')
+    return {'version': THREE_JOURNEY_EVIDENCE_VERSION, 'tables': result}
+
+
+def verify_three_journey_rows(expected, actual_rows):
+    """Reject changed, missing, newly added, or supposedly deleted rows."""
+    if expected.get('version') != THREE_JOURNEY_EVIDENCE_VERSION:
+        raise ValueError('unsupported evidence version')
+    if set(expected['tables']) != set(actual_rows):
+        raise ValueError('table coverage changed')
+    actual = three_journey_expected_rows(actual_rows,
+        {name: item['primary_key'] for name, item in expected['tables'].items()}, {})
+    for name, item in expected['tables'].items():
+        if actual['tables'][name]['retained'] != item['retained']:
+            raise ValueError(f'retained or deleted rows differ in {name}')
