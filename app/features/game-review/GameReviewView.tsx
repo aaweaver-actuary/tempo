@@ -117,7 +117,7 @@ export function GameReviewView({ api, repertoireId, onReviewGap }: GameReviewVie
 
   function matchesSelectedDeparture(finding: Finding): boolean {
     const selected = currentDetail?.first_departure;
-    return selected?.status === "own_actionable" && selected.decision !== null
+    return currentDetail?.comparison_freshness === "current" && selected?.status === "own_actionable" && selected.decision !== null
       && finding.provider === selected.source.provider && finding.game_id === selected.source.game_id
       && finding.source_revision === selected.source.source_revision && finding.source_digest === selected.source.source_digest
       && finding.ply === selected.ply && finding.decision_id === selected.decision.decision_id
@@ -210,8 +210,8 @@ export function GameReviewView({ api, repertoireId, onReviewGap }: GameReviewVie
           const receipt = receiptFor(currentDetail.receipts, finding);
           const gap = finding.kind === "opponent_gap" || finding.kind === "missing_own_continuation";
           // The existing retry endpoint replays stored lapse deliveries only.
-          const retryable = matchesSelectedDeparture(finding) && (!receipt || !("admission_status" in receipt)
-            && receipt.status === "pending" && ["accepted", "duplicate"].includes(receipt.outcome));
+          const retryable = matchesSelectedDeparture(finding) && !!receipt && !("admission_status" in receipt)
+            && receipt.status === "pending" && ["accepted", "duplicate"].includes(receipt.outcome);
           return <li key={findingKey(finding)} className="game-review-finding" data-current={cursor === finding.ply - 1 || cursor === finding.ply}>
             <strong>{findingLabels[finding.kind]}</strong><p>Ply {finding.ply}{finding.diagnostic ? ` · ${finding.diagnostic}` : ""}</p>
             <dl><dt>Played</dt><dd>{finding.played_uci}</dd><dt>Expected</dt><dd>{finding.expected_uci.join(", ") || "Not known"}</dd><dt>Repertoire</dt><dd>{finding.repertoire_id}</dd><dt>Decision</dt><dd>{finding.decision_id ?? "Not mapped"}</dd><dt>Card / presentation</dt><dd>{finding.presentation_id ?? "Not mapped"}</dd></dl>
