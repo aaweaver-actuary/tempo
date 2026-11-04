@@ -107,8 +107,25 @@ class PreparedPositionSource:
         object.__setattr__(self, "_seal", seal)
 
 
-def prepare_position_source(database, repertoire_id: str) -> PreparedPositionSource | Hold:
-    """Read and legally project a complete publication outside the writer."""
+@dataclass(frozen=True, init=False)
+class PreparedPositionSourceWithFacts:
+    """Owner-sealed source and detached semantic facts from its one owner read."""
+    prepared: PreparedPositionSource
+    _facts_json: str
+    _seal: object
+
+    def __init__(self, seal, prepared, facts_json):
+        if seal is not _OWNER_SEAL:
+            raise ValueError("position_source_owner_preparation_required")
+        object.__setattr__(self, "prepared", prepared)
+        object.__setattr__(self, "_facts_json", facts_json)
+        object.__setattr__(self, "_seal", seal)
+
+    def publication_facts(self):
+        return json.loads(self._facts_json)
+
+
+def _prepare_position_source_with_facts(database, repertoire_id):
     from app.repertoire.snapshot import PreparedPublishedRepertoire
     from app.repertoire.interfaces.position_schedule_occurrences import routes_from_snapshot
     try:
@@ -130,9 +147,21 @@ def prepare_position_source(database, repertoire_id: str) -> PreparedPositionSou
             repertoire_id, _authored_digest(header, facts["lines"]),
             json.dumps(header, sort_keys=True, separators=(",", ":")),
             json.dumps(integrity, sort_keys=True, separators=(",", ":")))
-        return PreparedPositionSource(_OWNER_SEAL, snapshot, routes, token)
+        prepared = PreparedPositionSource(_OWNER_SEAL, snapshot, routes, token)
+        return PreparedPositionSourceWithFacts(_OWNER_SEAL, prepared, json.dumps(published.publication_facts(), sort_keys=True, separators=(",", ":"), ensure_ascii=False))
     except (ValueError, TypeError, KeyError) as exc:
         return Hold("position_source_preparation_unavailable", str(exc))
+
+
+def prepare_position_source_with_facts(database, repertoire_id: str) -> PreparedPositionSourceWithFacts | Hold:
+    """Prepare source and preserve the same complete read, outside the writer."""
+    return _prepare_position_source_with_facts(database, repertoire_id)
+
+
+def prepare_position_source(database, repertoire_id: str) -> PreparedPositionSource | Hold:
+    """Read and legally project a complete publication outside the writer."""
+    result = _prepare_position_source_with_facts(database, repertoire_id)
+    return result if isinstance(result, Hold) else result.prepared
 
 
 def fence_position_source(database, prepared: PreparedPositionSource) -> Hold | None:
