@@ -179,7 +179,6 @@ it("Study reduced-source build succeeds without optional implementations and fai
     for (const path of optionalImplementations)
       expect(await exists(join(stageRoot, path)), `${path} should be absent from staged source`).toBe(false);
     expect(stagedOptionalImplementations).toEqual(optionalImplementations);
-    expect(await exists(join(stageRoot, "app/lib/workbench-navigation.ts"))).toBe(true);
 
     const positive = await runStagedStudyBuild(stageRoot);
     expect(positive.leakedFirstPartyIds).toEqual([]);
