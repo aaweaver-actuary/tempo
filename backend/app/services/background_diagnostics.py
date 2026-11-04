@@ -7,8 +7,7 @@ from tempo_legacy_database.adapters.background_diagnostics import (
 )
 from .background_metrics import BackgroundDiagnostics, COUNT_NAMES, DURATION_NAMES, KINDS
 from . import background_runtime
-from ..threat_analysis_commands import _ELIGIBLE_THREAT_REQUEST
-from .defensive_analysis import task_admission_sql, search_admission_sql
+from .defensive_analysis import task_admission_sql
 
 QUERY_BUDGET_SECONDS = 0.1
 
@@ -62,12 +61,6 @@ def snapshot() -> BackgroundDiagnostics:
                     oldest_generation_age_seconds=_age(row["generation_started_at"],now) if state not in ('complete','superseded') else None,
                     next_eligibility_seconds=_until(row["next_attempt_at"],now) if state=='delayed' else None,
                     estimated_age_count=int(row["estimated"] or 0)))
-            for queue, rows in reads.engine_rows(_ELIGIBLE_THREAT_REQUEST,search_admission_sql):
-                for row in rows:
-                    queue_rows.append(dict(queue=queue,state=row['diagnostic_state'],count=row['count'],
-                        oldest_pending_age_seconds=_age(row['origin'],now) if row['diagnostic_state']!='complete' else None,
-                        oldest_generation_age_seconds=_age(row['generation_started_at'],now) if queue=='engine_game' and row['diagnostic_state']!='complete' else None,
-                        estimated_age_count=int(row['estimated'] or 0) if queue=='engine_game' else 0))
             rows = reads.metric_rows(window_start,now,COUNT_NAMES,DURATION_NAMES)
             result.update(queues=queue_rows,counters=[dict(kind=row['kind'],counts={name:(int(row[name]) if name in COUNT_NAMES else float(row[name])) for name in COUNT_NAMES + DURATION_NAMES},
                                                         useful_completion_unit={'engine_game':'accepted_position','engine_defense':'accepted_position','game_analysis_publish':'published_game_analysis'}.get(row['kind']))

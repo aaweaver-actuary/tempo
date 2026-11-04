@@ -28,26 +28,6 @@ class DiagnosticReader:
                           "FROM background_tasks t LEFT JOIN background_activity a ON a.source='durable' AND a.work_id=t.id "
                           "GROUP BY diagnostic_state,t.state", (now.isoformat(),))
 
-    def engine_rows(self, eligible_threat_request, search_admission_sql):
-        # Engine parent jobs and defensive requests are distinct queues; never sum them with durable jobs.
-        for queue, table, identity, state_column, origin in (
-            ('engine_game','game_analysis_jobs','game_id','status','pending_since'),
-            ('engine_defense','threat_analysis_requests','id','state','created_at'),
-        ):
-            # Eligibility details below use the same defensive relation probes as its claim path.
-            blocked = "0"
-            if queue == 'engine_defense':
-                eligible = eligible_threat_request.replace("SELECT request.id,request.request_json", "SELECT request.id")
-                blocked = "NOT EXISTS ("+eligible+" AND request.id=t.id)"
-            else:
-                blocked = "NOT EXISTS(SELECT 1 FROM imported_games g WHERE g.id=t.game_id AND g.rated=1 AND g.speed IN ('blitz','rapid','classical'))"
-            global_pause = "NOT " + search_admission_sql("t.id") if queue == "engine_defense" else "FALSE"
-            classification = f"CASE WHEN t.{state_column}='queued' AND (COALESCE(a.paused,0)=1 OR {global_pause}) THEN 'paused' WHEN t.{state_column}='queued' AND ({blocked}) THEN 'blocked' ELSE t.{state_column} END"
-            rows = self._query(f"SELECT {classification} AS diagnostic_state,COUNT(*) AS count,MIN(t.{origin}) AS origin {",SUM(t.age_origin_estimated) AS estimated,MIN(t.generation_started_at) AS generation_started_at" if queue=="engine_game" else ""} "
-                               f"FROM {table} t LEFT JOIN background_activity a ON a.source=? AND a.work_id=t.{identity} "
-                               "GROUP BY diagnostic_state", ('game_analysis' if queue=='engine_game' else 'threat_analysis',))
-            yield queue, rows
-
     def metric_rows(self, window_start, now, count_names, duration_names):
         sums = ','.join(f'{"MAX" if name.endswith("_max_seconds") else "SUM"}({name}) AS {name}' for name in count_names + duration_names)
         return self._query(f"SELECT kind,{sums} FROM background_metric_buckets WHERE bucket_start>=? AND bucket_start<=? GROUP BY kind",
