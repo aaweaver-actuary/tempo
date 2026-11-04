@@ -12,6 +12,7 @@ from tempo_learning_database.adapters.position_effect_store import (
 )
 from tempo_learning_runtime.position_effect_owner import accept_position_effect
 from tempo_scheduling import schedule_position_review
+from tempo_learning_database.ddl.migrate import expected_migrations
 
 ROOT = Path(__file__).resolve().parents[4]
 AT = datetime(2026,11,4,15,tzinfo=timezone.utc)
@@ -28,7 +29,19 @@ def canonical(value):
 def store(case):
     with psycopg.connect(case.admin) as db:
         db.execute('SET search_path TO learning,public')
-        db.execute((ROOT/'database/tempo_learning_database/ddl/migrations/0007_position_effect_owner.sql').read_text())
+        migration_id = 'learning.position_effect_owner/0001'
+        expected = expected_migrations()
+        actual = dict(db.execute('SELECT id,checksum FROM learning.migration_history').fetchall())
+        assert actual == expected
+        ddl = (ROOT/'database/tempo_learning_database/ddl/migrations/0007_position_effect_owner.sql').read_text()
+        if migration_id in expected:
+            # Integrated proof uses the real registered chain and exact receipt.
+            assert actual[migration_id] == digest_bytes(ddl)
+            assert db.execute("SELECT to_regclass('learning.position_effect_authorities')").fetchone()[0]
+        else:
+            # Leaf prototype cannot edit the coordinator/T02-owned manifest.
+            assert db.execute("SELECT to_regclass('learning.position_effect_authorities')").fetchone()[0] is None
+            db.execute(ddl)
         db.execute("INSERT INTO position_effect_authorities VALUES ('r','e1','source','America/New_York','disposable-prototype')")
         db.execute("INSERT INTO position_effect_states VALUES ('r','standard',%s,'e2e4','p1','e1','source',3,4503599627370496,%s,%s)",
                    (POSITION,FSRS,AT-timedelta(days=1)))

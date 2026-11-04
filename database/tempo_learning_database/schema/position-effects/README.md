@@ -71,9 +71,11 @@ Learning essential native runner covers one legal established position's exact
 pinned next-state/due, replay with lost ACK/new transport, corruption/stale holds,
 completion retry, transaction crash rollback, racing Good, cross-epoch Good,
 human Again, midnight/DST owner day and operation/first-response collisions.
-It directly applies 0007 inside each task-owned fixture after normal migrations;
-manifest registration and installed migration qualification remain coordinator
-and T01 responsibilities.
+It verifies the complete normal migration receipt map and, when registered,
+0007's exact stored SQL checksum. Before coordinator registration only, it
+directly applies 0007 after asserting the prototype table absent. Manifest
+registration and installed migration qualification remain coordinator and T01
+responsibilities.
 
 Required remaining gates: real Content currentness/legality/definition ports,
 qualified retained-stage adoption, full original plan/history migration, Games
