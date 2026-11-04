@@ -3,6 +3,13 @@
 from tempo_legacy_database.adapters import frozen_order, postgres_store
 
 
+# Applied only when selecting or creating a new issuance. Retained attempt
+# reads deliberately keep their original availability and receipt semantics.
+RETIRED_QUEUE_PREDICATE = """ AND c.content_type NOT IN ('defense','endgame')
+    AND substr(COALESCE(q.admission_source,''),1,8) != 'defense:'
+    AND substr(COALESCE(q.admission_source,''),1,8) != 'endgame:'"""
+
+
 _AVAILABLE_ATTEMPT_BASE_SQL = """SELECT q.id FROM daily_queue q JOIN cards c ON c.id=q.card_id
             WHERE q.queue_date=? AND q.status='queued' AND c.archived=0
               AND c.pending_validation=0 AND c.superseded_by IS NULL
