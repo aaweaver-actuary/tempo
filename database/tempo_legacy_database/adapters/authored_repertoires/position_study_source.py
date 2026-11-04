@@ -125,7 +125,7 @@ class PreparedPositionSourceWithFacts:
         return json.loads(self._facts_json)
 
 
-def _prepare_position_source_with_facts(database, repertoire_id):
+def _prepare_position_source(database, repertoire_id, *, retain_facts):
     from app.repertoire.snapshot import PreparedPublishedRepertoire
     from app.repertoire.interfaces.position_schedule_occurrences import routes_from_snapshot
     try:
@@ -148,6 +148,8 @@ def _prepare_position_source_with_facts(database, repertoire_id):
             json.dumps(header, sort_keys=True, separators=(",", ":")),
             json.dumps(integrity, sort_keys=True, separators=(",", ":")))
         prepared = PreparedPositionSource(_OWNER_SEAL, snapshot, routes, token)
+        if not retain_facts:
+            return prepared
         return PreparedPositionSourceWithFacts(_OWNER_SEAL, prepared, json.dumps(published.publication_facts(), sort_keys=True, separators=(",", ":"), ensure_ascii=False))
     except (ValueError, TypeError, KeyError) as exc:
         return Hold("position_source_preparation_unavailable", str(exc))
@@ -155,13 +157,12 @@ def _prepare_position_source_with_facts(database, repertoire_id):
 
 def prepare_position_source_with_facts(database, repertoire_id: str) -> PreparedPositionSourceWithFacts | Hold:
     """Prepare source and preserve the same complete read, outside the writer."""
-    return _prepare_position_source_with_facts(database, repertoire_id)
+    return _prepare_position_source(database, repertoire_id, retain_facts=True)
 
 
 def prepare_position_source(database, repertoire_id: str) -> PreparedPositionSource | Hold:
     """Read and legally project a complete publication outside the writer."""
-    result = _prepare_position_source_with_facts(database, repertoire_id)
-    return result if isinstance(result, Hold) else result.prepared
+    return _prepare_position_source(database, repertoire_id, retain_facts=False)
 
 
 def fence_position_source(database, prepared: PreparedPositionSource) -> Hold | None:

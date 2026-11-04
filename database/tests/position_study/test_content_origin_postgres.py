@@ -42,6 +42,18 @@ def test_owner_single_read_and_detached_facts(monkeypatch):
         PreparedContentOrigin(None, original, b'{}')
 
 
+def test_original_preparation_does_not_retain_publication_facts(monkeypatch):
+    from app.repertoire.snapshot import PreparedPublishedRepertoire
+    db = setup(monkeypatch)
+    def unexpected_retention(_self):
+        raise AssertionError('ordinary preparation must not retain facts')
+    monkeypatch.setattr(PreparedPublishedRepertoire, 'publication_facts', unexpected_retention)
+    prepared = owner.prepare_position_source(db, 'rep')
+    assert not isinstance(prepared, Hold)
+    with pytest.raises(AssertionError, match='must not retain'):
+        owner.prepare_position_source_with_facts(db, 'rep')
+
+
 def test_historical_origin_native(monkeypatch):
     """Owner snapshot, historical physical race, authored race, replay and rollback."""
     import os
