@@ -1,5 +1,7 @@
 # Legacy backend migrations
 
+Migration [060](060_position_first_response_immutable.sql) rejects updates, deletions and truncation of original first responses at source readiness 60. Inserts and exact replay remain unchanged; existing rows are not rewritten. This source change does not migrate a live database.
+
 Migration [059](059_queue_refresh_epochs.sql) adds nonnegative requested and
 published queue-refresh epochs at source readiness 59. Existing projection
 generations, queue entries, accepted reviews and retained attempts are preserved.
@@ -112,3 +114,5 @@ migration has been run by the feature implementation.
 - [057_position_study.sql](057_position_study.sql)
 - [058_queue_attempt_abandonment.sql](058_queue_attempt_abandonment.sql)
 - [059_queue_refresh_epochs.sql](059_queue_refresh_epochs.sql)
+
+- [060_position_first_response_immutable.sql](060_position_first_response_immutable.sql)

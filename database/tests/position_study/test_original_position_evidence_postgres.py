@@ -141,27 +141,41 @@ def test_original_evidence_real_saved_later_mistake_and_repeatable_snapshot(monk
             with psycopg.connect(dsn) as writer:
                 writer.execute('UPDATE reviews SET invalidated_at=%s WHERE id=%s', ('2026-11-04T12:00:00Z', complete.review_id))
             assert read_original_completion(scope, attempt_id=plan.attempt_id) == complete
-        # Fixture-only corruption tests retain the exact accepted row for restoration.
+        # Test-local read-result corruption: durable original rows remain untouched.
         saved = json.loads(responses[0].stored_payload_json)
         original_digest = responses[0].payload_digest
-        def inject(payload, digest):
-            with psycopg.connect(dsn) as writer:
-                writer.execute('UPDATE study_position_first_responses SET payload_json=%s::jsonb, payload_digest=%s WHERE event_id=%s',
-                               (json.dumps(payload), digest, responses[0].event_id))
-        def fresh_responses():
+        class CorruptRows:
+            def __init__(self, cursor, payload, digest):
+                self.cursor, self.payload, self.digest = cursor, payload, digest
+            def fetchall(self):
+                rows = [dict(row) for row in self.cursor.fetchall()]
+                rows[0]['stored_json'] = json.dumps(self.payload)
+                rows[0]['payload_digest'] = self.digest
+                return rows
+        class CorruptScope:
+            def __init__(self, delegate, payload, digest):
+                self.delegate, self.payload, self.digest = delegate, payload, digest
+            @property
+            def in_transaction(self): return self.delegate.in_transaction
+            @property
+            def read_only(self): return self.delegate.read_only
+            def execute_native(self, statement, parameters=()):
+                cursor = self.delegate.execute_native(statement, parameters)
+                if 'FROM public.study_position_first_responses r' in statement:
+                    return CorruptRows(cursor, self.payload, self.digest)
+                return cursor
+        def fresh_responses(payload=None, digest=None):
             with psycopg.connect(dsn, row_factory=tempo_row_factory) as connection:
                 connection.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
-                return read_original_first_responses(PostgresConnection(connection, read_only=True), attempt_id=plan.attempt_id, decode_response=decoder)
+                reader = PostgresConnection(connection, read_only=True)
+                if payload is not None: reader = CorruptScope(reader, payload, digest)
+                return read_original_first_responses(reader, attempt_id=plan.attempt_id, decode_response=decoder)
         changed = dict(saved, actual_uci='a2a3')
-        inject(changed, original_digest)
-        assert fresh_responses().code == 'LP_RESPONSE_INVALID'
+        assert fresh_responses(changed, original_digest).code == 'LP_RESPONSE_INVALID'
         changed = dict(saved, original_ply=saved['original_ply'] + 2)
-        inject(changed, _position_digest(changed))
-        assert fresh_responses().code == 'LP_RESPONSE_INVALID'
+        assert fresh_responses(changed, _position_digest(changed)).code == 'LP_RESPONSE_INVALID'
         changed = dict(saved, event_id='different-event')
-        inject(changed, _position_digest(changed))
-        assert fresh_responses().code == 'LP_RESPONSE_ROW_MISMATCH'
-        inject(saved, original_digest)
+        assert fresh_responses(changed, _position_digest(changed)).code == 'LP_RESPONSE_ROW_MISMATCH'
         assert [r.stored_payload_json for r in fresh_responses()] == [r.stored_payload_json for r in responses]
         with psycopg.connect(dsn, row_factory=tempo_row_factory) as fresh:
             fresh.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
