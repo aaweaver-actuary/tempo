@@ -92,7 +92,7 @@ def test_activity_progress_rejects_stale_generation_and_lease(tmp_path, monkeypa
 
 
 
-def test_pausing_coverage_invalidates_browser_lease_and_resume_reopens_queue(tmp_path, monkeypatch):
+def test_retired_coverage_heartbeat_does_not_recreate_work_and_control_remains(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     database.initialize()
     _seed_all_sources()
@@ -108,12 +108,16 @@ def test_pausing_coverage_invalidates_browser_lease_and_resume_reopens_queue(tmp
         )
     client = TestClient(app)
     assert set_control("coverage", "activity-coverage", "pause")
+    with database.read_connection() as db:
+        before = tuple(db.execute("SELECT maia_status,lease_id FROM repertoire_coverage_nodes WHERE id='activity-node'").fetchone())
+        count_before = db.execute("SELECT COUNT(*) FROM repertoire_coverage_nodes").fetchone()[0]
     assert client.post("/api/repertoire-coverage/maia/heartbeat", json={
         "node_id": "activity-node", "lease_id": "old-lease",
-    }).status_code == 409
+    }).status_code == 404
     with database.read_connection() as db:
         node = db.execute("SELECT maia_status,lease_id FROM repertoire_coverage_nodes WHERE id='activity-node'").fetchone()
-    assert tuple(node) == ("queued", None)
+        assert db.execute("SELECT COUNT(*) FROM repertoire_coverage_nodes").fetchone()[0] == count_before
+    assert tuple(node) == before == ("queued", None)
     assert set_control("coverage", "activity-coverage", "resume")
     with database.read_connection() as db:
         assert db.execute("SELECT paused FROM background_activity WHERE source='coverage' AND work_id='activity-coverage'").fetchone()[0] == 0
