@@ -420,3 +420,11 @@ capture-omission rejection, immutable batch replay, representative activation
 denial, final-watermark/generation binding and conservative forward recovery.
 These tests do not establish PostgreSQL transfer, browser recovery, actual
 evidence validity, installed state or complete migration acceptance.
+## Complete bounded publication generation (#908 W09A)
+
+`tests/test_cutover_publication_generation.py` owns the native synthetic
+10,000-definition/fact/route/binding inactive generation, exact active identities,
+same-digest replay, changed-digest/incomplete rejection and stale predecessor
+denial. It uses the regular owning disposable PostgreSQL fixture. One-move
+synthetic routes do not establish real retained graph/alias capacity, source-edit
+fencing, paging beyond public limits or full F12 acceptance.
