@@ -179,7 +179,8 @@ def prepare_cross_repertoire_authority_scope(database, *, prepared_origin: Prepa
             for item in route.decisions:
                 expected.append((route.route_id,item))
         stored = origin['occurrences']
-        if len(expected) != len(stored) or len(expected) > 100000: return Hold('AUTH_SCOPE_OCCURRENCE_MISMATCH')
+        if len(expected) > 100000: return Hold('AUTH_SCOPE_LIMIT')
+        if len(expected) != len(stored): return Hold('AUTH_SCOPE_OCCURRENCE_MISMATCH')
         mapped, seen = [], set()
         for (route_id, item), original in zip(expected, stored):
             identity = dict(repertoire_id=token.repertoire_id,route_id=route_id,ply=item.ply)
