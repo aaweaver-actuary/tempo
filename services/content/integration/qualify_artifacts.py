@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import tomllib
 
 SERVICE = Path(__file__).resolve().parents[1]
 ROOT = SERVICE.parents[1]
@@ -27,6 +28,19 @@ def qualify_consumers(workspace, destination, run, report, producer_python, prod
     components = {item["id"]: item for item in manifest["components"]}
     providers = {item["artifact"]["name"].replace("-", "_"): item
                  for item in components.values() if item.get("artifact")}
+    # Learning declares this local Python distribution even though its component
+    # entry is not an independently registered artifact.
+    learning = components["learning"]
+    with (ROOT / learning["root"] / "pyproject.toml").open("rb") as stream:
+        local_path = tomllib.load(stream)["tool"]["uv"]["sources"]["tempo-evidence-math"]["path"]
+    evidence_root = (ROOT / learning["root"] / local_path).resolve()
+    evidence = components["evidence-math"]
+    if evidence_root != (ROOT / evidence["root"]).resolve():
+        raise ValueError("Learning evidence-math source disagrees with component root")
+    with (evidence_root / "pyproject.toml").open("rb") as stream:
+        if tomllib.load(stream)["project"]["name"] != "tempo-evidence-math":
+            raise ValueError("Unexpected evidence-math distribution")
+    providers["tempo_evidence_math"] = evidence
     selected = {}
 
     def select(component):
