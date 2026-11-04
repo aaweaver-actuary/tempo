@@ -6879,3 +6879,16 @@ revision/epoch. Separate source parity had one existing native case skipped for
 its absent explicit disposable DSN and is not claimed complete. Full Content
 projection, authority anchor, physical currentness and service-recreation replay
 are not established.
+
+## Same-snapshot historical authority catalogue
+
+`test_content_origin_postgres.py::test_native_cross_repertoire_scope_preserves_complete_family_and_anchor`
+uses the actual bounded owner catalogue in the same RO/RR snapshot as its sealed
+origin. It preserves delayed/pre-anchor/qualified/root-unique0 and ambiguous
+anchors, competitor routes outside selected export, opposite color/internal
+namespace rules and archived competitor inclusion; changed-family old/fresh
+snapshot distinction and old-origin rejection remain explicit. Three selected
+pure helpers retain limits/completeness/shape guards. This four-case selection
+passed on its exact source with cleanup; other standalone native cases were
+excluded/unrun. No Content publication, active-retirement union, physical
+currentness or activation authority is established by historical classification.
