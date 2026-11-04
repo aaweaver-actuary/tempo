@@ -36,7 +36,7 @@ shows whether the encounter was recorded, the Study owner's disposition, actual
 admission status and explicit deferral reason. Recorded importance, `status=applied`
 and a pending first introduction do not imply availability. Only an actual
 `admission_status=available` is labeled available for Study. The existing feedback retry endpoint replays stored lapse deliveries only; a
-pending `EncounterReceipt` therefore has no legacy Retry feedback action. This
+pending `EncounterReceipt` therefore has no legacy Retry feedback action. A retry is offered only for a current selected departure with a visible pending accepted or duplicate legacy receipt; missing or stale evidence remains inspectable without a retry. This
 view adds no encounter replay API and is independent of operator history-to-Study
 proof.
 
