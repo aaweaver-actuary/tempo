@@ -75,7 +75,6 @@ CUT62_PROTECTED_TABLES = frozenset((
     'discovery_admission_intents',
     'discovery_recommendation_requests',
     'endgame_templates',
-    'engine_scheduling_state',
     'explorer_position_cache',
     'frozen_opening_activation',
     'frozen_opening_pending',
@@ -83,10 +82,6 @@ CUT62_PROTECTED_TABLES = frozenset((
     'frozen_opening_ranks',
     'frozen_opening_runs',
     'game_accounts',
-    'game_analysis_jobs',
-    'game_analysis_position_errors',
-    'game_analysis_position_reports',
-    'game_analysis_publications',
     'game_derivation_jobs',
     'game_feature_rows',
     'game_finding_preparations',
@@ -243,15 +238,19 @@ CUT62_PROTECTED_TABLES = frozenset((
     'threat_training_candidates',
 ))
 CUT62_RETIRED_TABLES = frozenset(('defense_attempts', 'endgame_attempts',
-                                  'next_opponent_accounts', 'next_opponent_snapshots'))
+                                  'next_opponent_accounts', 'next_opponent_snapshots',
+                                  'game_analysis_jobs', 'game_analysis_position_reports',
+                                  'game_analysis_position_errors', 'game_analysis_publications',
+                                  'engine_scheduling_state'))
 CUT62_LEDGER = 'tempo_schema_migrations'
-CUT62_EVIDENCE_VERSION = 1
+CUT62_EVIDENCE_VERSION = 2
 CUT62_PROTECTED_SEQUENCES = frozenset((
     'background_task_events_id_seq', 'card_revisions_id_seq', 'daily_queue_id_seq',
-    'game_analysis_position_errors_id_seq', 'opening_evidence_presentations_id_seq',
+    'opening_evidence_presentations_id_seq',
     'reviews_id_seq', 'study_attempt_issuance_sequence', 'study_position_fsrs_id_seq',
     'study_recombination_completions_sequence_seq', 'threat_analysis_report_history_id_seq',
 ))
+CUT62_RETIRED_SEQUENCES = frozenset(('game_analysis_position_errors_id_seq',))
 
 
 def _cut62_mac(secret, domain, values):
@@ -327,7 +326,7 @@ def _cut62_catalog(database, secret):
 
 
 
-def _cut62_sequences(database, secret):
+def _cut62_sequences(database, secret, source):
     from psycopg import sql
     definitions = database.execute("""
         SELECT c.relname, pg_get_userbyid(c.relowner), COALESCE(c.relacl::text,''),
@@ -336,14 +335,17 @@ def _cut62_sequences(database, secret):
         JOIN pg_sequence s ON s.seqrelid=c.oid
         WHERE n.nspname='public' ORDER BY c.relname
     """).fetchall()
-    if {row[0] for row in definitions} != CUT62_PROTECTED_SEQUENCES:
+    expected = CUT62_PROTECTED_SEQUENCES | (CUT62_RETIRED_SEQUENCES if source else frozenset())
+    if {row[0] for row in definitions} != expected:
         raise RuntimeError('cut62 sequence coverage changed')
-    states = []
+    states = {'protected': [], 'retired': []}
     for definition in definitions:
         value = database.execute(sql.SQL('SELECT last_value,is_called FROM {}.{}').format(
             sql.Identifier('public'), sql.Identifier(definition[0]))).fetchone()
-        states.append(json.dumps([*definition, *value], separators=(',', ':')))
-    return _cut62_mac(secret, 'cut62:sequences', states)
+        category = 'retired' if definition[0] in CUT62_RETIRED_SEQUENCES else 'protected'
+        states[category].append(json.dumps([*definition, *value], separators=(',', ':')))
+    return {category: _cut62_mac(secret, 'cut62:sequences:' + category, values)
+            for category, values in states.items()}
 
 def _cut62_profile_objects(database, should_exist):
     for name in ('idx_next_opponent_account_time', 'idx_next_opponent_speed_rating_time'):
@@ -391,7 +393,7 @@ def capture_cut62(database, secret):
     rows = {name: _cut62_table(database, name, layout[name][0], secret)
             for name in sorted(source_tables - {CUT62_LEDGER})}
     return {'version': CUT62_EVIDENCE_VERSION, 'from': 61, 'to': 62,
-            'layout': layout, 'rows': rows, 'catalog': _cut62_catalog(database, secret), 'sequences': _cut62_sequences(database, secret)}
+            'layout': layout, 'rows': rows, 'catalog': _cut62_catalog(database, secret), 'sequences': _cut62_sequences(database, secret, True)}
 
 
 def verify_cut62(database, witness, secret):
@@ -409,11 +411,14 @@ def verify_cut62(database, witness, secret):
     for name in sorted(CUT62_RETIRED_TABLES):
         if database.execute('SELECT to_regclass(%s)', ('public.' + name,)).fetchone()[0] is not None:
             raise RuntimeError('cut62 retired relation remains: ' + name)
+    for name in sorted(CUT62_RETIRED_SEQUENCES):
+        if database.execute('SELECT to_regclass(%s)', ('public.' + name,)).fetchone()[0] is not None:
+            raise RuntimeError('cut62 retired sequence remains: ' + name)
     target = CUT62_PROTECTED_TABLES | {CUT62_LEDGER}
     layout = _cut62_layout(database, target)
     if layout != {name: witness['layout'][name] for name in target}:
         raise RuntimeError('cut62 retained table layout changed')
-    if _cut62_sequences(database, secret) != witness.get('sequences'):
+    if _cut62_sequences(database, secret, False)['protected'] != witness.get('sequences', {}).get('protected'):
         raise RuntimeError('cut62 retained sequences changed')
     if _cut62_catalog(database, secret) != witness.get('catalog'):
         raise RuntimeError('cut62 retained catalog changed')
@@ -421,7 +426,8 @@ def verify_cut62(database, witness, secret):
         if _cut62_table(database, name, layout[name][0], secret) != witness['rows'][name]:
             raise RuntimeError('cut62 retained rows changed in ' + name)
     return {'version': CUT62_EVIDENCE_VERSION, 'from': 61, 'to': 62,
-            'retired': {name: witness['rows'][name] for name in sorted(CUT62_RETIRED_TABLES)}}
+            'retired': {name: witness['rows'][name] for name in sorted(CUT62_RETIRED_TABLES)},
+            'retired_sequences': witness['sequences']['retired']}
 
 
 def save_cut62_witness(path, database):

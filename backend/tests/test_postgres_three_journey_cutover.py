@@ -24,11 +24,11 @@ def test_cut62_guard_retains_full_fixed_ledger_and_rejects_tamper(monkeypatch):
     monkeypatch.setattr(guard, '_cut62_versions', lambda database, version: None)
     monkeypatch.setattr(guard, '_cut62_profile_objects', lambda database, should_exist: None)
     monkeypatch.setattr(guard, '_cut62_catalog', lambda database, secret: {'count': 1, 'digest': 'catalog'})
-    monkeypatch.setattr(guard, '_cut62_sequences', lambda database, secret: {'count': 10, 'digest': 'sequences'})
+    monkeypatch.setattr(guard, '_cut62_sequences', lambda database, secret, source: {'protected': {'count': 9, 'digest': 'sequences'}, 'retired': {'count': int(source), 'digest': 'retired'}})
     monkeypatch.setattr(guard, '_cut62_layout', lambda database, names: {name: layout[name] for name in names})
     monkeypatch.setattr(guard, '_cut62_table', lambda database, name, key, secret: state[name].copy())
     witness = guard.capture_cut62(FakeDatabase(), b'x' * 32)
-    assert len(guard.CUT62_PROTECTED_TABLES) == 189
+    assert len(guard.CUT62_PROTECTED_TABLES) == 184
     assert guard.verify_cut62(FakeDatabase(), witness, b'x' * 32)['to'] == 62
     name = next(iter(guard.CUT62_PROTECTED_TABLES))
     state[name]['digest'] = 'tampered'
@@ -38,7 +38,7 @@ def test_cut62_guard_retains_full_fixed_ledger_and_rejects_tamper(monkeypatch):
     del changed['rows'][name]
     with pytest.raises(RuntimeError, match='coverage'):
         guard.verify_cut62(FakeDatabase(), changed, b'x' * 32)
-    changed['version'] = 2
+    changed['version'] = 99
     with pytest.raises(RuntimeError, match='unsupported'):
         guard.verify_cut62(FakeDatabase(), changed, b'x' * 32)
 
@@ -66,7 +66,7 @@ def test_cut62_layout_rejects_unexpected_table(monkeypatch):
 
 def test_cut62_rejects_reintroduced_retired_relation(monkeypatch):
     source = guard.CUT62_PROTECTED_TABLES | guard.CUT62_RETIRED_TABLES | {guard.CUT62_LEDGER}
-    witness = {'version': 1, 'from': 61, 'to': 62,
+    witness = {'version': 2, 'from': 61, 'to': 62,
                'layout': dict.fromkeys(source), 'rows': dict.fromkeys(source - {guard.CUT62_LEDGER})}
     monkeypatch.setattr(guard, '_cut62_session', lambda database: None)
     monkeypatch.setattr(guard, '_cut62_versions', lambda database, version: None)
@@ -90,9 +90,9 @@ def test_cut62_sequence_drift_is_rejected(monkeypatch):
     monkeypatch.setattr(guard, '_cut62_layout', lambda database, names: {name: layout[name] for name in names})
     monkeypatch.setattr(guard, '_cut62_table', lambda database, name, key, secret: {'count': 1, 'digest': name})
     monkeypatch.setattr(guard, '_cut62_catalog', lambda database, secret: {'count': 1, 'digest': 'catalog'})
-    monkeypatch.setattr(guard, '_cut62_sequences', lambda database, secret: {'count': 10, 'digest': 'before'})
+    monkeypatch.setattr(guard, '_cut62_sequences', lambda database, secret, source: {'protected': {'count': 9, 'digest': 'before'}, 'retired': {'count': int(source), 'digest': 'retired'}})
     witness = guard.capture_cut62(FakeDatabase(), b'x' * 32)
-    monkeypatch.setattr(guard, '_cut62_sequences', lambda database, secret: {'count': 10, 'digest': 'after'})
+    monkeypatch.setattr(guard, '_cut62_sequences', lambda database, secret, source: {'protected': {'count': 9, 'digest': 'after'}, 'retired': {'count': int(source), 'digest': 'retired'}})
     with pytest.raises(RuntimeError, match='sequences changed'):
         guard.verify_cut62(FakeDatabase(), witness, b'x' * 32)
 
@@ -134,3 +134,30 @@ def test_cut62_native_schema61_to62(tmp_path):
         db.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json) VALUES ('synthetic','lichess','synthetic','2026-01-01T00:00:00Z','rapid',1,'white','draw','synthetic','[]')")
         assert db.execute("SELECT to_regclass('public.next_opponent_accounts')").fetchone()[0] is None
         db.rollback()
+
+
+def test_cut62_sequence_inventory_separates_removed_identity():
+    class Result:
+        def __init__(self, value):
+            self.value = value
+        def fetchall(self):
+            return self.value
+        def fetchone(self):
+            return self.value
+    class SequenceDB:
+        def __init__(self, names):
+            self.names = names
+        def execute(self, statement):
+            if isinstance(statement, str):
+                return Result([(name, 'owner', '', 1, 1, 100, 1, 1, False)
+                               for name in sorted(self.names)])
+            return Result((1, False))
+    source = guard._cut62_sequences(SequenceDB(guard.CUT62_PROTECTED_SEQUENCES | guard.CUT62_RETIRED_SEQUENCES), b'x' * 32, True)
+    target = guard._cut62_sequences(SequenceDB(guard.CUT62_PROTECTED_SEQUENCES), b'x' * 32, False)
+    assert source['protected'] == target['protected']
+    assert source['retired']['count'] == 1
+    assert target['retired']['count'] == 0
+    with pytest.raises(RuntimeError, match='sequence coverage'):
+        guard._cut62_sequences(SequenceDB(guard.CUT62_PROTECTED_SEQUENCES), b'x' * 32, True)
+    with pytest.raises(RuntimeError, match='sequence coverage'):
+        guard._cut62_sequences(SequenceDB(guard.CUT62_PROTECTED_SEQUENCES | guard.CUT62_RETIRED_SEQUENCES), b'x' * 32, False)
