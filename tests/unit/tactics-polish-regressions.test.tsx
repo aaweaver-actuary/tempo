@@ -74,6 +74,24 @@ const advanceTacticTimer = async () => {
 
 afterEach(() => vi.useRealTimers());
 
+it("mounts Tactics and activates a pack without requesting game insights", async () => {
+  const requests: Array<{ url: string; method: string }> = [];
+  vi.stubGlobal("fetch", vi.fn(async (input, options) => {
+    const url = String(input);
+    requests.push({ url, method: options?.method ?? "GET" });
+    if (url.includes("tactics-packs")) return Response.json(records.slice(0, 25));
+    if (url.endsWith("/api/tactics/activation")) return Response.json(catalog);
+    if (url.includes("tactics/catalog")) return Response.json(catalog);
+    return Response.json({});
+  }));
+  render(<TacticsView theme="brown" pieceSet="cburnett" onQueueChanged={vi.fn()} />);
+  await screen.findByText("Puzzle 1 of 25");
+  fireEvent.click(screen.getByRole("tab", { name: "Packs" }));
+  fireEvent.click(screen.getByRole("button", { name: "Activate Hanging pieces easy pack 1" }));
+  await waitFor(() => expect(requests.some(({ url, method }) => url.endsWith("/api/tactics/activation") && method === "PUT")).toBe(true));
+  expect(requests.some(({ url }) => url.includes("/api/game-insights/"))).toBe(false);
+});
+
 it("legacy clean puzzle identities select the next unattempted deck position rather than the attempt counter", async () => {
   const cleanIds = records
     .slice(0, 24)

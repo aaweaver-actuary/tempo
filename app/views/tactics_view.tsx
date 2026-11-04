@@ -24,10 +24,7 @@ import {
   advanceTacticProgress,
   writeTacticProgress,
 } from "../lib/tactics-progress";
-import {
-  TacticalCatalogPanel,
-  type MotifRecommendation,
-} from "../components/tactical-catalog";
+import { TacticalCatalogPanel } from "../components/tactical-catalog";
 import {
   loadTacticalCatalog,
   setPackActivation,
@@ -44,10 +41,7 @@ import {
   readWorkspaceData,
   invalidateWorkspaceData,
 } from "../lib/workspace-data";
-import {
-  motifRecommendationsSchema,
-  tacticProgressSchema,
-} from "../domain/schemas";
+import { tacticProgressSchema } from "../domain/schemas";
 import { reportDebugError } from "../lib/debug-reporting";
 import { useTaskTabs } from "../components/task-tabs";
 
@@ -129,9 +123,6 @@ function TacticsWorkspace({
   const [catalogError, setCatalogError] = useState("");
   const [activationError, setActivationError] = useState("");
   const [activationBusy, setActivationBusy] = useState(false);
-  const [recommendations, setRecommendations] = useState<MotifRecommendation[]>(
-    [],
-  );
   const tools = useTaskTabs(["Solve", "Packs"], "Solve", "tempo-tactics-tools");
   const [progress, setProgress] = useState(readTacticProgress);
   const [progressReady, setProgressReady] = useState(() => !usesLocalApi());
@@ -208,23 +199,6 @@ function TacticsWorkspace({
               ? error.message
               : "Could not load tactics catalog.",
           );
-      });
-    return () => {
-      active = false;
-    };
-  }, [retry]);
-  useEffect(() => {
-    if (!usesLocalApi() || independentStudy) return;
-    let active = true;
-    void readWorkspaceData(
-      `${API_URL}/api/game-insights/motifs`,
-      motifRecommendationsSchema,
-    )
-      .then((payload) => {
-        if (active) setRecommendations(payload.recommendations);
-      })
-      .catch(() => {
-        if (active) setRecommendations([]);
       });
     return () => {
       active = false;
@@ -564,16 +538,6 @@ function TacticsWorkspace({
           onSelect={selectPack}
           onActivate={independentStudy ? undefined : (ids, active) => void activatePacks(ids, active)}
           busy={activationBusy}
-          recommendations={recommendations}
-          onStartSuggested={(recommendation) => {
-            const suggestedPack = catalog.packs.find(
-              (pack) => pack.id === recommendation.recommended_pack_id,
-            );
-            if (!suggestedPack) return;
-            if (!independentStudy && !suggestedPack.active)
-              void activatePacks([suggestedPack.id], true);
-            selectPack(suggestedPack);
-          }}
         />
       </section>
     );
@@ -605,17 +569,6 @@ function TacticsWorkspace({
             onSelect={selectPack}
             onActivate={independentStudy ? undefined : (ids, active) => void activatePacks(ids, active)}
             busy={activationBusy}
-            recommendations={recommendations}
-            onStartSuggested={(recommendation) => {
-              const suggestedPack = catalog.packs.find(
-                (pack) => pack.id === recommendation.recommended_pack_id,
-              );
-              if (!suggestedPack) return;
-              if (!independentStudy && !suggestedPack.active) {
-                void activatePacks([suggestedPack.id], true);
-              }
-              selectPack(suggestedPack);
-            }}
           />
         )}
         <div className="board-column centered-board">
