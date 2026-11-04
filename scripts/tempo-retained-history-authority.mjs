@@ -23,11 +23,12 @@ const manifestShape = m => Array.isArray(m?.source_inventory) && m.source_invent
 function validIngress(r, c) { try {
   const u = new URL(c.ingress.origin), host = u.hostname.replace(/^\[|\]$/g, '');
   const port = u.port || (u.protocol === 'https:' ? '443' : '80');
+  const loopback = h => h === '127.0.0.1' || h === '::1';
   return ['http:', 'https:'].includes(u.protocol) && u.origin === c.ingress.origin && !u.username && !u.password
-    && c.ingress.hosts.includes(host) && Array.isArray(r.ports) && r.ports.length > 0
-    && r.ports.every(p => p && ['study-web','learning','postgres'].includes(p.service) && text(p.host) && text(p.port)
-      && Number.isInteger(p.target) && p.target > 0 && Number(p.port) >= 1 && Number(p.port) <= 65535 && /^\d+$/.test(p.port))
-    && r.ports.some(p => p.service === 'study-web' && p.host === host && p.port === port && p.target === 80);
+    && loopback(host) && c.ingress.hosts.every(loopback) && c.ingress.hosts.includes(host)
+    && Array.isArray(r.ports) && r.ports.length === 1
+    && r.ports.every(p => p && p.service === 'study-web' && p.host === host && p.port === port
+      && p.target === 80 && (p.protocol === undefined || p.protocol === 'tcp'));
 } catch { return false; } }
 
 const fail = reason => { throw new Error(`retained_history_${reason}`); };

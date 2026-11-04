@@ -116,3 +116,28 @@ test('explicit HTTPS IPv6 origin is accepted when ingress and port match', () =>
   registration.cutover.ingress.hosts=['other']; observation.registration=structuredClone(registration);
   assert.throws(()=>verifyRetainedHistoryBindings(registration,observation),/registration_incomplete/);
 });
+
+
+test('retained ingress rejects published non-web, non-loopback, mismatched and duplicate bindings', () => {
+  const cases = [
+    ['Postgres', r => r.ports.push({service:'postgres',host:'127.0.0.1',port:'5432',target:5432})],
+    ['Learning', r => r.ports.push({service:'learning',host:'127.0.0.1',port:'8000',target:8000})],
+    ['wildcard', r => {r.webUrl='http://0.0.0.0:1234'; r.cutover.ingress={origin:r.webUrl,hosts:['0.0.0.0']}; r.ports[0].host='0.0.0.0';}],
+    ['non-loopback', r => {r.webUrl='http://192.0.2.1:1234'; r.cutover.ingress={origin:r.webUrl,hosts:['192.0.2.1']}; r.ports[0].host='192.0.2.1';}],
+    ['other ingress host', r => r.cutover.ingress.hosts.push('0.0.0.0')],
+    ['mismatched port', r => {r.ports[0].port='1235';}],
+    ['mismatched origin', r => {r.webUrl='http://127.0.0.1:1235';}],
+    ['extra web mapping', r => r.ports.push({service:'study-web',host:'127.0.0.1',port:'1235',target:80})],
+    ['duplicate mapping', r => r.ports.push({...r.ports[0]})],
+    ['UDP', r => {r.ports[0].protocol='udp';}],
+    ['wrong target', r => {r.ports[0].target=81;}],
+    ['malformed origin', r => {r.webUrl='not a URL'; r.cutover.ingress.origin=r.webUrl;}],
+  ];
+  for (const [name, mutate] of cases) {
+    const {registration,observation}=fixture(); mutate(registration);
+    observation.registration=structuredClone(registration);
+    observation.artifacts.ingress=structuredClone(registration.cutover.ingress);
+    observation.artifacts.ports=structuredClone(registration.ports);
+    assert.throws(() => verifyRetainedHistoryBindings(registration,observation), /registration_incomplete/, name);
+  }
+});
