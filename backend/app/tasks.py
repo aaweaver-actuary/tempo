@@ -23,10 +23,10 @@ from .services.feedback_diagnostics import diagnose_feedback, feedback_stage, fe
 from .product_composition.database_infrastructure import bind_database_infrastructure
 bind_database_infrastructure()
 
+from .contracts.command_registry import RETIRED_COMMANDS, RETIRED_TASK_KINDS, is_retired_command
 from .celery_app import celery_app
 from .product_composition.worker_game_sync import resolve_worker_game_sync_command
 from .product_composition.worker_game_commands import resolve_worker_game_command
-from .product_composition.worker_legacy_evidence import resolve_worker_legacy_evidence
 from .product_composition.worker_product_feedback import resolve_worker_product_feedback
 from .command_gateway import (
     claim_recoverable_operation, execute_command, record_operation_attempt,
@@ -36,7 +36,6 @@ from tempo_legacy_database.connections import read_connection
 from tempo_legacy_database.adapters.lifecycle.refresh_requests import daily_queue_projection
 from . import study_commands  # noqa: F401 - registers explicit worker commands
 from . import study_attempt_commands  # noqa: F401 - registers Study attempt commands
-from . import defense_commands  # noqa: F401 - registers defensive exercise commands
 from . import tactic_commands  # noqa: F401 - registers tactic attempt commands
 from . import queue_commands  # noqa: F401 - registers foreground queue commands
 from .product_composition.feedback_release import register_feedback_next_card_priority
@@ -50,28 +49,19 @@ from . import account_commands  # noqa: F401 - registers foreground account comm
 from . import settings_commands  # noqa: F401 - registers foreground settings command
 from .product_composition.repertoire_runtime import register_current_repertoire_commands
 register_current_repertoire_commands()
-from . import finding_commands  # noqa: F401 - registers foreground finding decisions
-from . import finding_card_commands  # noqa: F401 - registers foreground finding cards
 from . import annotation_commands  # noqa: F401 - registers foreground position notes
-from . import endgame_commands  # noqa: F401 - registers foreground endgame templates
 from . import branch_commands  # noqa: F401 - registers foreground branch edits
 from . import pgn_import_commands  # noqa: F401 - registers foreground PGN imports
-from . import analysis_paste_commands  # noqa: F401 - registers foreground analysis paste
 from .services import prefix_transition_application  # registers the foreground apply command
 from . import prefix_split_commands  # noqa: F401 - registers foreground prefix splits
 from . import card_commands  # noqa: F401 - registers foreground card revisions
 from . import activity_commands  # noqa: F401 - registers foreground activity controls
-from . import defensive_admin_commands  # noqa: F401 - registers defensive admin tasks
-from . import threat_analysis_commands  # noqa: F401 - registers defensive engine callbacks
-from . import coverage_commands  # noqa: F401 - registers foreground coverage admission
-from . import coverage_maia_commands  # noqa: F401 - registers background Maia callbacks
-from . import discovery_commands  # noqa: F401 - registers discovery acceptance
 from . import integrity_repair_commands  # noqa: F401 - registers guided integrity repairs
 from .services.activity_gate import activity_gate
 from .services.redis_admission_gate import BackgroundAdmissionDeferred
 from .services.background_runtime import measure_handler
 from .services.background_wakes import CoalescedWakeTask
-from .services.durable_tasks import current_delivery, record_stale_delivery, defer_paused_defensive_task
+from .services.durable_tasks import current_delivery, record_stale_delivery
 from .services.durable_tasks import claim_task, complete_task, defer_task_for_contention, defer_task_for_transaction_timeout, fail_task
 
 from .services.durable_tasks import defer_task_for_foreground
@@ -79,15 +69,9 @@ from .services.queue_refresh_wakeup import wake_queue_refresh, wake_queue_refres
 from .services.queue_ordering import PRESENTATION_VERSION
 from .services.postgres_queue_refresh import execute_postgres_queue_refresh_slice
 from .services.repertoire_game_refresh import execute_repertoire_game_refresh_slice
-from .services.threat_training import (
-    execute_defense_admission_slice, execute_defense_rubric_audit_slice,
-)
 from .services.postgres_opening_graph import execute_postgres_opening_graph_slice
 from .services.postgres_integrity import execute_postgres_integrity_slice
 from .services.postgres_opening_segmentation import execute_segmentation_slice
-from .services.discovery_admission import (
-    execute_admission_intent_slice, execute_recommendation_request_slice,
-)
 from .services.canonical_prefix_preview import execute_prefix_preview_slice
 
 
@@ -99,91 +83,6 @@ from .services.study_mode import STUDY_TASK_KINDS, STUDY_BACKGROUND_COMMANDS, PA
 def study_only_enabled(database=None):
     """Compatibility seam; always consult the current Study policy owner."""
     return study_mode.study_only_enabled() if database is None else study_mode.study_only_enabled(database)
-
-
-def execute_profile_slice(claimed_task):
-    from .services.postgres_next_opponent import execute_profile_slice as execute
-    return execute(claimed_task)
-
-
-def execute_game_position_index_slice(claimed_task):
-    from .services.postgres_game_derivation import execute_game_position_index_slice as execute
-    return execute(claimed_task)
-
-
-def execute_game_repertoire_comparison_slice(claimed_task):
-    from .services.postgres_game_repertoire import execute_game_repertoire_comparison_slice as execute
-    return execute(claimed_task)
-
-
-def execute_game_findings_slice(claimed_task):
-    from .services.postgres_game_findings import execute_game_findings_slice as execute
-    return execute(claimed_task)
-
-
-def execute_game_miss_slice(claimed_task):
-    from .services.postgres_game_misses import execute_game_miss_slice as execute
-    return execute(claimed_task)
-
-
-def execute_game_event_slice(claimed_task):
-    from .services.postgres_game_events import execute_game_event_slice as execute
-    return execute(claimed_task)
-
-
-def execute_game_feature_slice(claimed_task):
-    from .services.postgres_game_features import execute_game_feature_slice as execute
-    return execute(claimed_task)
-
-
-def execute_game_priority_handoff_slice(claimed_task):
-    from .services.postgres_game_priorities import execute_game_priority_handoff_slice as execute
-    return execute(claimed_task)
-
-
-def execute_game_analysis_publication_slice(claimed_task):
-    from .game_analysis_publication import execute_game_analysis_publication_slice as execute
-    return execute(claimed_task)
-
-
-def execute_game_analysis_followup_slice(claimed_task):
-    from .game_analysis_publication import execute_game_analysis_followup_slice as execute
-    return execute(claimed_task)
-
-
-def execute_coverage_seed_slice(claimed_task):
-    from .services.postgres_coverage_seed import execute_coverage_seed_slice as execute
-    return execute(claimed_task)
-
-
-def execute_coverage_explorer_slice(claimed_task):
-    from .services.postgres_coverage_explorer import execute_coverage_explorer_slice as execute
-    return execute(claimed_task)
-
-
-def recover_one_explorer_run():
-    from .services.postgres_coverage_recovery import recover_one_explorer_run as execute
-    return execute()
-
-
-def execute_threat_report_audit(claimed_task):
-    from .services.threat_pipeline import execute_threat_report_audit as execute
-    return execute(claimed_task)
-
-
-def execute_threat_scan_slice(claimed_task):
-    from .services.threat_pipeline import execute_threat_scan_slice as execute
-    return execute(claimed_task)
-
-
-def execute_threat_backfill_slice(claimed_task):
-    from .services.threat_pipeline import execute_threat_backfill_slice as execute
-    return execute(claimed_task)
-
-
-def execute_threat_validation(claimed_task):
-    from .services.threat_pipeline import execute_threat_validation as execute
-    return execute(claimed_task)
 
 
 def execute_game_sync_record_slice(claimed_task):
@@ -200,45 +99,12 @@ def execute_game_sync_window_slice(claimed_task):
 # These handlers publish bounded receipts; none starts a search or traversal.
 # Maia submit aggregates a whole run; threat report fans out to all candidates.
 # Their source receipts remain durable, but execution needs normal admission.
-_CONTROL_BACKGROUND_COMMANDS = frozenset({
-    'coverage.maia.heartbeat', 'coverage.maia.release', 'coverage.maia.failure',
-    'threat.analysis.failure',
-    'threat.analysis.release', 'games.analysis.position.report',
-    'games.analysis.position.release', 'games.analysis.failure',
-    'games.analysis.heartbeat', 'games.analysis.release',
-    'games.analysis.finalize.admit',
-})
+_CONTROL_BACKGROUND_COMMANDS = frozenset()
 _SUPPORTED_BACKGROUND_KINDS = (
-    "product_game_refresh",
-    "daily_queue",
-    "defensive_rubric_audit",
-    "defensive_admission",
-    "repertoire_game_refresh",
-    "defensive_threat_report_audit",
-    "defensive_threat_scan",
-    "defensive_threat_backfill",
-    "defensive_threat_validate",
-    "next_opponent_profile",
-    "game_sync_record",
-    "game_derivation_positions",
-    "game_derivation_compare",
-    "game_derivation_findings",
-    "game_derivation_misses",
-    "game_derivation_events",
-    "game_derivation_features",
-    "game_derivation_priorities",
-    "game_sync_window",
-    "opening_graph_rebuild",
-    prefix_transition_application.TASK_KIND,
-    "integrity_scan",
-    "opening_segmentation",
-    "discovery_recommendation",
-    "discovery_admission",
-    "coverage_seed",
-    "canonical_prefix_preview",
-    "coverage_explorer",
-    "game_analysis_publish",
-    "game_analysis_followup",
+    "product_game_refresh", "daily_queue", "repertoire_game_refresh",
+    "game_sync_record", "game_sync_window", "opening_graph_rebuild",
+    prefix_transition_application.TASK_KIND, "integrity_scan",
+    "opening_segmentation", "canonical_prefix_preview",
 )
 
 
@@ -301,6 +167,8 @@ def execute_foreground_command(
 
 
 def _execute_foreground_command(self, operation_id, command_name, payload, expected_retry_cycle=None):
+    if is_retired_command(command_name):
+        return None
     submitted_at = (self.request.headers or {}).get("submitted_at")
     queue_wait = max(0.0, time.time() - float(submitted_at)) if submitted_at else None
     started = time.perf_counter()
@@ -322,7 +190,6 @@ def _execute_foreground_command(self, operation_id, command_name, payload, expec
                 return None
             resolve_worker_game_sync_command(command_name)
             resolve_worker_game_command(command_name)
-            resolve_worker_legacy_evidence(command_name)
             resolve_worker_product_feedback(command_name)
             result = execute_command(operation_id, command_name, saved_payload,
                                      attempt_token=attempt_token)
@@ -352,6 +219,8 @@ def execute_background_command(
 ) -> Any:
     """Execute an external worker callback in a bounded background section."""
 
+    if is_retired_command(command_name):
+        return None
     with measure_handler("other", (self.request.headers or {}).get("submitted_at")), \
             activity_gate.background_job(command_name, operation_id, yielding=True):
         # Persist the source envelope even when discretionary execution is denied.
@@ -371,7 +240,6 @@ def execute_background_command(
                 activity_gate.check_background_admission()
                 resolve_worker_game_sync_command(command_name)
                 resolve_worker_game_command(command_name)
-                resolve_worker_legacy_evidence(command_name)
                 resolve_worker_product_feedback(command_name)
                 return execute_command(operation_id, command_name, saved_payload,
                                        background=True, attempt_token=attempt_token)
@@ -490,7 +358,7 @@ def recover_operations() -> bool:
         study_only_mode = study_only_enabled()
         operation = claim_recoverable_operation(
             allowed_background_commands=STUDY_BACKGROUND_COMMANDS if study_only_mode else None,
-            paused_commands=PAUSED_IMPORT_COMMANDS if study_only_mode else (),
+            paused_commands=RETIRED_COMMANDS | (PAUSED_IMPORT_COMMANDS if study_only_mode else frozenset()),
             background_only=True,
         )
     if operation is None:
@@ -513,7 +381,7 @@ def recover_study_operations() -> bool:
     """Recover one foreground receipt without optional worker/idle dependence."""
     with activity_gate.background_job('operation_recovery', 'essential', yielding=True), activity_gate.background_control():
         operation = claim_recoverable_operation(allowed_background_commands=(),
-            paused_commands=PAUSED_IMPORT_COMMANDS if study_only_enabled() else ())
+            paused_commands=RETIRED_COMMANDS | (PAUSED_IMPORT_COMMANDS if study_only_enabled() else frozenset()))
     if operation is None:
         return False
     if operation['background']:
@@ -572,18 +440,6 @@ def progress_study_queue() -> bool:
         return _execute_claimed_background_slice(claimed, None, queue_refresh_wake=True)
 
 
-@celery_app.task(name="app.tasks.recover_active_coverage", base=CoalescedWakeTask)
-def recover_active_coverage() -> bool:
-    if study_only_enabled():
-        return False
-    try:
-        with activity_gate.background_job("coverage_recovery", "one-run", yielding=True):
-            activity_gate.check_background_admission()
-            return recover_one_explorer_run()
-    except BackgroundAdmissionDeferred:
-        return False
-
-
 @celery_app.task(name="app.tasks.execute_background_slice", bind=True)
 def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
     """Process fenced legacy deliveries already queued before execution-time claims."""
@@ -602,35 +458,17 @@ def _execute_claimed_background_slice(
     background_handlers = {
         "product_game_refresh": refresh_slice,
         "daily_queue": execute_postgres_queue_refresh_slice,
-        "defensive_rubric_audit": execute_defense_rubric_audit_slice,
-        "defensive_admission": execute_defense_admission_slice,
         "repertoire_game_refresh": execute_repertoire_game_refresh_slice,
-        "defensive_threat_report_audit": execute_threat_report_audit,
-        "defensive_threat_scan": execute_threat_scan_slice,
-        "defensive_threat_backfill": execute_threat_backfill_slice,
-        "defensive_threat_validate": execute_threat_validation,
-        "next_opponent_profile": execute_profile_slice,
         "game_sync_record": execute_game_sync_record_slice,
-        "game_derivation_positions": execute_game_position_index_slice,
-        "game_derivation_compare": execute_game_repertoire_comparison_slice,
-        "game_derivation_findings": execute_game_findings_slice,
-        "game_derivation_misses": execute_game_miss_slice,
-        "game_derivation_events": execute_game_event_slice,
-        "game_derivation_features": execute_game_feature_slice,
-        "game_derivation_priorities": execute_game_priority_handoff_slice,
         "game_sync_window": execute_game_sync_window_slice,
         "opening_graph_rebuild": execute_postgres_opening_graph_slice,
         prefix_transition_application.TASK_KIND: prefix_transition_application.execute_application_slice,
         "integrity_scan": execute_postgres_integrity_slice,
         "opening_segmentation": execute_segmentation_slice,
-        "discovery_recommendation": execute_recommendation_request_slice,
-        "discovery_admission": execute_admission_intent_slice,
-        "coverage_seed": execute_coverage_seed_slice,
         "canonical_prefix_preview": execute_prefix_preview_slice,
-        "coverage_explorer": execute_coverage_explorer_slice,
-        "game_analysis_publish": execute_game_analysis_publication_slice,
-        "game_analysis_followup": execute_game_analysis_followup_slice,
     }
+    if claimed_task["kind"] in RETIRED_TASK_KINDS:
+        return False
     handler = background_handlers.get(claimed_task["kind"])
     if handler is None:
         raise ValueError(f"Unported background handler: {claimed_task['kind']}")
@@ -645,8 +483,6 @@ def _execute_claimed_background_slice(
                     defer_task_for_foreground(claimed_task)
                     return False
                 claimed_task={**claimed_task,'explicit_import_preparation':True}
-            if defer_paused_defensive_task(claimed_task):
-                return False
             if not current_delivery(claimed_task):
                 record_stale_delivery(claimed_task)
                 return False
@@ -720,5 +556,3 @@ def _execute_claimed_background_slice(
         except BrokerUnavailable:
             _LOGGER.exception("Could not wake background work; periodic polling will retry")
     return more_work
-
-from . import opening_segmentation_api  # noqa: F401 - registers advisory commands

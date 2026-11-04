@@ -38,16 +38,11 @@ celery_app.conf.update(
         "app.tasks.poll_background_tasks": {"queue": "background"},
         "app.tasks.recover_operations": {"queue": "background"},
         "app.tasks.recover_study_operations": {"queue": "foreground"},
-        "app.tasks.recover_active_coverage": {"queue": "background"},
     },
     beat_schedule={
         "poll-durable-background-tasks": {
             "task": "app.tasks.poll_background_tasks",
             "schedule": 1.0,
-        },
-        "recover-active-coverage": {
-            "task": "app.tasks.recover_active_coverage",
-            "schedule": 30.0,
         },
         "recover-essential-study-operations": {
             "task": "app.tasks.recover_study_operations",

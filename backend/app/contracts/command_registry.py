@@ -73,3 +73,37 @@ class CommandRegistry:
         callback = self._after_commit.get(name)
         if callback is not None:
             callback(result)
+
+# Immutable historical names: these envelopes may still be in the broker or
+# receipt table. Unknown and mixed commands are deliberately not classified.
+RETIRED_COMMANDS = frozenset({
+    'defense.recognition.submit', 'defense.attempt.submit', 'defense.candidate.change',
+    'endgames.template.create', 'endgames.attempt.create',
+    'game_findings.curate', 'game_findings.decide', 'game_findings.card.save',
+    'analysis.paste.commit', 'defensive.audit', 'defensive.backfill',
+    'coverage.refresh.request', 'discovery.accept',
+    'coverage.maia.claim', 'coverage.maia.heartbeat', 'coverage.maia.release',
+    'coverage.maia.failure', 'coverage.maia.submit',
+    'threat.analysis.claim', 'threat.analysis.report', 'threat.analysis.failure',
+    'threat.analysis.release', 'threat.analysis.retry',
+    'games.defensive_threats.refresh',
+    'games.analysis.claim', 'games.analysis.position.claim', 'games.analysis.position.report',
+    'games.analysis.position.release', 'games.analysis.failure', 'games.analysis.heartbeat',
+    'games.analysis.release', 'games.analysis.retry', 'games.analysis.repair_timeout',
+    'games.analysis.repair_provenance', 'games.analysis.finalize.admit', 'games.analysis.manual.admit',
+    'game_evidence.receive_legacy', 'game_evidence.admit_legacy',
+    'opening.segmentation.refresh', 'opening.segmentation.preference',
+    'studies.chapters.create', 'studies.chapters.reorder', 'studies.chapters.rename',
+})
+RETIRED_TASK_KINDS = frozenset({
+    'defensive_rubric_audit', 'defensive_admission', 'defensive_threat_report_audit',
+    'defensive_threat_scan', 'defensive_threat_backfill', 'defensive_threat_validate',
+    'next_opponent_profile', 'game_derivation_positions', 'game_derivation_compare',
+    'game_derivation_findings', 'game_derivation_misses', 'game_derivation_events',
+    'game_derivation_features', 'game_derivation_priorities', 'discovery_recommendation',
+    'discovery_admission', 'coverage_seed', 'coverage_explorer',
+    'game_analysis_publish', 'game_analysis_followup',
+})
+
+def is_retired_command(name: str) -> bool:
+    return name in RETIRED_COMMANDS

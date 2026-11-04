@@ -298,32 +298,12 @@ def test_foreground_deferral_cannot_overwrite_new_generation(dispatch_store):
     assert current['attempt_count'] == 0 and current['lease_token'] is None
 
 
-def test_accepted_background_receipt_remains_prompt_during_foreground(dispatch_store, monkeypatch):
-    observed = []
-    def record(*args, **kwargs):
-        with database.connection(background=True):
-            observed.append('receipt')
-        return True, {}, 'owned-attempt', 1
-    def publish(*args, **kwargs):
-        with database.connection(background=True):
-            observed.append('publication')
-        return {'accepted': True}
-    monkeypatch.setattr(tasks, 'record_operation_attempt', record)
-    monkeypatch.setattr(tasks, 'execute_command', publish)
-    with tasks.activity_gate.foreground():
-        assert tasks.execute_background_command.run('report', 'games.analysis.position.report', {}) == {'accepted': True}
-    assert observed == ['receipt', 'publication']
-
-
-def test_discretionary_background_command_retains_receipt_without_consuming_failure(dispatch_store, monkeypatch):
-    deferred = []
-    monkeypatch.setattr(tasks, 'record_operation_attempt', lambda *args, **kwargs: (True, {}, 'owned', 1))
-    monkeypatch.setattr(tasks, 'execute_command', lambda *args, **kwargs: pytest.fail('denied calculation'))
-    monkeypatch.setattr(tasks, 'record_operation_retry', lambda *args, **kwargs: pytest.fail('denial is not failure'))
-    monkeypatch.setattr(tasks, 'defer_operation_for_foreground', lambda *args: deferred.append(args))
-    with tasks.activity_gate.foreground():
-        assert tasks.execute_background_command.run('claim', 'games.analysis.position.claim', {}) is None
-    assert deferred == [('claim', 'owned')]
+def test_retired_envelopes_stop_before_attempt_or_retry(monkeypatch):
+    monkeypatch.setattr(tasks, 'record_operation_attempt', lambda *a, **k: pytest.fail('retired attempt'))
+    monkeypatch.setattr(tasks, 'record_operation_retry', lambda *a, **k: pytest.fail('retired retry'))
+    assert tasks.execute_background_command.run('old', 'games.analysis.position.report', {}) is None
+    assert tasks.execute_foreground_command.run('old', 'endgames.attempt.create', {}) is None
+    assert tasks.execute_background_slice.run({'kind': 'defensive_threat_scan'}) is False
 
 
 def test_transaction_deadline_bookkeeping_does_not_wait_for_raced_foreground(dispatch_store, monkeypatch):
@@ -436,7 +416,7 @@ def test_foreground_receipt_recovery_uses_existing_essential_only_filter_and_ori
     monkeypatch.setattr(tasks.celery_app, 'send_task', lambda *args, **kwargs: deliveries.append((args, kwargs)))
     with tasks.activity_gate.foreground():
         assert tasks.recover_study_operations.run()
-    assert claims == [dict(allowed_background_commands=(), paused_commands=tasks.PAUSED_IMPORT_COMMANDS)]
+    assert claims == [dict(allowed_background_commands=(), paused_commands=tasks.RETIRED_COMMANDS | tasks.PAUSED_IMPORT_COMMANDS)]
     assert deliveries[0][0] == ('app.tasks.execute_foreground_command',)
     assert deliveries[0][1]['queue'] == 'foreground'
     assert deliveries[0][1]['args'] == ['original-operation', 'cards.review', {'original':'bytes'}]
@@ -512,7 +492,7 @@ def test_generic_receipt_recovery_reserves_only_background_identity(monkeypatch,
     assert tasks.recover_operations.run()
     assert claims == [dict(background_only=True,
         allowed_background_commands=tasks.STUDY_BACKGROUND_COMMANDS if study_only else None,
-        paused_commands=tasks.PAUSED_IMPORT_COMMANDS if study_only else ())]
+        paused_commands=tasks.RETIRED_COMMANDS | (tasks.PAUSED_IMPORT_COMMANDS if study_only else frozenset()))]
     assert deliveries[0][0] == ('app.tasks.execute_background_command',)
     assert deliveries[0][1]['task_id']=='original-background'
     assert deliveries[0][1]['args']==['original-background','game_evidence.product_accept',{'original':'bytes'}]

@@ -36,71 +36,10 @@ assert "app.canonical_prefix_api" not in sys.modules
     subprocess.run([sys.executable, '-c', script], env=os.environ.copy(), check=True, timeout=20)
 
 
-def test_engine_fairness_fixture_preserves_later_worker_command_resolution():
-    script = '''
-import importlib.abc
-import os
-import socket
-import subprocess
-import sys
-from contextlib import contextmanager
-from unittest.mock import patch
-import psycopg
-class RejectMain(importlib.abc.MetaPathFinder):
-    def find_spec(self, fullname, path=None, target=None):
-        if fullname == "app.main":
-            raise AssertionError("engine fixture imported app.main")
-def forbidden(*args, **kwargs):
-    raise AssertionError("registration proof attempted database, network or provider execution")
-sys.meta_path.insert(0, RejectMain())
-socket.socket.connect = forbidden
-socket.create_connection = forbidden
-subprocess.Popen = forbidden
-psycopg.connect = forbidden
-from database.tests import check_postgres_engine_fairness as engine_fixture
-from database.tests import check_postgres_graph_retention as fixtures
-from app import command_gateway, game_analysis_commands
-from app.product_composition.worker_game_commands import resolve_worker_game_command
-from tempo_legacy_database.infrastructure import database_admission
-
-class FixtureBoundaryReached(Exception):
-    pass
-parent_url = "postgresql://unused.invalid/registration-proof"
-@contextmanager
-def stop_before_database():
-    assert fixtures.DATABASE_URL == parent_url
-    assert database_admission() is engine_fixture.activity_gate
-    raise FixtureBoundaryReached
-    yield
-with patch.dict(os.environ, {"TEMPO_TEST_INSTANCE": "disposable"}), patch.object(
-        fixtures, "owned_fixture_database", stop_before_database):
-    try:
-        engine_fixture.proof_engine_fairness(parent_url)
-    except FixtureBoundaryReached:
-        pass
-    else:
-        raise AssertionError("engine proof did not reach its owned database boundary")
-
-expected = {
-    "games.analysis.position.claim": game_analysis_commands.claim_game_analysis_position,
-    "games.analysis.position.release": game_analysis_commands.release_position_report,
-    "games.analysis.position.report": game_analysis_commands.publish_position_report,
-}
-handlers = command_gateway._handlers
-assert {name for name in handlers if name.startswith("games.analysis.")} == set(expected)
-for name, handler in expected.items():
-    assert handlers[name] is handler
-    resolve_worker_game_command(name)
-    assert handlers[name] is handler
-assert not command_gateway.is_command_registered("games.analysis.finalize.admit")
-resolve_worker_game_command("games.analysis.finalize.admit")
-from app import game_analysis_publication
-expected["games.analysis.finalize.admit"] = game_analysis_publication.admit_game_analysis_publication
-for _ in range(2):
-    for name, handler in expected.items():
+def test_retired_game_commands_are_not_lazy_loaded():
+    from app.product_composition.worker_game_commands import resolve_worker_game_command
+    from app.command_gateway import is_command_registered
+    for name in ('games.analysis.position.claim', 'games.analysis.finalize.admit',
+                 'games.defensive_threats.refresh'):
         resolve_worker_game_command(name)
-        assert handlers[name] is handler
-assert not command_gateway.is_command_registered("games.analysis.manual.admit")
-assert "app.main" not in sys.modules
-'''
-    subprocess.run([sys.executable, '-c', script], env=os.environ.copy(), check=True, timeout=20)
+        assert not is_command_registered(name)
