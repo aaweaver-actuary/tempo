@@ -142,3 +142,23 @@ def test_staged_postgres_mutations_pass_the_runtime_write_guard(monkeypatch):
         return blocked
 
     assert asyncio.run(probe_routes()) == []
+
+
+def test_retired_routes_do_not_dispatch_or_match_game_wildcard(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import command_dispatch
+
+    def unexpected_dispatch(*args, **kwargs):
+        raise AssertionError("retired request dispatched a command")
+
+    monkeypatch.setattr(command_dispatch, "dispatch_command", unexpected_dispatch)
+    client = TestClient(main.app)
+    for method, path in (
+        ("GET", "/api/games/example/analysis"),
+        ("GET", "/api/games/next-opponent-profile"),
+        ("POST", "/api/endgames/probe"),
+        ("POST", "/api/product/game-history/start"),
+        ("POST", "/api/repertoire-coverage/maia/claim"),
+    ):
+        response = client.request(method, path)
+        assert response.status_code in (404, 405), (method, path, response.status_code)
