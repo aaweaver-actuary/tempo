@@ -1,23 +1,4 @@
-"""Analysis progress and manual-retry rows on the caller's locked transaction."""
-
-
-def analysis_lease_for_update(database, work_id: str):
-    return database.execute_native(
-        "SELECT analysis_version,analysis_evidence_version,status,lease_id "
-        "FROM game_analysis_jobs WHERE game_id=%s FOR UPDATE", (work_id,),
-    ).fetchone()
-
-
-def save_analysis_progress(database, work_id: str, generation: str, phase: str,
-                           completed: int, total: int, updated_at: str) -> None:
-    database.execute_native(
-        "INSERT INTO background_activity(source,work_id,generation_key,phase,completed_units,total_units,updated_at) "
-        "VALUES('game_analysis',%s,%s,%s,%s,%s,%s) "
-        "ON CONFLICT(source,work_id) DO UPDATE SET generation_key=excluded.generation_key,"
-        "phase=excluded.phase,completed_units=excluded.completed_units,"
-        "total_units=excluded.total_units,updated_at=excluded.updated_at",
-        (work_id, generation, phase, completed, total, updated_at),
-    )
+"""Manual-retry rows on the caller's locked transaction."""
 
 
 def failed_task_for_update(database, task_id: str):
