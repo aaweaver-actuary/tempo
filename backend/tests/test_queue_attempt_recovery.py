@@ -430,3 +430,52 @@ def test_rejected_opening_save_does_not_refresh_progression_or_create_exposure(a
     with database.connection() as connection:
         assert connection.execute('SELECT COUNT(*) FROM reviews').fetchone()[0] == 0
         assert connection.execute("SELECT COUNT(*) FROM background_tasks WHERE kind='daily_queue'").fetchone()[0] == 0
+
+
+def test_retired_queue_cards_hold_without_stranding_other_study_or_tactics(admitted_attempt):
+    from tempo_legacy_database.adapters.http_composition import queue_projection
+    from tempo_legacy_database.adapters.queue_refresh.application import eligibility
+    from app.services.real_game_feedback import MISS_REASON
+
+    day = date.today().isoformat()
+    with database.connection() as connection:
+        for card_id, content_type, origin, position in (
+            ('retired-defense', 'defense', None, -4),
+            ('retired-endgame', 'endgame', None, -3),
+            ('retired-origin', 'tactic', 'defense:old', -2),
+            ('defense-theme-tactic', 'tactic', None, -1),
+        ):
+            connection.execute(
+                "INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type) "
+                "SELECT ?,repertoire_id,kind,start_fen,moves_json,state,due_date,? FROM cards WHERE id='recovery-card'",
+                (card_id, content_type),
+            )
+            connection.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_source) VALUES(?,?,?,?)",
+                               (day, card_id, position, origin))
+        # Filtering also applies before a pending persisted block_defense phase resumes.
+        assert [row['id'] for row in queue_projection.queue_rows(connection, day, None, miss_reason=MISS_REASON)] == [
+            'defense-theme-tactic', 'recovery-card']
+        assert queue_projection.available_count(connection, day, miss_reason=MISS_REASON) == 2
+        assert {row['card_id'] for row in queue_projection.queue_diagnostics(connection, day)} >= {
+            'retired-defense', 'retired-endgame', 'retired-origin'}
+        eligibility._block_unapproved_defense_queue_entries(connection, day)
+        eligibility._restore_eligible_due_queue_entries(connection, day)
+        states = dict(connection.execute("SELECT card_id,status FROM daily_queue WHERE queue_date=?", (day,)))
+        assert all(states[card] == 'blocked' for card in ('retired-defense', 'retired-endgame', 'retired-origin'))
+        assert states['defense-theme-tactic'] == states['recovery-card'] == 'queued'
+
+
+def test_retired_queue_hold_preserves_issued_attempt_and_receipt(admitted_attempt):
+    from tempo_legacy_database.adapters.queue_refresh.application import eligibility
+    queue_entry_id, request = admitted_attempt
+    saved = main._apply_review('recovery-card', request)
+    with database.connection() as connection:
+        connection.execute("UPDATE daily_queue SET status='queued' WHERE id=?", (queue_entry_id,))
+        connection.execute("UPDATE cards SET content_type='defense' WHERE id='recovery-card'")
+        connection.execute("UPDATE queue_attempt_origins SET issued_as_head=1 WHERE queue_entry_id=?", (queue_entry_id,))
+        before = dict(connection.execute("SELECT * FROM queue_attempt_origins WHERE queue_entry_id=?", (queue_entry_id,)).fetchone())
+        eligibility._block_unapproved_defense_queue_entries(connection, date.today().isoformat())
+        assert connection.execute("SELECT status FROM daily_queue WHERE id=?", (queue_entry_id,)).fetchone()[0] == 'queued'
+        assert dict(connection.execute("SELECT * FROM queue_attempt_origins WHERE queue_entry_id=?", (queue_entry_id,)).fetchone()) == before
+    assert saved['persisted'] is True
+    assert main._apply_review('recovery-card', request) == saved

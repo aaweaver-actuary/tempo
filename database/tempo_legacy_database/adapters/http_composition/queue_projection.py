@@ -42,11 +42,22 @@ def queue_projection(database, day: str):
     ).fetchone()
 
 
+# Retired source identities remain held even if their card was later retyped.
+_RETIRED_QUEUE_PREDICATE = """ AND c.content_type NOT IN ('defense','endgame')
+    AND substr(COALESCE(q.admission_source,''),1,8) != 'defense:'
+    AND substr(COALESCE(q.admission_source,''),1,8) != 'endgame:'"""
+
 def queue_diagnostics(database, day: str):
     rows = database.execute(
         "SELECT card_id,message FROM queue_projection_diagnostics WHERE queue_date=? ORDER BY card_id",
         (day,),
     ).fetchall()
+    rows = [*rows, *database.execute(
+        """SELECT DISTINCT c.id AS card_id, 'Retired Defense or Endgames attempt held' AS message
+           FROM daily_queue q JOIN cards c ON c.id=q.card_id
+           WHERE q.queue_date=? AND q.status IN ('queued','blocked') AND NOT (1=1 """
+        + _RETIRED_QUEUE_PREDICATE + ")", (day,),
+    ).fetchall()]
     if isinstance(database, postgres_store.PostgresConnection):
         from .retained_position_availability import retained_holds
         rows = [*rows, *retained_holds(database, day)]
@@ -105,7 +116,7 @@ def queue_rows(database, day: str, limit: int | None, *, miss_reason: str):
                            WHERE q.queue_date=? AND q.status='queued' AND c.archived=0
                              AND c.superseded_by IS NULL
                              AND NOT EXISTS(SELECT 1 FROM deleted_cards deleted WHERE deleted.card_id=c.id)
-                             AND (c.content_type!='defense' OR (SELECT include_defensive_cards_in_daily_stack FROM settings WHERE id=1)=1)
+                             """ + _RETIRED_QUEUE_PREDICATE + """
                              AND COALESCE(c.pending_validation,0)=0
                              AND (c.content_type!='study_exercise' OR
                                   (exercise.status='published' AND study.archived=0
@@ -200,7 +211,7 @@ def encounter_rows(database, fen_key_batch, badge_cutoff):
 def available_count(database, day: str, *, miss_reason: str):
     _interactive_read_profile(database)
     return database.execute(
-        "SELECT COUNT(*) FROM (" + availability.available_attempt_sql(miss_reason) + ") eligible_queue",
+        "SELECT COUNT(*) FROM (" + availability.available_attempt_sql(miss_reason) + _RETIRED_QUEUE_PREDICATE + ") eligible_queue",
         (day,),
     ).fetchone()[0]
 

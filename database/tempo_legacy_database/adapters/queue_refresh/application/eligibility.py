@@ -133,15 +133,17 @@ def _block_ineligible_opening_queue_entries(db, day):
 
 
 def _block_unapproved_defense_queue_entries(db, day):
+    # Keep the persisted phase name for in-flight refresh checkpoints. Never
+    # change an issued attempt; its original receipt remains saveable.
     db.execute(
         """UPDATE daily_queue SET status='blocked'
-           WHERE queue_date=? AND status='queued' AND card_id IN (
-               SELECT card.id FROM cards card
-               JOIN threat_training_candidates candidate ON candidate.card_id=card.id
-               WHERE card.content_type='defense' AND
-                 (card.pending_validation=1 OR candidate.approved_at IS NULL
-                  OR candidate.validation_state NOT IN ('engine_supported','validated_control'))
-           )""",
+           WHERE queue_date=? AND status='queued'
+             AND (card_id IN (SELECT id FROM cards WHERE content_type IN ('defense','endgame'))
+                  OR substr(COALESCE(admission_source,''),1,8) = 'defense:'
+                  OR substr(COALESCE(admission_source,''),1,8) = 'endgame:')
+             AND NOT EXISTS(SELECT 1 FROM queue_attempt_origins origin
+                 WHERE origin.queue_entry_id=daily_queue.id AND origin.card_id=daily_queue.card_id
+                   AND origin.issued_as_head=1)""",
         (day,),
     )
 
@@ -154,12 +156,9 @@ def _restore_eligible_due_queue_entries(db, day):
            WHERE queue_date=? AND status='blocked' AND card_id IN (
                SELECT c.id FROM cards c
            WHERE c.archived=0 AND c.due_date<=? AND COALESCE(c.pending_validation,0)=0
-                 AND (c.content_type!='defense' OR EXISTS(
-                     SELECT 1 FROM threat_training_candidates candidate
-                     WHERE candidate.card_id=c.id AND candidate.approved_at IS NOT NULL
-                       AND candidate.validation_state IN ('engine_supported','validated_control')
-                       AND candidate.superseded_at IS NULL
-                 ))
+                 AND c.content_type NOT IN ('defense','endgame')
+                 AND substr(COALESCE(daily_queue.admission_source,''),1,8) != 'defense:'
+                 AND substr(COALESCE(daily_queue.admission_source,''),1,8) != 'endgame:'
                  AND EXISTS(
                      SELECT 1 FROM repertoires eligible
                      WHERE (eligible.id=c.repertoire_id OR EXISTS(
@@ -183,6 +182,8 @@ def _restore_published_study_queue_entries(db, day):
              JOIN study_exercises exercise ON exercise.id=card.study_exercise_id
              JOIN studies study ON study.id=exercise.study_id
              WHERE card.content_type='study_exercise' AND card.archived=0
+               AND substr(COALESCE(daily_queue.admission_source,''),1,8) != 'defense:'
+               AND substr(COALESCE(daily_queue.admission_source,''),1,8) != 'endgame:'
                AND card.pending_validation=0 AND study.archived=0
                AND exercise.status='published' AND card.due_date<=?
                AND NOT EXISTS(SELECT 1 FROM study_sibling_burials burial
