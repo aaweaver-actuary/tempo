@@ -6864,3 +6864,18 @@ Both native cases passed together on PostgreSQL18.6/schema60, source hashes
 matched the final commit despite a retained precommit runner revision, and
 owned resources were removed. Administrator trigger/DDL bypass, full source
 finality and target atomic effect/receipt/checkpoint remain separate gates.
+
+## Historical authored origin retention (source061)
+
+`database/tests/position_study/test_content_origin_postgres.py` owns two pure
+same-read/detached-facts and opt-in preparation cases plus one actual PostgreSQL
+historical-origin lifecycle case. The finite owned native selection ran all
+three with complete=true and cleanup; it preserves exact source digest versus
+archive hash, physical-only change as explicitly historical/ineligible, exact
+prepared-byte replay after authored edit, changed-request conflict, new-export
+authored hold, rollback and immutable UPDATE denial. Earlier fixture restoration
+failures remain retained; source authority was preserved instead of rewinding
+revision/epoch. Separate source parity had one existing native case skipped for
+its absent explicit disposable DSN and is not claimed complete. Full Content
+projection, authority anchor, physical currentness and service-recreation replay
+are not established.
