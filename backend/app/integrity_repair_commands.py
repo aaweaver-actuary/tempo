@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from .services.repertoire_game_refresh import refresh_game_publications_after_mutation
 from .command_gateway import register_command
-from app.repertoire.changes.application import validate_source_rows
+from app.repertoire.changes.application import validate_repair_source_rows
 from app.repertoire.changes.ports import ChangeError
 from tempo_legacy_database.adapters.authored_repertoires import product_changes as change_storage
 from tempo_legacy_database.adapters.authored_repertoires import integrity_commands as storage
@@ -81,7 +81,7 @@ def resolve_integrity_issue(
         proposed = tuple(dict(row, moves_json=json.dumps(replacements[row["source_id"]]))
                          if row["source_id"] in replacements else row
                          for row in sources if row["source_id"] not in removed)
-        validate_source_rows(repertoire_id, proposed)
+        validate_repair_source_rows(repertoire_id, sources, proposed)
     except ChangeError as error:
         raise HTTPException(409, str(error)) from error
     admitted_routes = []
@@ -94,7 +94,7 @@ def resolve_integrity_issue(
     for card_identifier in prepared.unsupported_card_ids:
         _archive_unsupported_card(database, repertoire_id, card_identifier)
     try:
-        validate_source_rows(repertoire_id, change_storage.lock_sources(database, repertoire_id))
+        validate_repair_source_rows(repertoire_id, sources, change_storage.lock_sources(database, repertoire_id))
     except ChangeError as error:
         raise HTTPException(409, str(error)) from error
     for validated_route in admitted_routes:

@@ -367,8 +367,8 @@ class RepertoireChanges:
         return self.decide(decision)
 
 
-def validate_source_rows(repertoire_id: str, rows: tuple[dict, ...]) -> None:
-    """Guard old import/edit commands using the same public exact index.
+def _source_rows_report(repertoire_id: str, rows: tuple[dict, ...]) -> ConflictReport:
+    """Audit locked retained sources using the same public exact index.
 
     Caller owns current source read + repertoire row lock and supplies the
     proposed final source set. The guard does no I/O and creates no card mapping.
@@ -397,7 +397,25 @@ def validate_source_rows(repertoire_id: str, rows: tuple[dict, ...]) -> None:
                         for item in routes], decision_presentations=[])))
     except ValueError as error:
         raise ChangeError("invalid_source") from error
-    require_valid_change(value)
+    return conflict_report(value)
+
+
+def validate_source_rows(repertoire_id: str, rows: tuple[dict, ...]) -> None:
+    report = _source_rows_report(repertoire_id, rows)
+    if not report.clean:
+        raise ChangeError("conflict_pending_resolution" if report.conflicts else "invalid_source")
+
+
+def validate_repair_source_rows(repertoire_id: str, before: tuple[dict, ...], after: tuple[dict, ...]) -> None:
+    """Allow an exact conflict removal while rejecting every new or changed conflict."""
+    original = _source_rows_report(repertoire_id, before)
+    result = _source_rows_report(repertoire_id, after)
+    if any(item.code != "own_response_conflict" for report in (original, result) for item in report.diagnostics):
+        raise ChangeError("invalid_source")
+    old = {(item.position, item.responses_uci) for item in original.conflicts}
+    new = {(item.position, item.responses_uci) for item in result.conflicts}
+    if (old and not new < old) or (not old and new):
+        raise ChangeError("conflict_pending_resolution")
 
 
 def verify_retained_publication(change: ValidatedChange, published: RepertoireSnapshot) -> None:

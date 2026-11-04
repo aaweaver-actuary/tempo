@@ -508,7 +508,7 @@ def test_native_mutation_validates_actual_sources_before_receipt(case, monkeypat
     from app import card_commands, integrity_repair_commands
     from app import command_gateway as gateway
     from app.chess.cards import card_id
-    from app.repertoire.changes.application import validate_source_rows
+    from app.repertoire.changes.application import validate_source_rows, validate_repair_source_rows
     from app.services import postgres_opening_graph, redis_admission_gate
     from tempo_legacy_database.adapters import postgres_store
     from tempo_legacy_database.adapters.authored_repertoires.product_changes import lock_sources
@@ -630,7 +630,13 @@ def test_native_mutation_validates_actual_sources_before_receipt(case, monkeypat
         return validate_source_rows(repertoire_id, rows)
 
     command_module = card_commands if card_revision else integrity_repair_commands
-    monkeypatch.setattr(command_module, 'validate_source_rows', observe_validation)
+    if card_revision:
+        monkeypatch.setattr(command_module, 'validate_source_rows', observe_validation)
+    else:
+        def observe_repair_validation(repertoire_id, before_rows, after_rows):
+            validations.append((repertoire_id, tuple(dict(row) for row in after_rows)))
+            return validate_repair_source_rows(repertoire_id, before_rows, after_rows)
+        monkeypatch.setattr(command_module, 'validate_repair_source_rows', observe_repair_validation)
     if card_revision:
         command = 'cards.revise'
         payload = dict(card_id=old_card, request=dict(starting_fen=starting_fen,
@@ -695,3 +701,29 @@ def test_native_mutation_validates_actual_sources_before_receipt(case, monkeypat
         assert durable_state(database) == (committed if legal else before)
         assert database.execute_native('SELECT count(*) FROM operation_receipts WHERE operation_id=%s',
             (operation,)).fetchone()[0] == 1
+
+
+def test_native_locked_repair_sources_allow_one_existing_conflict_only(case):
+    import chess
+    import json
+    from app.repertoire.changes.application import validate_repair_source_rows
+    from tempo_legacy_database.adapters.authored_repertoires.product_changes import lock_sources
+    from test_product_game_lapse import NOW
+
+    repertoire = 'multi-conflict-' + uuid4().hex
+    other_fen = 'rnbqkb1r/pppppppp/5n2/8/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 2 2'
+    with case.transaction() as database:
+        database.execute_native('INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,%s,%s,%s)',
+                                (repertoire, repertoire, 'synthetic', NOW.isoformat()))
+        for name, fen, move in (('a', chess.STARTING_FEN, 'e2e4'), ('b', chess.STARTING_FEN, 'd2d4'),
+                                ('c', other_fen, 'e2e4'), ('d', other_fen, 'd2d4')):
+            database.execute_native("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(%s,%s,%s,'white',%s,%s,%s)",
+                                    (repertoire + name, repertoire, name, fen, json.dumps([move]), NOW.isoformat()))
+        before = tuple(dict(row) for row in lock_sources(database, repertoire))
+        after = tuple(dict(row, moves_json=json.dumps(['e2e4'])) if row['source_id'] == 'line:' + repertoire + 'b' else row for row in before)
+        validate_repair_source_rows(repertoire, before, after)
+        with pytest.raises(ChangeError, match='conflict_pending_resolution'):
+            validate_repair_source_rows(repertoire, before, before)
+        worsened = after + (dict(after[-1], source_id='line:new', moves_json=json.dumps(['c2c4'])),)
+        with pytest.raises(ChangeError, match='conflict_pending_resolution'):
+            validate_repair_source_rows(repertoire, before, worsened)
