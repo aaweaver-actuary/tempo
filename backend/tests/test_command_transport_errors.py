@@ -239,6 +239,8 @@ def test_opening_checkpoint_http_semantic_rejection_preserves_terminal_receipt(r
     monkeypatch.setattr(main.postgres_store, 'connection',
                         lambda **options: nullcontext(SimpleNamespace(raw=transport, execute_native=source_read)))
     monkeypatch.setitem(command_gateway._handlers, 'opening_evidence.checkpoint', transport.handler)
+    from app.services.postgres_opening_evidence import prepare_standalone_checkpoint
+    monkeypatch.setitem(command_gateway._preparers, 'opening_evidence.checkpoint', prepare_standalone_checkpoint)
     transport.command_name = 'opening_evidence.checkpoint'
     transport.background = True
     transport.deferred = deferred
