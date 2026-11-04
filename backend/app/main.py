@@ -513,7 +513,7 @@ def record_browser_activity(session_id: str = Query(default='legacy', pattern=r'
 # Task identities are retained for repair journals and queue/graph recovery;
 # retired Jobs and optional producer tasks are not a public control surface.
 _RECOVERY_TASK_KINDS = frozenset({
-    "daily_queue", "opening_graph_rebuild", "integrity_repair", "canonical_prefix_preview",
+    "daily_queue", "opening_graph_rebuild", "integrity_repair", "integrity_scan", "canonical_prefix_preview",
 })
 
 
