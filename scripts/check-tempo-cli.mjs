@@ -2,7 +2,7 @@
 // reused from this test invocation; no live product target is adopted.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -124,6 +124,26 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     const tag = service.image ?? `${project}-${name}`;
     images[name] = JSON.parse((await docker(["image", "inspect", tag])).stdout)[0].Id;
   }
+  // A distinct immutable schema-61 set is mandatory: a schema-62 maintenance
+  // image cannot safely jump the populated historical fixture across this cut.
+  const schema61Revision = "4aa0ad1b731402365c1b866a6ba7bed484d2b6ac";
+  const imageFile = environment.TEMPO_LIFECYCLE_SCHEMA61_IMAGES;
+  if (!imageFile) throw new Error("Provide the task-owned schema-61 image manifest before lifecycle mutation.");
+  const schema61 = JSON.parse(readFileSync(imageFile, "utf8"));
+  if (schema61.revision !== schema61Revision) throw new Error("Unexpected schema-61 image revision.");
+  const schema61Images = { ...images };
+  for (const [name, service] of Object.entries(config.services)) {
+    if (!service.build && name !== "game-feedback-worker" && name !== "migration") continue;
+    const file = service.build?.dockerfile;
+    const kind = name === "migration" || file === "Dockerfile.postgres-maintenance" ? "migration"
+      : name === "game-feedback-worker" || file === "backend/Dockerfile" ? "api"
+        : file === "Dockerfile.web" ? "web" : null;
+    if (!kind || !schema61.images?.[kind]) throw new Error(`Missing schema-61 image for ${name}`);
+    const inspected = JSON.parse((await docker(["image", "inspect", schema61.images[kind]])).stdout)[0];
+    if (inspected.Config?.Labels?.["org.opencontainers.image.revision"] !== schema61Revision)
+      throw new Error(`Schema-61 image revision mismatch for ${name}`);
+    schema61Images[name] = inspected.Id;
+  }
   const fixtureImages = join(directory, "fixture-images.json");
   atomicJson(fixtureImages, { services: Object.fromEntries(Object.entries(images).map(([name, image]) => [name, { image }])) });
   composeArguments.push("-f", fixtureImages);
@@ -151,6 +171,7 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     assert.equal(legacyTacticalRow.content_type, "tactics");
     assert.equal(legacyTacticalRow.repertoire_id, "__game_tactics__", "fixture satisfies migration 025's predicate");
     const preparedImages = { revision, images, configFingerprint: configurationFingerprint(config) };
+    const prepared61 = { revision: schema61Revision, images: schema61Images, configFingerprint: configurationFingerprint(config) };
     // Commit the real schema-16 upgrade, then inject an unexpected historical
     // mutation before the genuine verifier reads it. The current ledger must
     // not let the next process skip its original H0 obligation.
@@ -160,14 +181,16 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
         await markHistoryIncorrect(compose);
       return result;
     };
-    const runtime = makeRuntime(target, { run: mutatingRun, stateDirectory, revision, evidence, preparedImages });
+    const runtime = makeRuntime(target, { run: mutatingRun, stateDirectory, revision: schema61Revision,
+      evidence: { commit: schema61Revision, disposable_runner: childProject }, preparedImages: prepared61 });
     await runtime.inspectTarget();
     await assert.rejects(lifecycle("history_mutation_rejected", { recreate: true }, runtime), /Original migration history verification failed/);
     const originalGuard = JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8"));
     assert.equal(originalGuard.state, "pending");
     const failedReceipt = await readLatestMigration(compose);
-    assert.equal(Number(failedReceipt.stdout.trim()), schemaVersionFromSource(readFileSync("database/tempo_legacy_database/ddl/schema_version.py", "utf8")));
-    const retryRuntime = () => makeRuntime(target, { run, stateDirectory, revision, evidence, preparedImages, retry: true });
+    assert.equal(Number(failedReceipt.stdout.trim()), 61);
+    const retryRuntime = () => makeRuntime(target, { run, stateDirectory, revision: schema61Revision,
+      evidence: { commit: schema61Revision, disposable_runner: childProject }, preparedImages: prepared61, retry: true });
     const failedRetry = retryRuntime(); await failedRetry.inspectTarget();
     const retryStart = commandLog.length;
     await assert.rejects(lifecycle("history_retry_rejected", { recreate: false }, failedRetry), /Original migration history verification failed/);
@@ -179,13 +202,74 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     const repairedRetry = retryRuntime(); await repairedRetry.inspectTarget();
     await lifecycle("history_repaired_retry", { recreate: false }, repairedRetry);
     assert.equal(JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8")).state, "verified");
-    const record = JSON.parse(readFileSync(join(stateDirectory, "deployment.json"), "utf8"));
-    assert.equal(record.schema, schemaVersionFromSource(readFileSync("database/tempo_legacy_database/ddl/schema_version.py", "utf8")));
-    assert.equal(record.backup.verified, true);
+    let historicalRecord = JSON.parse(readFileSync(join(stateDirectory, "deployment.json"), "utf8"));
+    assert.equal(historicalRecord.schema, 61);
+    assert.equal(historicalRecord.backup.verified, true);
     assert.equal(JSON.parse(readFileSync(join(stateDirectory, "operation.json"), "utf8")).phase, "ready");
     assert.deepEqual(await readNormalization(), { ...legacyTacticalRow, card_bucket: "tactic", content_type: "tactic" },
       "migration 025 normalizes the same card/queue row and preserves its historical identity");
     assert.deepEqual(await readHistory(), expected, "upgrade preserves original study history while workers may add unrelated receipts");
+
+    // Preserve the duplicate-DDL failure proof on the schema-61 image. The
+    // schema-62 guard intentionally rejects a direct 39-to-62 crossing.
+    await repairedRetry.stopApplications();
+    await compose(["exec", "-T", "postgres", "psql", "-U", "postgres", "-d", "tempo", "-c",
+      "CREATE TABLE cli_lifecycle_ledger_backup (LIKE tempo_schema_migrations INCLUDING ALL); INSERT INTO cli_lifecycle_ledger_backup SELECT * FROM tempo_schema_migrations WHERE version >= 40"]);
+    await forgetMigrationSuffix(repairedRetry);
+    const rejected61 = makeRuntime(target, { run, stateDirectory, revision: schema61Revision,
+      evidence: { commit: schema61Revision, disposable_runner: childProject },
+      preparedImages: prepared61, previous: historicalRecord });
+    await rejected61.inspectTarget();
+    await assert.rejects(lifecycle("historical_migration_rejected", { recreate: true }, rejected61), /already exists/);
+    assert(!(await rejected61.runningServices()).some(name => ["api", "foreground-worker", "background-worker", "web"].includes(name)));
+    assert.deepEqual(await readHistory(), expected, "rejected historical DDL preserves original study history");
+    // The only mutation used to create this fault was the disposable ledger
+    // suffix. Restore its exact known versions, then verify the original guard.
+    await compose(["exec", "-T", "postgres", "psql", "-U", "postgres", "-d", "tempo", "-c",
+      "INSERT INTO tempo_schema_migrations SELECT * FROM cli_lifecycle_ledger_backup; DROP TABLE cli_lifecycle_ledger_backup"]);
+    const recovered61 = retryRuntime(); await recovered61.inspectTarget();
+    await lifecycle("historical_ledger_recovered", { recreate: false }, recovered61);
+    historicalRecord = JSON.parse(readFileSync(join(stateDirectory, "deployment.json"), "utf8"));
+    assert.equal(historicalRecord.schema, 61);
+    assert.deepEqual(await readHistory(), expected);
+
+    // Cross the destructive cut with the same registered target and an original
+    // witness. Interrupt after capture, test a missing witness, then resume once.
+    let interruptedCapture = false;
+    const cutRun = async (command, args, options) => {
+      const result = await run(command, args, options);
+      if (args.includes("--cut62-capture") && !interruptedCapture) {
+        interruptedCapture = true; throw new Error("injected post-capture interruption");
+      }
+      return result;
+    };
+    const cutRuntime = makeRuntime(target, { run: cutRun, stateDirectory, revision, evidence, preparedImages, previous: historicalRecord });
+    await cutRuntime.inspectTarget();
+    await assert.rejects(lifecycle("cut62_interrupted_capture", { recreate: true }, cutRuntime), /injected post-capture interruption/);
+    const cutGuard = JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8"));
+    assert.equal(cutGuard.state, "pending");
+    assert.equal(cutGuard.starting_schema, 61); assert.equal(cutGuard.intended_schema, 62);
+    assert.equal(cutGuard.backup.verified, true);
+    const witness = join(stateDirectory, cutGuard.cut62_witness.replace(/\.json$/, ""), cutGuard.cut62_witness);
+    assert(existsSync(witness));
+    const witnessBytes = readFileSync(witness);
+    renameSync(witness, witness + ".held");
+    try {
+      const missing = makeRuntime(target, { run, stateDirectory, revision, evidence, preparedImages, previous: historicalRecord, retry: true });
+      await missing.inspectTarget();
+      await assert.rejects(lifecycle("cut62_missing_witness", { recreate: true }, missing), /witness is missing/);
+    } finally { renameSync(witness + ".held", witness); }
+    const cutRetryStart = commandLog.length;
+    const cutRetry = makeRuntime(target, { run, stateDirectory, revision, evidence, preparedImages, previous: historicalRecord, retry: true });
+    await cutRetry.inspectTarget();
+    await lifecycle("cut62_resume_original_witness", { recreate: true }, cutRetry);
+    assert(!commandLog.slice(cutRetryStart).some(call => call.args.includes("--cut62-capture")));
+    assert.deepEqual(readFileSync(witness), witnessBytes);
+    assert.equal(JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8")).state, "verified");
+    const record = JSON.parse(readFileSync(join(stateDirectory, "deployment.json"), "utf8"));
+    assert.equal(record.schema, 62); assert.equal(record.backup.verified, true);
+    assert.equal(target.webUrl, `http://127.0.0.1:${webPort}`);
+    assert.deepEqual(await readHistory(), expected, "cutover retains the historical Study origin");
 
     // Exercise the registered Node operator only after the real upgrade/ready
     // boundary. The fixed orphan exists solely in this already owned lifetime;
@@ -412,20 +496,8 @@ await executeLifecycle({ recreate: false }, runtime);
     const afterRestart = (await repeat.compose(["ps", "-q", "api"])).stdout.trim();
     assert.notEqual(beforeRestart, afterRestart, "restart recreates the real API container");
     assert.deepEqual(await readHistory(), expected, "restart preserves original study history");
+    console.log("PASS Tempo CLI historical and schema-62 guarded migration lifecycle preserves retained history and verified backups");
 
-    // A genuinely rejected PostgreSQL migration, after a verified backup, must
-    // leave all application consumers stopped. Migration 40 adds a column without
-    // IF NOT EXISTS; the latest migration may be safely replayable view DDL.
-    // Remove the ledger suffix while retaining that column to force duplicate DDL.
-    await repeat.stopApplications();
-    await forgetMigrationSuffix(repeat);
-    const rejected = makeRuntime(target, { run, stateDirectory, revision, evidence, previous: record });
-    await rejected.inspectTarget();
-    await assert.rejects(lifecycle("migration_rejected", { recreate: true }, rejected), /already exists/);
-    const running = await rejected.runningServices();
-    assert(!running.some(name => ["api", "foreground-worker", "background-worker", "web"].includes(name)));
-    assert.deepEqual(await readHistory(), expected, "rejected DDL preserves original study history");
-    console.log("PASS Tempo CLI populated 16-to-current upgrade permits migration 025 normalization, verifies actual PostgreSQL image major, retains original H0 through committed-schema failure/retry/repair, restores backup, quiesces before dependencies, corrects uncommitted/missing fallback dependencies, and preserves repeat/restart/rejected-migration history");
   } catch (error) { failure = error; }
   finally {
     try {
