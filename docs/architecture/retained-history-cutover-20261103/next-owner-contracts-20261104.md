@@ -47,8 +47,14 @@ one named failure), then its exact corrected owner selection passed 96/96 native
 and 98/98 pure cases. Independent review confirmed locked terminal checks and
 epoch CAS prevent late capture/hold/publish reviving accepted or aborted epochs;
 owned fixtures were removed. This is supported Content-owner authority only.
-The integrated public module candidate is undergoing separate source-free
-package qualification; this record does not assert its main delivery yet.
+The integrated public module candidate `d83eb140f714bee38096847f51e13a5cb2246390`
+passed source-free Content qualification: 365 cases in each Python 3.12/3.14
+wheel/sdist combination, plus one independent installed consumer case and probe.
+All 146 Content source fingerprints matched; source/temp consumer cleanup passed.
+The initial 360-pass/four-failure fake-composition result remains retained; the
+two-test-only repair preserved real guard execution and added reserved denial.
+Main #942 merge `19f9bbaae748223d1aaea8207b09cc439236c1db` delivers this source.
+No live schema application, installation or activation follows.
 
 Full contract proposals remain proposals beyond these explicit frozen subsets.
 The next owner mapping must bind original legacy plan/source digest domains to
