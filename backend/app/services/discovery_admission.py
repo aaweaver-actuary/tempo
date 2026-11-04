@@ -496,10 +496,14 @@ def _recovery_identity(database, task: dict, *, lock=False):
     intent_id = payload["intent_id"]
     if not isinstance(intent_id, str) or not intent_id or row["deduplication_key"] != intent_id:
         return "invalid", None
-    intent = storage.intent(database, (intent_id,))
+    intent = storage.intent(database, (intent_id,), lock=lock)
     if not intent or intent["id"] != intent_id:
         return "invalid", None
-    return ("completed" if intent["state"] == "queued" else "accepted"), intent
+    if intent["state"] == "queued":
+        return "completed", intent
+    if intent["state"] != "preparing":
+        return "held", intent
+    return "accepted", intent
 
 
 def _materialize_admission_branch(task: dict) -> None:
@@ -588,7 +592,7 @@ def execute_admission_intent_slice(task: dict) -> bool:
         if not storage.configured():
             storage.begin_write(database)
         identity, _intent = _recovery_identity(database, task, lock=True)
-        if identity == "stale":
+        if identity in {"stale", "held"}:
             return True
         if identity in {"invalid", "completed"}:
             complete_task_slice_in_transaction(database, task)
@@ -618,7 +622,7 @@ def execute_admission_intent_slice(task: dict) -> bool:
                     or lease["lease_token"] != task["lease_token"]):
                 return True
         identity, current = _recovery_identity(database, task, lock=True)
-        if identity == "stale":
+        if identity in {"stale", "held"}:
             return True
         if identity in {"invalid", "completed"}:
             complete_task_slice_in_transaction(database, task)

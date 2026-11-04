@@ -170,9 +170,10 @@ def mark_preparing(database, values):
     )
 
 
-def intent(database, values):
+def intent(database, values, *, lock=False):
+    suffix = ' FOR UPDATE' if lock and configured() else ''
     return database.execute(
-        "SELECT * FROM discovery_admission_intents WHERE id=?",
+        "SELECT * FROM discovery_admission_intents WHERE id=?" + suffix,
         values,
     ).fetchone()
 

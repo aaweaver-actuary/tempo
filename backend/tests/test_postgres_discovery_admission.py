@@ -137,13 +137,13 @@ def test_recovery_identity_rejects_forged_and_missing_intents(monkeypatch):
            'lease_token': 'lease', 'state': 'leased'}
     task = {**row, 'payload': {'intent_id': 'intent'}}
     monkeypatch.setattr(discovery_admission.storage, 'recovery_task', lambda *a, **k: row)
-    monkeypatch.setattr(discovery_admission.storage, 'intent', lambda *a: {'id': 'intent', 'state': 'preparing'})
+    monkeypatch.setattr(discovery_admission.storage, 'intent', lambda *a, **k: {'id': 'intent', 'state': 'preparing'})
     assert discovery_admission._recovery_identity(None, task)[0] == 'accepted'
     assert discovery_admission._recovery_identity(None, {**task, 'payload': {'intent_id': 'other'}})[0] == 'stale'
     row['deduplication_key'] = 'other'
     assert discovery_admission._recovery_identity(None, {**task, 'deduplication_key': 'other'})[0] == 'invalid'
     row['deduplication_key'] = 'intent'
-    monkeypatch.setattr(discovery_admission.storage, 'intent', lambda *a: None)
+    monkeypatch.setattr(discovery_admission.storage, 'intent', lambda *a, **k: None)
     assert discovery_admission._recovery_identity(None, task)[0] == 'invalid'
 
 
@@ -158,7 +158,7 @@ def test_recovery_stale_envelope_does_not_complete_but_missing_intent_does(monke
     monkeypatch.setattr(discovery_admission.storage, 'configured', lambda: True)
     monkeypatch.setattr(discovery_admission, 'connection', lambda **_: nullcontext(object()))
     monkeypatch.setattr(discovery_admission.storage, 'recovery_task', lambda *a, **k: row)
-    monkeypatch.setattr(discovery_admission.storage, 'intent', lambda *a: None)
+    monkeypatch.setattr(discovery_admission.storage, 'intent', lambda *a, **k: None)
     monkeypatch.setattr(discovery_admission.activity_gate, 'wait_for_foreground', lambda: None)
     monkeypatch.setattr(discovery_admission, '_materialize_admission_branch', lambda *_: (_ for _ in ()).throw(AssertionError('materialized')))
     monkeypatch.setattr(discovery_admission, 'complete_task_slice_in_transaction', lambda _db, item: completions.append(item['id']))
