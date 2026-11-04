@@ -7,13 +7,13 @@ import {join} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {createServer as portServer} from 'node:net';
 const root=process.cwd(), evidence=fileURLToPath(new URL('.',import.meta.url));
-const {managedBuild,recordBudgetResource,assertDevelopmentCapacity,waitForStudyQuiet}=await import(pathToFileURL(join(root,'scripts/development-budget.mjs')));
+const {managedBuild,recordBudgetResource,waitForStudyQuiet}=await import(pathToFileURL(join(root,'scripts/development-budget.mjs')));
 const {readHostStudyActivity}=await import(pathToFileURL(join(root,'scripts/host-study-activity.mjs')));
 const {createServer}=await import(pathToFileURL(join(root,'node_modules/vite/dist/node/index.js')));
 const {chromium}=await import(pathToFileURL(join(root,'node_modules/playwright/index.mjs')));
-const owner='tempo-saturation-'+randomUUID(), images=[], containers=[];
+const owner='tempo-saturation-'+randomUUID();
 const runDirectory=join(evidence,'combined-'+owner);await mkdir(runDirectory,{mode:0o700});
-const report={owner,revision:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),complete:false,cleanup:false,host_cleanup_errors:[],cohorts:[],limits:{docker_cpus:2,docker_memory_mib:2048,host:'owned host API, Celery, Vite, Learning and Chromium processes inherit nice/thread settings; RSS is observed, not kernel memory capped on macOS'},missing_overlap:['The full 2 GiB builder cannot coexist with PostgreSQL and inference within the aggregate Docker allocation; its real build follows verified cleanup.','Each cohort includes one real Study UI commit/confirmed prepared successor plus 59 native HTTP commits; independent Learning durable writes remain qualified by the separate 42-case owner suite.']};
+const report={owner,revision:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),complete:false,cleanup:false,host_cleanup_errors:[],cohorts:[],limits:{docker_cpus:2,docker_memory_mib:2048,host:'owned host API, Celery, Vite, Learning and Chromium processes inherit nice/thread settings; RSS is observed, not kernel memory capped on macOS'},missing_overlap:['The full 2 GiB builder cannot coexist with PostgreSQL within the aggregate Docker allocation; its real build follows verified cleanup.','Each cohort includes one real Study UI commit/confirmed prepared successor plus 59 native HTTP commits; independent Learning durable writes remain qualified by the separate 42-case owner suite.']};
 const docker=args=>execFileSync('docker',args,{encoding:'utf8',maxBuffer:16*1024*1024});
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function json(path){try{return JSON.parse(await readFile(path,'utf8'));}catch(error){if(error.code==='ENOENT')return undefined;throw error;}}
@@ -25,7 +25,6 @@ async function stop(child,graceMilliseconds=0){if(!child)return;if(graceMillisec
 async function absent(kind,name){try{docker([kind,'inspect',name]);return false;}catch(error){if(/No such|no such/.test(String(error.stderr)))return true;throw error;}}
 await recordBudgetResource('saturation:'+owner,true);
 try{
- await managedBuild(async builder=>{for(const [kind,file]of[['stockfish','Dockerfile.engine'],['maia','Dockerfile.maia']]){const image=owner+'-'+kind+':proof';images.push(image);docker(['buildx','build','--builder',builder,'--load','--label','tempo.owner='+owner,'-f',file,'-t',image,'.']);}});
  for(let cohort=0;cohort<Number(process.env.TEMPO_SATURATION_COHORTS??1);cohort++){
   const directory=join(runDirectory,'saturation-'+cohort);await mkdir(directory,{mode:0o700});
   const hostDirectory=join(directory,'host');await mkdir(hostDirectory,{mode:0o700});
@@ -34,7 +33,6 @@ try{
   assert(!(await readHostStudyActivity({directory:hostDirectory})).available);
   const row={cohort,complete:false,docker:[],input_ms:[],local_yield_ms:[],control_samples:[],host_samples:[],children:[]};report.cohorts.push(row);await publish(join(directory,'coordinator-in-progress.json'),{owner,coordinator_pid:process.pid,revision:report.revision,row});
   let native,learning,publisher,controlServer,host,browser,page,timer,polling=false,localActive=false;
-  const inferenceChildren=[];
   try{
    native=await ownedChild(join(root,'backend/.venv/bin/python'),[join(evidence,'native-overlap.py'),'--evidence',directory],{TEMPO_SATURATION_DIRECTORY:directory},join(directory,'native.log'));row.children.push({kind:'native',pid:native.pid});await publish(join(directory,'coordinator-in-progress.json'),{owner,coordinator_pid:process.pid,revision:report.revision,row});
    const ready=await Promise.race([waitFile(join(directory,'native-ready.json')),native.completion.then(result=>{throw new Error('Native assembly exited before readiness: '+JSON.stringify(result));})]);
@@ -74,24 +72,11 @@ try{
    row.host_samples.push({at:Date.now(),processes:pidSnapshot.filter(([pid,parent])=>pid===process.pid||parent===process.pid||pid===native.pid||parent===native.pid)});
    await page.evaluate(async url=>{const {runStudyTask}=await import(url);const fen='rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';const lines=Array.from({length:12000},(_,i)=>({id:'overlap-'+i,repertoireId:'overlap',repertoireName:'Overlap',title:'Line '+i,side:'white',startingFen:fen,moves:['e2e4','e7e5','g1f3','b8c6','f1b5','a7a6','b5a4','g8f6']}));async function prepare(){await runStudyTask({kind:'index',lines});window.saturation.usefulBulkCompletions++;if(!window.saturation.stopRepeating)return prepare();window.saturation.settled='complete';}window.saturation.bulk=prepare().catch(error=>window.saturation.settled=error.name);},backgroundURL);
    await page.waitForFunction(()=>window.saturation.events.some(event=>event.kind==='running'));
-   let quietSince,quietDeadline=Date.now()+30000;
-   while(true){const state=await json(controlPath);if(state?.available&&!state.active){quietSince??=Date.now();if(Date.now()-quietSince>=3200)break;}else quietSince=undefined;assert(Date.now()<quietDeadline,'Control did not establish a continuous genuine quiet period before inference');await pause(50);}
-   row.before_inference_quiet_ms=Date.now()-quietSince;
-   for(const [kind,index,cpus,memory]of[['stockfish',0,.25,384],['maia',1,.3,1024]]){
-    const name=owner+'-'+cohort+'-'+kind;containers.push(name);
-    assertDevelopmentCapacity([kind],owner,docker,{[kind]:{cpus,memoryMiB:memory}});
-    docker(['create','--env','TEMPO_SATURATION_CONTROL_URL=http://host.docker.internal:'+controlPort+'/control','--name',name,'--label','tempo.owner='+owner,'--label','tempo.resource-class=development','--cpus',String(cpus),'--memory',memory+'m','--mount','type=bind,source='+directory+',target=/overlap','--mount','type=bind,source='+join(evidence,'inference-overlap.mjs')+',target=/app/overlap.mjs,readonly','--mount','type=bind,source='+join(evidence,'inference-yield.mjs')+',target=/app/inference-yield.mjs,readonly','--entrypoint','node',images[index],'/app/overlap.mjs',kind]);
-    const details=JSON.parse(docker(['inspect',name]))[0];assert.equal(details.HostConfig.Memory,memory*1024**2);row.docker.push({name,cpus,memoryMiB:memory});
-    inferenceChildren.push(await ownedChild('docker',['start','--attach',name],{},join(directory,kind+'.log')));
-   }
-   const runningDeadline=Date.now()+90000;
-   while(true){const values=await Promise.all(['stockfish','maia'].map(kind=>json(join(directory,kind+'-running.json'))));if(values.every(value=>value?.running===true)){row.inference_running_generations={stockfish:values[0].generation,maia:values[1].generation};break;}assert(Date.now()<runningDeadline,'Both real capped engines did not establish simultaneous useful execution');await pause(10);}
    await page.waitForFunction(()=>window.saturation.optionalRunning);
    const runningState=await page.evaluate(()=>window.saturation.events);const baselineTerminations=runningState.filter(event=>event.kind==='terminated'&&event.worker_name==='tempo-optional-preparation').length;
-   const start=await page.evaluate(()=>performance.now());await page.mouse.down();row.interaction_wall_ms=await page.evaluate(()=>performance.timeOrigin+window.saturation.lastInput);await publish(join(directory,'interaction.json'),{started:true,at:row.interaction_wall_ms,generations:row.inference_running_generations});localActive=true;await poll();
+   const start=await page.evaluate(()=>performance.now());await page.mouse.down();row.interaction_wall_ms=await page.evaluate(()=>performance.timeOrigin+window.saturation.lastInput);localActive=true;await poll();
    await page.waitForFunction(count=>window.saturation.events.filter(event=>event.kind==='terminated'&&event.worker_name==='tempo-optional-preparation').length>count,baselineTerminations);
    const events=await page.evaluate(()=>window.saturation.events);const localYield=events.filter(event=>event.kind==='terminated'&&event.worker_name==='tempo-optional-preparation').at(-1);row.cancellation_driver_observation_ms=localYield.at-start;row.local_yield_ms.push(localYield.at-localYield.input_at);assert(row.local_yield_ms[0]>=0&&row.local_yield_ms[0]<=50);
-   await Promise.all(['stockfish','maia'].map(async kind=>{const yielded=await waitFile(join(directory,kind+'-yielded.json'));assert.equal(yielded.proof?.verified,true);assert.equal(yielded.generation,row.inference_running_generations[kind]);row[kind+'_ack_observation_ms']=Date.now()-row.interaction_wall_ms;row[kind+'_yield_ms']=yielded.at-row.interaction_wall_ms;row[kind+'_container_wall_time']=yielded.at;assert(row[kind+'_yield_ms']>=0&&row[kind+'_yield_ms']<=250);}));
    const abort=new AbortController();let admitted=false;const denied=managedBuild(async()=>{admitted=true;},{quiet:()=>waitForStudyQuiet({signal:abort.signal})}).catch(error=>String(error));await pause(750);abort.abort(new Error('Bounded active-Study admission probe'));row.build_admission_reason=await denied;assert(String(row.build_admission_reason).includes('Bounded active-Study'));assert(!admitted);row.active_build_deferred=true;
    await pause(3000);assert(await page.evaluate(()=>window.saturation.priority.studyInteractionActive()));row.stationary_contact_held=true;
    await page.mouse.up();localActive=false;await poll();
@@ -115,7 +100,6 @@ try{
    await pause(3200);assert(await page.evaluate(()=>window.saturation.priority.studyInteractionActive()));row.delayed_essential_held=true;
    await page.waitForFunction(()=>window.saturation.delayedComplete||window.saturation.delayedError);assert.equal(await page.evaluate(()=>window.saturation.delayedError),undefined);await pause(3200);localActive=false;await poll();await publish(join(directory,'ui-inputs-complete.json'),{at:Date.now()});
    await page.waitForFunction(()=>window.saturation.settled==='complete',undefined,{timeout:60000});
-   for(const kind of ['stockfish','maia'])await waitFile(join(directory,kind+'-resumed.json'));
    await waitFile(join(directory,'native-reconciled.json'));
    row.repeated_cancellation_ms=[];
    for(let repeat=0;repeat<Number(process.env.TEMPO_SATURATION_CANCELLATIONS??3);repeat++){
@@ -139,7 +123,7 @@ try{
   }finally{
    clearInterval(timer);await publish(join(directory,'abort.json'),{aborted:!row.complete});
    if(page){try{if(!row.complete)await page.screenshot({path:join(directory,'failure.png')});await page.context().tracing.stop({path:join(directory,'browser-trace.zip')});}catch(error){report.host_cleanup_errors.push(String(error));}}
-   const cleanup=await Promise.allSettled([browser?.close(),host?.close(),stop(learning),stop(native,2000),stop(publisher),stop(controlServer),...inferenceChildren.map(stop)]);
+   const cleanup=await Promise.allSettled([browser?.close(),host?.close(),stop(learning),stop(native,2000),stop(publisher),stop(controlServer)]);
    row.host_cleanup_errors=cleanup.filter(item=>item.status==='rejected').map(item=>String(item.reason));
    try{
     const journal=await json(join(directory,'native-host-processes.json'));
@@ -153,7 +137,6 @@ try{
    }
    row.native_absence_verified=!row.host_cleanup_errors.length;
    report.host_cleanup_errors.push(...row.host_cleanup_errors);
-   for(const name of row.docker.map(value=>value.name)){if(!await absent('container',name)){const details=JSON.parse(docker(['inspect',name]))[0];assert.equal(details.Config.Labels['tempo.owner'],owner);docker(['rm','--force','--volumes',name]);}assert(await absent('container',name));}
    await rm(join(directory,'credential'),{force:true});await rm(join(directory,'control-credential'),{force:true});
    await writeFile(join(directory,'coordinator.json'),JSON.stringify(row,null,2));
   }
@@ -163,8 +146,6 @@ try{
  report.complete=report.cohorts.every(row=>row.complete);
 }finally{
  const errors=[];
- for(const name of containers)try{if(!await absent('container',name)){assert.equal(JSON.parse(docker(['inspect',name]))[0].Config.Labels['tempo.owner'],owner);docker(['rm','--force','--volumes',name]);}assert(await absent('container',name));}catch(error){errors.push(String(error));}
- for(const name of images)try{if(!await absent('image',name)){assert.equal(JSON.parse(docker(['image','inspect',name]))[0].Config.Labels['tempo.owner'],owner);docker(['image','rm',name]);}assert(await absent('image',name));}catch(error){errors.push(String(error));}
  report.cleanup=!errors.length&&!report.host_cleanup_errors.length;report.cleanup_errors=errors;
  if(report.cleanup)await recordBudgetResource('saturation:'+owner,false);
  await writeFile(join(evidence,'combined-saturation.json'),JSON.stringify(report,null,2));

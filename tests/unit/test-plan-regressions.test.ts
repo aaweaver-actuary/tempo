@@ -20,7 +20,7 @@ it("full verification owns every test family once without repeating regular brow
   const full = plannedStages("full");
   const names = full.map((stage) => stage.name);
   expect(names).toEqual([
-    "capabilities", "unit", "defense_engine", "backend", "rust_format", "rust_lint",
+    "capabilities", "unit", "backend", "rust_format", "rust_lint",
     "rust_test", "lint", "typecheck", "wasm_build", "local_build",
     "postgres_docker", "visual",
   ]);

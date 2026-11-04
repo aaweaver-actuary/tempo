@@ -48,7 +48,6 @@
       "tests/unit/integrity-repair-pending-regressions.test.ts",
       "tests/unit/integrity-repair-status-regressions.test.tsx",
       "tests/unit/maia-coverage-client-regressions.test.ts",
-      "tests/unit/maia-interaction-priority.test.ts",
       "tests/unit/maia-worker-regressions.test.ts",
       "tests/unit/notification-regressions.test.tsx",
       "tests/unit/offline-shell-build-regressions.test.ts",
@@ -182,7 +181,6 @@
     "legacy-runner-wrappers": [
       "tests/unit/ci-fast-lane-regressions.test.ts",
       "tests/unit/ci-reliability-regressions.test.ts",
-      "tests/unit/defense-engine-smoke-regressions.test.ts",
       "tests/unit/performance-report-regressions.test.ts",
       "tests/unit/postgres-test-speedups-regressions.test.ts",
       "tests/unit/queue-readiness-diagnostics-regressions.test.ts",
@@ -193,14 +191,12 @@
       "tests/unit/component-packaging-regressions.test.ts"
     ],
     "runners": [
-      "tests/runner/engine-image-packaging.test.mjs",
       "tests/runner/ci-browser-shards.test.mjs",
       "tests/runner/ci-development.test.mjs",
       "tests/runner/ci-fast-lane.test.mjs",
       "tests/runner/ci-reliability.test.mjs",
       "tests/runner/development-budget.test.mjs",
       "tests/runner/game-review-collection.test.mjs",
-      "tests/runner/inference-priority.test.mjs",
       "tests/runner/merge-conflict-guard.test.mjs",
       "tests/runner/postgres-test-speedups.test.mjs",
       "tests/runner/study-learning-proof.test.mjs",

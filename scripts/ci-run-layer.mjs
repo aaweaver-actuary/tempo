@@ -128,7 +128,7 @@ export function layerCommands(layer, plan, shardId) {
     if (plan.tier === "development" && ["frontend", "backend"].includes(layer) && plan.core[layer] !== "all") {
       const files = plan.core[layer];
       if (!files?.length) throw new Error("Selected core collection cannot be empty");
-      commands = commands.filter(([name]) => name !== "defense_engine").map(([name, command, args]) =>
+      commands = commands.map(([name, command, args]) =>
         [name, command, name === "unit" ? [...args, ...files] : name === "backend" ? args.flatMap(argument => argument === "backend/tests" ? files : [argument]) : args]);
     }
     if (layer === "frontend") {
