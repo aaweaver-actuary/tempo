@@ -1,0 +1,30 @@
+{
+  "worker_id": "P0C",
+  "role": "Content scale and identity measurement",
+  "source_sha": "5d879ffce599af7a2eaf9627e9e1c7ea82e9af5a",
+  "status": "SOURCE INVENTORIED",
+  "branch": "codex/cutover-p0c-20261103",
+  "pr_url": null,
+  "owner_files": ["docs/cutover-p0c-20261103/"],
+  "changed_files": ["docs/cutover-p0c-20261103/capacity.json", "docs/cutover-p0c-20261103/identity-crosswalk.csv", "docs/cutover-p0c-20261103/activation-choice.md", "docs/cutover-p0c-20261103/probe.py", "docs/cutover-p0c-20261103/handoff.json"],
+  "claims": [
+    {"claim":"v2 definitions and facts max 10000, routes 10000, aliases 8192, raw and normalized limit 16777216 bytes", "source":"services/learning/runtime/src/tempo_learning_runtime/publication_bridge.py:23-25,112-117,198; services/learning/runtime/src/tempo_learning_runtime/api.py:141", "proof":"test_publication_bundle_limits.py"},
+    {"claim":"historical Content 2048/8 MiB documentation differs from current source", "source":"services/content/README.md:3-7; services/content/src/tempo_content/models.py:120", "proof":"test_publication_bundle_limits.py"},
+    {"claim":"legacy physical identity requires explicit one-to-one compatible alias", "source":"services/learning/runtime/src/tempo_learning_runtime/publication_bridge.py:139-145,314-357", "proof":"source inspection; retained history mapping not proven"},
+    {"claim":"synthetic 10000 one-move definitions validate with 10751453 canonical bytes and 217563136 byte peak RSS", "source":"docs/cutover-p0c-20261103/probe.py", "proof":"pure model; no activation"}
+  ],
+  "selected_tests": [
+    {"command":"services/content/.venv/bin/python -m pytest -q services/content/tests/test_learning_export_profile.py", "result":"12 passed in 5.45s", "environment":"macOS Python 3.13.5, isolated locked venv"},
+    {"command":"services/learning/runtime/.venv/bin/python -m pytest -q services/learning/runtime/tests/test_publication_bundle_limits.py", "result":"4 passed in 0.30s, 1 deprecation warning", "environment":"macOS Python 3.13.5, isolated locked venv"},
+    {"command":"services/learning/runtime/.venv/bin/python docs/cutover-p0c-20261103/probe.py 7258", "result":"PASS pure model 7258 definitions; 7802643 canonical bytes, 184500224 bytes peak RSS, 1.428s validation", "environment":"macOS Python 3.13.5; no database"},
+    {"command":"services/learning/runtime/.venv/bin/python docs/cutover-p0c-20261103/probe.py 10000", "result":"PASS pure model 10000 definitions; 10751453 canonical bytes, 217563136 bytes peak RSS, 1.989s validation", "environment":"macOS Python 3.13.5; no database"},
+    {"command":"native F12 stage/atomic activation", "result":"NOT RUN; no task-owned full graph or disposable native run established", "environment":"none"}
+  ],
+  "fixtures": ["F12 partial synthetic one-move model only"],
+  "contract_exports": [],
+  "unresolved": ["Actual complete graph cardinalities, bytes, source-currentness and physical alias mapping", "Native activation cost and retained history references", "Separate pinned T00 count and crosswalk outputs not identified"],
+  "blockers": ["F12 native atomic complete-generation validation and source-to-physical identity proof remain required before cutover"],
+  "dependencies_unblocked": [],
+  "installation": "not attempted",
+  "next_owner": "W01 identity owner and W09A Content generation owner; coordinator integrates F12"
+}

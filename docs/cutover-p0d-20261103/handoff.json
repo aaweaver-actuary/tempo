@@ -1,0 +1,63 @@
+{
+  "worker_id": "P0D",
+  "role": "writer paths static and synthetic safety inventory",
+  "source_sha": "5d879ffce599af7a2eaf9627e9e1c7ea82e9af5a",
+  "status": "SOURCE INVENTORIED",
+  "branch": "codex/cutover-p0d-20261103",
+  "pr_url": null,
+  "owner_files": [
+    "docs/cutover-p0d-20261103/"
+  ],
+  "changed_files": [
+    "docs/cutover-p0d-20261103/fence-test-plan.md",
+    "docs/cutover-p0d-20261103/handoff.json",
+    "docs/cutover-p0d-20261103/risks.md",
+    "docs/cutover-p0d-20261103/writer-surface.tsv"
+  ],
+  "claims": [
+    {
+      "claim": "Legacy worker role and automatic restart",
+      "source": "docker-compose.yml:64-110",
+      "proof": "source inspection"
+    },
+    {
+      "claim": "API startup dispatches queue maintenance despite reader-only database URL",
+      "source": "backend/app/main.py:246-267",
+      "proof": "source inspection"
+    },
+    {
+      "claim": "Old runtime starts workers and consumers",
+      "source": "scripts/tempo-runtime.mjs:578-584",
+      "proof": "source inspection"
+    },
+    {
+      "claim": "Existing synthetic transition test substitutes boolean fence",
+      "source": "scripts/tests/tempo-cutover-transition.test.mjs:70",
+      "proof": "source inspection"
+    }
+  ],
+  "selected_tests": [
+    {
+      "command": "none",
+      "result": "NOT RUN: source inventory and proposed cases only",
+      "environment": "no services or test fixtures started"
+    }
+  ],
+  "fixtures": [
+    "F13 proposed",
+    "F14 proposed"
+  ],
+  "contract_exports": [],
+  "unresolved": [
+    "Installed roles, grants, membership, ownership, privileged principals and active sessions",
+    "full installed legacy launch and credential inventory",
+    "target-owned fence and linearization semantics",
+    "optional dependency startup proof"
+  ],
+  "blockers": [
+    "Coordinator must reserve and specify actual shared authority fence"
+  ],
+  "dependencies_unblocked": [],
+  "installation": "not attempted",
+  "next_owner": "Coordinator (#908), database authority owner and W01B launcher owner"
+}
