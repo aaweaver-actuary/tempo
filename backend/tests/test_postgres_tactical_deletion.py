@@ -43,7 +43,7 @@ def test_tactical_deleted_candidate_batches_preserve_rotated_order(monkeypatch, 
         raise AssertionError(statement)
 
     monkeypatch.setattr(postgres_queue_refresh.read_storage, "_bounded_read", read)
-    monkeypatch.setattr(postgres_queue_refresh, "pack_records", records_by_pack.__getitem__)
+    monkeypatch.setattr(postgres_queue_refresh, "introduction_pack_records", records_by_pack.__getitem__)
     monkeypatch.setattr(postgres_queue_refresh, "validate_puzzle_record", lambda record: (record["PuzzleId"], ["e2e4"]))
     monkeypatch.setattr(postgres_queue_refresh, "card_id", lambda fen, solution: fen)
     prepared = postgres_queue_refresh._prepare_tactical_introduction("2026-10-08")
@@ -105,3 +105,53 @@ def test_pr102_tactical_deletion_fixture_is_nonterminal_and_uuid_independent(mon
             board.push(move)
         identifiers.append(card_id(*validate_puzzle_record(record)))
     assert len(set(identifiers)) == 3
+
+
+def test_stale_active_pack_does_not_block_postgres_tactical_selector(monkeypatch):
+    from app.services.tactical_catalog import pack_records
+
+    valid = 'fork-easy-01'
+    active = [('000-retired-fixture',), (valid,)]
+
+    def read(statement, parameters=(), *, native=False):
+        if 'tactics_new_per_day' in statement:
+            return [(1,)]
+        if statement == postgres_queue_refresh.DAILY_TACTIC_COUNT_SQL:
+            return [(0,)]
+        if 'tactic_pack_activation' in statement:
+            return active
+        if 'tactic_rotation' in statement:
+            return [('',)]
+        if 'tactic_progress' in statement or 'deleted_cards' in statement:
+            return []
+        raise AssertionError(statement)
+
+    monkeypatch.setattr(postgres_queue_refresh.read_storage, '_bounded_read', read)
+    selected = postgres_queue_refresh._prepare_tactical_introduction('2026-11-04')
+    assert selected['pack_id'] == valid
+    assert selected['puzzle_id'] == pack_records(valid)[0]['PuzzleId']
+    assert selected['rotation_cursor'] == ''
+    active[:] = [(valid,)]
+    assert postgres_queue_refresh._prepare_tactical_introduction('2026-11-04') == selected
+    active[:] = [('000-retired-fixture',)]
+    assert postgres_queue_refresh._prepare_tactical_introduction('2026-11-04') is None
+
+
+def test_postgres_tactical_selector_propagates_invalid_pack_records(monkeypatch):
+    def read(statement, parameters=(), *, native=False):
+        if 'tactics_new_per_day' in statement:
+            return [(1,)]
+        if statement == postgres_queue_refresh.DAILY_TACTIC_COUNT_SQL:
+            return [(0,)]
+        if 'tactic_pack_activation' in statement:
+            return [('known',)]
+        if 'tactic_rotation' in statement:
+            return [('',)]
+        if 'tactic_progress' in statement:
+            return []
+        raise AssertionError(statement)
+
+    monkeypatch.setattr(postgres_queue_refresh.read_storage, '_bounded_read', read)
+    monkeypatch.setattr(postgres_queue_refresh, 'introduction_pack_records', lambda _: [{'PuzzleId': 'bad', 'FEN': 'invalid', 'Moves': ''}])
+    with pytest.raises(ValueError):
+        postgres_queue_refresh._prepare_tactical_introduction('2026-11-04')

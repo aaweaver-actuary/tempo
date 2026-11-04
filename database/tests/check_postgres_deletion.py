@@ -108,7 +108,7 @@ def main_check():
             return original_read(statement, parameters, native=native)
 
         try:
-            with patch.object(postgres_queue_refresh, "pack_records", return_value=records), patch.object(postgres_queue_refresh, "_bounded_read", candidate_read):
+            with patch.object(postgres_queue_refresh, "introduction_pack_records", return_value=records), patch.object(postgres_queue_refresh, "_bounded_read", candidate_read):
                 prepared = postgres_queue_refresh._prepare_tactical_introduction(today)
                 assert prepared["card_id"] == identifiers[1]
                 with postgres_store.connection() as database:
