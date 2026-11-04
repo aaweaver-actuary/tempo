@@ -606,8 +606,10 @@ def retry_task(task_id: str) -> dict | None:
 def requeue_interrupted_tasks() -> None:
     def operation(database: sqlite3.Connection) -> None:
         now = _iso()
-        interrupted = storage.interrupted_tasks(database)
-        write_interrupted = storage.prepare_interrupted_requeue()
+        from ..contracts.command_registry import RETIRED_TASK_KINDS
+        excluded_kinds = tuple(sorted(RETIRED_TASK_KINDS))
+        interrupted = storage.interrupted_tasks(database, excluded_kinds)
+        write_interrupted = storage.prepare_interrupted_requeue(excluded_kinds)
         write_interrupted(database, (now,))
         for row in interrupted:
             _record_event(database, row["id"], row["generation"], "reclaimed", "queued", kind=row["kind"])
