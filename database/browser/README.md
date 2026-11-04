@@ -150,3 +150,7 @@ database replacement epoch, so an unchanged origin alone cannot detect that chan
 
 Source implementation and focused synthetic browser-state checks do not establish
 installed browser recovery. See the [canonical browser view](../../app/README.md#main-study-path-and-source-gap).
+
+### Passive cutover journal inspection
+
+[cutover-journal-inspection.ts](cutover-journal-inspection.ts) reads every store in an already-opened database in one readonly transaction for that database, returning the original IndexedDB primary keys and structured-clone values with a versioned `BLOCK` / `unconfirmed-authority` disposition. This includes out-of-line keys that `getAll()` does not return. The caller must identify, open and retain the original database; inspection neither binds authorities nor migrates, quarantines, rewrites, deletes or delivers records. The caller supplies a positive safe-integer record budget; exceeding it aborts inspection and returns an explicit incomplete error, never a truncated result. Original stores remain the durable source. LocalStorage strings and unenumerated or unavailable databases require separate recovery, and server receipts cannot be inferred from this result.
