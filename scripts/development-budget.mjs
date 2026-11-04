@@ -1,5 +1,5 @@
 // One host-wide owner for newly managed heavy work. Never stop another task's resources.
-import { mkdir, mkdtemp, readFile, writeFile, rm, readdir } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile, rm, rmdir, readdir } from 'node:fs/promises';
 import { readFileSync, writeFileSync, rmSync, mkdirSync, existsSync } from 'node:fs';
 import { tmpdir, setPriority } from 'node:os';
 import { join } from 'node:path';
@@ -395,11 +395,46 @@ export async function reconcileDevelopmentBudget({ directory = budgetDirectory()
   ownerAlive = pid => { try { process.kill(pid, 0); return true; } catch (error) { if (error.code === 'ESRCH') return false; throw error; } } } = {}) {
   const owner = await requireBudgetOwner(directory, token);
   if (ownerAlive(owner.pid)) throw new Error('Development owner is still running; do not reclaim its resources');
-  for (const filename of await readdir(join(directory, 'resources'))) {
-    const resource = JSON.parse(await readFile(join(directory, 'resources', filename), 'utf8'));
-    if (resource.token !== token || !resource.key.startsWith('builder:'))
-      throw new Error(`Resource needs its owning cleanup procedure: ${resource.key}`);
-    await reconcileDevelopmentBuilder(resource.key.slice('builder:'.length), { directory, token, docker });
+  const resourceDirectory = join(directory, 'resources');
+  const files = await readdir(resourceDirectory);
+  const records = await Promise.all(files.map(async filename => ({filename,
+    ...JSON.parse(await readFile(join(resourceDirectory, filename), 'utf8'))})));
+  const compose = records.filter(record => record.key?.startsWith('compose:'));
+  const startups = records.filter(record => record.key?.startsWith('startup:'));
+  if (compose.length || startups.length) {
+    if (compose.length !== 1 || startups.length !== 1 || records.length !== 2)
+      throw new Error('Resource needs its owning cleanup procedure: ambiguous Compose journal');
+    const [claim] = compose, [startup] = startups;
+    const project = claim.key.slice('compose:'.length);
+    if (!/^tempo-pg-regressions-\d+-[a-f0-9]+$/.test(project) || claim.token !== token || startup.token !== token ||
+        startup.key !== `startup:${project}` || startup.project !== project ||
+        !Number.isSafeInteger(claim.pid) || claim.pid <= 0 || startup.pid !== claim.pid ||
+        claim.filename !== encodeURIComponent(claim.key) || startup.filename !== encodeURIComponent(startup.key))
+      throw new Error('Compose startup ownership mismatch; retain admission and journal');
+    if (ownerAlive(claim.pid)) throw new Error('Compose startup owner is still running');
+    const lane = join(directory, 'admission-lane');
+    const laneFiles = await readdir(lane);
+    if (laneFiles.length !== 1 || laneFiles[0] !== 'startup-owner.json')
+      throw new Error('Compose startup admission is unverified');
+    const admission = JSON.parse(await readFile(join(lane, 'startup-owner.json'), 'utf8'));
+    if (admission.token !== token || admission.project !== project || admission.pid !== claim.pid)
+      throw new Error('Compose startup ownership mismatch; retain admission and journal');
+    for (const args of [ ['ps','-aq'], ['volume','ls','-q'], ['network','ls','-q'] ]) {
+      if ((await docker([...args,'--filter',`label=com.docker.compose.project=${project}`])).trim())
+        throw new Error('Compose project resources remain; retain admission and journal');
+    }
+    await requireBudgetOwner(directory, token);
+    if (ownerAlive(owner.pid) || ownerAlive(claim.pid)) throw new Error('Compose startup owner is still running');
+    await rm(join(lane, 'startup-owner.json'));
+    await rmdir(lane);
+    await rm(join(resourceDirectory, startup.filename));
+    await rm(join(resourceDirectory, claim.filename));
+  } else {
+    for (const resource of records) {
+      if (resource.token !== token || !resource.key.startsWith('builder:'))
+        throw new Error(`Resource needs its owning cleanup procedure: ${resource.key}`);
+      await reconcileDevelopmentBuilder(resource.key.slice('builder:'.length), { directory, token, docker });
+    }
   }
   await requireBudgetOwner(directory, token);
   if (ownerAlive(owner.pid) || (await readdir(join(directory, 'resources'))).length)
