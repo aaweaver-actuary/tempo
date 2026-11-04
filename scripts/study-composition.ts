@@ -6,7 +6,7 @@ export const optionalStudyImplementations = {
   games: ['app/hooks/use-game-sync.ts', 'app/lib/game-sync-command.ts'],
   composition: ['app/views/legacy-home.tsx', 'app/views/legacy-workspace.tsx'],
   authoring: ['app/views/repertoire_view.tsx',
-    'app/views/card_editor.tsx', 'app/views/tree_browser.tsx', 'app/views/studies_view.tsx',
+    'app/views/card_editor.tsx',
     'app/ImportDialogBox.tsx', 'app/AnalysisPasteDialog.tsx'],
   workspaceAdministration: ['app/views/settings_view.tsx',
     'app/components/integrity-repair-status.tsx', 'app/components/repertoire-integrity-dialog.tsx'],
