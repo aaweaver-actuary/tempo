@@ -135,3 +135,40 @@ def test_late_preserve_through_request_cannot_reorder_stale_cycle(schema59, monk
     actual = schema59.query('SELECT id,position FROM daily_queue WHERE queue_date=%s ORDER BY id', (day,))
     assert [tuple(row) for row in actual] == [(rows[0], 0), (rows[1], 1)]
     assert schema59.query('SELECT state FROM queue_projections WHERE queue_date=%s', (day,))[0][0] == 'refreshing'
+
+
+def test_expired_worker_cannot_publish_or_steal_replacement_lease(schema59, monkeypatch):
+    """A resumed stale worker cannot commit after its lease is reclaimed."""
+    from tempo_learning_runtime import durable_tasks, maintenance
+
+    day = '2026-11-08'
+    monkeypatch.setattr(maintenance, 'next_candidates', lambda *_: [])
+    monkeypatch.setattr(maintenance.queue_application, 'presentation_rows', lambda *_: [])
+    with schema59.database.scope():
+        with schema59.database.transaction() as db:
+            db.execute_native("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('rep','rep','test','now')")
+            db.execute_native("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date) VALUES('a','rep','checkpoint','fen','[]',%s)", (day,))
+            entry = db.execute_native("INSERT INTO daily_queue(queue_date,card_id,position,status) VALUES(%s,'a',0,'issued') RETURNING id", (day,)).fetchone()[0]
+            original = durable_tasks.enqueue_task_in_transaction(db, 'daily_queue', 'current', {'queue_date': day, 'preserve_through_entry_id': entry})
+            epochs.request(db, day)
+        with schema59.database.transaction() as db:
+            first = durable_tasks.claim(db)
+        maintenance.apply_task(first)
+        with schema59.database.transaction() as db:
+            stale = durable_tasks.claim(db)
+            db.execute_native("UPDATE background_tasks SET lease_expires_at=NOW()-INTERVAL '1 second' WHERE id=%s", (original['id'],))
+        with schema59.database.transaction() as db:
+            current = durable_tasks.claim(db)
+        assert current['id'] == stale['id'] == original['id']
+        assert current['generation'] == stale['generation']
+        assert current['lease_token'] != stale['lease_token']
+        before = [tuple(row) for row in schema59.query('SELECT id,position,status,attempt_state,attempt_failed FROM daily_queue WHERE id=%s', (entry,))]
+        with pytest.raises(maintenance.SupersededWork):
+            maintenance.apply_task(stale)
+        lease = schema59.query('SELECT state,generation,lease_token FROM background_tasks WHERE id=%s', (original['id'],))[0]
+        assert tuple(lease) == ('leased', current['generation'], current['lease_token'])
+        assert [tuple(row) for row in schema59.query('SELECT id,position,status,attempt_state,attempt_failed FROM daily_queue WHERE id=%s', (entry,))] == before
+        assert tuple(schema59.query('SELECT requested_refresh_epoch,published_refresh_epoch FROM queue_projections WHERE queue_date=%s', (day,))[0]) == (1, 0)
+        maintenance.apply_task(current)
+    assert tuple(schema59.query('SELECT state,requested_refresh_epoch,published_refresh_epoch FROM queue_projections WHERE queue_date=%s', (day,))[0]) == ('ready', 1, 1)
+    assert [tuple(row) for row in schema59.query('SELECT id,position,status,attempt_state,attempt_failed FROM daily_queue WHERE id=%s', (entry,))] == before
