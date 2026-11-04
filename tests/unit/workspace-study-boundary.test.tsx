@@ -24,7 +24,6 @@ let seenImported: unknown;
 vi.mock('../../app/views/repertoire_view', () => ({ default: ({ imported }: { imported: unknown }) => { seenImported = imported; return <div>Repertoire</div>; } }));
 vi.mock('../../app/features/product-api/RepertoireAuditMount', () => ({ RepertoireAuditMount: ({ children, onNavigate }: { children: React.ReactNode, onNavigate: (intent: { kind: string }) => void }) => <>{children}<button onClick={() => onNavigate({ kind: 'manual_edit' })}>Open tree</button></> }));
 vi.mock('../../app/components/integrity-repair-status', () => ({ IntegrityRepairStatus: () => null }));
-vi.mock('../../app/components/workbench-launch', () => ({ WorkbenchLaunch: () => null }));
 const card = (id: string, entry: number) => mapQueueCardToPracticeCard({ id, revision: 1, queue_entry_id: entry,
   start_fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', moves: ['e2e4'], content_type: 'opening', repertoire_name: 'Fixture', repertoire_source: 'PGN' });
 const a = card('a', 11), b = card('b', 12);
@@ -45,7 +44,7 @@ function mount() {
     invalidateBranchEvidence: noop, refreshQueueAfterRepertoireChange: asyncNoop,
     refreshDatabaseQueueAfterRepertoireChange: asyncNoop, addImportedRepertoire: noop, renameLocalRepertoire: noop,
     deleteLocalRepertoire: noop, onCardSaved: noop, finishPermanentDeletion: asyncNoop,
-    children: slots => <>{slots.topActions}{slots.content}{slots.dialogs}<button onClick={() => slots.onEditCard?.(a)}>Edit A</button><button onClick={() => slots.onEditCard?.(b)}>Edit B</button></> };
+    children: slots => <>{slots.trainingActions}{slots.content}{slots.dialogs}<button onClick={() => slots.onEditCard?.(a)}>Edit A</button><button onClick={() => slots.onEditCard?.(b)}>Edit B</button></> };
   return render(<WorkspaceFailureBoundary><Suspense fallback={null}><LegacyWorkspace {...props} /></Suspense></WorkspaceFailureBoundary>);
 }
 afterEach(() => { cleanup(); closeStudyIntentStorage(); vi.unstubAllGlobals(); deletion.pending = false; deletion.failEditor = false; deletion.localApi = false; deletion.finish = undefined; });
@@ -130,7 +129,7 @@ it('workspace_failure_preserves_active_attempt_queue_and_pending_save', async ()
 it('workspace_receives_the_original_imported_content_reference', async () => {
   const imported = useTrainingStore.getState().importedRepertoires;
   mount();
-  await screen.findByText('Repertoire');
+  await screen.findByText('Repertoire', { selector: 'div' });
   expect(seenImported).toBe(imported);
 });
 
