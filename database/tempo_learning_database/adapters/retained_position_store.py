@@ -39,24 +39,31 @@ def _state(manifest, legacy_fsrs_ids):
             raise ValueError("position key")
         if any(not isinstance(value[n], str) or not value[n] for n in
                ("repertoire_id", "position", "expected_uci", "policy_version", "owner_epoch",
-                "source_digest", "fsrs_json", "donor_card_id", "donor_fingerprint", "donor_selection_policy")):
+                "source_digest", "fsrs_json")):
             raise ValueError("missing fields")
         if any(type(value[n]) is not int or value[n] <= 0 for n in
-               ("version", "fsrs_internal_card_id", "donor_card_revision")):
+               ("version", "fsrs_internal_card_id")):
             raise ValueError("invalid identity")
         fsrs = json.loads(value["fsrs_json"])
         if not isinstance(fsrs, dict) or type(fsrs.get("card_id")) is not int or fsrs["card_id"] != value["fsrs_internal_card_id"]:
             raise ValueError("ambiguous FSRS")
-        donors = [f for f in manifest.facts if f.source.store == "cards" and
-                  len(f.source.primary_key) == 1 and f.source.primary_key[0].value == value["donor_card_id"]]
-        if len(donors) != 1 or donors[0].source not in fact.references:
-            raise ValueError("missing donor reference")
-        donor = json.loads(base64.b64decode(donors[0].original_base64, validate=True))
-        donor_fsrs = json.loads(donor["fsrs_card_json"])
-        donor_id = donor_fsrs.get("card_id") if isinstance(donor_fsrs, dict) else None
-        if (donor.get("id") != value["donor_card_id"] or donor.get("revision") != value["donor_card_revision"]
-                or type(donor_id) is not int or donor_id not in legacy_fsrs_ids):
-            raise ValueError("ambiguous donor identity")
+        donor_names = ("donor_card_id", "donor_card_revision", "donor_fingerprint", "donor_selection_policy")
+        donor_values = tuple(value[n] for n in donor_names)
+        if any(v is not None for v in donor_values):
+            if (any(not isinstance(value[n], str) or not value[n] for n in
+                    ("donor_card_id", "donor_fingerprint", "donor_selection_policy"))
+                    or type(value["donor_card_revision"]) is not int):
+                raise ValueError("partial or invalid donor")
+            donors = [f for f in manifest.facts if f.source.store == "cards" and
+                      len(f.source.primary_key) == 1 and f.source.primary_key[0].value == value["donor_card_id"]]
+            if len(donors) != 1 or donors[0].source not in fact.references:
+                raise ValueError("missing donor reference")
+            donor = json.loads(base64.b64decode(donors[0].original_base64, validate=True))
+            donor_fsrs = json.loads(donor["fsrs_card_json"])
+            donor_id = donor_fsrs.get("card_id") if isinstance(donor_fsrs, dict) else None
+            if (donor.get("id") != value["donor_card_id"] or donor.get("revision") != value["donor_card_revision"]
+                    or type(donor_id) is not int or donor_id not in legacy_fsrs_ids):
+                raise ValueError("ambiguous donor identity")
         if value["fsrs_internal_card_id"] in legacy_fsrs_ids:
             raise ValueError("reserved FSRS collision")
         for n in ("due_at", "introduced_at"):
