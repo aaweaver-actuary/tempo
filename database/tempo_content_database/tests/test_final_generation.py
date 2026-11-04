@@ -282,3 +282,73 @@ assert ContentFinalGeneration and ReserveFinal
 '''
     result = subprocess.run([sys.executable,'-I','-c',code],capture_output=True,text=True)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_content_final_generation_terminal_capture_race_never_revives_old_epoch():
+    """CF terminal race: a stale capture must not reopen accepted authority."""
+    assert os.environ.get('TEMPO_CONTENT_TEST_CONTAINER','').startswith('tempo-content-')
+    url, workspace = os.environ['TEMPO_CONTENT_DATABASE_URL'], os.environ['TEMPO_CONTENT_WORKSPACE']
+    source = _source(workspace)
+    manifest = {'schema_version':1,'kind':'authored_import','workspace_id':workspace,'source_key':source['source_key'],
+        'title':source['title'],'complete':True,'export_profile':'learning',
+        'provenance':{'kind':'synthetic','source_sha256':hashlib.sha256(json.dumps(source).encode()).hexdigest(),'description':'terminal race'}}
+    with ContentService(url,workspace) as initial, ContentService(url,workspace) as first, ContentService(url,workspace) as second:
+        bridge = Bridge(initial)
+        draft = bridge.draft(source,manifest,0)
+        operation = bridge.prepare(bridge.approve(draft['id'],draft['digest'])['id'],100)
+        publication = operation['document']['export']['publication']
+        bridge.record(operation['id'], {'transport':'authenticated_learning_http','endpoint':'synthetic-owner-test','acknowledgement':{
+            'contract_version':1,'workspace_id':workspace,'activation_id':operation['id']+':activate',
+            'publication_id':publication['publication_id'],'publication_generation':publication['publication_generation'],
+            'activation_revision':1,'status':'activated','reason':None}})
+        command = ReserveFinal('terminal-race',draft['source_id'],publication['publication_id'],publication['publication_generation'],operation['id'])
+        creator = make_final_generation(initial)
+        reservation = creator.execute(command)
+        evidence = creator.execute(CaptureFinal(reservation.handle)).capture
+        assert evidence is not None
+        left, right = make_final_generation(first), make_final_generation(second)
+        left_handle = left.execute(RecoverFinal('terminal-race',draft['source_id'])).handle
+        right_handle = right.execute(RecoverFinal('terminal-race',draft['source_id'])).handle
+        arrived, release_left, release_right = Barrier(3), Event(), Event()
+        for producer, release in ((left,release_left),(right,release_right)):
+            original = producer._store._read_capture
+            def delayed(row, original=original, release=release):
+                arrived.wait(timeout=10)
+                assert release.wait(15)
+                return original(row)
+            producer._store._read_capture = delayed
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            left_future = executor.submit(left.execute,CaptureFinal(left_handle))
+            right_future = executor.submit(right.execute,CaptureFinal(right_handle))
+            arrived.wait(timeout=10)
+            target = Reader(AcceptedTarget('test-target','fresh-allocation',1,'terminal-race',evidence.certificate_digest,
+                                           evidence.export_sha256,'legacy-watermark','activation-receipt','checkpoint','a'*64))
+            resolver = make_final_generation(initial,target)
+            active = resolver.execute(RecoverFinal('terminal-race',draft['source_id']))
+            accepted = resolver.execute(ResolveFinal(active.handle,'accept'))
+            assert accepted.status == 'ACCEPTED'
+            release_left.set()
+            first_result = left_future.result(timeout=10)
+            if first_result.status != 'BLOCK' or first_result.code != 'content_final_handle_invalid':
+                release_right.set()
+                pytest.fail(f'terminal reservation returned stale capture: {first_result.status}/{first_result.code}')
+            newer = creator.execute(ReserveFinal('next-epoch',draft['source_id'],publication['publication_id'],publication['publication_generation'],operation['id']))
+            assert newer.status == 'RESERVED' and newer.epoch == 2
+            owner_url = os.environ['TEMPO_CONTENT_MIGRATION_DATABASE_URL']
+            with psycopg.connect(owner_url) as db:
+                db.execute('UPDATE content.sources SET requested_revision=2 WHERE id=%s',(draft['source_id'],))
+            try:
+                release_right.set()
+                second_result = right_future.result(timeout=10)
+                assert second_result.status == 'BLOCK' and second_result.code == 'content_final_handle_invalid'
+            finally:
+                with psycopg.connect(owner_url) as db:
+                    db.execute('UPDATE content.sources SET requested_revision=1 WHERE id=%s',(draft['source_id'],))
+                release_right.set()
+            with psycopg.connect(url) as db:
+                old = db.execute('SELECT state,capture_id,resolution_json FROM content.final_generation_reservations WHERE reservation_id=%s',(reservation.reservation_id,)).fetchone()
+                current = db.execute('SELECT state,epoch FROM content.final_generation_reservations WHERE reservation_id=%s',(newer.reservation_id,)).fetchone()
+                stored = db.execute('SELECT certificate_bytes,export_bytes FROM content.final_generation_captures WHERE capture_id=%s',(evidence.capture_id,)).fetchone()
+            assert old[0] == 'accepted' and old[1] == evidence.capture_id and old[2]['activation_receipt'] == 'activation-receipt'
+            assert current == ('reserved',2)
+            assert bytes(stored[0]) == evidence.certificate_bytes and bytes(stored[1]) == evidence.export_bytes
