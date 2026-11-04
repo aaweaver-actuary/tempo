@@ -1,6 +1,6 @@
 """Independent authored Content and immutable publication component."""
 
-from . import generation_envelope
+from . import final_generation, generation_envelope
 from .models import SourceSnapshot
 from .domain import (ContentError, build_publication, canonical_position,
                      canonical_source, inventory_segment, stable_id,
@@ -8,7 +8,7 @@ from .domain import (ContentError, build_publication, canonical_position,
 
 __all__ = ["SourceSnapshot", "ContentService", "ContentError", "stable_id", "canonical_source",
            "canonical_position", "inventory_segment", "validate_exercise_step",
-           "build_publication", "generation_envelope"]
+           "build_publication", "generation_envelope", "final_generation"]
 
 
 def __getattr__(name: str):
