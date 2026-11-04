@@ -8,19 +8,17 @@ const required = [
   "favicon.svg",
   "tempo-core/tempo_core.js",
   "tempo-core/tempo_core_bg.wasm",
-  "engines/sf_19_smallnet.js",
-  "engines/sf_19_smallnet.wasm",
-  "engines/nn-61e7af4bb97d.nnue",
-  "ort/ort-wasm-simd-threaded.mjs",
-  "ort/ort-wasm-simd-threaded.wasm",
   "data/tactics-decks.json",
+  "data/tactics-catalog.json",
+  "data/tactics-packs",
   "sounds/standard/Move.mp3",
   "sounds/standard/Capture.mp3",
 ];
-for (let index = 0; index < 6; index += 1) required.push(`maia3/parts/part-${String(index).padStart(2, "0")}`);
 
 const missing = required.filter((path) => !existsSync(new URL(path, root)));
 if (missing.length) throw new Error(`Static build is missing: ${missing.join(", ")}`);
+if (!readdirSync(new URL("data/tactics-packs/", root)).some((name) => name.endsWith(".json")))
+  throw new Error("Static build has no Tactics packs");
 
 const html = readFileSync(new URL("index.html", root), "utf8");
 if (!html.includes('/tempo/assets/')) throw new Error("Generated HTML does not use the /tempo/ base path");
@@ -34,6 +32,8 @@ function measure(directory, prefix = "") {
     const path = join(directory, name);
     const relative = join(prefix, name);
     const stats = statSync(path);
+    if (/^(?:engines|maia3|ort)(?:\/|$)/i.test(relative) || /(?:stockfish|\.nnue$|maia3|ort-wasm)/i.test(relative))
+      throw new Error(`Static build contains retired compute payload: ${relative}`);
     if (stats.isDirectory()) measure(path, relative);
     else {
       total += stats.size;
