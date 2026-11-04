@@ -32,6 +32,11 @@ for task in (tasks.execute_foreground_command, tasks.execute_background_command,
     assert task.name == "app.tasks." + task.__name__
 assert "app.opening_evidence_api" not in sys.modules
 assert "app.canonical_prefix_api" not in sys.modules
+from app.services import background_diagnostics
+for module in ("app.threat_analysis_commands", "app.game_analysis_commands", "app.services.engine_scheduling"):
+    assert module not in sys.modules
+for name in ("threat.analysis.claim", "games.analysis.claim", "games.analysis.position.report"):
+    assert not command_gateway.is_command_registered(name)
 '''
     subprocess.run([sys.executable, '-c', script], env=os.environ.copy(), check=True, timeout=20)
 
