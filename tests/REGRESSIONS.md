@@ -6893,3 +6893,11 @@ expansion guards. This five-case selection
 passed on its exact source with cleanup; other standalone native cases were
 excluded/unrun. No Content publication, active-retirement union, physical
 currentness or activation authority is established by historical classification.
+
+OR-B1 extends historical-origin output refusal to escaped-UTF8 base envelopes,
+route and repeated occurrence expansion before appending/full serialization.
+The preparation epoch is masked in SQL when over raw budget. The tiny-budget
+regression plus actual historical lifecycle passed in a four-case selection
+(one native/three pure), source/dependency hashes and cleanup verified. This
+scoped preparation/output bound does not qualify the unchanged shared
+`owner_mode` publication-time current-epoch transfer as universally bounded.

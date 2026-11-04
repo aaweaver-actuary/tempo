@@ -52,3 +52,9 @@ Scope artifacts account escaped-UTF8 JSON prefix repetition and occurrence
 expansion before materializing/encoding over-limit output. A bounded source
 catalogue is not by itself a bound on its repeated policy-prefix representation;
 resource refusal remains AUTH_SCOPE_LIMIT and never becomes a guessed anchor.
+
+Origin preparation also budgets escaped-UTF8 base envelope, route and occurrence
+expansion before constructing full output and masks an oversized prepared epoch
+before transfer. Successful canonical bytes/digests remain unchanged. This is
+a preparation/output bound; the existing publication-time shared owner-mode
+current-epoch read retains its separate input-size limitation.
