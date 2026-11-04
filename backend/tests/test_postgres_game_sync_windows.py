@@ -163,7 +163,8 @@ def test_game_sync_completion_waits_for_every_window_and_record_receipt(monkeypa
     assert profile_intents == []
     unfinished["record"] = False
     assert finish_game_sync_if_complete(database, "job")
-    assert profile_intents == [database]
+    assert profile_intents == []
+    assert any("INSERT INTO game_sync_state" in statement for statement in statements)
     assert sum("UPDATE game_sync_jobs SET status='complete'" in statement
                for statement in statements) == 1
 
