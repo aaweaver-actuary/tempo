@@ -6848,3 +6848,19 @@ repeatable snapshot versus fresh-reader changes, row/text bounds, transaction
 refusal and empty tables. Native receipt is hash-bound to the committed adapter
 and test despite its precommit revision label. This proves only
 `PRELIMINARY_UNBOUND`, not asset correspondence, finality or Study closure.
+
+## Original first-response immutability (LP07)
+
+`database/tests/position_study/test_position_first_response_immutability.py`
+owns actual legacy migration59→60 preservation/rollback/reapply, insertion and
+exact retry including SQL ON CONFLICT DO NOTHING, negative-grade rollback,
+duplicate contention, and post-lock immutable UPDATE/DELETE/no-op denial.
+Single-table TRUNCATE may be rejected first by PostgreSQL FK SQLSTATE0A000;
+the legal CASCADE form reaches the immutable23514 guard before deletion.
+Original malformed evidence is retained and still rejected by its actual codec.
+The affected L3 native reader test preserves its three decoder/row negatives
+using test-local read-result corruption; persisted originals are untouched.
+Both native cases passed together on PostgreSQL18.6/schema60, source hashes
+matched the final commit despite a retained precommit runner revision, and
+owned resources were removed. Administrator trigger/DDL bypass, full source
+finality and target atomic effect/receipt/checkpoint remain separate gates.
