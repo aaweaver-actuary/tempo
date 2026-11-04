@@ -45,7 +45,7 @@ it("Games settings removes obsolete controls and browser mirroring while global 
   const compatibility = { lichess_username: "SavedLichess", chesscom_username: "SavedChesscom", auto_sync_minutes: 17 };
   const authoritativeSettings = { initial_depth: 6, ...compatibility };
   vi.mocked(readWorkspaceResponse).mockImplementation(async () => Response.json(authoritativeSettings));
-  const legacyKeys = ["tempo-lichess-username", "tempo-chesscom-username"];
+  const legacyKeys = ["tempo-lichess-username", "tempo-chesscom-username", "tempo-arrow-metric", "tempo-engine-window-cp", "tempo-coverage-target", "tempo-maia-elo", "tempo-maia-transposition-plies", "tempo-explorer-speeds", "tempo-explorer-ratings"];
   for (const key of legacyKeys) localStorage.setItem(key, "Retained browser value");
   const reads = vi.spyOn(Storage.prototype, "getItem");
   const writes = vi.spyOn(Storage.prototype, "setItem");
@@ -64,6 +64,8 @@ it("Games settings removes obsolete controls and browser mirroring while global 
     onTheme={vi.fn()} onPieces={vi.fn()} onSound={vi.fn()} />);
   const save = screen.getByRole("button", { name: "Save settings" }) as HTMLButtonElement;
   await waitFor(() => expect(save.disabled).toBe(false));
+  expect(screen.queryByRole("tab", { name: "Builder" })).toBeNull();
+  expect(screen.queryByText(/Stockfish|Maia|Explorer/)).toBeNull();
   fireEvent.click(screen.getByRole("tab", { name: "Games" }));
   await screen.findByRole("region", { name: "Game sync settings" });
   expect(screen.getByRole("button", { name: "Save game sync settings" })).toBeTruthy();

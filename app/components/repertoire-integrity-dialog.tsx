@@ -5,17 +5,12 @@ import { API_URL } from "../const";
 import { Chessboard, type BoardTheme, type PieceSet } from "./chessboard";
 import CloseButton from "./buttons/CloseButton";
 import { useDialogFocus } from "../hooks/use-dialog-focus";
-import { loadExplorer } from "../lib/lichess-explorer";
-import { readLichessSessionToken } from "../lib/lichess-session";
-import { adaptExplorerMoves } from "../domain/adapters/analysis-adapters";
-import type { CandidateMove } from "../domain/analysis";
 import {
   repertoireIntegritySchema,
 } from "../domain/schemas";
 import { readJsonResponse } from "../lib/validated-data";
 import { enqueueIntegrityRepair, pendingIntegrityRepairs, subscribeIntegrityRepairs, INTEGRITY_REPAIR_CONFIRMED, type PendingIntegrityRepair } from "../lib/integrity-repair-outbox";
 import { asFenString, asUciMove } from "../domain/shared";
-import { MoveComparisonTable } from "./move-comparison-table";
 import { reportDebugError } from "../lib/debug-reporting";
 
 export function RepertoireIntegrityDialog({
@@ -37,8 +32,6 @@ export function RepertoireIntegrityDialog({
   const [personal, setPersonal] = useState<
     { move_uci: string; games: number; score_percentage: number }[]
   >([]);
-  const [lichess, setLichess] = useState<CandidateMove[]>([]);
-  const [masters, setMasters] = useState<CandidateMove[]>([]);
   const [error, setError] = useState("");
   const [integrityLoadError, setIntegrityLoadError] = useState("");
   const [repairs, setRepairs] = useState<PendingIntegrityRepair[]>([]);
@@ -60,10 +53,7 @@ export function RepertoireIntegrityDialog({
       return undefined;
     }
   }, [issue]);
-  const repertoireMoves = useMemo<CandidateMove[]>(
-    () => (issue?.moves ?? []).map((move) => ({ uci: asUciMove(move.uci) })),
-    [issue],
-  );
+
 
   const load = useCallback(async () => {
     loadController.current?.abort();
@@ -125,7 +115,7 @@ export function RepertoireIntegrityDialog({
     queueMicrotask(() => {
       if (controller.signal.aborted) return;
       setSelectedChoice(current => current?.identity === issueIdentity ? current : undefined);
-      setPersonal([]); setLichess([]); setMasters([]);
+      setPersonal([]);
     });
     if (issue?.fen) {
       const fen = issue.fen;
@@ -135,12 +125,7 @@ export function RepertoireIntegrityDialog({
           const games = await response.json() as { moves?: { move_uci: string; games: number; score_percentage: number }[] };
           if (!controller.signal.aborted) setPersonal(games.moves ?? []);
         }).catch(() => { /* Optional evidence remains unavailable; selection is independent. */ });
-      void loadExplorer(fen, "blitz,rapid,classical", "1600,1800,2000,2200,2500", readLichessSessionToken())
-        .then(explorer => {
-          if (controller.signal.aborted || !explorer) return;
-          setLichess(adaptExplorerMoves(fen, explorer.lichess.moves));
-          setMasters(adaptExplorerMoves(fen, explorer.masters.moves));
-        }).catch(() => { /* Explorer already reports source failures. */ });
+
     }
     return () => controller.abort();
   }, [issueIdentity, issue?.fen]);
@@ -243,16 +228,13 @@ export function RepertoireIntegrityDialog({
                           .join(" · ")
                       : "none"}
                   </p>
-                  <MoveComparisonTable
-                    repertoire={repertoireMoves}
-                    engine={[]}
-                    maia={[]}
-                    lichess={lichess}
-                    masters={masters}
-                    turn={board.turn() === "w" ? "white" : "black"}
-                    onPlay={(move) => setSelected(move)}
-                    onHover={() => undefined}
-                  />
+                  {issue.moves.map(move => {
+                    try {
+                      const candidate = new Chess(issue.fen!);
+                      const legal = candidate.move({ from: move.uci.slice(0, 2), to: move.uci.slice(2, 4), promotion: move.uci.slice(4) || undefined });
+                      return legal ? <Button key={move.uci} onClick={() => setSelected(move.uci)}>Choose {legal.san}</Button> : null;
+                    } catch { return null; }
+                  })}
                   <p className="source-status">
                     Personal games:{" "}
                     {personal.length
@@ -263,7 +245,7 @@ export function RepertoireIntegrityDialog({
                           )
                           .join(" · ")
                       : "unavailable"}{" "}
-                    · Stockfish: unavailable · Maia: unavailable
+
                   </p>
                   <p>
                     Selected response:{" "}

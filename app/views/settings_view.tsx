@@ -158,26 +158,6 @@ export default function SettingsView({
         sound_volume: Number(
           localStorage.getItem("tempo-sound-volume") ?? 0.72,
         ),
-        arrow_metric:
-          (localStorage.getItem("tempo-arrow-metric") as
-            | SettingsValues["arrow_metric"]
-            | null) ?? "stockfish",
-        engine_line_window_cp: Number(
-          localStorage.getItem("tempo-engine-window-cp") ?? 30,
-        ),
-        coverage_target: Number(
-          localStorage.getItem("tempo-coverage-target") ?? 90,
-        ),
-        maia_elo: localStorage.getItem("tempo-maia-elo") ?? "1500",
-        maia_transposition_plies: Number(
-          localStorage.getItem("tempo-maia-transposition-plies") ?? 4,
-        ),
-        explorer_speeds:
-          localStorage.getItem("tempo-explorer-speeds") ??
-          "blitz,rapid,classical",
-        explorer_ratings:
-          localStorage.getItem("tempo-explorer-ratings") ??
-          "1600,1800,2000,2200,2500",
       }));
       void loadSettings();
     }, 0);
@@ -198,22 +178,6 @@ export default function SettingsView({
     onTheme(values.board_theme);
     onPieces(values.piece_set);
     onSound(values.sound);
-    localStorage.setItem(
-      "tempo-coverage-target",
-      String(values.coverage_target),
-    );
-    localStorage.setItem("tempo-maia-elo", values.maia_elo);
-    localStorage.setItem(
-      "tempo-maia-transposition-plies",
-      String(values.maia_transposition_plies),
-    );
-    localStorage.setItem("tempo-explorer-speeds", values.explorer_speeds);
-    localStorage.setItem("tempo-explorer-ratings", values.explorer_ratings);
-    localStorage.setItem(
-      "tempo-engine-window-cp",
-      String(values.engine_line_window_cp),
-    );
-    localStorage.setItem("tempo-arrow-metric", values.arrow_metric);
     localStorage.setItem("tempo-sound-volume", String(values.sound_volume));
     if (usesLocalApi()) {
       const backend = {
@@ -350,7 +314,7 @@ export default function SettingsView({
       )}
       {!settingsLoaded && !loadError && <Notice>Loading settings…</Notice>}
       <TabList as="nav" className="settings-section-nav" label="Settings sections">
-        {["training", "board", "builder", "games", "data"].map((section) => (
+        {["training", "board", "games", "data"].map((section) => (
           <Button
             key={section}
             id={`settings-tab-${section}`}
@@ -522,146 +486,6 @@ export default function SettingsView({
                 update("sound_volume", Number(event.target.value))
               }
             />
-          </label>
-        </section>
-        <section id="settings-section-builder" className="settings-card" role="tabpanel" aria-labelledby="settings-tab-builder" hidden={activeSection !== "builder"}>
-          <h2>Builder</h2>
-          <label>
-            <span>Coverage target</span>
-            <SelectInput disabled={!settingsLoaded}
-              value={values.coverage_target}
-              onChange={(event) =>
-                update("coverage_target", Number(event.target.value))
-              }
-            >
-              <option value="80">80%</option>
-              <option value="90">90%</option>
-              <option value="95">95%</option>
-            </SelectInput>
-          </label>
-          <label>
-            <span>
-              Required reply threshold
-              <small>Cover opponent moves occurring at least this often</small>
-            </span>
-            <SelectInput disabled={!settingsLoaded}
-              value={values.coverage_reply_denominator}
-              onChange={(event) =>
-                update("coverage_reply_denominator", Number(event.target.value))
-              }
-            >
-              <option value="100">1 in 100</option>
-              <option value="200">1 in 200</option>
-              <option value="300">1 in 300</option>
-            </SelectInput>
-          </label>
-          <label>
-            <span>Cumulative reply coverage</span>
-            <SelectInput disabled={!settingsLoaded}
-              value={values.coverage_cumulative_target}
-              onChange={(event) =>
-                update("coverage_cumulative_target", Number(event.target.value))
-              }
-            >
-              <option value="90">90%</option>
-              <option value="95">95%</option>
-              <option value="99">99%</option>
-            </SelectInput>
-          </label>
-          <label>
-            <span>Coverage horizon<small>Full move number</small></span>
-            <TextInput disabled={!settingsLoaded}
-              type="number"
-              min="4"
-              max="40"
-              value={values.coverage_horizon_fullmoves}
-              onChange={(event) =>
-                update("coverage_horizon_fullmoves", Number(event.target.value))
-              }
-            />
-          </label>
-          <label>
-            <span>Candidate colors</span>
-            <SelectInput disabled={!settingsLoaded}
-              value={values.arrow_metric}
-              onChange={(event) =>
-                update(
-                  "arrow_metric",
-                  event.target.value as SettingsValues["arrow_metric"],
-                )
-              }
-            >
-              <option value="stockfish">Stockfish quality</option>
-              <option value="lichess">Lichess practical score</option>
-              <option value="masters">Masters practical score</option>
-            </SelectInput>
-          </label>
-          <label>
-            <span>
-              Engine move window<small>Centipawns from the best move</small>
-            </span>
-            <TextInput disabled={!settingsLoaded}
-              type="number"
-              min="0"
-              max="300"
-              value={values.engine_line_window_cp}
-              onChange={(event) =>
-                update("engine_line_window_cp", Number(event.target.value))
-              }
-            />
-          </label>
-          <label>
-            <span>Maia strength</span>
-            <SelectInput disabled={!settingsLoaded}
-              value={values.maia_elo}
-              onChange={(event) => update("maia_elo", event.target.value)}
-            >
-              <option>1100</option>
-              <option>1500</option>
-              <option>1900</option>
-            </SelectInput>
-          </label>
-          <label>
-            <span>
-              Transposition search<small>Maia lookahead plies</small>
-            </span>
-            <TextInput disabled={!settingsLoaded}
-              type="number"
-              min="2"
-              max="8"
-              value={values.maia_transposition_plies}
-              onChange={(event) =>
-                update("maia_transposition_plies", Number(event.target.value))
-              }
-            />
-          </label>
-          <label>
-            <span>Explorer games</span>
-            <SelectInput disabled={!settingsLoaded}
-              value={values.explorer_speeds}
-              onChange={(event) =>
-                update("explorer_speeds", event.target.value)
-              }
-            >
-              <option value="blitz,rapid,classical">
-                Blitz + rapid + classical
-              </option>
-              <option value="rapid,classical">Rapid + classical</option>
-              <option value="classical">Classical only</option>
-            </SelectInput>
-          </label>
-          <label>
-            <span>Explorer ratings</span>
-            <SelectInput disabled={!settingsLoaded}
-              value={values.explorer_ratings}
-              onChange={(event) =>
-                update("explorer_ratings", event.target.value)
-              }
-            >
-              <option value="1600,1800,2000,2200,2500">1600+</option>
-              <option value="2000,2200,2500">2000+</option>
-              <option value="2200,2500">2200+</option>
-            </SelectInput>
           </label>
         </section>
         <section id="settings-section-games" className="settings-card" role="tabpanel" aria-labelledby="settings-tab-games" hidden={activeSection !== "games"}>
