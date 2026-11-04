@@ -113,6 +113,18 @@ PYTHONPATH=backend:database backend/.venv/bin/python -B \
   -m app.product_composition.game_collection_status --workspace legacy --limit 20
 ```
 
+To read identity and one game without collection-wide diagnostics, use:
+
+```sh
+PYTHONPATH=backend:database backend/.venv/bin/python -B \
+  -m app.product_composition.game_collection_status --workspace legacy --selected-game-only --provider lichess --game-id <provider-game-id>
+```
+
+This mode reads the selected game and its bounded receipt observations; it does
+not enumerate configured repertoires or aggregate the collection. A missing or
+ambiguous game remains unresolved. The existing selector without this flag still
+runs the full report.
+
 The process requires the existing `TEMPO_DATABASE_READ_URL` and installed backend
 dependencies. It never uses `TEMPO_DATABASE_WRITE_URL`. Use `--provider lichess`
 or `--provider chesscom` (`chess.com` is also accepted), and optional
