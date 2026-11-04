@@ -29,29 +29,6 @@ def control_activity(database: PostgresConnection, payload: dict[str, Any]) -> d
 register_command("activity.control", control_activity)
 
 
-def report_analysis_progress(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, bool]:
-    if payload.get("source") != "game_analysis" or not all(
-        isinstance(payload.get(field), str)
-        for field in ("id", "generation", "phase", "lease_id")
-    ):
-        raise HTTPException(422, "Invalid analysis progress")
-    completed, total = payload.get("completed"), payload.get("total")
-    if (isinstance(completed, bool) or not isinstance(completed, int)
-            or isinstance(total, bool) or not isinstance(total, int)
-            or completed < 0 or total < completed):
-        raise HTTPException(422, "Invalid analysis progress count")
-    work_id = payload["id"]
-    job = storage.analysis_lease_for_update(database, work_id)
-    if (job is None or f"{job['analysis_version']}:{job['analysis_evidence_version']}" != payload["generation"]
-            or job["status"] != "leased" or job["lease_id"] != payload["lease_id"]):
-        raise HTTPException(409, "Analysis lease is no longer active")
-    storage.save_analysis_progress(
-        database, work_id, payload["generation"], payload["phase"], completed, total,
-        datetime.now(timezone.utc).isoformat(),
-    )
-    return {"ok": True}
-
-
 def retry_failed_task(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
     task_id = str(payload["task_id"])
     failed = storage.failed_task_for_update(database, task_id)

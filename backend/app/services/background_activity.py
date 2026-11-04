@@ -39,8 +39,6 @@ def report_progress(
             current_generation = ":".join(str(current[column]) for column in columns)
             if current_generation != generation_key:
                 return False
-            if source == "game_analysis" and (current["status"] != "leased" or current["lease_id"] != lease_id):
-                return False
         storage.upsert_progress(database, (source, work_id, generation_key, phase, completed_units, total_units, _now()))
     return True
 
@@ -87,9 +85,6 @@ def set_control_in_transaction(database, source: str, work_id: str, action: str,
     write_control = storage.prepare_control_update(action)
     value = int(action in {"pause", "prioritize"})
     write_control(database, (value, now, source, work_id))
-    if source == "game_analysis" and action == "pause":
-        storage.release_analysis_lease(database, (now, work_id))
-        storage.mark_analysis_pending(database, (work_id,))
     if source == "coverage" and action == "pause":
         storage.release_maia_lease(database, (now, work_id))
     if source == "threat_analysis" and action == "pause":

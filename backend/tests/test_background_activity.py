@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor
 
+import pytest
 from fastapi.testclient import TestClient
 
 from tempo_legacy_database import connections as database
@@ -32,7 +33,6 @@ def _seed_all_sources() -> None:
         db.execute("""INSERT INTO repertoire_coverage_runs(id,repertoire_id,status,settings_json,total_nodes,completed_nodes,created_at,updated_at)
                    VALUES('activity-coverage','activity-rep','queued','{}',0,0,?,?)""", (now, now))
         db.execute("INSERT INTO daily_statistics_jobs(local_day,status,updated_at) VALUES('2026-09-22','queued',?)", (now,))
-        db.execute("INSERT INTO game_analysis_jobs(game_id,status,updated_at) VALUES('activity-game','queued',?)", (now,))
 
 
 def test_retired_tray_routes_leave_existing_pause_metadata_unchanged(tmp_path, monkeypatch):
@@ -84,14 +84,12 @@ def test_activity_progress_rejects_stale_generation_and_lease(tmp_path, monkeypa
     _seed_all_sources()
     assert report_progress("integrity", "activity-rep", "activity-scan", "Scanning", 2, 5)
     assert not report_progress("integrity", "activity-rep", "old-scan", "Stale", 5, 5)
-    with database.connection() as db:
-        db.execute("UPDATE game_analysis_jobs SET status='leased',lease_id='current-lease' WHERE game_id='activity-game'")
-    assert not report_progress("game_analysis", "activity-game", "1:1", "Stale", 1, 2, lease_id="old-lease")
-    assert report_progress("game_analysis", "activity-game", "1:1", "Scanning", 1, 2, lease_id="current-lease")
-    assert set_control("game_analysis", "activity-game", "pause")
-    assert not report_progress("game_analysis", "activity-game", "1:1", "Scanning", 2, 2, lease_id="current-lease")
+    assert not set_control("game_analysis", "activity-game", "pause")
+    with pytest.raises(ValueError, match="Unknown background work source"):
+        report_progress("game_analysis", "activity-game", "1:1", "Scanning", 1, 2)
     with database.read_connection() as db:
-        assert tuple(db.execute("SELECT phase,completed_units,total_units,paused FROM background_activity WHERE source='game_analysis' AND work_id='activity-game'").fetchone()) == ("Scanning", 1, 2, 1)
+        assert tuple(db.execute("SELECT phase,completed_units,total_units FROM background_activity WHERE source='integrity' AND work_id='activity-rep'").fetchone()) == ("Scanning", 2, 5)
+
 
 
 def test_pausing_coverage_invalidates_browser_lease_and_resume_reopens_queue(tmp_path, monkeypatch):

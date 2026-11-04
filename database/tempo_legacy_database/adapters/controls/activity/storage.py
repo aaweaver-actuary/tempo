@@ -10,7 +10,6 @@ SOURCES = {
     "derivation": ("game_derivation_jobs", "game_id"),
     "integrity": ("repertoire_integrity_jobs", "repertoire_id"),
     "coverage": ("repertoire_coverage_runs", "id"),
-    "game_analysis": ("game_analysis_jobs", "game_id"),
     "threat_analysis": ("threat_analysis_requests", "id"),
 }
 
@@ -19,14 +18,13 @@ def prepare_progress_read(source):
     generation_columns = {
         "durable": ("generation",), "derivation": ("derivation_version",),
         "integrity": ("run_id",), "coverage": ("id",),
-        "game_analysis": ("analysis_version", "analysis_evidence_version"),
     }
     table, id_column = SOURCES[source]
     columns = generation_columns.get(source)
 
     def read_current(database, work_id):
         return database.execute(
-            f"SELECT {','.join(columns)}{',status,lease_id' if source == 'game_analysis' else ''} FROM {table} WHERE {id_column}=?",
+            f"SELECT {','.join(columns)} FROM {table} WHERE {id_column}=?",
             (work_id,),
         ).fetchone()
 
@@ -95,21 +93,6 @@ def ensure_control(database, values):
     return database.execute(
         """INSERT INTO background_activity(source,work_id,updated_at)
            VALUES(?,?,?) ON CONFLICT(source,work_id) DO NOTHING""",
-        values,
-    )
-
-
-def release_analysis_lease(database, values):
-    return database.execute(
-        """UPDATE game_analysis_jobs SET status='queued',lease_id=NULL,
-               lease_expires_at=NULL,updated_at=? WHERE game_id=? AND status='leased'""",
-        values,
-    )
-
-
-def mark_analysis_pending(database, values):
-    return database.execute(
-        "UPDATE imported_games SET analysis_state='pending' WHERE id=?",
         values,
     )
 
