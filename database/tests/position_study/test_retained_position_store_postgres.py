@@ -22,7 +22,7 @@ import runpy
 
 ROOT = Path(__file__).resolve().parents[3]
 apply_migrations = runpy.run_path(str(ROOT / "database/tooling/apply_postgres_migrations.py"))["apply_migrations"]
-TARGET_DDL = (ROOT / "database/tempo_learning_database/ddl/migrations/0004_retained_position.sql").read_text()
+from tempo_learning_database.ddl.migrate import migrate, expected_migrations
 
 # Each selected table is read in full, with its actual primary key and native
 # typed row_to_json text. TEXT (including FSRS) is never parsed/reformatted by
@@ -57,13 +57,13 @@ def populate(conn):
     conn.execute("""INSERT INTO study_position_seed_runs(repertoire_id,owner_epoch,source_digest,source_token_json,selection_policy,manifest_digest,manifest_count,allocator_preflight_json,seeded_count,status,created_at,completed_at)
         VALUES ('r','e1','authored','{}','v1','manifest',1,'{}',1,'complete','2026-10-01T12:00:00Z','2026-10-01T12:00:00Z')""")
     conn.execute("""INSERT INTO study_position_seed_outcomes(repertoire_id,owner_epoch,variant,position,expected_uci,policy_version,disposition,donor_card_id,donor_card_revision,donor_fingerprint,donor_selection_policy,donor_fsrs_internal_card_id,allocated_fsrs_internal_card_id,clone_fingerprint,introduced_at)
-        VALUES ('r','e1','standard','exact-fen','e2e4','p1','seeded','card-1',2,'fingerprint','v1',42,4503599627370496,'clone','2026-10-01T12:00:00Z')""")
+        VALUES ('r','e1','standard','rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -','e2e4','p1','seeded','card-1',2,'fingerprint','v1',42,4503599627370496,'clone','2026-10-01T12:00:00Z')""")
     conn.execute("""INSERT INTO study_position_states(repertoire_id,variant,position,expected_uci,policy_version,owner_epoch,source_digest,version,fsrs_internal_card_id,fsrs_json,due_at,introduced_at,donor_card_id,donor_card_revision,donor_fingerprint,donor_selection_policy)
-        VALUES ('r','standard','exact-fen','e2e4','p1','e1','authored',3,4503599627370496,%s,'2026-11-05T01:02:03.123456Z','2026-10-01T12:00:00Z','card-1',2,'fingerprint','v1')""", ('{ "card_id":4503599627370496, "state":2, "step":null, "stability":1.25, "difficulty":5.0, "due":"2026-11-05T01:02:03.123456+00:00", "last_review":"2026-10-02T12:01:00+00:00" }',))
-    conn.execute("""INSERT INTO study_position_issued_plans VALUES ('attempt-1',9,'card-1',2,'r','standard','e1','authored','2026-10-02','plan-digest','{"target":"exact-fen"}','2026-10-02T12:00:00Z')""")
-    conn.execute("""INSERT INTO study_position_first_responses VALUES ('event-1','attempt-1',0,'r','standard','exact-fen','e1','payload','{"actual_uci":"e2e4"}','2026-10-02T12:00:30Z','2026-10-02T12:00:31Z')""")
+        VALUES ('r','standard','rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -','e2e4','p1','e1','authored',3,4503599627370496,%s,'2026-11-05T01:02:03.123456Z','2026-10-01T12:00:00Z','card-1',2,'fingerprint','v1')""", ('{ "card_id":4503599627370496, "state":2, "step":null, "stability":1.25, "difficulty":5.0, "due":"2026-11-05T01:02:03.123456+00:00", "last_review":"2026-10-02T12:01:00+00:00" }',))
+    conn.execute("""INSERT INTO study_position_issued_plans VALUES ('attempt-1',9,'card-1',2,'r','standard','e1','authored','2026-10-02','plan-digest','{"target":"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -"}','2026-10-02T12:00:00Z')""")
+    conn.execute("""INSERT INTO study_position_first_responses VALUES ('event-1','attempt-1',0,'r','standard','rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -','e1','payload','{"actual_uci":"e2e4"}','2026-10-02T12:00:30Z','2026-10-02T12:00:31Z')""")
     conn.execute("""INSERT INTO study_position_grades(effect_id,source_kind,event_id,attempt_id,decision_index,effect_kind,repertoire_id,variant,position,owner_epoch,expected_uci,policy_version,source_digest,accepted_study_day,grade,request_digest,accepted_at,fsrs_before_json,fsrs_after_json,version_before,version_after)
-        VALUES ('effect-1','study','event-1','attempt-1',0,'response','r','standard','exact-fen','e1','e2e4','p1','authored','2026-10-02','good','effect-digest','2026-10-02T12:01:00Z','before','after',2,3)""")
+        VALUES ('effect-1','study','event-1','attempt-1',0,'response','r','standard','rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -','e1','e2e4','p1','authored','2026-10-02','good','effect-digest','2026-10-02T12:01:00Z','before','after',2,3)""")
     conn.execute("""INSERT INTO reviews(id,card_id,rating,reviewed_at,previous_interval,next_interval,internal_rating,guided,source_kind,source_ref,invalidated_at,invalidation_reason)
         VALUES (71,'card-1','good','2026-10-02T12:01:00Z',1,3,'good',0,'position_study','attempt:attempt-1','2026-10-03T12:00:00Z','source_edit'),
                (72,'card-1','again','2026-10-03T12:01:00Z',3,1,'again',0,'study',NULL,NULL,NULL)""")
@@ -98,6 +98,8 @@ def capture(conn):
             raw = row_text.encode("utf-8")
             # Restrict references to matching review where applicable.
             targets = [key for dep in refs.get(table, ()) for key in by_table[dep]]
+            if table == "study_position_states" and row["donor_card_id"] is None:
+                targets = [k for k in targets if k.store != "cards"]
             if table == "review_schedule_snapshots":
                 targets = [k for k in targets if k.primary_key[0].value == str(row["review_id"])]
             if table == "review_attempt_receipts":
@@ -120,7 +122,9 @@ def capture(conn):
     return rows, manifest, receipt
 
 
-def test_f01_retained_position_atomic_exact_replay_and_negative_cases():
+@pytest.mark.parametrize("donor_revision", [2, 0, -1, None], ids=["donor-backed", "zero-revision", "negative-revision", "donor-free-legal-start"])
+def test_f01_retained_position_atomic_exact_replay_and_negative_cases(donor_revision):
+    donor_free = donor_revision is None
     identity = os.environ.get("TEMPO_LEARNING_TEST_FIXTURE", "")
     if not identity.startswith("tempo-learning-"):
         pytest.fail("requires owned Learning PostgreSQL runner")
@@ -131,18 +135,31 @@ def test_f01_retained_position_atomic_exact_replay_and_negative_cases():
     try:
         dsn = make_conninfo(admin, dbname=name)
         apply_migrations(dsn)
+        migrate(dsn, "fixture-workspace", "America/New_York")
         with psycopg.connect(dsn, autocommit=True) as conn:
             with conn.transaction():
                 populate(conn)
+                if not donor_free:
+                    conn.execute("UPDATE cards SET revision=%s WHERE id='card-1'", (donor_revision,))
+                    conn.execute("UPDATE study_position_states SET donor_card_revision=%s", (donor_revision,))
+                if donor_free:
+                    conn.execute("UPDATE study_position_states SET donor_card_id=NULL, donor_card_revision=NULL, donor_fingerprint=NULL, donor_selection_policy=NULL")
                 rows, manifest, receipt = capture(conn)
+            import chess
+            position = rows["study_position_states"][0]
+            board = chess.Board(position["position"] + " 0 1")
+            assert board.is_valid() and board.fen(en_passant="legal").rsplit(" ", 2)[0] == position["position"]
+            assert chess.Move.from_uci(position["expected_uci"]) in board.legal_moves
             namespace = frozenset(row[0] for row in conn.execute("SELECT (fsrs_card_json::jsonb->>'card_id')::bigint FROM cards WHERE fsrs_card_json IS NOT NULL"))
             assert namespace == frozenset({42})
             # Verify source has the entire original review/invalidations set.
             assert len(rows["reviews"]) == 2 and rows["reviews"][0]["invalidated_at"] is not None
             assert conn.execute("SELECT max(version) FROM tempo_schema_migrations").fetchone() == (59,)
-            conn.execute("CREATE SCHEMA target")
-            conn.execute("SET search_path TO target")
-            conn.execute(TARGET_DDL)
+            assert dict(conn.execute("SELECT id,checksum FROM learning.migration_history")) == expected_migrations()
+            assert "learning.retained_position_optional_donor/0001" in expected_migrations()
+            conn.execute("SET search_path TO learning")
+            assert conn.execute("SELECT count(*) FROM cards").fetchone() == (0,)
+            assert conn.execute("SELECT count(*) FROM daily_queue").fetchone() == (0,)
             with pytest.raises(RetainedPositionConflict, match="active transaction"):
                 stage_position(conn, manifest, receipt, legacy_fsrs_ids=namespace)
             with pytest.raises(RuntimeError, match="rollback stage"):
@@ -154,7 +171,7 @@ def test_f01_retained_position_atomic_exact_replay_and_negative_cases():
             with conn.transaction():
                 assert stage_position(conn, manifest, receipt, legacy_fsrs_ids=namespace) == receipt
                 assert stage_position(conn, manifest, receipt, legacy_fsrs_ids=namespace) == receipt
-                row = read_position(conn, "r", "standard", "exact-fen")
+                row = read_position(conn, "r", "standard", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -")
                 source = rows["study_position_states"][0]
                 assert row[3:10] == tuple(source[n] for n in ("expected_uci","policy_version","owner_epoch","source_digest","version","fsrs_internal_card_id","fsrs_json"))
                 assert row[10].isoformat() == source["due_at"] and row[11].isoformat() == source["introduced_at"]
@@ -187,6 +204,10 @@ def test_f01_retained_position_atomic_exact_replay_and_negative_cases():
             with pytest.raises(RetainedPositionConflict, match="collision"):
                 with conn.transaction():
                     stage_position(conn, manifest, receipt, legacy_fsrs_ids=frozenset({42,4503599627370496}))
+            # A different batch cannot claim the already staged position.
+            with pytest.raises(RetainedPositionConflict, match="position identity conflict"):
+                with conn.transaction():
+                    stage_position(conn, manifest, receipt.model_copy(update={"batch_id":"other"}), legacy_fsrs_ids=namespace)
             # A changed source snapshot under the same transfer/batch is a conflict.
             state_fact = next(f for f in manifest.facts if f.source.store == "study_position_states")
             altered = json.loads(base64.b64decode(state_fact.original_base64)); altered["source_digest"] = "changed"
@@ -204,14 +225,20 @@ def test_f01_retained_position_atomic_exact_replay_and_negative_cases():
             conn.execute("SET search_path TO public")
             _, source_after, _ = capture(conn)
             assert source_after == manifest
-            conn.execute("SET search_path TO target")
+            conn.execute("SET search_path TO learning")
             from tempo_learning_database.adapters.retained_position_store import _state
             state_fact = next(f for f in manifest.facts if f.source.store == "study_position_states")
-            malformed = json.loads(base64.b64decode(state_fact.original_base64)); malformed["donor_card_id"] = ""
+            malformed = json.loads(base64.b64decode(state_fact.original_base64)); malformed["donor_card_id"] = "card-1" if donor_free else None
             raw = json.dumps(malformed).encode()
             bad = state_fact.model_copy(update={"original_base64":base64.b64encode(raw).decode(),"original_digest":digest_bytes(raw)})
             with pytest.raises(RetainedPositionConflict, match="ambiguous"):
+
                 _state(manifest.model_copy(update={"facts":tuple(bad if f is state_fact else f for f in manifest.facts)}), frozenset({42}))
+            with pytest.raises(psycopg.errors.CheckViolation):
+                with conn.transaction():
+                    conn.execute("UPDATE retained_position_states SET donor_card_id=%s", ("card-1" if donor_free else None,))
+            assert conn.execute("SELECT count(*) FROM cards").fetchone() == (0,)
+            assert conn.execute("SELECT count(*) FROM daily_queue").fetchone() == (0,)
     finally:
         with psycopg.connect(admin, autocommit=True) as root:
             root.execute(sql.SQL("DROP DATABASE {}").format(sql.Identifier(name)))
