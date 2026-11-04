@@ -80,6 +80,16 @@ CREATE TABLE position_effect_receipts (
         REFERENCES position_effect_responses(event_id, attempt_id, decision_index),
     CHECK (version_after = version_before + CASE WHEN grade = 'observe' THEN 0 ELSE 1 END)
 );
+-- First-response evidence is append-only, including its original acceptance
+-- clock and bytes/digest. No correction or replay may rewrite the first answer.
+CREATE FUNCTION position_effect_response_immutable() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION 'position first response is immutable' USING ERRCODE='23514';
+END $$;
+CREATE TRIGGER position_effect_response_immutable
+    BEFORE UPDATE OR DELETE ON position_effect_responses
+    FOR EACH ROW EXECUTE FUNCTION position_effect_response_immutable();
 -- Epoch deliberately excluded: the daily credit survives authority epochs.
 CREATE UNIQUE INDEX position_effect_one_good_day ON position_effect_receipts
     (repertoire_id,variant,position,accepted_study_day) WHERE grade='good';

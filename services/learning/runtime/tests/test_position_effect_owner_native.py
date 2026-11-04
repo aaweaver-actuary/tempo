@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 import json
 from pathlib import Path
+import time
 
 import chess
 import psycopg
@@ -55,7 +56,8 @@ def connect(store):
     return db
 
 
-def issue(db, name='a', *, actual='e2e4', complete=True, epoch='e1', issued_day=date(2026,11,4), version=3):
+def issue(db, name='a', *, actual='e2e4', complete=True, epoch='e1', issued_day=date(2026,11,4), version=3,
+          corrupt_response=False):
     plan = dict(attempt_id=name,queue_entry_id=9,card_id='original-card',card_revision=2,
         repertoire_id='r',variant='standard',position=POSITION,expected_uci='e2e4',policy_version='p1',
         owner_epoch=epoch,source_digest='source',due=True,issued_version=version,
@@ -71,7 +73,7 @@ def issue(db, name='a', *, actual='e2e4', complete=True, epoch='e1', issued_day=
         assistance_before=False,manual_failure=False,observed_at=(AT-timedelta(minutes=1)).isoformat(),
         disposition='expected' if actual == 'e2e4' else 'wrong'))
     db.execute('INSERT INTO position_effect_responses VALUES (%s,%s,0,%s,%s,%s)',
-        ('event:'+name,name,payload,digest_bytes(payload),AT-timedelta(seconds=30)))
+        ('event:'+name,name,'{}' if corrupt_response else payload,digest_bytes(payload),AT-timedelta(seconds=30)))
     return dict(attempt_id=name,event_id='event:'+name,operation_id='op:'+name,
         request_digest=digest_bytes(digest_bytes(raw)+':'+digest_bytes(payload)),accepted_at=AT,
         expected_owner_epoch=epoch,expected_source_digest='source')
@@ -127,13 +129,14 @@ def test_first_response_pending_recovers_same_attempt_and_day(store):
     ("UPDATE position_effect_authorities SET owner_epoch='stale'",'owner_or_source_changed'),
     ("UPDATE position_effect_authorities SET source_digest='stale'",'owner_or_source_changed'),
     ("UPDATE position_effect_states SET fsrs_internal_card_id=77",'position_fsrs_identity_mismatch'),
-    ("UPDATE position_effect_responses SET payload_json='{}'",'first_response_digest_mismatch'),
+    ('corrupt_response_at_insert','first_response_digest_mismatch'),
     ("UPDATE position_effect_attempts SET plan_json='{}'",'issued_plan_digest_mismatch'),
 ])
 def test_stale_and_corrupt_evidence_holds_without_schedule(store,mutation,reason):
     with connect(store) as db:
-        request = issue(db)
-        db.execute(mutation)
+        request = issue(db,corrupt_response=mutation == 'corrupt_response_at_insert')
+        if mutation != 'corrupt_response_at_insert':
+            db.execute(mutation)
         before = counts(db)
         assert accept_position_effect(db,**request).reason == reason
         assert counts(db) == before
@@ -173,6 +176,48 @@ def test_day_rollover_and_operation_collision(store):
         with pytest.raises(psycopg.errors.UniqueViolation):
             with db.transaction():
                 db.execute("INSERT INTO position_effect_responses SELECT 'other-event',attempt_id,decision_index,payload_json,payload_digest,accepted_at FROM position_effect_responses WHERE event_id=%s",(request['event_id'],))
+
+
+def wait_blocked(observer, pid, blocker):
+    deadline = time.monotonic() + 4
+    while time.monotonic() < deadline:
+        if blocker in observer.execute('SELECT pg_blocking_pids(%s)',(pid,)).fetchone()[0]:
+            return
+        time.sleep(.01)
+    pytest.fail('expected PostgreSQL lock wait was not observed')
+
+
+def test_response_is_locked_during_source_wait_and_append_only_after_commit(store):
+    with connect(store) as db:
+        request = issue(db)
+    with connect(store) as blocker, connect(store) as acceptance, connect(store) as updater, connect(store) as observer:
+        blocker.execute("SELECT 1 FROM position_effect_authorities WHERE repertoire_id='r' FOR UPDATE")
+        def apply():
+            result = accept_position_effect(acceptance,**request)
+            acceptance.commit()
+            return result
+        def rewrite():
+            with pytest.raises(psycopg.errors.CheckViolation,match='immutable'):
+                updater.execute('UPDATE position_effect_responses SET accepted_at=%s WHERE event_id=%s',
+                                (AT+timedelta(days=1),request['event_id']))
+            updater.rollback()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            applied = pool.submit(apply)
+            wait_blocked(observer,acceptance.info.backend_pid,blocker.info.backend_pid)
+            changed = pool.submit(rewrite)
+            wait_blocked(observer,updater.info.backend_pid,acceptance.info.backend_pid)
+            blocker.commit()
+            receipt = applied.result(timeout=5)
+            changed.result(timeout=5)
+        assert receipt.grade == 'good'
+        assert observer.execute('SELECT accepted_at FROM position_effect_responses').fetchone()[0] == AT-timedelta(seconds=30)
+        assert accept_position_effect(observer,**request).replayed
+        for query in ("UPDATE position_effect_responses SET payload_json='{}',payload_digest='changed'",
+                      'DELETE FROM position_effect_responses'):
+            with pytest.raises(psycopg.errors.CheckViolation,match='immutable'):
+                with observer.transaction():
+                    observer.execute(query)
+        assert counts(observer)[0:2] == (1,4)
 
 
 @pytest.mark.parametrize('instant,day',[
