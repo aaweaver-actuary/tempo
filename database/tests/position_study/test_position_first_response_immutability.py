@@ -96,6 +96,9 @@ def test_lp07_original_response_native_migration_and_immutability(monkeypatch):
         retry = source.persist_position_first_response(port, plan, first['payload_json'], first['accepted_at'],
             apply_grade=lambda *args: calls.append(args))
         assert retry['event_id'] == first['event_id'] and retry['accepted_at'] == first['accepted_at'] and not calls
+        assert raw.execute('''INSERT INTO study_position_first_responses
+            SELECT * FROM study_position_first_responses WHERE event_id=%s
+            ON CONFLICT DO NOTHING RETURNING event_id''', (first['event_id'],)).fetchone() is None
         raw.rollback()
         changed = dict(first['payload_json'], assistance_before=not first['payload_json']['assistance_before'])
         with pytest.raises(source.EvidenceConflict):
