@@ -233,7 +233,11 @@ def test_independent_decisions_keep_their_attempt_index_and_event_identity():
     assert first.first_response.attempt_id != second.first_response.attempt_id
 
 
-def test_decision_observe_does_not_call_scheduler_and_good_matches_legacy():
+def test_decision_observe_does_not_call_scheduler_and_good_matches_legacy(monkeypatch):
+    # This explicit pure legacy comparator is not part of the installed runtime.
+    # Bind its source locally instead of relying on a legacy runner's sys.path.
+    from pathlib import Path
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[4] / "backend"))
     from tempo_learning_runtime.position_grade_policy import CurrentPositionState, decide_position_grade
     from tempo_legacy_database.adapters.study.position_grade_effects import _decide
 
