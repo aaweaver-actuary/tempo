@@ -47,7 +47,7 @@ def fence_disposable_source(control, source: DisposableSource, *, timeout_second
     marker = "tempo-disposable-fence:" + source.allocation_token
     row = control.execute("""
         SELECT current_database(), system_identifier::text,
-               pg_shdescription((SELECT oid FROM pg_database WHERE datname='postgres'), 'pg_database'),
+               shobj_description((SELECT oid FROM pg_database WHERE datname='postgres'), 'pg_database'),
                (SELECT rolsuper FROM pg_roles WHERE rolname=current_user),
                (SELECT setting::int BETWEEN 1 AND 1000 FROM pg_settings WHERE name='statement_timeout'),
                (SELECT setting::int BETWEEN 1 AND 1000 FROM pg_settings WHERE name='lock_timeout')
@@ -59,7 +59,7 @@ def fence_disposable_source(control, source: DisposableSource, *, timeout_second
 
     def verify_source():
         actual = control.execute("""
-            SELECT oid, pg_shdescription(oid, 'pg_database'), datallowconn
+            SELECT oid, shobj_description(oid, 'pg_database'), datallowconn
             FROM pg_database WHERE datname=%s
         """, (source.database,)).fetchone()
         if not actual or actual[:2] != (source.database_oid, marker):
