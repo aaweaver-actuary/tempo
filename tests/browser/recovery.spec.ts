@@ -636,25 +636,54 @@ productTest("repair choices advance before a delayed save and survive reload thr
   const repairPgn = '[Event "First e4"]\n\n1. e4 *\n\n[Event "First d4"]\n\n1. d4 *\n\n' +
     '[Event "Second e4"]\n[SetUp "1"]\n[FEN "rnbqkb1r/pppppppp/5n2/8/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 2 2"]\n\n2. e4 *\n\n' +
     '[Event "Second d4"]\n[SetUp "1"]\n[FEN "rnbqkb1r/pppppppp/5n2/8/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 2 2"]\n\n2. d4 *';
-  const imported = await request.post(`${api}/imports/pgn`, { multipart: {
-    file: { name: "queued-repair.pgn", mimeType: "application/x-chess-pgn", buffer: Buffer.from(repairPgn) }, initial_depth: "1",
+  const conflict = await request.post(`${api}/imports/pgn`, { multipart: {
+    file: { name: "blocked-repair.pgn", mimeType: "application/x-chess-pgn", buffer: Buffer.from(repairPgn) }, initial_depth: "1",
   } });
-  expect(imported.ok()).toBe(true);
+  expect(conflict.status()).toBe(409);
+  expect((await conflict.json()).detail.code).toBe("repertoire_conflict");
+  expect((await (await request.get(`${api}/repertoires`)).json()).repertoires
+    .some((item: { name: string }) => item.name === "blocked-repair")).toBe(false);
+
+  // Seed a pre-existing conflict as old persisted authored content, never via
+  // the current import path, which correctly rejects competing answers.
+  const cleanPgn = '[Event "First e4"]\n\n1. e4 *\n\n' +
+    '[Event "Second e4"]\n[SetUp "1"]\n[FEN "rnbqkb1r/pppppppp/5n2/8/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 2 2"]\n\n2. e4 *';
+  const imported = await request.post(`${api}/imports/pgn`, { multipart: {
+    file: { name: "queued-repair.pgn", mimeType: "application/x-chess-pgn", buffer: Buffer.from(cleanPgn) }, initial_depth: "1",
+  } });
+  expect(imported.ok(), await imported.text()).toBe(true);
   let repertoireId = "";
+  let seedGraph: { id: string; generation: number } | undefined;
   await expect.poll(async () => {
     const result = await (await request.get(`${api}/repertoires`, { headers: { "X-Tempo-Work-Class": "background" } })).json();
     const repertoire = result.repertoires.find((item: { name: string }) => item.name === "queued-repair");
     repertoireId = repertoire?.id ?? "";
-    return {
-      integrity_issue_count: repertoire?.integrity_issue_count,
-      integrity_status: repertoire?.integrity_status,
-      integrity_scan_status: repertoire?.integrity_scan_status,
-    };
-  }, { timeout: 20_000 }).toEqual({
-    integrity_issue_count: 2,
-    integrity_status: "needs_repair",
-    integrity_scan_status: "idle",
-  });
+    const tasks = (await (await request.get(`${api}/system/tasks`)).json()).tasks;
+    seedGraph = tasks.find((task: { kind: string; deduplication_key: string; state: string }) =>
+      task.kind === "opening_graph_rebuild" && task.deduplication_key === repertoireId && task.state === "complete");
+    return Boolean(seedGraph && repertoire?.integrity_scan_status === "idle");
+  }, { timeout: 60_000 }).toBe(true);
+  expect(repertoireId).toMatch(/^[a-zA-Z0-9_-]+$/);
+  expect(seedGraph!.id).toMatch(/^[a-zA-Z0-9_-]+$/);
+  const health = await (await request.get(`${api}/health`)).json();
+  const postgresId = await verifyPostgresFixtureTarget({ health, apiUrl: api, project: process.env.TEMPO_TEST_COMPOSE_PROJECT });
+  const day = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  expect(day).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  const seedSql = `INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
+    SELECT 'legacy-' || id,repertoire_id,'Synthetic legacy competing line',trained_color,start_fen,'["d2d4"]',created_at
+    FROM repertoire_lines WHERE repertoire_id='${repertoireId}';
+    UPDATE background_tasks SET state='failed',phase='failed',generation=generation+1,
+      payload_json=json_build_object('repertoire_id','${repertoireId}','local_day','${day}')::text,
+      last_error='synthetic legacy fixture' WHERE id='${seedGraph!.id}';`;
+  execFileSync("docker", postgresFixtureSqlArguments(postgresId, seedSql, 5000), { encoding: "utf8", timeout: 10_000 });
+  const seedRetryId = `seed-retry-${repertoireId}`;
+  expect((await request.post(`${api}/system/tasks/${seedGraph!.id}/retry`, { headers: { "Idempotency-Key": seedRetryId } })).ok()).toBe(true);
+  await expect.poll(async () => {
+    const result = await (await request.get(`${api}/repertoires`, { headers: { "X-Tempo-Work-Class": "background" } })).json();
+    const repertoire = result.repertoires.find((item: { id: string }) => item.id === repertoireId);
+    return { integrity_issue_count: repertoire?.integrity_issue_count,
+      integrity_status: repertoire?.integrity_status, integrity_scan_status: repertoire?.integrity_scan_status };
+  }, { timeout: 60_000 }).toEqual({ integrity_issue_count: 2, integrity_status: "needs_repair", integrity_scan_status: "idle" });
   let releaseSave: (() => void) | undefined;
   const saveHold = new Promise<void>(resolve => { releaseSave = resolve; });
   let savedOnServer = false;
@@ -700,8 +729,6 @@ productTest("repair choices advance before a delayed save and survive reload thr
 
     // Reopen a real completed graph task as terminal in this verified disposable
     // fixture; retain the accepted repair's original operation identity.
-    const health = await (await request.get(`${api}/health`)).json();
-    const postgresId = await verifyPostgresFixtureTarget({ health, apiUrl: api, project: process.env.TEMPO_TEST_COMPOSE_PROJECT });
     const tasks = (await (await request.get(`${api}/system/tasks`)).json()).tasks;
     const graph = tasks.find((task: { kind: string; deduplication_key: string; state: string }) =>
       task.kind === "opening_graph_rebuild" && task.deduplication_key === repertoireId && task.state === "complete");
