@@ -291,3 +291,43 @@ def test_defense_uses_retained_rubric_and_durably_requests_uncovered_move(case):
         ).json()
         == result.json()
     )
+
+
+def test_tactic_retained_progress_and_original_attempt_replay(case):
+    """F09 subset: retained rows stay authoritative across retry and a new solve."""
+    from tempo_chess_core import card_id
+    from tempo_learning_runtime.puzzles import validate_puzzle_record
+
+    payload = {
+        "attempt_id": "original-attempt-f09", "puzzle_id": "original-puzzle-f09",
+        "deck_id": "original-pack-f09", "correct": True, "clean": True,
+        "source_fen": chess.STARTING_FEN, "moves": ["e2e4", "e7e5"],
+    }
+    training_fen, solution = validate_puzzle_record(
+        {"FEN": payload["source_fen"], "Moves": payload["moves"]}
+    )
+    original_card = card_id(training_fen, solution)
+    original_result = {"card_id": original_card, "mode": "light", "next_due": "2026-01-08"}
+    case.query(
+        "INSERT INTO learning.tactic_progress(puzzle_id,deck_id,card_id,clean_pass_at,admitted_at,admission_mode) VALUES(%s,%s,%s,%s,%s,%s)",
+        (payload["puzzle_id"], payload["deck_id"], original_card, "2026-01-01T00:00:00+00:00", "2026-01-01T00:00:00+00:00", "light"),
+    )
+    case.query(
+        "INSERT INTO learning.tactic_discovery_attempts(id,deck_id,puzzle_id,clean,result_json) VALUES(%s,%s,%s,%s,%s)",
+        (payload["attempt_id"], payload["deck_id"], payload["puzzle_id"], 1, json.dumps(original_result)),
+    )
+    endpoint = "/api/tactics/attempt"
+    for _ in range(2):
+        response = case.client.post(endpoint, json=payload)
+        assert response.status_code == 200, response.text
+        assert response.json() == original_result
+    assert case.query("SELECT COUNT(*) FROM learning.tactic_discovery_attempts")[0][0] == 1
+    assert case.query("SELECT COUNT(*) FROM learning.cards")[0][0] == 0
+    response = case.client.post(endpoint, json={**payload, "attempt_id": "new-attempt-f09"})
+    assert response.status_code == 200, response.text
+    assert response.json()["card_id"] == original_card
+    assert [tuple(row) for row in case.query("SELECT puzzle_id,deck_id,card_id,clean_pass_at,admitted_at FROM learning.tactic_progress")] == [
+        (payload["puzzle_id"], payload["deck_id"], original_card, "2026-01-01T00:00:00+00:00", "2026-01-01T00:00:00+00:00")
+    ]
+    assert case.query("SELECT COUNT(*) FROM learning.tactic_discovery_attempts")[0][0] == 2
+    assert case.query("SELECT COUNT(*) FROM learning.cards")[0][0] == 1
