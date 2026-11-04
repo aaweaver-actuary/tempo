@@ -116,6 +116,13 @@ def issue_queue_head(database, payload: dict[str, Any]) -> dict[str, Any]:
     _lock_attempt_card(database, entry_id)
     if queue_storage.is_postgres_connection(database):
         lock_queue_date_for_position(database, payload["queue_date"])
+    # Revalidate after the card/day fences. A prepared position plan may
+    # already have been written; raise so its transaction rolls back.
+    if (queue_storage.retired_issuance_target(database, entry_id, payload['card_id'], payload['expected_revision'])
+            and not queue_storage.issued_origin(database, entry_id, payload['card_id'], payload['expected_revision'])):
+        if position_plan is not None:
+            raise ReviewConflict('position_head_changed', 'Position head changed during issuance', retryable=True)
+        return {'issued': False, 'reason': 'retired_queue_target'}
     # A newly authorized ordinary successor cannot get ahead of already durable
     # local urgent work. The completed review stays committed; the explicit
     # next-card command performs preparation outside this writer transaction.

@@ -417,3 +417,45 @@ def test_ready_optional_pending_still_precedes_unissued_head_and_preserves_issue
     monkeypatch.setattr(queue_next_card, '_source_pending', lambda *_args, **_kwargs:
                         NextCardPreparation(False, True, 'ready', blocks_issuance=True))
     assert client.get('/api/queue/window?limit=2').status_code == 200
+
+
+@pytest.mark.parametrize('retired_type,origin', [('defense', None), ('endgame', None), ('tactic', 'defense:old')])
+def test_prepared_retired_head_is_not_issued_and_next_tactic_is_playable(queued_attempts, retired_type, origin):
+    from app import queue_commands
+    payload = {'queue_date': date.today().isoformat(), 'entry_id': queued_attempts['active-a'],
+               'card_id': 'active-a', 'expected_revision': 1}
+    with database.connection() as connection:
+        connection.execute("UPDATE cards SET content_type=? WHERE id='active-a'", (retired_type,))
+        connection.execute("UPDATE daily_queue SET admission_source=? WHERE id=?", (origin, queued_attempts['active-a']))
+        assert queue_commands.issue_queue_head(connection, payload) == {'issued': False, 'reason': 'retired_queue_target'}
+        assert connection.execute('SELECT issued_as_head FROM queue_attempt_origins WHERE queue_entry_id=?', (queued_attempts['active-a'],)).fetchone()[0] == 0
+    response = TestClient(main.app).get('/api/queue/today')
+    assert response.status_code == 200, response.text
+    assert response.json()['cards'][0]['id'] == 'later-b'
+    with database.read_connection() as connection:
+        assert connection.execute('SELECT issued_as_head FROM queue_attempt_origins WHERE queue_entry_id=?', (queued_attempts['later-b'],)).fetchone()[0] == 1
+
+
+def test_retired_head_after_position_plan_raises_for_transaction_rollback(queued_attempts, monkeypatch):
+    from types import SimpleNamespace
+    from app import queue_commands
+    from app.contracts.review_conflicts import ReviewConflict
+    from app.services.queue_next_card import PreparedQueueHead
+    from tempo_legacy_database.adapters.authored_repertoires import position_study_source
+    from tempo_legacy_database.adapters.study import position_issued_plans
+    payload = {'queue_date': date.today().isoformat(), 'entry_id': queued_attempts['active-a'],
+               'card_id': 'active-a', 'expected_revision': 1}
+    prepared = PreparedQueueHead(payload, 'position', SimpleNamespace(source=object()))
+    monkeypatch.setattr(position_study_source, 'fence_position_source', lambda *args: None)
+    def insert_plan(connection, proposal):
+        connection.execute("UPDATE settings SET timezone='rollback-marker' WHERE id=1")
+        return object()
+    monkeypatch.setattr(position_issued_plans, 'issue_in_borrowed_transaction', insert_plan)
+    with database.connection() as connection:
+        connection.execute("UPDATE cards SET content_type='endgame' WHERE id='active-a'")
+    with pytest.raises(ReviewConflict, match='Position head changed'):
+        with database.connection() as connection:
+            queue_commands.issue_queue_head(connection, prepared)
+    with database.read_connection() as connection:
+        assert connection.execute('SELECT timezone FROM settings WHERE id=1').fetchone()[0] != 'rollback-marker'
+        assert connection.execute('SELECT issued_as_head FROM queue_attempt_origins WHERE queue_entry_id=?', (queued_attempts['active-a'],)).fetchone()[0] == 0
