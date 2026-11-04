@@ -2,6 +2,7 @@
 from contextlib import contextmanager
 
 import pytest
+import psycopg
 import redis
 
 from app.services import redis_admission_gate
@@ -183,6 +184,57 @@ def test_prefix_foreground_receipt_denial_does_not_consume_failure_attempts(monk
     monkeypatch.setattr(tasks, 'record_operation_retry', lambda *_args, **_kwargs: pytest.fail('denial spent failure budget'))
     assert tasks.execute_foreground_command.run('retained-apply', command_name, {}) is None
     assert observed == [('retained-apply', 'fenced-attempt')]
+
+
+@pytest.mark.parametrize('error_type,claim,command_name,retryable', [
+    *[(error, claim, 'queue.issue_head', claim < 3)
+      for error in (psycopg.errors.DeadlockDetected,
+                    psycopg.errors.SerializationFailure,
+                    psycopg.errors.LockNotAvailable)
+      for claim in (1, 2, 3, 4)],
+    (psycopg.OperationalError, 1, 'queue.issue_head', False),
+    (psycopg.InterfaceError, 1, 'queue.issue_head', False),
+    (psycopg.errors.TransactionTimeout, 1, 'queue.issue_head', False),
+    (ValueError, 1, 'queue.issue_head', False),
+    (psycopg.errors.DeadlockDetected, 1, 'queue.other', False),
+])
+def test_issue_head_retries_only_rollback_safe_contention_within_cycle(
+        monkeypatch, error_type, claim, command_name, retryable):
+    from contextlib import nullcontext
+    from app import tasks
+
+    monkeypatch.setattr(tasks.activity_gate, 'foreground', nullcontext)
+    saved = {'saved': 'original envelope'}
+    monkeypatch.setattr(tasks, 'record_operation_attempt',
+                        lambda *_args, **_kwargs: (True, saved, 'fenced-attempt', claim))
+    error = error_type('controlled failure')
+    executed = []
+    def execute(*args, **kwargs):
+        executed.append((args, kwargs))
+        raise error
+    monkeypatch.setattr(tasks, 'execute_command', execute)
+    recorded = []
+    monkeypatch.setattr(tasks, 'record_operation_retry',
+                        lambda *args, **kwargs: recorded.append((args, kwargs)))
+    with pytest.raises(error_type) as caught:
+        tasks.execute_foreground_command.run('original-operation', command_name, {'new': 'delivery'})
+    assert caught.value is error
+    assert executed == [(('original-operation', command_name, saved), {'attempt_token': 'fenced-attempt'})]
+    assert recorded == [(('original-operation', 'fenced-attempt', error),
+                         {'retryable': retryable, 'background': False})]
+
+
+def test_issue_head_normal_hold_does_not_enter_retry_path(monkeypatch):
+    from contextlib import nullcontext
+    from app import tasks
+
+    monkeypatch.setattr(tasks.activity_gate, 'foreground', nullcontext)
+    monkeypatch.setattr(tasks, 'record_operation_attempt',
+                        lambda *_args, **_kwargs: (True, {'saved': True}, 'fenced-attempt', 1))
+    hold = {'issued': False, 'reason': 'immutable_conflict'}
+    monkeypatch.setattr(tasks, 'execute_command', lambda *_args, **_kwargs: hold)
+    monkeypatch.setattr(tasks, 'record_operation_retry', lambda *_args, **_kwargs: pytest.fail('hold retried'))
+    assert tasks.execute_foreground_command.run('original-operation', 'queue.issue_head', {}) is hold
 
 
 @pytest.fixture
