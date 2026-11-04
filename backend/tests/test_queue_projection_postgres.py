@@ -121,3 +121,29 @@ def test_accepted_authority_hold_does_not_become_issuance_blocker_when_retry_exp
 
 
 from test_product_game_lapse_postgres import case
+
+
+def test_retired_head_does_not_consume_limited_queue_window(owned_postgres, monkeypatch):
+    """Filter before LIMIT while preserving opening color, tactic and issued origin."""
+    monkeypatch.setattr(postgres_store, 'configured', lambda: True)
+    day = '2026-10-30'
+    repertoire = 'retired-window-' + uuid.uuid4().hex
+    retired, opening, tactic = (repertoire + suffix for suffix in ('-retired', '-opening', '-tactic'))
+    with owned_postgres() as database:
+        database.execute_native("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,'Queue','synthetic',%s)", (repertoire, day))
+        for position, (card_id, content_type, source, color) in enumerate((
+            (retired, 'defense', 'defense:historical', 'black'),
+            (opening, 'opening', None, 'white'),
+            (tactic, 'tactic', 'lichess:defense-theme', 'black'),
+        )):
+            database.execute_native("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type,trained_color)
+                VALUES(%s,%s,'prefix',%s,'["e2e4"]','learning',%s,%s,%s)""", (card_id,repertoire,chess.STARTING_FEN,day,content_type,color))
+            database.execute_native('INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(%s,%s)', (repertoire,card_id))
+            database.execute_native("INSERT INTO daily_queue(queue_date,card_id,position,admission_source) VALUES(%s,%s,%s,%s)", (day,card_id,position,source))
+        database.execute_native('UPDATE queue_attempt_origins SET issued_as_head=1 WHERE card_id=%s', (retired,))
+        rows = queue_projection.queue_rows(database, day, 1, miss_reason=MISS_REASON)
+        assert [(row['id'], row['effective_trained_color'], row['admission_source']) for row in rows] == [(opening, 'white', None)]
+        rows = queue_projection.queue_rows(database, day, 2, miss_reason=MISS_REASON)
+        assert [(row['id'], row['effective_trained_color'], row['admission_source']) for row in rows] == [
+            (opening, 'white', None), (tactic, 'black', 'lichess:defense-theme')]
+        assert database.execute_native('SELECT issued_as_head FROM queue_attempt_origins WHERE card_id=%s', (retired,)).fetchone()[0] == 1
