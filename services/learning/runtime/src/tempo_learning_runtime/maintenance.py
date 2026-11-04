@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 import json, logging
-from tempo_learning_database.adapters import maintenance as storage
+from tempo_learning_database.adapters import maintenance as storage, queue_refresh_epochs
 from tempo_learning_database.adapters.maintenance import psycopg, PoolTimeout
 from tempo_learning_remediation import RemediationError
 from tempo_learning_database.connections import connection
@@ -81,6 +81,16 @@ def apply_task(task):
             finish_slice(database, task, payload, more)
             return True
         day = payload["queue_date"]
+        if "_refresh_cycle_epoch" not in payload:
+            # Old checkpoints cannot certify work performed before epoch tracking.
+            if storage.leased_task_payload_for_update(database, task) is None:
+                raise SupersededWork()
+            epochs = queue_refresh_epochs.lock(database, day)
+            epoch = int(epochs[0]) if epochs is not None else queue_refresh_epochs.request(database, day)
+            payload.pop("after_order_key", None)
+            payload["_refresh_cycle_epoch"] = epoch
+            finish_slice(database, task, payload, True)
+            return True
         cursor = payload.get("after_order_key", [])
         candidates = next_candidates(database, day, cursor)
         # One candidate commits alongside its cursor; refreshes coalesce into a new generation.
@@ -109,8 +119,24 @@ def apply_task(task):
                 storage.save_queue_day_order(database, day, seed, membership_hash, datetime.now(timezone.utc).isoformat())
             # Match foreground task-before-projection order after card/queue
             # locks, preventing ensure_current's projection lock from inverting it.
-            finish_slice(database, task, payload, False)
-            storage.mark_queue_projection_ready(database, day, datetime.now(timezone.utc).isoformat())
+            if storage.leased_task_payload_for_update(database, task) is None:
+                raise SupersededWork()
+            epochs = queue_refresh_epochs.lock(database, day)
+            if epochs is None:
+                raise RuntimeError("Queue refresh request epoch is missing")
+            requested, cycle = int(epochs[0]), int(payload["_refresh_cycle_epoch"])
+            if requested < cycle:
+                raise RuntimeError("Queue refresh cycle is ahead of its durable request")
+            if requested != cycle:
+                payload.pop("after_order_key", None)
+                payload["_refresh_cycle_epoch"] = requested
+                finish_slice(database, task, payload, True)
+            else:
+                if not queue_refresh_epochs.publish_if_current(
+                    database, day, cycle, datetime.now(timezone.utc).isoformat()
+                ):
+                    raise SupersededWork()
+                finish_slice(database, task, payload, False)
     return True
 
 

@@ -102,6 +102,7 @@ def refresh_projection(database, queue_date, has_active_task):
     projection_lock_clause = " FOR UPDATE" if has_active_task else ""
     return database.execute(
         """SELECT projection.state,projection.refresh_pending,
+                   projection.requested_refresh_epoch,projection.published_refresh_epoch,
                   (SELECT day.membership_hash FROM daily_queue_days AS day
                    WHERE day.queue_date=projection.queue_date) AS presentation_membership_hash,
                   EXISTS(SELECT 1 FROM daily_queue AS entry

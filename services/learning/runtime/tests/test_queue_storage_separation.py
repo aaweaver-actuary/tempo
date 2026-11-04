@@ -146,7 +146,7 @@ def test_ready_projection_returns_without_refresh_mutation(monkeypatch, command_
     monkeypatch.setattr(commands.storage, "current_refresh_task", lambda *_: None)
     def projection(_db, day, locked):
         assert (day, locked) == ("2026-10-21", False)
-        return dict(state="ready", refresh_pending=False, has_queued_entries=queued, presentation_membership_hash=receipt)
+        return dict(state="ready", refresh_pending=False, requested_refresh_epoch=0, published_refresh_epoch=0, has_queued_entries=queued, presentation_membership_hash=receipt)
     monkeypatch.setattr(commands.storage, "refresh_projection", projection)
     monkeypatch.setattr(commands, "request_queue_refresh_in_transaction", lambda *_: pytest.fail("Ready projection enqueued work"))
     assert commands.ensure_current_queue(None, dict(queue_date="2026-10-21")) == dict(queue_date="2026-10-21", refresh_pending=False)
@@ -163,7 +163,7 @@ def test_active_same_day_task_retains_identity_and_failure_detail(monkeypatch, c
     def projection(_db, day, locked):
         assert (day, locked) == ("2026-10-21", True)
         events.append("projection lock")
-        return dict(state="ready", refresh_pending=False, has_queued_entries=True,
+        return dict(state="ready", refresh_pending=False, requested_refresh_epoch=0, published_refresh_epoch=0, has_queued_entries=True,
                     presentation_membership_hash="queue-presentation-v2:receipt")
     monkeypatch.setattr(commands.storage, "refresh_projection", projection)
     monkeypatch.setattr(commands.storage, "retain_refreshing_projection", lambda _db, _day, error: events.append(("refreshing", error)))
@@ -185,7 +185,7 @@ def test_done_or_other_day_task_requests_existing_refresh_capability(monkeypatch
 
 @pytest.mark.parametrize("receipt", [None, "queue-presentation-v2:receipt", "unmixed:" + PRESENTATION_VERSION + ":receipt"])
 def test_stale_nonempty_ready_day_requests_refresh_then_current_receipt_is_noop(monkeypatch, command_day, receipt):
-    projection = dict(state="ready", refresh_pending=False, has_queued_entries=True,
+    projection = dict(state="ready", refresh_pending=False, requested_refresh_epoch=0, published_refresh_epoch=0, has_queued_entries=True,
                       presentation_membership_hash=receipt)
     calls = []
     monkeypatch.setattr(commands.storage, "current_refresh_task", lambda *_: None)
@@ -198,3 +198,12 @@ def test_stale_nonempty_ready_day_requests_refresh_then_current_receipt_is_noop(
     assert commands.ensure_current_queue(None, dict(queue_date="2026-10-21")) == dict(
         queue_date="2026-10-21", refresh_pending=False)
     assert calls == ["2026-10-21"]
+
+
+def test_unpublished_epoch_does_not_pass_ready_check(monkeypatch, command_day):
+    monkeypatch.setattr(commands.storage, "current_refresh_task", lambda *_: None)
+    monkeypatch.setattr(commands.storage, "refresh_projection", lambda *_: dict(
+        state="ready", refresh_pending=False, requested_refresh_epoch=2,
+        published_refresh_epoch=1, has_queued_entries=False, presentation_membership_hash=None))
+    monkeypatch.setattr(commands, "request_queue_refresh_in_transaction", lambda *_: dict(id="refresh"))
+    assert commands.ensure_current_queue(None, {"queue_date": "2026-10-21"})["refresh_pending"] is True
