@@ -6798,3 +6798,10 @@ lost-acknowledgment, committed-receipt and offline records across reopen/reload.
 Caller-supplied inspection budgets reject incomplete captures without mutation.
 The browser case uses a disposable Chromium origin and the real IndexedDB API.
 This is passive held-data inspection, not server reconciliation or full F10.
+
+## Retained-history recombination fixture subset (#908 W02C)
+
+`backend/tests/test_cutover_position_recombination_fixtures.py` owns pure legacy
+three-clean/failure/split evidence identity and Italian carrier/teaching/source
+holds. Position-owned cohorts retain the existing R11-inert contract. This is
+not seed transfer, native F03/F11, executable target ownership or activation proof.
