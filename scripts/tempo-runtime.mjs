@@ -1,9 +1,9 @@
 // Bounded deployment stages. No work is scheduled from application startup.
 import { createHash, randomUUID } from "node:crypto";
 import { managedComposeBuild } from './development-budget.mjs';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import { isDeepStrictEqual } from 'node:util';
 import {modeOverrideFor, modeRecordArgs, modes, modeStatusArgs} from './managed-games-control.mjs';
 import { atomicJson, deploymentCanStart, redact, targetKey, validateContainers, validateTarget } from "./tempo-deployment.mjs";
@@ -35,6 +35,29 @@ export function configurationFingerprint(configured) {
     if (service.labels) delete service.labels["org.opencontainers.image.revision"];
   }
   return createHash("sha256").update(JSON.stringify(stable)).digest("hex");
+}
+
+// Only the exact migration with a version-scoped comparator may cross this cut.
+export function cut62WitnessName(guard) {
+  const crossing = guard.starting_schema < 62 && guard.intended_schema >= 62;
+  if (!crossing) return null;
+  if (guard.starting_schema !== 61 || guard.intended_schema !== 62 ||
+      !/^[0-9a-f-]{36}$/i.test(guard.attempt_id ?? ''))
+    throw new Error('Unsupported schema 62 crossing; preserve the original backup and fix forward.');
+  return `cut62-${guard.attempt_id}.json`;
+}
+
+export function cut62MountDirectory(stateDirectory, witnessName) {
+  if (!isAbsolute(stateDirectory) || /[:,\n\r]/.test(stateDirectory))
+    throw new Error('Cannot mount private migration state safely; preserve the original guard.');
+  if (!/^cut62-[0-9a-f-]{36}\.json$/i.test(witnessName ?? '')) throw new Error('Invalid schema 62 witness identity.');
+  return join(stateDirectory, witnessName.replace(/\.json$/, ''));
+}
+
+export function requirePrivateCut62Witness(path) {
+  let info;
+  try { info = lstatSync(path); } catch { throw new Error('Schema 62 original witness is missing; keep writers stopped. Preserve the guard and verified backup for manual recovery; never recapture after an interrupted attempt.'); }
+  if (!info.isFile() || (info.mode & 0o077)) throw new Error('Schema 62 witness is not a private regular file; keep writers stopped.');
 }
 
 // Read-only classification shared by diagnostics and lock-time preflight.
@@ -438,7 +461,11 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   }
 
   async function maintenance(script, args = [], options = {}) {
-    return compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration", script, ...args], options);
+    const { cut62Mount = null, ...runOptions } = options;
+    const mountDirectory = cut62Mount ? cut62MountDirectory(stateDirectory, cut62Mount) : null;
+    return compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T",
+      ...(mountDirectory ? ["--volume", `${mountDirectory}:/cut62`] : []),
+      "migration", script, ...args], runOptions);
   }
 
   async function checkSchema() {
@@ -535,7 +562,8 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   async function migrate() {
     originalHistoryVerified = false;
     stage("applying_migrations");
-    if (migrationGuard?.state !== "pending") {
+    const newGuard = migrationGuard?.state !== "pending";
+    if (newGuard) {
       if (!backupRecord?.verified) throw new Error("Migration requires a restore-verified backup before capturing history.");
       // H0 belongs to this database attempt, not to a process or revision.
       // Persist it before any migration transaction can commit. Retries never
@@ -547,15 +575,47 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
         study_invariants: JSON.parse((await maintenance("database/tooling/verify_postgres_cli_state.py")).stdout),
         backup: backupRecord, state: "pending", created_at: new Date().toISOString() };
     }
+    const witnessName = cut62WitnessName(migrationGuard);
+    if (witnessName && migrationGuard.cut62_witness !== undefined && migrationGuard.cut62_witness !== witnessName)
+      throw new Error('Schema 62 witness identity changed; preserve the original guard.');
+    // Persisting this pending identity before capture deliberately fences a crash.
+    // A missing witness requires manual recovery from the original guard/verified
+    // backup; retry must never infer that recapture is safe.
+    if (witnessName && newGuard) migrationGuard.cut62_witness = witnessName;
+    if (witnessName && !newGuard && migrationGuard.cut62_witness !== witnessName)
+      throw new Error('Schema 62 original witness is missing from the guard; keep writers stopped.');
     migrationGuard.last_attempted_revision = revision;
     migrationGuard.last_attempted_at = new Date().toISOString();
     atomicJson(guardPath, migrationGuard);
     operation.study_invariants = migrationGuard.study_invariants;
     operation.backup = migrationGuard.backup;
     atomicJson(journalPath, operation);
+    if (witnessName) {
+      const directory = lstatSync(stateDirectory);
+      if (!directory.isDirectory() || (directory.mode & 0o077))
+        throw new Error('Schema 62 migration state must be a private directory; keep writers stopped.');
+      const witnessDirectory = cut62MountDirectory(stateDirectory, witnessName);
+      if (newGuard) mkdirSync(witnessDirectory, { mode: 0o700 });
+      let witnessDirectoryStat;
+      try { witnessDirectoryStat = lstatSync(witnessDirectory); } catch {
+        throw new Error('Schema 62 witness directory is missing; keep writers stopped.');
+      }
+      if (!witnessDirectoryStat.isDirectory() || (witnessDirectoryStat.mode & 0o077))
+        throw new Error('Schema 62 witness directory must be private; keep writers stopped.');
+      const witnessPath = join(witnessDirectory, witnessName);
+      if (newGuard) {
+        if (existsSync(witnessPath)) throw new Error('Schema 62 witness already exists; refusing to recapture.');
+        await maintenance("database/tooling/verify_postgres_cli_state.py", ["--cut62-capture", `/cut62/${witnessName}`], { cut62Mount: witnessName });
+        const directoryFd = openSync(witnessDirectory, "r");
+        try { fsyncSync(directoryFd); } finally { closeSync(directoryFd); }
+      }
+      requirePrivateCut62Witness(witnessPath);
+    }
     if (status.pending_versions.length) await maintenance("database/tooling/apply_postgres_migrations.py", [], { echo: true });
     try {
-      await maintenance("database/tooling/verify_postgres_cli_state.py", ["--expected", JSON.stringify(migrationGuard.study_invariants)]);
+      if (witnessName) await maintenance("database/tooling/verify_postgres_cli_state.py",
+        ["--cut62-verify", `/cut62/${witnessName}`], { cut62Mount: witnessName });
+      else await maintenance("database/tooling/verify_postgres_cli_state.py", ["--expected", JSON.stringify(migrationGuard.study_invariants)]);
       originalHistoryVerified = true;
     } catch (error) {
       throw new Error(`Original migration history verification failed; keep writers stopped. Preserve backup ${migrationGuard.backup.filename} and guard ${guardPath}. ${error.message}`, { cause: error });

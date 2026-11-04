@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { schemaVersionFromSource, validateTarget, validateContainers, deploymentCanStart,
   acquireTargetLock, assessMainVerification, assessCandidate, qualityEvidence, atomicJson, selectCandidate, productVolumes, targetKey,
   CommandExecutionError, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, sourceFingerprint, sourceMatchesFingerprint } from "../../scripts/tempo-deployment.mjs";
-import { assessMigrationRecovery, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
+import { assessMigrationRecovery, cut62WitnessName, cut62MountDirectory, requirePrivateCut62Witness, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
 import { parseArguments, ensureDocker } from "../../scripts/tempo-cli.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
@@ -2549,4 +2549,86 @@ test('Docker availability uses bounded server endpoint without optional info dia
   },false,() => assert.fail('unexpected Docker launch'));
   assert.equal(calls.length,1);
   await assert.rejects(ensureDocker({context:'owned-context'}, async () => ({code:1}),false,() => {}),/Docker is unavailable/);
+});
+
+test("schema 62 comparator accepts only the exact guarded crossing", () => {
+  const guard = { starting_schema: 61, intended_schema: 62, attempt_id: "01234567-89ab-cdef-0123-456789abcdef" };
+  assert.equal(cut62WitnessName(guard), `cut62-${guard.attempt_id}.json`);
+  assert.equal(cut62WitnessName({ ...guard, starting_schema: 62, intended_schema: 62 }), null);
+  assert.equal(cut62WitnessName({ ...guard, starting_schema: 59, intended_schema: 61 }), null);
+  for (const change of [{ starting_schema: 60 }, { intended_schema: 63 }, { attempt_id: "../witness" }])
+    assert.throws(() => cut62WitnessName({ ...guard, ...change }), /Unsupported/);
+});
+
+test("schema 62 retry requires an existing private regular witness", t => {
+  const path = join(directory(t), "original.json");
+  assert.throws(() => requirePrivateCut62Witness(path), /missing/);
+  writeFileSync(path, "original", { mode: 0o644 });
+  assert.throws(() => requirePrivateCut62Witness(path), /private regular/);
+  fs.chmodSync(path, 0o600);
+  assert.doesNotThrow(() => requirePrivateCut62Witness(path));
+  assert.equal(readFileSync(path, "utf8"), "original");
+});
+
+test("schema 62 bind source is absolute and cannot alter volume syntax", () => {
+  const name = "cut62-01234567-89ab-cdef-0123-456789abcdef.json";
+  assert.equal(cut62MountDirectory("/private/example", name), "/private/example/cut62-01234567-89ab-cdef-0123-456789abcdef");
+  for (const path of ["relative", "/private/a:b", "/private/a,b", "/private/a\nb"])
+    assert.throws(() => cut62MountDirectory(path, name), /mount/);
+});
+
+test("schema 62 runtime preserves original witness across failed verification and retry", async t => {
+  let schema = 61, shouldFail = true, captures = 0;
+  const { runtime, calls, fixture } = imageRuntimeFixture(t, "postgres:18.6-trixie", 18, false, args => {
+    if (args.includes("database/tooling/apply_postgres_migrations.py")) {
+      if (!args.includes("--check")) { schema = 62; return ""; }
+      return JSON.stringify({ initialized: true, roles_ready: true, credentials_ready: true, expected_version: 62,
+        applied_versions: Array.from({ length: schema }, (_, index) => index + 1), pending_versions: schema === 61 ? [62] : [] });
+    }
+    if (args.includes("--cut62-capture")) {
+      captures += 1;
+      const directory = args[args.indexOf("--volume") + 1].slice(0, -":/cut62".length);
+      writeFileSync(join(directory, args.at(-1).split("/").at(-1)), "original", { mode: 0o600 });
+      return "{}";
+    }
+    if (args.includes("--cut62-verify")) {
+      if (shouldFail) throw new Error("injected verification failure");
+      return "{}";
+    }
+    if (args.includes("database/tooling/verify_postgres_cli_state.py")) return JSON.stringify({ reviews: { digest: "original" } });
+  });
+  fs.chmodSync(fixture.stateDirectory, 0o700);
+  await runtime.config(); await runtime.checkSchema(); await runtime.backup();
+  await assert.rejects(runtime.migrate(), /Original migration history verification failed/);
+  const guard = JSON.parse(readFileSync(join(fixture.stateDirectory, "migration-guard.json"), "utf8"));
+  assert.equal(guard.state, "pending");
+  const witness = join(cut62MountDirectory(fixture.stateDirectory, guard.cut62_witness), guard.cut62_witness);
+  assert.equal(readFileSync(witness, "utf8"), "original");
+  rmSync(witness);
+  await assert.rejects(runtime.migrate(), /witness is missing/);
+  assert.equal(captures, 1);
+  writeFileSync(witness, "original", { mode: 0o600 });
+  shouldFail = false;
+  await runtime.checkSchema(); await runtime.migrate();
+  assert.equal(captures, 1);
+  assert.equal(calls.filter(args => args.includes("--cut62-verify")).length, 2);
+  assert(calls.filter(args => args.includes("--cut62-verify")).every(args => args.includes("--volume") && !args.includes("--mount")));
+});
+
+test("schema 62 interrupted capture leaves original guard fenced and never rebaselines", async t => {
+  let captures = 0;
+  const { runtime, fixture } = imageRuntimeFixture(t, "postgres:18.6-trixie", 18, false, args => {
+    if (args.includes("database/tooling/apply_postgres_migrations.py") && args.includes("--check"))
+      return JSON.stringify({ initialized: true, roles_ready: true, credentials_ready: true, expected_version: 62,
+        applied_versions: Array.from({ length: 61 }, (_, index) => index + 1), pending_versions: [62] });
+    if (args.includes("--cut62-capture")) { captures += 1; throw new Error("interrupted capture"); }
+    if (args.includes("database/tooling/verify_postgres_cli_state.py")) return JSON.stringify({ reviews: { digest: "original" } });
+  });
+  fs.chmodSync(fixture.stateDirectory, 0o700);
+  await runtime.config(); await runtime.checkSchema(); await runtime.backup();
+  await assert.rejects(runtime.migrate(), /interrupted capture/);
+  const guard = JSON.parse(readFileSync(join(fixture.stateDirectory, "migration-guard.json"), "utf8"));
+  assert.equal(guard.state, "pending");
+  await assert.rejects(runtime.migrate(), /witness is missing/);
+  assert.equal(captures, 1);
 });
