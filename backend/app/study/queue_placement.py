@@ -64,6 +64,12 @@ def ensure_discovery_card_queued(database, card_id: str, queue_date: str) -> Non
     from app.services.redis_admission_gate import BackgroundAdmissionDeferred
     if not try_lock_discovery_queue_position(database, queue_date, card_id):
         raise BackgroundAdmissionDeferred("Study queue is busy or target already issued")
-    ensure_card_queued_after(database, card_id, after_cards=0, attempt_state="guided",
-                            priority_reason="Discovery · added continuation", queue_date=queue_date,
-                            protect_presented=True)
+    # The existing insert capability chooses MAX(position)+1 when protected.
+    # Do not recalculate or rewrite any other entry's position.
+    previous = capture_daily_queue_order(database, queue_date)
+    entry = storage.queued_entry(database, queue_date, card_id)
+    if not entry:
+        cycle = storage.next_cycle(database, queue_date, card_id)
+        entry = storage.insert_entry(database, queue_date, card_id, cycle, True, "guided", None)
+    storage.classify_entry(database, entry["id"])
+    preserve_daily_queue_order(database, queue_date, previous=previous)

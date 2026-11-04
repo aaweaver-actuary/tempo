@@ -222,7 +222,7 @@ def test_materialization_fence_uses_graph_owner_order_and_holds_on_contention():
         def execute_native(self, statement, parameters=()):
             calls.append(statement)
             return Cursor((True,))
-    assert discovery_admission.storage.try_materialization_fence(Database(), 'r')
+    assert discovery_admission.storage.try_materialization_fence(Database(), 'r') == 'ready'
     assert 'opening_graph_rebuild' in calls[0] and 'SKIP LOCKED' in calls[0]
     assert 'prefix-transition:reservations' in calls[1]
     assert 'pg_try_advisory_xact_lock(' in calls[2]
@@ -233,8 +233,8 @@ def test_materialization_fence_uses_graph_owner_order_and_holds_on_contention():
             calls.append(statement)
             return Cursor(None)
     calls.clear()
-    assert not discovery_admission.storage.try_materialization_fence(BusyGraph(), 'r')
-    assert len(calls) == 1
+    assert discovery_admission.storage.try_materialization_fence(BusyGraph(), 'r') == 'graph_prerequisite_missing'
+    assert len(calls) == 2
 
 
 def test_discovery_queue_fence_declines_issued_target():
@@ -251,3 +251,19 @@ def test_discovery_queue_fence_declines_issued_target():
             if 'queue_attempt_origins' in statement: return QueueCursor([(1,)])
             return QueueCursor([])
     assert not try_lock_discovery_queue_position(Database(), '2026-01-01', 'card')
+
+
+def test_discovery_queue_appends_guided_ordinary_without_reordering(monkeypatch):
+    from app.study import queue_placement
+    from tempo_legacy_database.adapters import queue_position_lock
+    calls = []
+    monkeypatch.setattr(queue_position_lock, 'try_lock_discovery_queue_position', lambda *_: True)
+    monkeypatch.setattr(queue_placement, 'capture_daily_queue_order', lambda *_: 'receipt')
+    monkeypatch.setattr(queue_placement.storage, 'queued_entry', lambda *_: None)
+    monkeypatch.setattr(queue_placement.storage, 'next_cycle', lambda *_: 0)
+    monkeypatch.setattr(queue_placement.storage, 'insert_entry', lambda _db, day, card, cycle, protected, attempt, reason: calls.append((day, card, cycle, protected, attempt, reason)) or {'id': 9})
+    monkeypatch.setattr(queue_placement.storage, 'classify_entry', lambda _db, entry: calls.append(('classify', entry)))
+    monkeypatch.setattr(queue_placement.storage, 'set_position', lambda *_: (_ for _ in ()).throw(AssertionError('reordered')))
+    monkeypatch.setattr(queue_placement, 'preserve_daily_queue_order', lambda _db, day, previous: calls.append(('receipt', day, previous)))
+    queue_placement.ensure_discovery_card_queued(object(), 'card', '2026-01-01')
+    assert calls == [('2026-01-01', 'card', 0, True, 'guided', None), ('classify', 9), ('receipt', '2026-01-01', 'receipt')]

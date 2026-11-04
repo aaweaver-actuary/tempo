@@ -251,14 +251,6 @@ def introduce_card(database, values):
     )
 
 
-def mark_explicit_admission(database, values):
-    return database.execute(
-        """UPDATE daily_queue SET admission_kind='explicit',admission_source=?
-                       WHERE queue_date=? AND card_id=? AND status='queued'""",
-        values,
-    )
-
-
 def mark_intent_queued(database, values):
     return database.execute(
         """UPDATE discovery_admission_intents SET state='queued',card_id=?,updated_at=? WHERE id=?""",
@@ -314,23 +306,34 @@ def try_materialization_fence(database, repertoire_id):
         "AND deduplication_key=%s FOR UPDATE SKIP LOCKED", (repertoire_id,),
     ).fetchone()
     if not graph:
-        return False
+        exists = database.execute_native(
+            "SELECT 1 FROM background_tasks WHERE kind='opening_graph_rebuild' AND deduplication_key=%s",
+            (repertoire_id,),
+        ).fetchone()
+        return 'graph_authority_busy' if exists else 'graph_prerequisite_missing'
     reservations = database.execute_native(
         "SELECT pg_try_advisory_xact_lock_shared(hashtextextended('tempo:prefix-transition:reservations',0))",
     ).fetchone()
     if not reservations or not reservations[0]:
-        return False
+        return 'graph_authority_busy'
     graph_lock = database.execute_native(
         "SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))", ("tempo:opening-graph:" + repertoire_id,),
     ).fetchone()
     if not graph_lock or not graph_lock[0]:
-        return False
+        return 'graph_authority_busy'
     repertoire = database.execute_native(
         "SELECT id FROM repertoires WHERE id=%s FOR UPDATE SKIP LOCKED", (repertoire_id,),
     ).fetchone()
     if not repertoire:
-        return False
+        return 'graph_authority_busy'
     scope = database.execute_native(
         "SELECT id FROM repertoire_game_scope WHERE id=1 FOR UPDATE SKIP LOCKED",
     ).fetchone()
-    return bool(scope)
+    return 'ready' if scope else 'graph_authority_busy'
+
+
+def mark_recovery_hold(database, intent_id, reason, now):
+    return database.execute(
+        "UPDATE discovery_admission_intents SET last_error=?,updated_at=? WHERE id=? AND state='preparing'",
+        (reason, now, intent_id),
+    ).rowcount

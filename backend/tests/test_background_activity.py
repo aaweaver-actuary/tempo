@@ -217,3 +217,29 @@ def test_discovery_prerequisite_checkpoint_preserves_task_identity_and_generatio
             assert db.execute("SELECT event FROM background_task_events WHERE task_id=? ORDER BY id DESC LIMIT 1", (task['id'],)).fetchone()[0] == 'slice_complete'
     finally:
         database_writer.stop()
+
+
+def test_sqlite_discovery_recovery_records_specific_hold_without_changing_identity(tmp_path, monkeypatch):
+    from app.services import discovery_admission
+    monkeypatch.setattr(database, 'DB_PATH', tmp_path / 'tempo.db')
+    database.initialize()
+    _seed_all_sources()
+    now = datetime.now(timezone.utc).isoformat()
+    database_writer.start()
+    try:
+        with database.connection() as db:
+            db.execute("INSERT INTO repertoire_opportunities(id,repertoire_id,kind,fen_key,status,score,evidence_json,evidence_fingerprint,created_at,updated_at) VALUES('op','activity-rep','missing_response','fen','active',1,'{}','fingerprint',?,?)", (now, now))
+            db.execute("INSERT INTO discovery_admission_intents(id,opportunity_id,repertoire_id,evidence_fingerprint,starting_fen,selected_move_uci,preview_moves_json,recommendation_json,line_id,created_at,updated_at) VALUES('intent','op','activity-rep','fingerprint',?,'e2e4','[\"e2e4\"]','{}','line',?,?)", (START_FEN, now, now))
+        task = enqueue_task('discovery_admission', 'intent', {'intent_id': 'intent'})
+        with database.connection() as db:
+            db.execute("UPDATE background_tasks SET state='leased',lease_token='lease' WHERE id=?", (task['id'],))
+        claimed = {**task, 'kind': 'discovery_admission', 'lease_token': 'lease', 'payload': {'intent_id': 'intent'}}
+        assert discovery_admission.execute_admission_intent_slice(claimed) is True
+        with database.read_connection() as db:
+            row = db.execute('SELECT id,generation,state,lease_token FROM background_tasks WHERE id=?', (task['id'],)).fetchone()
+            assert tuple(row) == (task['id'], task['generation'], 'queued', None)
+            intent = db.execute("SELECT state,last_error,line_id FROM discovery_admission_intents WHERE id='intent'").fetchone()
+            assert tuple(intent) == ('preparing', 'sqlite_current_authority_unavailable', 'line')
+            assert db.execute("SELECT 1 FROM repertoire_lines WHERE id='line'").fetchone() is None
+    finally:
+        database_writer.stop()

@@ -560,8 +560,9 @@ def _materialize_admission_branch(task: dict) -> None:
     from .repertoire_game_refresh import refreshing_game_scope
     with connection(background=True) as database, refreshing_game_scope(database):
         if storage.configured():
-            if not storage.try_materialization_fence(database, intent["repertoire_id"]):
-                return
+            fence = storage.try_materialization_fence(database, intent["repertoire_id"])
+            if fence != "ready":
+                return fence
             if not lock_current_slice(database, task):
                 return
         else:
@@ -616,7 +617,10 @@ def execute_admission_intent_slice(task: dict) -> bool:
         if identity in {"invalid", "completed"}:
             complete_task_slice_in_transaction(database, task)
             return False
-    _materialize_admission_branch(task)
+    if not storage.configured():
+        hold_reason = "sqlite_current_authority_unavailable"
+    else:
+        hold_reason = _materialize_admission_branch(task)
     activity_gate.wait_for_foreground()
     read_section = background_read_connection if storage.configured() else read_connection
     with read_section() as database:
@@ -648,6 +652,13 @@ def execute_admission_intent_slice(task: dict) -> bool:
             return False
         if dict(current) != dict(intent):
             return True
+        if hold_reason:
+            if storage.mark_recovery_hold(database, current["id"], hold_reason, _now()) != 1:
+                return True
+            retry_at = (datetime.now(timezone.utc) + timedelta(seconds=60)).isoformat()
+            advance_task_slice_in_transaction(database, task, next_phase="queued",
+                next_payload=task["payload"], eligible_at=retry_at)
+            return True
         if card_id_value and integrity_published and storage.configured():
             from .postgres_integrity import try_hold_current_integrity_certificate
             certificate = try_hold_current_integrity_certificate(database, current["repertoire_id"])
@@ -661,7 +672,6 @@ def execute_admission_intent_slice(task: dict) -> bool:
                 today = date.today().isoformat()
                 storage.introduce_card(database, (today, card_id_value))
                 ensure_discovery_card_queued(database, card_id_value, today)
-                storage.mark_explicit_admission(database, (f"discovery:{current['opportunity_id']}", today, card_id_value))
                 storage.mark_intent_queued(database, (card_id_value, _now(), current["id"]))
                 if storage.complete_opportunity_admission(database, (card_id_value, card_id_value, _now(), current["opportunity_id"], current["evidence_fingerprint"])) != 1:
                     from .redis_admission_gate import BackgroundAdmissionDeferred
