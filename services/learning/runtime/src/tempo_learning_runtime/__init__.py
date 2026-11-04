@@ -15,7 +15,6 @@ from . import study_contracts
 from . import opening_evidence_contracts
 
 __all__ = [
-    "original_plan_mapping",
     "scheduling_review_application",
     "scheduling_review_contracts",
     "scheduling_review_store",
@@ -32,6 +31,7 @@ __all__ = [
     "create_app",
     "register_evidence_receiver",
     "register_settlement",
+    "original_plan_mapping",
 ]
 
 from .config import Configuration
