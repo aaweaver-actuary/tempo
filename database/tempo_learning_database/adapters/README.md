@@ -4,6 +4,7 @@
 
 | File | Role |
 | --- | --- |
+| [retained_position_store.py](retained_position_store.py) | Representative original position/fact staging and receipt replay on a caller-owned transaction, using the independent Learning transfer contract; no source reads, scheduler or activation. |
 | [card_deletion.py](card_deletion.py) | Existing deleted-card fact on the caller’s transaction; application conflict translation stays in Learning composition. |
 | [frozen_order.py](frozen_order.py) | Bounded frozen-order reads, activation/exposure facts and SQL predicates; [policy/composition](../../../services/learning/runtime/src/tempo_learning_runtime/study/frozen_order/README.md). |
 | [real_game_miss_projection.py](real_game_miss_projection.py) | Existing Learning-owned miss query, using remediation’s public predicate without a new connection or writer. |

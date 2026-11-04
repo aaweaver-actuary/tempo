@@ -12,6 +12,11 @@
 
 Learning alone owns queue/review/scheduling writes. Remediation DDL is supplied by its installed Learning-owned package and applied by this migration owner. There is no Games table access or Games serving prerequisite introduced here.
 
+The [retained-position source schema and transaction view](schema/retained-position/README.md)
+describe #908's representative non-serving copy mechanism. Its additive migration
+is registered after Content bridge v1. Registration is not installation, full
+migration acceptance or permission to activate copied data.
+
 ## Logical relationships (not SQL foreign keys)
 
 Content publication IDs/generations and Game Evidence evidence/delivery identifiers are accepted protocol facts. They are not foreign keys into producer databases. Several local receipt/card fields deliberately have no FK so deletion/replay facts survive.
