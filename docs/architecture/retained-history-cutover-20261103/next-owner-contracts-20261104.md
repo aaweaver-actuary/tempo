@@ -70,3 +70,17 @@ review accepted final owner source000111ca and native two-case proof at
 PostgreSQL18.6/schema60; retained precommit revision is bound by matching hashes.
 This closes bounded durable original-response immutability, with privileged
 DDL/replication bypass and actual installed migration still unqualified.
+
+Historical-origin source061 is a separate retention subset, not the planned
+full-currentness correspondence producer. One actual owner RO/RR snapshot and
+its accepted source codec bind retained semantic facts and ordered original
+occurrences. The borrowed writer uses existing authored/epoch fences for NEW
+receipts; identical prepared-byte replay returns the original observation
+before new currentness checks. Ordinary source preparation avoids retention
+serialization. Physical/currentness are UNQUALIFIED, activationFalse and final
+legacy fence absent. Cross-repertoire authority anchor is unavailable, so
+Content source/manifest output is absent and projection BLOCKED_AUTHORITY_SCOPE.
+The three-case owner selection (two pure, one native lifecycle) passed with
+complete cleanup; two earlier fixture failures and a separate incomplete parity
+receipt with one skipped native case remain explicit. This cannot certify old
+issued attempts without exact corresponding provenance, nor full cutover.
