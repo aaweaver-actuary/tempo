@@ -103,6 +103,7 @@ def main(test_paths=None, additional_environment=None, extra_sources=(), evidenc
     owners = {
         "learning-remediation",
         "learning-review-application",
+        "evidence-math",
         "scheduling",
         "chess-core",
         "content-publication-contracts",

@@ -7,6 +7,8 @@ COPY services/learning/application/src services/learning/application/src
 COPY services/learning/application/hatch_build.py services/learning/application/hatch_build.py
 COPY services/learning/remediation/pyproject.toml services/learning/remediation/pyproject.toml
 COPY services/learning/remediation/src services/learning/remediation/src
+COPY packages/evidence-math/pyproject.toml packages/evidence-math/pyproject.toml
+COPY packages/evidence-math/src packages/evidence-math/src
 COPY packages/scheduling/pyproject.toml packages/scheduling/pyproject.toml
 COPY packages/scheduling/src packages/scheduling/src
 COPY packages/chess-core/pyproject.toml packages/chess-core/pyproject.toml

@@ -440,3 +440,14 @@ owning disposable PostgreSQL fixture. `test_queue_persistence.py` and
 `test_queue_storage_separation.py` retain the affected public/storage boundary.
 This does not establish non-frozen invalidation, retained position issuance,
 Study-day conversion or full saved-review→playable-next-card acceptance.
+
+## Position grade decisions and retained next-review comparison (#908 W02B)
+
+`tests/test_position_daily_credit.py` and
+`tests/test_position_first_response_policy.py` own the pure legacy-compatible
+decision port: at-most-one Good per exact position/day across epochs, verified
+Again, original event replay/conflict and Observe without scheduler work.
+`database/tests/position_study/test_retained_position_store_postgres.py` compares
+the next pinned Good response from original and copied full FSRS without
+replaying history. These are proposals and representative retained-state proof;
+an accepted-grade transaction/receipt port and native uniqueness remain absent.

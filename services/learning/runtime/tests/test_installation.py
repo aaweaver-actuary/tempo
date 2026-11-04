@@ -11,6 +11,11 @@ import tempo_learning_database
 def test_installed_artifact_has_migrations_and_no_optional_services():
     assert "site-packages" in tempo_learning_runtime.__file__
     assert metadata.version("tempo-learning-runtime") == "0.1.0"
+    assert metadata.version("tempo-evidence-math") == "0.1.0"
+    import tempo_evidence_math
+    from tempo_learning_runtime import position_grade_policy
+    assert "site-packages" in tempo_evidence_math.__file__
+    assert "site-packages" in position_grade_policy.__file__
     assert metadata.version("tempo-game-evidence-contracts") == "3.0.0"
     for distribution in ("celery", "redis", "torch", "onnxruntime", "transformers"):
         with pytest.raises(metadata.PackageNotFoundError):

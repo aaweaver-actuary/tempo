@@ -162,6 +162,7 @@
       ],
       "dependencies": [
         "tempo_learning_review",
+        "tempo_evidence_math",
         "tempo_scheduling",
         "tempo_chess_core",
         "tempo_content_publication_contracts",
@@ -1325,7 +1326,7 @@
       "root": "packages/evidence-math",
       "publicExports": [],
       "dependencies": [],
-      "buildInputs": [],
+      "buildInputs": ["pyproject.toml", "src"],
       "buildCommand": null,
       "artifact": null,
       "tests": [],

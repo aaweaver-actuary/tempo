@@ -1,5 +1,7 @@
 """F01: exact single-position source rows on the owned native PG fixture."""
 import base64
+from datetime import date, datetime, timezone
+from importlib.metadata import version
 import json
 import os
 from pathlib import Path
@@ -57,7 +59,7 @@ def populate(conn):
     conn.execute("""INSERT INTO study_position_seed_outcomes(repertoire_id,owner_epoch,variant,position,expected_uci,policy_version,disposition,donor_card_id,donor_card_revision,donor_fingerprint,donor_selection_policy,donor_fsrs_internal_card_id,allocated_fsrs_internal_card_id,clone_fingerprint,introduced_at)
         VALUES ('r','e1','standard','exact-fen','e2e4','p1','seeded','card-1',2,'fingerprint','v1',42,4503599627370496,'clone','2026-10-01T12:00:00Z')""")
     conn.execute("""INSERT INTO study_position_states(repertoire_id,variant,position,expected_uci,policy_version,owner_epoch,source_digest,version,fsrs_internal_card_id,fsrs_json,due_at,introduced_at,donor_card_id,donor_card_revision,donor_fingerprint,donor_selection_policy)
-        VALUES ('r','standard','exact-fen','e2e4','p1','e1','authored',3,4503599627370496,%s,'2026-11-05T01:02:03.123456Z','2026-10-01T12:00:00Z','card-1',2,'fingerprint','v1')""", ('{ "card_id":4503599627370496, "stability":1.25 }',))
+        VALUES ('r','standard','exact-fen','e2e4','p1','e1','authored',3,4503599627370496,%s,'2026-11-05T01:02:03.123456Z','2026-10-01T12:00:00Z','card-1',2,'fingerprint','v1')""", ('{ "card_id":4503599627370496, "state":2, "step":null, "stability":1.25, "difficulty":5.0, "due":"2026-11-05T01:02:03.123456+00:00", "last_review":"2026-10-02T12:01:00+00:00" }',))
     conn.execute("""INSERT INTO study_position_issued_plans VALUES ('attempt-1',9,'card-1',2,'r','standard','e1','authored','2026-10-02','plan-digest','{"target":"exact-fen"}','2026-10-02T12:00:00Z')""")
     conn.execute("""INSERT INTO study_position_first_responses VALUES ('event-1','attempt-1',0,'r','standard','exact-fen','e1','payload','{"actual_uci":"e2e4"}','2026-10-02T12:00:30Z','2026-10-02T12:00:31Z')""")
     conn.execute("""INSERT INTO study_position_grades(effect_id,source_kind,event_id,attempt_id,decision_index,effect_kind,repertoire_id,variant,position,owner_epoch,expected_uci,policy_version,source_digest,accepted_study_day,grade,request_digest,accepted_at,fsrs_before_json,fsrs_after_json,version_before,version_after)
@@ -156,6 +158,19 @@ def test_f01_retained_position_atomic_exact_replay_and_negative_cases():
                 source = rows["study_position_states"][0]
                 assert row[3:10] == tuple(source[n] for n in ("expected_uci","policy_version","owner_epoch","source_digest","version","fsrs_internal_card_id","fsrs_json"))
                 assert row[10].isoformat() == source["due_at"] and row[11].isoformat() == source["introduced_at"]
+                # Both transitions consume the exact captured FSRS bytes and the
+                # same explicitly pinned time, day, package and scheduler settings.
+                # This is a read-only comparison, not activation of staged state.
+                from tempo_scheduling import schedule_position_review
+                from tempo_scheduling._scheduler import DESIRED_RETENTION, MAXIMUM_INTERVAL_DAYS
+                assert version("fsrs") == "6.3.2"
+                assert (DESIRED_RETENTION, MAXIMUM_INTERVAL_DAYS) == (0.92, 365)
+                assert row[9] == source["fsrs_json"]
+                accepted_at = datetime(2026, 11, 6, 13, 30, tzinfo=timezone.utc)
+                review_day = date(2026, 11, 6)
+                original = schedule_position_review("good", fsrs_card_json=source["fsrs_json"], accepted_at=accepted_at, review_day=review_day)
+                copied = schedule_position_review("good", fsrs_card_json=row[9], accepted_at=accepted_at, review_day=review_day)
+                assert original == copied
                 assert row[12:16] == tuple(source[n] for n in ("donor_card_id","donor_card_revision","donor_fingerprint","donor_selection_policy"))
                 captured = conn.execute("SELECT source_key,target_key,original_bytes,original_digest,references_json FROM retained_position_facts").fetchall()
                 expected = {(f.source.store, tuple(p.value for p in f.source.primary_key)): f for f in manifest.facts}
