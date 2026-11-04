@@ -3,19 +3,14 @@ import { afterEach, expect, it, vi } from "vitest";
 import { RepertoireIntegrityDialog } from "../../app/components/repertoire-integrity-dialog";
 import { enqueueIntegrityRepair, discardStaleIntegrityRepair, flushIntegrityRepairs, pendingIntegrityRepairs,
   INTEGRITY_REPAIR_CONFIRMED, INTEGRITY_REPAIRS_CHANGED } from "../../app/lib/integrity-repair-outbox";
-import { loadExplorer, type ExplorerResult } from "../../app/lib/lichess-explorer";
 
 vi.mock("../../app/components/chessboard", () => ({ Chessboard: () => <div /> }));
-vi.mock("../../app/components/move-comparison-table", () => ({
-  MoveComparisonTable: ({ onPlay, lichess }: { onPlay: (move: string) => void; lichess: { uci: string }[] }) =>
-    <><button onClick={() => onPlay("e2e4")}>Choose e4</button><span data-testid="explorer-moves">{lichess.map(move => move.uci).join(",")}</span></>,
-}));
-vi.mock("../../app/lib/lichess-explorer", () => ({ loadExplorer: vi.fn(async () => null) }));
+
 
 const startingFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 const issues = ["first", "second"].map(id => ({ id, kind: "multiple_responses",
   fen_key: startingFen.split(" ").slice(0, 4).join(" "), fen: startingFen,
-  trained_color: "white", signature: `${id}-signature`, moves: [],
+  trained_color: "white", signature: `${id}-signature`, moves: [{ uci: "e2e4", line_count: 1, card_count: 1, review_count: 0 }],
   sources: [{ type: "line", id: `${id}-source` }],
 }));
 const integrity = { repertoire_id: "rep", status: "needs_repair", issue_count: 2,
@@ -89,7 +84,6 @@ it("unchanged repair status refresh preserves selection and all queued choices s
 
 it("late repair evidence from the previous conflict cannot populate the next conflict", async () => {
   let finishPersonal: (response: Response) => void = () => undefined;
-  let finishExplorer: (result: ExplorerResult) => void = () => undefined;
   let personalRequests = 0;
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     if (String(input).includes("position-summary")) {
@@ -98,7 +92,6 @@ it("late repair evidence from the previous conflict cannot populate the next con
     }
     return Response.json(integrity);
   }));
-  vi.mocked(loadExplorer).mockImplementationOnce(() => new Promise(resolve => { finishExplorer = resolve; }));
   render(<RepertoireIntegrityDialog repertoireId="rep" theme="brown" pieceSet="cburnett" onClose={vi.fn()} />);
   await screen.findByText(/line first-source/);
   fireEvent.click(screen.getByRole("button", { name: "Choose e4" }));
@@ -107,10 +100,8 @@ it("late repair evidence from the previous conflict cannot populate the next con
   fireEvent.click(screen.getByRole("button", { name: "Choose e4" }));
   await act(async () => {
     finishPersonal(Response.json({ moves: [{ move_uci: "d2d4", games: 99, score_percentage: 70 }] }));
-    finishExplorer({ lichess: { source: "lichess", state: "ready", moves: [{ uci: "d2d4", white: 1, draws: 0, black: 0 }],
-      retryable: false, hasCachedData: false }, masters: { source: "masters", state: "ready", moves: [], retryable: false, hasCachedData: false } });
+
   });
-  expect(screen.getByTestId("explorer-moves").textContent).toBe("");
   expect(screen.queryByText(/99 games/)).toBeNull();
   expect(screen.getByText("e2e4")).not.toBeNull();
 });
@@ -299,4 +290,21 @@ it("recovered integrity load clears only its alert while a saved-choice read fai
   expect(screen.getByRole("alert").textContent).toContain("Saved repair choices could not be read");
   expect(screen.queryByText("Integrity load unavailable")).toBeNull();
   expect(screen.getByText("e2e4", { selector: "strong" })).not.toBeNull();
+});
+
+it("conflict choice remains usable with optional network unavailable and no Explorer requests", async () => {
+  const requests: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input); requests.push(url);
+    if (url.endsWith("/integrity")) return Response.json(integrity);
+    throw new TypeError("Network unavailable");
+  }));
+  render(<RepertoireIntegrityDialog repertoireId="rep" theme="brown" pieceSet="cburnett" onClose={vi.fn()} />);
+  await screen.findByText(/line first-source/);
+  expect(screen.queryByText(/Stockfish|Maia|Explorer/)).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Choose e4" }));
+  fireEvent.click(screen.getByRole("button", { name: "Keep this response" }));
+  await screen.findByText(/line second-source/);
+  expect(pendingIntegrityRepairs()[0]).toMatchObject({ issueId: "first", selectedMoveUci: "e2e4" });
+  expect(requests.some(url => /explorer\.lichess|masters|stockfish|maia/i.test(url))).toBe(false);
 });
