@@ -1,5 +1,6 @@
 """Prove populated historical upgrades without the retired profile runtime."""
 import os
+import secrets
 import sys
 import uuid
 from datetime import datetime, timezone
@@ -11,7 +12,8 @@ from psycopg import sql
 _REPOSITORY = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPOSITORY))
 sys.path.insert(0, str(_REPOSITORY / "database"))
-from database.tooling.apply_postgres_migrations import MIGRATIONS, apply_migrations
+from database.tooling.apply_postgres_migrations import MIGRATIONS, apply_migrations, migration_source
+from database.tooling.verify_postgres_cli_state import capture_cut62, verify_cut62, CUT62_RETIRED_TABLES
 from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 
 ADMIN_DSN = os.getenv("TEMPO_PROFILE_REHEARSAL_ADMIN_DSN", "postgresql://postgres@postgres:5432/postgres")
@@ -28,7 +30,7 @@ def apply_through(database, boundary):
             break
         if version <= current:
             continue
-        database.execute(migration.read_text(), prepare=False)
+        database.execute(migration_source(migration), prepare=False)
         database.commit()
 
 
@@ -97,6 +99,10 @@ def check_upgrade(boundary):
             apply_through(database, 44)
             check_boundary_44(database)
             assert database.execute("SELECT * FROM imported_games ORDER BY id").fetchall() == sources
+            apply_through(database, 61)
+            secret = secrets.token_bytes(32)
+            witness = capture_cut62(database, secret)
+            assert witness['version'] == 2 and len(CUT62_RETIRED_TABLES) == 9
         for _ in range(2):
             apply_migrations(dsn)
             with psycopg.connect(dsn) as database:
@@ -110,7 +116,9 @@ def check_upgrade(boundary):
                 for index in ('idx_opening_graph_current_roots', 'idx_opening_graph_mature_parent_candidates',
                               'idx_cards_locked_openings', 'idx_cards_mature_parent'):
                     assert database.execute('SELECT to_regclass(%s)', (index,)).fetchone()[0] == index
-                for retired in ('next_opponent_accounts', 'next_opponent_snapshots',
+                result = verify_cut62(database, witness, secret)
+                assert result['version'] == 2 and set(result['retired']) == CUT62_RETIRED_TABLES
+                for retired in (*CUT62_RETIRED_TABLES,
                                 'idx_next_opponent_account_time', 'idx_next_opponent_speed_rating_time'):
                     assert database.execute('SELECT to_regclass(%s)', (retired,)).fetchone()[0] is None
                 for function in ('invalidate_next_opponent_inputs()', 'next_opponent_game_time(text)', 'protect_next_opponent_snapshot()'):
