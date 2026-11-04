@@ -97,6 +97,29 @@ def test_content_final_generation_cf01_cf07_supported_writer_and_restart():
                 stale_publication.result(timeout=15)
         service._commit_publication = original_commit
         assert (reserved.status,reserved.epoch) == ('RESERVED',1)
+        # Simulate an old worker becoming claimable after the reservation. The
+        # real worker path must reject it before acquiring a fresh lease.
+        owner_url = os.environ['TEMPO_CONTENT_MIGRATION_DATABASE_URL']
+        with psycopg.connect(owner_url) as db:
+            db.execute("UPDATE content.tasks SET state='pending',lease_token='old',lease_until=clock_timestamp()-interval '1 second' WHERE source_id=%s AND generation=%s", (draft['source_id'],publication['publication_generation']))
+        try:
+            with pytest.raises(ContentError,match='reservation'):
+                service.work_once(source['source_key'])
+        finally:
+            with psycopg.connect(owner_url) as db:
+                db.execute("UPDATE content.tasks SET state='complete',lease_token=NULL,lease_until=NULL WHERE source_id=%s AND generation=%s", (draft['source_id'],publication['publication_generation']))
+        # Force a disposable owner-only source drift and collect concurrently:
+        # the held generation attachments remain, while collector work may run.
+        with psycopg.connect(owner_url) as db:
+            db.execute('UPDATE content.sources SET requested_revision=2 WHERE id=%s',(draft['source_id'],))
+            db.execute('UPDATE content.collector SET pending=true WHERE id=1')
+        try:
+            service.collect_once()
+            with psycopg.connect(url) as db:
+                assert db.execute('SELECT count(*) FROM content.generation_routes WHERE source_id=%s AND generation=%s',(draft['source_id'],publication['publication_generation'])).fetchone()[0] == 2
+        finally:
+            with psycopg.connect(owner_url) as db:
+                db.execute('UPDATE content.sources SET requested_revision=1 WHERE id=%s',(draft['source_id'],))
         with pytest.raises(TypeError): ContentFinalReservationHandle()
         assert producer.execute(ReserveFinal('transfer-a',draft['source_id'],publication['publication_id'],2,operation['id'])).code == 'content_final_request_conflict'
         captured = producer.execute(CaptureFinal(reserved.handle))
