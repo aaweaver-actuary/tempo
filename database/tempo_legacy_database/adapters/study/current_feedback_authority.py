@@ -14,7 +14,7 @@ from tempo_game_evidence_contracts.legacy import decision_identity
 from tempo_game_review_contracts import CanonicalGame
 
 from app.study.game_feedback import instant
-from app.services.postgres_integrity import integrity_certificate_from_row
+from tempo_legacy_database.adapters.authored_repertoires.integrity.certificate import integrity_certificate_from_row
 from .recombination import _source_header
 from .game_feedback_authority import (CARD_COLUMNS, GRAPH_COLUMNS, CurrentOwnerDecisions,
     _require, _rows)
