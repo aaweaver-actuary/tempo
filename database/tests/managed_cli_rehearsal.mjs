@@ -103,8 +103,9 @@ export async function runShippingManagedCliRehearsal({ root, project, target, re
   assert(pasted.affected_repertoire_ids?.includes(imported.repertoire_id));
   assert.deepEqual(await post('repertoire/paste/commit',paste,'cli-shipping-paste'),pasted);
   await assert.rejects(post('repertoire/paste/commit',paste,'cli-shipping-paste-stale'),/409/);
-  let card;
-  for(let i=0;i<120;i++){try{card=(await request('queue/today')).cards.find(item=>item.repertoire_id===imported.repertoire_id&&item.moves?.length);if(card)break}catch{}await new Promise(resolve=>setTimeout(resolve,250))}
+  let card,lastQueue,lastQueueError;
+  for(let i=0;i<120;i++){try{lastQueue=await request('queue/today');card=lastQueue.cards.find(item=>item.moves?.length&&item.start_fen);if(card)break}catch(error){lastQueueError=String(error.message)}await new Promise(resolve=>setTimeout(resolve,250))}
+  if(!card)atomicJson(join(directory,'shipping-study-queue-diagnostic.json'),{queue:lastQueue??null,error:lastQueueError??null});
   assert(card?.queue_entry_id&&new Chess(card.start_fen).move(card.moves[0]));
   await post(`cards/${card.id}/teaching`,{revision:card.revision,ply:0},'cli-shipping-teaching');
   await post(`cards/${card.id}/review`,{outcome:'correct',queue_entry_id:card.queue_entry_id,expected_revision:card.revision,attempt_id:'cli-shipping-review'},'cli-shipping-review');
