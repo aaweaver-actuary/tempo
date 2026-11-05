@@ -140,12 +140,15 @@ def _encode(report, *, private=False):
 def main(argv=None, *, reader_factory=None, capability_factory=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--identity-only", action="store_true", help="Read only database identity/schema")
+    parser.add_argument("--selected-game-only", action="store_true", help="Read identity and one selected game only")
     parser.add_argument("--workspace", default="legacy")
     parser.add_argument("--limit", type=int, default=20, choices=range(1, 101), metavar="1..100")
     parser.add_argument("--provider", choices=("lichess", "chesscom", "chess.com"))
     parser.add_argument("--game-id", help="Provider game ID; requires --provider")
     parser.add_argument("--private", action="store_true", help="Include private saved scope and game evidence; never credentials/PGNs")
     options = parser.parse_args(argv)
+    if options.selected_game_only and (options.identity_only or not options.provider or not options.game_id or not options.game_id.strip()):
+        parser.error("--selected-game-only requires --provider and nonempty --game-id and excludes --identity-only")
     if options.identity_only and (options.provider or options.game_id):
         parser.error("--identity-only cannot be combined with --provider or --game-id")
     if options.game_id and not options.provider:
@@ -154,6 +157,43 @@ def main(argv=None, *, reader_factory=None, capability_factory=None):
         parser.error("workspace/game ID must be at most 200 characters")
     report = {"schema_version": 1, "read_only": True, "unresolved": []}
     dsn = os.environ.get("TEMPO_DATABASE_READ_URL")
+    if options.selected_game_only:
+        identity = {"availability": "unavailable", "diagnostic": "games_reader_profile_required"}
+        selected = {"availability": "unavailable", "observed": False}
+        if dsn or reader_factory is not None:
+            try:
+                if reader_factory is None:
+                    from tempo_legacy_database.adapters.games.collection_observations import CollectionObservations
+                    from tempo_legacy_database.adapters.games.product_review import DedicatedGamesConnections
+                    connections = DedicatedGamesConnections(dsn, read_only=True)
+
+                    def receipts():
+                        from .game_review import CurrentStudyReceiptReads, SystemClock
+                        return CurrentStudyReceiptReads(connections, SystemClock())
+
+                    reader = CollectionObservations(connections, receipts=receipts)
+                else:
+                    reader = reader_factory()
+                identity = reader.identity()
+                if identity.get("availability") == "available":
+                    provider = "chesscom" if options.provider == "chess.com" else options.provider
+                    selected = reader.selected_game(options.workspace, provider, options.game_id)
+            except Exception:
+                if identity.get("availability") == "available":
+                    selected = {"availability": "unavailable", "diagnostic": "collection_read_unavailable"}
+                else:
+                    identity = {"availability": "unavailable", "diagnostic": "collection_read_unavailable"}
+        value = dict(schema_version=1, read_only=True, identity=identity, selected_game=selected)
+        encoded = json.dumps(value if options.private else _redacted(value), sort_keys=True, separators=(",", ":"))
+        if len(encoded.encode()) > MAX_OUTPUT_BYTES:
+            value = dict(schema_version=1, read_only=True, truncated=True,
+                         identity={"availability": identity.get("availability", "unavailable")},
+                         selected_game={"availability": "unavailable", "diagnostic": "output_exceeds_256_kib"})
+            encoded = json.dumps(value, sort_keys=True, separators=(",", ":"))
+            print(encoded)
+            return 2
+        print(encoded)
+        return 0 if identity.get("availability") == selected.get("availability") == "available" else 2
     if options.identity_only:
         if not dsn and reader_factory is None:
             identity = {"availability": "unavailable", "diagnostic": "games_reader_profile_required"}
