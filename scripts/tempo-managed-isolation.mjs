@@ -562,6 +562,35 @@ export function privateDefenseHistorySelection(path, expectedTarget) {
   return { bytes, digest: createHash('sha256').update(bytes).digest('hex'), count: keys.length, groups: { ...groups } };
 }
 
+// V2 selection is checked against the independently persisted attempt guard
+// and the freshly verified original backup digest. It is not activated here.
+export function inspectManagedHistorySelectionBinding({ target, stateDirectory, guard, verifiedBackupSha256 }) {
+  if (!isAbsolute(stateDirectory ?? '') || /[:,\n\r]/.test(stateDirectory) || guard?.version !== 1 ||
+      guard.state !== 'pending' || guard.target !== targetKey(target) || guard.intended_schema !== 62 ||
+      ![59, 61].includes(guard.starting_schema) || !Array.isArray(guard.starting_versions) ||
+      guard.starting_versions.length !== guard.starting_schema ||
+      guard.starting_versions.some((version, index) => version !== index + 1) ||
+      guard.database?.name !== 'tempo' || guard.database?.volume !== target.volumes?.[target.postgresVolumeKey]?.name ||
+      !guard.backup?.verified || !/^tempo-[0-9A-Za-z-]+\.dump$/.test(guard.backup.filename ?? '') ||
+      !/^[0-9a-f]{64}$/.test(verifiedBackupSha256 ?? ''))
+    throw new Error('Original managed history selection evidence is invalid; keep writers stopped.');
+  const witnessName = cut62WitnessName(guard);
+  if (guard.cut62_witness !== witnessName) throw new Error('Original managed witness identity differs; keep writers stopped.');
+  const directory = join(stateDirectory, witnessName.slice(0, -5));
+  const selectionPath = join(directory, 'defense-selection.json'), bindingPath = join(directory, 'binding.json');
+  const selection = privateDefenseHistorySelection(selectionPath, guard.target);
+  let binding;
+  try { binding = JSON.parse(readOwnedPrivateBytes(bindingPath)); }
+  catch { throw new Error('Original managed history binding is unavailable; keep writers stopped.'); }
+  if (!isDeepStrictEqual(binding, guard.defense_binding) || Object.keys(binding ?? {}).sort().join() !==
+      'attempt_id,backup_filename,backup_sha256,selection_sha256,target,version' || binding.version !== 1 ||
+      binding.target !== guard.target || binding.attempt_id !== guard.attempt_id ||
+      binding.backup_filename !== guard.backup.filename || binding.backup_sha256 !== verifiedBackupSha256 ||
+      binding.selection_sha256 !== selection.digest)
+    throw new Error('Original managed history selection, backup or attempt binding differs; keep writers stopped.');
+  return { selectionPath, bindingPath, selectionCount: selection.count, groups: selection.groups, selectionSha256: selection.digest };
+}
+
 // Validate the original paths and binding before any topology change. The
 // pinned database owner separately authenticates the witness and source rows.
 export function inspectManagedOriginalEvidence({ target, stateDirectory, guard, verifiedBackupSha256 }) {

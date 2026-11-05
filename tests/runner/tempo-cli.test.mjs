@@ -12,7 +12,7 @@ import { schemaVersionFromSource, validateTarget, validateContainers, deployment
   CommandExecutionError, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, sourceFingerprint, sourceMatchesFingerprint } from "../../scripts/tempo-deployment.mjs";
 import { assessMigrationRecovery, cut62WitnessName, privateSelection, inspectDisposableIsolation, inspectRegisteredIsolation, classifyManagedIsolationRecovery, classifyDisposableIsolationRecovery, persistDisposableIsolationIntent, advanceDisposableIsolationMarker, syncDisposableIsolationEvidence, validateCut62Preflight, assertColdPreflightContainers, cut62MountDirectory, requirePrivateCut62Witness, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
 import { parseArguments, ensureDocker } from "../../scripts/tempo-cli.mjs";
-import { captureManagedTargetLock, assertManagedTargetLock, inspectManagedOriginalEvidence, inspectManagedFence, assertManagedPinnedBackend, managedPinnedChallenge, assertManagedPinnedChallenge, prepareManagedDetachedTarget, privateDefenseHistorySelection } from "../../scripts/tempo-managed-isolation.mjs";
+import { captureManagedTargetLock, assertManagedTargetLock, inspectManagedOriginalEvidence, inspectManagedHistorySelectionBinding, inspectManagedFence, assertManagedPinnedBackend, managedPinnedChallenge, assertManagedPinnedChallenge, prepareManagedDetachedTarget, privateDefenseHistorySelection } from "../../scripts/tempo-managed-isolation.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
 
@@ -2738,6 +2738,34 @@ test("v2 Defense history selection preserves exact bytes and rejects ambiguous o
   writeFileSync(path, bytes, { mode: 0o600 }); assert.throws(() => privateDefenseHistorySelection(path, "other"), /invalid/);
   const zero = { ...valid, keys: [], expected: { ...valid.expected, count: 0, groups: { no_activity: 0, recognition_only: 0, reviewed: 0 } } };
   writeFileSync(path, JSON.stringify(zero), { mode: 0o600 }); assert.equal(privateDefenseHistorySelection(path, target).count, 0);
+});
+
+test("v2 Defense history selection binds exact bytes to the independent original guard and backup", t => {
+  const { target } = fixture(t), root = directory(t); fs.chmodSync(root, 0o700);
+  const attempt = "12345678-1234-1234-1234-123456789abc", name = `cut62-${attempt}.json`;
+  const dir = join(root, name.slice(0, -5)); mkdirSync(dir, { mode: 0o700 });
+  const selection = { version: 2, target: targetKey(target), cohort: "defense-history", keys: [["a", "x", "reviewed"]],
+    expected: { count: 1, groups: { no_activity: 0, recognition_only: 0, reviewed: 1 }, reference_digest: "a".repeat(64) } };
+  const selectionPath = join(dir, "defense-selection.json"), bytes = Buffer.from(JSON.stringify(selection));
+  writeFileSync(selectionPath, bytes, { mode: 0o600 });
+  const binding = { version: 1, target: targetKey(target), attempt_id: attempt, backup_filename: "tempo-original.dump",
+    backup_sha256: "b".repeat(64), selection_sha256: createHash("sha256").update(bytes).digest("hex") };
+  atomicJson(join(dir, "binding.json"), binding);
+  const guard = { version: 1, state: "pending", target: targetKey(target), attempt_id: attempt, starting_schema: 59, intended_schema: 62,
+    starting_versions: Array.from({ length: 59 }, (_, index) => index + 1), database: { name: "tempo", volume: target.volumes[target.postgresVolumeKey].name },
+    backup: { verified: true, filename: binding.backup_filename }, defense_binding: structuredClone(binding), cut62_witness: name };
+  const input = { target, stateDirectory: root, guard, verifiedBackupSha256: binding.backup_sha256 };
+  assert.equal(inspectManagedHistorySelectionBinding(input).selectionSha256, binding.selection_sha256);
+  for (const change of [
+    x => { x.verifiedBackupSha256 = "c".repeat(64); }, x => { x.guard.defense_binding.attempt_id = "other"; },
+    x => { x.guard.backup.filename = "tempo-other.dump"; }, x => { x.guard.target = "other"; },
+  ]) {
+    const altered = structuredClone(input); change(altered);
+    assert.throws(() => inspectManagedHistorySelectionBinding(altered), /invalid|differs/);
+  }
+  writeFileSync(selectionPath, Buffer.concat([bytes, Buffer.from("\n")]), { mode: 0o600 });
+  assert.throws(() => inspectManagedHistorySelectionBinding(input), /binding differs/);
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, "binding.json"), "utf8")), binding);
 });
 
 test("managed fence inspection uses the registered role and rejects foreign peers or changed control identity", async t => {
