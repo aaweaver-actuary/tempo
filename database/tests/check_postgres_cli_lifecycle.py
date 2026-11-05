@@ -248,8 +248,18 @@ def run_disposable_pinned_isolation(database_url, *, guard_path, selection_path,
                                             'pre62_path': pre62_path, 'assert_fenced': _assert_disposable_pinned_database})
             finally:
                 migration_owner._ISOLATED_TEST_ENABLED = False
-            if os.getenv('TEMPO_TEST_ISOLATION_CRASH_AFTER_COMMIT') == '1':
-                os._exit(77)
+        # The harness uses this bound, private observation to distinguish a
+        # real post-commit crash from an earlier failure that also exits 1.
+        with database.transaction():
+            database.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+            if (_assert_disposable_pinned_database(database, guard) != ready['pid'] or
+                    database.execute('SELECT COALESCE(max(version),0) FROM public.tempo_schema_migrations').fetchone()[0] != 62):
+                raise RuntimeError('Disposable post-commit schema differs')
+        _write_private_json_once(str(handoff / 'committed.json'),
+            {'version': 1, 'nonce': nonce, 'pid': ready['pid'], 'attempt_id': guard['attempt_id'],
+             'cut62_witness_id': witness_id, 'schema': 62})
+        if version == 61 and os.getenv('TEMPO_TEST_ISOLATION_CRASH_AFTER_COMMIT') == '1':
+            os._exit(77)
         with database.transaction():
             database.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
             if _assert_disposable_pinned_database(database, guard) != ready['pid'] or verify_cut62_v6(database, witness, secret).get('witness_id') != witness_id:

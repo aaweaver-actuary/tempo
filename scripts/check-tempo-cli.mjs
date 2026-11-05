@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { closeSync, existsSync, fsyncSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
@@ -99,12 +99,96 @@ async function exerciseIsolatedDefense({ target, run, compose, docker, makeRunti
       child.once("error", reject); child.once("close", code => resolve({ code, stdout, stderr }));
       child.stdin.end(JSON.stringify({ ...config, crash }));
     });
+    if (environment.TEMPO_LIFECYCLE_ISOLATION_LATE_WRITER === "1") {
+      const databaseId = (await compose(["ps", "-q", "postgres"])).stdout.trim();
+      assert(databaseId, "The owned late-writer database must exist.");
+      const insert = "INSERT INTO public.operation_receipts(operation_id,command_name,request_hash,state) VALUES ('cli-isolation-late-writer','synthetic','synthetic','pending')";
+      await docker(["exec", "--user", "postgres", databaseId, "psql", "-X", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", "tempo", "-c", insert]);
+      const denied = await supervise(null);
+      assert.notEqual(denied.code, 0); assert.match(denied.stderr, /changed|differs|witness/i);
+      const heldGuard = JSON.parse(readFileSync(guardPath, "utf8"));
+      assert.equal(heldGuard.state, "pending"); assert.equal(heldGuard.isolation.phase, "detached");
+      assert.equal(heldGuard.attempt_id, attempt); assert.deepEqual(heldGuard.defense_binding, binding);
+      assert.deepEqual(readFileSync(witnessPath), originalWitness); assert.deepEqual(readFileSync(prePath), originalPre);
+      const detached = JSON.parse((await docker(["inspect", heldGuard.isolation.identity.containerId])).stdout)[0];
+      assert.equal(Object.keys(detached.NetworkSettings.Networks).length, 0);
+      const control = async statement => docker(["exec", "--user", "postgres", databaseId, "psql", "-X", "-A", "-t", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", "postgres", "-c", statement]);
+      const state = JSON.parse((await control("SELECT json_build_object('allowed',(SELECT datallowconn FROM pg_database WHERE datname='tempo'),'sessions',(SELECT count(*) FROM pg_stat_activity WHERE datname='tempo'),'prepared',(SELECT count(*) FROM pg_prepared_xacts WHERE database='tempo'))")).stdout);
+      assert.deepEqual(state, { allowed: false, sessions: 0, prepared: 0 });
+      await control("ALTER DATABASE tempo ALLOW_CONNECTIONS true");
+      try {
+        const retained = JSON.parse((await docker(["exec", "--user", "postgres", databaseId, "psql", "-X", "-A", "-t", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", "tempo", "-c",
+          "SELECT json_build_object('schema',(SELECT max(version) FROM public.tempo_schema_migrations),'accepted',EXISTS(SELECT 1 FROM public.operation_receipts WHERE operation_id='cli-isolation-late-writer'))"])).stdout);
+        assert.deepEqual(retained, { schema: 61, accepted: true }, "Late accepted work must survive and 062 must not run.");
+      } finally { await control("ALTER DATABASE tempo ALLOW_CONNECTIONS false"); }
+      assert.equal(JSON.parse((await control("SELECT to_json(datallowconn) FROM pg_database WHERE datname='tempo'")).stdout), false);
+      console.log("PASS disposable late writer is preserved and blocks schema 62 before mutation");
+      return { lateWriterHold: true };
+    }
+    const receiptPath = join(witnessDirectory, "verified-receipt.json"), completionPath = join(witnessDirectory, "verified-completion.json");
+    let originalReceipt, receiptInode;
     for (const [fault, expectedCode] of [["after-commit", 1], ["after-receipt", 1], ["before-completion", 79],
       ["after-completion", 80], ["after-reattach", 81], ["after-guard", 82]]) {
+      const priorHandoffs = new Set(readdirSync(stateDirectory).filter(name => name.startsWith("handoff-")));
       const result = await supervise(fault);
       assert.equal(result.code, expectedCode, `Disposable ${fault} must stop at its intended boundary.`);
       assert.deepEqual(readFileSync(witnessPath), originalWitness); assert.deepEqual(readFileSync(prePath), originalPre);
-      assert.equal(JSON.parse(readFileSync(guardPath, "utf8")).attempt_id, attempt);
+      const observedGuard = JSON.parse(readFileSync(guardPath, "utf8"));
+      assert.equal(observedGuard.attempt_id, attempt); assert.deepEqual(observedGuard.defense_binding, binding);
+      assert.equal(observedGuard.cut62_identity.witness_id, captured.witness_id);
+      assert.equal(observedGuard.pre62_witness_id, captured59.witness_id);
+      const expectedPhase = ["after-commit", "after-receipt", "before-completion"].includes(fault) ? "detached"
+        : fault === "after-completion" ? "verified" : "reattached";
+      assert.equal(observedGuard.isolation.phase, expectedPhase);
+      assert.equal(observedGuard.state, fault === "after-guard" ? "verified" : "pending");
+      const handoffs = readdirSync(stateDirectory).filter(name => name.startsWith("handoff-") && !priorHandoffs.has(name));
+      if (fault !== "after-guard") {
+        assert.equal(handoffs.length, 1, `Disposable ${fault} needs one fresh pinned handoff.`);
+        const handoff = join(stateDirectory, handoffs[0]);
+        const ready = JSON.parse(readFileSync(join(handoff, "ready.json"), "utf8"));
+        const committed = JSON.parse(readFileSync(join(handoff, "committed.json"), "utf8"));
+        assert.deepEqual(committed, { version: 1, nonce: ready.nonce, pid: ready.pid, attempt_id: attempt,
+          cut62_witness_id: captured.witness_id, schema: 62 }, `Disposable ${fault} must reach schema 62 on the fenced connection.`);
+      } else assert.equal(handoffs.length, 0);
+      const hasReceipt = existsSync(receiptPath), hasCompletion = existsSync(completionPath);
+      assert.equal(hasReceipt, fault !== "after-commit");
+      assert.equal(hasCompletion, ["after-completion", "after-reattach", "after-guard"].includes(fault));
+      if (hasReceipt && !originalReceipt) { originalReceipt = readFileSync(receiptPath); receiptInode = lstatSync(receiptPath).ino; }
+      if (hasReceipt) { assert.deepEqual(readFileSync(receiptPath), originalReceipt); assert.equal(lstatSync(receiptPath).ino, receiptInode); }
+      const identity = observedGuard.isolation.identity;
+      const database = JSON.parse((await docker(["inspect", identity.containerId])).stdout)[0];
+      const network = JSON.parse((await docker(["network", "inspect", identity.networkId])).stdout)[0];
+      const attached = ["after-reattach", "after-guard"].includes(fault);
+      assert.equal(Object.keys(database.NetworkSettings.Networks).length, attached ? 1 : 0);
+      assert.equal(Boolean(network.Containers[identity.containerId]), attached);
+      const query = "SELECT json_build_object('allowed',(SELECT datallowconn FROM pg_database WHERE datname='tempo'),'sessions',(SELECT count(*) FROM pg_stat_activity WHERE datname='tempo'),'prepared',(SELECT count(*) FROM pg_prepared_xacts WHERE database='tempo'))";
+      const control = JSON.parse((await docker(["exec", "--user", "postgres", identity.containerId, "psql", "-X", "-A", "-t", "-U", "postgres", "-d", "postgres", "-c", query])).stdout);
+      assert.deepEqual(control, { allowed: attached, sessions: 0, prepared: 0 });
+      if (attached) {
+        const version = (await docker(["exec", "--user", "postgres", identity.containerId, "psql", "-X", "-A", "-t", "-U", "postgres", "-d", "tempo", "-c", "SELECT max(version) FROM public.tempo_schema_migrations"])).stdout.trim();
+        assert.equal(version, "62");
+      }
+      const checksum = await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "--entrypoint", "sh",
+        "postgres-backup", "-ec", 'cd /backups; sha256sum -c "$1.sha256" >/dev/null; sha256sum "$1" | cut -d " " -f1', "sh", backup.filename]);
+      assert.equal(checksum.stdout.trim(), backupDigest);
+      if (fault === "after-completion") {
+        const originalCompletion = readFileSync(completionPath), originalInode = lstatSync(completionPath).ino;
+        const held = `${completionPath}.held`;
+        renameSync(completionPath, held);
+        try {
+          const changed = JSON.parse(originalCompletion); changed.signature = "0".repeat(64);
+          writeFileSync(completionPath, JSON.stringify(changed), { mode: 0o600, flag: "wx" });
+          const denied = await supervise(null);
+          assert.notEqual(denied.code, 0);
+          assert.match(denied.stderr, /Original disposable completion differs/);
+          assert.deepEqual(JSON.parse(readFileSync(guardPath, "utf8")), observedGuard);
+          const stillDetached = JSON.parse((await docker(["inspect", identity.containerId])).stdout)[0];
+          assert.equal(Object.keys(stillDetached.NetworkSettings.Networks).length, 0);
+        } finally {
+          rmSync(completionPath, { force: true }); renameSync(held, completionPath);
+        }
+        assert.deepEqual(readFileSync(completionPath), originalCompletion); assert.equal(lstatSync(completionPath).ino, originalInode);
+      }
     }
     const resumed = await supervise(null);
     assert.equal(resumed.code, 0, "Disposable original attempt must resume without recapture.");
@@ -121,6 +205,8 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
   const root = process.cwd();
   const isolatedDefense = environment.TEMPO_LIFECYCLE_ISOLATED_DEFENSE === "1";
   const componentPython = environment.TEMPO_COMPONENT_PYTHON;
+  if (environment.TEMPO_LIFECYCLE_ISOLATION_LATE_WRITER === "1" && !isolatedDefense)
+    throw new Error("Late-writer proof requires the separate disposable Defense scenario.");
   if (isolatedDefense) {
     if (environment.TEMPO_LIFECYCLE_P0_59_ONLY !== "1" || !componentPython || !isAbsolute(componentPython))
       throw new Error("Disposable Defense proof requires schema59 mode and an explicit absolute TEMPO_COMPONENT_PYTHON.");
@@ -300,6 +386,7 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
       if (isolatedDefense) {
         final = await exerciseIsolatedDefense({ target, run, compose, docker, makeRuntime, lifecycle, stateDirectory,
           revision, evidence, preparedImages, selectionPath, componentPython, environment, childEnvironment, images });
+        if (final?.lateWriterHold) return;
       } else {
       let interrupted60 = false, interrupted61 = false, interruptedCapture = false, interrupted62 = false, captures = 0;
       const inject = async (command, args, options) => {
