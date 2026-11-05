@@ -34,7 +34,7 @@ from .durable_tasks import (
 )
 from app.chess.pgn import ends_on_trained_move
 from .puzzles import validate_puzzle_record
-from .tactical_catalog import pack_records
+from .tactical_catalog import introduction_pack_records
 from tempo_legacy_database.adapters.tactic_admission import DAILY_TACTIC_COUNT_SQL, count_daily_tactic_introductions, lock_daily_tactic_admission
 
 
@@ -181,7 +181,7 @@ def _prepare_tactical_introduction(queue_date: str) -> dict[str, Any] | None:
     ordered_packs = ([pack for pack in active_packs if pack > rotation_cursor]
                      + [pack for pack in active_packs if pack <= rotation_cursor])
     for pack_id in ordered_packs:
-        unseen_records = (record for record in pack_records(pack_id)
+        unseen_records = (record for record in introduction_pack_records(pack_id)
                           if record["PuzzleId"] not in seen_puzzles)
         while candidate_records := list(islice(unseen_records, _TACTICAL_CANDIDATE_READ_BATCH_SIZE)):
             prepared_candidates = []

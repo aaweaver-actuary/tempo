@@ -121,3 +121,79 @@ def test_tactical_completion_counts_distinct_clean_solves_across_practice_and_tr
         pack = next(pack for pack in client.get('/api/tactics/catalog').json()['packs'] if pack['id']=='pin-easy-01')
         assert pack['clean'] == 1
         assert pack['introduced'] == 1
+
+
+def test_stale_active_pack_does_not_block_valid_tactic_introduction(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from tempo_legacy_database import connections as database
+    from app.main import app
+    from app.services.tactical_catalog import pack_records, seed_tactical_introductions
+
+    monkeypatch.setattr(database, 'DB_PATH', tmp_path / 'tempo.db')
+    pack = 'fork-easy-01'
+    first = pack_records(pack)[0]['PuzzleId']
+    day = '2026-11-04'
+    with TestClient(app):
+        with database.connection() as db:
+            db.execute("UPDATE settings SET tactics_new_per_day=1 WHERE id=1")
+            db.executemany('INSERT INTO tactic_pack_activation(pack_id,active) VALUES(?,1)', [('000-retired-fixture',), (pack,)])
+            seed_tactical_introductions(db, day)
+            seed_tactical_introductions(db, day)
+            assert [tuple(row) for row in db.execute('SELECT puzzle_id,pack_id FROM tactic_introductions')] == [(first, pack)]
+            assert tuple(db.execute("SELECT pack_id,active FROM tactic_pack_activation WHERE pack_id='000-retired-fixture'").fetchone()) == ('000-retired-fixture', 1)
+
+
+def test_introduction_pack_lookup_only_suppresses_absent_catalog_entries(tmp_path, monkeypatch):
+    import pytest
+    from app.services import tactical_catalog as tactics
+
+    with pytest.raises(tactics.UnknownTacticalPack, match='^Unknown tactical pack$'):
+        tactics.pack_records('000-retired-fixture')
+    assert tactics.introduction_pack_records('000-retired-fixture') == ()
+
+    monkeypatch.setattr(tactics, 'DATA_ROOT', tmp_path)
+    tactics.catalog.cache_clear()
+    tactics.pack_records.cache_clear()
+    try:
+        data = tmp_path / 'data'
+        data.mkdir()
+        manifest = data / 'tactics-catalog.json'
+        with pytest.raises(FileNotFoundError):
+            tactics.introduction_pack_records('known')
+        manifest.write_text(json.dumps({'version': 2, 'packs': []}))
+        with pytest.raises(ValueError, match='Unsupported tactics catalog version'):
+            tactics.introduction_pack_records('known')
+        manifest.write_text(json.dumps({'version': 1, 'packs': [{'id': 'known', 'asset': 'missing.json'}]}))
+        with pytest.raises(FileNotFoundError):
+            tactics.introduction_pack_records('known')
+        (tmp_path / 'missing.json').write_text('{')
+        with pytest.raises(json.JSONDecodeError):
+            tactics.introduction_pack_records('known')
+    finally:
+        tactics.catalog.cache_clear()
+        tactics.pack_records.cache_clear()
+
+
+def test_stale_only_pack_preserves_due_tactic_and_history_during_queue_seed(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from tempo_legacy_database import connections as database
+    from app.main import app
+    from app.services.queue_application import seed_queue
+    from app.services.tactical_catalog import seed_tactical_introductions
+
+    monkeypatch.setattr(database, 'DB_PATH', tmp_path / 'tempo.db')
+    with TestClient(app):
+        with database.connection() as db:
+            db.execute('UPDATE settings SET tactics_new_per_day=1 WHERE id=1')
+            db.execute("INSERT INTO tactic_pack_activation(pack_id,active) VALUES('fork-easy-01',1)")
+            seed_tactical_introductions(db, '2026-11-03')
+            card_id = db.execute('SELECT card_id FROM tactic_progress').fetchone()[0]
+            db.execute("UPDATE tactic_pack_activation SET active=0 WHERE pack_id='fork-easy-01'")
+            db.execute("INSERT INTO tactic_pack_activation(pack_id,active) VALUES('000-retired-fixture',1)")
+            tables = ('tactic_pack_activation', 'tactic_progress', 'tactic_introductions', 'tactic_rotation', 'reviews')
+            before = {table: [tuple(row) for row in db.execute(f'SELECT * FROM {table}')] for table in tables}
+            seed_queue(db, '2026-11-04')
+            after = {table: [tuple(row) for row in db.execute(f'SELECT * FROM {table}')] for table in tables}
+            assert after == before
+            assert db.execute("SELECT COUNT(*) FROM tactic_introductions WHERE introduction_date='2026-11-04'").fetchone()[0] == 0
+            assert db.execute("SELECT COUNT(*) FROM daily_queue WHERE queue_date='2026-11-04' AND card_id=?", (card_id,)).fetchone()[0] == 1

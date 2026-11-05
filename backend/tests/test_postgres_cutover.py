@@ -5221,7 +5221,7 @@ def test_postgres_tactical_queue_prepares_outside_database_and_retries_timed_out
 
     monkeypatch.setattr(postgres_queue_refresh, "background_read_connection", read_section)
     monkeypatch.setattr(postgres_queue_refresh.read_storage, "background_read_connection", read_section)
-    monkeypatch.setattr(postgres_queue_refresh, "pack_records", records)
+    monkeypatch.setattr(postgres_queue_refresh, "introduction_pack_records", records)
     monkeypatch.setattr(postgres_queue_refresh, "validate_puzzle_record",
                         lambda record: ("training-fen", ["e2e4"]))
     monkeypatch.setattr(postgres_queue_refresh, "card_id", lambda fen, moves: "card-a")

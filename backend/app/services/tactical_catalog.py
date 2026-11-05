@@ -21,12 +21,23 @@ def catalog():
     return value
 
 
+class UnknownTacticalPack(ValueError):
+    """A successfully loaded catalog has no pack with this ID."""
+
+
 @lru_cache(maxsize=692)
 def pack_records(pack_id):
     pack = next((pack for pack in catalog()['packs'] if pack['id'] == pack_id), None)
     if not pack:
-        raise ValueError('Unknown tactical pack')
+        raise UnknownTacticalPack('Unknown tactical pack')
     return json.loads((DATA_ROOT / pack['asset']).read_text())
+
+
+def introduction_pack_records(pack_id):
+    try:
+        return pack_records(pack_id)
+    except UnknownTacticalPack:
+        return ()
 
 
 @lru_cache(maxsize=1)
@@ -77,7 +88,7 @@ def seed_tactical_introductions(db, day):
     storage.ensure_tactic_repertoire(db, day)
     while count_daily_tactic_introductions(db, day) < limit:
         ordered = [pack for pack in active if pack > cursor] + [pack for pack in active if pack <= cursor]
-        selection = next(((pack,record) for pack in ordered for record in pack_records(pack) if record['PuzzleId'] not in seen),None)
+        selection = next(((pack,record) for pack in ordered for record in introduction_pack_records(pack) if record['PuzzleId'] not in seen),None)
         if not selection:
             break
         pack,record = selection
