@@ -275,6 +275,28 @@ def _cut62_table(database, table, primary_key, secret):
 
 
 
+# Draft projection primitive; the reviewed fixed selector and migration wiring
+# are still required before this can be used for a cutover witness.
+def _cut62_projected_defense_table(database, table, primary_key, secret, cohort_sql):
+    from psycopg import sql
+    views = {
+        'cards': "SELECT t.* FROM public.cards t WHERE NOT EXISTS (SELECT 1 FROM cohort c WHERE c.card_id=t.id)",
+        'daily_queue': "SELECT t.* FROM public.daily_queue t WHERE NOT EXISTS (SELECT 1 FROM cohort c WHERE c.card_id=t.card_id)",
+        'queue_attempt_origins': "SELECT t.* FROM public.queue_attempt_origins t WHERE NOT EXISTS (SELECT 1 FROM cohort c WHERE c.card_id=t.card_id)",
+        'threat_training_candidates': "SELECT (json_populate_record(t, CASE WHEN EXISTS (SELECT 1 FROM cohort c WHERE c.candidate_id=t.id) THEN '{\"card_id\":null}'::json ELSE '{}'::json END)).* FROM public.threat_training_candidates t",
+        'priority_repertoire_source_epochs': "SELECT (json_populate_record(t, json_build_object('version',t.version+(SELECT count(*) FROM cohort c WHERE c.repertoire_id=t.repertoire_id)))).* FROM public.priority_repertoire_source_epochs t",
+        'frozen_opening_runs': "SELECT (json_populate_record(t, CASE WHEN EXISTS (SELECT 1 FROM cohort) AND EXISTS (SELECT 1 FROM public.frozen_opening_pending p WHERE p.run_id=t.run_id) AND t.invalidated=0 THEN '{\"invalidated\":1}'::json ELSE '{}'::json END)).* FROM public.frozen_opening_runs t",
+    }
+    if table not in views:
+        raise ValueError('unsupported Defense projection table')
+    query = sql.SQL('WITH cohort AS ({cohort}), projected AS ({projection}) SELECT row_to_json(t)::text FROM projected t ORDER BY {keys}').format(
+        cohort=sql.SQL(cohort_sql), projection=sql.SQL(views[table]),
+        keys=sql.SQL(',').join(sql.Identifier(key) for key in primary_key))
+    with database.cursor(name='cut62_projected_' + table) as cursor:
+        cursor.execute(query)
+        return _cut62_mac(secret, 'cut62:rows:' + table, (row[0] for row in cursor))
+
+
 def _cut62_catalog(database, secret):
     # Compare the remaining public catalog; exclude only explicitly retired
     # table-owned objects and the named migration-044 profile objects.
