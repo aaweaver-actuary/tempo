@@ -17,7 +17,7 @@ from pathlib import Path
 
 import psycopg
 
-from database.tooling.apply_postgres_migrations import MIGRATIONS
+from database.tooling.apply_postgres_migrations import MIGRATIONS, migration_source
 from database.tooling.provision_postgres_roles import provision
 from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 
@@ -89,6 +89,7 @@ def main():
     dsn = os.environ["TEMPO_POSTGRES_ADMIN_URL"]
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--seed59", action="store_true", help="Seed populated historical data and advance only through schema 59")
     mode.add_argument("--history", action="store_true", help="Read only the original fixture history, allowing unrelated worker receipts")
     mode.add_argument("--normalization", action="store_true", help="Read the qualifying legacy migration-025 card and queue row")
     mode.add_argument("--seed-abandon-orphan", action="store_true", help="Seed one fixed synthetic orphan after the owned CLI target upgrades")
@@ -147,9 +148,16 @@ def main():
             VALUES('2000-01-01','cli-legacy-tactical-miss',1,'complete','tactics')""")
         database.execute("""INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,response_json)
             VALUES('cli-preserved-receipt','fixture','preserved','complete','{"ok":true}')""")
+    if options.seed59:
+        # Use the migration owner's installed module resource, including 050.
+        # This disposable fixture retains the same populated origin and ledger.
+        with psycopg.connect(dsn) as database:
+            for migration in sorted(MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql"))[16:59]:
+                with database.transaction():
+                    database.execute(migration_source(migration), prepare=False)
     provision(dsn, Path("/run/secrets/reader_password").read_text().strip(),
               Path("/run/secrets/writer_password").read_text().strip())
-    print("Seeded populated schema 16 with preserved review, queue, and receipt history")
+    print(f"Seeded populated schema {59 if options.seed59 else 16} with preserved review, queue, and receipt history")
 
 
 if __name__ == "__main__":

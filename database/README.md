@@ -56,3 +56,31 @@ Schema/storage relationship changes must keep affected owner diagrams and data d
 ## Reducing the schema
 
 There is no target live table count. [SIMPLIFICATION.md](SIMPLIFICATION.md) records proposals, not assigned cleanup. [PERSISTENCE-DISPOSITION.md](PERSISTENCE-DISPOSITION.md) records a separately proposed graph-preserving fresh start; it does not waive preservation of the current installation's content, learning history, receipts, or pending work during ordinary feature delivery. Applying a fresh start requires an explicit current assignment, exact target/keep/disposal boundaries, verified recovery protection, and the required authorization for the specific irreversible action. Reuse still-valid explicit authorization; do not demand it again merely because an agent changed. These documents do not authorize execution.
+
+## Mixed Defense cutover evidence
+
+The following is a review matrix for the serving `public` schema, not a deletion
+list or evidence about an installed database. A current cut must first preserve
+exact keys and classify every cross-owner reference; unknown ownership remains held.
+
+| Evidence | Owner / disposition to review |
+| --- | --- |
+| `cards.content_type='defense'`, `threat_training_candidates.card_id`, original `queue_attempt_origins.content_type` | Retired Defense candidates; contradictory types, shared or missing references are not sufficient for deletion. |
+| `daily_queue`, `queue_attempt_origins`, `queue_attempt_abandonments`, `reviews`, `review_attempt_receipts`, `review_schedule_snapshots` | Study-owned queue, issuance and history; snapshot exact IDs and preserve issued/abandoned and unresolved rows until specifically adjudicated. |
+| `tactic_captures`, `tactic_progress`, `tactic_discovery_attempts` | Tactics-owned captures, admissions and solve receipts; a defensive puzzle theme is not Defense ownership. |
+| `repertoire_lines`, frozen opening ranks, position first responses, `study_game_feedback`, `product_feedback_deliveries` | Retained authored/Study/Games obligations and their identities; an accepted line or effect is not retired with its producer. |
+| `operation_receipts`, task and projection JSON | Shared envelopes; require reviewed typed paths and a per-reference disposition, including unknown or mixed payloads. |
+
+The `daily_queue` delete trigger may create or update an original origin, and
+abandoned origins and receipts are immutable. A disposable proof must cover
+these guards and derived priority/frozen invalidation before any broader cut is
+proposed. Existing migration 062's exclusive-store rehearsal does not approve
+shared-row deletion.
+
+The `pre62-source-59` witness is a separate, private stopped-writer check for
+original schema-59 rows, sequences and catalog through versions 60 and 61. It
+allows only the reviewed immutable-evidence objects and an empty new historical
+origin table. It does not replace a full verified backup, the separate version-3
+cutover witness, or any approval to change an installed database. A captured
+witness must persist unchanged across retries and must never be replaced after
+migration begins.

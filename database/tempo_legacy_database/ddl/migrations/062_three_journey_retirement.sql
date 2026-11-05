@@ -1,4 +1,4 @@
--- Review candidate: nine exclusively retired stores; all shared state remains.
+-- Review candidate: eight exclusively retired stores; all shared state remains.
 -- RESTRICT aborts the transaction if an unreviewed dependency remains.
 DROP TRIGGER next_opponent_input_change ON imported_games;
 DROP INDEX idx_next_opponent_account_time;
@@ -8,7 +8,7 @@ DROP FUNCTION next_opponent_game_time(text) RESTRICT;
 DROP TABLE next_opponent_accounts RESTRICT;
 DROP TABLE next_opponent_snapshots RESTRICT;
 DROP FUNCTION protect_next_opponent_snapshot() RESTRICT;
-DROP TABLE defense_attempts RESTRICT;
+-- Preserve original Defense attempt identities, moves, grades and replay facts.
 DROP TABLE endgame_attempts RESTRICT;
 -- The errors table owns game_analysis_position_errors_id_seq internally.
 -- Keep the shared bump_priority_source_epoch() and its retained triggers.

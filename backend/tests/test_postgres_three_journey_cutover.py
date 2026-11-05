@@ -28,7 +28,7 @@ def test_cut62_guard_retains_full_fixed_ledger_and_rejects_tamper(monkeypatch):
     monkeypatch.setattr(guard, '_cut62_layout', lambda database, names: {name: layout[name] for name in names})
     monkeypatch.setattr(guard, '_cut62_table', lambda database, name, key, secret: state[name].copy())
     witness = guard.capture_cut62(FakeDatabase(), b'x' * 32)
-    assert len(guard.CUT62_PROTECTED_TABLES) == 184
+    assert len(guard.CUT62_PROTECTED_TABLES) == 185
     assert guard.verify_cut62(FakeDatabase(), witness, b'x' * 32)['to'] == 62
     name = next(iter(guard.CUT62_PROTECTED_TABLES))
     state[name]['digest'] = 'tampered'
@@ -66,7 +66,7 @@ def test_cut62_layout_rejects_unexpected_table(monkeypatch):
 
 def test_cut62_rejects_reintroduced_retired_relation(monkeypatch):
     source = guard.CUT62_PROTECTED_TABLES | guard.CUT62_RETIRED_TABLES | {guard.CUT62_LEDGER}
-    witness = {'version': 2, 'from': 61, 'to': 62,
+    witness = {'version': 3, 'from': 61, 'to': 62,
                'layout': dict.fromkeys(source), 'rows': dict.fromkeys(source - {guard.CUT62_LEDGER})}
     monkeypatch.setattr(guard, '_cut62_session', lambda database: None)
     monkeypatch.setattr(guard, '_cut62_versions', lambda database, version: None)
@@ -122,7 +122,9 @@ def test_cut62_native_schema61_to62(tmp_path):
         db.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json) VALUES ('fixture-game','synthetic','synthetic','2026-01-01','rapid',0,'white','draw','synthetic','[]')")
         db.execute("INSERT INTO game_findings(id,game_id,analysis_version,ply,kind,confidence,evidence_json,created_at,updated_at) VALUES ('finding','fixture-game',1,1,'synthetic',1,'{}','2026-01-01','2026-01-01')")
         db.execute("INSERT INTO threat_training_candidates(id,finding_id,game_id,analysis_version,incident_id,player_ply,evidence_json,source_fingerprint,detector_version,policy_json,created_at,updated_at,card_id) VALUES ('candidate','finding','fixture-game',1,'incident',1,'{}','synthetic',1,'{}','2026-01-01','2026-01-01','defense')")
-        db.execute("INSERT INTO defense_attempts(attempt_id,candidate_id,card_id,exercise_revision,move_uci,grade_json,reviewed_at) VALUES ('attempt','candidate','defense',1,'e2e4','{}','2026-01-01')")
+        db.execute("INSERT INTO daily_queue(id,queue_date,card_id,position,status,review_result_json) VALUES (700002,'2026-01-01','defense',1,'complete','{\"scheduled\":true}')")
+        db.execute("INSERT INTO reviews(id,card_id,rating,reviewed_at,previous_interval,next_interval,source_kind,source_ref,invalidated_at) VALUES (700002,'defense','again','2026-01-01',1,0,'study','defense:attempt','2026-01-02')")
+        db.execute("INSERT INTO defense_attempts(attempt_id,candidate_id,card_id,queue_entry_id,exercise_revision,move_uci,grade_json,reviewed_at) VALUES ('attempt','candidate','defense',700002,1,'e2e4','{\"status\":\"incorrect\",\"diagnostic\":\"original\"}','2026-01-01')")
         db.execute("INSERT INTO endgame_templates(id,card_id,name,white_material,black_material,trained_color,goal_mix,created_at) VALUES ('template','endgame','synthetic','K','K','white','{}','2026-01-01')")
         db.execute("INSERT INTO endgame_attempts(id,template_id,start_fen,target,created_at) VALUES ('end-attempt','template','synthetic','draw','2026-01-01')")
         db.execute("INSERT INTO next_opponent_snapshots(version,account,method_version,profile_json,published_at) VALUES ('version','synthetic','1','{}','2026-01-01')")
@@ -141,19 +143,44 @@ def test_cut62_native_schema61_to62(tmp_path):
         db.execute("INSERT INTO product_feedback_deliveries(operation_id,source_key,effect_key,command_kind,state,next_attempt_at,payload) VALUES ('delivery','source','effect','again','pending',0,'{\"card_id\":\"opening\"}')")
         db.execute("INSERT INTO study_game_feedback(effect_key,identity_json,source_revision,decision_id,received_at,status,updated_at,card_id,applied_at) VALUES ('effect','{}','1','decision',now(),'applied',now(),'opening',now())")
 
+    with psycopg.connect(dsn) as db:
+        original_attempt = db.execute("SELECT row_to_json(a)::text FROM defense_attempts a WHERE attempt_id='attempt'").fetchone()[0]
     path = tmp_path / 'cut62-original.json'
     with psycopg.connect(dsn) as db:
-        guard.save_cut62_witness(path, db)
+        captured_id = guard.save_cut62_witness(path, db)
     witness, secret = guard.load_cut62_witness(path)
-    assert witness['version'] == 2
+    assert witness['rows']['defense_attempts']['count'] == 1
+    assert witness['version'] == 3
     assert all(witness['rows'][name]['count'] == 1 for name in guard.CUT62_RETIRED_TABLES)
     assert witness['sequences']['retired']['count'] == 1
+    with psycopg.connect(dsn) as db:
+        assert guard.check_captured_cut62(db, witness, secret)['witness_id'] == captured_id
+        db.execute("UPDATE endgame_attempts SET target='win' WHERE id='end-attempt'")
+        alternate_path = tmp_path / 'cut62-alternate.json'
+        alternate_id = guard.save_cut62_witness(alternate_path, db)
+        alternate, alternate_secret = guard.load_cut62_witness(alternate_path)
+        assert guard.check_captured_cut62(db, alternate, alternate_secret)['witness_id'] == alternate_id
+        assert alternate_id != captured_id
+        db.rollback()
+        db.execute("UPDATE repertoires SET name='tampered-before-cut' WHERE id='synthetic'")
+        with pytest.raises(RuntimeError, match='source changed'):
+            guard.check_captured_cut62(db, witness, secret)
+        db.rollback()
+        assert guard.check_captured_cut62(db, witness, secret)['unchanged']
     apply_migrations(dsn)
     with psycopg.connect(dsn) as db:
+        assert guard.verify_cut62(db, witness, secret)['witness_id'] == captured_id
+        assert guard.verify_cut62(db, alternate, alternate_secret)['witness_id'] == alternate_id
+        assert alternate_id != captured_id  # Caller must reject a valid swapped witness.
+        assert db.execute("SELECT row_to_json(a)::text FROM defense_attempts a WHERE attempt_id='attempt'").fetchone()[0] == original_attempt
+        db.execute("UPDATE defense_attempts SET move_uci='d2d4' WHERE attempt_id='attempt'")
+        with pytest.raises(RuntimeError, match='retained rows changed in defense_attempts'):
+            guard.verify_cut62(db, witness, secret)
+        db.rollback()
         guard.verify_cut62(db, witness, secret)
         assert db.execute("SELECT to_regclass('public.game_analysis_position_errors_id_seq')").fetchone()[0] is None
         old = copy.deepcopy(witness)
-        old['version'] = 1
+        old['version'] = 2
         with pytest.raises(RuntimeError, match='unsupported'):
             guard.verify_cut62(db, old, secret)
     apply_migrations(dsn)
@@ -203,3 +230,237 @@ def test_cut62_sequence_inventory_separates_removed_identity():
         guard._cut62_sequences(SequenceDB(guard.CUT62_PROTECTED_SEQUENCES), b'x' * 32, True)
     with pytest.raises(RuntimeError, match='sequence coverage'):
         guard._cut62_sequences(SequenceDB(guard.CUT62_PROTECTED_SEQUENCES | guard.CUT62_RETIRED_SEQUENCES), b'x' * 32, False)
+
+
+def test_schema61_defense_mixed_read_only_census(tmp_path):
+    """Synthetic transaction; classify identities and roll back without deletion."""
+    import os
+    from urllib.parse import urlparse
+    import psycopg
+    from psycopg.rows import dict_row
+
+    dsn = os.environ.get('TEMPO_W07_DEFENSE_CENSUS_DSN')
+    if not dsn:
+        pytest.skip('W07 defense-census disposable database not allocated')
+    parsed = urlparse(dsn)
+    if parsed.hostname != '127.0.0.1' or parsed.path != '/w07_census':
+        raise ValueError('refusing non-W07 disposable database')
+    with psycopg.connect(dsn, row_factory=dict_row) as db:
+        assert db.execute('SELECT max(version) AS v FROM tempo_schema_migrations').fetchone()['v'] == 61
+        try:
+            db.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES ('census-rep','synthetic','synthetic','2026-01-01')")
+            for card, kind in [('census-opening','opening'),('census-tactic','tactic'),('census-defense','defense'),('census-issued','defense'),('census-shared','defense'),('census-unknown','future-type')]:
+                db.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,content_type) VALUES (%s,'census-rep','prefix','synthetic','[]','2026-01-01',%s)", (card,kind))
+            db.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES ('accepted-line','census-rep','accepted','white','synthetic','[\"e2e4\"]','2026-01-01')")
+            db.execute("INSERT INTO daily_queue(id,queue_date,card_id,position,status,admission_source) VALUES (900001,'2026-01-01','census-opening',1,'issued',NULL),(900002,'2026-01-01','census-defense',2,'queued','defense:candidate'),(900003,'2026-01-01','census-issued',3,'issued','defense:issued')")
+            db.execute("UPDATE queue_attempt_origins SET issued_as_head=1 WHERE queue_entry_id IN (900001,900003)")
+            db.execute("INSERT INTO queue_attempt_abandonments(queue_entry_id,card_id,revision,operation_id,request_sha256,origin_sha256,actor,reason,abandoned_at) VALUES (900003,'census-issued',1,'abandoned',repeat('a',64),repeat('b',64),'synthetic','synthetic',now())")
+            db.execute("INSERT INTO reviews(id,card_id,rating,reviewed_at,previous_interval,next_interval,source_ref) VALUES (900002,'census-defense','again','2026-01-01',1,0,'defense:attempt')")
+            db.execute("INSERT INTO review_schedule_snapshots(review_id,state_json) VALUES (900002,'{}')")
+            db.execute("INSERT INTO review_attempt_receipts(attempt_id,card_id,queue_entry_id,outcome,guided,review_id,scheduling_status,result_json) VALUES ('census-receipt','census-defense',900002,'complete',0,900002,'complete','{}')")
+            db.execute("INSERT INTO tactic_captures(id,card_id,source_kind,captured_at,request_json,result_json) VALUES ('defense-theme','census-tactic','puzzle_rush','2026-01-01','{\"theme\":\"defense\"}','{}'),('mixed-capture','census-shared','game','2026-01-01','{}','{}')")
+            db.execute("INSERT INTO frozen_opening_runs(run_id,plan_checksum,plan_json,created_at,reader_version) VALUES ('census-run','census-hash','{}','2026-01-01','1')")
+            db.execute("INSERT INTO frozen_opening_ranks(run_id,card_id,ordinal,fingerprint,memberships_json,definition_json) VALUES ('census-run','census-opening',1,'synthetic','[]','{}')")
+            db.execute("UPDATE frozen_opening_activation SET run_id='census-run',epoch=1 WHERE id=1")
+            db.execute("INSERT INTO study_position_epochs(repertoire_id,epoch,source_digest,created_at) VALUES ('census-rep','epoch','synthetic',now())")
+            db.execute("INSERT INTO study_position_states(repertoire_id,variant,position,expected_uci,policy_version,owner_epoch,source_digest,fsrs_internal_card_id,fsrs_json,due_at,donor_card_id,donor_card_revision,donor_fingerprint,donor_selection_policy) VALUES ('census-rep','standard','position','e2e4','1','epoch','synthetic',4503599627370496,'{}',now(),'census-opening',1,'synthetic','synthetic')")
+            db.execute("INSERT INTO study_position_issued_plans(attempt_id,queue_entry_id,card_id,card_revision,repertoire_id,variant,owner_epoch,source_digest,issue_study_day,plan_digest,plan_json,issued_at) VALUES ('position-plan',900001,'census-opening',1,'census-rep','standard','epoch','synthetic','2026-01-01','synthetic','{}',now())")
+            db.execute("INSERT INTO study_position_first_responses(event_id,attempt_id,decision_index,repertoire_id,variant,position,owner_epoch,payload_digest,payload_json,observed_at,accepted_at) VALUES ('first-response','position-plan',0,'census-rep','standard','position','epoch','synthetic','{}',now(),now())")
+            db.execute("INSERT INTO study_game_feedback(effect_key,identity_json,source_revision,decision_id,received_at,status,updated_at,card_id,applied_at) VALUES ('game-effect','{}','1','decision',now(),'applied',now(),'census-opening',now())")
+            db.execute("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,response_json) VALUES ('mixed-envelope','unknown','synthetic','complete','{\"cards\":[\"census-defense\",\"census-opening\"]}')")
+            cards = db.execute("SELECT id,content_type FROM cards WHERE id LIKE 'census-%' ORDER BY id").fetchall()
+            assert {row['id'] for row in cards if row['content_type']=='defense'} == {'census-defense','census-issued','census-shared'}
+            origins = db.execute("SELECT queue_entry_id,card_id,revision,content_type,issued_as_head FROM queue_attempt_origins WHERE card_id LIKE 'census-%' ORDER BY queue_entry_id").fetchall()
+            assert [(row['queue_entry_id'],row['card_id'],row['revision'],row['issued_as_head']) for row in origins] == [(900001,'census-opening',1,1),(900002,'census-defense',1,0),(900003,'census-issued',1,1)]
+            assert db.execute("SELECT count(*) AS n FROM tactic_captures WHERE id IN ('defense-theme','mixed-capture')").fetchone()['n'] == 2
+            assert db.execute("SELECT count(*) AS n FROM study_position_first_responses WHERE event_id='first-response'").fetchone()['n'] == 1
+            assert db.execute("SELECT count(*) AS n FROM study_game_feedback WHERE effect_key='game-effect' AND status='applied'").fetchone()['n'] == 1
+            assert db.execute("SELECT count(*) AS n FROM repertoire_lines WHERE id='accepted-line'").fetchone()['n'] == 1
+            assert db.execute("SELECT count(*) AS n FROM review_attempt_receipts WHERE attempt_id='census-receipt' AND queue_entry_id=900002 AND review_id=900002").fetchone()['n'] == 1
+            assert db.execute("SELECT count(*) AS n FROM operation_receipts WHERE operation_id='mixed-envelope'").fetchone()['n'] == 1
+            # An interrupted pre-cut witness must match the still-stopped source.
+            from psycopg.rows import tuple_row
+            db.row_factory = tuple_row
+            path = tmp_path / 'defense-census-witness.json'
+            guard.save_cut62_witness(path, db)
+            witness, secret = guard.load_cut62_witness(path)
+            assert guard.check_captured_cut62(db, witness, secret)['unchanged']
+            db.execute('SAVEPOINT source_drift')
+            db.execute("UPDATE cards SET state='mature' WHERE id='census-opening'")
+            with pytest.raises(RuntimeError, match='source changed'):
+                guard.check_captured_cut62(db, witness, secret)
+            db.execute('ROLLBACK TO SAVEPOINT source_drift')
+            assert guard.check_captured_cut62(db, witness, secret)['unchanged']
+            # No deletion set: census-defense also appears in an unknown mixed envelope.
+            # The owner must resolve each typed and JSON reference before proposing one.
+        finally:
+            db.rollback()
+
+
+def test_cut62_existing_source_witness_check_fails_on_drift(monkeypatch):
+    witness = {'version': guard.CUT62_EVIDENCE_VERSION, 'from': 61, 'to': 62, 'sentinel': 'original'}
+    monkeypatch.setattr(guard, 'capture_cut62', lambda database, secret: dict(witness))
+    assert guard.check_captured_cut62(None, witness, b'x' * 32)['unchanged']
+    monkeypatch.setattr(guard, 'capture_cut62', lambda database, secret: {**witness, 'sentinel': 'changed'})
+    with pytest.raises(RuntimeError, match='source changed'):
+        guard.check_captured_cut62(None, witness, b'x' * 32)
+
+
+def test_pre62_original_witness_survives_only_expected_checkpoints(monkeypatch):
+    class Database:
+        version = 59
+        def execute(self, query):
+            class Result:
+                def fetchone(inner):
+                    return (self.version if 'max(version)' in query else 'owner',)
+            return Result()
+    database = Database()
+    source = guard.PRE62_SOURCE_TABLES
+    layout = {name: [['id'], [['id','text',True]]] for name in source}
+    state = {name: {'count':1,'digest':name} for name in source}
+    monkeypatch.setattr(guard, '_pre62_session', lambda db: None)
+    monkeypatch.setattr(guard, '_cut62_versions', lambda db, version: None)
+    monkeypatch.setattr(guard, '_pre62_added_objects', lambda db, version, owner, acl: None)
+    monkeypatch.setattr(guard, '_cut62_layout', lambda db, names: {name: layout.get(name, [['id'], []]) for name in names})
+    monkeypatch.setattr(guard, '_pre62_table', lambda db, name, key, secret: state[name].copy())
+    monkeypatch.setattr(guard, '_pre62_default_table_acl', lambda db: [])
+    monkeypatch.setattr(guard, '_pre62_sequences', lambda db, secret: {'count':10,'digest':'seq'})
+    monkeypatch.setattr(guard, '_pre62_catalog', lambda db, secret: {'count':1,'digest':'catalog'})
+    witness = guard.capture_pre62_59(database, b'x'*32)
+    assert 'defense_attempts' in witness['rows']
+    assert 'study_position_first_responses' in witness['rows']
+    for version in (59,60,61):
+        database.version=version
+        assert guard.verify_pre62_59(database,witness,b'x'*32)['observed_schema'] == version
+    state['defense_attempts']['digest']='modified'
+    with pytest.raises(RuntimeError, match='retained rows changed in defense_attempts'):
+        guard.verify_pre62_59(database,witness,b'x'*32)
+    state['defense_attempts']['digest']='defense_attempts'
+    monkeypatch.setattr(guard, '_pre62_sequences', lambda db, secret: {'count':10,'digest':'changed'})
+    with pytest.raises(RuntimeError, match='sequences changed'):
+        guard.verify_pre62_59(database,witness,b'x'*32)
+    database.version=62
+    with pytest.raises(RuntimeError, match='unsupported pre62 target'):
+        guard.verify_pre62_59(database,witness,b'x'*32)
+
+
+def test_pre62_file_never_overwrites_and_rejects_other_domain(tmp_path,monkeypatch):
+    witness={'domain':'pre62-source-59','version':1,'from':59,'through':61,
+             'layout':dict.fromkeys(guard.PRE62_SOURCE_TABLES),'rows':dict.fromkeys(guard.PRE62_SOURCE_TABLES - {guard.CUT62_LEDGER}),
+             'owner':'owner','new_table_acl':[],'catalog':{},'sequences':{}}
+    monkeypatch.setattr(guard,'capture_pre62_59',lambda database,secret: dict(witness))
+    path=tmp_path/'pre62.json'
+    guard.save_pre62_59(path,None)
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert guard.load_pre62_59(path)[0] == witness
+    with pytest.raises(FileExistsError):
+        guard.save_pre62_59(path,None)
+    payload=json.loads(path.read_text())
+    payload['witness']['domain']='cut62'
+    path.write_text(json.dumps(payload))
+    with pytest.raises(RuntimeError,match='authentication'):
+        guard.load_pre62_59(path)
+
+
+def test_pre62_native_original_59_survives_interrupted_60_and_61(tmp_path):
+    """The original witness never changes across either disposable migration."""
+    import os
+    from urllib.parse import urlparse
+    import psycopg
+    from database.tooling.apply_postgres_migrations import MIGRATIONS,migration_source
+
+    dsn=os.environ.get('TEMPO_W07_PRE62_REGRESSION_DSN')
+    if not dsn:
+        pytest.skip('W07 pre62 disposable database not allocated')
+    parsed=urlparse(dsn)
+    if parsed.hostname != '127.0.0.1' or parsed.path != '/w07_pre62':
+        raise ValueError('refusing non-W07 disposable database')
+    with psycopg.connect(dsn) as db:
+        assert db.execute("SELECT to_regclass('public.tempo_schema_migrations')").fetchone()[0] is None
+        for path in sorted(MIGRATIONS.glob('[0-9][0-9][0-9]_*.sql')):
+            if int(path.name[:3])<=59:
+                db.execute(migration_source(path),prepare=False)
+        db.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES ('r','synthetic','synthetic','2026-01-01')")
+        db.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,content_type) VALUES ('opening','r','prefix','synthetic','[]','2026-01-01','opening'),('defense','r','prefix','synthetic','[]','2026-01-01','defense')")
+        db.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json) VALUES ('game','synthetic','synthetic','2026-01-01','rapid',0,'white','draw','synthetic','[]')")
+        db.execute("INSERT INTO game_findings(id,game_id,analysis_version,ply,kind,confidence,evidence_json,created_at,updated_at) VALUES ('finding','game',1,1,'synthetic',1,'{}','2026-01-01','2026-01-01')")
+        db.execute("INSERT INTO threat_training_candidates(id,finding_id,game_id,analysis_version,incident_id,player_ply,evidence_json,source_fingerprint,detector_version,policy_json,created_at,updated_at,card_id) VALUES ('candidate','finding','game',1,'incident',1,'{}','synthetic',1,'{}','2026-01-01','2026-01-01','defense')")
+        db.execute("INSERT INTO defense_attempts(attempt_id,candidate_id,card_id,exercise_revision,move_uci,grade_json,reviewed_at) VALUES ('attempt','candidate','defense',1,'e2e4','{}','2026-01-01')")
+        db.execute("INSERT INTO study_position_epochs(repertoire_id,epoch,source_digest,created_at) VALUES ('r','epoch','synthetic',now())")
+        db.execute("INSERT INTO study_position_states(repertoire_id,variant,position,expected_uci,policy_version,owner_epoch,source_digest,fsrs_internal_card_id,fsrs_json,due_at) VALUES ('r','standard','position','e2e4','1','epoch','synthetic',4503599627370496,'{}',now())")
+        db.execute("INSERT INTO study_position_issued_plans(attempt_id,queue_entry_id,card_id,card_revision,repertoire_id,variant,owner_epoch,source_digest,issue_study_day,plan_digest,plan_json,issued_at) VALUES ('plan',900001,'opening',1,'r','standard','epoch','synthetic','2026-01-01','synthetic','{}',now())")
+        db.execute("INSERT INTO study_position_first_responses(event_id,attempt_id,decision_index,repertoire_id,variant,position,owner_epoch,payload_digest,payload_json,observed_at,accepted_at) VALUES ('first','plan',0,'r','standard','position','epoch','synthetic','{}',now(),now())")
+        db.execute("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,created_at,updated_at) VALUES ('kept','synthetic','synthetic','complete','2026-01-01','2026-01-01')")
+    witness_path=tmp_path/'pre62-original.json'
+    with psycopg.connect(dsn) as db:
+        captured_id=guard.save_pre62_59(witness_path,db)
+    raw=witness_path.read_bytes()
+    witness,secret=guard.load_pre62_59(witness_path)
+    assert guard.authenticate_pre62_59(witness,secret)==captured_id
+    import subprocess
+    import sys
+    result=subprocess.run([sys.executable, guard.__file__, '--pre62-authenticate59', str(witness_path)],
+                          check=True, capture_output=True, text=True)
+    assert json.loads(result.stdout)['witness_id']==captured_id
+    def verify():
+        with psycopg.connect(dsn) as db:
+            result=guard.verify_pre62_59(db,witness,secret)
+            assert result['witness_id']==captured_id
+            return result['observed_schema']
+    assert verify()==59
+    with psycopg.connect(dsn) as db:
+        db.execute(migration_source(MIGRATIONS/'060_position_first_response_immutable.sql'),prepare=False)
+    assert verify()==60
+    assert witness_path.read_bytes()==raw
+    with psycopg.connect(dsn) as db:
+        with pytest.raises(psycopg.errors.CheckViolation):
+            db.execute("DELETE FROM study_position_first_responses WHERE event_id='first'")
+        db.rollback()
+    assert verify()==60
+    with psycopg.connect(dsn) as db:
+        db.execute("UPDATE defense_attempts SET move_uci='d2d4' WHERE attempt_id='attempt'")
+    with pytest.raises(RuntimeError,match='retained rows changed in defense_attempts'):
+        verify()
+    with psycopg.connect(dsn) as db:
+        db.execute("UPDATE defense_attempts SET move_uci='e2e4' WHERE attempt_id='attempt'")
+        db.execute("DELETE FROM operation_receipts WHERE operation_id='kept'")
+    with pytest.raises(RuntimeError,match='retained rows changed in operation_receipts'):
+        verify()
+    with psycopg.connect(dsn) as db:
+        db.execute("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,created_at,updated_at) VALUES ('kept','synthetic','synthetic','complete','2026-01-01','2026-01-01')")
+        db.execute("ALTER TABLE cards DISABLE TRIGGER frozen_guard_cards")
+    with pytest.raises(RuntimeError,match='retained catalog changed'):
+        verify()
+    with psycopg.connect(dsn) as db:
+        db.execute("ALTER TABLE cards ENABLE TRIGGER frozen_guard_cards")
+        db.execute('CREATE INDEX pre62_unexpected ON cards(id)')
+    with pytest.raises(RuntimeError,match='retained catalog changed'):
+        verify()
+    with psycopg.connect(dsn) as db:
+        db.execute('DROP INDEX pre62_unexpected')
+        old=db.execute('SELECT last_value,is_called FROM reviews_id_seq').fetchone()
+        db.execute("SELECT setval('reviews_id_seq',5,true)")
+    try:
+        with pytest.raises(RuntimeError,match='retained sequences changed'):
+            verify()
+    finally:
+        with psycopg.connect(dsn) as db:
+            db.execute("SELECT setval('reviews_id_seq',%s,%s)",old)
+    assert verify()==60
+    with psycopg.connect(dsn) as db:
+        db.execute(migration_source(MIGRATIONS/'061_content_origin_receipts.sql'),prepare=False)
+    assert verify()==61
+    assert witness_path.read_bytes()==raw
+    with psycopg.connect(dsn) as db:
+        db.execute("INSERT INTO legacy_content_historical_origins(legacy_target_id,legacy_workspace_id,export_id,receipt_id,payload,receipt_digest) VALUES ('t','w','e','r','synthetic','digest')")
+    with pytest.raises(RuntimeError,match='not empty'):
+        verify()
+
+
+def test_cut62_witness_id_binds_retired_evidence_and_secret():
+    original = {'version': guard.CUT62_EVIDENCE_VERSION, 'rows': {'retired': {'digest': 'one'}}}
+    changed = {'version': guard.CUT62_EVIDENCE_VERSION, 'rows': {'retired': {'digest': 'two'}}}
+    identifier = guard.cut62_witness_id(original, b'x' * 32)
+    assert identifier == guard.cut62_witness_id(dict(original), b'x' * 32)
+    assert identifier != guard.cut62_witness_id(changed, b'x' * 32)
+    assert identifier != guard.cut62_witness_id(original, b'y' * 32)

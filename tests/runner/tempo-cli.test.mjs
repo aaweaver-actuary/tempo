@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { schemaVersionFromSource, validateTarget, validateContainers, deploymentCanStart,
   acquireTargetLock, assessMainVerification, assessCandidate, qualityEvidence, atomicJson, selectCandidate, productVolumes, targetKey,
   CommandExecutionError, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, sourceFingerprint, sourceMatchesFingerprint } from "../../scripts/tempo-deployment.mjs";
-import { assessMigrationRecovery, cut62WitnessName, cut62MountDirectory, requirePrivateCut62Witness, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
+import { assessMigrationRecovery, cut62WitnessName, validateCut62Preflight, assertColdPreflightContainers, cut62MountDirectory, requirePrivateCut62Witness, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
 import { parseArguments, ensureDocker } from "../../scripts/tempo-cli.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
@@ -2554,6 +2554,7 @@ test('Docker availability uses bounded server endpoint without optional info dia
 test("schema 62 comparator accepts only the exact guarded crossing", () => {
   const guard = { starting_schema: 61, intended_schema: 62, attempt_id: "01234567-89ab-cdef-0123-456789abcdef" };
   assert.equal(cut62WitnessName(guard), `cut62-${guard.attempt_id}.json`);
+  assert.equal(cut62WitnessName({ ...guard, starting_schema: 59 }), `cut62-${guard.attempt_id}.json`);
   assert.equal(cut62WitnessName({ ...guard, starting_schema: 62, intended_schema: 62 }), null);
   assert.equal(cut62WitnessName({ ...guard, starting_schema: 59, intended_schema: 61 }), null);
   for (const change of [{ starting_schema: 60 }, { intended_schema: 63 }, { attempt_id: "../witness" }])
@@ -2579,22 +2580,30 @@ test("schema 62 bind source is absolute and cannot alter volume syntax", () => {
 
 test("schema 62 runtime preserves original witness across failed verification and retry", async t => {
   let schema = 61, shouldFail = true, captures = 0;
+  const events = [], paths = new Map();
+  const originalOpen = fs.openSync, originalFsync = fs.fsyncSync;
+  t.mock.method(fs, "openSync", (...args) => { const fd = originalOpen(...args); paths.set(fd, args[0]); return fd; });
+  t.mock.method(fs, "fsyncSync", fd => { events.push(["sync", paths.get(fd)]); return originalFsync(fd); });
+  syncBuiltinESMExports();
+  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
   const { runtime, calls, fixture } = imageRuntimeFixture(t, "postgres:18.6-trixie", 18, false, args => {
     if (args.includes("database/tooling/apply_postgres_migrations.py")) {
-      if (!args.includes("--check")) { schema = 62; return ""; }
+      if (!args.includes("--check")) { events.push(["migrate"]); schema = 62; return ""; }
       return JSON.stringify({ initialized: true, roles_ready: true, credentials_ready: true, expected_version: 62,
         applied_versions: Array.from({ length: schema }, (_, index) => index + 1), pending_versions: schema === 61 ? [62] : [] });
     }
     if (args.includes("--cut62-capture")) {
       captures += 1;
+      events.push(["capture"]);
       const directory = args[args.indexOf("--volume") + 1].slice(0, -":/cut62".length);
       writeFileSync(join(directory, args.at(-1).split("/").at(-1)), "original", { mode: 0o600 });
-      return "{}";
+      return JSON.stringify({ witness_id: "cut-id" });
     }
     if (args.includes("--cut62-verify")) {
       if (shouldFail) throw new Error("injected verification failure");
-      return "{}";
+      return JSON.stringify({ witness_id: "cut-id" });
     }
+    if (args.includes("--cut62-check-captured")) return JSON.stringify({ witness_id: "cut-id" });
     if (args.includes("database/tooling/verify_postgres_cli_state.py")) return JSON.stringify({ reviews: { digest: "original" } });
   });
   fs.chmodSync(fixture.stateDirectory, 0o700);
@@ -2604,6 +2613,11 @@ test("schema 62 runtime preserves original witness across failed verification an
   assert.equal(guard.state, "pending");
   const witness = join(cut62MountDirectory(fixture.stateDirectory, guard.cut62_witness), guard.cut62_witness);
   assert.equal(readFileSync(witness, "utf8"), "original");
+  const captureIndex = events.findIndex(event => event[0] === "capture");
+  const directorySync = events.findIndex((event, index) => index > captureIndex && event[0] === "sync" && event[1] === cut62MountDirectory(fixture.stateDirectory, guard.cut62_witness));
+  const parentSync = events.findIndex((event, index) => index > directorySync && event[0] === "sync" && event[1] === fixture.stateDirectory);
+  const migrateIndex = events.findIndex(event => event[0] === "migrate");
+  assert(captureIndex >= 0 && directorySync > captureIndex && parentSync > directorySync && migrateIndex > parentSync);
   rmSync(witness);
   await assert.rejects(runtime.migrate(), /witness is missing/);
   assert.equal(captures, 1);
@@ -2613,6 +2627,38 @@ test("schema 62 runtime preserves original witness across failed verification an
   assert.equal(captures, 1);
   assert.equal(calls.filter(args => args.includes("--cut62-verify")).length, 2);
   assert(calls.filter(args => args.includes("--cut62-verify")).every(args => args.includes("--volume") && !args.includes("--mount")));
+});
+
+test("schema 62 rejects a different valid witness before migration and after migration", async t => {
+  let schema = 61, swapped = true, captures = 0;
+  const { runtime, fixture } = imageRuntimeFixture(t, "postgres:18.6-trixie", 18, false, args => {
+    if (args.includes("database/tooling/apply_postgres_migrations.py")) {
+      if (args.includes("--check")) return JSON.stringify({ initialized: true, roles_ready: true, credentials_ready: true,
+        expected_version: 62, applied_versions: Array.from({ length: schema }, (_, index) => index + 1), pending_versions: schema === 61 ? [62] : [] });
+      schema = 62; swapped = true; return "";
+    }
+    if (args.includes("--cut62-capture")) {
+      captures += 1;
+      const directory = args[args.indexOf("--volume") + 1].slice(0, -":/cut62".length);
+      writeFileSync(join(directory, args.at(-1).split("/").at(-1)), "original", { mode: 0o600 });
+      return JSON.stringify({ witness_id: "original" });
+    }
+    if (args.includes("--cut62-check-captured") || args.includes("--cut62-verify"))
+      return JSON.stringify({ witness_id: swapped ? "other-valid-witness" : "original" });
+    if (args.includes("database/tooling/verify_postgres_cli_state.py")) return JSON.stringify({ reviews: { digest: "original" } });
+  });
+  fs.chmodSync(fixture.stateDirectory, 0o700);
+  await runtime.config(); await runtime.checkSchema(); await runtime.backup();
+  await assert.rejects(runtime.migrate(), /witness identity differs/);
+  assert.equal(schema, 61); assert.equal(captures, 1);
+  swapped = false;
+  await assert.rejects(runtime.migrate(), /witness identity differs/);
+  assert.equal(schema, 62); assert.equal(captures, 1);
+  const guard = JSON.parse(readFileSync(join(fixture.stateDirectory, "migration-guard.json"), "utf8"));
+  assert.equal(guard.state, "pending");
+  swapped = false;
+  await runtime.checkSchema(); await runtime.migrate();
+  assert.equal(captures, 1);
 });
 
 test("schema 62 interrupted capture leaves original guard fenced and never rebaselines", async t => {
@@ -2631,4 +2677,219 @@ test("schema 62 interrupted capture leaves original guard fenced and never rebas
   assert.equal(guard.state, "pending");
   await assert.rejects(runtime.migrate(), /witness is missing/);
   assert.equal(captures, 1);
+});
+
+test("schema preflight refuses unsupported crossing before any writer stop", async () => {
+  for (const [current, expected] of [[58, 62], [60, 62], [59, 63], [62, 63]]) {
+    const status = { applied_versions: Array.from({ length: current }, (_, index) => index + 1), expected_version: expected };
+    const { calls, handlers } = actions();
+    handlers.preflightSchema = async () => { calls.push("preflight"); validateCut62Preflight(status, null); };
+    await assert.rejects(executeLifecycle({ recreate: true }, handlers), /Unsupported/);
+    assert(!calls.includes("stopApplications") && !calls.includes("ensureDatabase"));
+  }
+  for (const current of [59, 61, 62])
+    assert.doesNotThrow(() => validateCut62Preflight({ applied_versions: [current], expected_version: 62 }, null));
+  assert.doesNotThrow(() => validateCut62Preflight({ applied_versions: [60], expected_version: 62 },
+    { state: "pending", starting_schema: 59, intended_schema: 62 }));
+});
+
+test("schema preflight failure leaves writers untouched", async () => {
+  const { calls, handlers } = actions();
+  handlers.preflightSchema = async () => { calls.push("preflight"); throw new Error("database unavailable"); };
+  await assert.rejects(executeLifecycle({ recreate: true }, handlers), /database unavailable/);
+  assert.deepEqual(calls, ["ensureImages", "preflight", "recordFailure"]);
+});
+
+for (const failure of ["intermediate_verification", "capture", "witness_check", "post_migration_verification"]) {
+  test(`schema 59 cutover retains original guard through ${failure}`, async t => {
+    let schema = 59, captures = 0, failed = false;
+    const order = [];
+    const { runtime, fixture } = imageRuntimeFixture(t, "postgres:18.6-trixie", 18, false, args => {
+      if (args.includes("database/tooling/apply_postgres_migrations.py")) {
+        if (args.includes("--check")) return JSON.stringify({ initialized: true, roles_ready: true, credentials_ready: true,
+          expected_version: 62, applied_versions: Array.from({ length: schema }, (_, index) => index + 1),
+          pending_versions: Array.from({ length: 62 - schema }, (_, index) => schema + index + 1) });
+        if (args.includes("--target-version")) { order.push("to61"); schema = 61; return ""; }
+        order.push("to62"); schema = 62; return "";
+      }
+      if (args.includes("--pre62-capture59")) {
+        order.push("capture59");
+        const directory = args[args.indexOf("--volume") + 1].slice(0, -":/cut62".length);
+        writeFileSync(join(directory, args.at(-1).split("/").at(-1)), "original59", { mode: 0o600 });
+        return JSON.stringify({ witness_id: "original-id" });
+      }
+      if (args.includes("--pre62-verify59")) { order.push("check59"); return JSON.stringify({ witness_id: "original-id", observed_schema: schema }); }
+      if (args.includes("--pre62-authenticate59")) return JSON.stringify({ witness_id: "original-id" });
+      if (args.includes("--expected")) {
+        order.push("verify59");
+        if (failure === "intermediate_verification" && !failed) { failed = true; throw new Error("injected intermediate failure"); }
+        return "{}";
+      }
+      if (args.includes("--cut62-capture")) {
+        captures += 1; order.push("capture");
+        if (failure === "capture" && !failed) { failed = true; throw new Error("injected capture failure"); }
+        const directory = args[args.indexOf("--volume") + 1].slice(0, -":/cut62".length);
+        writeFileSync(join(directory, args.at(-1).split("/").at(-1)), "original", { mode: 0o600 });
+        return JSON.stringify({ witness_id: "cut-id" });
+      }
+      if (args.includes("--cut62-check-captured")) {
+        order.push("check61");
+        if (failure === "witness_check" && !failed) { failed = true; throw new Error("injected witness failure"); }
+        return JSON.stringify({ witness_id: "cut-id" });
+      }
+      if (args.includes("--cut62-verify")) {
+        order.push("verify62");
+        if (failure === "post_migration_verification" && !failed) { failed = true; throw new Error("injected post-migration failure"); }
+        return JSON.stringify({ witness_id: "cut-id" });
+      }
+      if (args.includes("database/tooling/verify_postgres_cli_state.py")) return JSON.stringify({ reviews: { digest: "schema59-original" } });
+    });
+    fs.chmodSync(fixture.stateDirectory, 0o700);
+    await runtime.config(); await runtime.checkSchema(); await runtime.backup();
+    await assert.rejects(runtime.migrate(), /injected/);
+    const guardPath = join(fixture.stateDirectory, "migration-guard.json");
+    const original = JSON.parse(readFileSync(guardPath, "utf8"));
+    assert.equal(original.starting_schema, 59); assert.equal(original.backup.verified, true);
+    if (failure === "capture") {
+      await assert.rejects(runtime.migrate(), /witness is missing/);
+      assert.equal(captures, 1); assert.equal(schema, 61); return;
+    }
+    await runtime.checkSchema(); await runtime.migrate();
+    const retried = JSON.parse(readFileSync(guardPath, "utf8"));
+    assert.equal(retried.attempt_id, original.attempt_id);
+    assert.deepEqual(retried.backup, original.backup);
+    assert.equal(retried.study_invariants.reviews.digest, "schema59-original");
+    assert.equal(captures, 1); assert.equal(schema, 62);
+    assert(order.indexOf("capture59") < order.indexOf("check59"));
+    assert(order.indexOf("check59") < order.indexOf("to61"));
+    assert(order.slice(order.indexOf("to61") + 1, order.indexOf("capture")).includes("check59"));
+    assert(order.indexOf("to61") < order.indexOf("verify59"));
+    assert(order.indexOf("verify59") < order.indexOf("capture"));
+    assert(order.indexOf("check61") < order.indexOf("to62"));
+  });
+}
+
+test("schema 59 cutover resumes interrupted schema 60 using the original backup", async t => {
+  let schema = 59, interrupted = false, captures = 0, preCaptures = 0, tampered = false;
+  const { runtime, calls, fixture } = imageRuntimeFixture(t, "postgres:18.6-trixie", 18, false, args => {
+    if (args.includes("database/tooling/apply_postgres_migrations.py")) {
+      if (args.includes("--check")) return JSON.stringify({ initialized: true, roles_ready: true, credentials_ready: true,
+        expected_version: 62, applied_versions: Array.from({ length: schema }, (_, index) => index + 1),
+        pending_versions: Array.from({ length: 62 - schema }, (_, index) => schema + index + 1) });
+      if (args.includes("--target-version")) {
+        if (!interrupted) { interrupted = true; schema = 60; throw new Error("interrupted after 060"); }
+        assert.equal(schema, 60); schema = 61; return "";
+      }
+      schema = 62; return "";
+    }
+    if (args.includes("--pre62-capture59")) {
+      preCaptures += 1;
+      const directory = args[args.indexOf("--volume") + 1].slice(0, -":/cut62".length);
+      writeFileSync(join(directory, args.at(-1).split("/").at(-1)), "original59", { mode: 0o600 });
+      return JSON.stringify({ witness_id: "original-id" });
+    }
+    if (args.includes("--pre62-verify59")) {
+      if (tampered) throw new Error("witness authentication failed");
+      return JSON.stringify({ witness_id: "original-id", observed_schema: schema });
+    }
+    if (args.includes("--cut62-capture")) {
+      captures += 1;
+      const directory = args[args.indexOf("--volume") + 1].slice(0, -":/cut62".length);
+      writeFileSync(join(directory, args.at(-1).split("/").at(-1)), "original", { mode: 0o600 });
+      return JSON.stringify({ witness_id: "cut-id" });
+    }
+    if (args.includes("--cut62-check-captured") || args.includes("--cut62-verify")) return JSON.stringify({ witness_id: "cut-id" });
+    if (args.includes("database/tooling/verify_postgres_cli_state.py")) return JSON.stringify({ reviews: { digest: "original59" } });
+  });
+  fs.chmodSync(fixture.stateDirectory, 0o700);
+  await runtime.config(); await runtime.checkSchema(); await runtime.backup();
+  await assert.rejects(runtime.migrate(), /interrupted after 060/);
+  const guardPath = join(fixture.stateDirectory, "migration-guard.json");
+  const original = JSON.parse(readFileSync(guardPath, "utf8"));
+  assert.equal(schema, 60); assert.equal(original.starting_schema, 59);
+  const prePath = join(cut62MountDirectory(fixture.stateDirectory, original.pre62_witness), original.pre62_witness);
+  rmSync(prePath);
+  await runtime.checkSchema(); await assert.rejects(runtime.migrate(), /witness is missing/);
+  assert.equal(schema, 60); assert.equal(preCaptures, 1);
+  writeFileSync(prePath, "original59", { mode: 0o600 });
+  tampered = true;
+  await assert.rejects(runtime.migrate(), /witness authentication failed/);
+  assert.equal(schema, 60); assert.equal(preCaptures, 1);
+  tampered = false;
+  await runtime.checkSchema(); await runtime.migrate();
+  const final = JSON.parse(readFileSync(guardPath, "utf8"));
+  assert.equal(schema, 62); assert.equal(captures, 1); assert.equal(preCaptures, 1);
+  assert.equal(final.attempt_id, original.attempt_id); assert.deepEqual(final.backup, original.backup);
+  assert.equal(calls.filter(args => args.some(arg => arg.includes("pg_dump"))).length, 1);
+});
+
+test("bounded migrator resolves all sources and permits only 59 or interrupted 60 through 61", () => {
+  const proof = String.raw`
+import contextlib, importlib.util, pathlib, sys, tempfile, types
+state = {'version': 59, 'writes': [], 'sources': []}
+class Result:
+    def __init__(self, rows): self.rows = rows
+    def fetchone(self): return self.rows[0]
+    def fetchall(self): return self.rows
+class Database:
+    def __enter__(self): return self
+    def __exit__(self, *args): pass
+    def transaction(self): return contextlib.nullcontext()
+    def commit(self): pass
+    def execute(self, sql, **kwargs):
+        if "to_regclass" in sql: return Result([(True,)])
+        if "SELECT version FROM" in sql: return Result([(i,) for i in range(1, state['version'] + 1)])
+        if "SELECT COALESCE" in sql: return Result([(state['version'],)])
+        assert sql.startswith('migration '), sql
+        state['version'] = int(sql.split()[1]); state['writes'].append(state['version'])
+        return Result([])
+sys.modules['psycopg'] = types.SimpleNamespace(connect=lambda *args, **kwargs: Database())
+spec = importlib.util.spec_from_file_location('migration_owner', 'database/tooling/apply_postgres_migrations.py')
+module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+with tempfile.TemporaryDirectory() as tmp:
+    module.MIGRATIONS = pathlib.Path(tmp)
+    for i in range(1, 63): (module.MIGRATIONS / f'{i:03}_fixture.sql').touch()
+    def source(path):
+        version = int(path.name[:3]); state['sources'].append(version); return f'migration {version}'
+    module.migration_source = source
+    for start, expected in [(59, [60, 61]), (60, [61])]:
+        state.update(version=start, writes=[], sources=[])
+        module.apply_migrations('synthetic', target_version=61)
+        assert state['sources'] == list(range(1, 63)) and state['writes'] == expected
+    for start, target in [(58, 61), (61, 61), (62, 61), (59, 60), (59, 62)]:
+        state.update(version=start, writes=[], sources=[])
+        try: module.apply_migrations('synthetic', target_version=target)
+        except RuntimeError: pass
+        else: raise AssertionError((start, target))
+        assert not state['writes'] and state['sources'] == list(range(1, 63))
+`;
+  const result = fsSpawnSync("python3", ["-c", proof], { encoding: "utf8", cwd: process.cwd() });
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test("schema 62 no-op preflight preserves an already running application", async () => {
+  const { calls, handlers } = actions({ pending: [], build: false });
+  handlers.preflightSchema = async () => {
+    calls.push("preflight");
+    validateCut62Preflight({ applied_versions: Array.from({ length: 62 }, (_, index) => index + 1), expected_version: 62 }, null);
+  };
+  await executeLifecycle({ recreate: false }, handlers);
+  assert.deepEqual(calls, ["preflight", "ensureDatabase", "checkSchema", "startServices", "verifyReady", "commitDeployment"]);
+  assert(!calls.includes("stopApplications") && !calls.includes("backup") && !calls.includes("migrate"));
+});
+
+test("cold schema preflight rejects active or restarting registered writers", () => {
+  const project = "tempo-owned";
+  const container = (service, state) => ({ Config: { Labels: { "com.docker.compose.project": project,
+    "com.docker.compose.service": service } }, State: state });
+  assert.doesNotThrow(() => assertColdPreflightContainers([container("redis", { Running: true })], project));
+  for (const service of ["foreground-worker", "background-worker", "background-scheduler", "game-feedback-worker", "api", "unknown"]) {
+    for (const state of [{ Running: true }, { Running: false, Restarting: true }])
+      assert.throws(() => assertColdPreflightContainers([container(service, state)], project), /may be active/);
+  }
+  assert.throws(() => assertColdPreflightContainers([container("postgres", { Running: true })], project), /may be active/);
+  assert.doesNotThrow(() => assertColdPreflightContainers([container("postgres", { Running: true }),
+    container("redis", { Running: true })], project, { databaseStarted: true }));
+  assert.throws(() => assertColdPreflightContainers([container("foreground-worker", { Running: true })],
+    project, { databaseStarted: true }), /may be active/);
 });

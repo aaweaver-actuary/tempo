@@ -69,7 +69,7 @@ def validate_migration_history(
     return len(applied_versions)
 
 
-def apply_migrations(database_url: str) -> None:
+def apply_migrations(database_url: str, *, target_version: int | None = None) -> None:
     files = sorted(MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql"))
     if not files:
         raise RuntimeError("No PostgreSQL migrations found")
@@ -85,9 +85,13 @@ def apply_migrations(database_url: str) -> None:
         current_version = validate_migration_history(
             files, applied_versions, expected_version=POSTGRES_SCHEMA_VERSION,
         )
+        if target_version is not None and (POSTGRES_SCHEMA_VERSION != 62 or target_version != 61 or current_version not in (59, 60)):
+            raise RuntimeError("Bounded migration supports only schema 59 or interrupted 60 through 61 on a schema-62 image")
         database.commit()
         for path in files:
             version = int(path.name[:3])
+            if target_version is not None and version > target_version:
+                break
             if version <= current_version:
                 continue
             if version != current_version + 1:
@@ -166,6 +170,7 @@ def main() -> None:
     parser.add_argument("--dsn", default=os.getenv("TEMPO_POSTGRES_ADMIN_URL"))
     parser.add_argument("--check", action="store_true", help="Read-only history and initialization check")
     parser.add_argument("--json", action="store_true", help="Print --check as JSON")
+    parser.add_argument("--target-version", type=int, help="Bound an approved schema-59/60 to 61 migration")
     parser.add_argument("--reader-passfile", type=Path, help="Verify reader authentication during --check")
     parser.add_argument("--writer-passfile", type=Path, help="Verify writer authentication during --check")
     options = parser.parse_args()
@@ -173,11 +178,13 @@ def main() -> None:
         parser.error("Provide --dsn or TEMPO_POSTGRES_ADMIN_URL")
     if options.json and not options.check:
         parser.error("--json requires --check")
+    if options.check and options.target_version is not None:
+        parser.error("--target-version cannot be combined with --check")
     if options.check:
         status = migration_status(options.dsn, reader_passfile=options.reader_passfile, writer_passfile=options.writer_passfile)
         print(json.dumps(status) if options.json else f"Schema {len(status['applied_versions'])}; expected {status['expected_version']}; pending {status['pending_versions']}")
     else:
-        apply_migrations(options.dsn)
+        apply_migrations(options.dsn, target_version=options.target_version)
 
 
 if __name__ == "__main__":
