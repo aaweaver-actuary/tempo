@@ -800,6 +800,23 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     const previousOperation = !migrationGuard && existsSync(journalPath) ? JSON.parse(readFileSync(journalPath, "utf8")) : null;
     const assessment = assessMigrationRecovery({ guard: migrationGuard, operation: previousOperation, target, configuration, retry });
     if (assessment.status === "blocked") throw new Error(assessment.message);
+    if (migrationGuard?.isolation) {
+      if (!target.disposable || assessment.status !== "retry-authorized")
+        throw new Error("Isolation recovery is restricted to the original disposable attempt; keep writers stopped.");
+      const receiptPath = join(cut62MountDirectory(stateDirectory, cut62WitnessName(migrationGuard)), "verified-receipt.json");
+      let receipt = null;
+      if (existsSync(receiptPath)) {
+        try { receipt = JSON.parse(privateBytes(receiptPath)); }
+        catch { throw new Error("Original isolation receipt is unavailable or invalid; keep writers stopped."); }
+      }
+      // executeLifecycle invokes this while the original target lock is held.
+      // A prior rename can be visible despite its directory fsync failing.
+      syncDisposableIsolationEvidence({ guardPath, guard: migrationGuard,
+        ...(receipt === null ? {} : { receiptPath, receipt }) });
+      // No physical recovery action is enabled until the isolated pinned
+      // handoff, reauthentication and native crash proof are reviewed.
+      throw new Error("Disposable isolation recovery requires the reviewed pinned handoff; keep writers stopped.");
+    }
     return assessment.status === "retry-authorized";
   }
 

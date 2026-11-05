@@ -2709,6 +2709,41 @@ test("disposable recovery classifies physical crash states and refuses an unboun
   }
 });
 
+test("locked disposable retry resyncs isolation guard and receipt before holding all actions", async t => {
+  const { runtime, calls, fixture } = imageRuntimeFixture(t, "postgres:18.6-trixie", 18, false, () => undefined, { retry: true });
+  await runtime.config();
+  fixture.target.disposable = true;
+  fs.chmodSync(fixture.stateDirectory, 0o700);
+  const attempt = "12345678-1234-1234-1234-123456789abc", name = `cut62-${attempt}.json`;
+  const guard = { version: 1, target: targetKey(fixture.target), database: { name: "tempo", volume: fixture.target.volumes[fixture.target.postgresVolumeKey].name },
+    state: "pending", attempt_id: attempt, starting_schema: 61, intended_schema: 62,
+    starting_versions: Array.from({ length: 61 }, (_, index) => index + 1), study_invariants: { reviews: {} },
+    backup: { verified: true, filename: "original.dump" }, cut62_witness: name, isolation: { phase: "detached" } };
+  const guardPath = join(fixture.stateDirectory, "migration-guard.json");
+  const witnessDirectory = cut62MountDirectory(fixture.stateDirectory, name); mkdirSync(witnessDirectory, { mode: 0o700 });
+  const receiptPath = join(witnessDirectory, "verified-receipt.json");
+  atomicJson(guardPath, { ...guard, isolation: { phase: "intent" } });
+  const firstFsync = fs.fsyncSync;
+  let injected = false;
+  t.mock.method(fs, "fsyncSync", fd => {
+    if (!injected && fs.fstatSync(fd).isDirectory()) { injected = true; throw new Error("injected directory fsync failure"); }
+    return firstFsync(fd);
+  });
+  syncBuiltinESMExports();
+  assert.throws(() => atomicJson(guardPath, guard), /durability failed/);
+  assert.deepEqual(JSON.parse(readFileSync(guardPath, "utf8")), guard);
+  t.mock.restoreAll(); syncBuiltinESMExports();
+  atomicJson(receiptPath, { version: 1, attempt_id: attempt });
+  const release = acquireTargetLock(fixture.stateDirectory); t.after(release);
+  const synced = [], descriptors = new Map(), originalOpen = fs.openSync, originalFsync = fs.fsyncSync;
+  t.mock.method(fs, "openSync", (...args) => { const fd = originalOpen(...args); descriptors.set(fd, args[0]); return fd; });
+  t.mock.method(fs, "fsyncSync", fd => { synced.push(descriptors.get(fd)); return originalFsync(fd); });
+  syncBuiltinESMExports(); t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+  assert.throws(() => runtime.checkMigrationRetry(), /reviewed pinned handoff/);
+  assert.deepEqual(synced, [guardPath, fixture.stateDirectory, receiptPath, witnessDirectory]);
+  assert(!calls.some(args => args.includes("disconnect") || args.includes("connect") || args.includes("stop") || args.includes("up")));
+});
+
 test("isolation retry resyncs a guard visible after rename-before-directory-fsync failure", t => {
   const dir = directory(t), guardPath = join(dir, "migration-guard.json");
   const old = { state: "pending", isolation: { phase: "previous" } }, next = { state: "pending", isolation: { phase: "intent" } };
