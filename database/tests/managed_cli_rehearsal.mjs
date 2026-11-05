@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash, createHmac } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { atomicJson, targetKey } from '../../scripts/tempo-deployment.mjs';
 import { studyDurabilityPgn } from './postgres-test-fixture.mjs';
 import { Chess } from 'chess.js';
@@ -16,8 +16,13 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
       !realpathSync(root).startsWith('/private/tmp/') || !realpathSync(environment.W08_OWNED_BARE).startsWith('/private/tmp/'))
     throw new Error('Owned managed clone identity differs');
   const git=(...args)=>{const result=spawnSync('git',args,{cwd:root,encoding:'utf8',timeout:30000});if(result.status!==0)throw new Error('Owned git inspection failed');return result.stdout.trim()};
+  const testSecrets=realpathSync(environment.TEMPO_PG_TEST_SECRETS), secretDirectory=statSync(testSecrets);
+  if(dirname(testSecrets)!==realpathSync(root) || !/^\.tempo-pg-test-secrets-[A-Za-z0-9]+$/.test(basename(testSecrets)) ||
+      !secretDirectory.isDirectory() || secretDirectory.uid!==process.getuid() || (secretDirectory.mode&0o777)!==0o700)
+    throw new Error('Owned runner secret directory differs');
+  const status=git('status','--porcelain','--untracked-files=all','--','.',`:(exclude)${basename(testSecrets)}/**`);
   if(git('rev-parse','HEAD')!==revision || git('symbolic-ref','--short','HEAD')!=='main' ||
-      git('status','--porcelain','--untracked-files=all')!=='' || realpathSync(git('remote','get-url','origin'))!==realpathSync(environment.W08_OWNED_BARE))
+      status!=='' || realpathSync(git('remote','get-url','origin'))!==realpathSync(environment.W08_OWNED_BARE))
     throw new Error('Owned managed clone provenance differs');
   const selectionDirectory = join(directory, 'approved'); mkdirSync(selectionDirectory, { mode: 0o700 }); chmodSync(selectionDirectory, 0o700);
   const selectionPath = join(selectionDirectory, 'selection.json');
@@ -53,7 +58,8 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
     pythonOwnerSha256:policy.owner_sha256,loaderSha256:sha(join(harness,'loader.mjs')),registerSha256:sha(join(harness,'register.mjs')),
     hookSha256:policy.hook_sha256,proxySha256:sha(join(harness,'docker')),policySha256:sha(policyPath),
     pythonOverride:'task-only sitecustomize enables the closed owner gate only in the verified pinned child',
-    clone:realpathSync(root),bareOrigin:realpathSync(environment.W08_OWNED_BARE),ci:'disabled'};
+    clone:realpathSync(root),bareOrigin:realpathSync(environment.W08_OWNED_BARE),runnerSecrets:testSecrets,
+    runnerSecretsUid:secretDirectory.uid,runnerSecretsMode:'0700',ci:'disabled'};
   atomicJson(join(directory,'managed-rehearsal-preflight.json'),evidence);
   const record=episode=>writeFileSync(join(directory,'managed-rehearsal-evidence.json'),JSON.stringify({...evidence,episode}),{mode:0o600});
   const commonEnv = { ...environment, PATH:`${harness}:${process.env.PATH}`, NODE_OPTIONS:`--import=${join(harness,'register.mjs')}`,
