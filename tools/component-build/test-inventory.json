@@ -34,6 +34,8 @@
       "tests/unit/deletion-dialogs-regressions.test.tsx",
       "tests/unit/desktop-queue-regressions.test.ts",
       "tests/unit/operation-status-study-client-regressions.test.ts",
+      "tests/unit/endgame-attempt-pending-regressions.test.ts",
+      "tests/unit/endgame-template-pending-regressions.test.ts",
       "tests/unit/domain-boundary-regressions.test.tsx",
       "tests/unit/game-contract-recovery-regressions.test.tsx",
       "tests/unit/game-sync-command-pending-regressions.test.ts",

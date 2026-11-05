@@ -65,6 +65,12 @@ class EndgameTemplateRequest(BaseModel):
     goal_mix: Literal["win", "draw", "both"] = "both"
 
 
+class EndgameProbeRequest(BaseModel):
+    """Request model for probing an endgame position."""
+
+    fen: str
+
+
 class DefenseAttemptRequest(BaseModel):
     attempt_id: str = Field(min_length=1, max_length=100)
     exercise_revision: int = Field(ge=1)

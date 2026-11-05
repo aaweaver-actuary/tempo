@@ -18,13 +18,14 @@ from tempo_learning_database.connections import (
     connection,
 )
 from . import gateway, queue_application
-from .command_handlers import register_handlers, reconcile
+from .command_handlers import register_handlers, reconcile, save_endgame_attempt
 from .clock import date
 from tempo_learning_database.adapters import api as storage
 from .models import (
     ReviewRequest,
     QueueAttemptFailureRequest,
     TacticAttemptRequest,
+    EndgameProbeRequest,
 )
 from .study_contracts import StudyAttemptRequest, StudySelfAssessmentRequest
 from .review_conflicts import ReviewConflict
@@ -33,6 +34,7 @@ from .opening_evidence_contracts import OpeningEvidenceCheckpoint
 from .maintenance import safe_run_once
 from .publications import PublicationBundle, stage
 from .puzzles import validate_puzzle_record
+from tempo_learning_database.adapters import endgame_store
 from .receivers import receive
 from .receivers import EvidenceDelivery
 from . import study_bootstrap, teaching_commands
@@ -596,6 +598,28 @@ def create_app(configuration: Configuration):
             },
             idempotency_key or "tactic-attempt:" + request.attempt_id,
         )
+
+    @app.post("/api/endgames/probe")
+    async def probe(request: EndgameProbeRequest):
+        raise HTTPException(410, "On-demand endgame calculation has been removed")
+
+    @app.get("/api/endgames/templates")
+    def templates():
+        return {"templates": endgame_store.active_templates()}
+
+    @app.post("/api/endgames/templates/{identifier}/attempt")
+    def endgame_attempt(identifier: str, idempotency_key: str | None = Header(None)):
+        # Recover only an already-recorded immutable position. Never generate a
+        # replacement or create a new operation identity after removal.
+        if idempotency_key:
+            prior = endgame_store.prior_attempt(idempotency_key)
+            if prior:
+                payload = json.loads(prior["payload_json"])
+                if (prior["command_name"] != "endgames.attempt.create"
+                        or payload.get("template_id") != identifier):
+                    raise HTTPException(409, "Operation ID was already used for another request")
+                return gateway.dispatch("endgames.attempt.create", payload, idempotency_key)
+        raise HTTPException(410, "On-demand endgame calculation has been removed; saved attempts remain available")
 
     @app.get("/internal/publications/operations/{operation_id}")
     def publication_operation(operation_id: str):
