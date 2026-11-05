@@ -117,7 +117,7 @@ export function privateSelection(path, expectedTarget) {
       keys.some((pair, index) => index && (Buffer.compare(Buffer.from(keys[index - 1][0]), Buffer.from(pair[0])) > 0 ||
         (keys[index - 1][0] === pair[0] && Buffer.compare(Buffer.from(keys[index - 1][1]), Buffer.from(pair[1])) >= 0))))
     throw new Error("Approved Defense selection is invalid for this target.");
-  return { bytes, digest: createHash("sha256").update(bytes).digest("hex") };
+  return { bytes, digest: createHash("sha256").update(bytes).digest("hex"), count: keys.length };
 }
 
 function writeExclusivePrivate(path, bytes) {
@@ -576,7 +576,15 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     if (preflight.expected_version === 62 && preflight.applied_versions.at(-1) < 62) {
       if (migrationGuard?.state === "pending") {
         if (defenseSelection) throw new Error("A retry must use the original Defense selection.");
-      } else approvedSelection = privateSelection(defenseSelection, targetKey(target));
+        const originalName = cut62WitnessName(migrationGuard);
+        const stored = privateSelection(join(cut62MountDirectory(stateDirectory, originalName), "defense-selection.json"), targetKey(target));
+        if (stored.digest !== migrationGuard.defense_binding?.selection_sha256)
+          throw new Error("Original Defense selection binding differs; keep writers stopped.");
+        if (stored.count) throw new Error("Nonempty Defense cleanup is unavailable without a verified writer and DDL fence.");
+      } else {
+        approvedSelection = privateSelection(defenseSelection, targetKey(target));
+        if (approvedSelection.count) throw new Error("Nonempty Defense cleanup is unavailable without a verified writer and DDL fence.");
+      }
     } else if (defenseSelection) throw new Error("Defense selection applies only to a schema 62 crossing.");
     return preflight;
   }

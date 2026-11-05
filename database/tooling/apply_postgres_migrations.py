@@ -125,7 +125,7 @@ def apply_migrations(database_url: str, *, target_version: int | None = None,
                     # this very transaction before SQL can mutate anything.
                     from database.tooling.verify_postgres_cli_state import (
                         _cut62_defense_reference_digest, check_captured_cut62_v6,
-                        cut62_witness_id, load_cut62_attempt_binding,
+                        cut62_witness_id, load_cut62_attempt_binding, verify_cut62_v6,
                         load_cut62_defense_selection, load_cut62_witness,
                     )
                     if defense_zero:
@@ -140,6 +140,8 @@ def apply_migrations(database_url: str, *, target_version: int | None = None,
                         selection, selection_digest = load_cut62_defense_selection(defense_selection)
                         if selection_digest != expected_selection_sha256:
                             raise RuntimeError("Original Defense selection identity differs")
+                        if selection['keys']:
+                            raise RuntimeError("Nonempty Defense cleanup requires a verified writer and DDL fence")
                         binding = load_cut62_attempt_binding(cut62_binding, selection, selection_digest)
                         witness, secret = load_cut62_witness(cut62_witness)
                         if (witness.get('version') != 6 or witness.get('selection') != selection or
@@ -155,6 +157,10 @@ def apply_migrations(database_url: str, *, target_version: int | None = None,
                 ).fetchone()[0]
                 if applied_version != version:
                     raise RuntimeError(f"{path.name} did not record version {version}")
+                if version == 62 and not defense_zero:
+                    verified = verify_cut62_v6(database, witness, secret)
+                    if verified.get('witness_id') != expected_witness_id:
+                        raise RuntimeError("Post-migration witness identity differs; transaction rolled back")
             current_version = version
             print(f"Applied {path.name}", flush=True)
         print(f"PostgreSQL schema version {current_version}", flush=True)

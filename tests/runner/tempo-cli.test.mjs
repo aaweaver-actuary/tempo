@@ -2862,8 +2862,8 @@ test("schema 59 cutover resumes interrupted schema 60 using the original backup"
 test("schema 62 migrator requires explicit policy and sets validated selection inside its migration transaction", () => {
   const proof = String.raw`
 import contextlib, importlib.util, json, pathlib, sys, tempfile, types
-state = {'version':61, 'in_tx':False, 'events':[]}
-selection={'version':1,'target':'target','cohort':'defense-no-activity','keys':[['card','candidate']],'expected':{'count':1,'reference_digest':'a'*64}}
+state = {'version':61, 'in_tx':False, 'events':[], 'post_mismatch':False}
+selection={'version':1,'target':'target','cohort':'defense-no-activity','keys':[],'expected':{'count':0,'reference_digest':'a'*64}}
 binding={'version':1}
 witness={'version':6,'selection':selection,'binding':binding}
 class Result:
@@ -2876,7 +2876,11 @@ class Database:
  @contextlib.contextmanager
  def transaction(self):
   state['in_tx']=True
+  original=state['version']
   try: yield
+  except Exception:
+   state['version']=original
+   raise
   finally: state['in_tx']=False
  def commit(self): pass
  def execute(self, sql, params=None, **kwargs):
@@ -2898,6 +2902,12 @@ module_stub.load_cut62_defense_selection=lambda path:(selection,'b'*64)
 module_stub.load_cut62_attempt_binding=lambda path,s,d:binding
 module_stub.load_cut62_witness=lambda path:(witness,'secret')
 module_stub.cut62_witness_id=lambda w,s:'c'*64
+def verify_post(db,w,s):
+ assert state['in_tx'] and state['version']==62
+ state['events'].append(('postverify',None))
+ if state['post_mismatch']: raise RuntimeError('projected digest mismatch')
+ return {'witness_id':'c'*64}
+module_stub.verify_cut62_v6=verify_post
 module_stub.check_captured_cut62_v6=lambda db,w,s:state['events'].append(('verify',None)) if state['in_tx'] else (_ for _ in ()).throw(AssertionError())
 sys.modules['database.tooling.verify_postgres_cli_state']=module_stub
 sys.modules['psycopg']=types.SimpleNamespace(Error=type('PostgresError',(Exception,),{}),connect=lambda *a,**k:Database())
@@ -2915,8 +2925,20 @@ with tempfile.TemporaryDirectory() as tmp:
  except RuntimeError as e: assert 'selection identity differs' in str(e)
  else: raise AssertionError('wrong digest accepted')
  assert state['version']==61 and state['events']==[]
+ selection['keys']=[['card','candidate']]
+ try: module.apply_migrations('fixture', defense_selection='s',cut62_binding='b',cut62_witness='w',expected_selection_sha256='b'*64,expected_witness_id='c'*64)
+ except RuntimeError as e: assert 'writer and DDL fence' in str(e)
+ else: raise AssertionError('unfenced nonempty selection accepted')
+ assert state['version']==61 and state['events']==[]
+ selection['keys']=[]
+ state['post_mismatch']=True
+ try: module.apply_migrations('fixture', defense_selection='s',cut62_binding='b',cut62_witness='w',expected_selection_sha256='b'*64,expected_witness_id='c'*64)
+ except RuntimeError as e: assert 'projected digest mismatch' in str(e)
+ else: raise AssertionError('post-verification failure accepted')
+ assert state['version']==61 and [x[0] for x in state['events']]==['verify','setting','ddl','postverify']
+ state.update(events=[],post_mismatch=False)
  module.apply_migrations('fixture', defense_selection='s',cut62_binding='b',cut62_witness='w',expected_selection_sha256='b'*64,expected_witness_id='c'*64)
- assert [x[0] for x in state['events']]==['verify','setting','ddl'] and state['events'][1][1]==selection
+ assert [x[0] for x in state['events']]==['verify','setting','ddl','postverify'] and state['events'][1][1]==selection
  state.update(version=61,events=[])
  module.apply_migrations('fixture',defense_zero=True)
  assert [x[0] for x in state['events']]==['setting','ddl'] and state['events'][0][1]['keys']==[]
