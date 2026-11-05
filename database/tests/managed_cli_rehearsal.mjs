@@ -293,6 +293,14 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
   assert.equal(statSync(selectionCopy).ino,selectionInode);assert.deepEqual(readFileSync(selectionCopy),selectionBytes);assert.deepEqual(readFileSync(bindingPath),bindingBytes);
   assert.equal(statSync(witness).ino,witnessInode); assert.deepEqual(readFileSync(witness),witnessBytes);
   assert.deepEqual(await readHistory(),expected);
+  assert(final.managed_image_settlement, 'original deployment must have a durable settlement');
+  const settlementBytes=readFileSync(join(stateDirectory,'migration-guard.json'));
+  await substitute(async()=>{
+    assertFailed(cli('','start','--no-ci','--no-open'));
+    assert.deepEqual(readFileSync(join(stateDirectory,'migration-guard.json')),settlementBytes);
+    assert.equal(await readLatestMigration(compose).then(result=>Number(result.stdout.trim())),62);
+  });
+  assert.equal(statSync(witness).ino,witnessInode); assert.deepEqual(readFileSync(witness),witnessBytes);
   const completion=join(witnessDir,'verified-completion.json'), completionBytes=readFileSync(completion), completionInode=statSync(completion).ino;
   const request=async(path,options={})=>{
     const response=await fetch(`${target.webUrl}/api/${path}`,options);
