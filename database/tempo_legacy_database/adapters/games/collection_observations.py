@@ -397,6 +397,15 @@ class CollectionObservations:
                     except Exception:
                         diagnostic = "owner_receipt_read_unavailable"
                     if receipt is not None:
+                        command = delivery.command
+                        original = (command.source if delivery.encounter is not None else
+                                    command.finding if delivery.lapse is not None else command)
+                        if (receipt.key != command.key or receipt.source_revision != original.source_revision
+                                or (isinstance(receipt, EncounterReceipt) and delivery.control is None
+                                    and receipt.source_digest != original.source_digest)):
+                            receipt = None
+                            diagnostic = "owner_receipt_identity_mismatch"
+                    if receipt is not None:
                         try:
                             observe = getattr(owner, "feedback_observation", None)
                             if callable(observe):
@@ -404,7 +413,8 @@ class CollectionObservations:
                         except Exception:
                             observation = None  # Missing queue facts cannot erase an actual receipt.
                 progress = (study_receipt_progress(receipt, observation)
-                            if diagnostic not in {"receipt_not_observed", "owner_receipt_read_unavailable"}
+                            if diagnostic not in {"receipt_not_observed", "owner_receipt_read_unavailable",
+                                                  "owner_receipt_identity_mismatch"}
                             else {"stage": "unknown", "queue": {"availability": "unavailable"}})
                 receipts.append({"operation_id": delivery.operation_id, "delivery_state": delivery.state,
                     "command_kind": delivery.command_kind,
