@@ -1054,7 +1054,7 @@ def authenticate_pre62_59(witness, secret):
     canonical=json.dumps(witness,sort_keys=True,separators=(',',':'))
     return _cut62_mac(secret,'pre62:witness-id',[canonical])['digest']
 
-def verify_pre62_59(database, witness, secret):
+def verify_pre62_59(database, witness, secret, *, in_write_transaction=False):
     if not isinstance(secret, bytes) or len(secret) != 32:
         raise ValueError('pre62 secret must be 32 bytes')
     if (witness.get('domain'),witness.get('version'),witness.get('from'),witness.get('through')) != ('pre62-source-59',PRE62_EVIDENCE_VERSION,59,61):
@@ -1062,7 +1062,15 @@ def verify_pre62_59(database, witness, secret):
     if set(witness.get('layout',{})) != PRE62_SOURCE_TABLES or set(witness.get('rows',{})) != PRE62_SOURCE_TABLES - {CUT62_LEDGER}:
         raise RuntimeError('pre62 witness coverage changed')
     witness_id = authenticate_pre62_59(witness,secret)
-    _pre62_session(database)
+    if in_write_transaction:
+        # The caller must already hold its stopped-writer and DDL fence.
+        # Never change an established migration transaction's access mode.
+        isolation, read_only = database.execute("SELECT current_setting('transaction_isolation'), current_setting('transaction_read_only')").fetchone()
+        if (isolation, read_only) != ('repeatable read', 'off'):
+            raise RuntimeError('pre62 write verification requires repeatable read write transaction')
+        _cut62_session(database)
+    else:
+        _pre62_session(database)
     version = database.execute('SELECT COALESCE(max(version),0) FROM public.tempo_schema_migrations').fetchone()[0]
     if version not in (59,60,61):
         raise RuntimeError('unsupported pre62 target version')

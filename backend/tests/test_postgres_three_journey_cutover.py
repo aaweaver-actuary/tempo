@@ -642,6 +642,23 @@ def test_pre62_native_original_59_survives_interrupted_60_and_61(tmp_path):
             return result['observed_schema']
     assert verify()==59
     with psycopg.connect(dsn) as db:
+        guard.verify_pre62_59(db,witness,secret)
+        assert db.execute("SELECT current_setting('transaction_read_only')").fetchone()[0] == 'on'
+        with pytest.raises(psycopg.errors.ReadOnlySqlTransaction):
+            db.execute('CREATE TABLE public.pre62_read_only_probe(id integer)')
+        db.rollback()
+    with psycopg.connect(dsn) as db:
+        with pytest.raises(RuntimeError, match='requires repeatable read write'):
+            guard.verify_pre62_59(db,witness,secret,in_write_transaction=True)
+        db.rollback()
+        db.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ WRITE')
+        assert guard.verify_pre62_59(db,witness,secret,in_write_transaction=True)['observed_schema']==59
+        db.execute('SAVEPOINT pre62_ddl_probe')
+        db.execute('CREATE TABLE public.pre62_write_probe(id integer)')
+        db.execute('ROLLBACK TO SAVEPOINT pre62_ddl_probe')
+        assert guard.verify_pre62_59(db,witness,secret,in_write_transaction=True)['observed_schema']==59
+        db.rollback()
+    with psycopg.connect(dsn) as db:
         db.execute(migration_source(MIGRATIONS/'060_position_first_response_immutable.sql'),prepare=False)
     assert verify()==60
     assert witness_path.read_bytes()==raw
@@ -683,6 +700,27 @@ def test_pre62_native_original_59_survives_interrupted_60_and_61(tmp_path):
     with psycopg.connect(dsn) as db:
         db.execute(migration_source(MIGRATIONS/'061_content_origin_receipts.sql'),prepare=False)
     assert verify()==61
+    with psycopg.connect(dsn) as db:
+        db.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ WRITE')
+        assert guard.verify_pre62_59(db,witness,secret,in_write_transaction=True)['observed_schema']==61
+        db.execute('SET LOCAL join_collapse_limit=1')
+        db.execute('SET LOCAL jit=off')
+        count,digest=guard._cut62_defense_reference_digest(db,[])
+        selection={'version':1,'target':'synthetic','cohort':'defense-no-activity','keys':[], 'expected':{'count':count,'reference_digest':digest}}
+        db.execute("SELECT set_config('tempo.cut62_defense_manifest',%s,true)",(json.dumps(selection),))
+        db.execute(migration_source(MIGRATIONS/'062_three_journey_retirement.sql'),prepare=False)
+        assert db.execute('SELECT max(version) FROM public.tempo_schema_migrations').fetchone()[0]==62
+        db.rollback()
+    with psycopg.connect(dsn) as db:
+        assert db.execute('SELECT max(version) FROM public.tempo_schema_migrations').fetchone()[0]==61
+        db.rollback()
+        db.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ WRITE')
+        corrupted=copy.deepcopy(witness)
+        corrupted['rows']['defense_attempts']['digest']='invalid'
+        with pytest.raises(RuntimeError,match='retained rows changed'):
+            guard.verify_pre62_59(db,corrupted,secret,in_write_transaction=True)
+        db.rollback()
+        assert db.execute('SELECT max(version) FROM public.tempo_schema_migrations').fetchone()[0]==61
     assert witness_path.read_bytes()==raw
     with psycopg.connect(dsn) as db:
         db.execute("INSERT INTO legacy_content_historical_origins(legacy_target_id,legacy_workspace_id,export_id,receipt_id,payload,receipt_digest) VALUES ('t','w','e','r','synthetic','digest')")
