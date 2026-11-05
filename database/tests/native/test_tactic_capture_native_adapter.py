@@ -13,7 +13,7 @@ def test_native_tactic_capture_contention_replay_and_rollback(owned_postgres, mo
     monkeypatch.setenv('TEMPO_DATABASE_READ_URL', dsn)
     from database.tooling.apply_postgres_migrations import apply_migrations
     from tempo_legacy_database.adapters import postgres_store
-    apply_migrations(dsn)
+    apply_migrations(dsn, defense_zero=True)
     with psycopg.connect(dsn) as connection:
         connection.execute('INSERT INTO settings(id) VALUES(1) ON CONFLICT(id) DO NOTHING')
         connection.execute('INSERT INTO tactic_rotation(id) VALUES(1) ON CONFLICT(id) DO NOTHING')

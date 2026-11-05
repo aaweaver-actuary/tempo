@@ -324,6 +324,108 @@ def load_cut62_attempt_binding(path, selection, selection_sha256):
 
 
 # Draft only: static typed ownership predicates need catalog and owner review.
+CUT62_DEFENSE_FK_LEDGER_SQL = '''
+WITH expected(target_table,source_schema,source_table,source_column,delete_rule) AS (VALUES
+('cards','public','cards','unlock_after_card_id','n'),
+('cards','public','daily_queue','card_id','c'),
+('cards','public','defense_attempts','card_id','c'),
+('cards','public','gameplay_card_priorities','card_id','c'),
+('cards','public','opening_card_schedule_seeds','card_id','c'),
+('cards','public','opening_card_schedule_seeds','source_card_id','c'),
+('cards','public','opening_graph_legacy_mappings','decision_card_id','c'),
+('cards','public','opening_graph_legacy_mappings','legacy_card_id','c'),
+('cards','public','prefix_splits','continuation_card_id','c'),
+('cards','public','prefix_splits','shortened_card_id','c'),
+('cards','public','prefix_splits','source_card_id','c'),
+('cards','public','repertoire_card_introduction_priorities','card_id','c'),
+('cards','public','repertoire_card_priority_generations','card_id','c'),
+('cards','public','repertoire_cards','card_id','c'),
+('cards','public','repertoire_decision_events_legacy','card_id','n'),
+('cards','public','repertoire_decision_events_staged','card_id','n'),
+('cards','public','repertoire_integrity_card_blocks','card_id','c'),
+('cards','public','repertoire_opportunities','card_id','n'),
+('cards','public','repertoire_priority_prepared_rows','card_id','c'),
+('cards','public','reviews','card_id','c'),
+('cards','public','study_attempts','card_id','a'),
+('cards','public','tactic_captures','card_id','c'),
+('cards','public','teaching_states','card_id','c'),
+('cards','public','threat_training_candidates','card_id','n'),
+('daily_queue','public','defense_recognition_submissions','queue_entry_id','c'),
+('daily_queue','public','study_attempts','queue_entry_id','a')
+), actual AS (
+ SELECT target.relname::text,n.nspname::text,source.relname::text,
+        CASE WHEN cardinality(con.conkey)=1 AND cardinality(con.confkey)=1 AND target_col.attname='id' THEN source_col.attname::text ELSE '<unexpected-composite>' END,
+        con.confdeltype::text
+ FROM pg_constraint con JOIN pg_class target ON target.oid=con.confrelid
+ JOIN pg_class source ON source.oid=con.conrelid JOIN pg_namespace n ON n.oid=source.relnamespace
+ LEFT JOIN pg_attribute source_col ON source_col.attrelid=source.oid AND source_col.attnum=con.conkey[1]
+ LEFT JOIN pg_attribute target_col ON target_col.attrelid=target.oid AND target_col.attnum=con.confkey[1]
+ WHERE con.contype='f' AND con.confrelid IN ('public.cards'::regclass,'public.daily_queue'::regclass)
+)
+SELECT NOT EXISTS ((SELECT * FROM actual EXCEPT ALL SELECT * FROM expected) UNION ALL (SELECT * FROM expected EXCEPT ALL SELECT * FROM actual))
+'''
+
+CUT62_DEFENSE_TRIGGER_LEDGER_SQL = '''
+WITH expected(table_name,trigger_name,enabled,trigger_type,function_schema,function_name,trigger_digest,function_digest) AS (VALUES
+('cards','canonical_card_delete_source','O',9,'public','advance_canonical_prefix_source','19b4fce6943415cb587bd73c801a5bcbe76f08058b91350e9a0226e3f0d96700','0f6124f0b6b634bfe65a1662b8ac29c8776f47591de2f251bf5480d079cbbd0c'),
+('cards','canonical_card_insert_source','O',5,'public','advance_canonical_prefix_source','563b9ab171090b6bbb4d74bf9f93f0ba867c3aaf88a52a30eee135bd7d9ae9f5','0f6124f0b6b634bfe65a1662b8ac29c8776f47591de2f251bf5480d079cbbd0c'),
+('cards','canonical_card_promote','O',19,'public','promote_canonical_card_source','9772e19ff2fc93a273eaedf36c91bc3f4437f2576ee96f0a6449a0bb78563a6e','c70ab525932736ba6b72b3ce555b25108114d89da35e6ae0d23609694067c35f'),
+('cards','canonical_card_source','O',17,'public','advance_canonical_prefix_source','13fb08871e34be4811e47e65bbb0bcf4fb69918c4e1b4e695b6e55a91ee28604','0f6124f0b6b634bfe65a1662b8ac29c8776f47591de2f251bf5480d079cbbd0c'),
+('cards','deleted_card_recreation_guard','O',23,'public','prevent_deleted_card_recreation','de57bd558cb711797fab3f915f7041a254c89f4bcfa522874f044fef0bfa9113','7bf4d70e62f2a8822692fc82409f51aa62a23534f322ad8711c735f1d2ec9f13'),
+('cards','frozen_guard_cards','O',28,'public','frozen_invalidate_pending','8d1b512e850b91127eb3c9c372b96713ec7df06ddbc5aecb6143c2d8b6ecdbdc','eea3585ca4e8ade215d3fbbe159a37f1e9668d4ee3829cd7dec330615b10ed2d'),
+('cards','opening_evidence_01_saved_presentation','O',21,'public','opening_evidence_capture_presentation','53a2f64db450cf68c42367cda8a22807b11e75c9ffaa66ac6b1ccdfedf2df7b1','39302b4c090976a0287764dacb24943bb534f988aff7de8de57b142683a7fb50'),
+('cards','opening_evidence_edited_scope','O',17,'public','opening_evidence_capture_edited_scope','f2b8f69a4104579c724296dcedf54727e1054ae57f1d2269222c47c8f31c8300','517e6d6067b1d634fd8631c81fc392245f2d8e064fd747e847f8fd22ba0cf80e'),
+('cards','prefix_transition_card_write','O',31,'public','guard_prefix_transition_write','ec04cc6b3a1efa4e0ad48a992ef4e142975ab609bb7b9fdc7a6a1d2df3e493d6','1d7faf0ad60b4ae39388a8c6b16162ef9c7f876731573d4841330d2a42611875'),
+('cards','priority_source_cards','O',29,'public','priority_card_source_changed','b696384919a4db0c92b3d7dd1801ecf9633a23785be3185d2d7d390c9a0dd6cd','cab9fd62a0ebc5f5839220a32b2eafd6563a22fdb24715dd6c73c1ff226adbe6'),
+('cards','queue_attempt_origin_revision','O',17,'public','retain_queue_attempt_revision','87f4c99899d748adc59bcbb58a83d2c3d47a6bd1a01b0c110a8442d9db875d86','4d95b31f6a4970b9c2a33a6174e298e77158455fb29860ba243fdc930b4dd2c2'),
+('cards','study_position_guard_legacy_fsrs_id','O',23,'public','study_position_guard_legacy_fsrs_id','5d7b69e921be8d4fd2fc24de638ac1626f73c3af9434037a1c6158110d792ff0','865a5679fdf7f12e118ed2f8d0a838639b34de52340ac61719ebbd620069455c'),
+('daily_queue','frozen_guard_daily_queue','O',28,'public','frozen_invalidate_pending','88d2ef4a7e58980e226386dd25c04d8b8c5634eb73bef1cdc1059a9bb478845d','eea3585ca4e8ade215d3fbbe159a37f1e9668d4ee3829cd7dec330615b10ed2d'),
+('daily_queue','opening_evidence_queue_scope','O',21,'public','opening_evidence_capture_queue_context','f25bb2efefad87cedab7464e4eb9c776919c652f89f5cc8979f7eca54196a01e','4ac4225be7f47b8bc682150a2bbf44d2e1b15c7bb0f562aca783fc57b1f70b6e'),
+('daily_queue','prefix_transition_queue_write','O',30,'public','reserve_prefix_transition_queue_write','6d5442d186b8e43d7ef16711024e2a2bca309adda2c201312f2de012cdb15655','0bb404f3938c0383b1a1bd62d7693aa31a51d9e04eb7cd7115eba371ec2f5aa1'),
+('daily_queue','queue_attempt_origin_delete','O',11,'public','retain_queue_attempt_origin','1956d8bb93ef22a6dfb7f02ea7cc3f1e9c1c6948d777594d699eaecaeaaba83e','dd8c36202d57b8e957db55d3d23c4e5b2c03c37cb8349a1f89160dff979bc674'),
+('daily_queue','queue_attempt_origin_insert','O',5,'public','retain_queue_attempt_origin','a088930bdf13320e2824a06e811337b0d4532d19b1c501121efe38d34f0dec3b','dd8c36202d57b8e957db55d3d23c4e5b2c03c37cb8349a1f89160dff979bc674'),
+('daily_queue','queue_attempt_origin_update','O',17,'public','retain_queue_attempt_origin','107c3d2b325146700e85aa2aaf20abdf343dcab87a100c2c27e2a001c84a6765','dd8c36202d57b8e957db55d3d23c4e5b2c03c37cb8349a1f89160dff979bc674'),
+('queue_attempt_origins','frozen_guard_queue_attempt_origins','O',28,'public','frozen_invalidate_pending','1df7013fef41ed9a4a5898282737f078647cf09851c9bd96813226710709a379','eea3585ca4e8ade215d3fbbe159a37f1e9668d4ee3829cd7dec330615b10ed2d'),
+('queue_attempt_origins','queue_attempt_abandoned_origin_immutable','O',27,'public','protect_abandoned_queue_origin','09d467b1e53ef6599d2341247be8629218029cb3caa860827790be9b71a0a0d3','e05f0ee0f613ade4d586d3d65d930f40a6d51753f32b8cf268f3ab43d289a8ae')
+), actual AS (
+ SELECT c.relname::text,t.tgname::text,t.tgenabled::text,t.tgtype::int,pn.nspname::text,p.proname::text,encode(sha256(convert_to(pg_get_triggerdef(t.oid),'UTF8')),'hex'),encode(sha256(convert_to(pg_get_functiondef(p.oid),'UTF8')),'hex')
+ FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace JOIN pg_proc p ON p.oid=t.tgfoid JOIN pg_namespace pn ON pn.oid=p.pronamespace
+ WHERE n.nspname='public' AND NOT t.tgisinternal AND c.relname IN ('cards','daily_queue','queue_attempt_origins','threat_training_candidates','priority_repertoire_source_epochs','frozen_opening_runs')
+)
+SELECT NOT EXISTS ((SELECT * FROM actual EXCEPT ALL SELECT * FROM expected) UNION ALL (SELECT * FROM expected EXCEPT ALL SELECT * FROM actual))
+'''
+
+CUT62_DEFENSE_ORIGIN_FK_SQL = '''
+SELECT count(*)=1 AND COALESCE(bool_and(n.nspname='public' AND c.relname='queue_attempt_abandonments' AND con.conname='queue_attempt_abandonments_queue_entry_id_card_id_revision_fkey' AND pg_get_constraintdef(con.oid)='FOREIGN KEY (queue_entry_id, card_id, revision) REFERENCES queue_attempt_origins(queue_entry_id, card_id, revision)'),false)
+FROM pg_constraint con JOIN pg_class c ON c.oid=con.conrelid JOIN pg_namespace n ON n.oid=c.relnamespace
+WHERE con.contype='f' AND con.confrelid='public.queue_attempt_origins'::regclass
+'''
+
+CUT62_DEFENSE_UPDATED_COLUMN_FK_SQL = '''
+SELECT NOT EXISTS (
+ SELECT 1 FROM pg_constraint con
+ WHERE con.contype='f' AND con.confrelid IN ('public.threat_training_candidates'::regclass,'public.priority_repertoire_source_epochs'::regclass,'public.frozen_opening_runs'::regclass)
+ AND EXISTS (SELECT 1 FROM unnest(con.confkey) key_column(attnum) JOIN pg_attribute a ON a.attrelid=con.confrelid AND a.attnum=key_column.attnum WHERE (con.confrelid='public.threat_training_candidates'::regclass AND a.attname='card_id') OR (con.confrelid='public.priority_repertoire_source_epochs'::regclass AND a.attname='version') OR (con.confrelid='public.frozen_opening_runs'::regclass AND a.attname='invalidated'))
+)
+'''
+
+CUT62_DEFENSE_HELPER_LEDGER_SQL = '''
+WITH expected(function_schema,function_name,arguments,digest) AS (VALUES
+('public','bump_priority_repertoire_source','target_repertoire_id text','fb608697361d49ffc403eeb81d33036a1adbc13ea1e5098e8011a8cdf9e31ba5'),
+('public','guard_prefix_transition_scope','scope_kind text, scope_id text','5e165e76a49e555c576c20b648072e258915f52a852d7a29d353823861d1ed46'),
+('public','opening_evidence_bind_queue','queue_identifier bigint, card_identifier text, admission_repertoire text','a1a451192b69cb037186d4f1f23ff0f5bd139355fcbb838f3ec8b2fa57e4d577')
+), actual AS (
+ SELECT n.nspname::text,p.proname::text,pg_get_function_identity_arguments(p.oid),encode(sha256(convert_to(pg_get_functiondef(p.oid),'UTF8')),'hex')
+ FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+ WHERE n.nspname='public' AND p.proname IN ('bump_priority_repertoire_source','guard_prefix_transition_scope','opening_evidence_bind_queue')
+)
+SELECT NOT EXISTS ((SELECT * FROM actual EXCEPT ALL SELECT * FROM expected) UNION ALL (SELECT * FROM expected EXCEPT ALL SELECT * FROM actual))
+'''
+
+CUT62_DEFENSE_RULE_LEDGER_SQL = '''
+SELECT NOT EXISTS (SELECT 1 FROM pg_rewrite r JOIN pg_class c ON c.oid=r.ev_class JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname IN ('cards','daily_queue','queue_attempt_origins','threat_training_candidates','priority_repertoire_source_epochs','frozen_opening_runs'))
+'''
+
 CUT62_DRAFT_DEFENSE_SELECTOR = '''
 WITH typed_receipts AS MATERIALIZED (
  SELECT CASE WHEN pg_input_is_valid(payload_json,'jsonb') THEN payload_json::jsonb END AS payload,
@@ -344,9 +446,9 @@ AND NOT EXISTS (SELECT 1 FROM public.defense_recognition_submissions r WHERE r.c
 AND NOT EXISTS (SELECT 1 FROM public.daily_queue q WHERE q.card_id=c.id AND (q.status NOT IN ('queued','blocked') OR q.review_result_json IS NOT NULL))
 AND NOT EXISTS (SELECT 1 FROM public.queue_attempt_origins o WHERE o.card_id=c.id AND o.review_result_json IS NOT NULL)
 AND NOT EXISTS (SELECT 1 FROM typed_receipts r WHERE
- r.payload->>'card_id'=c.id OR r.payload#>>'{review,prepared_next,card_id}'=c.id OR r.response->>'card_id'=c.id OR
+ r.payload->>'card_id'=c.id OR r.payload#>>'{review,prepared_next,card_id}'=c.id OR r.payload#>>'{checkpoint,manifest,card_id}'=c.id OR r.response->>'card_id'=c.id OR
  EXISTS (SELECT 1 FROM public.daily_queue q WHERE q.card_id=c.id AND q.id::text IN
- (r.payload->>'entry_id',r.payload->>'queue_entry_id',r.payload#>>'{review,queue_entry_id}',r.payload#>>'{review,prepared_next,queue_entry_id}',r.response->>'entry_id',r.response->>'queue_entry_id')))
+ (r.payload->>'entry_id',r.payload->>'queue_entry_id',r.payload#>>'{review,queue_entry_id}',r.payload#>>'{review,prepared_next,queue_entry_id}',r.payload#>>'{checkpoint,origin_queue_entry_id}',r.payload#>>'{checkpoint,queue_entry_id}',r.response->>'entry_id',r.response->>'queue_entry_id')))
 AND NOT EXISTS (SELECT 1 FROM public.queue_attempt_origins o WHERE o.card_id=c.id AND o.issuance_sequence IS NOT NULL)
 AND NOT EXISTS (SELECT 1 FROM public.daily_queue q WHERE q.card_id=c.id AND ((q.admission_source IS NOT NULL AND q.admission_source<>'defense:' || t.id) OR NOT EXISTS (SELECT 1 FROM public.queue_attempt_origins o WHERE o.queue_entry_id=q.id AND o.card_id=c.id AND o.revision=c.revision AND o.queue_date=q.queue_date AND o.cycle=q.cycle AND o.content_type='defense' AND o.start_fen=c.start_fen AND o.moves_json=c.moves_json)))
 AND NOT EXISTS (SELECT 1 FROM public.queue_attempt_origins o WHERE o.card_id=c.id AND (o.revision<>c.revision OR o.content_type<>'defense' OR o.start_fen<>c.start_fen OR o.moves_json<>c.moves_json OR NOT EXISTS (SELECT 1 FROM public.daily_queue q WHERE q.id=o.queue_entry_id AND q.card_id=c.id AND q.queue_date=o.queue_date AND q.cycle=o.cycle)))
@@ -571,6 +673,7 @@ def _cut62_versions(database, last):
 
 
 def _cut62_session(database):
+    database.execute('SET LOCAL search_path=pg_catalog,public,pg_temp')
     database.execute("SET LOCAL TIME ZONE 'UTC'")
     database.execute("SET LOCAL DateStyle = 'ISO, YMD'")
     database.execute('SET LOCAL extra_float_digits = 3')
@@ -594,17 +697,53 @@ def capture_cut62(database, secret):
 
 def capture_cut62_v6(database, secret, selection, binding):
     """Capture original and exact approved projected state in one read snapshot."""
+    database.execute('SET LOCAL search_path=pg_catalog,public,pg_temp')
     database.execute('SET LOCAL join_collapse_limit=1')
     database.execute('SET LOCAL jit=off')
     database.execute("SET LOCAL statement_timeout='30s'")
     migration = (Path(__file__).resolve().parents[1] / 'tempo_legacy_database/ddl/migrations/062_three_journey_retirement.sql').read_text()
     selectors = [part.split('\n-- END CUT62 DEFENSE SELECTOR', 1)[0] for part in migration.split('-- BEGIN CUT62 DEFENSE SELECTOR\n')[1:]]
+    updated_fk = migration.split('-- BEGIN CUT62 DEFENSE UPDATED COLUMN FK\n', 1)[1].split('\n-- END CUT62 DEFENSE UPDATED COLUMN FK', 1)[0]
+    if updated_fk != CUT62_DEFENSE_UPDATED_COLUMN_FK_SQL.strip():
+        raise RuntimeError('cut62 Defense updated-column ledger differs from migration')
+    for label, expected in (('HELPER LEDGER', CUT62_DEFENSE_HELPER_LEDGER_SQL), ('RULE LEDGER', CUT62_DEFENSE_RULE_LEDGER_SQL)):
+        found = migration.split('-- BEGIN CUT62 DEFENSE ' + label + '\n', 1)[1].split('\n-- END CUT62 DEFENSE ' + label, 1)[0]
+        if found != expected.strip():
+            raise RuntimeError('cut62 Defense dependency ledger differs from migration')
+    origin_fk = migration.split('-- BEGIN CUT62 DEFENSE ORIGIN FK\n', 1)[1].split('\n-- END CUT62 DEFENSE ORIGIN FK', 1)[0]
+    if origin_fk != CUT62_DEFENSE_ORIGIN_FK_SQL.strip():
+        raise RuntimeError('cut62 Defense origin foreign-key ledger differs from migration')
+    trigger_ledger = migration.split('-- BEGIN CUT62 DEFENSE TRIGGER LEDGER\n', 1)[1].split('\n-- END CUT62 DEFENSE TRIGGER LEDGER', 1)[0]
+    if trigger_ledger != CUT62_DEFENSE_TRIGGER_LEDGER_SQL.strip():
+        raise RuntimeError('cut62 Defense trigger ledger differs from migration')
+    fk_ledger = migration.split('-- BEGIN CUT62 DEFENSE FK LEDGER\n', 1)[1].split('\n-- END CUT62 DEFENSE FK LEDGER', 1)[0]
+    if fk_ledger != CUT62_DEFENSE_FK_LEDGER_SQL.strip():
+        raise RuntimeError('cut62 Defense foreign-key ledger differs from migration')
     if len(selectors) != 2 or any(part != CUT62_DRAFT_DEFENSE_SELECTOR.strip() for part in selectors):
         raise RuntimeError('cut62 Defense selector differs from migration')
     reference = migration.split('-- BEGIN CUT62 REFERENCE DIGEST\n',1)[1].split('\n-- END CUT62 REFERENCE DIGEST',1)[0].strip()
     expected_reference = CUT62_DEFENSE_REFERENCE_SQL.replace('{selector}', '\n-- BEGIN CUT62 DEFENSE SELECTOR\n'+CUT62_DRAFT_DEFENSE_SELECTOR.strip()+'\n-- END CUT62 DEFENSE SELECTOR\n').replace('%s::jsonb', "(current_setting('tempo.cut62_defense_manifest', true)::jsonb->'keys')").replace("SELECT (SELECT count(*) FROM chosen), encode(sha256(convert_to(value::text,'UTF8')),'hex') FROM evidence", "SELECT (SELECT count(*) FROM chosen) AS selected_count, encode(sha256(convert_to(value::text,'UTF8')),'hex') AS reference_digest FROM evidence").strip()
     if reference != expected_reference:
         raise RuntimeError('cut62 reference digest differs from migration')
+    materialized = migration.split('-- BEGIN CUT62 MATERIALIZED REFERENCE DIGEST\n',1)[1].split('\n-- END CUT62 MATERIALIZED REFERENCE DIGEST',1)[0].strip()
+    expected_materialized = CUT62_DEFENSE_REFERENCE_SQL.replace('{selector}', 'SELECT card_id,candidate_id,repertoire_id FROM pg_temp.cut62_defense_selected').replace('%s::jsonb', "(current_setting('tempo.cut62_defense_manifest', true)::jsonb->'keys')").replace("SELECT (SELECT count(*) FROM chosen), encode(sha256(convert_to(value::text,'UTF8')),'hex') FROM evidence", "SELECT (SELECT count(*) FROM chosen) AS selected_count, encode(sha256(convert_to(value::text,'UTF8')),'hex') AS reference_digest FROM evidence").strip()
+    if materialized != expected_materialized:
+        raise RuntimeError('cut62 materialized reference digest differs from migration')
+    if selection['keys']:
+        if database.execute("SELECT current_setting('server_version_num')::int,current_setting('session_replication_role'),current_setting('transaction_isolation')").fetchone() != (180006, 'origin', 'repeatable read'):
+            raise RuntimeError('unsupported Defense cutover database session')
+        if not database.execute(CUT62_DEFENSE_FK_LEDGER_SQL).fetchone()[0]:
+            raise RuntimeError('cut62 Defense foreign-key ledger changed')
+        if not database.execute(CUT62_DEFENSE_ORIGIN_FK_SQL).fetchone()[0]:
+            raise RuntimeError('cut62 Defense origin foreign-key ledger changed')
+        if not database.execute(CUT62_DEFENSE_UPDATED_COLUMN_FK_SQL).fetchone()[0]:
+            raise RuntimeError('cut62 Defense updated-column foreign-key ledger changed')
+        if not database.execute(CUT62_DEFENSE_TRIGGER_LEDGER_SQL).fetchone()[0]:
+            raise RuntimeError('cut62 Defense trigger ledger changed')
+        if not database.execute(CUT62_DEFENSE_HELPER_LEDGER_SQL).fetchone()[0]:
+            raise RuntimeError('cut62 Defense helper ledger changed')
+        if not database.execute(CUT62_DEFENSE_RULE_LEDGER_SQL).fetchone()[0]:
+            raise RuntimeError('cut62 Defense rewrite-rule ledger changed')
     count, digest = _cut62_defense_reference_digest(database, selection['keys'])
     if count != selection['expected']['count'] or digest != selection['expected']['reference_digest']:
         raise RuntimeError('approved Defense reference evidence changed')
@@ -1009,6 +1148,9 @@ def main():
         with psycopg.connect(os.environ['TEMPO_POSTGRES_ADMIN_URL'], options='-c default_transaction_read_only=on') as database:
             database.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
             _cut62_session(database)
+            database.execute('SET LOCAL join_collapse_limit=1')
+            database.execute('SET LOCAL jit=off')
+            database.execute("SET LOCAL statement_timeout='30s'")
             _cut62_versions(database, 61)
             count, digest = _cut62_defense_reference_digest(database, selection['keys'])
         print(json.dumps({'count': count, 'reference_digest': digest}))
@@ -1069,4 +1211,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except psycopg.Error as error:
+        print(json.dumps({'error': type(error).__name__, 'sqlstate': error.sqlstate}), file=sys.stderr)
+        sys.exit(1)

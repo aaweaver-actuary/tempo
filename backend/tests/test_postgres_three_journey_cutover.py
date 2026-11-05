@@ -254,6 +254,7 @@ def test_schema61_defense_exclusive_rehearsal_preserves_shared_history(tmp_path)
     if parsed.hostname != '127.0.0.1' or parsed.path != '/w07_census':
         raise ValueError('refusing non-W07 disposable database')
     with psycopg.connect(dsn, row_factory=dict_row) as db:
+        db.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')
         assert db.execute('SELECT max(version) AS v FROM tempo_schema_migrations').fetchone()['v'] == 61
         db.execute('SET LOCAL join_collapse_limit=1')
         db.execute('SET LOCAL jit=off')
@@ -338,6 +339,10 @@ def test_schema61_defense_exclusive_rehearsal_preserves_shared_history(tmp_path)
             db.execute("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,payload_json) VALUES ('retained-issue','queue.issue_head','x','pending','{\"entry_id\":900004,\"card_id\":\"census-exclusive\",\"expected_revision\":1}')")
             assert db.execute(cohort_sql).fetchall() == []
             db.execute('ROLLBACK TO SAVEPOINT retained_receipt_hold')
+            db.execute('SAVEPOINT retained_checkpoint_hold')
+            db.execute("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,payload_json) VALUES ('retained-checkpoint','opening_evidence.checkpoint','x','pending','{\"checkpoint\":{\"origin_queue_entry_id\":900004}}')")
+            assert db.execute(cohort_sql).fetchall() == []
+            db.execute('ROLLBACK TO SAVEPOINT retained_checkpoint_hold')
             db.execute('SAVEPOINT opaque_result_hold')
             db.execute("UPDATE daily_queue SET review_result_json='{}' WHERE id=900004")
             assert db.execute(cohort_sql).fetchall() == []
@@ -383,6 +388,62 @@ def test_schema61_defense_exclusive_rehearsal_preserves_shared_history(tmp_path)
             selection = {'version': 1, 'target': 'synthetic', 'cohort': 'defense-no-activity', 'keys': selected_keys, 'expected': {'count': reference_count, 'reference_digest': reference_digest}}
             binding = {'version': 1, 'target': 'synthetic', 'attempt_id': 'synthetic', 'backup_filename': 'synthetic', 'backup_sha256': 'a'*64, 'selection_sha256': 'b'*64}
             db.row_factory = tuple_row
+            db.execute('SAVEPOINT unexpected_foreign_key')
+            db.execute('ALTER TABLE tactic_progress ADD CONSTRAINT synthetic_unknown_card_fk FOREIGN KEY(card_id) REFERENCES cards(id)')
+            with pytest.raises(RuntimeError, match='foreign-key ledger changed'):
+                guard.capture_cut62_v6(db, b'x'*32, selection, binding)
+            db.execute('ROLLBACK TO SAVEPOINT unexpected_foreign_key')
+            db.execute('SAVEPOINT changed_trigger')
+            db.execute('ALTER TABLE cards DISABLE TRIGGER frozen_guard_cards')
+            with pytest.raises(RuntimeError, match='trigger ledger changed'):
+                guard.capture_cut62_v6(db, b'x'*32, selection, binding)
+            db.execute('ROLLBACK TO SAVEPOINT changed_trigger')
+            db.execute('SAVEPOINT unexpected_origin_fk')
+            db.execute('ALTER TABLE queue_attempt_abandonments ADD CONSTRAINT synthetic_extra_origin_fk FOREIGN KEY(queue_entry_id,card_id,revision) REFERENCES queue_attempt_origins(queue_entry_id,card_id,revision)')
+            with pytest.raises(RuntimeError, match='origin foreign-key ledger changed'):
+                guard.capture_cut62_v6(db, b'x'*32, selection, binding)
+            db.execute('ROLLBACK TO SAVEPOINT unexpected_origin_fk')
+            db.execute('SAVEPOINT changed_epoch_dependency')
+            db.execute('ALTER TABLE priority_repertoire_source_epochs ADD CONSTRAINT synthetic_epoch_unique UNIQUE(version)')
+            db.execute('ALTER TABLE reviews ADD COLUMN synthetic_epoch bigint')
+            db.execute('ALTER TABLE reviews ADD CONSTRAINT synthetic_epoch_fk FOREIGN KEY(synthetic_epoch) REFERENCES priority_repertoire_source_epochs(version)')
+            with pytest.raises(RuntimeError, match='updated-column foreign-key ledger changed'):
+                guard.capture_cut62_v6(db, b'x'*32, selection, binding)
+            db.execute('ROLLBACK TO SAVEPOINT changed_epoch_dependency')
+            for changed_helper in (
+                "CREATE OR REPLACE FUNCTION public.bump_priority_repertoire_source(target_repertoire_id text) RETURNS void LANGUAGE plpgsql AS $$ BEGIN RETURN; END $$",
+                "CREATE OR REPLACE FUNCTION public.guard_prefix_transition_scope(scope_kind text,scope_id text) RETURNS void LANGUAGE plpgsql AS $$ BEGIN RETURN; END $$",
+                "CREATE OR REPLACE FUNCTION public.opening_evidence_bind_queue(queue_identifier bigint,card_identifier text,admission_repertoire text) RETURNS void LANGUAGE sql AS $$ SELECT NULL::void $$",
+            ):
+                db.execute('SAVEPOINT changed_transitive_helper')
+                db.execute(changed_helper)
+                with pytest.raises(RuntimeError, match='helper ledger changed'):
+                    guard.capture_cut62_v6(db, b'x'*32, selection, binding)
+                db.execute('ROLLBACK TO SAVEPOINT changed_transitive_helper')
+            db.execute('SAVEPOINT helper_search_path_drift')
+            db.execute("ALTER FUNCTION public.bump_priority_repertoire_source(text) SET search_path=pg_catalog")
+            with pytest.raises(RuntimeError, match='helper ledger changed'):
+                guard.capture_cut62_v6(db, b'x'*32, selection, binding)
+            db.execute('ROLLBACK TO SAVEPOINT helper_search_path_drift')
+            db.execute('SAVEPOINT unexpected_rewrite_rule')
+            db.execute("CREATE RULE synthetic_extra AS ON DELETE TO public.cards DO ALSO UPDATE public.frozen_opening_runs SET invalidated=1")
+            with pytest.raises(RuntimeError, match='rewrite-rule ledger changed'):
+                guard.capture_cut62_v6(db, b'x'*32, selection, binding)
+            db.execute('ROLLBACK TO SAVEPOINT unexpected_rewrite_rule')
+            db.execute('SAVEPOINT changed_trigger_function')
+            db.execute("CREATE OR REPLACE FUNCTION frozen_invalidate_pending() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$")
+            with pytest.raises(RuntimeError, match='trigger ledger changed'):
+                guard.capture_cut62_v6(db, b'x'*32, selection, binding)
+            db.execute('ROLLBACK TO SAVEPOINT changed_trigger_function')
+            db.execute('SAVEPOINT replica_mode')
+            db.execute("SET LOCAL session_replication_role='replica'")
+            with pytest.raises(RuntimeError, match='unsupported Defense cutover database session'):
+                guard.capture_cut62_v6(db, b'x'*32, selection, binding)
+            db.execute('ROLLBACK TO SAVEPOINT replica_mode')
+            # Shadowing must not redirect migration DDL or a trigger's pending-run lookup.
+            db.execute('CREATE TEMP TABLE frozen_opening_pending(run_id text) ON COMMIT DROP')
+            db.execute('CREATE TEMP TABLE daily_chess_snapshots(local_day text) ON COMMIT DROP')
+            db.execute("INSERT INTO pg_temp.daily_chess_snapshots VALUES ('sentinel')")
             v6 = guard.capture_cut62_v6(db, b'x'*32, selection, binding)
             assert guard.check_captured_cut62_v6(db, v6, b'x'*32)['unchanged']
             from database.tooling.apply_postgres_migrations import MIGRATIONS, migration_source
@@ -391,6 +452,48 @@ def test_schema61_defense_exclusive_rehearsal_preserves_shared_history(tmp_path)
                 db.execute(migration_source(MIGRATIONS / '062_three_journey_retirement.sql'), prepare=False)
             db.execute('ROLLBACK TO SAVEPOINT missing_approval')
             assert db.execute('SELECT max(version) FROM tempo_schema_migrations').fetchone()[0] == 61
+            for savepoint, mutation, message in (
+                ('migration_changed_helper', "CREATE OR REPLACE FUNCTION public.bump_priority_repertoire_source(target_repertoire_id text) RETURNS void LANGUAGE plpgsql AS $$ BEGIN RETURN; END $$", 'helper ledger changed'),
+                ('migration_extra_rule', "CREATE RULE synthetic_extra AS ON DELETE TO public.cards DO ALSO UPDATE public.frozen_opening_runs SET invalidated=1", 'rewrite-rule ledger changed'),
+                ('migration_origin_fk', 'ALTER TABLE queue_attempt_abandonments ADD CONSTRAINT synthetic_extra_origin_fk FOREIGN KEY(queue_entry_id,card_id,revision) REFERENCES queue_attempt_origins(queue_entry_id,card_id,revision)', 'origin foreign-key ledger changed'),
+                ('migration_trigger_function', "CREATE OR REPLACE FUNCTION frozen_invalidate_pending() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$", 'trigger ledger changed'),
+                ('migration_replica', "SET LOCAL session_replication_role='replica'", 'Unsupported Defense cutover database session'),
+            ):
+                db.execute('SAVEPOINT ' + savepoint)
+                db.execute(mutation)
+                db.execute("SELECT set_config('tempo.cut62_defense_manifest',%s,true)", (json.dumps(selection),))
+                with pytest.raises(psycopg.Error, match=message):
+                    db.execute(migration_source(MIGRATIONS / '062_three_journey_retirement.sql'), prepare=False)
+                db.execute('ROLLBACK TO SAVEPOINT ' + savepoint)
+            for bad_selection in (
+                {**selection, 'cohort': None},
+                {**selection, 'keys': [selected_keys[0], selected_keys[0]], 'expected': {'count': 2, 'reference_digest': reference_digest}},
+            ):
+                db.execute('SAVEPOINT invalid_selection')
+                db.execute("SELECT set_config('tempo.cut62_defense_manifest',%s,true)", (json.dumps(bad_selection),))
+                with pytest.raises(psycopg.Error, match='invalid approved Defense selection'):
+                    db.execute(migration_source(MIGRATIONS / '062_three_journey_retirement.sql'), prepare=False)
+                db.execute('ROLLBACK TO SAVEPOINT invalid_selection')
+            db.execute('SAVEPOINT migration_epoch_dependency')
+            db.execute('ALTER TABLE priority_repertoire_source_epochs ADD CONSTRAINT synthetic_epoch_unique UNIQUE(version)')
+            db.execute('ALTER TABLE reviews ADD COLUMN synthetic_epoch bigint')
+            db.execute('ALTER TABLE reviews ADD CONSTRAINT synthetic_epoch_fk FOREIGN KEY(synthetic_epoch) REFERENCES priority_repertoire_source_epochs(version)')
+            db.execute("SELECT set_config('tempo.cut62_defense_manifest',%s,true)", (json.dumps(selection),))
+            with pytest.raises(psycopg.Error, match='updated-column foreign-key ledger changed'):
+                db.execute(migration_source(MIGRATIONS / '062_three_journey_retirement.sql'), prepare=False)
+            db.execute('ROLLBACK TO SAVEPOINT migration_epoch_dependency')
+            db.execute('SAVEPOINT migration_changed_trigger')
+            db.execute('ALTER TABLE cards DISABLE TRIGGER frozen_guard_cards')
+            db.execute("SELECT set_config('tempo.cut62_defense_manifest',%s,true)", (json.dumps(selection),))
+            with pytest.raises(psycopg.Error, match='trigger ledger changed'):
+                db.execute(migration_source(MIGRATIONS / '062_three_journey_retirement.sql'), prepare=False)
+            db.execute('ROLLBACK TO SAVEPOINT migration_changed_trigger')
+            db.execute('SAVEPOINT migration_unknown_foreign_key')
+            db.execute('ALTER TABLE tactic_progress ADD CONSTRAINT synthetic_unknown_card_fk FOREIGN KEY(card_id) REFERENCES cards(id)')
+            db.execute("SELECT set_config('tempo.cut62_defense_manifest',%s,true)", (json.dumps(selection),))
+            with pytest.raises(psycopg.Error, match='foreign-key ledger changed'):
+                db.execute(migration_source(MIGRATIONS / '062_three_journey_retirement.sql'), prepare=False)
+            db.execute('ROLLBACK TO SAVEPOINT migration_unknown_foreign_key')
             db.execute('SAVEPOINT changed_reference')
             db.execute("UPDATE threat_analysis_requests SET state='complete' WHERE id='shared-request'")
             db.execute("SELECT set_config('tempo.cut62_defense_manifest',%s,true)", (json.dumps(selection),))
@@ -403,6 +506,9 @@ def test_schema61_defense_exclusive_rehearsal_preserves_shared_history(tmp_path)
             from database.tooling.apply_postgres_migrations import MIGRATIONS, migration_source
             db.execute(migration_source(MIGRATIONS / '062_three_journey_retirement.sql'), prepare=False)
             assert guard.verify_cut62_v6(db, v6, b'x'*32)['version'] == 6
+            assert db.execute("SELECT to_regclass('public.daily_chess_snapshots')").fetchone()[0] is None
+            assert db.execute("SELECT local_day FROM pg_temp.daily_chess_snapshots").fetchone()[0] == 'sentinel'
+            assert db.execute("SELECT invalidated FROM public.frozen_opening_runs WHERE run_id='census-run'").fetchone()[0] == 1
             db.execute('ROLLBACK TO SAVEPOINT v6_prototype')
             db.row_factory = dict_row
             # An interrupted pre-cut witness must match the still-stopped source.
@@ -611,3 +717,23 @@ def test_defense_selection_is_private_sorted_and_bound_to_exact_bytes(tmp_path):
     path.chmod(0o644)
     with pytest.raises(RuntimeError, match='private regular file'):
         guard.load_cut62_defense_selection(path)
+
+
+def test_verifier_cli_redacts_database_error_details(tmp_path, monkeypatch, capsys):
+    import runpy
+    import sys
+    import psycopg
+    path = tmp_path / 'selection.json'
+    path.write_text(json.dumps({'version': 1, 'target': 'synthetic', 'cohort': 'defense-no-activity', 'keys': [], 'expected': {'count': 0, 'reference_digest': 'a'*64}}))
+    path.chmod(0o600)
+    def fail(*args, **kwargs):
+        raise psycopg.DatabaseError('sensitive-card-id')
+    monkeypatch.setattr(psycopg, 'connect', fail)
+    monkeypatch.setenv('TEMPO_POSTGRES_ADMIN_URL', 'synthetic')
+    monkeypatch.setattr(sys, 'argv', [guard.__file__, '--cut62-reference-digest', '--defense-selection', str(path)])
+    with pytest.raises(SystemExit) as exc:
+        runpy.run_path(guard.__file__, run_name='__main__')
+    assert exc.value.code == 1
+    captured = capsys.readouterr()
+    assert 'sensitive-card-id' not in captured.err
+    assert json.loads(captured.err) == {'error': 'DatabaseError', 'sqlstate': None}

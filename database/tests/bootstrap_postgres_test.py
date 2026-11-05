@@ -11,6 +11,7 @@ sys.path.insert(0, str(_REPOSITORY / "database"))
 sys.path.insert(0, str(_REPOSITORY / "backend"))
 
 import argparse
+import os
 from pathlib import Path
 
 import psycopg
@@ -25,8 +26,11 @@ def main() -> None:
     parser.add_argument("--admin-dsn", required=True)
     parser.add_argument("--reader-password-file", type=Path, required=True)
     parser.add_argument("--writer-password-file", type=Path, required=True)
+    parser.add_argument("--defense-zero", action="store_true", help="Explicitly retain all shared Defense data")
     options = parser.parse_args()
-    apply_migrations(options.admin_dsn)
+    if options.defense_zero and os.getenv("TEMPO_TEST_INSTANCE") != "disposable":
+        raise RuntimeError("Explicit zero bootstrap requires the disposable runner")
+    apply_migrations(options.admin_dsn, defense_zero=options.defense_zero)
     with psycopg.connect(options.admin_dsn) as database:
         database_name = database.execute("SELECT current_database()").fetchone()[0]
         database.execute(sql.SQL("COMMENT ON DATABASE {} IS {}").format(

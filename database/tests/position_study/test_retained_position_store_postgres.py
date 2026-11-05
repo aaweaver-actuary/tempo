@@ -134,7 +134,7 @@ def test_f01_retained_position_atomic_exact_replay_and_negative_cases(donor_revi
         root.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
     try:
         dsn = make_conninfo(admin, dbname=name)
-        apply_migrations(dsn)
+        apply_migrations(dsn, defense_zero=True)
         migrate(dsn, "fixture-workspace", "America/New_York")
         with psycopg.connect(dsn, autocommit=True) as conn:
             with conn.transaction():
@@ -261,7 +261,7 @@ def test_warm_changed_final_requires_fresh_nonserving_target():
                 root.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
             allocated.append(name)
         warm_dsn, final_dsn = [make_conninfo(admin, dbname=name) for name in names]
-        apply_migrations(warm_dsn)
+        apply_migrations(warm_dsn, defense_zero=True)
         migrate(warm_dsn, "fixture-workspace", "America/New_York")
         migrate(final_dsn, "fixture-workspace", "America/New_York")
         namespace = frozenset({42})

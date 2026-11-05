@@ -45,7 +45,7 @@ def test_lp07_original_response_native_migration_and_immutability(monkeypatch):
         conn.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(empty_name)))
     try:
         empty_dsn = make_conninfo(admin, dbname=empty_name)
-        migration.apply_migrations(empty_dsn)
+        migration.apply_migrations(empty_dsn, defense_zero=True)
         with psycopg.connect(empty_dsn) as empty:
             assert empty.execute('SELECT max(version) FROM tempo_schema_migrations').fetchone()[0] == 60
             assert empty.execute('SELECT count(*) FROM study_position_first_responses').fetchone()[0] == 0
@@ -84,7 +84,7 @@ def test_lp07_original_response_native_migration_and_immutability(monkeypatch):
         assert raw.execute('SELECT max(version) FROM tempo_schema_migrations').fetchone()[0] == 59
         assert raw.execute("SELECT to_regprocedure('public.reject_position_first_response_mutation()')").fetchone()[0] is None
         raw.commit()
-        migration.apply_migrations(dsn)
+        migration.apply_migrations(dsn, defense_zero=True)
         assert raw.execute('SELECT max(version) FROM tempo_schema_migrations').fetchone()[0] == 60
         assert [dict(row) for row in raw.execute('SELECT * FROM study_position_first_responses ORDER BY decision_index').fetchall()] == before
         raw.commit()

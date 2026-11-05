@@ -97,7 +97,7 @@ def migrated_command_database(command_boundary_native, monkeypatch):
     from tempo_legacy_database.adapters.redis_control import admission
     try:
         bind_database_infrastructure()
-        apply_migrations(dsn)
+        apply_migrations(dsn, defense_zero=True)
         with psycopg.connect(dsn) as connection:
             connection.execute('INSERT INTO settings(id) VALUES(1) ON CONFLICT(id) DO NOTHING')
             connection.execute('INSERT INTO tactic_rotation(id) VALUES(1) ON CONFLICT(id) DO NOTHING')

@@ -328,7 +328,7 @@ def run():
     with psycopg.connect(ADMIN_DSN, autocommit=True) as administrator:
         administrator.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(template_name)))
     try:
-        apply_migrations(f'postgresql://postgres@postgres:5432/{template_name}')
+        apply_migrations(f'postgresql://postgres@postgres:5432/{template_name}', defense_zero=True)
         for test in selected:
             parameters = ('generation', 'publication', 'parent', 'archived', 'blocked', 'introduced', 'membership', 'quota', 'disabled', 'study_only') if test == test_postgres_capacity_stale_proposal_rejected_without_side_effects else (None,)
             for parameter in parameters:

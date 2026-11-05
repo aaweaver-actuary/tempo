@@ -124,8 +124,8 @@ def main():
     with psycopg.connect(ADMIN_DSN, autocommit=True) as administrator:
         administrator.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(database_name)))
     try:
-        apply_migrations(dsn)
-        apply_migrations(dsn)
+        apply_migrations(dsn, defense_zero=True)
+        apply_migrations(dsn, defense_zero=True)
         os.environ['TEMPO_DATABASE_WRITE_URL']=dsn
         os.environ['TEMPO_DATABASE_READ_URL']=dsn
         os.environ.pop('TEMPO_REDIS_URL',None)

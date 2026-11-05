@@ -11,6 +11,8 @@ sys.path.insert(0, str(_REPOSITORY / "database"))
 
 import argparse
 import hashlib
+from functools import wraps
+import re
 from importlib import metadata
 import json
 import os
@@ -69,6 +71,22 @@ def validate_migration_history(
     return len(applied_versions)
 
 
+def safe_postgres_errors(function):
+    """Do not expose database-provided detail, row keys, SQL or connection data."""
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        try:
+            return function(*args, **kwargs)
+        except psycopg.Error as error:
+            state = getattr(error, "sqlstate", None)
+            state = state if isinstance(state, str) and re.fullmatch(r"[0-9A-Z]{5}", state) else "unknown"
+            name = type(error).__name__
+            name = name if re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", name) else "DatabaseError"
+            raise RuntimeError(f"PostgreSQL migration operation failed ({name}, SQLSTATE {state}); keep writers stopped.") from None
+    return wrapped
+
+
+@safe_postgres_errors
 def apply_migrations(database_url: str, *, target_version: int | None = None,
                      defense_zero: bool = False, defense_selection: str | None = None,
                      cut62_binding: str | None = None, cut62_witness: str | None = None,
@@ -142,6 +160,7 @@ def apply_migrations(database_url: str, *, target_version: int | None = None,
         print(f"PostgreSQL schema version {current_version}", flush=True)
 
 
+@safe_postgres_errors
 def migration_status(database_url: str, *, reader_passfile=None, writer_passfile=None) -> dict[str, object]:
     """Validate both histories using an explicitly read-only database session."""
     files = sorted(MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql"))

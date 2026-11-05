@@ -47,7 +47,7 @@ def proof_scheduling_turns(parent_database_url):
             created = True
         from database.tooling.apply_postgres_migrations import apply_migrations
         from database.tests.check_postgres_graph_retention import owned_admission_scope
-        apply_migrations(database_url)
+        apply_migrations(database_url, defense_zero=True)
         with psycopg.connect(database_url) as database:
             database.execute('INSERT INTO settings(id) VALUES(1)')
         with patch.dict(os.environ, {'TEMPO_DATABASE_WRITE_URL': database_url,

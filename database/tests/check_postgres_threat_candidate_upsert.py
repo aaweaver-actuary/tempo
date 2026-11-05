@@ -41,7 +41,7 @@ def verify_issue12_three_anchors_on_postgres(database_url: str) -> None:
     with psycopg.connect(administrator_url, autocommit=True) as administrator:
         administrator.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(database_name)))
     try:
-        apply_migrations(scenario_url)
+        apply_migrations(scenario_url, defense_zero=True)
         os.environ["TEMPO_DATABASE_WRITE_URL"] = scenario_url
         os.environ["TEMPO_DATABASE_READ_URL"] = scenario_url
         os.environ.pop("TEMPO_REDIS_URL", None)
