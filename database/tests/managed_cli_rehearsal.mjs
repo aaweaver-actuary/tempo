@@ -15,6 +15,26 @@ export function validateOwnedPostgresTelemetry(ids, items, project, expectedImag
   return item;
 }
 
+// A resumed Games comparison may publish its current scope after the cut.
+// All source rows remain exact; only that owner-published generation may move.
+export function assertRetainedAfterGamesPublication(before, after) {
+  for(const key of ['findings','candidates','links','requests','london']) assert.deepEqual(after.retainedRows[key],before.retainedRows[key]);
+  const original=before.retainedRows.games, current=after.retainedRows.games;
+  assert.equal(original.length,15);assert.equal(current.length,15);
+  const oldJobs=new Map(before.comparisonEvidence.games.map(item=>[item.id,item]));
+  const newJobs=new Map(after.comparisonEvidence.games.map(item=>[item.id,item]));
+  assert.equal(oldJobs.size,15);assert.equal(newJobs.size,15);
+  for(let i=0;i<original.length;i++){
+    const {repertoire_scope_generation:oldScope,...oldRow}=original[i];
+    const {repertoire_scope_generation:newScope,...newRow}=current[i];
+    assert.deepEqual(newRow,oldRow);
+    const old=oldJobs.get(oldRow.id), now=newJobs.get(oldRow.id);
+    assert(old&&now);assert.equal(now.scope,newScope);assert.equal(newScope,after.comparisonEvidence.scope);
+    assert.equal(now.job_status,'complete');assert(now.published_version>0&&now.published_comparison===true);
+    if(oldScope!==newScope){assert.equal(old.scope,oldScope);assert.equal(old.job_status,'queued');assert.equal(old.published_version,0);assert.equal(old.published_comparison,false);assert.equal(now.published_version,1);}
+  }
+}
+
 export async function prepareOwnedStudyProgression({ target, directory }) {
   const { Chess } = await import('chess.js');
   const request = async (path, options = {}) => {
@@ -101,7 +121,7 @@ export async function runShippingManagedCliRehearsal({ root, project, target, re
     atomicJson(join(directory,'shipping-retained-after.json'),{categories:current.retainedCategories,rows:current.retainedRows,comparisonEvidence:current.comparisonEvidence});
     assert.deepEqual(Object.fromEntries(['schema','cards','queues','origins','recognitions','attempts','reviews','linkedCandidates','epochs','frozen']
       .map(key=>[key,current[key]])),{schema:62,cards:0,queues:0,origins:0,recognitions:0,attempts:0,reviews:0,linkedCandidates:0,epochs:15,frozen:1});
-    assert.equal(current.retainedDigest,originalDefense.retainedDigest);assert.equal(current.londonChoices,5);
+    assertRetainedAfterGamesPublication(originalDefense,current);assert.equal(current.londonChoices,5);
     assert.deepEqual(current.frozenActivation,originalDefense.frozenActivation);assert.equal(current.frozenRanks,originalDefense.frozenRanks);
     assert(Object.values(current.retired).every(value=>!value));
   };
