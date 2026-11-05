@@ -353,6 +353,22 @@ test("start after merge verifies backup before migrations and publishes success 
   assert.deepEqual(calls, ["ensureImages", "stopApplications", "ensureDatabase", "checkSchema", "backup", "migrate", "checkSchema", "startServices", "verifyReady", "commitDeployment"]);
 });
 
+test("managed retry resolves the isolated target before ordinary schema preflight", async () => {
+  const { calls, handlers } = actions({ pending: [] });
+  handlers.checkMigrationRetry = async () => { calls.push('guard'); return true; };
+  handlers.resumeManagedIsolation = async () => { calls.push('resume'); return true; };
+  handlers.preflightSchema = async () => { calls.push('preflight'); };
+  await executeLifecycle({ recreate: false }, handlers);
+  assert.deepEqual(calls.slice(0, 4), ['guard', 'ensureImages', 'resume', 'preflight']);
+  assert(!calls.includes('backup') && !calls.includes('migrate'));
+  const failed = actions({ pending: [] });
+  failed.handlers.checkMigrationRetry = async () => true;
+  failed.handlers.resumeManagedIsolation = async () => { throw new Error('original receipt unavailable'); };
+  failed.handlers.preflightSchema = async () => { failed.calls.push('preflight'); };
+  await assert.rejects(executeLifecycle({ recreate: false }, failed.handlers), /receipt unavailable/);
+  assert(!failed.calls.includes('preflight') && !failed.calls.includes('startServices'));
+});
+
 test("changed dependency preparation stops writers before dependency recreation even on the same revision", async () => {
   const { calls, handlers } = actions({ pending: [] });
   handlers.ensureImages = async () => { calls.push("ensureImages"); return { dependenciesMayChange: true }; };
