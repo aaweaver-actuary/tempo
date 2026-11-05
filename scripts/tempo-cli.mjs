@@ -25,7 +25,8 @@ Options: --plan previews maintenance without changing services or source;
          --no-wait assesses release checks once without waiting;
          --no-ci updates to current main without GitHub CI evidence;
          --no-open avoids opening the browser; --retry explicitly retries interrupted
-         or failed maintenance after inspection; --config FILE selects a registration.
+         or failed maintenance after inspection; --config FILE selects a registration;
+         --defense-selection FILE supplies the approved private cutover selection.
 
 After a merge, the normal command is: tempo start
 `;
@@ -38,6 +39,14 @@ export function parseArguments(argumentsList) {
     if (!args[configIndex + 1] || args[configIndex + 1].startsWith("--")) throw new Error("--config needs a file path.");
     configPath = resolve(args[configIndex + 1]); args.splice(configIndex, 2);
   }
+  const selectionIndex = args.indexOf("--defense-selection");
+  let defenseSelection = null;
+  if (selectionIndex >= 0) {
+    const value = args[selectionIndex + 1];
+    if (!value || value.startsWith("--") || !value.startsWith("/") || args.lastIndexOf("--defense-selection") !== selectionIndex)
+      throw new Error("--defense-selection requires one absolute private file path.");
+    defenseSelection = value; args.splice(selectionIndex, 2);
+  }
   const command = args.shift() ?? "help";
   const flags = new Set(args.filter(argument => argument.startsWith("--")));
   const services = args.filter(argument => !argument.startsWith("--"));
@@ -45,11 +54,12 @@ export function parseArguments(argumentsList) {
   if (!["install", "start", "restart", "stop", "status", "doctor", "logs", "backup", "migrate"].includes(command))
     throw new Error(`Unknown Tempo command: ${command}. Run tempo help.`);
   if ([...flags].some(flag => !["--plan", "--no-open", "--follow", "--retry", "--verbose", "--no-wait", "--no-ci"].includes(flag))
+    || (defenseSelection && (!['start', 'restart', 'migrate'].includes(command) || flags.has('--retry')))
     || (command !== "logs" && services.length) || services.length > 1
     || (flags.has("--follow") && command !== "logs")
     || (flags.has("--no-wait") && !["start", "restart", "migrate"].includes(command))
     || (flags.has("--no-ci") && !["start", "restart"].includes(command))) throw new Error("Invalid options. Run tempo help.");
-  return { command, configPath, flags, services };
+  return { command, configPath, flags, services, defenseSelection };
 }
 
 function readJson(path) { return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null; }
@@ -415,7 +425,7 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
         }
         const selectedRevision = candidate?.revision ?? previous.revision;
         runtime = createRuntime(target, { run, stateDirectory, previous, revision: selectedRevision,
-          evidence: candidate?.evidence, fallback: !candidate, retry: options.flags.has("--retry"), log });
+          evidence: candidate?.evidence, fallback: !candidate, retry: options.flags.has("--retry"), defenseSelection: options.defenseSelection, log });
         await runtime.inspectTarget(); secrets.push(...runtime.secretValues);
         const recreate = options.command === "restart" || Boolean(candidate && previous?.revision !== selectedRevision);
         // SIGINT is scoped to waiting. Once maintenance starts, retain the CLI's

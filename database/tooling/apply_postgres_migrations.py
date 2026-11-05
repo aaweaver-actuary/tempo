@@ -69,7 +69,10 @@ def validate_migration_history(
     return len(applied_versions)
 
 
-def apply_migrations(database_url: str, *, target_version: int | None = None) -> None:
+def apply_migrations(database_url: str, *, target_version: int | None = None,
+                     defense_zero: bool = False, defense_selection: str | None = None,
+                     cut62_binding: str | None = None, cut62_witness: str | None = None,
+                     expected_selection_sha256: str | None = None, expected_witness_id: str | None = None) -> None:
     files = sorted(MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql"))
     if not files:
         raise RuntimeError("No PostgreSQL migrations found")
@@ -97,6 +100,37 @@ def apply_migrations(database_url: str, *, target_version: int | None = None) ->
             if version != current_version + 1:
                 raise RuntimeError(f"Missing migration before {path.name}")
             with database.transaction():
+                if version == 62:
+                    database.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+                    # A crossing must choose an explicit policy. The installed
+                    # path reauthenticates the original witness and source in
+                    # this very transaction before SQL can mutate anything.
+                    from database.tooling.verify_postgres_cli_state import (
+                        _cut62_defense_reference_digest, check_captured_cut62_v6,
+                        cut62_witness_id, load_cut62_attempt_binding,
+                        load_cut62_defense_selection, load_cut62_witness,
+                    )
+                    if defense_zero:
+                        if any((defense_selection, cut62_binding, cut62_witness, expected_selection_sha256, expected_witness_id)):
+                            raise RuntimeError("Conflicting schema 62 Defense policies")
+                        count, digest = _cut62_defense_reference_digest(database, [])
+                        selection = {'version': 1, 'target': 'explicit-historical-zero', 'cohort': 'defense-no-activity',
+                                     'keys': [], 'expected': {'count': count, 'reference_digest': digest}}
+                    else:
+                        if not all((defense_selection, cut62_binding, cut62_witness, expected_selection_sha256, expected_witness_id)):
+                            raise RuntimeError("Schema 62 requires an explicit approved Defense policy")
+                        selection, selection_digest = load_cut62_defense_selection(defense_selection)
+                        if selection_digest != expected_selection_sha256:
+                            raise RuntimeError("Original Defense selection identity differs")
+                        binding = load_cut62_attempt_binding(cut62_binding, selection, selection_digest)
+                        witness, secret = load_cut62_witness(cut62_witness)
+                        if (witness.get('version') != 6 or witness.get('selection') != selection or
+                                witness.get('binding') != binding or cut62_witness_id(witness, secret) != expected_witness_id):
+                            raise RuntimeError("Original Defense witness or binding differs")
+                        check_captured_cut62_v6(database, witness, secret)
+                        selection = witness['selection']
+                    database.execute("SELECT set_config('tempo.cut62_defense_manifest', %s, true)",
+                                     (json.dumps(selection, separators=(',', ':')),))
                 database.execute(sources[path], prepare=False)
                 applied_version = database.execute(
                     "SELECT COALESCE(MAX(version),0) FROM tempo_schema_migrations"
@@ -171,6 +205,12 @@ def main() -> None:
     parser.add_argument("--check", action="store_true", help="Read-only history and initialization check")
     parser.add_argument("--json", action="store_true", help="Print --check as JSON")
     parser.add_argument("--target-version", type=int, help="Bound an approved schema-59/60 to 61 migration")
+    parser.add_argument("--defense-zero", action="store_true", help="Explicitly select no Defense cleanup for a fresh or historical fixture")
+    parser.add_argument("--defense-selection")
+    parser.add_argument("--cut62-binding")
+    parser.add_argument("--cut62-witness")
+    parser.add_argument("--expected-selection-sha256")
+    parser.add_argument("--expected-witness-id")
     parser.add_argument("--reader-passfile", type=Path, help="Verify reader authentication during --check")
     parser.add_argument("--writer-passfile", type=Path, help="Verify writer authentication during --check")
     options = parser.parse_args()
@@ -184,7 +224,10 @@ def main() -> None:
         status = migration_status(options.dsn, reader_passfile=options.reader_passfile, writer_passfile=options.writer_passfile)
         print(json.dumps(status) if options.json else f"Schema {len(status['applied_versions'])}; expected {status['expected_version']}; pending {status['pending_versions']}")
     else:
-        apply_migrations(options.dsn, target_version=options.target_version)
+        apply_migrations(options.dsn, target_version=options.target_version, defense_zero=options.defense_zero,
+                         defense_selection=options.defense_selection, cut62_binding=options.cut62_binding,
+                         cut62_witness=options.cut62_witness, expected_selection_sha256=options.expected_selection_sha256,
+                         expected_witness_id=options.expected_witness_id)
 
 
 if __name__ == "__main__":
