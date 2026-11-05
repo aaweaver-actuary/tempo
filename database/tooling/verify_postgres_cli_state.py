@@ -1063,6 +1063,9 @@ def verify_pre62_59(database, witness, secret, *, in_write_transaction=False):
         raise RuntimeError('pre62 witness coverage changed')
     witness_id = authenticate_pre62_59(witness,secret)
     if in_write_transaction:
+        # Reject implicit transactions and autocommit before issuing a query.
+        if database.info.transaction_status != psycopg.pq.TransactionStatus.INTRANS:
+            raise RuntimeError('pre62 write verification requires an active transaction')
         # The caller must already hold its stopped-writer and DDL fence.
         # Never change an established migration transaction's access mode.
         isolation, read_only = database.execute("SELECT current_setting('transaction_isolation'), current_setting('transaction_read_only')").fetchone()

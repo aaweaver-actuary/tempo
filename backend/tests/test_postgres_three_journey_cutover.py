@@ -647,7 +647,16 @@ def test_pre62_native_original_59_survives_interrupted_60_and_61(tmp_path):
         with pytest.raises(psycopg.errors.ReadOnlySqlTransaction):
             db.execute('CREATE TABLE public.pre62_read_only_probe(id integer)')
         db.rollback()
+    for autocommit in (False, True):
+        with psycopg.connect(dsn, autocommit=autocommit) as db:
+            db.execute("SET default_transaction_isolation TO 'repeatable read'")
+            if not autocommit:
+                db.commit()
+            with pytest.raises(RuntimeError, match='requires an active transaction'):
+                guard.verify_pre62_59(db,witness,secret,in_write_transaction=True)
+            assert db.info.transaction_status == psycopg.pq.TransactionStatus.IDLE
     with psycopg.connect(dsn) as db:
+        db.execute('SELECT 1')
         with pytest.raises(RuntimeError, match='requires repeatable read write'):
             guard.verify_pre62_59(db,witness,secret,in_write_transaction=True)
         db.rollback()
