@@ -14,6 +14,7 @@ import { Chess } from "chess.js";
 import { createHash } from 'node:crypto';
 import { verifyPersistedRedisReadiness } from "../database/tests/redis/check-redis-readiness.mjs";
 import { forgetMigrationSuffix, markHistoryIncorrect, markHistoryCorrect, readLatestMigration } from "../database/tests/cli/lifecycle-storage.mjs";
+import { resolvePython } from './resolve-python.mjs';
 
 export async function verifyTempoCliLifecycle({ project, environment, composeFiles, revision, measure = null }) {
   const root = process.cwd();
@@ -188,7 +189,11 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
       const managedManifest = (environment.TEMPO_LIFECYCLE_MANAGED_REHEARSAL === '1' || environment.TEMPO_LIFECYCLE_SHIPPING_REHEARSAL === '1')
         ? JSON.parse((await compose(['--profile','maintenance','run','--rm','--no-deps','-T',
           '-e', `TEMPO_TEST_COMPOSE_PROJECT=${childProject}`, 'migration','database/tests/check_postgres_cli_lifecycle.py',
-          '--seed-defense-v2',targetKey(target)])).stdout) : null;
+          environment.TEMPO_LIFECYCLE_SHIPPING_REHEARSAL === '1' ? '--seed-defense-v2-15' : '--seed-defense-v2',targetKey(target)])).stdout) : null;
+      const readDefenseFixture = environment.TEMPO_LIFECYCLE_SHIPPING_REHEARSAL === '1' ? async () => JSON.parse((await compose([
+        '--profile','maintenance','run','--rm','--no-deps','-T','migration','database/tests/check_postgres_cli_lifecycle.py',
+        '--inspect-defense-v2-15'])).stdout) : null;
+      let originalDefense = null;
       const oldOverlay = join(directory, "schema59-images.json");
       atomicJson(oldOverlay, { services: Object.fromEntries(Object.entries(schema61Images).map(([name, image]) => [name, { image }])) });
       await compose(["-f", oldOverlay, "up", "-d", "--no-build", "--no-deps", "--wait",
@@ -202,8 +207,16 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
           assert(item?.State?.Running,`Owned historical ${service} must be running before the baseline stop`);
           assert.equal(item.Image,schema61Images[service]);
         }
+        const gameWitness = mode => {
+          const result=childProcess(`shipping_game_${mode}`,resolvePython(),['database/tests/check_cli_game_review_survivor.py',mode,childProject],
+            {cwd:root,env:{...childEnvironment,TEMPO_TEST_INSTANCE:'disposable'},encoding:'utf8',timeout:60000});
+          if(result.error||result.status!==0)throw new Error(`Owned Game Review ${mode} failed: ${(result.stderr??'').slice(-1000)}`);
+          return JSON.parse(result.stdout.trim().split('\n').at(-1));
+        };
+        if (environment.TEMPO_LIFECYCLE_SHIPPING_REHEARSAL === '1') assert.equal(gameWitness('seed').seeded,true);
         assert.equal(Number((await readLatestMigration(compose)).stdout.trim()),59);
         assert.deepEqual(await readHistory(),expected);
+        if (readDefenseFixture) originalDefense = await readDefenseFixture();
         const postgresId=(await compose(['ps','-q','postgres'])).stdout.trim();
         const postgres=JSON.parse((await docker(['inspect',postgresId])).stdout)[0];
         const dataVolume=target.volumes[target.postgresVolumeKey].name;
@@ -226,7 +239,8 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
         const runRehearsal = environment.TEMPO_LIFECYCLE_SHIPPING_REHEARSAL === '1' ? runShippingManagedCliRehearsal : runOwnedManagedCliRehearsal;
         await runRehearsal({ root, project:childProject, target, config, context, daemonId, images,
           revision, environment:childEnvironment, stateRoot, stateDirectory, registration, directory, compose, docker,
-          readHistory, expected, readLatestMigration, manifest:managedManifest });
+          readHistory, expected, readLatestMigration, manifest:managedManifest, readDefenseFixture, originalDefense,
+          checkGameReview: environment.TEMPO_LIFECYCLE_SHIPPING_REHEARSAL === '1' ? () => gameWitness('check') : null });
         console.log('PASS owned managed CLI rehearsal');
         return;
       }

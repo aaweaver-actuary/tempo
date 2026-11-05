@@ -18,7 +18,7 @@ export function validateOwnedPostgresTelemetry(ids, items, project, expectedImag
 // One unmodified shipping CLI invocation on an owned, stopped schema-59 stack.
 // Product journey checks remain the delivery owner's assembled proof.
 export async function runShippingManagedCliRehearsal({ root, project, target, revision, environment, stateRoot,
-  stateDirectory, registration, directory, compose, readHistory, expected, readLatestMigration, manifest }) {
+  stateDirectory, registration, directory, compose, readHistory, expected, readLatestMigration, manifest, readDefenseFixture, originalDefense, checkGameReview }) {
   const ref=environment.TEMPO_LIFECYCLE_CANDIDATE_REF;
   if(!/^refs\/heads\/codex\/[a-z0-9][a-z0-9/-]*$/.test(ref??'') || !/^[0-9a-f]{40}$/.test(revision) ||
       !root.startsWith('/private/tmp/') || !target.disposable || target.project!==project)
@@ -37,6 +37,11 @@ export async function runShippingManagedCliRehearsal({ root, project, target, re
       git('remote','get-url','origin')!=='https://github.com/aaweaver-actuary/tempo.git'||remote.length!==2||remote[0]!==revision||remote[1]!==ref)
     throw new Error('Owned shipping source identity differs');
   const approved=join(directory,'approved');mkdirSync(approved,{mode:0o700});chmodSync(approved,0o700);
+  assert.deepEqual(manifest.expected.groups,{no_activity:11,recognition_only:2,reviewed:2});
+  assert.equal(manifest.expected.count,15);
+  assert.deepEqual(Object.fromEntries(['schema','cards','queues','origins','recognitions','attempts','reviews','linkedCandidates','epochs','frozen']
+    .map(key=>[key,originalDefense[key]])),{schema:59,cards:15,queues:243,origins:243,recognitions:6,attempts:3,reviews:3,linkedCandidates:15,epochs:0,frozen:0});
+  assert(Object.values(originalDefense.retired).every(Boolean));
   const selection=join(approved,'selection.json');writeFileSync(selection,JSON.stringify(manifest),{mode:0o600});
   const selectionHash=createHash('sha256').update(readFileSync(selection)).digest('hex');
   const secretValues=['admin_password','reader_password','writer_password','admin_pgpass','reader_pgpass','writer_pgpass']
@@ -62,16 +67,67 @@ export async function runShippingManagedCliRehearsal({ root, project, target, re
       !/^tempo-[0-9A-Za-z-]+\.dump$/.test(guard.backup.filename??''))throw new Error('Owned shipping cut evidence is incomplete');
   if(Number((await readLatestMigration(compose)).stdout.trim())!==62)throw new Error('Owned shipping schema differs');
   assert.deepEqual(await readHistory(),expected);
+  const checkDefense=async()=>{
+    const current=await readDefenseFixture();
+    assert.deepEqual(Object.fromEntries(['schema','cards','queues','origins','recognitions','attempts','reviews','linkedCandidates','epochs','frozen']
+      .map(key=>[key,current[key]])),{schema:62,cards:0,queues:0,origins:0,recognitions:0,attempts:0,reviews:0,linkedCandidates:0,epochs:15,frozen:1});
+    assert.equal(current.retainedDigest,originalDefense.retainedDigest);assert(Object.values(current.retired).every(value=>!value));
+  };
+  await checkDefense();
+  const gameBeforeRestart=checkGameReview();assert.equal(gameBeforeRestart.schema,62);assert.equal(gameBeforeRestart.owner_receipt,'held');
+  assert(gameBeforeRestart.legal_moves>0);assert.match(gameBeforeRestart.fixture_sha256,/^[0-9a-f]{64}$/);
   await compose(['exec','-T','postgres-backup','sh','-ec','cd /backups && sha256sum -c "$1.sha256"','sh',guard.backup.filename]);
+  const { Chess }=await import('chess.js');
+  const request=async(path,options={})=>{
+    const response=await fetch(`${target.webUrl}/api/${path}`,{...options,signal:AbortSignal.timeout(10000)});
+    const body=await response.json();if(!response.ok)throw new Error(`Owned product request ${path} failed: ${response.status}`);
+    if(response.status!==202)return body;
+    for(let i=0;i<120;i++){await new Promise(resolve=>setTimeout(resolve,250));const poll=await fetch(`${target.webUrl}/api/operations/${encodeURIComponent(body.operation_id)}`,{signal:AbortSignal.timeout(10000)});
+      if(!poll.ok)throw new Error('Owned operation poll failed');const status=await poll.json();
+      if(status.state==='complete')return status.response;if(status.state==='failed')throw new Error(`Owned operation failed: ${status.error?.status_code??'unknown'}`);}
+    throw new Error('Owned operation did not settle');
+  };
+  const post=(path,payload,id)=>request(path,{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':id},body:JSON.stringify(payload)});
+  const settings=await request('settings');
+  await request('settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({...settings,new_cards_per_day:100,study_new_per_day:100})});
+  const text='[Event "Owned release"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 *';
+  const form=new FormData();form.set('file',new Blob([text],{type:'application/x-chess-pgn'}),'owned-release.pgn');form.set('trained_color','white');form.set('initial_depth','6');
+  const imported=await request('imports/pgn',{method:'POST',body:form});assert(imported.repertoire_id);
+  const pasteText='1. e4 e5 2. Nf3 Nc6 3. Bc4 *',preview=await post('repertoire/paste/preview',{text:pasteText},'cli-shipping-preview');
+  const paste={text:pasteText,preview_token:preview.preview_token,selections:[{index:0,repertoire_id:imported.repertoire_id,acknowledge_conflict:true}]};
+  const pasted=await post('repertoire/paste/commit',paste,'cli-shipping-paste');
+  assert(pasted.affected_repertoire_ids?.includes(imported.repertoire_id));
+  assert.deepEqual(await post('repertoire/paste/commit',paste,'cli-shipping-paste'),pasted);
+  await assert.rejects(post('repertoire/paste/commit',paste,'cli-shipping-paste-stale'),/409/);
+  let card;
+  for(let i=0;i<120;i++){try{card=(await request('queue/today')).cards.find(item=>item.repertoire_id===imported.repertoire_id&&item.moves?.length);if(card)break}catch{}await new Promise(resolve=>setTimeout(resolve,250))}
+  assert(card?.queue_entry_id&&new Chess(card.start_fen).move(card.moves[0]));
+  await post(`cards/${card.id}/teaching`,{revision:card.revision,ply:0},'cli-shipping-teaching');
+  await post(`cards/${card.id}/review`,{outcome:'correct',queue_entry_id:card.queue_entry_id,expected_revision:card.revision,attempt_id:'cli-shipping-review'},'cli-shipping-review');
+  let next;for(let i=0;i<120;i++){try{next=(await request('queue/today')).cards.find(item=>item.queue_entry_id!==card.queue_entry_id&&item.moves?.length);if(next)break}catch{}await new Promise(resolve=>setTimeout(resolve,250))}
+  assert(next&&new Chess(next.start_fen).move(next.moves[0]));
+  const reviewReceipt=await request('operations/cli-shipping-review');assert.equal(reviewReceipt.state,'complete');
+  const packId='hangingPiece-easy-01',deckResponse=await fetch(`${target.webUrl}/data/tactics-packs/${packId}.json`,{signal:AbortSignal.timeout(10000)});
+  assert(deckResponse.ok);const [puzzle]=await deckResponse.json();assert(puzzle?.PuzzleId&&puzzle.FEN&&puzzle.Moves);
+  const moves=puzzle.Moves.split(/\s+/),board=new Chess(puzzle.FEN);for(const move of moves)assert(board.move({from:move.slice(0,2),to:move.slice(2,4),promotion:move[4]}));
+  await request('tactics/activation',{method:'PUT',headers:{'Content-Type':'application/json','Idempotency-Key':'cli-shipping-pack'},body:JSON.stringify({pack_ids:[packId],active:true})});
+  await post('tactics/attempt',{attempt_id:'cli-shipping-tactic',puzzle_id:`lichess-${puzzle.PuzzleId}`,deck_id:packId,
+    correct:true,clean:true,source_fen:puzzle.FEN,moves,rating:1500},'cli-shipping-tactic');
+  const tacticProgress=await request('tactics/progress');assert(tacticProgress[packId]?.cleanIds?.includes(`lichess-${puzzle.PuzzleId}`));
   const originalGuard=readFileSync(join(stateDirectory,'migration-guard.json'));
   call('restart',['restart',...common]);
   assert.deepEqual(readFileSync(join(stateDirectory,'migration-guard.json')),originalGuard);
   assert.deepEqual(await readHistory(),expected);
+  await checkDefense();
+  assert.deepEqual(checkGameReview(),gameBeforeRestart);
+  assert.deepEqual(await request('operations/cli-shipping-review'),reviewReceipt);
+  assert.deepEqual((await request('tactics/progress'))[packId],tacticProgress[packId]);
   const finalRemote=git('ls-remote','origin',ref).split(/\s+/);
   if(finalRemote.length!==2||finalRemote[0]!==revision||finalRemote[1]!==ref||git('rev-parse','HEAD')!==revision||git('rev-parse','HEAD^{tree}')!==tree)
     throw new Error('Owned shipping candidate changed during rehearsal');
   atomicJson(join(directory,'shipping-rehearsal.json'),{revision,tree,ref,project,selectionSha256:selectionHash,
-    backup:guard.backup.filename,backupSha256:guard.defense_binding.backup_sha256,witnessId:guard.cut62_identity.witness_id,
+    backup:guard.backup.filename,backupSha256:guard.defense_binding.backup_sha256,witnessId:guard.cut62_identity.witness_id,gameReview:gameBeforeRestart,
+    studyReview:'cli-shipping-review',paste:'cli-shipping-paste',tacticAttempt:'cli-shipping-tactic',
     command:'tempo start --no-ci --no-open --candidate-ref REF --candidate-sha SHA --config FILE --defense-selection FILE',
     restart:'tempo restart --no-ci --no-open --candidate-ref REF --candidate-sha SHA --config FILE',
     dockerExecutable,gateOrSelectorOverrides:false,disposableCompose:true,ci:'disabled'});
