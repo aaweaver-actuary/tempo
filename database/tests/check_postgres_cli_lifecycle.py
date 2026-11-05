@@ -90,11 +90,41 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--seed59", action="store_true", help="Seed populated historical data and advance only through schema 59")
+    mode.add_argument("--seed-defense-v2", metavar="TARGET", help="Seed and describe the owned all-group Defense fixture")
     mode.add_argument("--history", action="store_true", help="Read only the original fixture history, allowing unrelated worker receipts")
     mode.add_argument("--normalization", action="store_true", help="Read the qualifying legacy migration-025 card and queue row")
     mode.add_argument("--seed-abandon-orphan", action="store_true", help="Seed one fixed synthetic orphan after the owned CLI target upgrades")
     mode.add_argument("--abandon-inspection", action="store_true", help="Read retained origin/receipt bytes and complete Study history for abandonment proof")
     options = parser.parse_args()
+    if options.seed_defense_v2:
+        from database.tooling import verify_postgres_cli_state as guard
+        keys = [['cli-defense-move','cli-defense-candidate-move','reviewed'],
+                ['cli-defense-quiet','cli-defense-candidate-quiet','no_activity'],
+                ['cli-defense-recognition','cli-defense-candidate-recognition','recognition_only']]
+        with psycopg.connect(dsn) as database:
+            database.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ WRITE')
+            if database.execute('SELECT max(version) FROM tempo_schema_migrations').fetchone()[0] != 59:
+                raise RuntimeError('Defense fixture requires the owned schema 59 database')
+            database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES ('cli-defense-rep','synthetic','synthetic','2026-01-01')")
+            for card in ('move','quiet','recognition'):
+                database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,content_type) VALUES (%s,'cli-defense-rep','prefix','fen','[]','2026-01-01','defense')", ('cli-defense-'+card,))
+            database.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json) VALUES ('cli-defense-game','synthetic','synthetic','2026-01-01','rapid',0,'white','draw','fen','[]')")
+            database.execute("INSERT INTO game_findings(id,game_id,analysis_version,ply,kind,confidence,evidence_json,created_at,updated_at) VALUES ('cli-defense-finding','cli-defense-game',1,1,'synthetic',1,'{}','2026-01-01','2026-01-01')")
+            for number, card in enumerate(('move','quiet','recognition'), 1):
+                database.execute("INSERT INTO threat_training_candidates(id,finding_id,game_id,analysis_version,incident_id,player_ply,evidence_json,source_fingerprint,detector_version,policy_json,created_at,updated_at,card_id) VALUES (%s,'cli-defense-finding','cli-defense-game',1,%s,%s,'{}','synthetic',1,'{}','2026-01-01','2026-01-01',%s)", ('cli-defense-candidate-'+card,'cli-defense-incident-'+card,number,'cli-defense-'+card))
+                database.execute("INSERT INTO daily_queue(id,queue_date,card_id,position,status) VALUES (%s,'2026-01-01',%s,%s,%s)", (920000+number,'cli-defense-'+card,number,'complete' if card=='move' else 'queued'))
+            database.execute("INSERT INTO defense_recognition_submissions(attempt_id,candidate_id,queue_entry_id,exercise_revision,answer_json,recognition_correct,created_at) VALUES ('cli-defense-recognition-id','cli-defense-candidate-recognition',920003,7,'{}',1,'2026-01-01')")
+            database.execute("INSERT INTO defense_attempts(attempt_id,candidate_id,card_id,queue_entry_id,exercise_revision,move_uci,grade_json,reviewed_at) VALUES ('cli-defense-move-id','cli-defense-candidate-move','cli-defense-move',920001,7,'e2e4','{\"status\":\"correct\"}','2026-01-01')")
+            database.execute("INSERT INTO reviews(id,card_id,rating,reviewed_at,previous_interval,next_interval,source_kind,source_ref) VALUES (920001,'cli-defense-move','good','2026-01-02',1,2,'study','defense:cli-defense-move-id')")
+            result={'card_id':'cli-defense-move','next_due':'2026-01-03','interval_days':1,'state':'learning','requeue_today':False,'requeue_after_cards':None,'stability':1.0,'scheduling_mode':'standard','hard_correct_streak':1,'suggest_shorter_prefix':False,'idempotent':False}
+            database.execute('UPDATE daily_queue SET review_result_json=%s WHERE id=920001',(json.dumps(result),))
+            guard._cut62_history_session(database)
+            count, groups, digest = guard._cut62_draft_history_reference(database, keys)
+            if (count, groups) != (3, {'no_activity':1,'recognition_only':1,'reviewed':1}):
+                raise RuntimeError('Owned Defense fixture did not produce all three exact groups')
+        print(json.dumps({'version':2,'target':options.seed_defense_v2,'cohort':'defense-history','keys':keys,
+                          'expected':{'count':count,'groups':groups,'reference_digest':digest}}))
+        return
     if options.seed_abandon_orphan or options.abandon_inspection:
         connection_options = {} if options.seed_abandon_orphan else {"options": "-c default_transaction_read_only=on"}
         with psycopg.connect(dsn, **connection_options) as database:
