@@ -21,6 +21,8 @@ test('offline quiet proof is consulted only when Study API is unavailable', asyn
   assert.equal(calls,1);
   await assert.rejects(waitForStudyQuiet({hostActivity,read:async()=>{throw new Error('offline')},offlineCheck:async()=>{throw new Error('running unknown writer')}}),/running unknown writer/);
   await waitForStudyQuiet({hostActivity,read:async()=>({ok:true,json:async()=>({active:false})}),offlineCheck:async()=>{throw new Error('must not run')}});
+  await assert.rejects(waitForStudyQuiet({hostActivity,read:async()=>({ok:true,json:async()=>({active:true})}),
+    offlineCheck:async()=>{throw new Error('must not run')},pause:async()=>{throw new Error('active waits')}}),/active waits/);
 });
 
 test('study budget serializes independent development owners and never removes another owner', async () => {
