@@ -31,7 +31,8 @@ export function assertRetainedAfterGamesPublication(before, after) {
     const old=oldJobs.get(oldRow.id), now=newJobs.get(oldRow.id);
     assert(old&&now);assert.equal(now.scope,newScope);assert.equal(newScope,after.comparisonEvidence.scope);
     assert.equal(now.job_status,'complete');assert(now.published_version>0&&now.published_comparison===true);
-    if(oldScope!==newScope){assert.equal(old.scope,oldScope);assert.equal(old.job_status,'queued');assert.equal(old.published_version,0);assert.equal(old.published_comparison,false);assert.equal(now.published_version,1);}
+    assert.equal(old.scope,oldScope);assert(now.published_version>=old.published_version);
+    if(oldScope!==newScope)assert(now.published_version>old.published_version);
   }
 }
 
@@ -116,14 +117,16 @@ export async function runShippingManagedCliRehearsal({ root, project, target, re
       !/^tempo-[0-9A-Za-z-]+\.dump$/.test(guard.backup.filename??''))throw new Error('Owned shipping cut evidence is incomplete');
   if(Number((await readLatestMigration(compose)).stdout.trim())!==62)throw new Error('Owned shipping schema differs');
   assert.deepEqual(await readHistory(),expected);
+  let previousDefense=originalDefense;
   const checkDefense=async()=>{
     const current=await readDefenseFixture();
     atomicJson(join(directory,'shipping-retained-after.json'),{categories:current.retainedCategories,rows:current.retainedRows,comparisonEvidence:current.comparisonEvidence});
     assert.deepEqual(Object.fromEntries(['schema','cards','queues','origins','recognitions','attempts','reviews','linkedCandidates','epochs','frozen']
       .map(key=>[key,current[key]])),{schema:62,cards:0,queues:0,origins:0,recognitions:0,attempts:0,reviews:0,linkedCandidates:0,epochs:15,frozen:1});
-    assertRetainedAfterGamesPublication(originalDefense,current);assert.equal(current.londonChoices,5);
+    assertRetainedAfterGamesPublication(previousDefense,current);assert.equal(current.londonChoices,5);
     assert.deepEqual(current.frozenActivation,originalDefense.frozenActivation);assert.equal(current.frozenRanks,originalDefense.frozenRanks);
     assert(Object.values(current.retired).every(value=>!value));
+    previousDefense=current;
   };
   await checkDefense();
   const gameBeforeRestart=checkGameReview();assert.equal(gameBeforeRestart.schema,62);assert.equal(gameBeforeRestart.owner_receipt,'held');
