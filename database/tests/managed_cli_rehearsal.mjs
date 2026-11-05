@@ -2,9 +2,9 @@
 import assert from 'node:assert/strict';
 import { createHash, createHmac } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import { atomicJson, targetKey } from '../../scripts/tempo-deployment.mjs';
+import { atomicJson, redact, targetKey } from '../../scripts/tempo-deployment.mjs';
 import { studyDurabilityPgn } from './postgres-test-fixture.mjs';
 import { Chess } from 'chess.js';
 
@@ -21,9 +21,28 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
       !secretDirectory.isDirectory() || secretDirectory.uid!==process.getuid() || (secretDirectory.mode&0o777)!==0o700)
     throw new Error('Owned runner secret directory differs');
   const status=git('status','--porcelain','--untracked-files=all','--','.',`:(exclude)${basename(testSecrets)}/**`);
-  if(git('rev-parse','HEAD')!==revision || git('symbolic-ref','--short','HEAD')!=='main' ||
-      status!=='' || realpathSync(git('remote','get-url','origin'))!==realpathSync(environment.W08_OWNED_BARE))
+  const candidateRef=environment.W08_CANDIDATE_REF;
+  if(!/^refs\/heads\/codex\/[a-z0-9][a-z0-9/-]*$/.test(candidateRef??'') ||
+      git('rev-parse','HEAD')!==revision || git('symbolic-ref','--short','HEAD')!=='main' ||
+      status!=='' || git('remote','get-url','origin')!=='https://github.com/aaweaver-actuary/tempo.git')
     throw new Error('Owned managed clone provenance differs');
+  const remote=git('ls-remote','origin',candidateRef).split(/\s+/);
+  if(remote.length!==2||remote[0]!==revision||remote[1]!==candidateRef) throw new Error('Published candidate ref differs');
+  git('fetch','origin',candidateRef);
+  const candidateTree=git('rev-parse','HEAD^{tree}');
+  if(git('rev-parse','FETCH_HEAD')!==revision||git('rev-parse','FETCH_HEAD^{tree}')!==candidateTree)
+    throw new Error('Published candidate tree differs');
+  // The test runner creates exactly one private secrets directory in the owned
+  // clone. Make the real CLI's ordinary Git status ignore that one directory,
+  // without masking any tracked or other untracked source changes.
+  const excludePath=join(root,'.git','info','exclude'), excludeBefore=readFileSync(excludePath,'utf8');
+  const secretPattern=`/${basename(testSecrets)}/`, entries=excludeBefore.split('\n').map(line=>line.trim()).filter(line=>line&&!line.startsWith('#'));
+  if(entries.some(line=>line!==secretPattern) || entries.length>1)
+    throw new Error('Owned clone Git exclusion file is not pristine');
+  const excludeFd=openSync(excludePath,'a');
+  try { if(!entries.length)writeFileSync(excludeFd,`\n${secretPattern}\n`);fsyncSync(excludeFd); } finally { closeSync(excludeFd); }
+  const excludeDirectory=openSync(dirname(excludePath),'r');try {fsyncSync(excludeDirectory)} finally {closeSync(excludeDirectory)}
+  if(git('status','--porcelain','--untracked-files=all')!=='') throw new Error('Owned clone has other untracked source');
   const selectionDirectory = join(directory, 'approved'); mkdirSync(selectionDirectory, { mode: 0o700 }); chmodSync(selectionDirectory, 0o700);
   const selectionPath = join(selectionDirectory, 'selection.json');
   assert.deepEqual(manifest.expected.groups, { no_activity: 1, recognition_only: 1, reviewed: 1 });
@@ -52,24 +71,44 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
   const sourceText=readFileSync(join(root,'scripts/tempo-managed-isolation.mjs'),'utf8');
   const gate="export function requireManagedIsolationGate() {\n  throw new Error('Nonempty Defense cleanup is unavailable without a verified writer and DDL fence.');\n}";
   assert.equal(sourceText.split(gate).length,2);
-  const evidence={revision,project,daemonId,context,images,dbId,networkId:policy.network_id,
+  const selectorPath=join(root,'scripts/tempo-deployment.mjs'), selectorText=readFileSync(selectorPath,'utf8');
+  assert.equal(selectorText.split('"refs/heads/main"').length,3);assert.equal(selectorText.split('"fetch", "origin", "main"').length,2);
+  const transformedSelector=selectorText.replaceAll('"refs/heads/main"',JSON.stringify(candidateRef))
+    .replace('"fetch", "origin", "main"',`"fetch", "origin", ${JSON.stringify(candidateRef)}`);
+  const evidence={revision,candidateTree,project,daemonId,context,images,dbId,networkId:policy.network_id,candidateRef,
     ownerSourceSha256:sha(join(root,'scripts/tempo-managed-isolation.mjs')),
     ownerTransformedSha256:createHash('sha256').update(sourceText.replace(gate,'export function requireManagedIsolationGate() {}')).digest('hex'),
+    selectorSourceSha256:sha(selectorPath),selectorTransformedSha256:createHash('sha256').update(transformedSelector).digest('hex'),
     pythonOwnerSha256:policy.owner_sha256,loaderSha256:sha(join(harness,'loader.mjs')),registerSha256:sha(join(harness,'register.mjs')),
     hookSha256:policy.hook_sha256,proxySha256:sha(join(harness,'docker')),policySha256:sha(policyPath),
     pythonOverride:'task-only sitecustomize enables the closed owner gate only in the verified pinned child',
-    clone:realpathSync(root),bareOrigin:realpathSync(environment.W08_OWNED_BARE),runnerSecrets:testSecrets,
+    clone:realpathSync(root),bootstrapBare:realpathSync(environment.W08_OWNED_BARE),origin:git('remote','get-url','origin'),runnerSecrets:testSecrets,
+    gitExcludeSha256:sha(excludePath),
     runnerSecretsUid:secretDirectory.uid,runnerSecretsMode:'0700',ci:'disabled'};
   atomicJson(join(directory,'managed-rehearsal-preflight.json'),evidence);
-  const record=episode=>writeFileSync(join(directory,'managed-rehearsal-evidence.json'),JSON.stringify({...evidence,episode}),{mode:0o600});
+  const record=episode=>{
+    const latest=git('ls-remote','origin',candidateRef).split(/\s+/);
+    if(latest.length!==2||latest[0]!==revision||latest[1]!==candidateRef||git('rev-parse','HEAD')!==revision||
+       git('rev-parse','HEAD^{tree}')!==candidateTree||git('status','--porcelain','--untracked-files=all')!=='' ||
+       sha(join(harness,'loader.mjs'))!==evidence.loaderSha256||sha(join(harness,'register.mjs'))!==evidence.registerSha256||
+       sha(join(harness,'sitecustomize.py'))!==evidence.hookSha256||sha(join(harness,'docker'))!==evidence.proxySha256)
+      throw new Error('Owned candidate source changed during rehearsal');
+    atomicJson(join(directory,'managed-rehearsal-evidence.json'),{...evidence,episode});
+  };
   const commonEnv = { ...environment, PATH:`${harness}:${process.env.PATH}`, NODE_OPTIONS:`--import=${join(harness,'register.mjs')}`,
     W08_REAL_DOCKER:environment.W08_REAL_DOCKER, W08_POLICY:policyPath, W08_OWNER_PATH:join(root,'scripts/tempo-managed-isolation.mjs'),
     W08_EXPECTED_OWNER_SHA:sha(join(root,'scripts/tempo-managed-isolation.mjs')), W08_HOOK_DIR:harness,
+    W08_SELECTOR_PATH:selectorPath,W08_EXPECTED_SELECTOR_SHA:sha(selectorPath),W08_CANDIDATE_REF:candidateRef,
     TEMPO_CLI_STATE_DIR:stateRoot };
+  const secrets=['admin_password','reader_password','writer_password','admin_pgpass','reader_pgpass','writer_pgpass']
+    .map(name=>readFileSync(join(environment.TEMPO_PG_TEST_SECRETS,name),'utf8').trim());
+  let invocation=0;
   const cli = (fault, ...args) => {
     const result = spawnSync(process.execPath,['scripts/tempo-cli.mjs',...args,'--config',registration],
       {cwd:root,env:{...commonEnv,W08_FAULT:fault},encoding:'utf8',timeout:600000,maxBuffer:20*1024*1024});
     if (result.error) throw result.error;
+    atomicJson(join(directory,`managed-cli-${String(++invocation).padStart(2,'0')}.json`),{
+      fault,status:result.status,signal:result.signal,stdout:redact(result.stdout??'',secrets),stderr:redact(result.stderr??'',secrets)});
     return result;
   };
   const fired = fault => {
@@ -91,6 +130,7 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
   const closed = spawnSync(process.execPath,['scripts/tempo-cli.mjs','start','--no-ci','--no-open','--defense-selection',selectionPath,'--config',registration],
     {cwd:root,env:{...commonEnv,NODE_OPTIONS:'',W08_FAULT:''},encoding:'utf8',timeout:30000});
   assert.notEqual(closed.status,0);assert.match(closed.stderr,/Nonempty Defense cleanup is unavailable/);
+  atomicJson(join(directory,'managed-shipping-js-gate.json'),{revision,closed:true,status:closed.status});
   const readGuard = () => JSON.parse(readFileSync(join(stateDirectory,'migration-guard.json')));
   const assertFailed = result => assert.notEqual(result.status,0,'owned fault must interrupt real CLI');
   const isolatedSchema = async () => {
@@ -190,6 +230,8 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
   let coldTopology=JSON.parse((await docker(['inspect',dbId])).stdout)[0];
   assert.equal(coldTopology.State.Running,false);assert.equal(Object.keys(coldTopology.NetworkSettings.Networks).length,0);
   await substitute(async()=>{ assertFailed(cli('','start','--retry','--no-ci','--no-open')); assert.equal(await isolatedSchema(),61); });
+  assert.deepEqual(JSON.parse(readFileSync(join(policyDir,'shipping-python-gate.json'),'utf8')),
+    {image:images.migration,revision,owner_sha256:policy.owner_sha256,closed:true});
   const afterCommit=cli('after-commit','start','--retry','--no-ci','--no-open'); assertFailed(afterCommit);fired('after-commit');
   const pending=readGuard(); assert.equal(pending.attempt_id,original.attempt_id); assert.deepEqual(pending.backup,original.backup);
   assert.equal(pending.isolation.phase,'detached');
