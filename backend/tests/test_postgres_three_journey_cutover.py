@@ -446,3 +446,12 @@ def test_pre62_native_original_59_survives_interrupted_60_and_61(tmp_path):
         db.execute("INSERT INTO legacy_content_historical_origins(legacy_target_id,legacy_workspace_id,export_id,receipt_id,payload,receipt_digest) VALUES ('t','w','e','r','synthetic','digest')")
     with pytest.raises(RuntimeError,match='not empty'):
         verify()
+
+
+def test_cut62_witness_id_binds_retired_evidence_and_secret():
+    original = {'version': guard.CUT62_EVIDENCE_VERSION, 'rows': {'retired': {'digest': 'one'}}}
+    changed = {'version': guard.CUT62_EVIDENCE_VERSION, 'rows': {'retired': {'digest': 'two'}}}
+    identifier = guard.cut62_witness_id(original, b'x' * 32)
+    assert identifier == guard.cut62_witness_id(dict(original), b'x' * 32)
+    assert identifier != guard.cut62_witness_id(changed, b'x' * 32)
+    assert identifier != guard.cut62_witness_id(original, b'y' * 32)

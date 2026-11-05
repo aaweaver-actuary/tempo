@@ -398,13 +398,18 @@ def capture_cut62(database, secret):
 
 
 
+def cut62_witness_id(witness, secret):
+    canonical = json.dumps(witness, sort_keys=True, separators=(',', ':'))
+    return _cut62_mac(secret, 'cut62:witness-id', [canonical])['digest']
+
+
 def check_captured_cut62(database, witness, secret):
     """Verify an existing original against unchanged schema 61; never rewrite it."""
     if (witness.get('version'), witness.get('from'), witness.get('to')) != (CUT62_EVIDENCE_VERSION, 61, 62):
         raise RuntimeError('unsupported cut62 witness')
     if capture_cut62(database, secret) != witness:
         raise RuntimeError('cut62 source changed since original capture')
-    return {'version': CUT62_EVIDENCE_VERSION, 'from': 61, 'to': 62, 'unchanged': True}
+    return {'version': CUT62_EVIDENCE_VERSION, 'from': 61, 'to': 62, 'unchanged': True, 'witness_id': cut62_witness_id(witness, secret)}
 
 def verify_cut62(database, witness, secret):
     """Compare against the original witness; never capture a replacement after mutation."""
@@ -437,7 +442,8 @@ def verify_cut62(database, witness, secret):
             raise RuntimeError('cut62 retained rows changed in ' + name)
     return {'version': CUT62_EVIDENCE_VERSION, 'from': 61, 'to': 62,
             'retired': {name: witness['rows'][name] for name in sorted(CUT62_RETIRED_TABLES)},
-            'retired_sequences': witness['sequences']['retired']}
+            'retired_sequences': witness['sequences']['retired'],
+            'witness_id': cut62_witness_id(witness, secret)}
 
 
 def save_cut62_witness(path, database):
@@ -457,6 +463,7 @@ def save_cut62_witness(path, database):
         # An incomplete file must never be treated as a valid original witness.
         os.unlink(path)
         raise
+    return cut62_witness_id(witness, secret)
 
 
 def load_cut62_witness(path):
@@ -774,8 +781,8 @@ def main():
         with psycopg.connect(os.environ['TEMPO_POSTGRES_ADMIN_URL'],
                              options='-c default_transaction_read_only=on') as database:
             if args.cut62_capture:
-                save_cut62_witness(args.cut62_capture, database)
-                print(json.dumps({'version': CUT62_EVIDENCE_VERSION, 'from': 61, 'to': 62, 'captured': True}))
+                witness_id = save_cut62_witness(args.cut62_capture, database)
+                print(json.dumps({'version': CUT62_EVIDENCE_VERSION, 'from': 61, 'to': 62, 'captured': True, 'witness_id': witness_id}))
             elif args.cut62_check_captured:
                 witness, secret = load_cut62_witness(args.cut62_check_captured)
                 print(json.dumps(check_captured_cut62(database, witness, secret)))
