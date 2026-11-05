@@ -141,3 +141,25 @@ def test_native_missing_graph_parks_accepted_intent_without_changing_identity(ow
         assert tuple(intent) == (intent_id, 'preparing', 'graph_prerequisite_missing')
         assert database.execute_native('SELECT count(*) FROM repertoire_lines WHERE id=%s',
                                        ('line-' + token,)).fetchone()[0] == 0
+
+
+def test_native_graph_owner_contention_is_nonblocking_and_distinct_from_missing(owned_database):
+    from time import monotonic
+    from tempo_legacy_database.adapters.authored_repertoires.discovery_admission import storage
+
+    token = uuid.uuid4().hex
+    repertoire, task_id = 'graph-rep-' + token, 'graph-task-' + token
+    now = datetime.now(timezone.utc).isoformat()
+    with postgres_store.connection(read_only=False) as database:
+        database.execute_native(
+            "INSERT INTO background_tasks(id,kind,deduplication_key,generation,state,payload_json,"
+            "next_attempt_at,created_at,updated_at) VALUES(%s,'opening_graph_rebuild',%s,1,'queued',%s,%s,%s,%s)",
+            (task_id, repertoire, json.dumps({'repertoire_id': repertoire}), now, now, now))
+    with psycopg.connect(os.environ['TEMPO_DISCOVERY_ACCEPTANCE_ADMIN']) as holder:
+        holder.execute('SELECT id FROM background_tasks WHERE id=%s FOR UPDATE', (task_id,))
+        started = monotonic()
+        with postgres_store.connection(read_only=False) as contender:
+            assert storage.try_materialization_fence(contender, repertoire) == 'graph_authority_busy'
+        assert monotonic() - started < 2.0
+    with postgres_store.connection(read_only=False) as database:
+        assert storage.try_materialization_fence(database, 'absent-' + token) == 'graph_prerequisite_missing'
