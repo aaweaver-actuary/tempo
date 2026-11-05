@@ -12,7 +12,7 @@ import { schemaVersionFromSource, validateTarget, validateContainers, deployment
   CommandExecutionError, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, sourceFingerprint, sourceMatchesFingerprint } from "../../scripts/tempo-deployment.mjs";
 import { assessMigrationRecovery, cut62WitnessName, privateSelection, inspectDisposableIsolation, inspectRegisteredIsolation, classifyManagedIsolationRecovery, classifyDisposableIsolationRecovery, persistDisposableIsolationIntent, advanceDisposableIsolationMarker, syncDisposableIsolationEvidence, validateCut62Preflight, assertColdPreflightContainers, cut62MountDirectory, requirePrivateCut62Witness, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
 import { parseArguments, ensureDocker } from "../../scripts/tempo-cli.mjs";
-import { captureManagedTargetLock, assertManagedTargetLock, inspectManagedOriginalEvidence, inspectManagedHistorySelectionBinding, inspectManagedFence, assertManagedPinnedBackend, managedPinnedChallenge, assertManagedPinnedChallenge, prepareManagedDetachedTarget, restoreManagedCompletedTarget, privateDefenseHistorySelection } from "../../scripts/tempo-managed-isolation.mjs";
+import { captureManagedTargetLock, assertManagedTargetLock, persistManagedHistoryWitnessIdentity, managedHistoryRetryCheck, inspectManagedOriginalEvidence, inspectManagedHistorySelectionBinding, inspectManagedFence, assertManagedPinnedBackend, managedPinnedChallenge, assertManagedPinnedChallenge, prepareManagedDetachedTarget, restoreManagedCompletedTarget, privateDefenseHistorySelection } from "../../scripts/tempo-managed-isolation.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
 
@@ -2671,6 +2671,27 @@ test("managed isolation retains the exact original target lock token", t => {
   writeFileSync(path, JSON.stringify(changed), { mode: 0o600 });
   assert.throws(() => assertManagedTargetLock(root, original), /lock changed/);
   writeFileSync(path, originalBytes, { mode: 0o600 });
+});
+
+test("managed history records one witness identity and dispatches retry by schema", t => {
+  const root = directory(t); fs.chmodSync(root, 0o700);
+  atomicJson(join(root, 'maintenance.lock'), { pid: process.pid, token: '12345678-1234-1234-1234-123456789abc' });
+  const lock = captureManagedTargetLock(root), attempt = '12345678-1234-1234-1234-123456789abc';
+  const backup = { filename: 'tempo-original.dump', verified: true }, id = 'c'.repeat(64);
+  const guard = { state: 'pending', target: 'target', attempt_id: attempt, starting_schema: 61, intended_schema: 62,
+    cut62_witness: `cut62-${attempt}.json`, cut62_capture_started: true, backup,
+    defense_binding: { version: 1, target: 'target', attempt_id: attempt, backup_filename: backup.filename,
+      backup_sha256: 'a'.repeat(64), selection_sha256: 'b'.repeat(64) } };
+  atomicJson(join(root, 'migration-guard.json'), guard);
+  assert.throws(() => persistManagedHistoryWitnessIdentity({ stateDirectory: root, lock, guard, witnessId: id }), /missing/);
+  const recorded = persistManagedHistoryWitnessIdentity({ stateDirectory: root, lock, guard, witnessId: id, newCapture: true });
+  assert.deepEqual(JSON.parse(readFileSync(join(root, 'migration-guard.json'))), recorded);
+  assert.deepEqual(persistManagedHistoryWitnessIdentity({ stateDirectory: root, lock, guard: recorded, witnessId: id }), recorded);
+  assert.throws(() => persistManagedHistoryWitnessIdentity({ stateDirectory: root, lock, guard: recorded, witnessId: 'd'.repeat(64) }), /differs/);
+  assert.equal(managedHistoryRetryCheck({ guard: recorded, schema: 61, witnessId: id }), 'check-source');
+  assert.equal(managedHistoryRetryCheck({ guard: recorded, schema: 62, witnessId: id }), 'check-projection');
+  assert.throws(() => managedHistoryRetryCheck({ guard: recorded, schema: 60, witnessId: id }), /differs/);
+  assert.throws(() => managedHistoryRetryCheck({ guard: recorded, schema: 62, witnessId: 'd'.repeat(64) }), /differs/);
 });
 
 test("managed isolation inspects only the original bound backup and witness paths", t => {

@@ -222,6 +222,49 @@ export function assertManagedTargetLock(stateDirectory, original) {
   if (!isDeepStrictEqual(current, original)) throw new Error('Managed isolation target lock changed; keep writers stopped.');
 }
 
+// Capture is performed by the packaged owner. Its returned ID is recorded
+// once against the existing attempt; retries may only resync and compare it.
+export function persistManagedHistoryWitnessIdentity({ stateDirectory, lock, guard, witnessId, newCapture = false }) {
+  assertManagedTargetLock(stateDirectory, lock);
+  const guardPath = join(stateDirectory, 'migration-guard.json');
+  requireCurrentIsolationGuard(guardPath, guard);
+  const binding = guard?.defense_binding;
+  if (guard?.state !== 'pending' || !guard.cut62_capture_started ||
+      guard.cut62_witness !== cut62WitnessName(guard) || !guard.backup?.verified ||
+      binding?.version !== 1 || binding.target !== guard.target || binding.attempt_id !== guard.attempt_id ||
+      binding.backup_filename !== guard.backup.filename || !/^[0-9a-f]{64}$/.test(binding.backup_sha256 ?? '') ||
+      !/^[0-9a-f]{64}$/.test(binding.selection_sha256 ?? '') || !/^[0-9a-f]{64}$/.test(witnessId ?? ''))
+    throw new Error('Original managed history witness binding is invalid; keep writers stopped.');
+  const expected = { witness_id: witnessId, attempt_id: guard.attempt_id, backup_filename: guard.backup.filename };
+  if (guard.cut62_identity && !isDeepStrictEqual(guard.cut62_identity, expected))
+    throw new Error('Original managed history witness identity differs; keep writers stopped.');
+  if (!guard.cut62_identity) {
+    if (newCapture !== true) throw new Error('Original managed history witness identity is missing; keep writers stopped.');
+    const next = structuredClone(guard);
+    next.cut62_identity = expected;
+    assertManagedTargetLock(stateDirectory, lock);
+    requireCurrentIsolationGuard(guardPath, guard);
+    atomicJson(guardPath, next);
+    guard = next;
+  }
+  syncManagedIsolationEvidence({ guardPath, guard });
+  assertManagedTargetLock(stateDirectory, lock);
+  return guard;
+}
+
+// The owner authenticates the persisted witness and supplies its stable ID;
+// schema 61 checks the original source and schema 62 checks the projection.
+export function managedHistoryRetryCheck({ guard, schema, witnessId }) {
+  const identity = guard?.cut62_identity;
+  if (guard?.state !== 'pending' || ![61, 62].includes(schema) ||
+      !/^[0-9a-f]{64}$/.test(witnessId ?? '') || identity?.witness_id !== witnessId ||
+      identity.attempt_id !== guard.attempt_id || identity.backup_filename !== guard.backup?.filename ||
+      guard.defense_binding?.attempt_id !== guard.attempt_id ||
+      guard.defense_binding?.backup_filename !== guard.backup?.filename)
+    throw new Error('Original managed history witness or schema differs; keep writers stopped.');
+  return schema === 61 ? 'check-source' : 'check-projection';
+}
+
 // Read only. The caller must hold the original target lock and explicitly
 // assume exclusive Docker/host-administrator control for the entire cut.
 export async function inspectManagedFence({ target, configuration, expectedImage, guard, stateDirectory, lock, docker, exclusiveAdministrator }) {
