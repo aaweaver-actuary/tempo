@@ -367,6 +367,68 @@ export async function inspectManagedCompletedTarget({ target, configuration, exp
   return topology;
 }
 
+// A stopped isolated target may only be started by its exact registered ID.
+// This path is gated pending review and does not claim daemon-restart safety.
+export async function startManagedStoppedDetachedTarget({ target, configuration, expectedImage, guard,
+  stateDirectory, lock, docker, exclusiveAdministrator, verifyOriginalBackup }) {
+  requireManagedIsolationGate();
+  if (exclusiveAdministrator !== true || guard?.state !== 'pending' ||
+      !['intent', 'detached', 'verified'].includes(guard.isolation?.phase) || typeof verifyOriginalBackup !== 'function')
+    throw new Error('Original stopped isolation state is invalid.');
+  assertManagedTargetLock(stateDirectory, lock);
+  validateTarget(configuration, target);
+  const guardPath = join(stateDirectory, 'migration-guard.json'), identity = guard.isolation.identity;
+  syncManagedIsolationEvidence({ guardPath, guard });
+  if (existsSync(join(stateDirectory, guard.cut62_witness.slice(0, -5), 'pinned-helper.json')))
+    throw new Error('Original managed helper must be reconciled before starting PostgreSQL.');
+  const backupSha = await verifyOriginalBackup(guard.backup);
+  inspectManagedOriginalEvidence({ target, stateDirectory, guard, verifiedBackupSha256: backupSha });
+  const inspect = async () => {
+    assertManagedTargetLock(stateDirectory, lock);
+    const daemonId = (await docker(['info', '--format', '{{.ID}}'])).stdout.trim();
+    const ids = (await docker(['ps', '-aq'])).stdout.trim().split(/\s+/).filter(Boolean);
+    if (!ids.length) throw new Error('Original stopped container inventory is unavailable.');
+    const containers = JSON.parse((await docker(['inspect', ...ids])).stdout);
+    if (!Array.isArray(containers) || containers.length !== ids.length || ids.some(id => !containers.some(item => item.Id?.startsWith(id))))
+      throw new Error('Original stopped container inventory is incomplete.');
+    validateContainers(containers, target);
+    const originals = containers.filter(item => item.Id === identity.containerId);
+    if (originals.length !== 1 || containers.some(item => item.State?.Running && item.Id !== identity.containerId &&
+        ((typeof item.HostConfig?.NetworkMode === 'string' && item.HostConfig.NetworkMode.startsWith('container:') &&
+          (identity.containerId.startsWith(item.HostConfig.NetworkMode.slice(10)) || item.HostConfig.NetworkMode.slice(10) === originals[0]?.Name?.replace(/^\//, ''))) ||
+         (item.Config?.Labels?.['com.docker.compose.project'] === target.project &&
+          !['postgres', 'redis'].includes(item.Config?.Labels?.['com.docker.compose.service'])))))
+      throw new Error('Original stopped target has an active helper or writer.');
+    const networks = JSON.parse((await docker(['network', 'inspect', identity.networkId])).stdout);
+    if (!Array.isArray(networks) || networks.length !== 1) throw new Error('Original stopped network is unavailable.');
+    const topology = inspectRegisteredIsolation({ target, daemonId, container: originals[0], network: networks[0],
+      expectedImage, trustedDaemon: exclusiveAdministrator, intent: identity, allowStopped: true });
+    if (topology.attached) throw new Error('Original stopped target is unexpectedly attached.');
+    return originals[0];
+  };
+  const original = await inspect();
+  if (original.State?.Running !== false || original.State?.Restarting !== false)
+    throw new Error('Original target is not stopped.');
+  if (!isDeepStrictEqual(JSON.parse(readOwnedPrivateBytes(guardPath)), guard) ||
+      await verifyOriginalBackup(guard.backup) !== backupSha)
+    throw new Error('Original managed evidence changed before start.');
+  assertManagedTargetLock(stateDirectory, lock);
+  const started = (await docker(['start', identity.containerId])).stdout.trim();
+  if (started.length < 12 || !identity.containerId.startsWith(started))
+    throw new Error('Original managed container start identity differs.');
+  const current = await inspect();
+  if (!current.State?.Running) throw new Error('Original managed target did not start.');
+  let observed;
+  for (let attempt = 0; attempt < 60; attempt++) {
+    try { observed = await inspectManagedFence({ target, configuration, expectedImage, guard, stateDirectory,
+      lock, docker, exclusiveAdministrator }); break; }
+    catch (error) { if (attempt === 59) throw error; await new Promise(resolve => setTimeout(resolve, 500)); }
+  }
+  if (observed.attached || observed.backendPids.length || observed.preparedTransactions || typeof observed.allowConnections !== 'boolean')
+    throw new Error('Original managed started target is not isolated and drained.');
+  return observed;
+}
+
 // The caller obtains this observation after re-closing admission. It must
 // independently authenticate the helper's ready challenge and hold the lock.
 export function assertManagedPinnedBackend({ guard, observation, backend }) {

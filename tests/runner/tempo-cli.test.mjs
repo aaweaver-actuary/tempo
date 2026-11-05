@@ -11,7 +11,7 @@ import { schemaVersionFromSource, validateTarget, validateContainers, deployment
   CommandExecutionError, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, sourceFingerprint, sourceMatchesFingerprint } from "../../scripts/tempo-deployment.mjs";
 import { assessMigrationRecovery, cut62WitnessName, validateCut62Preflight, assertColdPreflightContainers, cut62MountDirectory, requirePrivateCut62Witness, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
 import { parseArguments, ensureDocker } from "../../scripts/tempo-cli.mjs";
-import { runManagedPinnedChild } from "../../scripts/tempo-managed-isolation.mjs";
+import { inspectRegisteredIsolation, runManagedPinnedChild } from "../../scripts/tempo-managed-isolation.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
 
@@ -1170,6 +1170,27 @@ test("managed pinned child is blocked before any host action", async () => {
   await assert.rejects(runManagedPinnedChild({ docker: async () => { actions++; },
     verifyOriginalBackup: async () => { actions++; } }), /unavailable/);
   assert.equal(actions, 0);
+});
+
+test("stopped isolated topology retains exact identity and rejects exposure", t => {
+  const { target } = fixture(t); target.version = 1; target.daemonId = 'daemon';
+  const network = { Id: 'a'.repeat(64), Name: `${target.project}_default`, Driver: 'bridge', Scope: 'local',
+    Labels: { 'com.docker.compose.project': target.project }, Containers: { ['b'.repeat(64)]: { EndpointID: 'd'.repeat(64) } } };
+  const container = { Id: 'b'.repeat(64), Image: `sha256:${'c'.repeat(64)}`, State: { Running: true, Restarting: false },
+    Config: { Labels: { 'com.docker.compose.project': target.project, 'com.docker.compose.service': 'postgres' } },
+    HostConfig: { NetworkMode: network.Name, PublishAllPorts: false, PortBindings: {} },
+    NetworkSettings: { Ports: {}, Networks: { [network.Name]: { NetworkID: network.Id, EndpointID: 'd'.repeat(64), Aliases: ['postgres'] } } },
+    Mounts: [{ Type: 'volume', Destination: '/var/lib/postgresql', Name: target.volumes[target.postgresVolumeKey].name, Source: '/owned/data', RW: true }] };
+  const input = { target, daemonId: target.daemonId, container, network, expectedImage: container.Image, trustedDaemon: true };
+  const identity = inspectRegisteredIsolation(input).original;
+  const stopped = structuredClone(input); stopped.container.State.Running = false;
+  stopped.container.NetworkSettings.Networks = {}; stopped.network.Containers = {};
+  assert.equal(inspectRegisteredIsolation({ ...stopped, intent: identity, allowStopped: true }).attached, false);
+  for (const change of [
+    x => { x.container.Id = 'e'.repeat(64); }, x => { x.container.HostConfig.PortBindings = { '5432/tcp': [{ HostPort: '5432' }] }; },
+    x => { x.container.NetworkSettings.Networks.extra = {}; }, x => { x.daemonId = 'other'; },
+    x => { x.container.Image = `sha256:${'f'.repeat(64)}`; }, x => { x.network.Containers[container.Id] = {}; },
+  ]) { const altered = structuredClone(stopped); change(altered); assert.throws(() => inspectRegisteredIsolation({ ...altered, intent: identity, allowStopped: true }), /unsafe/); }
 });
 
 test("direct managed migration and preflight hold before side effects", async t => {

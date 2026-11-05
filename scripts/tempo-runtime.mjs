@@ -12,7 +12,7 @@ import { TempoProblem, classifyRedisReply, phaseGuidance } from "./tempo-guidanc
 import { isTimingPublicationFailure } from "./test-scenario-timings.mjs";
 import { probeLifecycleRedis } from "../database/tooling/cli/probes.mjs";
 import { createBackupRestoreDatabase, createPostgresBackup, removeBackupRestoreDatabase, restorePostgresBackup } from "../database/tooling/cli/backup.mjs";
-import { assertManagedTargetLock, captureManagedTargetLock, inspectManagedCompletedTarget, inspectManagedFence, persistManagedHistoryWitnessIdentity, privateDefenseHistorySelection,
+import { assertManagedTargetLock, captureManagedTargetLock, inspectManagedCompletedTarget, inspectManagedFence, persistManagedHistoryWitnessIdentity, privateDefenseHistorySelection, startManagedStoppedDetachedTarget,
   prepareManagedDetachedTarget, runManagedPinnedChild, restoreManagedCompletedTarget, requireManagedIsolationGate } from './tempo-managed-isolation.mjs';
 
 export const applicationServices = ["web", "api",
@@ -702,8 +702,10 @@ print(json.dumps({**result,'database':row}))`;
   async function resumeManagedIsolation() {
     if (!managedIsolationRetry && !managedCompletionPending) return false;
     const lock = captureManagedTargetLock(stateDirectory);
-    if (managedIsolationRetry && !(await runningServices()).includes('postgres'))
-      throw new Error('Original isolated PostgreSQL is stopped; preserve its guard and topology for controlled recovery.');
+    if (managedIsolationRetry && !(await runningServices()).includes('postgres')) {
+      await startManagedStoppedDetachedTarget({ target, configuration, expectedImage: images.postgres, guard: migrationGuard,
+        stateDirectory, lock, docker, exclusiveAdministrator: true, verifyOriginalBackup: verifiedBackupDigest });
+    }
     if (managedCompletionPending && !(await runningServices()).includes('postgres')) {
       const before = await inspectContainerInventory();
       validateContainers(before, target);
