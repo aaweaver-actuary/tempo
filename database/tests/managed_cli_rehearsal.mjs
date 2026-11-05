@@ -297,8 +297,20 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
   topology=JSON.parse((await docker(['inspect',dbId])).stdout)[0];assert.equal(Object.keys(topology.NetworkSettings.Networks).length,1);
   assertFailed(cli('before-app-start','start','--retry','--no-ci','--no-open'));fired('before-app-start');
   assert.equal(readGuard().state,'verified');
+  const publicationFailure=cli('after-deployment-rename','start','--no-ci','--no-open');
+  assertFailed(publicationFailure);fired('after-deployment-rename');
+  const published=readFileSync(join(stateDirectory,'deployment.json'));
+  const publishedRecord=JSON.parse(published),unsettled=readGuard();
+  assert.equal(publishedRecord.revision,revision);assert.equal(publishedRecord.schema,62);
+  assert.equal(publishedRecord.images.migration,preparedBinding.image);assert.deepEqual(publishedRecord.backup,original.backup);
+  assert.equal(unsettled.state,'verified');assert.equal(unsettled.isolation.phase,'reattached');assert(!unsettled.managed_image_settlement);
+  assert.equal(unsettled.cut62_identity.witness_id,captured.cut62_identity.witness_id);
+  assert.equal(await admission(),'t');assert.equal(Object.keys(JSON.parse((await docker(['inspect',dbId])).stdout)[0].NetworkSettings.Networks).length,1);
+  assert.equal(Number((await readLatestMigration(compose)).stdout.trim()),62);assert(existsSync(receipt));assert(existsSync(completionPath));
   const completed=cli('','start','--no-ci','--no-open'); assert.equal(completed.status,0,completed.stderr);
+  assert(!completed.stdout.includes('Tempo: preparing images'),'settlement recovery must reuse the original prepared images');
   const final=readGuard(); assert.equal(final.state,'verified'); assert.equal(final.attempt_id,original.attempt_id); assert.deepEqual(final.backup,original.backup);
+  assert.equal(final.managed_image_settlement?.payload?.deployment_sha256,createHash('sha256').update(published).digest('hex'));
   assert.deepEqual(final.defense_binding,original.defense_binding);assert.equal(final.cut62_identity.witness_id,captured.cut62_identity.witness_id);
   assert.equal(statSync(preWitness).ino,preInode);assert.deepEqual(readFileSync(preWitness),preBytes);
   assert.equal(statSync(selectionCopy).ino,selectionInode);assert.deepEqual(readFileSync(selectionCopy),selectionBytes);assert.deepEqual(readFileSync(bindingPath),bindingBytes);
@@ -369,5 +381,31 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
   assert(playable&&new Chess(playable.start_fen).move(playable.moves[0]));
   assert.equal(statSync(completion).ino,completionInode);assert.deepEqual(readFileSync(completion),completionBytes);
   record('full-managed-lifecycle');
+  const nextRef=environment.W08_NEXT_CANDIDATE_REF;
+  if (!/^refs\/heads\/codex\/[a-z0-9][a-z0-9/-]*$/.test(nextRef??'') || nextRef===candidateRef)
+    throw new Error('Owned later candidate ref is required');
+  const nextRemote=git('ls-remote','origin',nextRef).split(/\s+/);
+  if(nextRemote.length!==2||!/^[0-9a-f]{40}$/.test(nextRemote[0])||nextRemote[0]===revision||nextRemote[1]!==nextRef)
+    throw new Error('Owned later candidate ref differs');
+  git('fetch','origin',nextRef);
+  if(git('rev-parse','FETCH_HEAD')!==nextRemote[0]||git('rev-parse','FETCH_HEAD^{tree}')!==candidateTree)
+    throw new Error('Owned later candidate must be an exact-tree descendant');
+  git('merge-base','--is-ancestor',revision,nextRemote[0]);
+  const settledGuardBytes=readFileSync(join(stateDirectory,'migration-guard.json'));
+  commonEnv.W08_CANDIDATE_REF=nextRef;
+  const nextStart=cli('','start','--no-ci','--no-open');assert.equal(nextStart.status,0,nextStart.stderr);
+  assert(nextStart.stdout.includes('Tempo: preparing images'),'later revision must perform a real candidate build');
+  assert.equal(git('rev-parse','HEAD'),nextRemote[0]);assert.equal(git('rev-parse','HEAD^{tree}'),candidateTree);
+  const nextDeployment=JSON.parse(readFileSync(join(stateDirectory,'deployment.json')));
+  assert.equal(nextDeployment.revision,nextRemote[0]);assert.equal(nextDeployment.evidence.commit,nextRemote[0]);
+  assert.equal(nextDeployment.schema,62);assert.deepEqual(readFileSync(join(stateDirectory,'migration-guard.json')),settledGuardBytes);
+  const nextMigration=JSON.parse((await docker(['image','inspect',nextDeployment.images.migration])).stdout)[0];
+  assert.equal(nextMigration.Id,nextDeployment.images.migration);assert.equal(nextMigration.Config?.Labels?.['org.opencontainers.image.revision'],nextRemote[0]);
+  assert.deepEqual(await request('operations/w08-managed-review'),reviewReceipt);
+  const nextPlayable=(await request('queue/today')).cards.find(item=>item.moves?.length&&item.start_fen);
+  assert(nextPlayable&&new Chess(nextPlayable.start_fen).move(nextPlayable.moves[0]));
+  atomicJson(join(directory,'managed-later-candidate.json'),{initialRevision:revision,nextRevision:nextRemote[0],nextRef,
+    tree:candidateTree,migrationImage:nextDeployment.images.migration,guardSha256:createHash('sha256').update(settledGuardBytes).digest('hex'),
+    ci:'disabled'});
   return { cli, final, original, completion, completionBytes, completionInode, witness, witnessBytes, witnessInode };
 }
