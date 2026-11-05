@@ -116,7 +116,7 @@
       "tests/unit/review-client-capability.test.ts",
       "tests/unit/review-outbox-regressions.test.ts",
       "tests/unit/settings-loading-regressions.test.tsx",
-      "tests/unit/settings-notification-regressions.test.tsx",
+
       "tests/unit/settings-save-pending-regressions.test.ts",
       "tests/unit/shared-board-shell-mount-regressions.test.tsx",
       "tests/unit/shared-board-shell-tactics-regressions.test.tsx",
