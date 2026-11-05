@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { schemaVersionFromSource, validateTarget, validateContainers, deploymentCanStart,
   acquireTargetLock, assessMainVerification, assessCandidate, qualityEvidence, atomicJson, selectCandidate, productVolumes, targetKey,
   CommandExecutionError, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, sourceFingerprint, sourceMatchesFingerprint } from "../../scripts/tempo-deployment.mjs";
-import { assessMigrationRecovery, cut62WitnessName, privateSelection, inspectDisposableIsolation, validateCut62Preflight, assertColdPreflightContainers, cut62MountDirectory, requirePrivateCut62Witness, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
+import { assessMigrationRecovery, cut62WitnessName, privateSelection, inspectDisposableIsolation, classifyDisposableIsolationRecovery, validateCut62Preflight, assertColdPreflightContainers, cut62MountDirectory, requirePrivateCut62Witness, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
 import { parseArguments, ensureDocker } from "../../scripts/tempo-cli.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
@@ -2588,18 +2588,21 @@ test("disposable isolation inspection rejects changed identities, exposed ports 
   const target = { disposable: true, project: "tempo-pg-regressions-example", daemonId: "daemon", postgresVolumeKey: "postgres-test-data",
     volumes: { "postgres-test-data": { name: "tempo-pg-regressions-example_postgres-test-data" } } };
   const network = { Id: "a".repeat(64), Name: "tempo-pg-regressions-example_default", Driver: "bridge", Scope: "local",
-    Labels: { "com.docker.compose.project": target.project } };
+    Labels: { "com.docker.compose.project": target.project }, Containers: { ["b".repeat(64)]: { EndpointID: "d".repeat(64) } } };
   const container = { Id: "b".repeat(64), Image: `sha256:${"c".repeat(64)}`, State: { Running: true },
     Config: { Labels: { "com.docker.compose.project": target.project, "com.docker.compose.service": "postgres" } },
     HostConfig: { NetworkMode: network.Name, PublishAllPorts: false, PortBindings: {} },
-    NetworkSettings: { Ports: {}, Networks: { [network.Name]: { NetworkID: network.Id, Aliases: ["postgres", "db"], IPAMConfig: null } } },
-    Mounts: [{ Type: "volume", Destination: "/var/lib/postgresql", Name: target.volumes[target.postgresVolumeKey].name }] };
+    NetworkSettings: { Ports: {}, Networks: { [network.Name]: { NetworkID: network.Id, EndpointID: "d".repeat(64), Aliases: ["postgres", "db"], IPAMConfig: null } } },
+    Mounts: [{ Type: "volume", Destination: "/var/lib/postgresql", Name: target.volumes[target.postgresVolumeKey].name, Source: "/owned/volume", RW: true }] };
   const input = { target, daemonId: target.daemonId, container, network, expectedImage: container.Image, trustedDaemon: true };
   const original = inspectDisposableIsolation(input).original;
-  const detached = structuredClone(input); detached.container.NetworkSettings.Networks = {};
+  const detached = structuredClone(input); detached.container.NetworkSettings.Networks = {}; detached.network.Containers = {};
   assert.throws(() => inspectDisposableIsolation(detached), /unsafe/);
   assert.equal(inspectDisposableIsolation({ ...detached, intent: original }).attached, false);
   assert.throws(() => inspectDisposableIsolation({ ...detached, intent: { ...original, networkName: "other" } }), /unsafe/);
+  assert.throws(() => inspectDisposableIsolation({ ...detached, intent: { ...original, aliases: [...original.aliases].reverse() } }), /unsafe/);
+  const ambiguous = structuredClone(detached); ambiguous.network.Containers[container.Id] = { EndpointID: "d".repeat(64) };
+  assert.throws(() => inspectDisposableIsolation({ ...ambiguous, intent: original }), /unsafe/);
   for (const change of [
     x => { x.trustedDaemon = false; },
     x => { x.daemonId = "other"; },
@@ -2609,6 +2612,12 @@ test("disposable isolation inspection rejects changed identities, exposed ports 
     x => { delete x.container.HostConfig.PublishAllPorts; },
     x => { delete x.container.NetworkSettings.Ports; },
     x => { x.container.NetworkSettings.Networks.extra = {}; },
+    x => { x.network.Containers = {}; },
+    x => { x.container.NetworkSettings.Networks[network.Name].Aliases = ["db"]; },
+    x => { x.container.NetworkSettings.Ports = { "5432/tcp": "unknown" }; },
+    x => { delete x.container.HostConfig.NetworkMode; },
+    x => { x.container.Mounts[0].RW = false; },
+    x => { x.container.Mounts.push({ Destination: "/var/lib/postgresql/subdir" }); },
     x => { x.container.NetworkSettings.Networks[network.Name].Aliases = ["other"]; },
     x => { x.container.NetworkSettings.Networks[network.Name].IPAMConfig = { IPv4Address: "172.18.0.2" }; },
     x => { x.network.Id = "e".repeat(64); },
@@ -2619,6 +2628,39 @@ test("disposable isolation inspection rejects changed identities, exposed ports 
   }
   const production = structuredClone(input); production.target.disposable = false;
   assert.throws(() => inspectDisposableIsolation(production), /unsafe/);
+});
+
+test("disposable recovery classifies physical crash states and refuses an unbound receipt", () => {
+  const identity = { target: "target", trustedDaemon: true };
+  const attempt = "12345678-1234-1234-1234-123456789abc";
+  const preWitness = `pre62-${attempt}.json`;
+  const binding = { target: "target", attempt_id: attempt, backup_filename: "backup", backup_sha256: "a".repeat(64), selection_sha256: "b".repeat(64) };
+  const guard = { version: 1, state: "pending", target: "target", attempt_id: attempt, starting_schema: 59, intended_schema: 62,
+    cut62_witness: `cut62-${attempt}.json`,
+    backup: { verified: true, filename: "backup" }, defense_binding: binding, pre62_witness: preWitness, pre62_witness_id: "c".repeat(64),
+    cut62_identity: { attempt_id: attempt, backup_filename: "backup", witness_id: "d".repeat(64) },
+    cut62_intermediate_verified: { schema: 61, attempt_id: attempt, backup_filename: "backup", pre62_witness: preWitness, pre62_witness_id: "c".repeat(64) },
+    isolation: { phase: "intent", identity, target_oid: 123, original_allow_connections: true } };
+  const input = { guard, identity, attached: true, targetOid: 123, allowConnections: true, otherBackends: 0, preparedTransactions: 0 };
+  assert.equal(classifyDisposableIsolationRecovery(input), "detach");
+  const detached = { ...input, attached: false };
+  assert.equal(classifyDisposableIsolationRecovery(detached), "pin-and-reclose");
+  assert.equal(classifyDisposableIsolationRecovery({ ...detached, allowConnections: false }), "reopen-isolated-and-pin");
+  assert.equal(classifyDisposableIsolationRecovery({ ...detached, allowConnections: false, pinnedPid: 42, schema: 61 }), "verify-and-migrate");
+  assert.equal(classifyDisposableIsolationRecovery({ ...detached, allowConnections: false, pinnedPid: 42, schema: 62 }), "verify-committed");
+  const receipt = { version: 1, target: "target", attempt_id: attempt, target_oid: 123, backup_filename: "backup", backup_sha256: "a".repeat(64),
+    selection_sha256: "b".repeat(64), pre62_witness_id: "c".repeat(64), cut62_witness_id: "d".repeat(64), schema: 62 };
+  assert.equal(classifyDisposableIsolationRecovery({ ...detached, allowConnections: false, receipt }), "restore-after-receipt");
+  assert.equal(classifyDisposableIsolationRecovery({ ...input, receipt }), "complete");
+  for (const change of [
+    x => { x.otherBackends = 1; }, x => { x.preparedTransactions = 1; }, x => { x.targetOid = 124; },
+    x => { x.pinnedPid = 42; }, x => { x.guard.isolation.phase = "detached"; },
+    x => { x.guard.cut62_intermediate_verified.pre62_witness_id = "e".repeat(64); },
+    x => { x.receipt = { ...receipt, selection_sha256: "f".repeat(64) }; },
+  ]) {
+    const altered = structuredClone(input); change(altered);
+    assert.throws(() => classifyDisposableIsolationRecovery(altered), /unsafe/);
+  }
 });
 
 test("Defense selection requires a private canonical target-bound file and retries reject replacements", t => {

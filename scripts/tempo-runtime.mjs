@@ -133,44 +133,113 @@ function syncDirectory(path) {
 // authorize detachment or enable nonempty migration by itself.
 export function inspectDisposableIsolation({ target, daemonId, container, network, expectedImage, trustedDaemon, intent = null }) {
   const fail = () => { throw new Error("Disposable database isolation identity is unsafe or changed."); };
-  const labels = container?.Config?.Labels ?? {};
-  const host = container?.HostConfig ?? {};
-  const ports = container?.NetworkSettings?.Ports ?? {};
-  const attached = container?.NetworkSettings?.Networks ?? {};
-  const entries = Object.entries(attached);
+  const labels = container?.Config?.Labels ?? {}, host = container?.HostConfig ?? {}, settings = container?.NetworkSettings;
+  const object = value => value !== null && typeof value === "object" && !Array.isArray(value);
   const id = value => typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
+  const emptyObject = value => value == null || (object(value) && Object.keys(value).length === 0);
+  const emptyArray = value => value == null || (Array.isArray(value) && value.length === 0);
+  const ports = settings?.Ports, attached = settings?.Networks;
   const projectNetwork = network?.Labels?.["com.docker.compose.project"];
+  const mounts = Array.isArray(container?.Mounts) ? container.Mounts : [];
+  const destination = "/var/lib/postgresql";
+  const overlap = path => path === destination || destination.startsWith(path + "/") || path.startsWith(destination + "/") || path === "/";
+  const storage = mounts.filter(m => typeof m.Destination === "string" && overlap(m.Destination));
   if (trustedDaemon !== true || !target?.disposable || !/^tempo-pg-regressions-[a-zA-Z0-9-]+$/.test(target.project ?? "") ||
       !target.daemonId || daemonId !== target.daemonId || labels["com.docker.compose.project"] !== target.project ||
-      labels["com.docker.compose.service"] !== "postgres" || !container?.State?.Running || !id(container.Id) ||
+      labels["com.docker.compose.service"] !== "postgres" || container?.State?.Running !== true || !id(container.Id) ||
       !/^sha256:[0-9a-f]{64}$/.test(expectedImage ?? "") || container.Image !== expectedImage ||
       typeof host.PublishAllPorts !== "boolean" || host.PublishAllPorts || !Object.hasOwn(host, "PortBindings") ||
-      !container.NetworkSettings || !Object.hasOwn(container.NetworkSettings, "Ports") || Object.keys(host.PortBindings ?? {}).length ||
-      Object.values(ports).some(value => Array.isArray(value) && value.length) ||
-      host.NetworkMode === "host" || String(host.NetworkMode ?? "").startsWith("container:") ||
-      !id(network?.Id) || network.Driver !== "bridge" || network.Scope !== "local" || projectNetwork !== target.project ||
+      !(host.PortBindings === null || object(host.PortBindings)) || Object.keys(host.PortBindings ?? {}).length ||
+      !settings || !Object.hasOwn(settings, "Ports") || !(ports === null || object(ports)) ||
+      Object.values(ports ?? {}).some(value => value !== null && (!Array.isArray(value) || value.length !== 0)) ||
+      !object(attached) || !id(network?.Id) || typeof network.Name !== "string" || !network.Name ||
+      host.NetworkMode !== network.Name || network.Driver !== "bridge" || network.Scope !== "local" ||
+      projectNetwork !== target.project || !object(network.Containers) ||
       !target.volumes?.[target.postgresVolumeKey]?.name ||
-      (container.Mounts ?? []).filter(m => m.Type === "volume" && m.Destination === "/var/lib/postgresql" &&
-        m.Name === target.volumes[target.postgresVolumeKey].name).length !== 1 || entries.length > 1) fail();
+      mounts.some(m => !object(m) || typeof m.Destination !== "string" || !m.Destination.startsWith("/") ||
+        m.Destination.includes("//") || m.Destination.split("/").includes("..")) || storage.length !== 1 ||
+      storage[0].Type !== "volume" || storage[0].Destination !== destination || storage[0].RW !== true ||
+      storage[0].Name !== target.volumes[target.postgresVolumeKey].name ||
+      typeof storage[0].Source !== "string" || !isAbsolute(storage[0].Source)) fail();
+  const entries = Object.entries(attached);
+  if (entries.length > 1) fail();
+  const identityKeys = ["aliases", "containerId", "daemonId", "imageId", "networkId", "networkName", "project", "target", "trustedDaemon", "volumeName", "volumeSource"].sort().join();
+  const canonicalIntent = value => object(value) && Object.keys(value).sort().join() === identityKeys &&
+    Array.isArray(value.aliases) && value.aliases.includes("postgres") && value.aliases.every(alias => typeof alias === "string" && alias) &&
+    new Set(value.aliases).size === value.aliases.length && isDeepStrictEqual(value.aliases, [...value.aliases].sort());
   let original;
   if (entries.length === 1) {
     const [name, endpoint] = entries[0];
-    const aliases = endpoint?.Aliases;
-    if (name !== network.Name || endpoint.NetworkID !== network.Id || !Array.isArray(aliases) || !aliases.length ||
+    const aliases = endpoint?.Aliases, reciprocal = network.Containers[container.Id];
+    if (name !== network.Name || endpoint.NetworkID !== network.Id || !id(endpoint.EndpointID) ||
+        reciprocal?.EndpointID !== endpoint.EndpointID || !Array.isArray(aliases) || !aliases.includes("postgres") ||
         aliases.some(alias => typeof alias !== "string" || !alias) || new Set(aliases).size !== aliases.length ||
-        Object.keys(endpoint.IPAMConfig ?? {}).length || Object.keys(endpoint.DriverOpts ?? {}).length ||
-        (endpoint.Links?.length ?? 0) || (endpoint.GwPriority ?? 0) !== 0) fail();
+        !emptyObject(endpoint.IPAMConfig) || !emptyObject(endpoint.DriverOpts) ||
+        !emptyArray(endpoint.Links) || (endpoint.GwPriority ?? 0) !== 0) fail();
     original = { target: targetKey(target), project: target.project, daemonId, trustedDaemon: true, containerId: container.Id,
-      imageId: expectedImage, networkName: name, networkId: network.Id, aliases: [...aliases].sort() };
-    if (intent && !isDeepStrictEqual(original, intent)) fail();
+      imageId: expectedImage, networkName: name, networkId: network.Id, aliases: [...aliases].sort(),
+      volumeName: storage[0].Name, volumeSource: storage[0].Source };
+    if (intent && (!canonicalIntent(intent) || !isDeepStrictEqual(original, intent))) fail();
   } else {
-    if (!intent || intent.trustedDaemon !== true || intent.target !== targetKey(target) || intent.project !== target.project || intent.daemonId !== daemonId ||
+    if (network.Containers[container.Id] || !canonicalIntent(intent) || intent.trustedDaemon !== true ||
+        intent.target !== targetKey(target) || intent.project !== target.project || intent.daemonId !== daemonId ||
         intent.containerId !== container.Id || intent.imageId !== expectedImage || intent.networkId !== network.Id ||
-        intent.networkName !== network.Name || !Array.isArray(intent.aliases) || !intent.aliases.length ||
-        intent.aliases.some(alias => typeof alias !== "string" || !alias) || new Set(intent.aliases).size !== intent.aliases.length) fail();
+        intent.networkName !== network.Name || intent.volumeName !== storage[0].Name || intent.volumeSource !== storage[0].Source) fail();
     original = intent;
   }
   return { attached: entries.length === 1, original };
+}
+
+// Classify physical state only after Docker identity has been checked. This
+// returns a next step; it does not mutate admission, network or database state.
+export function classifyDisposableIsolationRecovery({ guard, identity, attached, targetOid, allowConnections,
+  otherBackends, preparedTransactions, pinnedPid = null, schema = null, receipt = null }) {
+  const fail = () => { throw new Error("Disposable isolation recovery state is unsafe or ambiguous."); };
+  const isolation = guard?.isolation;
+  const binding = guard?.defense_binding;
+  const cut = guard?.cut62_identity;
+  const digest = value => typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
+  let expectedCutName;
+  try { expectedCutName = cut62WitnessName(guard); } catch { fail(); }
+  if (guard?.version !== 1 || guard.state !== "pending" || guard.cut62_witness !== expectedCutName || !isolation || !["intent", "detached", "verified", "reattached"].includes(isolation.phase) ||
+      !isDeepStrictEqual(isolation.identity, identity) || identity?.trustedDaemon !== true || guard.target !== identity?.target ||
+      ![59, 61].includes(guard.starting_schema) || guard.intended_schema !== 62 ||
+      !Number.isSafeInteger(targetOid) || targetOid <= 0 || isolation.target_oid !== targetOid ||
+      isolation.original_allow_connections !== true || typeof attached !== "boolean" || typeof allowConnections !== "boolean" ||
+      !Number.isSafeInteger(otherBackends) || otherBackends !== 0 ||
+      !Number.isSafeInteger(preparedTransactions) || preparedTransactions !== 0 ||
+      (pinnedPid !== null && (!Number.isSafeInteger(pinnedPid) || pinnedPid <= 0)) ||
+      (schema !== null && ![61, 62].includes(schema)) || !guard.backup?.verified ||
+      binding?.target !== guard.target || binding.attempt_id !== guard.attempt_id ||
+      binding.backup_filename !== guard.backup.filename || !digest(binding.backup_sha256) || !digest(binding.selection_sha256) ||
+      cut?.attempt_id !== guard.attempt_id || cut.backup_filename !== guard.backup.filename || !digest(cut.witness_id) ||
+      (guard.starting_schema === 59 && (guard.pre62_witness !== `pre62-${guard.attempt_id}.json` || !digest(guard.pre62_witness_id) ||
+        guard.cut62_intermediate_verified?.schema !== 61 ||
+        guard.cut62_intermediate_verified.attempt_id !== guard.attempt_id ||
+        guard.cut62_intermediate_verified.pre62_witness !== guard.pre62_witness ||
+        guard.cut62_intermediate_verified.pre62_witness_id !== guard.pre62_witness_id ||
+        guard.cut62_intermediate_verified.backup_filename !== guard.backup.filename))) fail();
+  const expectedReceipt = { version: 1, target: guard.target, attempt_id: guard.attempt_id, target_oid: targetOid,
+    backup_filename: binding.backup_filename, backup_sha256: binding.backup_sha256, selection_sha256: binding.selection_sha256,
+    pre62_witness_id: guard.starting_schema === 59 ? guard.pre62_witness_id : null, cut62_witness_id: cut.witness_id, schema: 62 };
+  if (receipt && !isDeepStrictEqual(receipt, expectedReceipt)) fail();
+  if (receipt) {
+    if (schema !== null && schema !== 62) fail();
+    if (attached && !allowConnections) return "reopen-after-receipt";
+    if (attached) return "complete";
+    return "restore-after-receipt";
+  }
+  if (isolation.phase === "verified" || isolation.phase === "reattached") fail();
+  if (attached) {
+    if (isolation.phase !== "intent" || !allowConnections || pinnedPid !== null || (schema !== null && schema !== 61)) fail();
+    return "detach";
+  }
+  if (pinnedPid !== null) {
+    if (allowConnections || schema === null) fail();
+    return schema === 61 ? "verify-and-migrate" : "verify-committed";
+  }
+  if (schema !== null) fail();
+  return allowConnections ? "pin-and-reclose" : "reopen-isolated-and-pin";
 }
 
 // Read-only classification shared by diagnostics and lock-time preflight.
