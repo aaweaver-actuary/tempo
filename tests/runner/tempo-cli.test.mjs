@@ -3170,6 +3170,63 @@ with tempfile.TemporaryDirectory() as tmp:
   assert.equal(result.status, 0, result.stdout + result.stderr);
 });
 
+test("disposable supervisor rejects lock turnover and replaced target identity", () => {
+  const proof = String.raw`
+import ast,json,os,pathlib,stat,tempfile
+source=pathlib.Path('database/tests/cli_isolation_supervisor.py').read_text()
+names={'_private_file','_check_lock','supervise'}
+nodes=[n for n in ast.parse(source).body if isinstance(n,ast.FunctionDef) and n.name in names]
+scope={'os':os,'json':json,'stat':stat,'Path':pathlib.Path}
+exec(compile(ast.Module(body=nodes,type_ignores=[]),'<supervisor>','exec'),scope)
+with tempfile.TemporaryDirectory(dir='/private/tmp') as root:
+ path=pathlib.Path(root)/'maintenance.lock'
+ path.write_text(json.dumps({'pid':os.getpid(),'token':'original'}));path.chmod(0o600)
+ scope['_check_lock'](root,os.getpid(),'original')
+ path.write_text(json.dumps({'pid':os.getpid(),'token':'replacement'}))
+ try:scope['_check_lock'](root,os.getpid(),'original')
+ except RuntimeError:pass
+ else:raise AssertionError('replacement lock accepted')
+guard={'state':'verified','origin_revision':'a'*40,'isolation':{'phase':'reattached','completion':{'sha256':'digest','filename':'verified-completion.json'},
+ 'target_oid':10,'target_name':'tempo','control_oid':20,'control_name':'postgres','system_identifier':'123','admin_role':'postgres'}}
+scope.update(authenticate_attempt=lambda **kw:guard,verify_candidate_provenance=lambda *a:None,
+ inspect_owned_topology=lambda *a,**kw:{'attached':True,'original':{}},
+ authenticate_existing_receipt=lambda *a:{'ok':True},authenticate_completion=lambda *a:'digest',
+ inspect_control_database=lambda *a:{'allowConnections':True,'backendPids':[],'preparedTransactions':0,
+  'targetOid':11,'targetName':'tempo','controlOid':20,'controlName':'postgres','systemIdentifier':'123','adminRole':'postgres'})
+config={'lock_pid':os.getppid(),'lock_token':'token','trusted_daemon':True,'target':{},'approved_revision':'a'*40,'maintenance_revision':'a'*40,
+ 'root':'/tmp/x','witness_path':'/tmp/x/witness'}
+try:scope['supervise'](config)
+except RuntimeError:pass
+else:raise AssertionError('replaced database accepted')
+`;
+  const result = fsSpawnSync("python3", ["-c", proof], { cwd: process.cwd(), encoding: "utf8" });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
+test("disposable supervisor binds its mounted fixture to the approved commit", () => {
+  const proof = String.raw`
+import ast,hashlib,hmac,os,pathlib,re,stat,subprocess,tempfile
+source=pathlib.Path('database/tests/cli_isolation_supervisor.py').read_text()
+node=next(n for n in ast.parse(source).body if isinstance(n,ast.FunctionDef) and n.name=='verify_candidate_provenance')
+with tempfile.TemporaryDirectory(dir='/private/tmp') as tmp:
+ root=pathlib.Path(tmp); tests=root/'database'/'tests';tests.mkdir(parents=True)
+ fixture=tests/'check_postgres_cli_lifecycle.py'; supervisor=tests/'cli_isolation_supervisor.py'
+ fixture.write_text('fixture original\n');supervisor.write_text('supervisor original\n')
+ def git(*args):return subprocess.run(['git','-C',str(root),*args],check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True).stdout.strip()
+ git('init','-q');git('add','database');git('-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','-qm','fixture')
+ revision=git('rev-parse','HEAD')
+ scope={'Path':pathlib.Path,'__file__':str(supervisor),'re':re,'subprocess':subprocess,'os':os,'stat':stat,'hmac':hmac,'hashlib':hashlib}
+ exec(compile(ast.Module(body=[node],type_ignores=[]),'<supervisor>','exec'),scope)
+ check=scope['verify_candidate_provenance'];check({'root':str(root)},revision)
+ fixture.write_text('fixture changed\n')
+ try:check({'root':str(root)},revision)
+ except RuntimeError:pass
+ else:raise AssertionError('changed mounted fixture accepted')
+`;
+  const result = fsSpawnSync("python3", ["-c", proof], { cwd: process.cwd(), encoding: "utf8" });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
 test("shipped migration CLI exposes no disposable isolation supervisor", () => {
   const proof = String.raw`
 import runpy,sys,types

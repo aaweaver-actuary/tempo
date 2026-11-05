@@ -43,7 +43,37 @@ def _private_file(path, root):
         return stream.read()
 
 
-def authenticate_attempt(*, root, guard_path, selection_path, binding_path, witness_path, pre62_path, lock_pid, allow_verified=False):
+def _check_lock(root, lock_pid, lock_token):
+    lock = json.loads(_private_file(Path(root) / 'maintenance.lock', root))
+    if (not isinstance(lock_pid, int) or lock_pid <= 0 or lock.get('pid') != lock_pid or
+            not isinstance(lock_token, str) or not lock_token or lock.get('token') != lock_token):
+        raise RuntimeError('Original lifecycle lock is not held by the supervisor parent')
+    os.kill(lock_pid, 0)
+
+
+def verify_candidate_provenance(target, revision):
+    """Require the bound test adapter and supervisor to match one commit."""
+    if not re.fullmatch(r'[0-9a-f]{40}', revision or ''):
+        raise RuntimeError('Disposable candidate revision is invalid')
+    checkout = Path(target['root'])
+    if checkout != Path(__file__).resolve().parents[2]:
+        raise RuntimeError('Disposable candidate checkout differs')
+    head = subprocess.run(['git', '-C', str(checkout), 'rev-parse', 'HEAD'],
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)
+    if head.returncode or head.stdout.strip() != revision:
+        raise RuntimeError('Disposable candidate revision differs')
+    for relative in ('database/tests/check_postgres_cli_lifecycle.py', 'database/tests/cli_isolation_supervisor.py'):
+        path = checkout / relative
+        info = os.lstat(path)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
+            raise RuntimeError('Disposable candidate fixture is not owned source')
+        source = subprocess.run(['git', '-C', str(checkout), 'show', revision + ':' + relative],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+        if source.returncode or not hmac.compare_digest(hashlib.sha256(source.stdout).digest(), hashlib.sha256(path.read_bytes()).digest()):
+            raise RuntimeError('Disposable candidate fixture differs from its approved commit')
+
+
+def authenticate_attempt(*, root, guard_path, selection_path, binding_path, witness_path, pre62_path, lock_pid, lock_token, allow_verified=False):
     """Authenticate original files before any disposable Docker mutation."""
     root = Path(root)
     if not root.is_absolute() or root != Path(os.path.normpath(root)):
@@ -54,10 +84,7 @@ def authenticate_attempt(*, root, guard_path, selection_path, binding_path, witn
         if (not stat.S_ISDIR(info.st_mode) or info.st_uid not in (0, os.geteuid()) or
                 (mode & 0o022 and not (info.st_uid == 0 and mode & stat.S_ISVTX))):
             raise RuntimeError('Disposable private root ancestor is untrusted')
-    lock = json.loads(_private_file(root / 'maintenance.lock', root))
-    if not isinstance(lock_pid, int) or lock_pid <= 0 or lock.get('pid') != lock_pid or not lock.get('token'):
-        raise RuntimeError('Original lifecycle lock is not held by the supervisor parent')
-    os.kill(lock_pid, 0)
+    _check_lock(root, lock_pid, lock_token)
     guard = json.loads(_private_file(guard_path, root))
     witness_name = guard.get('cut62_witness')
     if (Path(guard_path) != root / 'migration-guard.json' or
@@ -348,14 +375,14 @@ api.syncDisposableIsolationEvidence(sync);console.log(JSON.stringify(next));"""
 
 
 def prepare_detached_target(*, target, expected_image, root, guard_path, selection_path, binding_path,
-                            witness_path, pre62_path, lock_pid, trusted_daemon):
+                            witness_path, pre62_path, lock_pid, lock_token, trusted_daemon):
     """Validate originals, durably record intent, then detach the owned DB.
 
     Recovery after a detach-before-marker crash observes the real Docker state
     and records the same original intent. No application is started here.
     """
     arguments = dict(root=root, guard_path=guard_path, selection_path=selection_path,
-                     binding_path=binding_path, witness_path=witness_path, pre62_path=pre62_path, lock_pid=lock_pid)
+                     binding_path=binding_path, witness_path=witness_path, pre62_path=pre62_path, lock_pid=lock_pid, lock_token=lock_token)
     guard = authenticate_attempt(**arguments)
     topology = inspect_owned_topology(target, expected_image, guard, trusted_daemon=trusted_daemon)
     identity = topology['original']
@@ -368,6 +395,7 @@ def prepare_detached_target(*, target, expected_image, root, guard_path, selecti
     if not guard.get('isolation'):
         if not topology['attached'] or not control['allowConnections']:
             raise RuntimeError('Disposable original topology or admission is not normal')
+        _check_lock(root, lock_pid, lock_token)
         guard = persist_isolation_intent(target, guard_path, guard, identity, control)
     isolation = guard['isolation']
     if (isolation.get('phase') not in ('intent', 'detached') or isolation.get('identity') != identity or
@@ -388,6 +416,7 @@ def prepare_detached_target(*, target, expected_image, root, guard_path, selecti
             raise RuntimeError('Attached disposable database admission changed')
         if authenticate_attempt(**arguments) != guard:
             raise RuntimeError('Original disposable guard changed before detach')
+        _check_lock(root, lock_pid, lock_token)
         result = subprocess.run(['docker', '--context', target['context'], 'network', 'disconnect',
                                  identity['networkId'], identity['containerId']],
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)
@@ -397,17 +426,18 @@ def prepare_detached_target(*, target, expected_image, root, guard_path, selecti
     control = inspect_control_database(target, identity, guard)
     if topology['attached'] or topology['original'] != identity or control['backendPids'] or control['preparedTransactions']:
         raise RuntimeError('Disposable database did not reach the drained detached state')
+    _check_lock(root, lock_pid, lock_token)
     return advance_isolation_marker(target, guard_path, guard, identity, False, control)
 
 
 def run_fenced_helper(*, target, expected_image, maintenance_image, maintenance_revision, pgpass_path,
                       root, guard_path, selection_path, binding_path, witness_path, pre62_path,
-                      lock_pid, trusted_daemon, crash=None):
+                      lock_pid, lock_token, trusted_daemon, crash=None):
     """Open one loopback connection, reclose admission, and verify the cut."""
     from database.tests.check_postgres_cli_lifecycle import create_disposable_handoff, _write_private_json_once
 
     arguments = dict(root=root, guard_path=guard_path, selection_path=selection_path,
-                     binding_path=binding_path, witness_path=witness_path, pre62_path=pre62_path, lock_pid=lock_pid)
+                     binding_path=binding_path, witness_path=witness_path, pre62_path=pre62_path, lock_pid=lock_pid, lock_token=lock_token)
     guard = authenticate_attempt(**arguments)
     isolation = guard.get('isolation') or {}
     if isolation.get('phase') not in ('detached', 'verified'):
@@ -430,6 +460,7 @@ def run_fenced_helper(*, target, expected_image, maintenance_image, maintenance_
         raise RuntimeError('Disposable database is not drained or its identity changed')
     if not re.fullmatch(r'sha256:[0-9a-f]{64}', maintenance_image or '') or not maintenance_revision:
         raise RuntimeError('Disposable maintenance image identity is invalid')
+    verify_candidate_provenance(target, maintenance_revision)
     inspected = subprocess.run(['docker', '--context', target['context'], 'image', 'inspect', maintenance_image],
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)
     if inspected.returncode:
@@ -471,12 +502,14 @@ def run_fenced_helper(*, target, expected_image, maintenance_image, maintenance_
     if pre62_inside:
         command += ['--isolation-pre62', pre62_inside]
     if not control['allowConnections']:
+        _check_lock(root, lock_pid, lock_token)
         set_disposable_admission(target, identity, True)
         control = inspect_control_database(target, identity, guard)
         if not control['allowConnections'] or control['backendPids']:
             raise RuntimeError('Disposable isolated admission did not reopen cleanly')
     if authenticate_attempt(**arguments) != guard or inspect_owned_topology(target, expected_image, guard, trusted_daemon=trusted_daemon)['attached']:
         raise RuntimeError('Disposable original evidence changed before pinning')
+    _check_lock(root, lock_pid, lock_token)
     result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)
     helper_id = result.stdout.strip()
     if result.returncode or not re.fullmatch(r'[0-9a-f]{64}', helper_id):
@@ -503,12 +536,16 @@ def run_fenced_helper(*, target, expected_image, maintenance_image, maintenance_
     if (ready['backend_role'] != isolation['admin_role'] or ready['backend_address'] not in ('127.0.0.1', '::1') or
             control['backendPids'] != [ready['pid']] or control['backendDetails'] != [detail] or not control['allowConnections']):
         raise RuntimeError('Disposable pinned backend is not the only admitted target session')
+    _check_lock(root, lock_pid, lock_token)
     set_disposable_admission(target, identity, False)
     control = inspect_control_database(target, identity, guard)
     topology = inspect_owned_topology(target, expected_image, guard, trusted_daemon=trusted_daemon)
     if (control['allowConnections'] or control['backendPids'] != [ready['pid']] or control['backendDetails'] != [detail] or
             topology['attached'] or topology['original'] != identity or authenticate_attempt(**arguments) != guard):
         raise RuntimeError('Disposable pinned fence changed before acknowledgement')
+    _check_lock(root, lock_pid, lock_token)
+    verify_candidate_provenance(target, maintenance_revision)
+    _check_lock(root, lock_pid, lock_token)
     _write_private_json_once(str(Path(handoff) / 'closed.json'), ready)
     waited = subprocess.run(['docker', '--context', target['context'], 'wait', helper_id],
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=50)
@@ -542,12 +579,12 @@ def _completion_envelope(guard, witness_path, receipt):
 
 
 def publish_detached_completion(*, target, expected_image, root, guard_path, selection_path, binding_path,
-                                witness_path, pre62_path, lock_pid, trusted_daemon, receipt):
+                                witness_path, pre62_path, lock_pid, lock_token, trusted_daemon, receipt):
     """Persist the authenticated verification result before reconnecting."""
     from database.tests.check_postgres_cli_lifecycle import _write_private_json_once
 
     arguments = dict(root=root, guard_path=guard_path, selection_path=selection_path,
-                     binding_path=binding_path, witness_path=witness_path, pre62_path=pre62_path, lock_pid=lock_pid)
+                     binding_path=binding_path, witness_path=witness_path, pre62_path=pre62_path, lock_pid=lock_pid, lock_token=lock_token)
     guard = authenticate_attempt(**arguments)
     topology = inspect_owned_topology(target, expected_image, guard, trusted_daemon=trusted_daemon)
     identity = topology['original']
@@ -556,6 +593,7 @@ def publish_detached_completion(*, target, expected_image, root, guard_path, sel
             control['preparedTransactions'] or authenticate_existing_receipt(root, Path(witness_path).parent / 'verified-receipt.json', guard) != receipt):
         raise RuntimeError('Disposable completion lacks a drained verified receipt')
     if guard['isolation']['phase'] == 'detached':
+        _check_lock(root, lock_pid, lock_token)
         guard = advance_isolation_marker(target, guard_path, guard, identity, False, control, receipt=receipt)
     if guard['isolation']['phase'] != 'verified':
         raise RuntimeError('Disposable completion phase is invalid')
@@ -577,6 +615,7 @@ def publish_detached_completion(*, target, expected_image, root, guard_path, sel
         if json.loads(_private_file(path, root)) != completion:
             raise RuntimeError('Original disposable completion changed')
     else:
+        _check_lock(root, lock_pid, lock_token)
         _write_private_json_once(str(path), completion)
     return guard, completion
 
@@ -603,10 +642,10 @@ def authenticate_completion(root, witness_path, guard, receipt):
 
 
 def restore_completed_target(*, target, expected_image, root, guard_path, selection_path, binding_path,
-                             witness_path, pre62_path, lock_pid, trusted_daemon):
+                             witness_path, pre62_path, lock_pid, lock_token, trusted_daemon):
     """Restore the original topology only after the completion is durable."""
     arguments = dict(root=root, guard_path=guard_path, selection_path=selection_path,
-                     binding_path=binding_path, witness_path=witness_path, pre62_path=pre62_path, lock_pid=lock_pid)
+                     binding_path=binding_path, witness_path=witness_path, pre62_path=pre62_path, lock_pid=lock_pid, lock_token=lock_token)
     guard = authenticate_attempt(**arguments)
     if (guard.get('isolation') or {}).get('phase') not in ('verified', 'reattached'):
         raise RuntimeError('Disposable completion is not ready to restore')
@@ -630,6 +669,7 @@ def restore_completed_target(*, target, expected_image, root, guard_path, select
         if isolation['phase'] != 'verified':
             raise RuntimeError('Disposable detached phase is invalid')
         if not control['allowConnections']:
+            _check_lock(root, lock_pid, lock_token)
             set_disposable_admission(target, identity, True)
         control = inspect_control_database(target, identity, guard)
         if (not control['allowConnections'] or control['backendPids'] or control['preparedTransactions'] or
@@ -643,6 +683,7 @@ def restore_completed_target(*, target, expected_image, root, guard_path, select
         for alias in identity['aliases']:
             command += ['--alias', alias]
         command += [identity['networkId'], identity['containerId']]
+        _check_lock(root, lock_pid, lock_token)
         result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)
         if result.returncode:
             raise RuntimeError('Disposable original network could not be restored')
@@ -652,18 +693,16 @@ def restore_completed_target(*, target, expected_image, root, guard_path, select
             control['backendPids'] or control['preparedTransactions']):
         raise RuntimeError('Disposable restored topology or admission differs')
     if isolation['phase'] == 'verified':
+        _check_lock(root, lock_pid, lock_token)
         guard = advance_isolation_marker(target, guard_path, guard, identity, True, control, receipt=receipt)
     if guard['isolation']['phase'] != 'reattached':
         raise RuntimeError('Disposable reattachment marker is invalid')
     return guard, receipt, completion_sha
 
 
-def complete_original_guard(*, target, root, guard_path, witness_path, guard, receipt, completion_sha, lock_pid):
+def complete_original_guard(*, target, root, guard_path, witness_path, guard, receipt, completion_sha, lock_pid, lock_token):
     """Publish the one-time verified transition under the existing target lock."""
-    lock = json.loads(_private_file(Path(root) / 'maintenance.lock', root))
-    if not isinstance(lock_pid, int) or lock_pid <= 0 or lock.get('pid') != lock_pid or not lock.get('token'):
-        raise RuntimeError('Original lifecycle lock is not held by the supervisor parent')
-    os.kill(lock_pid, 0)
+    _check_lock(root, lock_pid, lock_token)
     if (guard.get('state') != 'pending' or (guard.get('isolation') or {}).get('phase') != 'reattached' or
             authenticate_completion(root, witness_path, guard, receipt) != completion_sha):
         raise RuntimeError('Original disposable attempt cannot be completed')
@@ -698,11 +737,15 @@ def supervise(config):
     if config.get('lock_pid') != os.getppid() or config.get('trusted_daemon') is not True:
         raise RuntimeError('Disposable supervisor parent authority is unavailable')
     keys = ('target', 'expected_image', 'root', 'guard_path', 'selection_path', 'binding_path',
-            'witness_path', 'pre62_path', 'lock_pid', 'trusted_daemon')
+            'witness_path', 'pre62_path', 'lock_pid', 'lock_token', 'trusted_daemon')
     common = {key: config.get(key) for key in keys}
     original = {key: common[key] for key in ('root', 'guard_path', 'selection_path', 'binding_path',
-                                             'witness_path', 'pre62_path', 'lock_pid')}
+                                             'witness_path', 'pre62_path', 'lock_pid', 'lock_token')}
     guard = authenticate_attempt(**original, allow_verified=True)
+    revision = config.get('approved_revision')
+    if revision != config.get('maintenance_revision') or revision != guard.get('origin_revision'):
+        raise RuntimeError('Disposable original candidate revision differs')
+    verify_candidate_provenance(common['target'], revision)
     phase = (guard.get('isolation') or {}).get('phase')
     crash = config.get('crash')
     if crash not in (None, 'after-commit', 'after-receipt', 'before-completion', 'after-completion', 'after-reattach', 'after-guard'):
@@ -717,7 +760,13 @@ def supervise(config):
                 (guard['isolation'].get('completion') or {}).get('filename') != 'verified-completion.json'):
             raise RuntimeError('Original disposable completion is unavailable')
         control = inspect_control_database(common['target'], topology['original'], guard)
-        if not control['allowConnections'] or control['backendPids'] or control['preparedTransactions']:
+        if (not control['allowConnections'] or control['backendPids'] or control['preparedTransactions'] or
+                control['targetOid'] != guard['isolation']['target_oid'] or
+                control['targetName'] != guard['isolation']['target_name'] or
+                control['systemIdentifier'] != guard['isolation']['system_identifier'] or
+                control['controlOid'] != guard['isolation']['control_oid'] or
+                control['controlName'] != guard['isolation']['control_name'] or
+                control['adminRole'] != guard['isolation']['admin_role']):
             raise RuntimeError('Completed disposable target is not ready for first startup')
         verify_original_backup(common['target'], guard)
         sync_original_guard(common['target'], common['guard_path'], guard)
@@ -744,7 +793,7 @@ def supervise(config):
         os._exit(81)
     guard = complete_original_guard(target=common['target'], root=common['root'], guard_path=common['guard_path'],
         witness_path=common['witness_path'], guard=guard, receipt=receipt, completion_sha=completion_sha,
-        lock_pid=common['lock_pid'])
+        lock_pid=common['lock_pid'], lock_token=common['lock_token'])
     if crash == 'after-guard':
         os._exit(82)
     return guard
