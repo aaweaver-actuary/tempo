@@ -443,6 +443,9 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   }
 
   async function ensureDatabase({ allowRecreation = false } = {}) {
+    if (allowRecreation && migrationGuard?.defense_binding &&
+        !managedCompletionAuthenticated && !managedPreIsolationAuthenticated)
+      throw new Error('Original managed PostgreSQL identity has not been authenticated; keep writers stopped.');
     await verifySelectedPostgresImage();
     stage("checking_database");
     const volume = target.volumes[target.postgresVolumeKey];

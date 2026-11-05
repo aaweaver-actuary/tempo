@@ -1214,6 +1214,15 @@ test("direct managed migration and preflight hold before side effects", async t 
   assert.deepEqual(readdirSync(stateDirectory), []);
 });
 
+test("direct dependency recreation holds an unauthenticated original managed target", async t => {
+  const { target } = fixture(t), stateDirectory = directory(t);
+  atomicJson(join(stateDirectory,'migration-guard.json'),{state:'pending',defense_binding:{}});
+  let calls=0;
+  const runtime=createRuntime(target,{stateDirectory,revision:'a'.repeat(40),run:async()=>{calls++;}});
+  await assert.rejects(runtime.ensureDatabase({allowRecreation:true}),/identity has not been authenticated/);
+  assert.equal(calls,0);
+});
+
 test("source update rejects exact main revisions when every eligible run fails or lacks required jobs", async () => {
   const fixture = sourceSelectionFixture({ runs: [{ id: 1 }, { id: 2 }], failedRuns: [1], incompleteRuns: [2] });
   await assert.rejects(selectCandidate({ root: "fixture" }, fixture.run, fixture.fetchJson), /quality/);
