@@ -238,8 +238,8 @@ def test_cut62_sequence_inventory_separates_removed_identity():
         guard._cut62_sequences(SequenceDB(guard.CUT62_PROTECTED_SEQUENCES | guard.CUT62_RETIRED_SEQUENCES), b'x' * 32, False)
 
 
-def test_schema61_defense_mixed_read_only_census(tmp_path):
-    """Synthetic transaction; classify identities and roll back without deletion."""
+def test_schema61_defense_exclusive_rehearsal_preserves_shared_history(tmp_path):
+    """Prove exact synthetic Defense deletion and rollback amid shared history."""
     import os
     from urllib.parse import urlparse
     import psycopg
