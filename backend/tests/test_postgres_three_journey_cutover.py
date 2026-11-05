@@ -385,11 +385,21 @@ def test_schema61_defense_exclusive_rehearsal_preserves_shared_history(tmp_path)
             db.row_factory = tuple_row
             v6 = guard.capture_cut62_v6(db, b'x'*32, selection, binding)
             assert guard.check_captured_cut62_v6(db, v6, b'x'*32)['unchanged']
+            from database.tooling.apply_postgres_migrations import MIGRATIONS, migration_source
+            db.execute('SAVEPOINT missing_approval')
+            with pytest.raises(psycopg.Error):
+                db.execute(migration_source(MIGRATIONS / '062_three_journey_retirement.sql'), prepare=False)
+            db.execute('ROLLBACK TO SAVEPOINT missing_approval')
+            assert db.execute('SELECT max(version) FROM tempo_schema_migrations').fetchone()[0] == 61
+            db.execute('SAVEPOINT changed_reference')
+            db.execute("UPDATE threat_analysis_requests SET state='complete' WHERE id='shared-request'")
+            db.execute("SELECT set_config('tempo.cut62_defense_manifest',%s,true)", (json.dumps(selection),))
+            with pytest.raises(psycopg.Error, match='reference evidence changed'):
+                db.execute(migration_source(MIGRATIONS / '062_three_journey_retirement.sql'), prepare=False)
+            db.execute('ROLLBACK TO SAVEPOINT changed_reference')
+            assert db.execute("SELECT card_id FROM threat_training_candidates WHERE id='exclusive-candidate'").fetchone()[0] == 'census-exclusive'
             db.execute('SAVEPOINT v6_prototype')
-            db.execute("UPDATE threat_training_candidates SET card_id=NULL WHERE id='exclusive-candidate' AND card_id='census-exclusive'")
-            db.execute("DELETE FROM daily_queue WHERE id=900004 AND card_id='census-exclusive'")
-            db.execute("DELETE FROM queue_attempt_origins WHERE queue_entry_id=900004 AND card_id='census-exclusive' AND revision=1")
-            db.execute("DELETE FROM cards WHERE id='census-exclusive' AND content_type='defense'")
+            db.execute("SELECT set_config('tempo.cut62_defense_manifest',%s,true)", (json.dumps(selection),))
             from database.tooling.apply_postgres_migrations import MIGRATIONS, migration_source
             db.execute(migration_source(MIGRATIONS / '062_three_journey_retirement.sql'), prepare=False)
             assert guard.verify_cut62_v6(db, v6, b'x'*32)['version'] == 6

@@ -316,7 +316,7 @@ def load_cut62_attempt_binding(path, selection, selection_sha256):
         binding = json.load(stream)
     if not isinstance(binding, dict) or set(binding) != {'version','target','attempt_id','backup_filename','backup_sha256','selection_sha256'} or type(binding['version']) is not int or binding['version'] != 1:
         raise RuntimeError('invalid cut62 attempt binding')
-    if binding['target'] != selection['target'] or binding['selection_sha256'] != selection_sha256:
+    if not isinstance(binding['target'], str) or not binding['target'] or (selection is not None and binding['target'] != selection['target']) or binding['selection_sha256'] != selection_sha256:
         raise RuntimeError('cut62 selection binding changed')
     if any(not isinstance(binding[k], str) or not binding[k] for k in ('attempt_id','backup_filename')) or not isinstance(binding['backup_sha256'], str) or re.fullmatch('[0-9a-f]{64}', binding['backup_sha256']) is None:
         raise RuntimeError('invalid cut62 attempt binding')
@@ -418,10 +418,7 @@ AND NOT EXISTS (SELECT 1 FROM public.daily_queue q JOIN public.study_conflict_qu
 AND NOT EXISTS (SELECT 1 FROM public.daily_queue q JOIN public.study_position_issued_plans r ON r.queue_entry_id=q.id WHERE q.card_id=c.id)
 '''
 
-def _cut62_defense_reference_digest(database, keys):
-    """Return only the count and digest of exact original approved references."""
-    from psycopg import sql
-    query = sql.SQL("""
+CUT62_DEFENSE_REFERENCE_SQL = """
         WITH approved AS MATERIALIZED (
           SELECT value->>0 AS card_id, value->>1 AS candidate_id
           FROM jsonb_array_elements(%s::jsonb) value
@@ -440,7 +437,13 @@ def _cut62_defense_reference_digest(database, keys):
             'epochs', COALESCE((SELECT jsonb_agg(to_jsonb(e) ORDER BY e.repertoire_id) FROM public.priority_repertoire_source_epochs e WHERE EXISTS (SELECT 1 FROM chosen s WHERE s.repertoire_id=e.repertoire_id)),'[]'::jsonb)
           ) AS value
         ) SELECT (SELECT count(*) FROM chosen), encode(sha256(convert_to(value::text,'UTF8')),'hex') FROM evidence
-    """).format(selector=sql.SQL(CUT62_DRAFT_DEFENSE_SELECTOR))
+    """
+
+
+def _cut62_defense_reference_digest(database, keys):
+    """Return only the count and digest of exact original approved references."""
+    from psycopg import sql
+    query = sql.SQL(CUT62_DEFENSE_REFERENCE_SQL).format(selector=sql.SQL(CUT62_DRAFT_DEFENSE_SELECTOR))
     return database.execute(query, (json.dumps(keys, separators=(',', ':')),)).fetchone()
 
 
@@ -594,6 +597,14 @@ def capture_cut62_v6(database, secret, selection, binding):
     database.execute('SET LOCAL join_collapse_limit=1')
     database.execute('SET LOCAL jit=off')
     database.execute("SET LOCAL statement_timeout='30s'")
+    migration = (Path(__file__).resolve().parents[1] / 'tempo_legacy_database/ddl/migrations/062_three_journey_retirement.sql').read_text()
+    selectors = [part.split('\n-- END CUT62 DEFENSE SELECTOR', 1)[0] for part in migration.split('-- BEGIN CUT62 DEFENSE SELECTOR\n')[1:]]
+    if len(selectors) != 2 or any(part != CUT62_DRAFT_DEFENSE_SELECTOR.strip() for part in selectors):
+        raise RuntimeError('cut62 Defense selector differs from migration')
+    reference = migration.split('-- BEGIN CUT62 REFERENCE DIGEST\n',1)[1].split('\n-- END CUT62 REFERENCE DIGEST',1)[0].strip()
+    expected_reference = CUT62_DEFENSE_REFERENCE_SQL.replace('{selector}', '\n-- BEGIN CUT62 DEFENSE SELECTOR\n'+CUT62_DRAFT_DEFENSE_SELECTOR.strip()+'\n-- END CUT62 DEFENSE SELECTOR\n').replace('%s::jsonb', "(current_setting('tempo.cut62_defense_manifest', true)::jsonb->'keys')").replace("SELECT (SELECT count(*) FROM chosen), encode(sha256(convert_to(value::text,'UTF8')),'hex') FROM evidence", "SELECT (SELECT count(*) FROM chosen) AS selected_count, encode(sha256(convert_to(value::text,'UTF8')),'hex') AS reference_digest FROM evidence").strip()
+    if reference != expected_reference:
+        raise RuntimeError('cut62 reference digest differs from migration')
     count, digest = _cut62_defense_reference_digest(database, selection['keys'])
     if count != selection['expected']['count'] or digest != selection['expected']['reference_digest']:
         raise RuntimeError('approved Defense reference evidence changed')
@@ -669,11 +680,11 @@ def verify_cut62(database, witness, secret):
             'witness_id': cut62_witness_id(witness, secret)}
 
 
-def save_cut62_witness(path, database):
+def save_cut62_witness(path, database, selection=None, binding=None):
     """Create, never overwrite, a private witness and random secret on the caller's volume."""
     import secrets
     secret = secrets.token_bytes(32)
-    witness = capture_cut62(database, secret)
+    witness = capture_cut62(database, secret) if selection is None else capture_cut62_v6(database, secret, selection, binding)
     signature = _cut62_mac(secret, 'cut62:witness', [json.dumps(witness, sort_keys=True, separators=(',', ':'))])['digest']
     payload = {'secret': secret.hex(), 'witness': witness, 'signature': signature}
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -983,9 +994,25 @@ def main():
     group.add_argument('--cut62-capture', metavar='PRIVATE_WITNESS_PATH')
     group.add_argument('--cut62-verify', metavar='PRIVATE_WITNESS_PATH')
     group.add_argument('--cut62-check-captured', metavar='PRIVATE_WITNESS_PATH')
+    group.add_argument('--cut62-reference-digest', action='store_true', help='Read-only digest of selected original references')
+    selection_group = parser.add_mutually_exclusive_group()
+    selection_group.add_argument('--defense-selection', metavar='PRIVATE_SELECTION_PATH')
+    selection_group.add_argument('--defense-zero', action='store_true')
+    parser.add_argument('--cut62-binding', metavar='PRIVATE_BINDING_PATH')
     args = parser.parse_args()
     if (args.pre62_capture59 or args.pre62_verify59 or args.pre62_authenticate59 or args.cut62_capture or args.cut62_verify or args.cut62_check_captured) and args.expected:
         parser.error('--expected cannot be combined with a cut62 operation')
+    if args.cut62_reference_digest:
+        if not args.defense_selection or args.defense_zero or args.cut62_binding or args.expected:
+            parser.error('reference digest requires only a private Defense selection')
+        selection, _ = load_cut62_defense_selection(args.defense_selection)
+        with psycopg.connect(os.environ['TEMPO_POSTGRES_ADMIN_URL'], options='-c default_transaction_read_only=on') as database:
+            database.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+            _cut62_session(database)
+            _cut62_versions(database, 61)
+            count, digest = _cut62_defense_reference_digest(database, selection['keys'])
+        print(json.dumps({'count': count, 'reference_digest': digest}))
+        return
     if args.pre62_authenticate59:
         witness,secret=load_pre62_59(args.pre62_authenticate59)
         print(json.dumps({'domain':'pre62-source-59','version':PRE62_EVIDENCE_VERSION,'authenticated':True,'witness_id':authenticate_pre62_59(witness,secret)}))
@@ -1001,17 +1028,36 @@ def main():
                 print(json.dumps(verify_pre62_59(database,witness,secret)))
         return
     if args.cut62_capture or args.cut62_verify or args.cut62_check_captured:
+        import hashlib
+        if not args.cut62_binding or not (args.defense_selection or args.defense_zero):
+            parser.error('cut62 requires a private binding and explicit Defense selection or zero')
+        if args.defense_selection:
+            selection, selection_sha256 = load_cut62_defense_selection(args.defense_selection)
+            binding = load_cut62_attempt_binding(args.cut62_binding, selection, selection_sha256)
+        else:
+            selection = None
+            selection_sha256 = hashlib.sha256(b'tempo-cut62-defense-zero-v1').hexdigest()
+            binding = load_cut62_attempt_binding(args.cut62_binding, None, selection_sha256)
         with psycopg.connect(os.environ['TEMPO_POSTGRES_ADMIN_URL'],
                              options='-c default_transaction_read_only=on') as database:
+            database.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
             if args.cut62_capture:
-                witness_id = save_cut62_witness(args.cut62_capture, database)
-                print(json.dumps({'version': CUT62_EVIDENCE_VERSION, 'from': 61, 'to': 62, 'captured': True, 'witness_id': witness_id}))
-            elif args.cut62_check_captured:
-                witness, secret = load_cut62_witness(args.cut62_check_captured)
-                print(json.dumps(check_captured_cut62(database, witness, secret)))
+                if selection is None:
+                    database.execute('SET LOCAL join_collapse_limit=1')
+                    database.execute('SET LOCAL jit=off')
+                    database.execute("SET LOCAL statement_timeout='30s'")
+                    count, digest = _cut62_defense_reference_digest(database, [])
+                    selection = {'version': 1, 'target': binding['target'], 'cohort': 'defense-no-activity', 'keys': [], 'expected': {'count': count, 'reference_digest': digest}}
+                witness_id = save_cut62_witness(args.cut62_capture, database, selection, binding)
+                print(json.dumps({'version': 6, 'from': 61, 'to': 62, 'captured': True, 'witness_id': witness_id}))
             else:
-                witness, secret = load_cut62_witness(args.cut62_verify)
-                print(json.dumps(verify_cut62(database, witness, secret)))
+                witness, secret = load_cut62_witness(args.cut62_check_captured or args.cut62_verify)
+                if witness.get('version') != 6 or witness.get('binding') != binding or (selection is not None and witness.get('selection') != selection) or (selection is None and witness.get('selection', {}).get('keys') != []):
+                    raise RuntimeError('cut62 original selection or binding changed')
+                if args.cut62_check_captured:
+                    print(json.dumps(check_captured_cut62_v6(database, witness, secret)))
+                else:
+                    print(json.dumps(verify_cut62_v6(database, witness, secret)))
         return
     expected = json.loads(args.expected) if args.expected else None
     with psycopg.connect(os.environ["TEMPO_POSTGRES_ADMIN_URL"],
