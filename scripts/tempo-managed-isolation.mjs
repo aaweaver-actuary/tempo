@@ -309,6 +309,42 @@ export function assertManagedPinnedBackend({ guard, observation, backend }) {
     throw new Error('Managed isolation pinned backend is unsafe or changed.');
 }
 
+// A challenge binds the helper to the original attempt and topology. It is
+// not authorization by itself: the lock, private files, Docker state and the
+// pinned database session must all be independently checked by the owner.
+export function managedPinnedChallenge(guard, nonce) {
+  const isolation = guard?.isolation, identity = isolation?.identity, binding = guard?.defense_binding, cut = guard?.cut62_identity;
+  const digest = value => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
+  if (guard?.state !== 'pending' || !['detached', 'verified'].includes(isolation?.phase) ||
+      ![59, 61].includes(guard.starting_schema) || guard.intended_schema !== 62 ||
+      !/^[0-9a-f-]{36}$/i.test(guard.attempt_id ?? '') || (guard.starting_schema === 59 && !digest(guard.pre62_witness_id)) ||
+      !/^[0-9a-f]{32}$/.test(nonce ?? '') || identity?.target !== guard.target || identity?.trustedDaemon !== true ||
+      binding?.target !== guard.target || binding?.attempt_id !== guard.attempt_id ||
+      binding?.backup_filename !== guard.backup?.filename || !guard.backup?.verified ||
+      !digest(binding.backup_sha256) || !digest(binding.selection_sha256) || !digest(cut?.witness_id) ||
+      cut.attempt_id !== guard.attempt_id || cut.backup_filename !== guard.backup.filename ||
+      !Number.isSafeInteger(isolation.target_oid) || isolation.target_oid <= 0 ||
+      !Number.isSafeInteger(isolation.control_oid) || isolation.control_oid <= 0 || isolation.target_oid === isolation.control_oid ||
+      !/^[0-9]+$/.test(isolation.system_identifier ?? '') ||
+      ['daemonId', 'containerId', 'networkId', 'imageId'].some(key => typeof identity[key] !== 'string' || !identity[key]))
+    throw new Error('Original managed pinned challenge is invalid.');
+  return { version: 1, nonce, target: guard.target, attempt_id: guard.attempt_id, daemon_id: identity.daemonId,
+    container_id: identity.containerId, network_id: identity.networkId, image_id: identity.imageId,
+    system_identifier: isolation.system_identifier, target_oid: isolation.target_oid, control_oid: isolation.control_oid,
+    backup_sha256: binding.backup_sha256, selection_sha256: binding.selection_sha256, cut62_witness_id: cut.witness_id,
+    pre62_witness_id: guard.starting_schema === 59 ? guard.pre62_witness_id : null };
+}
+
+export function assertManagedPinnedChallenge({ guard, nonce, ready, observation }) {
+  const expected = managedPinnedChallenge(guard, nonce);
+  const keys = ['backend_address', 'backend_role', 'backend_start', 'pid'];
+  if (!ready || Object.keys(ready).sort().join() !== [...Object.keys(expected), ...keys].sort().join() ||
+      Object.entries(expected).some(([key, value]) => ready[key] !== value))
+    throw new Error('Managed pinned challenge differs from the original attempt.');
+  assertManagedPinnedBackend({ guard, observation, backend: { pid: ready.pid, role: ready.backend_role,
+    address: ready.backend_address, start: ready.backend_start } });
+}
+
 // The production gate deliberately remains closed. This phase documents the
 // concrete first physical transition; later phases must be completed and
 // reviewed before the gate can be changed.
@@ -451,6 +487,79 @@ export function privateSelection(path, expectedTarget) {
         (keys[index - 1][0] === pair[0] && Buffer.compare(Buffer.from(keys[index - 1][1]), Buffer.from(pair[1])) >= 0))))
     throw new Error("Approved Defense selection is invalid for this target.");
   return { bytes, digest: createHash("sha256").update(bytes).digest("hex"), count: keys.length };
+}
+
+function parseUniqueJson(text) {
+  let index = 0;
+  const fail = () => { throw new Error('Approved Defense history selection is invalid.'); };
+  const whitespace = () => { while (/[\x20\t\n\r]/.test(text[index] ?? '') && index < text.length) index++; };
+  const string = () => {
+    const start = index;
+    if (text[index++] !== '"') fail();
+    while (index < text.length) {
+      const character = text[index++];
+      if (character === '"') {
+        try { return JSON.parse(text.slice(start, index)); } catch { fail(); }
+      }
+      if (character === '\\') {
+        if (index >= text.length) fail();
+        index++;
+      }
+    }
+    fail();
+  };
+  const value = () => {
+    whitespace();
+    if (text[index] === '"') { string(); return; }
+    if (text[index] === '{') {
+      index++; whitespace(); const keys = new Set();
+      if (text[index] === '}') { index++; return; }
+      while (true) {
+        whitespace(); const key = string(); if (keys.has(key)) fail(); keys.add(key);
+        whitespace(); if (text[index++] !== ':') fail(); value(); whitespace();
+        const separator = text[index++]; if (separator === '}') return; if (separator !== ',') fail();
+      }
+    }
+    if (text[index] === '[') {
+      index++; whitespace(); if (text[index] === ']') { index++; return; }
+      while (true) {
+        value(); whitespace(); const separator = text[index++];
+        if (separator === ']') return; if (separator !== ',') fail();
+      }
+    }
+    const token = /^(?:true|false|null|-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)/.exec(text.slice(index));
+    if (!token) fail(); index += token[0].length;
+  };
+  value(); whitespace(); if (index !== text.length) fail();
+  try { return JSON.parse(text); } catch { fail(); }
+}
+
+// V2 is deliberately separate from the deployed v1/zero path. The exact
+// reviewed file bytes are hashed; strings are neither normalized nor rewritten.
+export function privateDefenseHistorySelection(path, expectedTarget) {
+  const bytes = readOwnedPrivateBytes(path);
+  let value;
+  try {
+    if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) throw new Error();
+    value = parseUniqueJson(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+  } catch { throw new Error('Approved Defense history selection is invalid for this target.'); }
+  const keys = value?.keys, groups = value?.expected?.groups;
+  const groupNames = ['no_activity', 'recognition_only', 'reviewed'];
+  const wellFormed = item => typeof item === 'string' && item.length > 0 &&
+    [...item].every(character => !(character.length === 1 && character.charCodeAt(0) >= 0xd800 && character.charCodeAt(0) <= 0xdfff));
+  if (Object.keys(value ?? {}).sort().join() !== 'cohort,expected,keys,target,version' || value.version !== 2 ||
+      value.target !== expectedTarget || value.cohort !== 'defense-history' || !Array.isArray(keys) || keys.length > 15 ||
+      Object.keys(value.expected ?? {}).sort().join() !== 'count,groups,reference_digest' ||
+      !groups || Object.keys(groups).sort().join() !== groupNames.join() ||
+      groupNames.some(name => !Number.isSafeInteger(groups[name]) || groups[name] < 0) ||
+      value.expected.count !== keys.length || !/^[0-9a-f]{64}$/.test(value.expected.reference_digest ?? '') ||
+      keys.some(tuple => !Array.isArray(tuple) || tuple.length !== 3 || !wellFormed(tuple[0]) || !wellFormed(tuple[1]) || !groupNames.includes(tuple[2])) ||
+      new Set(keys.map(tuple => tuple[0])).size !== keys.length || new Set(keys.map(tuple => tuple[1])).size !== keys.length ||
+      keys.some((tuple, index) => index && (Buffer.compare(Buffer.from(keys[index - 1][0]), Buffer.from(tuple[0])) > 0 ||
+        (keys[index - 1][0] === tuple[0] && Buffer.compare(Buffer.from(keys[index - 1][1]), Buffer.from(tuple[1])) >= 0))) ||
+      groupNames.some(name => groups[name] !== keys.filter(tuple => tuple[2] === name).length))
+    throw new Error('Approved Defense history selection is invalid for this target.');
+  return { bytes, digest: createHash('sha256').update(bytes).digest('hex'), count: keys.length, groups: { ...groups } };
 }
 
 // Validate the original paths and binding before any topology change. The

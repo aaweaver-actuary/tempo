@@ -293,14 +293,14 @@ def set_disposable_admission(target, identity, allow):
         raise RuntimeError('Disposable admission could not be changed')
 
 
-def assert_shared_pinned_backend(target, guard, topology, control, backend):
-    """Use the managed owner's pinned comparison for the disposable proof."""
+def assert_shared_pinned_challenge(target, guard, topology, control, ready, nonce):
+    """Use the managed owner's challenge and pinned comparison in the proof."""
     source = """import {pathToFileURL} from 'node:url';
 let input='';for await(const part of process.stdin)input+=part;
 const data=JSON.parse(input);const api=await import(pathToFileURL(data.module).href);
-api.assertManagedPinnedBackend(data.arguments);"""
+api.assertManagedPinnedChallenge(data.arguments);"""
     payload = {'module': str(Path(target['root']) / 'scripts' / 'tempo-managed-isolation.mjs'),
-               'arguments': {'guard': guard, 'observation': {**topology, **control}, 'backend': backend}}
+               'arguments': {'guard': guard, 'observation': {**topology, **control}, 'ready': ready, 'nonce': nonce}}
     result = subprocess.run(['node', '--input-type=module', '-e', source], input=json.dumps(payload),
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)
     if result.returncode:
@@ -651,7 +651,7 @@ def run_fenced_helper(*, target, expected_image, maintenance_image, maintenance_
     topology = inspect_owned_topology(target, expected_image, guard, trusted_daemon=trusted_daemon)
     if authenticate_attempt(**arguments) != guard:
         raise RuntimeError('Disposable pinned fence changed before acknowledgement')
-    assert_shared_pinned_backend(target, guard, topology, control, detail)
+    assert_shared_pinned_challenge(target, guard, topology, control, ready, nonce)
     _check_lock(root, lock_pid, lock_token)
     verify_candidate_provenance(target, maintenance_revision)
     _check_lock(root, lock_pid, lock_token)

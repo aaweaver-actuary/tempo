@@ -184,3 +184,62 @@ def authenticate_managed_completion(guard, *, selection_path, binding_path, witn
              isolation.get('completion') != {'filename': 'verified-completion.json', 'sha256': digest}))):
         raise RuntimeError('Original managed completion binding differs')
     return {'witness_id': witness_id, 'completion_sha256': digest}
+
+
+def write_private_json_once(path, value):
+    """Publish complete private evidence without replacing an original."""
+    if not os.path.isabs(path) or os.path.normpath(path) != path:
+        raise RuntimeError('Managed evidence path is invalid')
+    parent = os.path.dirname(path)
+    metadata = os.lstat(parent)
+    if not stat.S_ISDIR(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) != 0o700:
+        raise RuntimeError('Managed evidence directory is invalid')
+    temporary = os.path.join(parent, '.' + os.path.basename(path) + '.' + os.urandom(16).hex() + '.tmp')
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0), 0o600)
+    try:
+        with os.fdopen(descriptor, 'w') as stream:
+            json.dump(value, stream, sort_keys=True, separators=(',', ':'))
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.link(temporary, path, follow_symlinks=False)
+        os.unlink(temporary)
+        directory = os.open(parent, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+
+
+def resync_private_json(path, expected):
+    """Re-sync and re-read an already authenticated original, without replacing it."""
+    if not os.path.isabs(path) or os.path.normpath(path) != path:
+        raise RuntimeError('Managed evidence path is invalid')
+    parent = os.path.dirname(path)
+    metadata = os.lstat(parent)
+    if not stat.S_ISDIR(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) != 0o700:
+        raise RuntimeError('Managed evidence directory is invalid')
+
+    def read_and_sync(sync):
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+        with os.fdopen(descriptor, 'rb') as stream:
+            info = os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o600 or info.st_size > 1048576:
+                raise RuntimeError('Original managed evidence file is invalid')
+            value = json.load(stream)
+            if sync:
+                os.fsync(stream.fileno())
+            return value
+    if read_and_sync(True) != expected:
+        raise RuntimeError('Original managed evidence differs')
+    directory = os.open(parent, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+    if read_and_sync(False) != expected:
+        raise RuntimeError('Original managed evidence changed')

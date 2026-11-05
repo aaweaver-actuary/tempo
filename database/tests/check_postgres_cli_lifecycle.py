@@ -67,47 +67,16 @@ def _read_private_json(path):
 
 
 def _write_private_json_once(path, value):
-    # Publish only complete file contents; an existing receipt is never replaced.
-    parent = os.path.dirname(path)
-    temporary = os.path.join(parent, '.' + os.path.basename(path) + '.' + os.urandom(16).hex() + '.tmp')
-    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0), 0o600)
-    try:
-        with os.fdopen(descriptor, 'w') as stream:
-            json.dump(value, stream, sort_keys=True, separators=(',', ':'))
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.link(temporary, path, follow_symlinks=False)
-        os.unlink(temporary)
-        directory = os.open(parent, os.O_RDONLY)
-        try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
-    finally:
-        try:
-            os.unlink(temporary)
-        except FileNotFoundError:
-            pass
+    from database.tooling.managed_isolation import write_private_json_once
+    return write_private_json_once(path, value)
 
 
 def _reuse_verified_receipt(path, expected):
     # Called only after the pinned connection has authenticated the original
     # witness against schema 62. Re-sync a previously published receipt before
     # the supervisor can rely on it after an interrupted directory fsync.
-    if _read_private_json(path) != expected:
-        raise RuntimeError('Original disposable receipt differs')
-    descriptor = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
-    directory = os.open(os.path.dirname(path), os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
-    try:
-        os.fsync(directory)
-    finally:
-        os.close(directory)
-    if _read_private_json(path) != expected:
-        raise RuntimeError('Original disposable receipt changed')
+    from database.tooling.managed_isolation import resync_private_json
+    return resync_private_json(path, expected)
 
 
 def create_disposable_handoff(root):

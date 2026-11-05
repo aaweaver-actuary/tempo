@@ -12,7 +12,7 @@ import { schemaVersionFromSource, validateTarget, validateContainers, deployment
   CommandExecutionError, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, sourceFingerprint, sourceMatchesFingerprint } from "../../scripts/tempo-deployment.mjs";
 import { assessMigrationRecovery, cut62WitnessName, privateSelection, inspectDisposableIsolation, inspectRegisteredIsolation, classifyManagedIsolationRecovery, classifyDisposableIsolationRecovery, persistDisposableIsolationIntent, advanceDisposableIsolationMarker, syncDisposableIsolationEvidence, validateCut62Preflight, assertColdPreflightContainers, cut62MountDirectory, requirePrivateCut62Witness, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
 import { parseArguments, ensureDocker } from "../../scripts/tempo-cli.mjs";
-import { captureManagedTargetLock, assertManagedTargetLock, inspectManagedOriginalEvidence, inspectManagedFence, assertManagedPinnedBackend, prepareManagedDetachedTarget } from "../../scripts/tempo-managed-isolation.mjs";
+import { captureManagedTargetLock, assertManagedTargetLock, inspectManagedOriginalEvidence, inspectManagedFence, assertManagedPinnedBackend, managedPinnedChallenge, assertManagedPinnedChallenge, prepareManagedDetachedTarget, privateDefenseHistorySelection } from "../../scripts/tempo-managed-isolation.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
 
@@ -2703,6 +2703,43 @@ test("managed isolation inspects only the original bound backup and witness path
   assert.equal(readFileSync(join(cutDir, name), "utf8"), "original");
 });
 
+test("v2 Defense history selection preserves exact bytes and rejects ambiguous or incompatible input", t => {
+  const root = directory(t); fs.chmodSync(root, 0o700); const path = join(root, "selection.json"), target = "registered-target";
+  const valid = { version: 2, target, cohort: "defense-history", keys: [["a", "x", "no_activity"], ["b", "y", "reviewed"]],
+    expected: { count: 2, groups: { no_activity: 1, recognition_only: 0, reviewed: 1 }, reference_digest: "a".repeat(64) } };
+  const bytes = Buffer.from(`  ${JSON.stringify(valid)}\n`); writeFileSync(path, bytes, { mode: 0o600 });
+  const selected = privateDefenseHistorySelection(path, target);
+  assert.deepEqual(selected.bytes, bytes); assert.equal(selected.digest, createHash("sha256").update(bytes).digest("hex"));
+  assert.equal(selected.count, 2); assert.deepEqual(selected.groups, valid.expected.groups);
+  const invalid = [
+    { ...valid, version: 1 }, { ...valid, cohort: "defense-no-activity" }, { ...valid, extra: true },
+    { ...valid, keys: [["a", "x", "unknown"]] },
+    { ...valid, keys: [["a", "x", "no_activity"], ["a", "y", "reviewed"]] },
+    { ...valid, keys: [["a", "x", "no_activity"], ["b", "x", "reviewed"]] },
+    { ...valid, keys: [["b", "y", "reviewed"], ["a", "x", "no_activity"]] },
+    { ...valid, keys: [["\ud800", "x", "no_activity"]] },
+    { ...valid, keys: Array.from({ length: 16 }, (_, index) => [`c${String(index).padStart(2, "0")}`, `t${String(index).padStart(2, "0")}`, "no_activity"]),
+      expected: { count: 16, groups: { no_activity: 16, recognition_only: 0, reviewed: 0 }, reference_digest: "a".repeat(64) } },
+    { ...valid, expected: { ...valid.expected, groups: { no_activity: 2, recognition_only: 0, reviewed: 0 } } },
+    { ...valid, expected: { ...valid.expected, groups: { ...valid.expected.groups, other: 0 } } },
+  ];
+  for (const item of invalid) {
+    writeFileSync(path, JSON.stringify(item), { mode: 0o600 });
+    assert.throws(() => privateDefenseHistorySelection(path, target), /invalid/);
+  }
+  for (const raw of [
+    JSON.stringify(valid).replace('"version":2', '"version":2,"version":2'),
+    JSON.stringify(valid).replace('"no_activity":1', '"no_activity":1,"no_activity":1'),
+    JSON.stringify(valid).replace('"version":2', '"version":2,"\\u0076ersion":2'),
+  ]) {
+    writeFileSync(path, raw, { mode: 0o600 }); assert.throws(() => privateDefenseHistorySelection(path, target), /invalid/);
+  }
+  writeFileSync(path, Buffer.from([0xff]), { mode: 0o600 }); assert.throws(() => privateDefenseHistorySelection(path, target), /invalid/);
+  writeFileSync(path, bytes, { mode: 0o600 }); assert.throws(() => privateDefenseHistorySelection(path, "other"), /invalid/);
+  const zero = { ...valid, keys: [], expected: { ...valid.expected, count: 0, groups: { no_activity: 0, recognition_only: 0, reviewed: 0 } } };
+  writeFileSync(path, JSON.stringify(zero), { mode: 0o600 }); assert.equal(privateDefenseHistorySelection(path, target).count, 0);
+});
+
 test("managed fence inspection uses the registered role and rejects foreign peers or changed control identity", async t => {
   const { target, config } = fixture(t), root = directory(t); fs.chmodSync(root, 0o700);
   target.version = 1; target.daemonId = "daemon"; config.services.postgres.environment.POSTGRES_USER = "tempo";
@@ -2774,6 +2811,30 @@ test("managed pinned backend proof requires the sole original loopback session",
   ]) {
     const altered = structuredClone({ guard, observation, backend }); change(altered);
     assert.throws(() => assertManagedPinnedBackend(altered), /unsafe or changed/);
+  }
+});
+
+test("managed pinned challenge binds the original attempt and independently observed backend", () => {
+  const attempt = "12345678-1234-1234-1234-123456789abc", target = "target", nonce = "1".repeat(32);
+  const identity = { target, trustedDaemon: true, daemonId: "daemon", containerId: "container", networkId: "network", imageId: "image" };
+  const guard = { state: "pending", target, attempt_id: attempt, starting_schema: 59, intended_schema: 62,
+    backup: { verified: true, filename: "backup" }, pre62_witness_id: "a".repeat(64),
+    defense_binding: { target, attempt_id: attempt, backup_filename: "backup", backup_sha256: "b".repeat(64), selection_sha256: "c".repeat(64) },
+    cut62_identity: { attempt_id: attempt, backup_filename: "backup", witness_id: "d".repeat(64) },
+    isolation: { phase: "detached", identity, admin_role: "tempo", target_oid: 123, control_oid: 5, system_identifier: "987" } };
+  const backend = { pid: 44, role: "tempo", address: "127.0.0.1", start: "123.456" };
+  const ready = { ...managedPinnedChallenge(guard, nonce), pid: backend.pid, backend_role: backend.role,
+    backend_address: backend.address, backend_start: backend.start };
+  const observation = { original: identity, attached: false, allowConnections: false, preparedTransactions: 0,
+    backendPids: [backend.pid], backendDetails: [backend] };
+  assert.doesNotThrow(() => assertManagedPinnedChallenge({ guard, nonce, ready, observation }));
+  for (const change of [
+    x => { x.ready.nonce = "2".repeat(32); }, x => { x.ready.backup_sha256 = "e".repeat(64); },
+    x => { x.ready.extra = true; }, x => { x.observation.backendDetails[0].start = "changed"; },
+    x => { x.observation.allowConnections = true; }, x => { x.guard.cut62_identity.attempt_id = "other"; },
+  ]) {
+    const altered = structuredClone({ guard, nonce, ready, observation }); change(altered);
+    assert.throws(() => assertManagedPinnedChallenge(altered), /invalid|differs|unsafe/);
   }
 });
 
@@ -3453,12 +3514,12 @@ else:raise AssertionError('production gate accepted')
 
 test("disposable fixture publishes only complete receipts without replacing an original", () => {
   const proof = String.raw`
-import ast,json,os,pathlib,tempfile
+import ast,json,os,pathlib,stat,tempfile
 from unittest.mock import patch
-source=pathlib.Path('database/tests/check_postgres_cli_lifecycle.py').read_text()
-node=next(item for item in ast.parse(source).body if isinstance(item,ast.FunctionDef) and item.name=='_write_private_json_once')
-scope={'os':os,'json':json};exec(compile(ast.Module(body=[node],type_ignores=[]),'<fixture>','exec'),scope)
-write=scope['_write_private_json_once']
+source=pathlib.Path('database/tooling/managed_isolation.py').read_text()
+node=next(item for item in ast.parse(source).body if isinstance(item,ast.FunctionDef) and item.name=='write_private_json_once')
+scope={'os':os,'json':json,'stat':stat};exec(compile(ast.Module(body=[node],type_ignores=[]),'<fixture>','exec'),scope)
+write=scope['write_private_json_once']
 with tempfile.TemporaryDirectory() as tmp:
  path=os.path.join(tmp,'receipt.json')
  original_dump=json.dump
@@ -3527,11 +3588,11 @@ test("disposable receipt retry verifies and syncs the original without replacing
   const proof = String.raw`
 import ast,json,os,pathlib,stat,tempfile
 from unittest.mock import patch
-source=pathlib.Path('database/tests/check_postgres_cli_lifecycle.py').read_text()
-names={'_read_private_json','_reuse_verified_receipt'}
+source=pathlib.Path('database/tooling/managed_isolation.py').read_text()
+names={'resync_private_json'}
 nodes=[n for n in ast.parse(source).body if isinstance(n,ast.FunctionDef) and n.name in names]
 scope={'os':os,'json':json,'stat':stat};exec(compile(ast.Module(body=nodes,type_ignores=[]),'<fixture>','exec'),scope)
-reuse=scope['_reuse_verified_receipt']
+reuse=scope['resync_private_json']
 with tempfile.TemporaryDirectory() as tmp:
  path=os.path.join(tmp,'receipt.json')
  with open(path,'w') as stream:json.dump({'schema':62},stream)
