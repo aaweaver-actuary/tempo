@@ -87,6 +87,16 @@ def _candidate_image():
     return image, revision
 
 
+def _candidate_schema(image):
+    """Read the schema declared by the already validated immutable image."""
+    output = subprocess.check_output([
+        'docker', 'run', '--rm', '--network', 'none', '--entrypoint', 'python', image,
+        '-c', 'from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION; print(POSTGRES_SCHEMA_VERSION)',
+    ], text=True, timeout=30).strip()
+    assert output.isdecimal() and int(output) > 0, 'Candidate image schema must be a positive integer'
+    return int(output)
+
+
 def _candidate_web_image(revision):
     image = os.environ.get('TEMPO_COLLECTION_TEST_WEB_IMAGE')
     assert image, 'Set TEMPO_COLLECTION_TEST_WEB_IMAGE to the immutable qualified web image ID'
@@ -101,6 +111,7 @@ def _candidate_web_image(revision):
 
 def test_packaged_collection_retains_deviations_reconciles_and_never_delivers(case, tmp_path):
     image, revision = _candidate_image()
+    candidate_schema = _candidate_schema(image)
     # The operator consumes the actual immutable image metadata validated by
     # the candidate guard, never a fabricated image/label projection.
     inspected = json.loads(subprocess.check_output(['docker','image','inspect',image],text=True))[0]
@@ -209,7 +220,9 @@ def test_packaged_collection_retains_deviations_reconciles_and_never_delivers(ca
             absent = subprocess.run(['docker','inspect',name],capture_output=True,text=True)
             assert absent.returncode != 0 and 'no such' in absent.stderr.lower()
 
-    def evaluate(report, identity, preview, allowances, *, expected_schema=56):
+    def evaluate(report, identity, preview, allowances, *, expected_schema=None):
+        if expected_schema is None:
+            expected_schema = candidate_schema
         # Actual operator policy consumes authentic packaged reader output.
         # Only frozen-release/process metadata is synthetic here; installed
         # Docker/Compose orchestration remains a separate acceptance boundary.
@@ -330,7 +343,7 @@ console.log(JSON.stringify({activation_ready:blockers.length===0,blockers,
         wrong_role = run('identity-writer')
         assert wrong_role['identity']['reader_role']=='tempo_writer'
         assert 'reader_permission_unverified' in evaluate(public_partial,wrong_role,preview,[token])['launch_blockers']
-        assert 'collection_schema_mismatch' in evaluate(public_partial,identity,preview,[token],expected_schema=57)['launch_blockers']
+        assert 'collection_schema_mismatch' in evaluate(public_partial,identity,preview,[token],expected_schema=candidate_schema + 1)['launch_blockers']
         assert all(r['elapsed_seconds'] <= 25 for r in receipts if r['mode'] in ('status','status-public'))
         # Repair only generated fixture metadata. All production limits and the
         # real reader/projection stay unchanged, with no successful facts seeded.
@@ -423,6 +436,7 @@ def test_packaged_feedback_source_reaches_real_study_and_same_key_settlement(fee
     import shutil
 
     image, backend_revision = _candidate_image()
+    candidate_schema = _candidate_schema(image)
     candidate = subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
     web_image = _candidate_web_image(candidate)
     case = feedback_case
@@ -430,7 +444,7 @@ def test_packaged_feedback_source_reaches_real_study_and_same_key_settlement(fee
         info = database.raw.info
         admin_dsn = make_conninfo(info.dsn, password=info.password)
         port, database_name = info.port, info.dbname
-        assert database.execute_native('SELECT MAX(version) FROM tempo_schema_migrations').fetchone()[0] == 56
+        assert database.execute_native('SELECT MAX(version) FROM tempo_schema_migrations').fetchone()[0] == candidate_schema
         database.execute_native("UPDATE settings SET timezone='UTC',new_cards_per_day=0,study_only_mode=1 WHERE id=1")
         assert tuple(database.execute_native('SELECT new_cards_per_day,study_only_mode FROM settings WHERE id=1').fetchone())==(0,1)
     manifests = [json.loads(path.read_text()) for path in (ROOT/'test-results/game-feedback-native').glob('*/fixture.json')]
@@ -506,7 +520,7 @@ def test_packaged_feedback_source_reaches_real_study_and_same_key_settlement(fee
         from test_product_game_lapse_postgres import study_recovery_assembly_allocations
         budgets = study_recovery_assembly_allocations(resource_configuration)
     containers, report = {}, dict(candidate=candidate,backend_revision=backend_revision,web_revision=candidate,
-        image=image,web_image=web_image,schema=56,disposition='introduced_again' if introduced else 'first_introduction',
+        image=image,web_image=web_image,schema=candidate_schema,disposition='introduced_again' if introduced else 'first_introduction',
         fixture_container=pg['Id'],web_origin=web_url,stages=[])
     report['capture_unit_diagnostic_source_sha256'] = diagnostic_sha256
     if recovery_mode is not None:
