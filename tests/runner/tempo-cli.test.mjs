@@ -12,7 +12,7 @@ import { schemaVersionFromSource, validateTarget, validateContainers, deployment
   CommandExecutionError, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, sourceFingerprint, sourceMatchesFingerprint } from "../../scripts/tempo-deployment.mjs";
 import { assessMigrationRecovery, cut62WitnessName, validateCut62Preflight, assertColdPreflightContainers, cut62MountDirectory, requirePrivateCut62Witness, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
 import { parseArguments, ensureDocker } from "../../scripts/tempo-cli.mjs";
-import { authenticateManagedSettlement, inspectRegisteredIsolation, runManagedPinnedChild } from "../../scripts/tempo-managed-isolation.mjs";
+import { authenticateManagedSettlement, inspectRegisteredIsolation, matchesManagedPinnedHelper, runManagedPinnedChild } from "../../scripts/tempo-managed-isolation.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
 import { validateOwnedPostgresTelemetry } from '../../database/tests/managed_cli_rehearsal.mjs';
@@ -1209,6 +1209,18 @@ test("managed Defense selection accepts one absolute first-attempt path", () => 
     ['doctor', '--defense-selection', '/private/s'], ['migrate', '--defense-selection', '/private/s', '--defense-selection', '/private/t'],
     ['migrate', '--defense-selection', '/private/a:b'], ['migrate', '--defense-selection', '/private/../selection'],
   ]) assert.throws(() => parseArguments(args), /selection|Invalid options/i);
+});
+
+test("managed fence accepts only the original journaled pinned helper", () => {
+  const guard = { attempt_id: 'attempt', target: 'target', isolation: { identity: { containerId: 'database' } } };
+  const helper = { helper_id: 'helper', image: 'image', attempt_id: 'attempt', target: 'target', database_container: 'database' };
+  const item = { Id: 'helper', Image: 'image', Config: { Entrypoint: ['python'], Cmd: ['-c', 'from database.tooling.managed_isolation import managed_pinned_child; managed_pinned_child()'], Labels: { 'tempo.managed.attempt': 'attempt', 'tempo.managed.target': 'target' } }, HostConfig: { NetworkMode: 'container:database' } };
+  assert.equal(matchesManagedPinnedHelper(item, helper, { ...helper }, guard), true);
+  assert.equal(matchesManagedPinnedHelper(item, null, helper, guard), false);
+  for (const bad of [{ ...helper, helper_id: 'other' }, { ...helper, image: 'other' }, { ...helper, attempt_id: 'other' }, { ...helper, database_container: 'other' }])
+    assert.equal(matchesManagedPinnedHelper(item, bad, helper, guard), false);
+  assert.equal(matchesManagedPinnedHelper({ ...item, Config: { ...item.Config, Cmd: ['other'] } }, helper, helper, guard), false);
+  assert.equal(matchesManagedPinnedHelper({ ...item, HostConfig: { NetworkMode: 'bridge' } }, helper, helper, guard), false);
 });
 
 test("managed pinned child rejects an unfenced invocation before host action", async () => {

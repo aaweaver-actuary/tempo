@@ -346,9 +346,20 @@ export function managedHistoryRetryCheck({ guard, schema, witnessId }) {
   return schema === 61 ? 'check-source' : 'check-projection';
 }
 
+export function matchesManagedPinnedHelper(item, activeHelper, journal, guard) {
+  const expectedCommand = ['-c', 'from database.tooling.managed_isolation import managed_pinned_child; managed_pinned_child()'];
+  return !!activeHelper && isDeepStrictEqual(journal, activeHelper) && item.Id === activeHelper.helper_id &&
+    item.Image === activeHelper.image && activeHelper.attempt_id === guard.attempt_id && activeHelper.target === guard.target &&
+    activeHelper.database_container === guard.isolation?.identity?.containerId &&
+    item.Config?.Labels?.['tempo.managed.attempt'] === guard.attempt_id &&
+    item.Config?.Labels?.['tempo.managed.target'] === guard.target &&
+    item.HostConfig?.NetworkMode === `container:${activeHelper.database_container}` &&
+    isDeepStrictEqual(item.Config?.Entrypoint, ['python']) && isDeepStrictEqual(item.Config?.Cmd, expectedCommand);
+}
+
 // Read only. The caller must hold the original target lock and explicitly
 // assume exclusive Docker/host-administrator control for the entire cut.
-export async function inspectManagedFence({ target, configuration, expectedImage, guard, stateDirectory, lock, docker, exclusiveAdministrator }) {
+export async function inspectManagedFence({ target, configuration, expectedImage, guard, stateDirectory, lock, docker, exclusiveAdministrator, activeHelper = null }) {
   if (exclusiveAdministrator !== true || typeof docker !== 'function')
     throw new Error('Managed isolation requires exclusive administrator control.');
   assertManagedTargetLock(stateDirectory, lock);
@@ -370,8 +381,12 @@ export async function inspectManagedFence({ target, configuration, expectedImage
   validateContainers(containers, target);
   const project = containers.filter(item => item.Config?.Labels?.['com.docker.compose.project'] === target.project);
   for (const item of project) if ((item.State?.Running || item.State?.Restarting) &&
-      !['postgres', 'redis'].includes(item.Config?.Labels?.['com.docker.compose.service']))
-    throw new Error('Managed isolation has an active application or maintenance container.');
+      !['postgres', 'redis'].includes(item.Config?.Labels?.['com.docker.compose.service'])) {
+    const journalPath = guard.cut62_witness && join(stateDirectory, guard.cut62_witness.slice(0, -5), 'pinned-helper.json');
+    const journal = activeHelper && journalPath && existsSync(journalPath) ? JSON.parse(readOwnedPrivateBytes(journalPath)) : null;
+    if (!matchesManagedPinnedHelper(item, activeHelper, journal, guard))
+      throw new Error('Managed isolation has an active application or maintenance container.');
+  }
   const databases = project.filter(item => item.Config?.Labels?.['com.docker.compose.service'] === 'postgres');
   if (databases.length !== 1) throw new Error('Managed isolation database container is ambiguous.');
   const container = databases[0], intent = guard?.isolation?.identity ?? null;
@@ -832,7 +847,7 @@ export async function runManagedPinnedChild({ target, configuration, expectedIma
     assertManagedTargetLock(stateDirectory, lock);
     atomicJson(helperJournal, helperIdentity);
     observed = await inspectManagedFence({ target, configuration, expectedImage, guard, stateDirectory,
-      lock, docker, exclusiveAdministrator });
+      lock, docker, exclusiveAdministrator, activeHelper: helperIdentity });
     if (observed.attached || !observed.allowConnections || observed.backendPids.length !== 1 ||
         observed.backendPids[0] !== ready.pid || observed.preparedTransactions)
       throw new Error('Managed pinned child is not the sole target backend.');
@@ -840,7 +855,7 @@ export async function runManagedPinnedChild({ target, configuration, expectedIma
     await docker(['exec', '--user', 'postgres', observed.original.containerId, 'psql', '-X', '-v', 'ON_ERROR_STOP=1',
       '-U', observed.adminRole, '-d', observed.controlName, '-c', 'ALTER DATABASE tempo ALLOW_CONNECTIONS false']);
     observed = await inspectManagedFence({ target, configuration, expectedImage, guard, stateDirectory,
-      lock, docker, exclusiveAdministrator });
+      lock, docker, exclusiveAdministrator, activeHelper: helperIdentity });
     assertManagedPinnedChallenge({ guard, nonce, ready, observation: observed });
     if (!isDeepStrictEqual(JSON.parse(readOwnedPrivateBytes(guardPath)), guard) ||
         await verifyOriginalBackup(guard.backup) !== backupSha)
