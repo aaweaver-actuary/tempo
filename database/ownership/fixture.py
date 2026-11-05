@@ -13,7 +13,7 @@ import uuid
 import psycopg
 from psycopg import sql
 
-DOMAINS = ("learning", "content", "game_evidence", "intelligence")
+DOMAINS = ("learning", "content", "game_evidence")
 IMAGE = "postgres:18.6-trixie"
 
 

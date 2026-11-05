@@ -58,3 +58,36 @@ def test_retired_game_commands_are_not_lazy_loaded():
     ):
         resolve_worker_game_command(name)
         assert not is_command_registered(name)
+
+
+def test_retired_feature_commands_reject_new_dispatch_and_consume_stale_deliveries(
+    monkeypatch,
+):
+    import pytest
+    from fastapi import HTTPException
+    from app import command_dispatch, command_gateway, tasks
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("Retired command reached broker or receipt storage")
+
+    monkeypatch.setattr(command_dispatch.celery_app, "send_task", unexpected)
+    monkeypatch.setattr(tasks, "record_operation_attempt", unexpected)
+    for name in (
+        "coverage.refresh.request",
+        "coverage.maia.claim",
+        "coverage.maia.heartbeat",
+        "coverage.maia.release",
+        "coverage.maia.failure",
+        "coverage.maia.submit",
+        "defensive.audit",
+        "defensive.backfill",
+        "game_findings.curate",
+        "game_findings.decide",
+        "game_findings.card.save",
+    ):
+        assert not command_gateway.is_command_registered(name)
+        with pytest.raises(HTTPException) as error:
+            command_dispatch.dispatch_command(name, {}, idempotency_key="retired")
+        assert error.value.status_code == 410
+        assert tasks.execute_foreground_command.run("retired", name, {}) is None
+        assert tasks.execute_background_command.run("retired", name, {}) is None

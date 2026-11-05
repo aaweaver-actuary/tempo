@@ -30,7 +30,7 @@ storage, not dynamically discovered.
 | Per-game feature calculation | [statistics.py](statistics.py) retains `refresh_game_features`; [feature storage](../../../database/tempo_legacy_database/adapters/statistics/README.md) supplies inputs and the single canonical feature writer. It no longer materializes daily statistics. |
 | Native game completion | [postgres_game_priorities.py](postgres_game_priorities.py) retains `execute_game_priority_handoff_slice`, registered by `tasks.py` as `game_derivation_priorities`. It advances the bounded repertoire cursor and completes the existing derivation; the legacy name does not mean an adaptive-priority producer survives. |
 | Authored Discovery acceptance | [discovery_commands.py](../discovery_commands.py) retains `prepare_discovery_acceptance`, `accept_discovery` and `discovery.accept`. Recommendation/admission is separate from the retired opportunity feed/state/train producer. |
-| Canonical source and coverage | [canonical_prefix.py](canonical_prefix.py) owns preview/save commands and source validation/invalidation; [canonical_prefix_commands.py](../canonical_prefix_commands.py) registers them, and the HTTP router re-exports them; [coverage_maia_commands.py](../coverage_maia_commands.py) retains `coverage.maia.claim`, `heartbeat`, `release`, `failure` and `submit` under the same `coverage.maia.` prefix, candidate publication and progress. Neither recreates retired refresh producers. |
+| Canonical source | [canonical_prefix.py](canonical_prefix.py) owns source validation and invalidation. The HTTP router re-exports the preview and save commands registered by [canonical_prefix_commands.py](../canonical_prefix_commands.py). |
 
 **Coupling is reduced, not eliminated.** Removed producers no longer contribute
 their import/callback/worker/recovery paths, but saved-score/opportunity readers,
@@ -78,7 +78,6 @@ flowchart LR
 ```
 
 Concrete owners are [`save_prefix`](canonical_prefix.py),
-[`submit_maia_node`](../coverage_maia_commands.py),
 [`_publish_node`](postgres_coverage_explorer.py),
 [`execute_coverage_node` and `submit_maia_coverage`](repertoire_coverage.py),
 [`execute_game_priority_handoff_slice`](postgres_game_priorities.py).

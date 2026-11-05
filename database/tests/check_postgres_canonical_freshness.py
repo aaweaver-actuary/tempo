@@ -19,9 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'backend'))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from database.tooling.postgres_rehearsal_admission import admitted_call
 import chess
-from fastapi import HTTPException
 from tempo_legacy_database.adapters import postgres_store
-from app import coverage_maia_commands
 from app.branch_commands import add_repertoire_branch
 from app.card_commands import revise_card, archive_card
 from app.pgn_import_commands import admit_pgn_import, prepare_import_payload
@@ -32,7 +30,6 @@ from app.services.canonical_scope_freshness import game_scope_generation, covera
 from app.services.durable_tasks import complete_task, claim_task, enqueue_task_in_transaction, warm_completion_sql
 from app.services.postgres_opening_graph import execute_postgres_opening_graph_slice
 from app.services.postgres_coverage_seed import execute_coverage_seed_slice, request_coverage_seed_in_transaction
-from app.services.postgres_coverage_explorer import _publish_node
 from app.services.postgres_game_repertoire import execute_game_repertoire_comparison_slice
 from app.services.repertoire_coverage import coverage_summary, coverage_gaps
 from app.services.postgres_game_derivation import execute_game_position_index_slice
@@ -682,19 +679,11 @@ def prove_deterministic_route_certification():
 
 def prove_canonical_scope_lifecycle():
     """CF-15 / CP-4/5/6: normal publication, source mutation and recovery."""
-    from app import main as api, coverage_commands, card_commands, repertoire_commands, canonical_prefix_commands  # noqa: F401 - explicit direct gateway assembly
+    from app import card_commands, repertoire_commands, canonical_prefix_commands  # noqa: F401 - explicit direct gateway assembly
     from app.command_gateway import execute_command, read_operation
-    from app.services import postgres_coverage_explorer as explorer, repertoire_coverage as coverage
     from app.chess.cards import card_id
     from app.services.canonical_scope_freshness import scope_identity
     repertoire_ids, operation_ids, game_ids = [], [], []
-    saved_fetch = explorer._fetch_explorer
-    saved_token = coverage.get_explorer_session_token()
-    def fetch(fen, *_):
-        board = chess.Board(fen)
-        legal = [move for move in ('f8c5', 'g8f6', 'a7a6') if chess.Move.from_uci(move) in board.legal_moves]
-        assert legal
-        return {'moves': [{'uci': move, 'white': 500, 'draws': 0, 'black': 0} for move in legal]}
     def command(name, payload):
         operation_id = 'canonical-lifecycle-' + uuid.uuid4().hex
         operation_ids.append(operation_id)
@@ -711,23 +700,12 @@ def prove_canonical_scope_lifecycle():
         run_bounded_task_slices('canonical_prefix_preview', preview['preview_id'], execute_prefix_preview_slice)
         return command('repertoire.canonical_prefix.save', {'repertoire_id': identifier,
                        'request': {'preview_id': preview['preview_id'], 'expected_revision': expected_revision}})
-    def publish(identifier, game_id):
-        refresh_and_derive_game(game_id)
-        admitted = command('coverage.refresh.request', {'repertoire_id': identifier})
-        run_bounded_task_slices('coverage_seed', identifier, execute_coverage_seed_slice)
-        phases = run_bounded_task_slices('coverage_explorer', identifier, explorer.execute_coverage_explorer_slice)
-        assert phases and coverage_summary(identifier)['status'] == 'complete'
-        return admitted['run_id']
-    def visible(identifier, game_id, target_key):
-        assert api.repertoire_coverage_gaps(identifier)['gaps']
-        statistics = api.repertoire_statistics_summary(identifier, 'all')
-        assert statistics['games']['matched'] == 1, statistics['games']
+    def assert_game_comparison(identifier, game_id, *, current):
         with postgres_store.connection(read_only=True) as database:
             for table in ('game_repertoire_matches', 'repertoire_comparisons', 'repertoire_decision_events'):
-                assert database.execute(f'SELECT 1 FROM {table} WHERE game_id=? AND repertoire_id=?', (game_id, identifier)).fetchone(), table
+                row = database.execute(f'SELECT 1 FROM {table} WHERE game_id=? AND repertoire_id=?', (game_id, identifier)).fetchone()
+                assert bool(row) == current, table
     try:
-        explorer._fetch_explorer = fetch
-        coverage.set_explorer_session_token('fixture-ephemeral-token')
         for dimension in ('source', 'prefix', 'global'):
             identifier, other_id, game_id = ['canonical-lifecycle-' + uuid.uuid4().hex for _ in range(3)]
             repertoire_ids.extend((identifier, other_id))
@@ -737,7 +715,6 @@ def prove_canonical_scope_lifecycle():
             # CF-5 has ...Bc5/c3 too. This distinct covered decision keeps our
             # game primarily attributed here after changing the main repertoire.
             route = [*ITALIAN, 'f8c5', 'd2d3']
-            target_key = ' '.join(prefix_projection(route)['ending_fen'].split()[:4])
             with postgres_store.connection() as database:
                 for scope in (identifier, other_id):
                     database.execute('INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,?,?)', (scope, scope, scope + '.pgn', NOW))
@@ -747,8 +724,8 @@ def prove_canonical_scope_lifecycle():
                 database.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json) VALUES(?,'lichess','TempoPlayer',?,'rapid',1,'white','1-0',?,?)", (game_id, NOW, chess.STARTING_FEN, json.dumps([*route, 'a7a6', 'd3d4'])))
             command('repertoires.main.select', {'repertoire_id': identifier})
             recheck(identifier, ITALIAN)
-            old_run = publish(identifier, game_id)
-            visible(identifier, game_id, target_key)
+            refresh_and_derive_game(game_id)
+            assert_game_comparison(identifier, game_id, current=True)
             before_identity = identity(identifier)
             if dimension == 'source':
                 command('cards.revise', {'card_id': authored_id, 'request': {'starting_fen': chess.STARTING_FEN, 'moves': [*authored_moves, 'b7b6', 'a2a3'], 'history_mode': 'preserve', 'expected_revision': 1}})
@@ -761,15 +738,13 @@ def prove_canonical_scope_lifecycle():
             assert (after_identity['canonical_scope_source_revision'] > before_identity['canonical_scope_source_revision']) == (dimension == 'source')
             assert (after_identity['canonical_scope_preview_id'] != before_identity['canonical_scope_preview_id']) == (dimension == 'prefix')
             assert after_identity['game_scope_generation'] > before_identity['game_scope_generation']
-            assert api.repertoire_statistics_summary(identifier, 'all')['games']['matched'] == 0
-            if dimension == 'source':
-                assert coverage_summary(identifier)['run_id'] is None and coverage_gaps(identifier) == []
+            assert_game_comparison(identifier, game_id, current=False)
             recheck(identifier, prefix_metadata(identifier)['moves'])
             rechecked = identity(identifier)
             for field in ('canonical_prefix_revision', 'canonical_scope_source_revision', 'game_scope_generation'):
                 assert rechecked[field] == after_identity[field], field
-            assert publish(identifier, game_id) != old_run
-            visible(identifier, game_id, target_key)
+            refresh_and_derive_game(game_id)
+            assert_game_comparison(identifier, game_id, current=True)
             with postgres_store.connection(read_only=True) as database:
                 current = read_prefix(database, identifier)
                 assert {row[0] for row in database.execute('SELECT source_revision FROM canonical_prefix_positions WHERE preview_id=?', (current['preview_id'],))} == {current['source_revision']}
@@ -782,8 +757,6 @@ def prove_canonical_scope_lifecycle():
                 database.execute("DELETE FROM background_tasks WHERE deduplication_key=? OR json_extract(payload_json,'$.repertoire_id')=?", (identifier, identifier))
                 database.execute('DELETE FROM repertoires WHERE id IN (?,?)', (identifier, other_id))
     finally:
-        explorer._fetch_explorer = saved_fetch
-        coverage.set_explorer_session_token(saved_token)
         with postgres_store.connection() as database:
             database.execute_native('DELETE FROM operation_receipts WHERE operation_id=ANY(%s::text[])', (operation_ids,))
             database.execute_native('DELETE FROM imported_games WHERE id=ANY(%s::text[])', (game_ids,))
@@ -821,7 +794,6 @@ def main(database_url='postgresql://postgres@postgres:5432/tempo'):
             after_user_write = read_prefix(database,repertoire_id)['source_revision']
             after_user_game_scope = game_scope_generation(database)
             after_user_refresh_generation = database.execute("SELECT generation FROM background_tasks WHERE kind='repertoire_game_refresh' AND deduplication_key='all'").fetchone()[0]
-            requested_run = database.execute('SELECT id FROM repertoire_coverage_runs WHERE repertoire_id=? ORDER BY created_at DESC LIMIT 1',(repertoire_id,)).fetchone()[0]
         phases = run_bounded_task_slices('opening_graph_rebuild',repertoire_id,execute_postgres_opening_graph_slice)
         assert {'stage','link','classify','cleanup','finalize'} <= phases, phases
         assert prefix_metadata(repertoire_id)['source_revision'] == after_user_write, 'Graph materialization changed the authoritative source version'
@@ -830,42 +802,11 @@ def main(database_url='postgresql://postgres@postgres:5432/tempo'):
             assert database.execute("SELECT generation FROM background_tasks WHERE kind='repertoire_game_refresh' AND deduplication_key='all'").fetchone()[0] == after_user_refresh_generation
             assert database.execute('SELECT archived FROM cards WHERE id=?',(repertoire_id+'-authored',)).fetchone()[0] == 0
             assert database.execute('SELECT 1 FROM repertoire_cards WHERE repertoire_id=? AND card_id=?',(repertoire_id,repertoire_id+'-authored')).fetchone()
-        run_bounded_task_slices('coverage_seed',repertoire_id,execute_coverage_seed_slice)
-        assert coverage_summary(repertoire_id)['run_id'] == requested_run
-        assert coverage_summary(repertoire_id)['status'] == 'queued', coverage_summary(repertoire_id)
-        print('PASS CF-2 real branch -> graph stage/link/classify/cleanup -> original coverage seed, with restart between slices',flush=True)
-        # Current route certificates are required; certifying the authored source is explicit.
+        print('PASS CF-2 authored cards survive graph replacement and bounded restart', flush=True)
         set_prefix(repertoire_id,ITALIAN)
-        old_run = complete_coverage(repertoire_id)
-        with postgres_store.connection() as database:
-            database.execute('UPDATE repertoire_coverage_candidates SET covered=1 WHERE node_id IN (SELECT id FROM repertoire_coverage_nodes WHERE run_id=?)',(old_run,))
-        assert coverage_summary(repertoire_id)['is_complete']
-        with postgres_store.connection() as database:
-            lease = coverage_maia_commands.claim_maia_node(database,{})['job']
-            assert lease and lease['run_id'] == old_run
-            node = dict(database.execute('SELECT n.*,r.settings_json FROM repertoire_coverage_nodes n JOIN repertoire_coverage_runs r ON r.id=n.run_id WHERE n.id=?',(lease['node_id'],)).fetchone())
-            database.execute("UPDATE repertoire_coverage_runs SET status='running' WHERE id=?",(old_run,))
-            database.execute("UPDATE repertoire_coverage_nodes SET explorer_status='queued' WHERE id=?",(node['id'],))
-            enqueue_task_in_transaction(database,'coverage_explorer',repertoire_id,{'run_id':old_run,'repertoire_id':repertoire_id,'after_node_id':''},priority=80)
-        explorer_task = claim_owned('coverage_explorer',repertoire_id)
         with postgres_store.connection() as database:
             database.execute('DELETE FROM repertoire_lines WHERE repertoire_id=? AND name=?',(repertoire_id,'New branch'))
-        assert coverage_summary(repertoire_id)['run_id'] is None and coverage_gaps(repertoire_id) == []
-        with postgres_store.connection() as database:
-            assert coverage_maia_commands.claim_maia_node(database,{})['job'] is None
-            _publish_node(database, explorer_task,node,{'moves':[{'uci':'h7h6','white':1000}]},'cache','rapid:1.000000','1600')
-            assert not database.execute("SELECT 1 FROM repertoire_coverage_candidates WHERE node_id=? AND move_uci='h7h6'",(node['id'],)).fetchone()
-        for handler in (coverage_maia_commands.heartbeat_maia_node, coverage_maia_commands.submit_maia_node, coverage_maia_commands.fail_maia_node):
-            try:
-                with postgres_store.connection() as database:
-                    handler(database,{'node_id':lease['node_id'],'lease_id':lease['lease_id'],'moves':[],'error':'injected old result'})
-            except HTTPException as error:
-                assert error.status_code == 409
-            else:
-                raise AssertionError('Stale Maia publication was accepted')
         set_prefix(repertoire_id,ITALIAN)
-        assert complete_coverage(repertoire_id) != old_run and coverage_summary(repertoire_id)['run_id'] is not None
-        print('PASS CF-1 PostgreSQL source invalidation hides old coverage, fences Explorer and Maia, and recertification restores a current run',flush=True)
         # A newly eligible repertoire invalidates the primary selected for a different repertoire.
         with postgres_store.connection() as database:
             database.execute('INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,?,?,\'white\',?,?,?)',(other_repertoire_id+'-line',other_repertoire_id,'Stub',chess.STARTING_FEN,json.dumps(ITALIAN[:3]),NOW))

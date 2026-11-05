@@ -51,7 +51,6 @@ import sys
 from tempo_learning_contracts import v1 as learning
 from tempo_content_publication_contracts import v1 as content
 from tempo_game_evidence_contracts import v1 as evidence
-from tempo_intelligence_contracts import v1 as intelligence
 from tempo_analysis_jobs_contracts import v1 as jobs
 for forbidden in ('backend', 'app', 'services', 'celery', 'psycopg', 'torch', 'numpy', 'onnxruntime', 'fastapi', 'chess'):
     assert not any(name == forbidden or name.startswith(forbidden+'.') for name in sys.modules), forbidden

@@ -64,15 +64,6 @@ export const expectations: Record<string, Record<string, Expectation>> = {
     "ack-conflict":{model:"EvidenceAcknowledgement",checks:{status:"conflict",learning_revision:null}},
     "ack-stale_revision":{model:"EvidenceAcknowledgement",checks:{status:"stale_revision",learning_revision:null}}
   },
-  intelligence: {
-    "advice-probabilities":{model:"AdvisoryPublication",checks:{"advisory.kind":"probabilities","advisory.moves.0.probability":0,"advisory.moves.1.probability":null,"advisory.unknown_mass":1}},
-    "advice-ranking":{model:"AdvisoryPublication",checks:{"advisory.kind":"ranking","advisory.policy_id":"policy-a","advisory.cards.0.card_id":"card-a"}},
-    "advice-readiness":{model:"AdvisoryPublication",checks:{"advisory.kind":"readiness_valuation","advisory.readiness":null,"advisory.valuation":null}},
-    "advice-coverage":{model:"AdvisoryPublication",checks:{"advisory.kind":"coverage_recommendation","advisory.unknown_mass":0.5,"advisory.evidence_ids.0":"evidence-a"}},
-    available:{model:"IntelligenceAvailability",checks:{status:"available","publication.based_on_learning_revision":1}},
-    unavailable:{model:"IntelligenceAvailability",checks:{status:"unavailable",publication:null,reason:"provider_unavailable"}},
-    retryable_failure:{model:"IntelligenceAvailability",checks:{status:"retryable_failure",publication:null}}
-  },
   "analysis-jobs": {
     "stockfish-job":{model:"StockfishJob",checks:{worker:"stockfish",max_depth:12,max_nodes:100000,"constraints.max_wall_time_ms":5000}},
     "maia-job":{model:"MaiaJob",checks:{worker:"maia",rating:1500,model_id:"maia-2","legal_moves.length":2}},

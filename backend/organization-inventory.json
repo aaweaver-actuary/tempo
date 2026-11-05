@@ -6,8 +6,8 @@
   "reviewed_original_modules": 202,
   "review_coverage_is_implementation_completion": false,
   "original_status_counts": {
-    "reviewed-awaiting-owner-closure": 160,
-    "retired-source": 9,
+    "reviewed-awaiting-owner-closure": 153,
+    "retired-source": 16,
     "split-transport-contracts": 1,
     "moved-cohesive-module": 29,
     "partial-contract-extraction": 3
@@ -74,7 +74,7 @@
     "backend/app/study/review/__init__.py",
     "backend/app/study/review/feedback_contracts.py"
   ],
-  "current_python_module_count": 224,
+  "current_python_module_count": 217,
   "modules": [
     {
       "original_path": "backend/app/__init__.py",
@@ -261,27 +261,23 @@
     },
     {
       "original_path": "backend/app/coverage_commands.py",
-      "current_paths": [
-        "backend/app/coverage_commands.py"
-      ],
-      "status": "reviewed-awaiting-owner-closure",
+      "current_paths": [],
+      "status": "retired-source",
       "owner": "Durable coverage refresh admission command",
       "responsibility": [
         "One thin foreground command delegates a coverage build request and translates missing repertoire."
       ],
-      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+      "next_step": "The retired command names remain classified for stale delivery in app/contracts/command_registry.py."
     },
     {
       "original_path": "backend/app/coverage_maia_commands.py",
-      "current_paths": [
-        "backend/app/coverage_maia_commands.py"
-      ],
-      "status": "reviewed-awaiting-owner-closure",
+      "current_paths": [],
+      "status": "retired-source",
       "owner": "Optional coverage provider lease/result application",
       "responsibility": [
         "_lease enforces source/run freshness and active lease; claim/heartbeat/release/fail/submit implement one provider result protocol with last-value duplicate move behavior."
       ],
-      "next_step": "Confirm cohesive placement and strict import boundary; perform the recorded move/split if required."
+      "next_step": "The retired command names remain classified for stale delivery in app/contracts/command_registry.py."
     },
     {
       "original_path": "backend/app/defense_commands.py",
@@ -336,10 +332,8 @@
     },
     {
       "original_path": "backend/app/defensive_admin_commands.py",
-      "current_paths": [
-        "backend/app/defensive_admin_commands.py"
-      ],
-      "status": "reviewed-awaiting-owner-closure",
+      "current_paths": [],
+      "status": "retired-source",
       "owner": "Defense / operational audit and backfill command composition",
       "responsibility": [
         {
@@ -373,7 +367,7 @@
           "responsibility": "Import-time audit/backfill registration"
         }
       ],
-      "next_step": "A first small whole-file move: 33 lines intact to outer composition commands grouped under Defense/admin; update tasks.py import, preserve priorities135/160, deduplication keys and exact initial payloads. No new helper/interface machinery needed merely to move the file."
+      "next_step": "The retired command names remain classified for stale delivery in app/contracts/command_registry.py."
     },
     {
       "original_path": "backend/app/discovery_commands.py",
@@ -430,23 +424,19 @@
     },
     {
       "original_path": "backend/app/finding_card_commands.py",
-      "current_paths": [
-        "backend/app/finding_card_commands.py"
-      ],
-      "status": "reviewed-awaiting-owner-closure",
+      "current_paths": [],
+      "status": "retired-source",
       "owner": "games_findings",
       "responsibility": "Preview/deduplicated save of tactical or middlegame study content from a finding.",
-      "next_step": "Keep finding selection in games/findings; move card/tactic/Study integration to outer bridge; split existing pure line preparation from storage lookups without changing call order."
+      "next_step": "The retired command names remain classified for stale delivery in app/contracts/command_registry.py."
     },
     {
       "original_path": "backend/app/finding_commands.py",
-      "current_paths": [
-        "backend/app/finding_commands.py"
-      ],
-      "status": "reviewed-awaiting-owner-closure",
+      "current_paths": [],
+      "status": "retired-source",
       "owner": "games_findings",
       "responsibility": "Receipt-backed curation and explicit acceptance/rejection of imported-game findings.",
-      "next_step": "Move intact commands to games/findings; retain error/registration translation outside pure finding policy."
+      "next_step": "The retired command names remain classified for stale delivery in app/contracts/command_registry.py."
     },
     {
       "original_path": "backend/app/game_analysis_commands.py",

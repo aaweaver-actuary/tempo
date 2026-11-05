@@ -4,20 +4,19 @@ This is the executable interface foundation for [#264](https://github.com/aaweav
 
 ## Public artifacts and catalog
 
-The original five distributions start at **1.0.0** and require an explicit integer `contract_version: 1` in wire envelopes. Pydantic 2.12.5 models are authoritative. CPython 3.12 and 3.14 are qualified; metadata permits `>=3.12,<3.15`. JSON schemas use draft 2020-12 and are included in wheels. `tempo.invalid` schema IDs are identifiers, not hosted endpoints.
+The original distributions start at **1.0.0** and require an explicit integer `contract_version: 1` in wire envelopes. Pydantic 2.12.5 models are authoritative. CPython 3.12 and 3.14 are qualified; metadata permits `>=3.12,<3.15`. JSON schemas use draft 2020-12 and are included in wheels. `tempo.invalid` schema IDs are identifiers, not hosted endpoints.
 
 | Root / distribution | Public import | Producer → consumers | Authority |
 |---|---|---|---|
 | `learning-transfer` / `tempo-learning-transfer-contracts` | `tempo_learning_transfer_contracts.v1` | Owner capture adapters → Learning runtime/database adapters | Learning; pure transfer claims only |
 | `learning` / `tempo-learning-contracts` | `tempo_learning_contracts.v1` | Study Web/Workbench/Game Evidence requests → Learning; Learning responses → web clients and domain clients | Learning |
 | `content-publication` / `tempo-content-publication-contracts` | `tempo_content_publication_contracts.v1` | Content → Learning; Learning acknowledgements → Content/Workbench | Content definitions; Learning acceptance/activation/fencing |
-| `game-evidence` / `tempo-game-evidence-contracts` | `tempo_game_evidence_contracts.v1` | Game Evidence → Learning, Intelligence, Workbench; Learning acknowledgement → Game Evidence | Game Evidence observations; Learning obligations |
-| `intelligence` / `tempo-intelligence-contracts` | `tempo_intelligence_contracts.v1` | Intelligence → Learning/Workbench | Advisory evidence only |
-| `analysis-jobs` / `tempo-analysis-jobs-contracts` | `tempo_analysis_jobs_contracts.v1` | Content/Game Evidence/Intelligence → Stockfish or Maia; worker → requesting domain | Requesting domain inputs; worker execution/provenance |
+| `game-evidence` / `tempo-game-evidence-contracts` | `tempo_game_evidence_contracts.v1` | Game Evidence → Learning, Workbench; Learning acknowledgement → Game Evidence | Game Evidence observations; Learning obligations |
+| `analysis-jobs` / `tempo-analysis-jobs-contracts` | `tempo_analysis_jobs_contracts.v1` | Content/Game Evidence → Stockfish or Maia; worker → requesting domain | Requesting domain inputs; worker execution/provenance |
 
 Analysis jobs additionally exposes public `stockfish` and `maia` modules. Each `v1` namespace exposes `PUBLIC_MODELS`, `validate_contract(model, json)` and `serialize_contract(model)`. The [machine-readable catalog](catalog.json) lists every top-level interface, schema export and owning suite. There is no shared ORM, global registry, provider initialization or universal model package. Small wire primitives remain package-local to avoid coupled releases. The independent
 retained-history transfer contract is separately versioned and preserves its reviewed
-`version: 1` vocabulary; it does not change the original five contract envelopes.
+`version: 1` vocabulary; it does not change the original contract envelopes.
 
 ## Learning interfaces and settlement
 
@@ -53,9 +52,7 @@ Imported games carry provider identity, source digest, game revision and observa
 
 Game Evidence assigns stable obligation IDs for the same workspace/game/encounter/decision/kind across deliveries; delivery IDs may change without inventing a new obligation. Same evidence identity/revision or obligation identity with differing content conflicts. A changed observation revision needs explicit new acceptance; it does not silently rewrite a committed obligation. Learning returns accepted-pending/completed/retryable/terminal/conflict/stale acknowledgements. Only completion reports a committed Learning revision; repeated evidence must not duplicate obligations, queue effects or scheduling events.
 
-## Advisory and worker boundaries
-
-Intelligence publications bind content generation, Learning revision, policy, source/method versions, input provenance, production time and expiry. Probability `null` means unknown; `0.0` means known zero. Unknown mass is explicit. No expiry means freshness is unknown; conservative reference consumers fall back to deterministic ordering. Unavailable/incompatible/stale advice cannot manufacture eligibility, admission, FSRS updates or review events. Rankings require the caller's exact expected policy ID and revision, alongside workspace/content/Learning/freshness compatibility. Mismatches use sorted, deduplicated eligible IDs truncated to capacity; matching advice preserves its list order. Rankings remain subject to current eligibility, quota and card deduplication at Learning's commit boundary.
+## Worker boundaries
 
 Workers share only identity, request/execution versions, time/memory constraints, lifecycle and cancellation metadata. Stockfish requests include FEN, moves, permitted search moves, depth/node bounds, MultiPV and engine version; results carry ranked variations and side-to-move centipawn/mate scores. Maia requests include FEN, rating, model identity/version and an explicit legal move inventory; results carry normalized probabilities with model/runtime provenance. FEN legality and engine execution belong to implementations, not these packages.
 
@@ -72,17 +69,11 @@ JSON schemas validate wire shape, types, bounds and discriminated variants. Pyda
 
 ## PR #271 validation corrections
 
-Standalone advisory publications and publications nested in IntelligenceAvailability
-use the same independent TypeScript semantic checks: expiry, move/card uniqueness,
-known/unknown and coverage normalization (inclusive 1e-9 tolerance), and honest
-unknown probability mass. Availability and workspace binding remain separate checks.
-Structural JSON Schema/AJV acceptance does not establish semantic coherence.
-
 Timestamps require complete timezone-aware wire strings, Gregorian years 0001–9999,
 valid calendar/clock values, and either no fraction or 1–6 digits. Signed offsets
 permit hours 00–23 and minutes 00–59, including +00:00 and -00:00. Malformed offsets,
 hour 24, leap seconds, trailing text/newlines and excess fractions are rejected.
 Python retains aware datetime chronology; TypeScript compares integer microseconds
-with bigint. Expiry is strictly later; execution may finish at the start instant.
+with bigint. Execution may finish at the start instant.
 Validation/comparison preserves supplied strings, including offsets and fractional
 zeros: equivalent instants still produce distinct canonical wire payloads.

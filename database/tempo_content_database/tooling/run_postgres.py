@@ -116,9 +116,9 @@ def main(arguments=None):
             for role, password in (("content_owner", owner_password), ("content_runtime", runtime_password)):
                 database.execute(sql.SQL("CREATE ROLE {} LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD {}").format(sql.Identifier(role), sql.Literal(password)))
             database.execute("CREATE DATABASE content OWNER content_owner")
-            for name in ("learning", "game_evidence", "intelligence"):
+            for name in ("learning", "game_evidence"):
                 database.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
-            for name in ("postgres", "template1", "content", "learning", "game_evidence", "intelligence"):
+            for name in ("postgres", "template1", "content", "learning", "game_evidence"):
                 database.execute(sql.SQL("REVOKE ALL ON DATABASE {} FROM PUBLIC").format(sql.Identifier(name)))
             database.execute("GRANT CONNECT ON DATABASE content TO content_runtime")
         owner_url = make_conninfo(admin_url, dbname="content", user="content_owner", password=owner_password)
@@ -137,7 +137,7 @@ def main(arguments=None):
             TEMPO_CONTENT_TEST_CONTAINER=identity,
             TEMPO_CONTENT_TEST_VOLUME=volume,
             TEMPO_CONTENT_TEST_FOREIGN_DATABASES=json.dumps({name: make_conninfo(runtime_url, dbname=name)
-                                                           for name in ("learning", "game_evidence", "intelligence")}),
+                                                           for name in ("learning", "game_evidence")}),
         )
         result = run_pytest([DATABASE / "tests/test_postgres.py", DATABASE / "tests/test_final_generation.py"], evidence / "cases",
                             cwd=SERVICE, environment=environment, external_junit=external_junit,

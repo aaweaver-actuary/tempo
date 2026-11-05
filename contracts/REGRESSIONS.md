@@ -14,8 +14,6 @@ Every package also supports `python -m pytest contracts/<root>/tests`. Collectio
 | Publication is not activation; stale acknowledgements do not activate older content | `content-publication/tests/test_activation_reference.py::test_publication_acceptance_is_not_activation`, `test_stale_generation_and_acknowledgement_cannot_activate_older_content` |
 | Retirement/replacement fencing and immutable generations | `test_retirement_acknowledgement_requires_fencing_and_is_idempotent`, `test_structural_replacement_requires_accepted_current_generation`, `test_immutable_generation_and_activation_identity_reject_conflicts` |
 | Duplicate observations preserve one obligation; completion cannot regress | `game-evidence/tests/test_evidence_reference.py::test_duplicate_game_evidence_and_new_delivery_identity_do_not_duplicate_obligations`, `test_completed_evidence_replay_cannot_regress_to_pending` |
-| Unknown probability and deterministic fallback | `intelligence/tests/test_advisory_reference.py::test_unknown_probability_is_distinct_from_zero`, `test_intelligence_unavailable_preserves_deterministic_introductions` |
-| Rankings preserve eligibility/quota/deduplication | `test_ranking_never_overrides_eligibility_quota_or_deduplication` |
 | Worker-specific results, stale versions and cancellation | `analysis-jobs/tests/test_jobs_reference.py::test_bounded_worker_result_matches_request_and_provenance`, `test_cancellation_requested_is_not_computation_termination`, `test_stockfish_and_maia_cannot_exchange_results`, `test_same_job_request_replay_and_new_execution_generation_preserve_input` |
 | Native role isolation, default PUBLIC ACLs and credential guards | All six named test families in `database-ownership/tests/test_ownership.py` |
 | Installed source independence; forbidden direct/lazy/dynamic imports | `tests/test_dependency_boundaries.py::test_undeclared_direct_lazy_conditional_and_dynamic_dependencies_fail`, `test_installed_imports_do_not_load_application_registry_or_model_runtimes` |
@@ -26,12 +24,8 @@ These are new contract/reference invariants. There is no demonstrated failing ba
 
 ## PR #271 repair ownership
 
-All five package suites contain their own installed timestamp validity/serialization
-tests. Intelligence owns exact policy compatibility and standalone/wrapped advice;
-Analysis Jobs owns exact execution chronology. See their local inventories.
+The Learning, Content, Game Evidence and Analysis Jobs v1 suites exercise timestamp validity and serialization. Analysis Jobs also checks execution chronology.
 
-`semantic-negative/v1/repair-advisory-*` adds 14 structural-valid/semantic-invalid
-records for both envelope forms, without expanding the positive producer inventory.
 The shared Python negative test's historical name mentions TypeScript, but executes
 Python only. Independent TypeScript execution is registered in `consumer.test.ts`
 under `consumer rejects semantic negative` and `repair:` case names.

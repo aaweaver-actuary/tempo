@@ -10,7 +10,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_catalog_covers_every_versioned_public_interface_and_export():
     catalog = json.loads((ROOT / "catalog.json").read_text())
-    assert len(catalog["contracts"]) == 6
+    assert sorted(entry["root"] for entry in catalog["contracts"]) == sorted(
+        path.parent.name for path in ROOT.glob("*/pyproject.toml")
+    )
     for entry in catalog["contracts"]:
         public = importlib.import_module(entry["public_namespace"])
         assert entry["models"] == [model.__name__ for model in public.PUBLIC_MODELS]
