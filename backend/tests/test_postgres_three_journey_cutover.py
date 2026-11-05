@@ -254,6 +254,7 @@ def test_schema61_defense_exclusive_rehearsal_preserves_shared_history(tmp_path)
     if parsed.hostname != '127.0.0.1' or parsed.path != '/w07_census':
         raise ValueError('refusing non-W07 disposable database')
     with psycopg.connect(dsn, row_factory=dict_row) as db:
+        db.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')
         assert db.execute('SELECT max(version) AS v FROM tempo_schema_migrations').fetchone()['v'] == 61
         db.execute('SET LOCAL join_collapse_limit=1')
         db.execute('SET LOCAL jit=off')
@@ -397,6 +398,28 @@ def test_schema61_defense_exclusive_rehearsal_preserves_shared_history(tmp_path)
             with pytest.raises(RuntimeError, match='trigger ledger changed'):
                 guard.capture_cut62_v6(db, b'x'*32, selection, binding)
             db.execute('ROLLBACK TO SAVEPOINT changed_trigger')
+            db.execute('SAVEPOINT unexpected_origin_fk')
+            db.execute('ALTER TABLE queue_attempt_abandonments ADD CONSTRAINT synthetic_extra_origin_fk FOREIGN KEY(queue_entry_id,card_id,revision) REFERENCES queue_attempt_origins(queue_entry_id,card_id,revision)')
+            with pytest.raises(RuntimeError, match='origin foreign-key ledger changed'):
+                guard.capture_cut62_v6(db, b'x'*32, selection, binding)
+            db.execute('ROLLBACK TO SAVEPOINT unexpected_origin_fk')
+            db.execute('SAVEPOINT changed_epoch_dependency')
+            db.execute('ALTER TABLE priority_repertoire_source_epochs ADD CONSTRAINT synthetic_epoch_unique UNIQUE(version)')
+            db.execute('ALTER TABLE reviews ADD COLUMN synthetic_epoch bigint')
+            db.execute('ALTER TABLE reviews ADD CONSTRAINT synthetic_epoch_fk FOREIGN KEY(synthetic_epoch) REFERENCES priority_repertoire_source_epochs(version)')
+            with pytest.raises(RuntimeError, match='updated-column foreign-key ledger changed'):
+                guard.capture_cut62_v6(db, b'x'*32, selection, binding)
+            db.execute('ROLLBACK TO SAVEPOINT changed_epoch_dependency')
+            db.execute('SAVEPOINT changed_trigger_function')
+            db.execute("CREATE OR REPLACE FUNCTION frozen_invalidate_pending() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$")
+            with pytest.raises(RuntimeError, match='trigger ledger changed'):
+                guard.capture_cut62_v6(db, b'x'*32, selection, binding)
+            db.execute('ROLLBACK TO SAVEPOINT changed_trigger_function')
+            db.execute('SAVEPOINT replica_mode')
+            db.execute("SET LOCAL session_replication_role='replica'")
+            with pytest.raises(RuntimeError, match='unsupported Defense cutover database session'):
+                guard.capture_cut62_v6(db, b'x'*32, selection, binding)
+            db.execute('ROLLBACK TO SAVEPOINT replica_mode')
             v6 = guard.capture_cut62_v6(db, b'x'*32, selection, binding)
             assert guard.check_captured_cut62_v6(db, v6, b'x'*32)['unchanged']
             from database.tooling.apply_postgres_migrations import MIGRATIONS, migration_source
@@ -405,6 +428,34 @@ def test_schema61_defense_exclusive_rehearsal_preserves_shared_history(tmp_path)
                 db.execute(migration_source(MIGRATIONS / '062_three_journey_retirement.sql'), prepare=False)
             db.execute('ROLLBACK TO SAVEPOINT missing_approval')
             assert db.execute('SELECT max(version) FROM tempo_schema_migrations').fetchone()[0] == 61
+            for savepoint, mutation, message in (
+                ('migration_origin_fk', 'ALTER TABLE queue_attempt_abandonments ADD CONSTRAINT synthetic_extra_origin_fk FOREIGN KEY(queue_entry_id,card_id,revision) REFERENCES queue_attempt_origins(queue_entry_id,card_id,revision)', 'origin foreign-key ledger changed'),
+                ('migration_trigger_function', "CREATE OR REPLACE FUNCTION frozen_invalidate_pending() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$", 'trigger ledger changed'),
+                ('migration_replica', "SET LOCAL session_replication_role='replica'", 'Unsupported Defense cutover database session'),
+            ):
+                db.execute('SAVEPOINT ' + savepoint)
+                db.execute(mutation)
+                db.execute("SELECT set_config('tempo.cut62_defense_manifest',%s,true)", (json.dumps(selection),))
+                with pytest.raises(psycopg.Error, match=message):
+                    db.execute(migration_source(MIGRATIONS / '062_three_journey_retirement.sql'), prepare=False)
+                db.execute('ROLLBACK TO SAVEPOINT ' + savepoint)
+            for bad_selection in (
+                {**selection, 'cohort': None},
+                {**selection, 'keys': [selected_keys[0], selected_keys[0]], 'expected': {'count': 2, 'reference_digest': reference_digest}},
+            ):
+                db.execute('SAVEPOINT invalid_selection')
+                db.execute("SELECT set_config('tempo.cut62_defense_manifest',%s,true)", (json.dumps(bad_selection),))
+                with pytest.raises(psycopg.Error, match='invalid approved Defense selection'):
+                    db.execute(migration_source(MIGRATIONS / '062_three_journey_retirement.sql'), prepare=False)
+                db.execute('ROLLBACK TO SAVEPOINT invalid_selection')
+            db.execute('SAVEPOINT migration_epoch_dependency')
+            db.execute('ALTER TABLE priority_repertoire_source_epochs ADD CONSTRAINT synthetic_epoch_unique UNIQUE(version)')
+            db.execute('ALTER TABLE reviews ADD COLUMN synthetic_epoch bigint')
+            db.execute('ALTER TABLE reviews ADD CONSTRAINT synthetic_epoch_fk FOREIGN KEY(synthetic_epoch) REFERENCES priority_repertoire_source_epochs(version)')
+            db.execute("SELECT set_config('tempo.cut62_defense_manifest',%s,true)", (json.dumps(selection),))
+            with pytest.raises(psycopg.Error, match='updated-column foreign-key ledger changed'):
+                db.execute(migration_source(MIGRATIONS / '062_three_journey_retirement.sql'), prepare=False)
+            db.execute('ROLLBACK TO SAVEPOINT migration_epoch_dependency')
             db.execute('SAVEPOINT migration_changed_trigger')
             db.execute('ALTER TABLE cards DISABLE TRIGGER frozen_guard_cards')
             db.execute("SELECT set_config('tempo.cut62_defense_manifest',%s,true)", (json.dumps(selection),))
