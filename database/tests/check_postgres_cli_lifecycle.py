@@ -13,6 +13,7 @@ sys.path.insert(0, str(_REPOSITORY / "backend"))
 import os
 import argparse
 import json
+import hashlib
 import re
 from pathlib import Path
 
@@ -139,13 +140,16 @@ def main():
             def count(table, column, pattern):
                 from psycopg import sql
                 return database.execute(sql.SQL('SELECT count(*) FROM public.{} WHERE {} LIKE %s').format(sql.Identifier(table),sql.Identifier(column)),(pattern,)).fetchone()[0]
-            retained=database.execute("""SELECT encode(sha256(convert_to(jsonb_build_object(
+            retained_rows,retained=database.execute("""WITH retained AS (SELECT jsonb_build_object(
               'games',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM imported_games t WHERE id LIKE 'cli-defense-15-game-%'),
               'findings',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM game_findings t WHERE id LIKE 'cli-defense-15-finding-%'),
               'candidates',(SELECT jsonb_agg(to_jsonb(t)-'card_id' ORDER BY id) FROM threat_training_candidates t WHERE id LIKE 'cli-defense-15-candidate-%'),
               'links',(SELECT jsonb_agg(to_jsonb(t) ORDER BY candidate_id,request_id,role) FROM threat_candidate_requests t WHERE candidate_id LIKE 'cli-defense-15-candidate-%'),
               'requests',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM threat_analysis_requests t WHERE id LIKE 'cli-defense-15-request-%'),
-              'london',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM repertoire_lines t WHERE repertoire_id='cli-retained-london'))::text,'UTF8')),'hex')""").fetchone()[0]
+              'london',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM repertoire_lines t WHERE repertoire_id='cli-retained-london')) AS value)
+              SELECT value,encode(sha256(convert_to(value::text,'UTF8')),'hex') FROM retained""").fetchone()
+            retained_categories={key:{'count':len(rows or []),'sha256':hashlib.sha256(json.dumps(rows,sort_keys=True,separators=(',',':')).encode()).hexdigest()}
+                                 for key,rows in retained_rows.items()}
             tables=('next_opponent_accounts','next_opponent_snapshots','endgame_attempts','daily_chess_snapshots','daily_chess_insights',
               'daily_statistics_jobs','game_insight_recommendations','game_analysis_publications','game_analysis_position_reports',
               'game_analysis_position_errors','game_analysis_jobs','engine_scheduling_state')
@@ -156,7 +160,8 @@ def main():
               'attempts':count('defense_attempts','candidate_id','cli-defense-15-candidate-%'),
               'reviews':count('reviews','card_id','cli-defense-15-card-%'),
               'linkedCandidates':database.execute("SELECT count(*) FROM threat_training_candidates WHERE id LIKE 'cli-defense-15-candidate-%' AND card_id IS NOT NULL").fetchone()[0],
-              'retainedDigest':retained,'epochs':database.execute("SELECT count(*) FROM priority_repertoire_source_epochs WHERE repertoire_id LIKE 'cli-defense-15-rep-%'").fetchone()[0],
+              'retainedDigest':retained,'retainedCategories':retained_categories,'retainedRows':retained_rows,
+              'epochs':database.execute("SELECT count(*) FROM priority_repertoire_source_epochs WHERE repertoire_id LIKE 'cli-defense-15-rep-%'").fetchone()[0],
               'londonChoices':database.execute("SELECT count(DISTINCT moves_json) FROM repertoire_lines WHERE repertoire_id='cli-retained-london'").fetchone()[0],
               'frozen':database.execute("SELECT invalidated FROM frozen_opening_runs WHERE run_id='cli-retained-frozen'").fetchone()[0],
               'frozenActivation':database.execute("SELECT row_to_json(t) FROM frozen_opening_activation t WHERE id=1").fetchone()[0],
