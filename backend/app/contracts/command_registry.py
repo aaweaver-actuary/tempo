@@ -80,7 +80,7 @@ RETIRED_COMMANDS = frozenset({
     'defense.recognition.submit', 'defense.attempt.submit', 'defense.candidate.change',
     'endgames.template.create', 'endgames.attempt.create',
     'game_findings.curate', 'game_findings.decide', 'game_findings.card.save',
-    'analysis.paste.commit', 'activity.progress', 'defensive.audit', 'defensive.backfill',
+    'activity.progress', 'defensive.audit', 'defensive.backfill',
     'coverage.refresh.request', 'discovery.accept',
     'coverage.maia.claim', 'coverage.maia.heartbeat', 'coverage.maia.release',
     'coverage.maia.failure', 'coverage.maia.submit',

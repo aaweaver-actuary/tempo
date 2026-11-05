@@ -20,7 +20,10 @@ sys.meta_path.insert(0, RejectHTTP())
 socket.socket.connect = forbidden
 socket.create_connection = forbidden
 subprocess.Popen = forbidden
-from app import tasks, command_gateway, opening_evidence_commands, canonical_prefix_commands
+from app import tasks, command_gateway, opening_evidence_commands, canonical_prefix_commands, analysis_paste_commands
+from app.contracts.command_registry import RETIRED_COMMANDS
+assert 'analysis.paste.commit' not in RETIRED_COMMANDS
+assert command_gateway._handlers['analysis.paste.commit'] is analysis_paste_commands.commit_analysis_paste
 handlers = command_gateway._handlers
 preparers = command_gateway._preparers
 assert handlers["opening_evidence.checkpoint"] is opening_evidence_commands.commit_standalone_checkpoint

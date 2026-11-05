@@ -53,6 +53,7 @@ register_current_repertoire_commands()
 from . import annotation_commands  # noqa: F401 - registers foreground position notes
 from . import branch_commands  # noqa: F401 - registers foreground branch edits
 from . import pgn_import_commands  # noqa: F401 - registers foreground PGN imports
+from . import analysis_paste_commands  # noqa: F401 - registers foreground pasted lines
 from .services import prefix_transition_application  # registers the foreground apply command
 from . import prefix_split_commands  # noqa: F401 - registers foreground prefix splits
 from . import card_commands  # noqa: F401 - registers foreground card revisions
