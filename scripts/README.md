@@ -532,31 +532,6 @@ recorded runtime image across operator/documentation-only changes, also set
 verifies every Dockerfile COPY input and rejects untracked runtime additions. No production
 source is mounted into that image; only synthetic qualification inputs are mounted.
 
-### Engine job-family routing
-
-
-The engine cycle processes at most one recovered or newly claimed job. Its
-[Games and Defense adapters](engine-job-families.mjs) own claim, recovery and
-result callback routing. The ordinary durable journal retains Games operations
-and all callbacks; a separate journal retains uncertain Defense claims. Games
-recovery is attempted first, and a recovered claim is not claimed again.
-The adapters own control requests and pre-search release. `engine-search.mjs`
-polls a supplied Boolean continuation capability and retains its existing stop,
-deadline and diagnostics behavior.
-
-```mermaid
-flowchart LR
-  W[Engine worker] --> C[One-job cycle]
-  C --> G[Games adapter]
-  C --> D[Defense adapter]
-  G --> J[Ordinary durable journal]
-  D --> J
-  D --> K[Defense claim journal]
-  C -->|supplies continuation| S[Engine search]
-  G --> P[Games control and release]
-  D --> T[Defense control and release]
-```
-
 ### Exact legacy queue-attempt abandonment
 
 `scripts/position-study/abandon-queue-attempt.mjs` defaults to a checked plan on
