@@ -525,7 +525,7 @@ def _pre62_sequences(database, secret):
 
 def _pre62_catalog(database, secret):
     rows = database.execute("""
-      SELECT 'index', c.relname, pg_get_indexdef(c.oid)
+      SELECT 'index', c.relname, pg_get_indexdef(c.oid) || ':' || i.indisvalid::text || ':' || i.indisready::text
       FROM pg_class c JOIN pg_index i ON i.indexrelid=c.oid JOIN pg_class owner ON owner.oid=i.indrelid
       JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND owner.relname<>%s
       UNION ALL
@@ -533,21 +533,23 @@ def _pre62_catalog(database, secret):
       FROM pg_constraint con JOIN pg_class owner ON owner.oid=con.conrelid JOIN pg_namespace n ON n.oid=owner.relnamespace
       WHERE n.nspname='public' AND owner.relname<>%s
       UNION ALL
-      SELECT 'trigger', owner.relname || '.' || t.tgname, pg_get_triggerdef(t.oid)
+      SELECT 'trigger', owner.relname || '.' || t.tgname, pg_get_triggerdef(t.oid) || ':' || t.tgenabled::text
       FROM pg_trigger t JOIN pg_class owner ON owner.oid=t.tgrelid JOIN pg_namespace n ON n.oid=owner.relnamespace
       WHERE n.nspname='public' AND NOT t.tgisinternal AND owner.relname<>%s AND NOT (t.tgname=ANY(%s))
       UNION ALL
       SELECT 'function', p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')',
-             pg_get_functiondef(p.oid) || COALESCE(p.proacl::text,'')
+             pg_get_functiondef(p.oid) || ':' || pg_get_userbyid(p.proowner) || ':' || COALESCE(p.proacl::text,'')
       FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
       WHERE n.nspname='public' AND p.prokind='f' AND NOT (p.proname=ANY(%s))
       UNION ALL
       SELECT 'view', c.relname, pg_get_viewdef(c.oid,true) || COALESCE(c.relacl::text,'')
       FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('v','m')
       UNION ALL
-      SELECT 'grant', c.relname, COALESCE(c.relacl::text,'')
+      SELECT 'grant', c.relname, pg_get_userbyid(c.relowner) || ':' || COALESCE(c.relacl::text,'') || ':' || c.relrowsecurity::text || ':' || c.relforcerowsecurity::text
       FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
       WHERE n.nspname='public' AND c.relkind IN ('r','p') AND c.relname<>%s
+      UNION ALL
+      SELECT 'defaultacl', pg_get_userbyid(d.defaclrole) || ':' || d.defaclnamespace::text || ':' || d.defaclobjtype::text, d.defaclacl::text FROM pg_default_acl d
       UNION ALL
       SELECT 'default', c.relname || '.' || a.attname, pg_get_expr(d.adbin,d.adrelid)
       FROM pg_attrdef d JOIN pg_class c ON c.oid=d.adrelid JOIN pg_namespace n ON n.oid=c.relnamespace
@@ -559,7 +561,22 @@ def _pre62_catalog(database, secret):
         (json.dumps(row, separators=(',', ':'), ensure_ascii=False) for row in rows))
 
 
-def _pre62_added_objects(database, version, owner):
+
+def _pre62_default_table_acl(database):
+    # Effective new-table grants are the owner/global default plus the public
+    # schema's additive default grants. Compare normalized ACL entries.
+    return database.execute("""
+      SELECT grantor,grantee,privilege_type,is_grantable FROM aclexplode(COALESCE(
+        (SELECT defaclacl FROM pg_default_acl WHERE defaclrole=current_user::regrole
+         AND defaclnamespace=0 AND defaclobjtype='r'), acldefault('r',current_user::regrole)))
+      UNION
+      SELECT a.grantor,a.grantee,a.privilege_type,a.is_grantable
+      FROM pg_default_acl d CROSS JOIN LATERAL aclexplode(d.defaclacl) a
+      WHERE d.defaclrole=current_user::regrole AND d.defaclnamespace='public'::regnamespace AND d.defaclobjtype='r'
+      ORDER BY 1,2,3,4
+    """).fetchall()
+
+def _pre62_added_objects(database, version, owner, expected_acl):
     functions = database.execute("""SELECT p.proname, pg_get_userbyid(p.proowner), p.prosrc,
          p.proconfig, p.prosecdef, p.provolatile, pg_get_function_identity_arguments(p.oid), p.prorettype::regtype::text, l.lanname, p.proacl IS NULL
        FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN pg_language l ON l.oid=p.prolang
@@ -590,9 +607,12 @@ def _pre62_added_objects(database, version, owner):
     if exists != (version >= 61):
         raise RuntimeError('pre62 historical origin table state changed')
     if version >= 61:
-        relation = database.execute("SELECT c.relkind,pg_get_userbyid(c.relowner) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname=%s", (PRE62_NEW_TABLE,)).fetchone()
-        if relation != ('r',owner):
+        relation = database.execute("SELECT c.relkind,pg_get_userbyid(c.relowner),c.relrowsecurity,c.relforcerowsecurity FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname=%s", (PRE62_NEW_TABLE,)).fetchone()
+        if relation != ('r',owner,False,False):
             raise RuntimeError('pre62 historical origin owner or kind changed')
+        acl = database.execute("SELECT a.grantor,a.grantee,a.privilege_type,a.is_grantable FROM pg_class c CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) a WHERE c.oid=%s::regclass ORDER BY 1,2,3,4", ('public.' + PRE62_NEW_TABLE,)).fetchall()
+        if [list(row) for row in acl] != expected_acl:
+            raise RuntimeError('pre62 historical origin ACL changed')
         layout = table_layout(database)[PRE62_NEW_TABLE]
         expected_columns = (('legacy_target_id','text',True),('legacy_workspace_id','text',True),
                             ('export_id','text',True),('receipt_id','text',True),
@@ -601,8 +621,8 @@ def _pre62_added_objects(database, version, owner):
             raise RuntimeError('pre62 historical origin layout changed')
         if database.execute('SELECT EXISTS(SELECT 1 FROM public.legacy_content_historical_origins)').fetchone()[0]:
             raise RuntimeError('pre62 historical origin table is not empty')
-        indexes = database.execute("SELECT indexname FROM pg_indexes WHERE schemaname='public' AND tablename=%s ORDER BY 1", (PRE62_NEW_TABLE,)).fetchall()
-        if [row[0] for row in indexes] != ['legacy_content_historical_origins_pkey','legacy_content_historical_origins_receipt_id_key']:
+        indexes = database.execute("SELECT x.indexname,i.indisvalid,i.indisready FROM pg_indexes x JOIN pg_class c ON c.relname=x.indexname JOIN pg_namespace n ON n.oid=c.relnamespace AND n.nspname=x.schemaname JOIN pg_index i ON i.indexrelid=c.oid WHERE x.schemaname='public' AND x.tablename=%s ORDER BY 1", (PRE62_NEW_TABLE,)).fetchall()
+        if indexes != [('legacy_content_historical_origins_pkey',True,True),('legacy_content_historical_origins_receipt_id_key',True,True)]:
             raise RuntimeError('pre62 historical origin index inventory changed')
         constraints = database.execute("SELECT contype,pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid=%s::regclass AND contype<>'n' ORDER BY 1,2", ('public.' + PRE62_NEW_TABLE,)).fetchall()
         if constraints != [('p','PRIMARY KEY (legacy_target_id, legacy_workspace_id, export_id)'),('u','UNIQUE (receipt_id)')]:
@@ -618,18 +638,24 @@ def _pre62_added_objects(database, version, owner):
             raise RuntimeError('pre62 unexpected historical origin trigger')
 
 
+def _pre62_session(database):
+    database.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+    _cut62_session(database)
+
+
 def capture_pre62_59(database, secret):
     if not isinstance(secret, bytes) or len(secret) != 32:
         raise ValueError('pre62 secret must be 32 bytes')
-    _cut62_session(database)
+    _pre62_session(database)
     _cut62_versions(database, 59)
     owner = database.execute('SELECT current_user').fetchone()[0]
-    _pre62_added_objects(database, 59, owner)
+    expected_acl = [list(row) for row in _pre62_default_table_acl(database)]
+    _pre62_added_objects(database, 59, owner, expected_acl)
     layout = _cut62_layout(database, PRE62_SOURCE_TABLES)
     rows = {name: _pre62_table(database, name, layout[name][0], secret)
             for name in sorted(PRE62_SOURCE_TABLES - {CUT62_LEDGER})}
     return {'domain':'pre62-source-59','version':PRE62_EVIDENCE_VERSION,'from':59,'through':61,
-            'owner':owner,'layout':layout,'rows':rows,
+            'owner':owner,'new_table_acl':expected_acl,'layout':layout,'rows':rows,
             'catalog':_pre62_catalog(database,secret),'sequences':_pre62_sequences(database,secret)}
 
 
@@ -640,14 +666,16 @@ def verify_pre62_59(database, witness, secret):
         raise RuntimeError('unsupported pre62 witness')
     if set(witness.get('layout',{})) != PRE62_SOURCE_TABLES or set(witness.get('rows',{})) != PRE62_SOURCE_TABLES - {CUT62_LEDGER}:
         raise RuntimeError('pre62 witness coverage changed')
-    _cut62_session(database)
+    _pre62_session(database)
     version = database.execute('SELECT COALESCE(max(version),0) FROM public.tempo_schema_migrations').fetchone()[0]
     if version not in (59,60,61):
         raise RuntimeError('unsupported pre62 target version')
     _cut62_versions(database, version)
     if database.execute('SELECT current_user').fetchone()[0] != witness['owner']:
         raise RuntimeError('pre62 migration owner changed')
-    _pre62_added_objects(database, version, witness['owner'])
+    if [list(row) for row in _pre62_default_table_acl(database)] != witness.get('new_table_acl'):
+        raise RuntimeError('pre62 default table ACL changed')
+    _pre62_added_objects(database, version, witness['owner'], witness['new_table_acl'])
     expected_tables = PRE62_SOURCE_TABLES | ({PRE62_NEW_TABLE} if version >= 61 else set())
     layout = _cut62_layout(database, expected_tables)
     if any(layout[name] != witness['layout'][name] for name in PRE62_SOURCE_TABLES):

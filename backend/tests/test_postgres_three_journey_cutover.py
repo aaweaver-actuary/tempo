@@ -309,11 +309,12 @@ def test_pre62_original_witness_survives_only_expected_checkpoints(monkeypatch):
     source = guard.PRE62_SOURCE_TABLES
     layout = {name: [['id'], [['id','text',True]]] for name in source}
     state = {name: {'count':1,'digest':name} for name in source}
-    monkeypatch.setattr(guard, '_cut62_session', lambda db: None)
+    monkeypatch.setattr(guard, '_pre62_session', lambda db: None)
     monkeypatch.setattr(guard, '_cut62_versions', lambda db, version: None)
-    monkeypatch.setattr(guard, '_pre62_added_objects', lambda db, version, owner: None)
+    monkeypatch.setattr(guard, '_pre62_added_objects', lambda db, version, owner, acl: None)
     monkeypatch.setattr(guard, '_cut62_layout', lambda db, names: {name: layout.get(name, [['id'], []]) for name in names})
     monkeypatch.setattr(guard, '_pre62_table', lambda db, name, key, secret: state[name].copy())
+    monkeypatch.setattr(guard, '_pre62_default_table_acl', lambda db: [])
     monkeypatch.setattr(guard, '_pre62_sequences', lambda db, secret: {'count':10,'digest':'seq'})
     monkeypatch.setattr(guard, '_pre62_catalog', lambda db, secret: {'count':1,'digest':'catalog'})
     witness = guard.capture_pre62_59(database, b'x'*32)
@@ -348,3 +349,80 @@ def test_pre62_file_never_overwrites_and_rejects_other_domain(tmp_path,monkeypat
     path.write_text(json.dumps(payload))
     with pytest.raises(RuntimeError,match='authentication'):
         guard.load_pre62_59(path)
+
+
+def test_pre62_native_original_59_survives_interrupted_60_and_61(tmp_path):
+    """The original witness never changes across either disposable migration."""
+    import os
+    from urllib.parse import urlparse
+    import psycopg
+    from database.tooling.apply_postgres_migrations import MIGRATIONS,migration_source
+
+    dsn=os.environ.get('TEMPO_W07_PRE62_REGRESSION_DSN')
+    if not dsn:
+        pytest.skip('W07 pre62 disposable database not allocated')
+    parsed=urlparse(dsn)
+    if parsed.hostname != '127.0.0.1' or parsed.path != '/w07_pre62':
+        raise ValueError('refusing non-W07 disposable database')
+    with psycopg.connect(dsn) as db:
+        assert db.execute("SELECT to_regclass('public.tempo_schema_migrations')").fetchone()[0] is None
+        for path in sorted(MIGRATIONS.glob('[0-9][0-9][0-9]_*.sql')):
+            if int(path.name[:3])<=59:
+                db.execute(migration_source(path),prepare=False)
+        db.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES ('r','synthetic','synthetic','2026-01-01')")
+        db.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,content_type) VALUES ('opening','r','prefix','synthetic','[]','2026-01-01','opening'),('defense','r','prefix','synthetic','[]','2026-01-01','defense')")
+        db.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json) VALUES ('game','synthetic','synthetic','2026-01-01','rapid',0,'white','draw','synthetic','[]')")
+        db.execute("INSERT INTO game_findings(id,game_id,analysis_version,ply,kind,confidence,evidence_json,created_at,updated_at) VALUES ('finding','game',1,1,'synthetic',1,'{}','2026-01-01','2026-01-01')")
+        db.execute("INSERT INTO threat_training_candidates(id,finding_id,game_id,analysis_version,incident_id,player_ply,evidence_json,source_fingerprint,detector_version,policy_json,created_at,updated_at,card_id) VALUES ('candidate','finding','game',1,'incident',1,'{}','synthetic',1,'{}','2026-01-01','2026-01-01','defense')")
+        db.execute("INSERT INTO defense_attempts(attempt_id,candidate_id,card_id,exercise_revision,move_uci,grade_json,reviewed_at) VALUES ('attempt','candidate','defense',1,'e2e4','{}','2026-01-01')")
+        db.execute("INSERT INTO study_position_epochs(repertoire_id,epoch,source_digest,created_at) VALUES ('r','epoch','synthetic',now())")
+        db.execute("INSERT INTO study_position_states(repertoire_id,variant,position,expected_uci,policy_version,owner_epoch,source_digest,fsrs_internal_card_id,fsrs_json,due_at) VALUES ('r','standard','position','e2e4','1','epoch','synthetic',4503599627370496,'{}',now())")
+        db.execute("INSERT INTO study_position_issued_plans(attempt_id,queue_entry_id,card_id,card_revision,repertoire_id,variant,owner_epoch,source_digest,issue_study_day,plan_digest,plan_json,issued_at) VALUES ('plan',900001,'opening',1,'r','standard','epoch','synthetic','2026-01-01','synthetic','{}',now())")
+        db.execute("INSERT INTO study_position_first_responses(event_id,attempt_id,decision_index,repertoire_id,variant,position,owner_epoch,payload_digest,payload_json,observed_at,accepted_at) VALUES ('first','plan',0,'r','standard','position','epoch','synthetic','{}',now(),now())")
+        db.execute("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,created_at,updated_at) VALUES ('kept','synthetic','synthetic','complete','2026-01-01','2026-01-01')")
+    witness_path=tmp_path/'pre62-original.json'
+    with psycopg.connect(dsn) as db:
+        guard.save_pre62_59(witness_path,db)
+    raw=witness_path.read_bytes()
+    witness,secret=guard.load_pre62_59(witness_path)
+    def verify():
+        with psycopg.connect(dsn) as db:
+            return guard.verify_pre62_59(db,witness,secret)['observed_schema']
+    assert verify()==59
+    with psycopg.connect(dsn) as db:
+        db.execute(migration_source(MIGRATIONS/'060_position_first_response_immutable.sql'),prepare=False)
+    assert verify()==60
+    assert witness_path.read_bytes()==raw
+    with psycopg.connect(dsn) as db:
+        db.execute("UPDATE defense_attempts SET move_uci='d2d4' WHERE attempt_id='attempt'")
+    with pytest.raises(RuntimeError,match='retained rows changed in defense_attempts'):
+        verify()
+    with psycopg.connect(dsn) as db:
+        db.execute("UPDATE defense_attempts SET move_uci='e2e4' WHERE attempt_id='attempt'")
+        db.execute("DELETE FROM operation_receipts WHERE operation_id='kept'")
+    with pytest.raises(RuntimeError,match='retained rows changed in operation_receipts'):
+        verify()
+    with psycopg.connect(dsn) as db:
+        db.execute("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,created_at,updated_at) VALUES ('kept','synthetic','synthetic','complete','2026-01-01','2026-01-01')")
+        db.execute("ALTER TABLE cards DISABLE TRIGGER frozen_guard_cards")
+    with pytest.raises(RuntimeError,match='retained catalog changed'):
+        verify()
+    with psycopg.connect(dsn) as db:
+        db.execute("ALTER TABLE cards ENABLE TRIGGER frozen_guard_cards")
+        old=db.execute('SELECT last_value,is_called FROM reviews_id_seq').fetchone()
+        db.execute("SELECT setval('reviews_id_seq',5,true)")
+    try:
+        with pytest.raises(RuntimeError,match='retained sequences changed'):
+            verify()
+    finally:
+        with psycopg.connect(dsn) as db:
+            db.execute("SELECT setval('reviews_id_seq',%s,%s)",old)
+    assert verify()==60
+    with psycopg.connect(dsn) as db:
+        db.execute(migration_source(MIGRATIONS/'061_content_origin_receipts.sql'),prepare=False)
+    assert verify()==61
+    assert witness_path.read_bytes()==raw
+    with psycopg.connect(dsn) as db:
+        db.execute("INSERT INTO legacy_content_historical_origins(legacy_target_id,legacy_workspace_id,export_id,receipt_id,payload,receipt_digest) VALUES ('t','w','e','r','synthetic','digest')")
+    with pytest.raises(RuntimeError,match='not empty'):
+        verify()
