@@ -1161,7 +1161,7 @@ test("managed Defense selection accepts one absolute first-attempt path", () => 
   for (const args of [
     ['migrate', '--defense-selection', 'relative'], ['migrate', '--retry', '--defense-selection', '/private/s'],
     ['doctor', '--defense-selection', '/private/s'], ['migrate', '--defense-selection', '/private/s', '--defense-selection', '/private/t'],
-    ['migrate', '--defense-selection', '/private/a:b'],
+    ['migrate', '--defense-selection', '/private/a:b'], ['migrate', '--defense-selection', '/private/../selection'],
   ]) assert.throws(() => parseArguments(args), /selection|Invalid options/i);
 });
 

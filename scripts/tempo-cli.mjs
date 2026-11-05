@@ -36,7 +36,7 @@ export function parseArguments(argumentsList) {
   const selectionIndex = args.indexOf('--defense-selection');
   if (selectionIndex >= 0) {
     const path = args[selectionIndex + 1];
-    if (!path || !isAbsolute(path) || /[:,\n\r]/.test(path) || args.lastIndexOf('--defense-selection') !== selectionIndex)
+    if (!path || !isAbsolute(path) || resolve(path) !== path || /[:,\n\r]/.test(path) || args.lastIndexOf('--defense-selection') !== selectionIndex)
       throw new Error('Defense selection requires one private absolute file path.');
     defenseSelection = path; args.splice(selectionIndex, 2);
   }
@@ -259,6 +259,8 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
   if (nodeMajor < 22 || (nodeMajor === 22 && nodeMinor < 13)) throw new Error("Tempo CLI requires Node.js 22.13 or newer.");
   if (options.command === "install") { await install(options, sourceRoot, log); return 0; }
   const target = readJson(options.configPath);
+  if (options.defenseSelection && target?.version !== 1)
+    throw new Error('Defense selection requires an existing registered PostgreSQL target.');
   if (target && process.env.TEMPO_UPGRADE_EXPECTED_PROJECT && process.env.TEMPO_UPGRADE_EXPECTED_PROJECT !== target.project)
     throw new Error("Registered target differs from TEMPO_UPGRADE_EXPECTED_PROJECT; maintenance was not started.");
   // Select the public Study boundary before loading any legacy runtime, schema,

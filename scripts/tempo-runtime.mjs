@@ -702,10 +702,14 @@ print(json.dumps({**result,'database':row}))`;
   async function resumeManagedIsolation() {
     if (!managedIsolationRetry && !managedCompletionPending) return false;
     const lock = captureManagedTargetLock(stateDirectory);
+    if (managedIsolationRetry && !(await runningServices()).includes('postgres'))
+      throw new Error('Original isolated PostgreSQL is stopped; preserve its guard and topology for controlled recovery.');
     if (managedCompletionPending && !(await runningServices()).includes('postgres')) {
       const before = await inspectContainerInventory();
       validateContainers(before, target);
       assertColdPreflightContainers(before, target.project);
+      await inspectManagedCompletedTarget({ target, configuration, expectedImage: images.postgres, guard: migrationGuard,
+        stateDirectory, lock, docker, exclusiveAdministrator: true, allowStopped: true });
       await ensureDatabase({ allowRecreation: false });
       const after = await inspectContainerInventory();
       validateContainers(after, target);

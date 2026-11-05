@@ -40,7 +40,7 @@ export function inspectRegisteredIsolation(input) {
   return inspectIsolation(input);
 }
 
-function inspectIsolation({ target, daemonId, container, network, expectedImage, trustedDaemon, intent = null }) {
+function inspectIsolation({ target, daemonId, container, network, expectedImage, trustedDaemon, intent = null, allowStopped = false }) {
   const fail = () => { throw new Error("Database isolation identity is unsafe or changed."); };
   const labels = container?.Config?.Labels ?? {}, host = container?.HostConfig ?? {}, settings = container?.NetworkSettings;
   const object = value => value !== null && typeof value === "object" && !Array.isArray(value);
@@ -55,7 +55,8 @@ function inspectIsolation({ target, daemonId, container, network, expectedImage,
   const storage = mounts.filter(m => typeof m?.Destination === "string" && overlap(m.Destination));
   if (trustedDaemon !== true || !target ||
       !target.daemonId || daemonId !== target.daemonId || labels["com.docker.compose.project"] !== target.project ||
-      labels["com.docker.compose.service"] !== "postgres" || container?.State?.Running !== true || !id(container.Id) ||
+      labels["com.docker.compose.service"] !== "postgres" ||
+      !(container?.State?.Running === true || (allowStopped === true && container?.State?.Running === false && container?.State?.Restarting === false)) || !id(container.Id) ||
       !/^sha256:[0-9a-f]{64}$/.test(expectedImage ?? "") || container.Image !== expectedImage ||
       typeof host.PublishAllPorts !== "boolean" || host.PublishAllPorts || !Object.hasOwn(host, "PortBindings") ||
       !(host.PortBindings === null || object(host.PortBindings)) || Object.keys(host.PortBindings ?? {}).length ||
@@ -342,19 +343,25 @@ export async function inspectManagedFence({ target, configuration, expectedImage
 
 // A completed attempt authenticates its immutable binding without requiring
 // ordinary application sessions or accepted Study writes to disappear.
-export async function inspectManagedCompletedTarget({ target, configuration, expectedImage, guard, stateDirectory, lock, docker, exclusiveAdministrator }) {
+export async function inspectManagedCompletedTarget({ target, configuration, expectedImage, guard, stateDirectory, lock, docker, exclusiveAdministrator, allowStopped = false }) {
   if (exclusiveAdministrator !== true || guard?.isolation?.phase !== 'reattached' ||
       !['pending', 'verified'].includes(guard.state)) throw new Error('Managed completion identity is invalid.');
   assertManagedTargetLock(stateDirectory, lock);
   validateTarget(configuration, target);
   const identity = guard.isolation.identity;
   const daemonId = (await docker(['info', '--format', '{{.ID}}'])).stdout.trim();
-  const containers = JSON.parse((await docker(['inspect', identity.containerId])).stdout);
+  const ids = (await docker(['ps', '-aq'])).stdout.trim().split(/\s+/).filter(Boolean);
+  if (!ids.length) throw new Error('Managed completion container inventory is unavailable.');
+  const containers = JSON.parse((await docker(['inspect', ...ids])).stdout);
+  if (!Array.isArray(containers) || containers.length !== ids.length || ids.some(id => !containers.some(item => item.Id?.startsWith(id))))
+    throw new Error('Managed completion container inventory is incomplete.');
+  validateContainers(containers, target);
+  const originals = containers.filter(item => item.Id === identity.containerId);
   const networks = JSON.parse((await docker(['network', 'inspect', identity.networkId])).stdout);
-  if (!Array.isArray(containers) || containers.length !== 1 || !Array.isArray(networks) || networks.length !== 1)
+  if (originals.length !== 1 || !Array.isArray(networks) || networks.length !== 1)
     throw new Error('Original managed completion topology is unavailable.');
-  const topology = inspectRegisteredIsolation({ target, daemonId, container: containers[0], network: networks[0],
-    expectedImage, trustedDaemon: exclusiveAdministrator, intent: identity });
+  const topology = inspectRegisteredIsolation({ target, daemonId, container: originals[0], network: networks[0],
+    expectedImage, trustedDaemon: exclusiveAdministrator, intent: identity, allowStopped });
   if (!topology.attached) throw new Error('Original managed completion topology differs.');
   assertManagedTargetLock(stateDirectory, lock);
   return topology;
@@ -523,6 +530,8 @@ export async function runManagedPinnedChild({ target, configuration, expectedIma
   };
   if (existsSync(helperJournal)) {
     const previous = JSON.parse(readOwnedPrivateBytes(helperJournal));
+    syncManagedIsolationEvidence({ guardPath, guard, receiptPath: helperJournal, receipt: previous });
+    assertManagedTargetLock(stateDirectory, lock);
     const helper = await inspectOwnedHelper(previous);
     if (helper?.State?.Running) {
       assertManagedTargetLock(stateDirectory, lock);
