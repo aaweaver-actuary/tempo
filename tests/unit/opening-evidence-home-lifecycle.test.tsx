@@ -2,6 +2,8 @@ import { studyIntentStore } from "../../database/browser/study-intent-storage";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Home from "../../app/views/legacy-home";
+import StudyConnectionBoundary from "../../app/components/study-connection-boundary";
+import * as connection from "../../app/lib/study-connection";
 import { useTrainingStore } from "../../app/state/training-store";
 import { useBoardShellStore } from "../../app/state/board-shell-store";
 import { fetchAndInitializeQueue } from "../../app/views/fetchAndInitializeQueue";
@@ -122,12 +124,14 @@ it("AS-16 wrong-response reveal remains revealed", async () => {
 });
 
 
-it("connected full local Home exposes the configured Workbench independently of the Study shell", async () => {
+it("connected Study retains its controls without a retired Workbench link", async () => {
   vi.stubGlobal("__TEMPO_WORKBENCH_URL__", "https://analysis.example.test/?run=example-run");
+  vi.spyOn(connection, "studyConnection").mockReturnValue({ origin: "https://learning.example.test", workspace: "study", credential: "original" } as ReturnType<typeof connection.studyConnection>);
+  vi.spyOn(connection, "connectStudy").mockResolvedValue(undefined as never);
   vi.mocked(fetchAndInitializeQueue).mockResolvedValue("installed");
-  render(<Home />);
-  const link = await screen.findByRole("link", { name: "Open Workbench" });
-  expect(link.getAttribute("href")).toBe("https://analysis.example.test/?run=example-run");
-  expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+  render(<StudyConnectionBoundary />);
+  expect(await screen.findByRole("button", { name: "Study settings" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Disconnect Learning" })).toBeTruthy();
+  expect(screen.queryByRole("link", { name: "Open Workbench" })).toBeNull();
   expect(screen.queryByRole("heading", { name: "Connect Study to Learning" })).toBeNull();
 });

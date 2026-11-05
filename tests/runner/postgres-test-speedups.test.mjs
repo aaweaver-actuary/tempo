@@ -8,7 +8,7 @@ import { runInNewContext } from "node:vm";
 import { test } from "node:test";
 import { Chess } from "chess.js";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "../../database/tests/postgres-test-options.mjs";
-import { backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "../../database/tests/postgres-test-plan.mjs";
+import { assertDisposableVolumes, backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "../../database/tests/postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   readStudyQueuePublication, repertoireLimitRecreationPgn, studyDurabilityPgn } from "../../database/tests/postgres-test-fixture.mjs";
 import { createScenarioTimer, postgresCommandTiming } from "../../scripts/test-scenario-timings.mjs";
@@ -476,7 +476,7 @@ test("repertoire limit recreation fixture survives backup then leaves unrelated 
   const context = {
     measureScenario: { poll() {}, wait: async () => {} },
     assert, compose: ['compose'], randomBytes: () => Buffer.from('fixture'),
-    workloadConsumers: ['background-worker','background-scheduler','defense-engine'],
+    workloadConsumers: ['background-worker','background-scheduler'],
     runPrefixApplicationProof: () => {},
     repertoireLimitRecreationPgn, limitRecreationRepertoireId: null,
     console: { log() {} },
@@ -792,7 +792,7 @@ test("nested timing write failures propagate and cleanup executes even when its 
 test("PostgreSQL command timings classify fixed operations without retaining arguments or credentials", () => {
   for (const [args, expected] of [
     [["compose", "build", "secret-canary"], { label: "image_build", category: "build" }],
-    [["compose", "stop", "defense-engine"], { label: "compose_shutdown", category: "restart" }],
+    [["compose", "stop", "maia-worker"], { label: "compose_shutdown", category: "restart" }],
     [["compose", "up", "--force-recreate"], { label: "compose_recreation", category: "startup" }],
     [["compose", "up", "--no-recreate", "--wait", "--wait-timeout", "180", "postgres"],
       { label: "postgres_ready", category: "readiness" }],
@@ -916,35 +916,23 @@ test("disposable PostgreSQL backup handles INT and TERM while waiting on its sle
   assert.equal(syntaxCheck.status, 0, syntaxCheck.stderr);
 });
 
-test("both PostgreSQL product definitions and the disposable definition enable init for both workers", () => {
+test("PostgreSQL compositions omit retired compute services", () => {
   for (const file of ["docker-compose.yml", "docker-compose.postgres.yml", "docker-compose.postgres.test.yml"]) {
     const source = readFileSync(join(root, file), "utf8");
-    for (const worker of ["defense-engine", "maia-worker"]) {
-      const service = source.match(new RegExp(`^  ${worker}:\\r?\\n([\\s\\S]*?)(?=^  \\S|^\\S)`, "m"))?.[1];
-      assert(service, `${file} must define ${worker}`);
-      assert.match(service, /^    init: true$/m, `${file}: ${worker} must forward shutdown signals`);
-    }
+    for (const service of ["defense-engine", "maia-worker"]) assert.doesNotMatch(source, new RegExp(`^  ${service}:$`, "m"));
   }
 });
 
-test("real worker signal verification retains the existing stop boundary and rejects forced kill or missing workers", async () => {
-  for (const fault of [null, "forced_kill", "missing", "already_stopped", "no_init"]) {
+test("real background worker stops gracefully and rejects forced kill or missing worker", async () => {
+  for (const fault of [null, "forced_kill", "missing", "already_stopped"]) {
     let stopped = false;
-    let stops = 0;
-    const containers = ["defense-engine", "maia-worker"].map(service => ({
-      Config: { Labels: { "com.docker.compose.service": service } }, HostConfig: { Init: fault !== "no_init" },
-      State: { Running: true, ExitCode: 0 },
-    }));
     const proof = stopApplicationsAndVerifyWorkerSignals({
-      runtime: { stopApplications: async () => { stopped = true; stops += 1; } },
-      compose: async () => ({ stdout: fault === "missing" ? "engine\n" : "engine\nmaia\n" }),
-      docker: async () => ({ stdout: JSON.stringify(containers.map(container => ({ ...container,
-        State: { Running: !stopped && fault !== "already_stopped", ExitCode: stopped ? fault === "forced_kill" ? 137 : 143 : 0 },
-      }))) }),
+      runtime: { stopApplications: async () => { stopped = true; } },
+      compose: async () => ({ stdout: fault === "missing" ? "" : "worker\n" }),
+      docker: async () => ({ stdout: JSON.stringify([{ Config: { Labels: { "com.docker.compose.service": "background-worker" } },
+        State: { Running: !stopped && fault !== "already_stopped", ExitCode: stopped ? fault === "forced_kill" ? 137 : 0 : 0 } }]) }),
     });
-    if (fault) await assert.rejects(proof, /must|requires/);
-    else await proof;
-    assert.equal(stops, [null, "forced_kill"].includes(fault) ? 1 : 0);
+    if (fault) await assert.rejects(proof, /must|requires/); else await proof;
   }
 });
 
@@ -1013,7 +1001,7 @@ test("defensive pause native stage isolates consumers and preserves cleanup afte
 });
 
 test("background workload prevents scheduler claims and restores dispatch after failure", async () => {
-  const runningConsumers = new Set(["defense-engine", "background-worker", "background-scheduler"]);
+  const runningConsumers = new Set(["background-worker", "background-scheduler"]);
   const queuedFixture = { state: "queued" };
   const dispatchQueuedFixture = () => {
     if (runningConsumers.has("background-scheduler")) queuedFixture.state = "leased";
@@ -1034,7 +1022,7 @@ test("background workload prevents scheduler claims and restores dispatch after 
   }), error => error === measurementFailure);
   dispatchQueuedFixture();
   assert.equal(queuedFixture.state, "leased", "normal dispatch resumes after fixture cleanup");
-  assert.deepEqual([...runningConsumers].sort(), ["background-scheduler", "background-worker", "defense-engine", "maia-worker"]);
+  assert.deepEqual([...runningConsumers].sort(), ["background-scheduler", "background-worker"]);
 });
 
 for (const failWorkload of [false, true]) {
@@ -1093,13 +1081,13 @@ test("issue80 durable application proofs cover recreation and restored pre/post 
 });
 
 
-test("pr102 background restoration recovers API health before starting dependent engine", async () => {
+test("pr102 background restoration recovers API health before confirming restored workers", async () => {
   let apiHealthy = false;
   const runningConsumers = new Set();
   const events = [];
   await restoreBackgroundWorkloadConsumers({
     startConsumers: (services) => {
-      if (services.includes("defense-engine")) assert(apiHealthy, "Compose rejects an unhealthy API dependency");
+
       for (const service of services) runningConsumers.add(service);
       events.push(services);
     },
@@ -1116,14 +1104,14 @@ test("pr102 background restoration recovers API health before starting dependent
     },
   });
   assert.deepEqual(events, [["background-worker", "background-scheduler"], "original readiness passed",
-    ["defense-engine", "maia-worker"], "verified all running"]);
+    "verified all running"]);
   const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
   // The retired priority benchmark no longer adds a restoration call site.
-  assert.equal(source.match(/restoreConsumers: \(\) => restoreBackgroundWorkloadConsumers\(/g)?.length, 3);
+  assert.equal(source.match(/restoreConsumers: \(\) => restoreBackgroundWorkloadConsumers\(/g)?.length, 4);
 });
 
 
-test("pr102 background restoration preserves readiness rejection before engine start", async () => {
+test("pr102 background restoration preserves readiness rejection before verification", async () => {
   const readinessFailure = new Error("API is still unhealthy");
   const events = [];
   await assert.rejects(restoreBackgroundWorkloadConsumers({
@@ -1141,8 +1129,7 @@ test("study_opening_server_restart_quiesces_all_database_clients_before_restart"
     source.indexOf("function verifyProjectIsUnused()"));
   assert(restartProof.includes("executeIsolatedBackgroundWorkload"),
     "The new database restart must use the existing stop/work/restore boundary");
-  for (const client of ["api", "foreground-worker", "background-worker", "background-scheduler",
-    "defense-engine", "maia-worker"]) assert(restartProof.includes(`"${client}"`),
+  for (const client of ["api", "foreground-worker", "background-worker", "background-scheduler"]) assert(restartProof.includes(`"${client}"`),
     `${client} can retain a stale database connection or submit work during restart`);
   assert(restartProof.includes('"stop", ...postgresClients'));
   assert(restartProof.includes('"up", "--no-build", "-d", "--no-deps", ...postgresClients'));
@@ -1161,10 +1148,10 @@ test("study_opening_server_restart_refreshes_proxy_before_public_readiness", () 
     "The proxy must resolve the restored API address before public readiness is tested");
 });
 
-test("issue107 process restart and foreground profile proof runs in regular durability upgrade stage", () => {
+test("historical source upgrade proof runs in regular durability upgrade stage", () => {
   const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
   const upgradeAction = source.slice(source.indexOf("  schema_migrations: async () => {"), source.indexOf("  background_diagnostics: async () => {"));
-  assert(upgradeAction.includes("check_postgres_next_opponent.py"));
+  assert(upgradeAction.includes("check_postgres_historical_source_upgrade.py"));
   for (const mode of ["durability", "full"]) assert(postgresTestStages({ mode }).includes("schema_migrations"));
   assert(!postgresTestStages({ mode: "browser" }).includes("schema_migrations"));
 });
@@ -1198,7 +1185,7 @@ test('study_priority_allocated_native_entry_preserves_sibling_imports_and_cgroup
 
 test('study_priority_restoration_captures_output_and_checks_every_owned_consumer',async()=>{
   const {verifyRestoredPostgresConsumers}=await import('../../database/tests/postgres-maintenance-proof.mjs');
-  const clients=['api','foreground-worker','background-worker','background-scheduler','defense-engine','maia-worker','web'];
+  const clients=['api','foreground-worker','background-worker','background-scheduler','web'];
   const execute=present=>(command,args,options)=>{
     assert.equal(command,'docker');assert.deepEqual(args,['compose','-p','owned','ps','--format','json']);
     return spawnSync(process.execPath,['-e',`for(const Service of ${JSON.stringify(present)})console.log(JSON.stringify({Service,State:'running'}));`],options);
@@ -1223,10 +1210,6 @@ test('study_priority_diagnostic_native_allocation_retains_essential_clients_and_
     {schema:{...diagnostic.schema,cpus:4}}));
   assert.throws(()=>assertDevelopmentCapacity(['schema'],'owned',docker,
     {schema:{...diagnostic.schema,memoryMiB:2048}}),/exceed the aggregate/);
-  const maia=resourceBudgets.developmentServices['maia-worker'];
-  rows.push({Id:'maia',Config:{Labels:{'com.docker.compose.project':'owned','com.docker.compose.service':'maia-worker'}},
-    HostConfig:{NanoCpus:(maia.cpus??0)*1e9,Memory:maia.memoryMiB*1024*1024}});
-  assert.throws(()=>assertDevelopmentCapacity(['schema'],'owned',docker,diagnostic),/exceed the aggregate/);
   const runner=readFileSync(join(root,'database/tests/test-postgres-docker.mjs'),'utf8');
   assert.match(runner,/runAllocatedDiagnosticProof\("\/source\/database\/tests\/check_postgres_opening_segmentation\.py"/);
   const original=readFileSync(join(root,'database/tests/check_postgres_opening_segmentation.py'),'utf8');
@@ -1234,14 +1217,14 @@ test('study_priority_diagnostic_native_allocation_retains_essential_clients_and_
   assert(original.includes('assert replay.status_code == 200, replay.text'));
 });
 
-test('study_priority_background_isolation_stops_maia_and_restores_it_after_api_readiness', async () => {
-  assert(backgroundWorkloadConsumers.includes('maia-worker'),'Maia must not consume diagnostic rehearsal capacity');
+test('study_priority_background_isolation_restores_consumers_after_api_readiness', async () => {
+  assert.deepEqual(backgroundWorkloadConsumers, ['background-worker', 'background-scheduler']);
   for(const essential of ['api','foreground-worker','web'])assert(!backgroundWorkloadConsumers.includes(essential));
   const events=[];
   await restoreBackgroundWorkloadConsumers({startConsumers:services=>events.push(services),
     waitForReady:()=>events.push('api ready'),verifyConsumers:()=>events.push('all restored')});
   assert.deepEqual(events,[['background-worker','background-scheduler'],'api ready',
-    ['defense-engine','maia-worker'],'all restored']);
+    'all restored']);
 });
 
 test('study_priority_profile_selection_cannot_understate_diagnostic_native_caps', async () => {
@@ -1460,3 +1443,34 @@ test('native_actual_standalone_help_partial_start_has_owned_identity_and_verifie
   state.containers[0].Config.Labels['tempo.resource-owner']=options.token;assert.throws(cleanup,/still exists/);assert(existsSync(paths.journal));assert(existsSync(paths.lane));
   removalWorks=true;cleanup();budget.reconcileDevelopmentStartup(project,options);assert(!existsSync(paths.journal));assert(!existsSync(paths.lane));assert.equal(removals,2);
 }));
+
+test("rehearsal volume validation fails closed on installed or colliding targets", () => {
+  const project = "tempo-pg-regressions-fixture";
+  const keys = ["data", "redis", "backups"];
+  const stack = { name: project, volumes: Object.fromEntries(keys.map(key => [key, { name: `${project}_${key}` }])),
+    services: { postgres: { volumes: [{ type: "volume", source: "data", target: "/var/lib/postgresql" }] },
+      redis: { volumes: [{ type: "volume", source: "redis", target: "/data" }] },
+      backup: { volumes: [{ type: "volume", source: "backups", target: "/backups" }] } } };
+  const mounts = [["postgres", "/var/lib/postgresql", "data"], ["redis", "/data", "redis"], ["backup", "/backups", "backups"]];
+  assert.doesNotThrow(() => assertDisposableVolumes(stack, project, keys, mounts));
+  for (const change of [s => {s.volumes.backups.name = "tempo-postgres-backups";},
+    s => {s.volumes.data.external = true;}, s => {s.services.backup.volumes[0].source = "data";},
+    s => {s.volumes.extra = {name: "tempo-postgres-data"};}]) {
+    const unsafe = structuredClone(stack); change(unsafe);
+    assert.throws(() => assertDisposableVolumes(unsafe, project, keys, mounts), /Unsafe|Unexpected/);
+  }
+  assert.throws(() => assertDisposableVolumes(stack, "tempo", keys, mounts), /identity/);
+});
+
+test("disposable volume collision check fails closed before image build", () => {
+  const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
+  const check = source.slice(source.indexOf("function verifyDisposableVolumesAbsent("), source.indexOf("function verifyProjectIsUnused("));
+  for (const result of [{status: 0, stderr: ""}, {status: 1, stderr: "permission denied"}, {error: new Error("offline")}]) {
+    assert.throws(() => runInNewContext(`${check}\nverifyDisposableVolumesAbsent(["owned_volume"])`,
+      { spawnSync: () => result, environment: {} }), /absence is unverified/);
+  }
+  assert.doesNotThrow(() => runInNewContext(`${check}\nverifyDisposableVolumesAbsent(["owned_volume"])`,
+    { spawnSync: () => ({status: 1, stderr: "Error: No such volume: owned_volume"}), environment: {} }));
+  const config = source.slice(source.indexOf("  compose_config: async () => {"), source.indexOf("  image_build: async () => {"));
+  assert(config.includes("verifyDisposableVolumesAbsent"));
+});

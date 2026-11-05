@@ -168,33 +168,8 @@ services:
     depends_on:
       api: {condition: service_healthy}
 
-  defense-engine:
-    init: true
-    build:
-      context: .
-      dockerfile: Dockerfile.engine
-    environment:
-      TEMPO_API_URL: http://api:8000
-      TEMPO_ENGINE_OUTBOX_PATH: /state/pending-command.json
-    volumes: [engine-test-operations:/state]
-    depends_on:
-      api: {condition: service_healthy}
-    mem_limit: 512m
-
-  maia-worker:
-    init: true
-    build:
-      context: .
-      dockerfile: Dockerfile.maia
-    environment:
-      TEMPO_API_URL: http://api:8000
-    depends_on:
-      api: {condition: service_healthy}
-    mem_limit: 768m
-
 volumes:
   postgres-test-backups:
-  engine-test-operations:
   postgres-test-data:
   redis-test-data:
 

@@ -1,6 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useImperativeHandle, lazy } from "react";
 import type { LegacyWorkspaceProps } from "../components/optional-workspace";
-import { WorkbenchLaunch } from "../components/workbench-launch";
 import SavedLocallyButton from "../components/buttons/SavedLocallyButton";
 import { Button } from "../components/buttons/BaseButton";
 import { TrainingRepairNotice } from "../components/TrainingRepairNotice";
@@ -20,7 +19,6 @@ const AnalysisPasteDialog = lazy(() => import("../AnalysisPasteDialog").then(mod
 const CardEditor = lazy(() => import("./card_editor"));
 const RepertoireView = lazy(() => import("./repertoire_view"));
 const SettingsView = lazy(() => import("./settings_view"));
-const StudiesView = lazy(() => import("./studies_view"));
 const GameReviewView = lazy(() => import("../features/game-review/GameReviewView").then(module => ({ default: module.GameReviewView })));
 const gameReviewApi = createGameReviewApi({ fetch, endpoints: {
   recentGames: `${API_URL}/api/product/game-review/games`,
@@ -35,12 +33,11 @@ const gameReviewApi = createGameReviewApi({ fetch, endpoints: {
 } });
 const IntegrityRepairStatus = lazy(() => import("../components/integrity-repair-status").then(module => ({ default: module.IntegrityRepairStatus })));
 const RepertoireIntegrityDialog = lazy(() => import("../components/repertoire-integrity-dialog").then(module => ({ default: module.RepertoireIntegrityDialog })));
-import { TreeBrowser } from "./tree_browser";
 
 export function prepareLegacyWorkspaceNavigation(view: View | "analysis"): View {
-  return view === "analysis" || view === "builder" || view === "compare" || view === "insights" || view === "progress" || view === "statistics"
-    ? "train"
-    : view;
+  return ["train", "tactics", "games", "repertoire", "settings"].includes(view)
+    ? view as View
+    : "train";
 }
 
 /** Full workspace owner for authoring and integrity repair. */
@@ -54,7 +51,6 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
     addImportedRepertoire, renameLocalRepertoire, deleteLocalRepertoire,
     onCardSaved, finishPermanentDeletion } = props;
   const [showImport, setShowImport] = useState(false);
-  const [showTree, setShowTree] = useState(false);
   const [editorCard, setEditorCard] = useState<PracticeCard | null>(null);
   const [deletionRecoveryError, setDeletionRecoveryError] = useState("");
   const deletionRecoveryStarted = useRef(false);
@@ -186,8 +182,9 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
     },
   }), [checkPendingIntegrity, deferRepairDialog]);
   return props.children({
-    topActions: <>
-          {<WorkbenchLaunch />}
+    trainingActions: <>
+          <Button onClick={() => changeWorkspace("repertoire")}>Repertoire</Button>
+          <Button onClick={() => changeWorkspace("settings")}>Settings</Button>
           {<SavedLocallyButton setShowImport={setShowImport} />}
 
 </>,
@@ -205,7 +202,6 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
           <RepertoireAuditMount apiUrl={API_URL} request={fetch} onNavigate={intent => {
             if (intent.kind === "import") setShowImport(true);
             else if (intent.kind === "settings") changeWorkspace("settings");
-            else if (intent.kind === "manual_edit") setShowTree(true);
           }}>
           <RepertoireView
             theme={boardTheme}
@@ -220,9 +216,6 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
             onQueueChanged={refreshDatabaseQueueAfterRepertoireChange}
           />
           </RepertoireAuditMount>
-        )}
-        {currentView === "studies" && (
-          <StudiesView boardTheme={boardTheme} pieceSet={pieceSet} />
         )}
         {currentView === "settings" && (
           <SettingsView
@@ -269,13 +262,6 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
               );
             }
           }}
-        />
-      )}
-      {showTree && (
-        <TreeBrowser
-          onClose={() => setShowTree(false)}
-          theme={boardTheme}
-          pieceSet={pieceSet}
         />
       )}
       {editorCard && (

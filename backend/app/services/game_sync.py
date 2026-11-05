@@ -55,7 +55,7 @@ def _retry_at(value: str | None) -> str | None:
             return None
 
 
-def _persist_game(record: GameRecord) -> tuple[str, str]:
+def _persist_game(record: GameRecord) -> str:
     for retry_number in range(5):
         activity_gate.wait_for_foreground()
         try:
@@ -67,7 +67,7 @@ def _persist_game(record: GameRecord) -> tuple[str, str]:
     raise RuntimeError("Unreachable game persistence retry state")
 
 
-def _persist_game_once(record: GameRecord) -> tuple[str, str]:
+def _persist_game_once(record: GameRecord) -> str:
     with connection(background=True) as database:
         existing = storage.imported_provider_game(database, record.provider, record.provider_game_id)
         if not existing:
@@ -106,17 +106,12 @@ def _persist_game_once(record: GameRecord) -> tuple[str, str]:
             )
             if changed:
                 storage.update_imported_game(database, existing["id"], values)
-                storage.ensure_analysis_job(database, existing["id"], datetime.now(timezone.utc).isoformat())
-                return "updated", existing["id"]
-            storage.ensure_analysis_job(database, existing["id"], datetime.now(timezone.utc).isoformat())
-            return "duplicate", existing["id"]
+                return "updated"
+            return "duplicate"
         storage.insert_imported_game(
             database, f"{record.provider}:{record.provider_game_id}", record.provider, values,
         )
-        storage.insert_analysis_job(
-            database, f"{record.provider}:{record.provider_game_id}", datetime.now(timezone.utc).isoformat(),
-        )
-        return "inserted", f"{record.provider}:{record.provider_game_id}"
+        return "inserted"
 
 
 def _starting_point(provider: str, username: str, request: GameSyncRequest, *, background: bool = False) -> datetime:
@@ -166,13 +161,9 @@ async def _sync_provider(
                 username, since, request.speeds, request.rated_only, client
             )
         result.update(counts)
-        changed_game_ids: list[str] = []
         for record in records:
-            outcome, persisted_game_id = _persist_game(record)
+            outcome = _persist_game(record)
             result[{"inserted": "inserted", "updated": "updated", "duplicate": "duplicates"}[outcome]] += 1
-            if outcome in {"inserted", "updated"}:
-                changed_game_ids.append(persisted_game_id)
-        result["_changed_game_ids"] = changed_game_ids
         result["status"] = "idle"
         completed_at = datetime.now(timezone.utc)
         activity_gate.wait_for_foreground()
@@ -205,16 +196,10 @@ async def sync_providers(request: GameSyncRequest) -> dict:
         for provider, username in provider_accounts:
             if username:
                 results[provider] = await _sync_provider(provider, username, request, client)
-    changed_game_ids = [
-        game_id
-        for item in results.values()
-        for game_id in item.pop("_changed_game_ids", [])
-    ]
     return {
         "imported": sum(item["inserted"] for item in results.values()),
         "cached": True,
         "incremental": not request.repair,
         "synced_at": datetime.now(timezone.utc).isoformat(),
         "providers": results,
-        "_changed_game_ids": changed_game_ids,
     }

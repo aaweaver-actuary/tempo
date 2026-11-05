@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TempoProblem, classifyRedisReply, phaseGuidance, assertInstallationUnchanged, inspectMaintenance, installationFingerprint, recoveryAssessment, verificationProblem, waitForVerification } from "./tempo-guidance.mjs";
 import { acquireTargetLock, assessCandidate, assessMainVerification, atomicJson, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, portsFromConfig, productVolumes,
@@ -24,6 +24,9 @@ Options: --plan previews maintenance without changing services or source;
          --verbose shows technical evidence and underlying command output;
          --no-wait assesses release checks once without waiting;
          --no-ci updates to current main without GitHub CI evidence;
+         --candidate-ref REF --candidate-sha SHA selects an exact reviewed GitHub
+         branch and commit for an offline maintenance rehearsal (requires --no-ci);
+         --defense-selection FILE supplies the approved private Defense selection;
          --no-open avoids opening the browser; --retry explicitly retries interrupted
          or failed maintenance after inspection; --config FILE selects a registration.
 
@@ -32,6 +35,22 @@ After a merge, the normal command is: tempo start
 
 export function parseArguments(argumentsList) {
   const args = [...argumentsList];
+  const candidateOption = name => {
+    const index=args.indexOf(name); if(index<0)return null;
+    const value=args[index+1];if(!value||value.startsWith('--')||args.lastIndexOf(name)!==index)throw new Error('Candidate ref and SHA must each be supplied once.');
+    args.splice(index,2);return value;
+  };
+  const candidateRef=candidateOption('--candidate-ref'), candidateSha=candidateOption('--candidate-sha');
+  if ((candidateRef || candidateSha) && (!/^refs\/heads\/codex\/[a-z0-9][a-z0-9/-]*$/.test(candidateRef??'') || !/^[0-9a-f]{40}$/.test(candidateSha??'')))
+    throw new Error('Candidate requires a reviewed codex branch ref and exact 40-character SHA.');
+  let defenseSelection = null;
+  const selectionIndex = args.indexOf('--defense-selection');
+  if (selectionIndex >= 0) {
+    const path = args[selectionIndex + 1];
+    if (!path || !isAbsolute(path) || resolve(path) !== path || /[:,\n\r]/.test(path) || args.lastIndexOf('--defense-selection') !== selectionIndex)
+      throw new Error('Defense selection requires one private absolute file path.');
+    defenseSelection = path; args.splice(selectionIndex, 2);
+  }
   let configPath = process.env.TEMPO_CLI_CONFIG ?? join(homedir(), ".config", "tempo", "config.json");
   const configIndex = args.indexOf("--config");
   if (configIndex >= 0) {
@@ -48,8 +67,10 @@ export function parseArguments(argumentsList) {
     || (command !== "logs" && services.length) || services.length > 1
     || (flags.has("--follow") && command !== "logs")
     || (flags.has("--no-wait") && !["start", "restart", "migrate"].includes(command))
-    || (flags.has("--no-ci") && !["start", "restart"].includes(command))) throw new Error("Invalid options. Run tempo help.");
-  return { command, configPath, flags, services };
+    || (flags.has("--no-ci") && !["start", "restart"].includes(command))
+    || (defenseSelection && (!['start', 'restart', 'migrate'].includes(command) || flags.has('--retry') || flags.has('--plan')))
+    || (candidateRef && (!['start','restart'].includes(command) || !flags.has('--no-ci') || flags.has('--plan')))) throw new Error("Invalid options. Run tempo help.");
+  return { command, configPath, flags, services, ...(defenseSelection ? { defenseSelection } : {}), ...(candidateRef ? {candidateRef,candidateSha} : {}) };
 }
 
 function readJson(path) { return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null; }
@@ -250,6 +271,8 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
   if (nodeMajor < 22 || (nodeMajor === 22 && nodeMinor < 13)) throw new Error("Tempo CLI requires Node.js 22.13 or newer.");
   if (options.command === "install") { await install(options, sourceRoot, log); return 0; }
   const target = readJson(options.configPath);
+  if (options.defenseSelection && target?.version !== 1)
+    throw new Error('Defense selection requires an existing registered PostgreSQL target.');
   if (target && process.env.TEMPO_UPGRADE_EXPECTED_PROJECT && process.env.TEMPO_UPGRADE_EXPECTED_PROJECT !== target.project)
     throw new Error("Registered target differs from TEMPO_UPGRADE_EXPECTED_PROJECT; maintenance was not started.");
   // Select the public Study boundary before loading any legacy runtime, schema,
@@ -271,6 +294,10 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
   if (!target || target.version !== 1) throw new Error("Tempo is not registered. Run ./tempo install from the main checkout once.");
   if (!existsSync(target.root) || !target.context || !target.daemonId || !target.project || !target.composeFiles?.length || !target.postgresVolumeKey)
     throw new Error("Tempo registration is incomplete; inspect the config file before proceeding.");
+  if (options.defenseSelection) {
+    const { privateDefenseHistorySelection } = await import('./tempo-managed-isolation.mjs');
+    options.defenseSelectionDigest = privateDefenseHistorySelection(options.defenseSelection, targetKey(target)).digest;
+  }
   const { assessMigrationRecovery, createRuntime, executeLifecycle } = await import("./tempo-runtime.mjs");
   const secrets = Object.entries(process.env).filter(([key]) => /TOKEN|PASSWORD|SECRET/i.test(key)).map(([, value]) => value);
   const commandEnvironment = { ...process.env };
@@ -350,7 +377,8 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
       if (!blockedProblem) {
         try {
           assessment = options.flags.has("--no-ci")
-            ? await assessCandidate(target, run, undefined, { signal: cancellation.signal, expectedSource: originalSource, noCi: true })
+            ? await assessCandidate(target, run, undefined, { signal: cancellation.signal, expectedSource: originalSource, noCi: true,
+              ...(options.candidateRef ? {candidateRef:options.candidateRef,candidateSha:options.candidateSha} : {}) })
             : await waitForVerification({ ...verificationWaitOptions, now, assess: signal => assessCandidate(target, run, undefined, { signal, expectedSource: originalSource }),
               checkUnchanged: async () => { checkUnchanged(); await checkSourceUnchanged(); }, signal: cancellation.signal, deadline, noWait: options.flags.has("--no-wait"), log });
           if (assessment.verification.status !== "verified" && !options.flags.has("--no-ci")) {
@@ -375,7 +403,8 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
         migrationPreflight(runtime, true);
         let candidate;
         if (!blockedProblem) {
-          try { candidate = await selectCandidate(target, run, undefined, { expectedRevision: assessment.revision, expectedSource: originalSource, signal: cancellation.signal, noCi: options.flags.has("--no-ci") }); }
+          try { candidate = await selectCandidate(target, run, undefined, { expectedRevision: assessment.revision, expectedSource: originalSource, signal: cancellation.signal, noCi: options.flags.has("--no-ci"),
+            ...(options.candidateRef ? {candidateRef:options.candidateRef,candidateSha:options.candidateSha} : {}) }); }
           catch (error) {
             if (cancellation.signal.aborted) throw new TempoProblem("cancelled", "Waiting cancelled. No deployment was started.", { exitCode: 130 });
             if (error.code === "main_changed" || (error.code === "verification_pending" && !options.flags.has("--no-wait"))) {
@@ -415,7 +444,8 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
         }
         const selectedRevision = candidate?.revision ?? previous.revision;
         runtime = createRuntime(target, { run, stateDirectory, previous, revision: selectedRevision,
-          evidence: candidate?.evidence, fallback: !candidate, retry: options.flags.has("--retry"), log });
+          evidence: candidate?.evidence, fallback: !candidate, retry: options.flags.has("--retry"),
+          defenseSelection: options.defenseSelection ?? null, defenseSelectionDigest: options.defenseSelectionDigest ?? null, log });
         await runtime.inspectTarget(); secrets.push(...runtime.secretValues);
         const recreate = options.command === "restart" || Boolean(candidate && previous?.revision !== selectedRevision);
         // SIGINT is scoped to waiting. Once maintenance starts, retain the CLI's

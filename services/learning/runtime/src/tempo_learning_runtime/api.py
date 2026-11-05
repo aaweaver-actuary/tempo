@@ -26,8 +26,6 @@ from .models import (
     QueueAttemptFailureRequest,
     TacticAttemptRequest,
     EndgameProbeRequest,
-    DefenseAttemptRequest,
-    DefenseRecognitionRequest,
 )
 from .study_contracts import StudyAttemptRequest, StudySelfAssessmentRequest
 from .review_conflicts import ReviewConflict
@@ -36,7 +34,6 @@ from .opening_evidence_contracts import OpeningEvidenceCheckpoint
 from .maintenance import safe_run_once
 from .publications import PublicationBundle, stage
 from .puzzles import validate_puzzle_record
-from .defense import read_defense_exercise
 from tempo_learning_database.adapters import endgame_store
 from .receivers import receive
 from .receivers import EvidenceDelivery
@@ -600,34 +597,6 @@ def create_app(configuration: Configuration):
                 "solution": solution,
             },
             idempotency_key or "tactic-attempt:" + request.attempt_id,
-        )
-
-    @app.get("/api/defense-exercises/{candidate_id}")
-    def defense_read(candidate_id: str):
-        return read_defense_exercise(candidate_id)
-
-    @app.post("/api/defense-exercises/{candidate_id}/recognition")
-    def recognition(
-        candidate_id: str,
-        request: DefenseRecognitionRequest,
-        idempotency_key: str | None = Header(None),
-    ):
-        return gateway.dispatch(
-            "defense.recognition.submit",
-            {"candidate_id": candidate_id, "request": request.model_dump(mode="json")},
-            idempotency_key or "defense-recognition:" + request.attempt_id,
-        )
-
-    @app.post("/api/defense-exercises/{candidate_id}/attempt")
-    def defense_attempt(
-        candidate_id: str,
-        request: DefenseAttemptRequest,
-        idempotency_key: str | None = Header(None),
-    ):
-        return gateway.dispatch(
-            "defense.attempt.submit",
-            {"candidate_id": candidate_id, "request": request.model_dump(mode="json")},
-            idempotency_key or "defense-attempt:" + request.attempt_id,
         )
 
     @app.post("/api/endgames/probe")

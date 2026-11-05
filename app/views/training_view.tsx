@@ -8,8 +8,6 @@ import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
 import TrainingViewHeader from "./headers/TrainingViewHeader";
 import RetryButton from "../components/buttons/RetryButton";
-import EndgamesView from "./endgames_view";
-import { hasSavedEndgameLine } from "../lib/saved-endgame-practice";
 import type { PracticeCard } from "../domain/cards";
 import { Chessboard, type BoardTheme, type PieceSet } from "../components/chessboard";
 import { useBoardPublisher } from "../hooks/use-board-publisher";
@@ -38,7 +36,6 @@ import {
 } from "../state/training-store";
 import { annotationToShapes } from "../utils/position-annotations";
 import { useShallow } from "zustand/react/shallow";
-import DefenseTrainingView from "./defense_training_view";
 import StudyExerciseRunner from "./study_exercise_runner";
 import type { PendingReview } from "../lib/review-outbox";
 
@@ -75,7 +72,6 @@ interface TrainingViewProps {
   onOpeningAssistance?: (moveOffset: number, kind: AssistanceKind) => void;
   onMove: (from: Square, to: Square) => void;
   useSharedBoard?: boolean;
-  onDefenseGraded?: () => Promise<void>;
   onBury?: () => Promise<void>;
   burialPending?: boolean;
   burialRecoveryError?: string;
@@ -173,7 +169,6 @@ function StandardTrainingView({
   const positionUnavailable = positionStudyUnavailableReason ?? positionStudyUnavailable(card, offlineQueue || !navigator.onLine);
   const liveQueueBlocked = Boolean(serviceError && !offlineQueue);
   const trainingMutationBlocked = Boolean(positionUnavailable) || liveQueueBlocked || reviewBlocked || burialPending;
-  const isEndgame = card.kind === "endgame" && !hasSavedEndgameLine(card);
   const feedbackCopy = getFeedbackCopy(attemptFailed, card)[feedback];
   const playerName = trainedColor(card) === "white" ? "White" : "Black";
   const currentMoveKey = `${card.backendId ?? card.id}:${card.revision ?? 1}:${step}`;
@@ -214,7 +209,7 @@ function StandardTrainingView({
       onOpeningAssistance?.(step, feedback === "wrong" ? "revealed" : attemptFailed ? "guided" : showHint ? "hint" : "teaching");
     }
   }
-  useBoardPublisher("train", useSharedBoard && !isEndgame ? {
+  useBoardPublisher("train", useSharedBoard ? {
     keyboard: boardHistory.keyboard,
     positionKey: trainingPositionKey,
     unavailable: positionUnavailable ?? (
@@ -387,20 +382,7 @@ function StandardTrainingView({
         </div>
       )}
       {cardsLeft > 0 && !useSharedBoard && positionUnavailable && <p className="ui-notice" role="status">{positionUnavailable}</p>}
-      {cardsLeft > 0 && isEndgame && (
-        <EndgamesView
-          key={card.queueEntryId}
-          scheduledCard={card}
-          onReview={(outcome) => void rateCard(outcome)}
-          theme={boardTheme}
-          pieceSet={pieceSet}
-          onQueueChanged={() => void refreshDatabaseQueue()}
-          onBury={onBury}
-          blocked={trainingMutationBlocked}
-          useSharedBoard={useSharedBoard}
-        />
-      )}
-      {cardsLeft > 0 && !isEndgame && (
+      {cardsLeft > 0 && (
         <section
           className={`training-grid${useSharedBoard ? " training-grid-shared" : ""}${phoneOpening ? " phone-opening-study" : ""}`}
           id="train"
@@ -595,24 +577,16 @@ function TrainingContent(props: TrainingViewProps) {
       useSharedBoard={props.useSharedBoard ?? false} blocked={mutationBlocked}
       onAdvance={async () => { props.refreshDatabaseQueue(); }} /></div></>;
   }
-  if (props.card.kind === "defense") {
-    return (
-      <>{props.repairNotice}{liveQueueBlocked && <div role="alert">{props.serviceError} <RetryButton onRetry={() => props.refreshDatabaseQueue(false, true, true)} /></div>}<div inert={mutationBlocked}><DefenseTrainingView
-        key={`${props.card.queueEntryId ?? props.card.id}:${props.card.revision ?? 1}`}
-        card={props.card}
-        boardTheme={props.boardTheme}
-        pieceSet={props.pieceSet}
-        useSharedBoard={props.useSharedBoard ?? false}
-        blocked={mutationBlocked}
-        onAdvance={
-          props.onDefenseGraded ??
-          (async () => {
-            props.refreshDatabaseQueue();
-          })
-        }
-        onBury={props.onBury}
-      /></div></>
-    );
+  if (props.cardsLeft > 0 && (props.card.kind === "defense" || props.card.kind === "endgame")) {
+    return <RetiredCardHold {...props} />;
   }
   return <StandardTrainingView {...props} />;
+}
+
+function RetiredCardHold(props: TrainingViewProps) {
+  const message = "This retired training card cannot be practiced. Its existing attempt has been preserved.";
+  useBoardPublisher("train", props.useSharedBoard ? {
+    unavailable: message, interactionMode: "readonly", theme: props.boardTheme, pieceSet: props.pieceSet,
+  } : null);
+  return <>{props.repairNotice}<p role="alert">{message}</p></>;
 }

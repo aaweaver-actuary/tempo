@@ -58,37 +58,12 @@ def test_pr116_next_opponent_queued_task_is_supported(diagnostic_database):
         ('queued', 'queued', 1)]
 
 
-def test_pr116_next_opponent_eligible_retry_is_not_blocked(diagnostic_database):
-    profile_task = durable_tasks.enqueue_task('next_opponent_profile', 'profile', {})
-    claimed_profile = durable_tasks.claim_task('next_opponent_profile')
-    retry_result = durable_tasks.fail_task(claimed_profile['id'], claimed_profile['generation'],
-                                          claimed_profile['lease_token'], RuntimeError('synthetic'))
-    assert retry_result['state'] == 'retrying'
+def test_retired_profile_does_not_claim_or_retry(diagnostic_database):
+    profile = durable_tasks.enqueue_task('next_opponent_profile', 'profile', {})
+    assert durable_tasks.claim_task('next_opponent_profile') is None
     with database.connection() as connection:
-        connection.execute('UPDATE background_tasks SET next_attempt_at=? WHERE id=?',
-                           ('2020-01-01T00:00:00+00:00', profile_task['id']))
-    projection = background_diagnostics.snapshot()
-    assert projection.available, projection
-    durable_queues = [queue for queue in projection.queues if queue.queue == 'durable']
-    assert [(queue.state, queue.underlying_state, queue.count) for queue in durable_queues] == [
-        ('retrying', 'retrying', 1)]
-
-
-def test_pr116_next_opponent_lifecycle_metrics_retain_kind(diagnostic_database):
-    durable_tasks.enqueue_task('next_opponent_profile', 'profile', {})
-    claimed_profile = durable_tasks.claim_task('next_opponent_profile')
-    durable_tasks.fail_task(claimed_profile['id'], claimed_profile['generation'],
-                           claimed_profile['lease_token'], RuntimeError('synthetic'))
-    projection = background_diagnostics.snapshot()
-    assert projection.available, projection
-    counters_by_kind = {counter.kind: counter.counts for counter in projection.counters}
-    assert set(counters_by_kind) == {'next_opponent_profile'}
-    profile_counts = counters_by_kind['next_opponent_profile']
-    assert (profile_counts.generations_started, profile_counts.claims, profile_counts.retries) == (1, 1, 1)
-    with database.read_connection() as connection:
-        assert {row['kind'] for row in connection.execute('SELECT kind FROM background_metric_buckets')} == {
-            'next_opponent_profile'}
-    assert background_runtime.RuntimeMeasurement('next_opponent_profile').sample().kind == 'next_opponent_profile'
+        connection.execute("UPDATE background_tasks SET state='failed' WHERE id=?", (profile['id'],))
+    assert durable_tasks.retry_task(profile['id']) is None
 
 
 def test_pr116_diagnostic_contract_accepts_all_supported_kinds_and_bounds_counters(diagnostic_database):
@@ -373,36 +348,6 @@ def test_background_diagnostics_query_deadline_returns_unavailable(diagnostic_da
     assert result.queues==result.counters==[]
 
 
-def test_engine_callback_replay_does_not_inflate_position_or_preemption_counts(diagnostic_database):
-    from app import game_analysis_commands
-    now=datetime.now(timezone.utc).isoformat()
-    class NativeSqlite:
-        def __init__(self,connection):
-            self.connection=connection
-        def execute_native(self,statement,parameters=()):
-            return self.connection.execute(statement.replace('%s','?').replace('FOR UPDATE',''),parameters)
-        def execute(self,statement,parameters=()):
-            return self.connection.execute(statement.replace('FOR UPDATE',''),parameters)
-    with database.connection() as connection:
-        connection.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json) VALUES('synthetic','lichess','private-canary',?,'rapid',1,'white','1-0','synthetic','[]')",(now,))
-        connection.execute("INSERT INTO game_analysis_jobs(game_id,status,lease_id,updated_at) VALUES('synthetic','leased','parent',?)",(now,))
-        connection.execute("INSERT INTO game_analysis_position_reports(id,game_id,analysis_version,scan_pass,position_index,request_json,state,lease_id,parent_lease_id,updated_at) VALUES('position','synthetic',1,'shallow',0,'{}','leased','lease','parent',?)",(now,))
-        adapter=NativeSqlite(connection)
-        payload={'report_id':'position','lease_id':'lease','report':{},'request_json':'{}','diagnostics':{'outcome':'success','elapsed_seconds':2}}
-        assert game_analysis_commands.publish_position_report(adapter,payload)=={'status':'complete'}
-        assert game_analysis_commands.publish_position_report(adapter,payload)=={'status':'complete'}
-        connection.execute("UPDATE game_analysis_position_reports SET state='leased',lease_id='new',parent_lease_id='parent' WHERE id='position'")
-        release={'report_id':'position','lease_id':'new','diagnostics':{'outcome':'preempted','elapsed_seconds':3}}
-        assert game_analysis_commands.release_position_report(adapter,release)=={'status':'queued'}
-        assert game_analysis_commands.release_position_report(adapter,release)=={'status':'stale'}
-    result=counts('engine_game')
-    assert result.engine_completed_positions==1
-    assert result.engine_successful_seconds==2
-    assert result.engine_preemptions==1
-    assert result.engine_preempted_seconds==3
-    assert 'private-canary' not in background_diagnostics.snapshot().model_dump_json()
-
-
 def test_background_oldest_eligible_age_excludes_delayed_paused_and_blocked(diagnostic_database):
     task('eligible')
     delayed=task('delayed',delay_seconds=3600)
@@ -504,31 +449,6 @@ def test_background_stale_publication_lock_and_removed_result_are_observed(diagn
         connection.execute('DELETE FROM background_tasks')
         assert not durable_tasks.complete_task_slice_in_transaction(connection,claimed)
     assert counts().stale_results==2
-
-
-def test_engine_defense_expired_lease_reclaim_and_claim_are_observed(monkeypatch):
-    from app import threat_analysis_commands
-    recorded=[]
-    monkeypatch.setattr(threat_analysis_commands,'increment',lambda _database,kind,identity,**deltas: recorded.append((kind,identity,deltas)))
-    class Cursor:
-        def __init__(self,row=None):
-            self.row=row
-            self.rowcount=1
-        def fetchone(self):
-            return self.row
-    class ClaimDatabase:
-        def execute_native(self,statement,parameters=()):
-            if statement.startswith('SELECT defensive_analysis_enabled'):
-                return Cursor((1,))
-            if statement.startswith("UPDATE threat_analysis_requests SET state='queued'"):
-                return Cursor({'id':'expired'})
-            if statement.startswith('SELECT request.id'):
-                return Cursor({'id':'claimed','request_json':'{}'})
-            return Cursor()
-    result=threat_analysis_commands.claim_threat_analysis(ClaimDatabase(),{})
-    assert result['job']['id']=='claimed'
-    assert recorded==[('engine_defense','expired',{'lease_expiries':1,'lease_reclaims':1,'generation_restarts':1}),
-                      ('engine_defense','claimed',{'claims':1})]
 
 
 def test_background_runbook_snapshots_validate_without_private_fields():
@@ -754,4 +674,93 @@ def test_background_postgres_snapshot_disables_jit_before_budgeted_classificatio
     result = background_diagnostics.snapshot()
     assert result.available, result
     assert statements[0] == ("SELECT set_config('jit', 'off', true)", ())
-    assert any('FROM threat_analysis_requests' in statement for statement, _ in statements)
+    assert any('FROM background_tasks' in statement for statement, _ in statements)
+    assert not any('threat_analysis_requests' in statement or 'game_analysis_jobs' in statement
+                   for statement, _ in statements)
+
+
+def test_restart_preserves_retired_leases_and_recovers_other_kinds(diagnostic_database):
+    retired = durable_tasks.enqueue_task('defensive_threat_scan', 'retired', {})
+    retained = durable_tasks.enqueue_task('daily_queue', 'retained', {})
+    unknown = durable_tasks.enqueue_task('future_kind', 'unknown', {})
+    with database.connection() as connection:
+        for item in (retired, retained, unknown):
+            connection.execute("UPDATE background_tasks SET state='leased',lease_token=?,lease_expires_at=? WHERE id=?",
+                               ('original-lease', '2099-01-01', item['id']))
+        before = connection.execute('SELECT COUNT(*) FROM background_task_events WHERE task_id=?', (retired['id'],)).fetchone()[0]
+    durable_tasks.requeue_interrupted_tasks()
+    with database.read_connection() as connection:
+        for item in (retired, retained, unknown):
+            row = connection.execute('SELECT state,lease_token FROM background_tasks WHERE id=?', (item['id'],)).fetchone()
+            events = [r[0] for r in connection.execute('SELECT event FROM background_task_events WHERE task_id=? ORDER BY id', (item['id'],))]
+            if item is retired:
+                assert tuple(row) == ('leased', 'original-lease')
+                assert len(events) == before
+            else:
+                assert tuple(row) == ('queued', None)
+                assert events[-2:] == ['reclaimed', 'restarted']
+
+
+def test_retired_analysis_failure_does_not_touch_removed_engine_tables(diagnostic_database, monkeypatch):
+    statements = []
+    original = database.background_connection
+    @contextmanager
+    def traced_connection(**options):
+        with original(**options) as connection:
+            connection.set_trace_callback(statements.append)
+            yield connection
+    monkeypatch.setattr(database, 'background_connection', traced_connection)
+    retired = durable_tasks.enqueue_task('game_analysis_publish', 'old', {'game_id': 'old'}, max_attempts=1)
+    with database.connection() as connection:
+        connection.execute("UPDATE background_tasks SET state='leased',lease_token='old-lease',attempt_count=1 WHERE id=?", (retired['id'],))
+    result = durable_tasks.fail_task(retired['id'], retired['generation'], 'old-lease', RuntimeError('old delivery'))
+    assert result['state'] == 'failed'
+    assert any('background_tasks' in sql for sql in statements)
+    assert not any('game_analysis_jobs' in sql or 'game_analysis_publications' in sql
+                   or 'UPDATE imported_games' in sql for sql in statements)
+
+
+def test_local_game_ingest_and_replay_do_not_create_analysis_jobs(diagnostic_database):
+    from dataclasses import replace
+    from app.games.records import GameRecord
+    from app.services.game_sync import _persist_game_once
+    record = GameRecord(provider='lichess', username='test', provider_game_id='one',
+        played_at='2026-10-07T08:00:00+00:00', speed='rapid', rated=True,
+        color='white', result='1-0',
+        start_fen='rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+        uci_moves=['e2e4'], content_hash='first')
+    assert _persist_game_once(record) == 'inserted'
+    assert _persist_game_once(record) == 'duplicate'
+    assert _persist_game_once(replace(record, content_hash='changed')) == 'updated'
+    with database.read_connection() as connection:
+        assert connection.execute("SELECT content_hash FROM imported_games WHERE id='lichess:one'").fetchone()[0] == 'changed'
+        assert connection.execute('SELECT COUNT(*) FROM game_analysis_jobs').fetchone()[0] == 0
+
+
+@pytest.mark.parametrize('kind', ['coverage_seed', 'coverage_explorer'])
+@pytest.mark.parametrize('payload', [{}, {'run_id': 'saved-run'}], ids=['missing-run', 'existing-run'])
+def test_retired_coverage_terminal_failure_preserves_owner_rows_and_generic_event(diagnostic_database, monkeypatch, kind, payload):
+    statements = []
+    original = database.background_connection
+    @contextmanager
+    def traced_connection(**options):
+        with original(**options) as connection:
+            connection.set_trace_callback(statements.append)
+            yield connection
+    monkeypatch.setattr(database, 'background_connection', traced_connection)
+    # A stale payload need not have the retired feature's run identity.
+    with database.connection() as connection:
+        connection.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('rep','Synthetic','fixture','2026-01-01')")
+        connection.execute("INSERT INTO repertoire_coverage_runs(id,repertoire_id,status,settings_json,created_at,updated_at) VALUES('saved-run','rep','queued','{}','2026-01-01','2026-01-01')")
+    stale = durable_tasks.enqueue_task(kind, 'old', payload, max_attempts=1)
+    with database.connection() as connection:
+        connection.execute("UPDATE background_tasks SET state='leased',lease_token='old-lease',attempt_count=1 WHERE id=?", (stale['id'],))
+    assert durable_tasks.claim_task(kind) is None
+    result = durable_tasks.fail_task(stale['id'], stale['generation'], 'old-lease', RuntimeError('old delivery'))
+    assert result['state'] == 'failed'
+    with database.read_connection() as connection:
+        assert connection.execute('SELECT state FROM background_tasks WHERE id=?', (stale['id'],)).fetchone()[0] == 'failed'
+        assert connection.execute("SELECT 1 FROM background_task_events WHERE task_id=? AND event='failed'", (stale['id'],)).fetchone()
+        assert tuple(connection.execute("SELECT status,last_error FROM repertoire_coverage_runs WHERE id='saved-run'").fetchone()) == ('queued', None)
+    assert not any('repertoire_coverage_runs' in sql or 'repertoire_coverage_nodes' in sql for sql in statements)
+    assert durable_tasks.retry_task(stale['id']) is None

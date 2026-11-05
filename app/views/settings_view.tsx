@@ -17,11 +17,10 @@ import {
   createEncryptedBackup,
   restoreEncryptedBackup,
 } from "../../database/browser/encrypted-backup";
-import { migrateSqliteToBrowser } from "../../database/browser/sqlite-migration";
 import { reportDebugError } from "../lib/debug-reporting";
 import { saveLocalSettings } from "../lib/settings-save";
 import { PendingOperationError } from "../lib/operation-status";
-import { publishNotification, resolveNotification, updateNotification } from "../lib/notifications";
+import { publishNotification } from "../lib/notifications";
 
 import { Notice } from "../components/task-tabs";
 import { CurrentGameSyncSettings } from "../product-composition/GameSyncSettings";
@@ -32,16 +31,12 @@ type SettingsValues = {
   new_cards_per_day: number;
   study_new_per_day: number;
   tactics_new_per_day: number;
-  defense_new_cards_per_day: number;
-  include_defensive_cards_in_daily_stack: boolean;
-  defensive_analysis_enabled: boolean;
   study_only_mode: boolean;
   discovery_window_days: 30 | 90;
   lichess_username: string;
   chesscom_username: string;
   auto_sync_minutes: number;
   engine_line_window_cp: number;
-  major_mistake_cp: number;
   light_first_interval_days: number;
   draw_hold_user_moves: number;
   coverage_reply_denominator: number;
@@ -83,16 +78,12 @@ export default function SettingsView({
     new_cards_per_day: 10,
     study_new_per_day: 2,
     tactics_new_per_day: 5,
-    defense_new_cards_per_day: 5,
-    include_defensive_cards_in_daily_stack: true,
-    defensive_analysis_enabled: false,
     study_only_mode: false,
     discovery_window_days: 90,
     lichess_username: "",
     chesscom_username: "",
     auto_sync_minutes: 3,
     engine_line_window_cp: 30,
-    major_mistake_cp: 100,
     light_first_interval_days: 7,
     draw_hold_user_moves: 20,
     coverage_reply_denominator: 100,
@@ -111,19 +102,10 @@ export default function SettingsView({
     explorer_ratings: "1600,1800,2000,2200,2500",
     arrow_metric: "stockfish",
   });
-  const statusNotificationId = useRef<string | undefined>(undefined);
   function setStatus(message: string) {
     const severity = /could not|damaged|incorrect|unavailable/i.test(message) ? "error"
-      : /open Docker|retry/i.test(message) ? "warning" : "success";
-    if (message.startsWith("Copying and verifying")) {
-      statusNotificationId.current = publishNotification({ severity: "info", source: "settings",
-        key: "settings-data-transfer", message, active: true });
-    } else if (statusNotificationId.current) {
-      if (severity === "warning" || severity === "error")
-        updateNotification(statusNotificationId.current, { severity, message, active: false });
-      else resolveNotification(statusNotificationId.current, { severity, message });
-      statusNotificationId.current = undefined;
-    } else publishNotification({ severity, source: "settings", message });
+      : /retry/i.test(message) ? "warning" : "success";
+    publishNotification({ severity, source: "settings", message });
   }
   const [savedDailyLimit, setSavedDailyLimit] = useState(10);
   const [dirty, setDirty] = useState(false);
@@ -166,26 +148,6 @@ export default function SettingsView({
         sound_volume: Number(
           localStorage.getItem("tempo-sound-volume") ?? 0.72,
         ),
-        arrow_metric:
-          (localStorage.getItem("tempo-arrow-metric") as
-            | SettingsValues["arrow_metric"]
-            | null) ?? "stockfish",
-        engine_line_window_cp: Number(
-          localStorage.getItem("tempo-engine-window-cp") ?? 30,
-        ),
-        coverage_target: Number(
-          localStorage.getItem("tempo-coverage-target") ?? 90,
-        ),
-        maia_elo: localStorage.getItem("tempo-maia-elo") ?? "1500",
-        maia_transposition_plies: Number(
-          localStorage.getItem("tempo-maia-transposition-plies") ?? 4,
-        ),
-        explorer_speeds:
-          localStorage.getItem("tempo-explorer-speeds") ??
-          "blitz,rapid,classical",
-        explorer_ratings:
-          localStorage.getItem("tempo-explorer-ratings") ??
-          "1600,1800,2000,2200,2500",
       }));
       void loadSettings();
     }, 0);
@@ -206,22 +168,6 @@ export default function SettingsView({
     onTheme(values.board_theme);
     onPieces(values.piece_set);
     onSound(values.sound);
-    localStorage.setItem(
-      "tempo-coverage-target",
-      String(values.coverage_target),
-    );
-    localStorage.setItem("tempo-maia-elo", values.maia_elo);
-    localStorage.setItem(
-      "tempo-maia-transposition-plies",
-      String(values.maia_transposition_plies),
-    );
-    localStorage.setItem("tempo-explorer-speeds", values.explorer_speeds);
-    localStorage.setItem("tempo-explorer-ratings", values.explorer_ratings);
-    localStorage.setItem(
-      "tempo-engine-window-cp",
-      String(values.engine_line_window_cp),
-    );
-    localStorage.setItem("tempo-arrow-metric", values.arrow_metric);
     localStorage.setItem("tempo-sound-volume", String(values.sound_volume));
     if (usesLocalApi()) {
       const backend = {
@@ -230,16 +176,12 @@ export default function SettingsView({
         new_cards_per_day: values.new_cards_per_day,
         study_new_per_day: values.study_new_per_day,
         tactics_new_per_day: values.tactics_new_per_day,
-        defense_new_cards_per_day: values.defense_new_cards_per_day,
-        include_defensive_cards_in_daily_stack: values.include_defensive_cards_in_daily_stack,
-        defensive_analysis_enabled: values.defensive_analysis_enabled,
         study_only_mode: values.study_only_mode,
         discovery_window_days: values.discovery_window_days,
         lichess_username: values.lichess_username.trim(),
         chesscom_username: values.chesscom_username.trim(),
         auto_sync_minutes: values.auto_sync_minutes,
         engine_line_window_cp: values.engine_line_window_cp,
-        major_mistake_cp: values.major_mistake_cp,
         light_first_interval_days: values.light_first_interval_days,
         draw_hold_user_moves: values.draw_hold_user_moves,
         coverage_reply_denominator: values.coverage_reply_denominator,
@@ -264,30 +206,6 @@ export default function SettingsView({
     } else {
       setStatus("Saved in this browser.");
       setDirty(false);
-    }
-  }
-
-  async function transferLocalData() {
-    setStatus("Copying and verifying the local database…");
-    try {
-      const result = await migrateSqliteToBrowser(true);
-      if (result.status === "unavailable")
-        setStatus("Open Docker Tempo to transfer its local database.");
-      else
-        setStatus(
-          `Verified browser copy (${Object.values(result.counts ?? {}).reduce((sum, count) => sum + count, 0)} records).`,
-        );
-    } catch (error) {
-      reportDebugError(error, {
-        kind: "ui",
-        source: "settings-view",
-        operation: "transfer local data",
-      });
-      setStatus(
-        error instanceof Error
-          ? error.message
-          : "The local database could not be transferred.",
-      );
     }
   }
 
@@ -362,7 +280,7 @@ export default function SettingsView({
       )}
       {!settingsLoaded && !loadError && <Notice>Loading settings…</Notice>}
       <TabList as="nav" className="settings-section-nav" label="Settings sections">
-        {["training", "board", "builder", "games", "data"].map((section) => (
+        {["training", "board", "games", "data"].map((section) => (
           <Button
             key={section}
             id={`settings-tab-${section}`}
@@ -440,24 +358,6 @@ export default function SettingsView({
               checked={values.study_only_mode}
               onChange={(event) => update("study_only_mode", event.target.checked)} />
           </label>}
-          <label>
-            <span>Defensive analysis<small>Generate defensive exercises in the background. Turning off preserves your work; game analysis and repertoire recommendations continue.</small></span>
-            <TextInput disabled={!settingsLoaded} type="checkbox"
-              checked={values.defensive_analysis_enabled}
-              onChange={(event) => update("defensive_analysis_enabled", event.target.checked)} />
-          </label>
-          <label>
-            <span>New defensive exercises per day<small>Verified threats and false alarms; due reviews are additional</small></span>
-            <TextInput disabled={!settingsLoaded} type="number" min="0" max="100"
-              value={values.defense_new_cards_per_day}
-              onChange={(event) => update("defense_new_cards_per_day", Number(event.target.value))} />
-          </label>
-          <label>
-            <span>Defensive cards in daily stack<small>Turn off to hide them now; your cards and review history are kept</small></span>
-            <TextInput disabled={!settingsLoaded} type="checkbox"
-              checked={values.include_defensive_cards_in_daily_stack}
-              onChange={(event) => update("include_defensive_cards_in_daily_stack", event.target.checked)} />
-          </label>
           <label>
             <span>Discovery evidence window<small>How far back Tempo counts analyzed games</small></span>
             <SelectInput disabled={!settingsLoaded} value={values.discovery_window_days}
@@ -554,180 +454,18 @@ export default function SettingsView({
             />
           </label>
         </section>
-        <section id="settings-section-builder" className="settings-card" role="tabpanel" aria-labelledby="settings-tab-builder" hidden={activeSection !== "builder"}>
-          <h2>Builder</h2>
-          <label>
-            <span>Coverage target</span>
-            <SelectInput disabled={!settingsLoaded}
-              value={values.coverage_target}
-              onChange={(event) =>
-                update("coverage_target", Number(event.target.value))
-              }
-            >
-              <option value="80">80%</option>
-              <option value="90">90%</option>
-              <option value="95">95%</option>
-            </SelectInput>
-          </label>
-          <label>
-            <span>
-              Required reply threshold
-              <small>Cover opponent moves occurring at least this often</small>
-            </span>
-            <SelectInput disabled={!settingsLoaded}
-              value={values.coverage_reply_denominator}
-              onChange={(event) =>
-                update("coverage_reply_denominator", Number(event.target.value))
-              }
-            >
-              <option value="100">1 in 100</option>
-              <option value="200">1 in 200</option>
-              <option value="300">1 in 300</option>
-            </SelectInput>
-          </label>
-          <label>
-            <span>Cumulative reply coverage</span>
-            <SelectInput disabled={!settingsLoaded}
-              value={values.coverage_cumulative_target}
-              onChange={(event) =>
-                update("coverage_cumulative_target", Number(event.target.value))
-              }
-            >
-              <option value="90">90%</option>
-              <option value="95">95%</option>
-              <option value="99">99%</option>
-            </SelectInput>
-          </label>
-          <label>
-            <span>Coverage horizon<small>Full move number</small></span>
-            <TextInput disabled={!settingsLoaded}
-              type="number"
-              min="4"
-              max="40"
-              value={values.coverage_horizon_fullmoves}
-              onChange={(event) =>
-                update("coverage_horizon_fullmoves", Number(event.target.value))
-              }
-            />
-          </label>
-          <label>
-            <span>Candidate colors</span>
-            <SelectInput disabled={!settingsLoaded}
-              value={values.arrow_metric}
-              onChange={(event) =>
-                update(
-                  "arrow_metric",
-                  event.target.value as SettingsValues["arrow_metric"],
-                )
-              }
-            >
-              <option value="stockfish">Stockfish quality</option>
-              <option value="lichess">Lichess practical score</option>
-              <option value="masters">Masters practical score</option>
-            </SelectInput>
-          </label>
-          <label>
-            <span>
-              Engine move window<small>Centipawns from the best move</small>
-            </span>
-            <TextInput disabled={!settingsLoaded}
-              type="number"
-              min="0"
-              max="300"
-              value={values.engine_line_window_cp}
-              onChange={(event) =>
-                update("engine_line_window_cp", Number(event.target.value))
-              }
-            />
-          </label>
-          <label>
-            <span>Maia strength</span>
-            <SelectInput disabled={!settingsLoaded}
-              value={values.maia_elo}
-              onChange={(event) => update("maia_elo", event.target.value)}
-            >
-              <option>1100</option>
-              <option>1500</option>
-              <option>1900</option>
-            </SelectInput>
-          </label>
-          <label>
-            <span>
-              Transposition search<small>Maia lookahead plies</small>
-            </span>
-            <TextInput disabled={!settingsLoaded}
-              type="number"
-              min="2"
-              max="8"
-              value={values.maia_transposition_plies}
-              onChange={(event) =>
-                update("maia_transposition_plies", Number(event.target.value))
-              }
-            />
-          </label>
-          <label>
-            <span>Explorer games</span>
-            <SelectInput disabled={!settingsLoaded}
-              value={values.explorer_speeds}
-              onChange={(event) =>
-                update("explorer_speeds", event.target.value)
-              }
-            >
-              <option value="blitz,rapid,classical">
-                Blitz + rapid + classical
-              </option>
-              <option value="rapid,classical">Rapid + classical</option>
-              <option value="classical">Classical only</option>
-            </SelectInput>
-          </label>
-          <label>
-            <span>Explorer ratings</span>
-            <SelectInput disabled={!settingsLoaded}
-              value={values.explorer_ratings}
-              onChange={(event) =>
-                update("explorer_ratings", event.target.value)
-              }
-            >
-              <option value="1600,1800,2000,2200,2500">1600+</option>
-              <option value="2000,2200,2500">2000+</option>
-              <option value="2200,2500">2200+</option>
-            </SelectInput>
-          </label>
-        </section>
         <section id="settings-section-games" className="settings-card" role="tabpanel" aria-labelledby="settings-tab-games" hidden={activeSection !== "games"}>
           <h2>Games</h2>
           {activeSection === "games" && <CurrentGameSyncSettings />}
           <p>Configured game sync uses the saved account, UTC date range, game speeds, rated policy, and repertoires selected above.</p>
           <p>Save provider settings with the “Save game sync settings” button above.</p>
-          <h3>Existing imported-game analysis</h3>
-          <p>Controls existing imported-game analysis and finding classification, not provider synchronization or Game Review admission. Save this threshold with the page’s “Save settings” button.</p>
-          <label>
-            <span>
-              Major mistake threshold<small>Centipawn loss</small>
-            </span>
-            <TextInput disabled={!settingsLoaded}
-              type="number"
-              min="25"
-              max="1000"
-              value={values.major_mistake_cp}
-              onChange={(event) =>
-                update("major_mistake_cp", Number(event.target.value))
-              }
-            />
-          </label>
         </section>
         <section id="settings-section-data" className="settings-card" role="tabpanel" aria-labelledby="settings-tab-data" hidden={activeSection !== "data"}>
           <h2>Data &amp; backup</h2>
           <p className="settings-card-copy">
-            Keep an encrypted portable copy of browser data. Docker’s SQLite
-            file remains unchanged during transfer.
+            Keep an encrypted portable copy of browser data.
           </p>
           <div className="settings-actions">
-            {usesLocalApi() && (
-              <Button onClick={() => void transferLocalData()}>
-                Transfer Docker data
-              </Button>
-            )}
             <Button onClick={() => void exportBackup()}>
               Export encrypted backup
             </Button>

@@ -18,7 +18,6 @@ export function verificationStages({ python, tier, outputDirectory }) {
 const stages = [
   ["capabilities", "node", ["scripts/check-test-capabilities.mjs", "--docker", "--loopback", "--workspace-mount"]],
   ["unit", "npm", ["run", "test:unit", "--", "--reporter=default", "--reporter=json", `--outputFile.json=${unitProfilePath}`]],
-  ["defense_engine", "node", ["scripts/test-defense-engine.mjs"]],
   ["backend", python, ["-m", "pytest", "backend/tests", "-q", "-o", "cache_dir=.pytest_cache", "--rootdir=.", ...(tier === "ci-backend" ? ["--junitxml=test-results/ci/backend-tests.xml"] : [])]],
   ["rust_format", "cargo", ["fmt", "--all", "--", "--check"]],
   ["rust_lint", "cargo", ["clippy", "--all-targets", "--", "-D", "warnings"]],
@@ -34,13 +33,13 @@ const stages = [
 const stagesByTier = {
   fast: ["unit"],
   python: ["backend"],
-  backend: ["defense_engine", "backend"],
+  backend: ["backend"],
   rust: ["rust_format", "rust_lint", "rust_test"],
-  integration: ["defense_engine", "backend", "rust_format", "rust_lint", "rust_test"],
+  integration: ["backend", "rust_format", "rust_lint", "rust_test"],
   ui: ["capabilities", "postgres_docker", "visual"],
   browser: ["capabilities", "postgres_docker"],
   "ci-frontend": ["unit", "lint", "typecheck"],
-  "ci-backend": ["defense_engine", "backend"],
+  "ci-backend": ["backend"],
   "ci-build": ["rust_format", "rust_lint", "rust_test", "wasm_build", "local_build"],
   full: stages.map(([name]) => name),
 };

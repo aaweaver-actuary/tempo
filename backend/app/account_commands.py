@@ -26,8 +26,6 @@ def update_game_accounts(
             storage.save_game_account(database, provider, username)
         else:
             storage.delete_game_account(database, provider)
-    from .services.postgres_next_opponent import request_profile_refresh
-    request_profile_refresh(database)
     return {
         "lichess_username": lichess_username,
         "chesscom_username": chesscom_username,

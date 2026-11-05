@@ -1,4 +1,4 @@
-export const OFFLINE_SHELL_VERSION = "tempo-static-v7";
+export const OFFLINE_SHELL_VERSION = "tempo-static-v8";
 let confirmedShellVersion: string | undefined;
 
 export function offlineShellVersion(): string | undefined {

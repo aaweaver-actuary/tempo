@@ -13,8 +13,8 @@ if (args[0] !== "--managed-child") {
     [fileURLToPath(import.meta.url), "--managed-child", ...args]);
 } else {
   const [, kind, python, ...options] = args;
-  const scripts = { maia: "./qualify-maia-container.py", frozen: "../database/tests/test-frozen-postgres.py" };
-  if (!scripts[kind] || !python) throw new Error("Supply maia|frozen, an existing Python executable, and owning arguments");
+  const scripts = { frozen: "../database/tests/test-frozen-postgres.py" };
+  if (!scripts[kind] || !python) throw new Error("Supply frozen, an existing Python executable, and owning arguments");
   const directory = await mkdtemp(join(tmpdir(), "tempo-qualification-docker-"));
   try {
     const env = managedDockerEnvironment(process.env, directory);

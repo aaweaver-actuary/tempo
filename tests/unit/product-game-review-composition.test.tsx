@@ -47,14 +47,14 @@ it("mounts current Game Review receipts and keeps the Study attempt when its opt
   await waitFor(() => expect(useTrainingStore.getState().queueReadiness).toBe("ready"));
   const attempt = useTrainingStore.getState().attempt;
   expect(productRequests).toEqual([]);
-  fireEvent.click((await screen.findAllByRole("button", { name: "Games" }))[0]);
+  fireEvent.click((await screen.findAllByRole("button", { name: "Game Review" }))[0]);
   fireEvent.click(await screen.findByRole("button", { name: new RegExp(`Lichess · ${fixture.detail.game_id}`) }));
   expect(await screen.findByText(/Disposition: first introduction · Admission: pending/)).toBeTruthy();
   expect(screen.queryByText(/available for Study/)).toBeNull();
   expect(useTrainingStore.getState().attempt).toEqual(attempt);
   fireEvent.click(screen.getAllByRole("button", { name: "Train" })[0]);
   unavailable = true;
-  fireEvent.click(screen.getAllByRole("button", { name: "Games" })[0]);
+  fireEvent.click(screen.getAllByRole("button", { name: "Game Review" })[0]);
   expect(await screen.findByText(/Game Review request failed \(HTTP 503\)/)).toBeTruthy();
   fireEvent.click(screen.getAllByRole("button", { name: "Train" })[0]);
   expect(useTrainingStore.getState().attempt).toEqual(attempt);

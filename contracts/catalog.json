@@ -10,7 +10,6 @@
       "authoritative_owner": "Learning",
       "consumers": [
         "study-web",
-        "workbench-web",
         "game-evidence",
         "content"
       ],
@@ -51,8 +50,7 @@
       "public_namespace": "tempo_content_publication_contracts.v1",
       "authoritative_owner": "Content definitions / Learning activation",
       "consumers": [
-        "learning",
-        "workbench-web"
+        "learning"
       ],
       "models": [
         "Publication",
@@ -88,8 +86,7 @@
       "authoritative_owner": "Game Evidence observations / Learning obligations",
       "consumers": [
         "learning",
-        "intelligence",
-        "workbench-web"
+        "intelligence"
       ],
       "models": [
         "EvidenceDelivery",
@@ -125,8 +122,7 @@
       "public_namespace": "tempo_intelligence_contracts.v1",
       "authoritative_owner": "Intelligence advisory only",
       "consumers": [
-        "learning",
-        "workbench-web"
+        "learning"
       ],
       "models": [
         "AdvisoryPublication",

@@ -68,27 +68,16 @@ def inactive_frozen_queue(monkeypatch):
                         lambda _database, **_options: (None, 0))
 
 
-def test_postgres_game_exclusion_uses_foreground_receipt_and_atomic_followup(monkeypatch):
-    from app.services import postgres_next_opponent
-    profile_intents = []
-    monkeypatch.setattr(postgres_next_opponent, "request_profile_refresh", lambda database: profile_intents.append(database))
+def test_retired_exclusion_route_and_legacy_command_atomic_followup(monkeypatch):
     from fastapi.testclient import TestClient
     from app import game_commands, main
-    from app import command_dispatch
-
-    dispatched = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(command_dispatch, "dispatch_command",
-                        lambda name, payload, *, idempotency_key:
-                        dispatched.append((name, payload, idempotency_key)) or
-                        {"game_id": payload["game_id"], "excluded": payload["excluded"]})
+    # The retired HTTP entry point is no longer mounted. The legacy command's
+    # atomic storage behavior remains covered below while its callers retire.
     response = TestClient(main.app).post(
         "/api/games/provider:one/exclusion", json={"excluded": True},
         headers={"Idempotency-Key": "exclude-one"},
     )
-    assert response.status_code == 200, response.text
-    assert dispatched == [("games.exclusion.set",
-                           {"game_id": "provider:one", "excluded": True}, "exclude-one")]
+    assert response.status_code == 404
 
     statements = []
     followups = []
@@ -1428,9 +1417,6 @@ def test_postgres_game_accounts_update_dispatches_foreground_command(monkeypatch
 
 
 def test_postgres_game_accounts_update_reconciles_provider_rows(monkeypatch):
-    from app.services import postgres_next_opponent
-    profile_intents = []
-    monkeypatch.setattr(postgres_next_opponent, "request_profile_refresh", lambda database: profile_intents.append(database))
     from app.account_commands import update_game_accounts
 
     statements = []
@@ -1445,7 +1431,6 @@ def test_postgres_game_accounts_update_reconciles_provider_rows(monkeypatch):
         {"lichess_username": " alice ", "chesscom_username": ""},
     )
     assert response == {"lichess_username": "alice", "chesscom_username": ""}
-    assert len(profile_intents) == 1
     assert statements[0][1] == ("alice", "")
     assert statements[1][1] == ("lichess", "alice")
     assert statements[2][1] == ("chess.com",)
@@ -1723,7 +1708,7 @@ def test_postgres_branch_removal_dispatches_foreground_command_with_idempotency(
     assert dispatched == [("repertoire.branch.remove", request, "remove-white-e4")]
 
 
-def test_postgres_branch_removal_queues_coverage_with_changed_lines(monkeypatch, unscoped_canonical_prefix):
+def test_postgres_branch_removal_keeps_repairs_without_coverage(monkeypatch, unscoped_canonical_prefix):
     from app import branch_commands
 
     class QueryResult:
@@ -1763,9 +1748,9 @@ def test_postgres_branch_removal_queues_coverage_with_changed_lines(monkeypatch,
                         lambda db, repertoire_id: scheduled.append(("integrity", db, repertoire_id)))
     monkeypatch.setattr(branch_commands, "request_graph_rebuild_in_transaction",
                         lambda db, repertoire_id, day: scheduled.append(("graph", db, repertoire_id)))
-    monkeypatch.setattr(branch_commands, "request_coverage_seed_in_transaction",
-                        lambda db, repertoire_id, *, automatic, supersede_active: scheduled.append(
-                            ("coverage", db, repertoire_id, automatic, supersede_active)))
+    from app.services import coverage_seed_request
+    monkeypatch.setattr(coverage_seed_request, "request_coverage_seed_in_transaction",
+                        lambda *_args, **_kwargs: pytest.fail("retired coverage enqueued"))
     monkeypatch.setattr(branch_commands, "integrity_summary",
                         lambda db, repertoire_id: {"status": "unchecked"})
     result = branch_commands.remove_repertoire_branch(database, {
@@ -1775,9 +1760,8 @@ def test_postgres_branch_removal_queues_coverage_with_changed_lines(monkeypatch,
     assert database.deleted == ["match"]
     assert result == {"deleted_line_count": 1, "deleted_card_count": 0,
                       "retained_line_count": 2, "integrity": {"status": "unchecked"}}
-    assert [event[0] for event in scheduled] == ["integrity", "graph", "coverage"]
-    assert all(event[1] is database for event in scheduled)
-    assert scheduled[-1][2:] == ("white", True, True)
+    assert [event[0] for event in scheduled] == ["integrity", "graph"]
+    assert all(event[1] is database and event[2] == "white" for event in scheduled)
 
 
 def test_postgres_prefix_split_decisions_dispatch_foreground_commands_with_idempotency(monkeypatch):
@@ -2102,7 +2086,7 @@ def test_postgres_branch_edit_dispatches_foreground_command_with_idempotency(mon
     assert dispatched[0][2] == "branch-1"
 
 
-def test_postgres_branch_edit_checkpoints_graph_and_coverage_with_line(monkeypatch, unscoped_canonical_prefix):
+def test_postgres_branch_edit_checkpoints_graph_without_coverage(monkeypatch, unscoped_canonical_prefix):
     from app import branch_commands
 
     events = []
@@ -2122,8 +2106,9 @@ def test_postgres_branch_edit_checkpoints_graph_and_coverage_with_line(monkeypat
 
     monkeypatch.setattr(branch_commands, "request_graph_rebuild_in_transaction",
                         lambda *_args: events.append("graph"))
-    monkeypatch.setattr(branch_commands, "request_coverage_seed_in_transaction",
-                        lambda *_args, **_kwargs: events.append("coverage"))
+    from app.services import coverage_seed_request
+    monkeypatch.setattr(coverage_seed_request, "request_coverage_seed_in_transaction",
+                        lambda *_args, **_kwargs: pytest.fail("retired coverage enqueued"))
     monkeypatch.setattr(branch_commands, "integrity_summary",
                         lambda *_args: {"status": "unchecked"})
     result = branch_commands.add_repertoire_branch(Database(), {
@@ -2132,7 +2117,7 @@ def test_postgres_branch_edit_checkpoints_graph_and_coverage_with_line(monkeypat
     })
     assert result["duplicate"] is False
     assert result["moves"] == ["e2e4", "e7e5"]
-    assert events == ["line", "graph", "coverage"]
+    assert events == ["line", "graph"]
 
 
 def test_removed_endgame_template_generation_rejects_before_dispatch(monkeypatch):
@@ -2185,9 +2170,6 @@ def test_postgres_settings_update_dispatches_foreground_command(monkeypatch):
 
 
 def test_postgres_settings_update_refreshes_queue_and_preserves_omitted_defense_flag(monkeypatch):
-    from app.services import postgres_next_opponent
-    profile_intents = []
-    monkeypatch.setattr(postgres_next_opponent, "request_profile_refresh", lambda database: profile_intents.append(database))
     from app.contracts.transport.settings import Settings
     from app import settings_commands
 
@@ -2373,18 +2355,15 @@ def test_postgres_game_sync_admission_preserves_provider_rate_limit(monkeypatch)
     assert error.value.status_code == 429
 
 
-def test_postgres_game_sync_publishes_one_game_and_followup_intents_atomically(monkeypatch):
+def test_postgres_game_sync_publishes_one_game_without_legacy_analysis_work():
     from app.games.records import GameRecord
     from app.services import postgres_game_sync
 
     statements = []
-    enqueued = []
 
     class RecordingConnection:
         def execute(self, statement, parameters=()):
             statements.append((statement, parameters))
-            if "SELECT derivation_version FROM game_derivation_jobs" in statement:
-                return SimpleNamespace(fetchone=lambda: {"derivation_version": 1})
             return SimpleNamespace(fetchone=lambda: None)
 
     database = RecordingConnection()
@@ -2396,21 +2375,14 @@ def test_postgres_game_sync_publishes_one_game_and_followup_intents_atomically(m
         start_fen="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
         uci_moves=["e2e4"], content_hash="hash-1",
     )
-    monkeypatch.setattr(postgres_game_sync, "enqueue_compact_postgres_task_in_transaction",
-                        lambda _database, kind, key, payload, *, priority:
-                        enqueued.append((kind, key, payload, priority)))
     assert postgres_game_sync.persist_game_record_in_transaction(database, record) == (
         "inserted", "lichess:game-1",
     )
     assert statements[0][0].startswith("SELECT pg_advisory_xact_lock")
     assert any("INSERT INTO imported_games" in statement for statement, _ in statements)
-    assert any("INSERT INTO game_analysis_jobs" in statement for statement, _ in statements)
-    assert any("INSERT INTO game_derivation_jobs" in statement for statement, _ in statements)
-    assert enqueued == [("game_derivation_positions", "lichess:game-1",
-                         {"game_id": "lichess:game-1", "derivation_version": 1,
-                          "cursor": 0}, 125)]
-    assert not any("daily_chess_snapshots" in statement or "daily_chess_insights" in statement
-                   for statement, _ in statements)
+    writes = [sql for sql, _ in statements if sql.startswith(("INSERT", "UPDATE", "DELETE"))]
+    assert len(writes) == 1
+    assert writes[0].startswith("INSERT INTO imported_games")
 
 
 def test_postgres_game_sync_record_waits_for_foreground_and_discards_stale_replay(monkeypatch):

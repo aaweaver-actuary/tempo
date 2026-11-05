@@ -22,25 +22,11 @@ def update_imported_game(database, game_id, values):
     )
 
 
-def ensure_analysis_job(database, game_id, now):
-    database.execute(
-        "INSERT OR IGNORE INTO game_analysis_jobs(game_id,updated_at) VALUES(?,?)",
-        (game_id, now),
-    )
-
-
 def insert_imported_game(database, game_id, provider, values):
     database.execute(
         """INSERT INTO imported_games(id,provider,provider_game_id,content_hash,username,played_at,speed,rated,color,result,start_fen,moves_json,game_url,opening_name,player_rating,opponent_rating,rating_change,time_control)
                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (game_id, provider, *values),
-    )
-
-
-def insert_analysis_job(database, game_id, now):
-    database.execute(
-        "INSERT INTO game_analysis_jobs(game_id,updated_at) VALUES(?,?)",
-        (game_id, now),
     )
 
 

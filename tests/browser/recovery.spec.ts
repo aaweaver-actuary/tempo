@@ -3,6 +3,8 @@ import { prepareVisualUI } from "./visual-fixtures";
 import { test as productTest, api } from "./product-fixtures";
 import { heldDrag, prepareHeldDrag } from "./held-drag-fixtures";
 import type { Page } from "@playwright/test";
+import { execFileSync } from "node:child_process";
+import { postgresFixtureSqlArguments, verifyPostgresFixtureTarget } from "./product-fixture-reset";
 import { expectedPieces, renderedPieces, squareCenter } from "./keyboard-fixtures";
 
 const startFen =
@@ -626,33 +628,62 @@ test("discarding an unknown PGN import permits a different file after reload", a
 
 productTest("repair choices advance before a delayed save and survive reload through real PostgreSQL receipts", async ({ page, request }) => {
   // Allow setup plus the full eventual-recovery poll below.
-  productTest.setTimeout(120_000);
+  productTest.setTimeout(240_000);
   await prepareUI(page);
   // Await analysis from the retained passive Repertoire view so the active Train
   // workspace does not intentionally preempt the integrity slices this receipt test needs.
-  await navigate(page, "Repertoire");
+  await page.getByRole("button", { name: "Repertoire", exact: true }).click();
   const repairPgn = '[Event "First e4"]\n\n1. e4 *\n\n[Event "First d4"]\n\n1. d4 *\n\n' +
     '[Event "Second e4"]\n[SetUp "1"]\n[FEN "rnbqkb1r/pppppppp/5n2/8/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 2 2"]\n\n2. e4 *\n\n' +
     '[Event "Second d4"]\n[SetUp "1"]\n[FEN "rnbqkb1r/pppppppp/5n2/8/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 2 2"]\n\n2. d4 *';
-  const imported = await request.post(`${api}/imports/pgn`, { multipart: {
-    file: { name: "queued-repair.pgn", mimeType: "application/x-chess-pgn", buffer: Buffer.from(repairPgn) }, initial_depth: "1",
+  const conflict = await request.post(`${api}/imports/pgn`, { multipart: {
+    file: { name: "blocked-repair.pgn", mimeType: "application/x-chess-pgn", buffer: Buffer.from(repairPgn) }, initial_depth: "1",
   } });
-  expect(imported.ok()).toBe(true);
+  expect(conflict.status()).toBe(409);
+  expect((await conflict.json()).detail.code).toBe("repertoire_conflict");
+  expect((await (await request.get(`${api}/repertoires`)).json()).repertoires
+    .some((item: { name: string }) => item.name === "blocked-repair")).toBe(false);
+
+  // Seed a pre-existing conflict as old persisted authored content, never via
+  // the current import path, which correctly rejects competing answers.
+  const cleanPgn = '[Event "First e4"]\n\n1. e4 *\n\n' +
+    '[Event "Second e4"]\n[SetUp "1"]\n[FEN "rnbqkb1r/pppppppp/5n2/8/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 2 2"]\n\n2. e4 *';
+  const imported = await request.post(`${api}/imports/pgn`, { multipart: {
+    file: { name: "queued-repair.pgn", mimeType: "application/x-chess-pgn", buffer: Buffer.from(cleanPgn) }, initial_depth: "1",
+  } });
+  expect(imported.ok(), await imported.text()).toBe(true);
   let repertoireId = "";
+  let seedGraph: { id: string; generation: number } | undefined;
   await expect.poll(async () => {
     const result = await (await request.get(`${api}/repertoires`, { headers: { "X-Tempo-Work-Class": "background" } })).json();
     const repertoire = result.repertoires.find((item: { name: string }) => item.name === "queued-repair");
     repertoireId = repertoire?.id ?? "";
-    return {
-      integrity_issue_count: repertoire?.integrity_issue_count,
-      integrity_status: repertoire?.integrity_status,
-      integrity_scan_status: repertoire?.integrity_scan_status,
-    };
-  }, { timeout: 20_000 }).toEqual({
-    integrity_issue_count: 2,
-    integrity_status: "needs_repair",
-    integrity_scan_status: "idle",
-  });
+    const tasks = (await (await request.get(`${api}/system/tasks`)).json()).tasks;
+    seedGraph = tasks.find((task: { kind: string; deduplication_key: string; state: string }) =>
+      task.kind === "opening_graph_rebuild" && task.deduplication_key === repertoireId && task.state === "complete");
+    return Boolean(seedGraph && repertoire?.integrity_scan_status === "idle");
+  }, { timeout: 60_000 }).toBe(true);
+  expect(repertoireId).toMatch(/^[a-zA-Z0-9_-]+$/);
+  expect(seedGraph!.id).toMatch(/^[a-zA-Z0-9_-]+$/);
+  const health = await (await request.get(`${api}/health`)).json();
+  const postgresId = await verifyPostgresFixtureTarget({ health, apiUrl: api, project: process.env.TEMPO_TEST_COMPOSE_PROJECT });
+  const day = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  expect(day).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  const seedSql = `INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
+    SELECT 'legacy-' || id,repertoire_id,'Synthetic legacy competing line',trained_color,start_fen,'["d2d4"]',created_at
+    FROM repertoire_lines WHERE repertoire_id='${repertoireId}' ORDER BY id LIMIT 1;
+    UPDATE background_tasks SET state='failed',phase='failed',generation=generation+1,
+      payload_json=json_build_object('repertoire_id','${repertoireId}','local_day','${day}')::text,
+      last_error='synthetic legacy fixture' WHERE id='${seedGraph!.id}';`;
+  execFileSync("docker", postgresFixtureSqlArguments(postgresId, seedSql, 5000), { encoding: "utf8", timeout: 10_000 });
+  const seedRetryId = `seed-retry-${repertoireId}`;
+  expect((await request.post(`${api}/system/tasks/${seedGraph!.id}/retry`, { headers: { "Idempotency-Key": seedRetryId } })).ok()).toBe(true);
+  await expect.poll(async () => {
+    const result = await (await request.get(`${api}/repertoires`, { headers: { "X-Tempo-Work-Class": "background" } })).json();
+    const repertoire = result.repertoires.find((item: { id: string }) => item.id === repertoireId);
+    return { integrity_issue_count: repertoire?.integrity_issue_count,
+      integrity_status: repertoire?.integrity_status, integrity_scan_status: repertoire?.integrity_scan_status };
+  }, { timeout: 60_000 }).toEqual({ integrity_issue_count: 1, integrity_status: "needs_repair", integrity_scan_status: "idle" });
   let releaseSave: (() => void) | undefined;
   const saveHold = new Promise<void>(resolve => { releaseSave = resolve; });
   let savedOnServer = false;
@@ -666,13 +697,11 @@ productTest("repair choices advance before a delayed save and survive reload thr
   });
   try {
     await page.goto("/");
-    await page.getByRole("button", { name: "Resume repair", exact: true }).click();
+    await page.getByRole("button", { name: "Repertoire", exact: true }).click();
+    await page.getByRole("button", { name: "Resume repair", exact: true }).click({ timeout: 15_000 });
     const dialog = page.getByRole("dialog", { name: "Choose one response per position" });
-    await expect(dialog).toContainText("2 issues remaining");
-    await dialog.getByRole("button", { name: "e2e4", exact: true }).click();
-    await dialog.getByRole("button", { name: "Keep this response", exact: true }).click();
     await expect(dialog).toContainText("1 issue remaining");
-    await dialog.getByRole("button", { name: "e2e4", exact: true }).click();
+    await dialog.getByRole("button", { name: "Choose e4", exact: true }).click({ timeout: 15_000 });
     await dialog.getByRole("button", { name: "Keep this response", exact: true }).click();
     await expect(dialog).toContainText("All choices queued");
     await expect.poll(() => savedOnServer).toBe(true);
@@ -680,14 +709,14 @@ productTest("repair choices advance before a delayed save and survive reload thr
     const savedChoices = await page.evaluate(() => Object.keys(localStorage)
       .filter(key => key.startsWith("tempo-pending-integrity-repairs-v3:"))
       .map(key => JSON.parse(localStorage.getItem(key)!)));
-    expect(savedChoices).toHaveLength(2);
+    expect(savedChoices).toHaveLength(1);
     await page.reload(); releaseSave?.();
     await expect(page.getByRole("dialog", { name: "Choose one response per position" })).toHaveCount(0);
     // Prove eventual recovery through graph and integrity publication, not a
     // 20-second performance SLO for the asynchronous background pipeline.
     await expect.poll(async () => page.evaluate(() => Object.keys(localStorage)
       .filter(key => key.startsWith("tempo-pending-integrity-repairs-v3:")).length), { timeout: 60_000 }).toBe(0);
-    expect(submittedKeys).toHaveLength(2);
+    expect(submittedKeys).toHaveLength(1);
     expect(submittedKeys.sort()).toEqual(savedChoices.map(choice => choice.operationId).sort());
     const integrity = await (await request.get(`${api}/repertoires/${repertoireId}/integrity`)).json();
     expect(integrity).toMatchObject({ status: "clean", scan_status: "idle", issue_count: 0 });
@@ -695,6 +724,47 @@ productTest("repair choices advance before a delayed save and survive reload thr
       const receipt = await (await request.get(`${api}/operations/${operationId}`)).json();
       expect(receipt.state).toBe("complete");
     }
+
+    // Reopen a real completed graph task as terminal in this verified disposable
+    // fixture; retain the accepted repair's original operation identity.
+    const tasks = (await (await request.get(`${api}/system/tasks`)).json()).tasks;
+    const graph = tasks.find((task: { kind: string; deduplication_key: string; state: string }) =>
+      task.kind === "opening_graph_rebuild" && task.deduplication_key === repertoireId && task.state === "complete");
+    expect(graph).toBeTruthy();
+    expect(graph.id).toMatch(/^[a-zA-Z0-9_-]+$/);
+    const retiredId = `retired-${graph.id}`;
+    const sql = `UPDATE background_tasks SET state='failed', phase='failed', last_error='synthetic retry witness' WHERE id='${graph.id}';
+      INSERT INTO background_tasks(id,kind,deduplication_key,state,phase,payload_json,next_attempt_at,created_at,updated_at)
+      VALUES ('${retiredId}','game_analysis_followup','${retiredId}','failed','failed','{}',now()::text,now()::text,now()::text);`;
+    execFileSync("docker", postgresFixtureSqlArguments(postgresId, sql, 5000), { encoding: "utf8", timeout: 10_000 });
+    expect((await request.post(`${api}/system/tasks/${retiredId}/retry`, { headers: { "Idempotency-Key": `retired-${submittedKeys[0]}` } })).status()).toBe(404);
+    const terminal = (await (await request.get(`${api}/system/tasks`)).json()).tasks.find((task: { id: string }) => task.id === graph.id);
+    expect(terminal).toMatchObject({ state: "failed", generation: graph.generation });
+    await page.evaluate(({ repair, graphTask }) => {
+      const restored = { ...repair, phase: "validating", taskId: graphTask.id,
+        taskGeneration: graphTask.generation, retry: undefined, retryTaskId: undefined, retryOperationId: undefined };
+      localStorage.setItem(`tempo-pending-integrity-repairs-v3:${repair.operationId}`, JSON.stringify(restored));
+    }, { repair: savedChoices[0], graphTask: graph });
+    let retryId = "";
+    page.on("request", requestEvent => {
+      if (requestEvent.method() === "POST" && new URL(requestEvent.url()).pathname === `/api/system/tasks/${graph.id}/retry`)
+        retryId = requestEvent.headers()["idempotency-key"] ?? "";
+    });
+    await page.reload();
+    await page.locator(".integrity-repair-status").getByRole("button", { name: "Retry repair", exact: true }).click();
+    await expect.poll(() => retryId).not.toBe("");
+    await expect.poll(async () => (await (await request.get(`${api}/operations/${retryId}`)).json()).state,
+      { timeout: 60_000 }).toBe("complete");
+    const receiptBefore = await (await request.get(`${api}/operations/${retryId}`)).json();
+    const replay = await request.post(`${api}/system/tasks/${graph.id}/retry`, { headers: { "Idempotency-Key": retryId } });
+    expect(replay.ok()).toBe(true);
+    expect(await (await request.get(`${api}/operations/${retryId}`)).json()).toMatchObject({
+      operation_id: retryId, state: "complete", response: receiptBefore.response,
+    });
+    await expect.poll(async () => page.evaluate(id => localStorage.getItem(`tempo-pending-integrity-repairs-v3:${id}`), savedChoices[0].operationId),
+      { timeout: 60_000 }).toBeNull();
+    const recovered = (await (await request.get(`${api}/system/tasks`)).json()).tasks.find((task: { id: string }) => task.id === graph.id);
+    expect(recovered).toMatchObject({ state: "complete", generation: graph.generation });
   } finally { releaseSave?.(); }
 });
 

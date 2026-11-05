@@ -67,3 +67,14 @@ it("checks each original receipt through its own supplied client", async () => {
   expect(String(firstFetch.mock.calls[0][0])).toBe("https://a.example/api/operations/original");
   expect(String(secondFetch.mock.calls[0][0])).toBe("https://b.example/api/operations/original");
 });
+
+it.each(["defense-command", "endgame-command"])("holds retired %s before touching its journal or transport", async kind => {
+  const { record, store } = fixture();
+  record.kind = kind;
+  const fetch = vi.fn();
+  const delivery = createStudyCommandDelivery(client(fetch), async () => store);
+  await expect(delivery.deliver(record, new AbortController().signal)).rejects.toThrow("retired exercise is held");
+  await expect(delivery.checkReceipt(record, new AbortController().signal)).rejects.toThrow("retired exercise is held");
+  expect(fetch).not.toHaveBeenCalled();
+  expect(store.update).not.toHaveBeenCalled();
+});

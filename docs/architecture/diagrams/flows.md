@@ -24,7 +24,8 @@ The canonical drawing and source notes render directly in
 The canonical drawing and source notes render directly in
 [services/content/README.md](../../../services/content/README.md#content-publication-and-serving-activation-main).
 
-## Games read, failure and disposal (MAIN, merged PR322)
+## Game Review commands and historical Games read
 
-The canonical drawing and source notes render directly in
-[apps/workbench-web/README.md](../../../apps/workbench-web/README.md#games-read-failure-and-disposal-main-merged-pr322).
+The retained command and recovery boundary is documented in
+[product composition](../../../backend/app/product_composition/README.md#durable-game-review-commands-and-settings-recovery-590).
+The former standalone Workbench read sequence is [historical](https://github.com/aaweaver-actuary/tempo/blob/aec931f9820b8cd6b219074ae0c32d6686c21684/apps/workbench-web/README.md#games-read-failure-and-disposal-main-merged-pr322).

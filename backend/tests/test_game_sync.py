@@ -305,6 +305,9 @@ def test_incremental_overlap_catches_late_games_without_duplicates(tmp_path, mon
         assert second["providers"]["lichess"]["inserted"] == 1
         assert second["providers"]["lichess"]["duplicates"] == 1
         assert client.get("/api/games/summary").json()["total"] == 2
+        with database.read_connection() as db:
+            assert db.execute("SELECT COUNT(*) FROM game_analysis_jobs").fetchone()[0] == 0
+            assert db.execute("SELECT COUNT(*) FROM game_derivation_jobs").fetchone()[0] == 0
     assert since_values[1] <= int(datetime(2026, 9, 18, 12, tzinfo=timezone.utc).timestamp() * 1000)
 
 
@@ -379,9 +382,8 @@ def test_provider_status_never_inherits_another_provider_error(tmp_path, monkeyp
         assert providers["chess.com"]["last_error"] is None
 
 
-@pytest.mark.parametrize("locked_step", ["derivation", "finalization"])
 def test_sync_finalization_retries_transient_database_lock_without_refetching_providers(
-    tmp_path, monkeypatch, locked_step
+    tmp_path, monkeypatch
 ):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     provider_calls = []
@@ -391,28 +393,19 @@ def test_sync_finalization_retries_transient_database_lock_without_refetching_pr
         return {"imported": 0, "providers": {
             "lichess": {"provider": "lichess", "status": "idle", "error": None},
             "chess.com": {"provider": "chess.com", "status": "idle", "error": None},
-        }, "_changed_game_ids": ["lichess:one"]}
+        }}
 
     monkeypatch.setattr(game_sync_coordinator, "sync_providers", successful_providers)
     original_finish = game_sync_coordinator._finish_job
     operation_attempts = []
 
     def transiently_locked_finish(job_id, result):
-        if locked_step == "finalization":
-            operation_attempts.append(1)
-        if locked_step == "finalization" and len(operation_attempts) == 1:
+        operation_attempts.append(1)
+        if len(operation_attempts) == 1:
             raise sqlite3.OperationalError("database is locked")
         original_finish(job_id, result)
 
-    def transiently_locked_derivation(_game_id, *, background):
-        assert background is True
-        if locked_step == "derivation":
-            operation_attempts.append(1)
-        if locked_step == "derivation" and len(operation_attempts) == 1:
-            raise sqlite3.OperationalError("database is locked")
-
     monkeypatch.setattr(game_sync_coordinator, "_finish_job", transiently_locked_finish)
-    monkeypatch.setattr(game_sync_coordinator, "enqueue_game_derivation", transiently_locked_derivation)
     database.initialize()
     job_id = game_sync_coordinator.enqueue_sync(GameSyncRequest(lichess_username="TempoPlayer"))
     with database.read_connection() as db:

@@ -7,7 +7,7 @@ import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { TempoProblem, verificationProblem } from "./tempo-guidance.mjs";
 
 export const productVolumes = Object.fromEntries(["tempo-postgres-data", "tempo-postgres-backups",
-  "tempo-redis-data", "tempo-engine-operations"].map(name => [name, { name, external: true }]));
+  "tempo-redis-data"].map(name => [name, { name, external: true }]));
 
 // Persistent data has exactly one owner and destination. Test aliases retain
 // the same ownership contract on their independently scoped disposable volumes.
@@ -15,7 +15,6 @@ const persistentMounts = {
   postgres: { source: "tempo-postgres-data", disposableSource: "postgres-test-data", destination: "/var/lib/postgresql" },
   "postgres-backup": { source: "tempo-postgres-backups", disposableSource: "postgres-test-backups", destination: "/backups" },
   redis: { source: "tempo-redis-data", disposableSource: "redis-test-data", destination: "/data" },
-  "defense-engine": { source: "tempo-engine-operations", disposableSource: "engine-test-operations", destination: "/state" },
 };
 
 export function schemaVersionFromSource(source) {
@@ -73,6 +72,8 @@ export function validateTarget(config, target) {
   if (JSON.stringify(portsFromConfig(config)) !== JSON.stringify(target.ports))
     throw new Error(`Compose ports differ from the registered Tempo target: configured ${JSON.stringify(portsFromConfig(config))}; registered ${JSON.stringify(target.ports)}. Correct the registered port mapping before maintenance.`);
   for (const [key, expected] of Object.entries(target.volumes)) {
+    if (!target.disposable && key === "tempo-engine-operations" &&
+        expected.name === key && expected.external === true && !config.volumes?.[key]) continue;
     const actual = config.volumes?.[key];
     if (!actual || actual.name !== expected.name || Boolean(actual.external) !== Boolean(expected.external))
       throw new Error(`Unexpected Tempo volume mapping: ${key}.`);
@@ -81,7 +82,9 @@ export function validateTarget(config, target) {
     .filter(volume => volume.type === "volume").map(volume => volume.source);
   if (mountedVolumes.some(key => !target.volumes[key])) throw new Error("Unregistered data volume in the Tempo target.");
   for (const [serviceName, service] of Object.entries(config.services)) {
-    const expected = persistentMounts[serviceName];
+    // Frozen pre-retirement releases may still describe the old external journal.
+    const expected = !target.disposable && serviceName === "defense-engine"
+      ? { source: "tempo-engine-operations", destination: "/state" } : persistentMounts[serviceName];
     const source = target.disposable ? expected?.disposableSource : expected?.source;
     const mounts = (service.volumes ?? []).filter(mount => mount.type === "volume");
     if (mounts.some(mount => !expected || mount.source !== source || mount.target !== expected.destination)
@@ -132,6 +135,8 @@ export function validateContainers(containers, target) {
       const workingDirectory = labels["com.docker.compose.project.working_dir"];
       if (workingDirectory && resolve(workingDirectory) !== resolve(target.root))
         throw new Error("Registered Compose project belongs to another checkout.");
+      if (["defense-engine", "maia-worker"].includes(labels["com.docker.compose.service"]) && container.State?.Running)
+        throw new Error(`Stop and remove the retired ${labels["com.docker.compose.service"]} container for this registered Tempo project before updating.`);
       for (const mount of container.Mounts ?? []) {
         // Older backup containers inherit PostgreSQL's unused anonymous image
         // volume. It contains no cluster; new configurations use tmpfs here.
@@ -208,8 +213,12 @@ export function acquireTargetLock(directory) {
 }
 
 export function targetKey(target) {
+  const names = Object.values(target.volumes).map(volume => volume.name);
+  // Keep v1 production locks, migration guards and deployment receipts at their original address.
+  if (!target.disposable && target.project === "tempo" && names.length === 3 &&
+      Object.keys(productVolumes).every(name => names.includes(name))) names.push("tempo-engine-operations");
   return createHash("sha256").update(JSON.stringify([target.daemonId ?? target.context,
-    Object.values(target.volumes).map(volume => volume.name).sort()])).digest("hex").slice(0, 24);
+    names.sort()])).digest("hex").slice(0, 24);
 }
 
 const requiredVerificationJobs = ["plan", "frontend / verify", "backend / verify", "build / verify",
@@ -418,7 +427,14 @@ export async function inspectCandidateSource(target, run, { signal } = {}) {
   return { branch, head, changes, origin, problem, failures };
 }
 
-export async function assessCandidate(target, run, fetchJson, { signal, expectedSource, noCi = false } = {}) {
+function validateExplicitCandidate(candidateRef, candidateSha, noCi) {
+  if (candidateRef === 'refs/heads/main' && candidateSha === null) return;
+  if (!noCi || !/^refs\/heads\/codex\/[a-z0-9][a-z0-9/-]*$/.test(candidateRef ?? '') || !/^[0-9a-f]{40}$/.test(candidateSha ?? ''))
+    throw new Error('Explicit candidate requires a reviewed codex ref, exact SHA, and ci-disabled mode.');
+}
+
+export async function assessCandidate(target, run, fetchJson, { signal, expectedSource, noCi = false, candidateRef = 'refs/heads/main', candidateSha = null } = {}) {
+  validateExplicitCandidate(candidateRef, candidateSha, noCi);
   const source = await inspectCandidateSource(target, run, { signal });
   if (expectedSource && !sourceMatchesFingerprint(source, expectedSource))
     throw new TempoProblem("source_changed", "Local source changed while update verification was running. Local work is preserved; main was not fast-forwarded.",
@@ -427,9 +443,11 @@ export async function assessCandidate(target, run, fetchJson, { signal, expected
   const requestSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000);
   let revision;
   try {
-    const remote = await run("git", ["ls-remote", "https://github.com/aaweaver-actuary/tempo", "refs/heads/main"],
+    const remote = await run("git", ["ls-remote", "https://github.com/aaweaver-actuary/tempo", candidateRef],
       { allowFailure: true, timeout: 15_000, signal: requestSignal });
-    revision = remote.stdout.trim().split(/\s+/)[0];
+    const parts = remote.stdout.trim().split(/\s+/); revision = parts[0];
+    if (candidateSha && (parts.length !== 2 || parts[1] !== candidateRef || revision !== candidateSha))
+      throw new TempoProblem('candidate_changed', 'The reviewed candidate ref no longer matches its exact SHA.');
     if (remote.code !== 0 || !/^[a-f0-9]{40}$/.test(revision ?? ""))
       return { source, revision: source.head, verification: { status: "unavailable", message: `Remote main could not be read${remote.stderr?.trim() ? `: ${remote.stderr.trim().slice(-400)}` : "."}` } };
   } catch (error) {
@@ -447,18 +465,20 @@ export async function assessCandidate(target, run, fetchJson, { signal, expected
     : await assessMainVerification(revision, fetchJson, { signal: requestSignal }) };
 }
 
-export async function selectCandidate(target, run, fetchJson = githubJson, { expectedRevision, expectedSource, signal, noCi = false } = {}) {
+export async function selectCandidate(target, run, fetchJson = githubJson, { expectedRevision, expectedSource, signal, noCi = false, candidateRef = 'refs/heads/main', candidateSha = null } = {}) {
+  validateExplicitCandidate(candidateRef, candidateSha, noCi);
   signal?.throwIfAborted();
   if (!target.root) throw new Error("Tempo checkout is not registered.");
   const source = await inspectCandidateSource(target, run, { signal });
   if (source.problem) throw source.problem;
   if (expectedSource && !sourceMatchesFingerprint(source, expectedSource))
     throw new TempoProblem("source_changed", "Local source changed while update verification was running. Local work is preserved; main was not fast-forwarded.");
-  await run("git", ["fetch", "origin", "main"], { timeout: 60_000, signal });
+  await run("git", ["fetch", "origin", candidateRef === 'refs/heads/main' ? 'main' : candidateRef], { timeout: 60_000, signal });
   const revision = (await run("git", ["rev-parse", "FETCH_HEAD"])).stdout.trim();
   const current = (await run("git", ["rev-parse", "HEAD"])).stdout.trim();
   if (expectedRevision && revision !== expectedRevision)
     throw new TempoProblem("main_changed", "Main advanced while verification was being checked.");
+  if (candidateSha && revision !== candidateSha) throw new TempoProblem('candidate_changed', 'Fetched candidate differs from the approved SHA.');
   if (current !== source.head)
     throw new TempoProblem("source_changed", "Local source changed while update verification was running. Local work is preserved; main was not fast-forwarded.");
   if ((await run("git", ["merge-base", "--is-ancestor", current, revision], { allowFailure: true })).code !== 0)
@@ -467,7 +487,10 @@ export async function selectCandidate(target, run, fetchJson = githubJson, { exp
     : await verifiedMainEvidence(revision, fetchJson, signal);
   signal?.throwIfAborted();
   if (expectedRevision) {
-    const latest = (await run("git", ["ls-remote", "https://github.com/aaweaver-actuary/tempo", "refs/heads/main"], { timeout: 15_000, signal })).stdout.trim().split(/\s+/)[0];
+    const observed = (await run("git", ["ls-remote", "https://github.com/aaweaver-actuary/tempo", candidateRef], { timeout: 15_000, signal })).stdout.trim().split(/\s+/);
+    const latest = observed[0];
+    if (candidateSha && (observed.length !== 2 || observed[1] !== candidateRef || latest !== candidateSha))
+      throw new TempoProblem('candidate_changed', 'The reviewed candidate ref no longer matches its exact SHA.');
     if (latest !== revision) throw new TempoProblem("main_changed", "Main advanced while verification was being checked.");
   }
   if (revision !== current) {

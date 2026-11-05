@@ -11,7 +11,7 @@ import { join, resolve } from "node:path";
 import { createIsolatedTestEnvironment } from "../../scripts/test-environment.mjs";
 import { resolvePython } from "../../scripts/resolve-python.mjs";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "./postgres-test-options.mjs";
-import { backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "./postgres-test-plan.mjs";
+import { assertDisposableVolumes, backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "./postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   readStudyQueuePublication, repertoireLimitRecreationPgn, studyDurabilityPgn } from "./postgres-test-fixture.mjs";
 import { createScenarioTimer, isTimingPublicationFailure, postgresCommandTiming } from "../../scripts/test-scenario-timings.mjs";
@@ -19,7 +19,10 @@ import { verifyTempoCliLifecycle } from "../../scripts/check-tempo-cli.mjs";
 import { atomicJson, redact } from "../../scripts/tempo-deployment.mjs";
 
 const options = parsePostgresTestOptions(process.argv.slice(2));
-const stages = postgresTestStages(options);
+const staleOnly = process.env.TEMPO_PG_STALE_DELIVERY_ONLY === "1";
+const stages = staleOnly
+  ? ["compose_config", "image_build", "maintenance_cli", "startup", "service_health", "stale_delivery", "cleanup"]
+  : postgresTestStages(options);
 if (options.list) {
   console.log(JSON.stringify({ mode: options.mode, stages,
     browser_file: options.browserFile, browser_grep: options.browserGrep }, null, 2));
@@ -63,7 +66,7 @@ const maintenanceHelpContainer = `${project}-maintenance-help`;
 const compose = ["compose", "-p", project, "-f", "docker-compose.postgres.test.yml"];
 const resourceLimits = join(secretsDirectory, 'resource-limits.json');
 writeFileSync(resourceLimits, JSON.stringify(composeResourceLimits(['postgres', 'redis', 'api',
-  'foreground-worker', 'background-worker', 'background-scheduler', 'defense-engine', 'maia-worker', 'web', 'schema'],
+  'foreground-worker', 'background-worker', 'background-scheduler', 'web', 'schema'],
   process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN)), { mode: 0o600 });
 compose.push('-f', resourceLimits);
 const priorityResourceLimits = join(secretsDirectory,'priority-resource-limits.json');
@@ -90,7 +93,7 @@ const commitResult = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" 
 const candidateRevision = commitResult.stdout.trim();
 const buildLabels = join(secretsDirectory, "image-labels.json");
 writeFileSync(buildLabels, JSON.stringify({ services: Object.fromEntries([
-  "schema", "api", "foreground-worker", "background-worker", "background-scheduler", "web", "defense-engine", "maia-worker",
+  "schema", "api", "foreground-worker", "background-worker", "background-scheduler", "web",
 ].map(name => [name, { build: { labels: { "org.opencontainers.image.revision": candidateRevision } } }])) }));
 compose.push("-f", buildLabels);
 const measureScenario = createScenarioTimer(timingPath, {
@@ -123,9 +126,8 @@ async function verifyStudyOpeningAdmission() {
   // server invalidates API/worker pools. Quiesce the invocation's clients and
   // restore fresh pools before subsequent foreground durability assertions.
   const postgresClients = ["api", "foreground-worker", "background-worker", "background-scheduler"];
-  const analysisClients = ["defense-engine", "maia-worker"];
   await executeIsolatedBackgroundWorkload({
-    stopConsumers: () => run("docker", [...compose, "stop", ...postgresClients, ...analysisClients]),
+    stopConsumers: () => run("docker", [...compose, "stop", ...postgresClients]),
     measureWorkload: () => run("docker", [...compose, "restart", "postgres"]),
     restoreConsumers: async () => {
       run("docker", [...compose, "up", "--no-build", "-d", "--no-deps", ...postgresClients]);
@@ -133,7 +135,7 @@ async function verifyStudyOpeningAdmission() {
       // receive different addresses even though their service names persist.
       run("docker", [...compose, "restart", "web"]);
       await waitForReady();
-      run("docker", [...compose, "up", "--no-build", "-d", "--no-deps", ...analysisClients]);
+      run("docker", [...compose, "up", "--no-build", "-d", "--no-deps"]);
     },
   });
   run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python", nativeProofPath,
@@ -141,7 +143,7 @@ async function verifyStudyOpeningAdmission() {
 }
 
 async function withPriorityMaintenanceAllocation(proof) {
-  const clients=['api','foreground-worker','background-worker','background-scheduler','defense-engine','maia-worker','web'];
+  const clients=['api','foreground-worker','background-worker','background-scheduler','web'];
   await executeIsolatedBackgroundWorkload({
     stopConsumers: () => run('docker',[...compose,'stop',...clients]),
     measureWorkload: proof,
@@ -162,7 +164,7 @@ async function runAllocatedNativeProof(scriptPath, proofName, containerOptions =
 
 function runAllocatedDiagnosticProof(scriptPath, proofName, containerOptions = []) {
   // Keep the deployed reader and foreground writer for the unchanged proof.
-  // All optional consumers, including Maia, must yield their allocation first.
+  // Background consumers must yield their allocation first.
   verifyWorkloadConsumers('exited');
   const limit=resourceBudgets.diagnosticRehearsalServices.schema;
   const proof=allocatedNativeProofSource(scriptPath,proofName,limit);
@@ -187,6 +189,14 @@ async function verifyStudyPriorityMaintenance() {
         source_mount: 'read-only', evidence_mount: '/evidence', complete: true});
     });
   });
+}
+
+function verifyDisposableVolumesAbsent(names) {
+  for (const name of names) {
+    const result = spawnSync("docker", ["volume", "inspect", name], { encoding: "utf8", env: environment });
+    if (result.error || result.status === 0 || !/no such volume/i.test(result.stderr ?? ""))
+      throw new Error(`Disposable volume absence is unverified: ${name}`);
+  }
 }
 
 function verifyProjectIsUnused() {
@@ -241,7 +251,7 @@ function run(command, argumentsList, options = {}) {
   }
   if (command === 'docker' && ['up', 'start', 'run'].some(operation => argumentsList.includes(operation))) {
     const names = ['postgres', 'redis', 'api', 'foreground-worker', 'background-worker',
-      'background-scheduler', 'defense-engine', 'maia-worker', 'web', 'schema'];
+      'background-scheduler', 'web', 'schema'];
     const requested = names.filter(name => argumentsList.includes(name));
     return withDevelopmentStartup(requested.length ? requested : names.filter(name => name !== 'schema'),project,execute,
       {oneOff:argumentsList.includes('run'),allocations:postgresProofAllocations(argumentsList,
@@ -573,13 +583,6 @@ async function verifyForegroundAndStudyDurability() {
   const pgnImportOperationId = `pg-study-pgn-${randomBytes(12).toString("hex")}`;
   const importedStudy = await importFixture("recovery-study.pgn", studyDurabilityPgn, pgnImportOperationId);
   activeStudyRepertoireId = importedStudy.repertoire_id;
-  const coverageRefreshResponse = await apiRequest(
-    `repertoires/${importedStudy.repertoire_id}/coverage/refresh`, {
-      method: "POST",
-      headers: { "Idempotency-Key": `pg-study-coverage-${randomBytes(10).toString("hex")}` },
-    }, "foreground POST initial study priority refresh");
-  assert.equal(coverageRefreshResponse.status, 202,
-    `Coverage priority refresh queues successfully: ${await coverageRefreshResponse.text()}`);
   await postCommand("settings", await get("settings"), {
     method: "PUT", label: "foreground PUT initial study queue refresh",
   });
@@ -989,15 +992,24 @@ async function verifyCurrentCanonicalRouteAdmission() {
 
 const actions = {
   compose_config: async () => {
-    const config = spawnSync("docker", [...compose, "config", "--format", "json"],
+    const config = spawnSync("docker", [...compose, "--profile", "maintenance", "config", "--format", "json"],
       { encoding: "utf8", env: environment });
     assert.equal(config.status, 0, config.stderr);
     const stack = JSON.parse(config.stdout);
     assert.equal(stack.name, project);
-    for (const volumeName of ["postgres-test-data", "redis-test-data", "engine-test-operations"]) {
-      assert.equal(stack.volumes[volumeName].external, undefined);
-      assert.equal(stack.volumes[volumeName].name, `${project}_${volumeName}`);
-    }
+    assertDisposableVolumes(stack, project, ["postgres-test-data", "redis-test-data", "postgres-test-backups"], [
+      ["postgres", "/var/lib/postgresql", "postgres-test-data"], ["redis", "/data", "redis-test-data"],
+      ["postgres-backup", "/backups", "postgres-test-backups"],
+    ]);
+    const rehearsalProject = `${project}-rehearsal`;
+    const rehearsal = spawnSync("docker", ["compose", "-p", rehearsalProject, "-f", "docker-compose.postgres-rehearsal.yml",
+      "--profile", "backups", "config", "--format", "json"], { encoding: "utf8", env: { ...environment,
+        TEMPO_POSTGRES_PGPASS_FILE: join(secretsDirectory, "admin_pgpass") } });
+    assert.equal(rehearsal.status, 0, rehearsal.stderr);
+    assertDisposableVolumes(JSON.parse(rehearsal.stdout), rehearsalProject,
+      ["tempo-postgres-rehearsal", "tempo-redis-rehearsal", "tempo-postgres-backups"],
+      [["postgres", "/var/lib/postgresql", "tempo-postgres-rehearsal"], ["redis", "/data", "tempo-redis-rehearsal"],
+        ["postgres-backup", "/backups", "tempo-postgres-backups"]]);
     assert.equal(stack.services.api.environment.TEMPO_DATABASE_READ_URL,
       "postgresql://tempo_reader@postgres:5432/tempo");
     assert.equal(stack.services.api.environment.TEMPO_REDIS_URL, "redis://redis:6379/0");
@@ -1016,8 +1028,7 @@ const actions = {
     assert.equal(defaultConfig.status, 0, defaultConfig.stderr);
     const defaultStack = JSON.parse(defaultConfig.stdout);
     for (const resolvedStack of [stack, defaultStack])
-      for (const worker of ["defense-engine", "maia-worker"])
-        assert.equal(resolvedStack.services[worker].init, true, `${worker} must forward stop signals through Docker init`);
+      assert.equal(resolvedStack.services["maia-worker"], undefined, "retired Maia service must not be packaged");
     assert(defaultStack.services.postgres && defaultStack.services["foreground-worker"]);
     assert.equal(defaultStack.services.api.environment.TEMPO_DATABASE_WRITE_URL, undefined);
     assert.equal(defaultStack.services.api.environment.TEMPO_DB_PATH, undefined);
@@ -1030,6 +1041,8 @@ const actions = {
     console.log("PASS recurring PostgreSQL backup loop has valid shell syntax");
     console.log("PASS default Compose selects PostgreSQL and keeps SQLite isolated");
     verifyProjectIsUnused();
+    verifyDisposableVolumesAbsent(["postgres-test-data", "redis-test-data", "postgres-test-backups"].map(name => `${project}_${name}`));
+    verifyDisposableVolumesAbsent(["tempo-postgres-rehearsal", "tempo-redis-rehearsal", "tempo-postgres-backups"].map(name => `${rehearsalProject}_${name}`));
   },
   image_build: async () => {
     await waitForStudyQuiet();
@@ -1063,7 +1076,7 @@ const actions = {
       .filter(container => container.State === "running")
       .map(container => container.Service));
     for (const service of ["api", "foreground-worker", "background-worker",
-      "background-scheduler", "defense-engine", "maia-worker", "web"])
+      "background-scheduler", "web"])
       assert(runningServices.has(service), `${service} exited during PostgreSQL startup`);
   },
   game_review_reader: async () => {
@@ -1092,7 +1105,7 @@ const actions = {
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
       "/source/database/tests/check_postgres_upgrade.py"]);
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
-      "/source/database/tests/check_postgres_next_opponent.py"]);
+      "/source/database/tests/check_postgres_historical_source_upgrade.py"]);
   },
   background_diagnostics: async () => {
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
@@ -1102,10 +1115,16 @@ const actions = {
     const verifyLifecycle = () => verifyTempoCliLifecycle({ project, environment, revision: candidateRevision,
       composeFiles: [join(process.cwd(), "docker-compose.postgres.test.yml"), resourceLimits, buildLabels], measure: measureScenario });
     if (options.mode === "lifecycle") {
+      if (environment.TEMPO_LIFECYCLE_MANAGED_REHEARSAL === '1') {
+        await verifyTempoCliLifecycle({ project, environment: { ...environment, W08_COPY_ONLY:'1' }, revision: candidateRevision,
+          composeFiles: [join(process.cwd(), "docker-compose.postgres.test.yml"), resourceLimits, buildLabels], measure: measureScenario });
+        await verifyTempoCliLifecycle({ project, environment: { ...environment, W08_CAPTURE_ONLY:'1' }, revision: candidateRevision,
+          composeFiles: [join(process.cwd(), "docker-compose.postgres.test.yml"), resourceLimits, buildLabels], measure: measureScenario });
+      }
       await verifyLifecycle();
       return;
     }
-    const consumers = ["postgres", "redis", "api", "foreground-worker", "background-worker", "background-scheduler", "web", "defense-engine", "maia-worker"];
+    const consumers = ["postgres", "redis", "api", "foreground-worker", "background-worker", "background-scheduler", "web"];
     run("docker", [...compose, "stop", ...consumers]);
     try {
       await verifyLifecycle();
@@ -1114,9 +1133,33 @@ const actions = {
       await waitForReady();
     }
   },
+  stale_delivery: async () => {
+    // Broker witness runs against the owned foreground/background workers, then
+    // repeats identical logical deliveries after their scheduler and workers restart.
+    const staleWitness = phase => {
+      const result = run("docker", [...compose, "run", "--rm", "--no-deps",
+        "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
+        "/source/database/tests/check_postgres_background_workloads.py", "--stale-delivery", phase, project],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] });
+      const marker = result.stdout.split("\n").find(line => line.startsWith("STALE_DELIVERY_WITNESS "));
+      assert(marker, `Stale delivery ${phase} witness did not emit evidence`);
+      return JSON.parse(marker.slice("STALE_DELIVERY_WITNESS ".length));
+    };
+    const staleBefore = staleWitness("before");
+    run("docker", [...compose, "restart", "foreground-worker", "background-worker", "background-scheduler"]);
+    await waitForReady({ requireContainerHealthy: true });
+    const staleAfter = staleWitness("after");
+    assert.deepEqual(staleAfter.snapshot, staleBefore.snapshot, "original retired identities and state survive restart and replay");
+    assert.deepEqual(staleAfter.queue, staleBefore.queue, "retained queue completion survives worker restart");
+    atomicJson(`test-results/native/${project}-stale-delivery.json`, { revision: candidateRevision, project,
+      workers_restarted: ["foreground-worker", "background-worker", "background-scheduler"],
+      before: staleBefore, after: staleAfter });
+    console.log("PASS stale retired broker deliveries terminate without regrowth and Study queue completes across worker restart");
+  },
   background_workloads: async () => {
     await runAllocatedNativeProof("/source/database/tests/check_postgres_daily_study_dispatch.py",
       "test_postgres_daily_dispatch_uses_bounded_maintenance_allocation", ["-e", "TEMPO_REDIS_URL=redis://redis:6379/0"]);
+    await actions.stale_delivery();
     await executeIsolatedBackgroundWorkload({
       stopConsumers: () => {
         run("docker", [...compose, "stop", ...workloadConsumers]);
@@ -1227,7 +1270,7 @@ const actions = {
   },
   backup_restore: async () => {
     run("docker", [...compose, "stop", "api", "foreground-worker", "background-worker",
-      "background-scheduler", "defense-engine", "maia-worker", "web"]);
+      "background-scheduler", "web"]);
     runPrefixApplicationProof("--seed-retained");
     run("docker", [...compose, "exec", "-T", "postgres", "sh", "-ec",
       "pg_dump -U postgres -d tempo -Fc -f /tmp/tempo-test.dump && " +

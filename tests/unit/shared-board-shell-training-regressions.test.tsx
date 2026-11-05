@@ -116,30 +116,21 @@ it("Training shared board publishes shell ownership and hides local board instan
 });
 
 
-it("saved endgame legal lines keep ordinary board practice and review without calculation", async () => {
-  const fen = "8/8/8/8/8/2k5/R7/1K6 w - - 0 1";
-  useTrainingStore.setState({ currentFenString: asFenString(fen) });
+it.each(["endgame", "defense"] as const)("holds a retired %s card without grading or replacing its attempt", (kind) => {
+  const rateCard = vi.fn();
+  const refresh = vi.fn();
   const onMove = vi.fn();
-  const rateCard = vi.fn(async () => undefined);
-  render(<TrainingView dateLabel="Today" serviceError="" refreshDatabaseQueue={vi.fn()} cardsLeft={1}
-    card={{ id: asCardId("saved-endgame-line"), kind: "endgame", title: "Saved line", subtitle: "",
-      startingFen: asFenString(fen), moves: [asSanMove("Ra3+")], userMoveTarget: 1, orientation: "white" }}
+  const attempt = useTrainingStore.getState().attempt;
+  render(<TrainingView dateLabel="Today" serviceError="" refreshDatabaseQueue={refresh} cardsLeft={1}
+    card={{ id: asCardId("retired"), kind, title: "Retired", subtitle: "",
+      startingFen: asFenString(STANDARD_FEN), moves: [asSanMove("e4")], userMoveTarget: 1, orientation: "white" }}
     boardTheme="brown" pieceSet="cburnett" rateCard={rateCard} handleAttemptFailure={vi.fn()}
     resetCardAttempt={vi.fn()} setEditorCard={vi.fn()} onMove={onMove} useSharedBoard />);
-  expect(useBoardShellStore.getState().board.owner).toBe("train");
-  expect(useBoardShellStore.getState().board.fen).toBe(fen);
-  expect(screen.queryByText(/no playable stored solution/)).toBeNull();
-  useBoardShellStore.getState().board.onMove?.("a2", "a3");
-  expect(onMove).toHaveBeenCalledWith("a2", "a3");
-  fireEvent.click(screen.getByRole("button", { name: "Correct" }));
-  await waitFor(() => expect(rateCard).toHaveBeenCalledWith("correct"));
-});
-
-it("material placeholders and illegal stored lines never masquerade as playable endgames", async () => {
-  const { hasSavedEndgameLine } = await import("../../app/lib/saved-endgame-practice");
-  const card = { id: asCardId("material"), kind: "endgame" as const, title: "Material", subtitle: "",
-    startingFen: asFenString(STANDARD_FEN), moves: [], userMoveTarget: 0 };
-  expect(hasSavedEndgameLine(card)).toBe(false);
-  expect(hasSavedEndgameLine({ ...card, moves: [asSanMove("template:KR:K:white:both")] })).toBe(false);
-  expect(hasSavedEndgameLine({ ...card, startingFen: "invalid" as typeof card.startingFen, moves: [asSanMove("e4")] })).toBe(false);
+  expect(screen.getByRole("alert").textContent).toContain("existing attempt has been preserved");
+  expect(useBoardShellStore.getState().board.interactionMode).toBe("readonly");
+  expect(useBoardShellStore.getState().board.onMove).toBeUndefined();
+  expect(rateCard).not.toHaveBeenCalled();
+  expect(refresh).not.toHaveBeenCalled();
+  expect(onMove).not.toHaveBeenCalled();
+  expect(useTrainingStore.getState().attempt).toEqual(attempt);
 });

@@ -5,10 +5,8 @@ import type { Plugin } from 'vite';
 export const optionalStudyImplementations = {
   games: ['app/hooks/use-game-sync.ts', 'app/lib/game-sync-command.ts'],
   composition: ['app/views/legacy-home.tsx', 'app/views/legacy-workspace.tsx'],
-  // workbench-navigation.ts is retained as a build-time URL validator in vite.static.config.ts.
-  workbench: ['app/components/workbench-launch.tsx'],
   authoring: ['app/views/repertoire_view.tsx',
-    'app/views/card_editor.tsx', 'app/views/tree_browser.tsx', 'app/views/studies_view.tsx',
+    'app/views/card_editor.tsx',
     'app/ImportDialogBox.tsx', 'app/AnalysisPasteDialog.tsx'],
   workspaceAdministration: ['app/views/settings_view.tsx',
     'app/components/integrity-repair-status.tsx', 'app/components/repertoire-integrity-dialog.tsx'],
@@ -16,9 +14,7 @@ export const optionalStudyImplementations = {
 export const optionalStudyContractExceptions = {
   'app/domain/analysis.ts': 'Shared study exercise grading and annotation schemas.',
   'app/domain/games.ts': 'Shared game metadata types used by retained Study views.',
-  'app/lib/saved-endgame-practice.ts': 'Retained Study endgame line validation for playable saved cards.',
   'app/lib/tactics-progress.ts': 'Retained Study tactics progress projection for accepted packs.',
-  'app/views/endgames_view.tsx': 'Retained Study endgames experience.',
 } as const;
 const optionalModules = new Set<string>(Object.values(optionalStudyImplementations).flat());
 const optionalKeyword = /(game|workbench|discover|analysis|engine|maia|insight|statistics|progress|builder)/i;

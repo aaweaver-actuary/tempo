@@ -52,7 +52,7 @@ function detail(overrides: Partial<GameDetail> = {}): GameDetail {
     decision: { ...actionableFixture.payload.first_departure.decision, decision_id: candidate.decision_id, position_key: candidate.position_key,
       selected_response_uci: candidate.expected_uci[0], presentation_id: candidate.presentation_id, presentation_revision: candidate.presentation_revision },
   } : null;
-  return GameDetailSchema.parse({ ...firstSummary, starting_fen: DEFAULT_POSITION, moves, findings, receipts: [], first_departure, ...overrides });
+  return GameDetailSchema.parse({ ...firstSummary, starting_fen: DEFAULT_POSITION, moves, findings, receipts: [receipt()], comparison_freshness: "current", first_departure, ...overrides });
 }
 function refreshStatus(provider: "lichess" | "chesscom", operation_id: string) {
   return { provider, operation_id, job_id: `job:${operation_id}`, window: { start_at: "2026-10-25T00:00:00Z", end_at: "2026-10-30T12:00:00Z", precision: "millisecond" as const }, status: "queued" as const, pages_committed: 0, next_attempt_at: 0, error: null };
@@ -513,4 +513,17 @@ it.each([
       ...target, issuance_sequence: 106, issued_at: "2026-10-26T12:05:00Z" } } } });
   expect(departureProgressStage(settled)).toBe("settled");
   expect(departureProgress(settled)).toBe("Again applied · Settled after a genuine Study review");
+});
+
+
+it.each(["stale", "unknown"] as const)("does not retry a %s comparison even with a pending legacy receipt", async freshness => {
+  render(<GameReviewView api={fakeApi({ gameDetail: vi.fn(async () => detail({ comparison_freshness: freshness })) })} />);
+  await selectFirst(); await readyBoard();
+  expect(screen.queryByRole("button", { name: /Retry feedback at ply/ })).toBeNull();
+});
+
+it("does not offer a retry when no stored owner receipt is visible", async () => {
+  render(<GameReviewView api={fakeApi({ gameDetail: vi.fn(async () => detail({ receipts: [] })) })} />);
+  await selectFirst(); await readyBoard();
+  expect(screen.queryByRole("button", { name: /Retry feedback at ply/ })).toBeNull();
 });

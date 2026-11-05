@@ -1,7 +1,7 @@
 """Existing foreground queue locks and fixed queries on the caller transaction."""
 
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
-from tempo_legacy_database.adapters.http_composition.availability import available_attempt_sql
+from tempo_legacy_database.adapters.http_composition.availability import available_attempt_sql, RETIRED_QUEUE_PREDICATE
 from tempo_legacy_database.adapters.queue_refresh.foreground import _QUEUE_REFRESH_PROJECTION_SQL
 
 
@@ -50,13 +50,21 @@ def prepare_available_attempt(database, identified, entry_id, miss_reason):
 
 def prepare_queue_head(database, miss_reason):
     execute = database.execute
-    statement = f"{available_attempt_sql(miss_reason)} ORDER BY q.position,q.id LIMIT 1"
+    statement = f"{available_attempt_sql(miss_reason)}{RETIRED_QUEUE_PREDICATE} ORDER BY q.position,q.id LIMIT 1"
 
     def read_day(queue_date):
         return execute(statement, (queue_date,)).fetchone()
 
     return read_day
 
+
+
+def retired_issuance_target(database, entry_id, card_id, revision):
+    return database.execute(
+        """SELECT 1 FROM daily_queue q JOIN cards c ON c.id=q.card_id
+           WHERE q.id=? AND c.id=? AND c.revision=? AND NOT (1=1 """
+        + RETIRED_QUEUE_PREDICATE + ")", (entry_id, card_id, revision),
+    ).fetchone() is not None
 
 def issued_origin(database, entry_id, card_id, expected_revision):
     return database.execute(

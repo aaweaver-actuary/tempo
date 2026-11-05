@@ -10,14 +10,13 @@ export function cliFixture(mode = "upgrade") {
   mkdirSync(join(root, "database/tempo_legacy_database/ddl"), { recursive: true }); mkdirSync(bin);
   writeFileSync(join(root, "database/tempo_legacy_database/ddl/schema_version.py"), "POSTGRES_SCHEMA_VERSION = 29\n");
   const secret = join(directory, "password"); writeFileSync(secret, "canary-private-password", { mode: 0o600 });
-  const names = ["postgres", "redis", "api", "foreground-worker", "background-worker", "background-scheduler", "web", "defense-engine", "maia-worker", "postgres-backup", "migration"];
-  const volumes = Object.fromEntries(["tempo-postgres-data", "tempo-postgres-backups", "tempo-redis-data", "tempo-engine-operations"].map(name => [name, { name, external: true }]));
+  const names = ["postgres", "redis", "api", "foreground-worker", "background-worker", "background-scheduler", "web", "postgres-backup", "migration"];
+  const volumes = Object.fromEntries(["tempo-postgres-data", "tempo-postgres-backups", "tempo-redis-data"].map(name => [name, { name, external: true }]));
   const services = Object.fromEntries(names.map(name => [name, { image: `fixture-${name}`, ...(name !== "postgres" && name !== "redis" && name !== "postgres-backup" ? { build: { context: root } } : {}) }]));
   services.postgres = { image: "postgres:18.6-trixie", environment: { POSTGRES_USER: "tempo", POSTGRES_DB: "tempo" },
     volumes: [{ type: "volume", source: "tempo-postgres-data", target: "/var/lib/postgresql" }] };
   services.redis.volumes = [{ type: "volume", source: "tempo-redis-data", target: "/data" }];
   services["postgres-backup"].volumes = [{ type: "volume", source: "tempo-postgres-backups", target: "/backups" }];
-  services["defense-engine"].volumes = [{ type: "volume", source: "tempo-engine-operations", target: "/state" }];
   services.api.environment = { TEMPO_DATABASE_READ_URL: "postgresql://tempo_reader@postgres:5432/tempo" };
   for (const name of ["foreground-worker", "background-worker"]) {
     services[name].environment = { TEMPO_DATABASE_WRITE_URL: "postgresql://tempo_writer@postgres:5432/tempo",

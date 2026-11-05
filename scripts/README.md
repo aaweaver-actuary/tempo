@@ -276,11 +276,10 @@ precedes application shutdown, so faster builds do not directly shorten that out
 ## General qualification CPU allocation
 
 The [qualification window](qualification-window.mjs) composes the existing
-Study-aware budget and admitted managed Docker `run` lifecycle for Maia and
+Study-aware budget and admitted managed Docker `run` lifecycle for
 frozen-order qualification:
 
 ```sh
-node scripts/qualification-window.mjs maia /path/to/existing/python --source /task/checkout --evidence /task/evidence
 node scripts/qualification-window.mjs frozen /path/to/existing/python
 ```
 
@@ -295,9 +294,8 @@ and record observed kernel limits without claiming CPU reservation.
 The small [Python allocation adapter](qualification_cpu.py) owns CPU argument,
 environment and cgroup translation. Existing qualification owners retain memory,
 swap, PID/tmpfs limits, finite deadlines, source staging, permissions, image
-identity and cleanup. Maia's qualification-owner label remains distinct from
-the central resource-owner label. This source change does not qualify model
-inference, artifact installation, provider connectivity or installed services.
+identity and cleanup. This source change does not qualify artifact installation,
+provider connectivity or installed services.
 
 Root and lane Vitest configurations and the generic Node test runner use
 [`unitWorkerAllocation`](unit-worker-allocation.mjs). An omitted
@@ -313,94 +311,6 @@ with their existing owners.
 
 
 ## Games collection operator
-
-### One-time historical import and repertoire checks
-
-`import-game-history.py` freezes the saved Games accounts, filters and repertoire
-selection for the three calendar months ending at planning time (UTC). A missing
-day is clamped to the last day of the earlier month. The window is half-open.
-It imports every provider-accessible game in that scope through the existing
-paginated adapters and canonical Games writer. Comparison is deferred and no
-new own-miss command is generated during collection. Existing source correction
-quarantines and safety controls remain intact.
-
-Use Tempo's configured Python environment with its installed backend packages.
-Plan/status require `TEMPO_DATABASE_READ_URL`; run requires
-`TEMPO_DATABASE_WRITE_URL`. Keep credentials in the existing environment, never
-in command arguments or the manifest. The chosen manifest parent must exist.
-
-```sh
-python scripts/import-game-history.py plan --manifest /tmp/tempo-game-history.json
-python scripts/import-game-history.py run --manifest /tmp/tempo-game-history.json
-python scripts/import-game-history.py status --manifest /tmp/tempo-game-history.json
-python scripts/check-game-history.py plan --manifest /tmp/tempo-game-history.json
-python scripts/check-game-history.py run --manifest /tmp/tempo-game-history.json
-python scripts/check-game-history.py status --manifest /tmp/tempo-game-history.json
-```
-
-The second script requires a complete import, replays its saved provider pages
-without HTTP, and selects one first departure across the complete applicable
-repertoire scope. An opponent departure is retained as a gap with no subsequent
-Study consequence. An exact own departure uses Study's qualified intake: unseen
-introduction or introduced Again once, plus urgent priority. It preserves active
-attempts, history, original commands and occurrence identities.
-
-Feedback run requires the existing qualified managed feedback mode and verified
-runtime identity. It does not enable that mode or recurring collection. In an
-installed qualified worker image, the equivalent entry points are
-`python -m app.product_composition.game_history_scripts collect ...` and
-`python -m app.product_composition.game_history_scripts compare ...` with the
-same arguments and a manifest path available to both invocations. A local source
-checkout alone cannot establish the installed worker's feedback identity.
-
-Both runs stop after `--max-units` bounded units (default 50). Repeat the same
-run command to resume. Exit 0 means the selected phase completed; 1 means
-incomplete/deferred work; 2 means an operation/input failure. Plan exits 0 when
-the scope was successfully inspected; this is not readiness or completion.
-No timers, automatic retries, recurrence changes, forward checkpoints or
-Refresh-now checkpoints are created. Status reports retained cursors, errors,
-exclusions, unique games and pending deliveries; it never calls a truncated or
-quarantined window complete. The private manifest contains no PGNs or credentials
-and is created once with mode 0600; retain it for resume.
-
-Repertoire checking uses current accepted repertoire material. Missing scope or
-ambiguous targets remain unresolved. A later run revisits a completed unresolved
-comparison without changing occurrence identities. Changed saved configuration
-requires a new plan/manifest. Ordinary runs never clear quarantine or backoff;
-only the narrowly verified precision recovery below can resolve its own case.
-Provider games unpublished at import time cannot be guaranteed present.
-
-The supported precision recovery is `collect recover-precision --manifest PATH`
-through the installed module entry point. It handles only an initial Lichess
-history page quarantined because an existing legacy PGN second and the captured
-provider millisecond instant prove the same source. The Games owner revalidates
-each effect-free initial capture and records its resolution before the original
-saved page is replayed. It refuses existing deliveries, changed scope or source,
-additional captures, unproved precision, or any other quarantine. Incomplete
-recovery returns nonzero and can be resumed; original quarantine evidence stays.
-
-The narrowly scoped `collect recover-daily --manifest PATH` resolves one
-effect-free Chess.com daily-to-classical mapping quarantine on a noninitial
-saved historical page. It checks the exact configuration, checkpoint, original
-capture, any existing canonical game and every page source, retains a resolution
-capture, and atomically creates a canonical game if needed. It replays the saved
-page. Other conflicts remain quarantined.
-
-After installing the bounded-response adapter, `collect retry-provider-limit
---manifest PATH` can requeue a historical Lichess job failed specifically with
-`lichess_response_limit`. It requires the same saved scope, unchanged failed
-cursor and an unambiguous committed predecessor, and stores a failure receipt
-before requeueing. Other failures and committed cursors remain held. Continue
-with the ordinary `collect run` command after the operation reports `prepared`.
-
-Comparison completion means traversal and delivery acknowledgment, not actual
-Study admission, issuance or human settlement. Receipt admission/disposition and
-deferral counts describe saved acknowledgment receipts; `study_progress_current`
-is false. Use ordinary Games/Study for current progress. Historical intake yields
-to foreground activity and live urgent work. Study-only defers acquisition;
-comparison/intake does not change that setting or ordinary introduction limits.
-
-Architecture: [finite history composition](../backend/app/product_composition/README.md#one-time-historical-games-scripts).
 
 ### Managed recurring worker
 
@@ -621,33 +531,6 @@ recorded runtime image across operator/documentation-only changes, also set
 `TEMPO_COLLECTION_TEST_REVISION` to its original exact source commit; the suite
 verifies every Dockerfile COPY input and rejects untracked runtime additions. No production
 source is mounted into that image; only synthetic qualification inputs are mounted.
-
-### Engine job-family routing
-
-The file-scoped engine image packaging proof is `node tools/component-build/test-lane.mjs runners engine-image-packaging` (also registered as the `engine-image-packaging` component suite). It checks Docker COPY inputs and declared proof inputs for literal relative static imports and `new URL()` child paths; computed or dynamic dependencies and actual image startup require separate proof. Affected-path selection is not automatically wired to this suite.
-
-
-The engine cycle processes at most one recovered or newly claimed job. Its
-[Games and Defense adapters](engine-job-families.mjs) own claim, recovery and
-result callback routing. The ordinary durable journal retains Games operations
-and all callbacks; a separate journal retains uncertain Defense claims. Games
-recovery is attempted first, and a recovered claim is not claimed again.
-The adapters own control requests and pre-search release. `engine-search.mjs`
-polls a supplied Boolean continuation capability and retains its existing stop,
-deadline and diagnostics behavior.
-
-```mermaid
-flowchart LR
-  W[Engine worker] --> C[One-job cycle]
-  C --> G[Games adapter]
-  C --> D[Defense adapter]
-  G --> J[Ordinary durable journal]
-  D --> J
-  D --> K[Defense claim journal]
-  C -->|supplies continuation| S[Engine search]
-  G --> P[Games control and release]
-  D --> T[Defense control and release]
-```
 
 ### Exact legacy queue-attempt abandonment
 

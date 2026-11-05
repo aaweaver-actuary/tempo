@@ -21,6 +21,7 @@ import httpx
 from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import PlainTextResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.routing import Match
 
 from app.product_composition.database_infrastructure import bind_database_infrastructure
 bind_database_infrastructure()
@@ -33,31 +34,20 @@ from tempo_legacy_database.adapters.http_composition import (
     queue_maintenance as queue_maintenance_storage,
     queue_projection as queue_projection_storage,
     repertoires as repertoire_http_storage,
-    snapshots as snapshot_http_storage,
     line_authoring as line_authoring_storage,
     card_authoring as card_authoring_storage,
     practice as practice_storage,
-    discovery as http_discovery_storage,
-    coverage as http_coverage_storage,
-    game_sync as game_sync_storage,
-    game_analysis_control as game_analysis_control_storage,
-    analysis_publication as analysis_publication_storage,
-    defense_controls as defense_controls_storage,
-    game_findings as game_findings_storage,
-    game_reads as game_reads_storage,
 )
 from tempo_legacy_database.adapters.commands import accounts as account_storage
+from tempo_legacy_database.adapters.durable_tasks import storage as durable_task_storage
 from tempo_legacy_database.adapters.tactics import attempts as tactic_attempt_storage
 from tempo_legacy_database.adapters.commands import annotations as annotation_command_storage
 from tempo_legacy_database.adapters.foreground_controls import repertoires as repertoire_control_storage
 from tempo_legacy_database.adapters.projections import repertoire_statistics as repertoire_projection_storage
 from tempo_legacy_database.adapters.foreground_controls import prefix_splits as prefix_split_storage
 from tempo_legacy_database.adapters.authored_repertoires.opening_mutations import prefix_splits as opening_card_storage
-from app.games.opponents.http import create_next_opponent_router
-from app.product_composition.next_opponent import read_next_opponent_profile
 from .command_gateway import CommandConflict, load_blocked_operation, read_operation
 from .celery_app import celery_app
-from .study_routes import create_study_router
 from .product_composition.compatibility_coordinator import compose_compatibility_coordinator, enqueue_daily_queue_refresh
 from app.contracts.transport.tactics import TacticActivationRequest
 from app.contracts.review_conflicts import ReviewConflict
@@ -68,25 +58,15 @@ from .services.tactical_catalog import (
     puzzle_membership,
     progress_pack_id,
 )
-from app.contracts.transport.game_sync import AccountSettings, GameSyncRequest
-from app.games.sync.http import create_game_sync_router
-from .product_composition.game_sync_http import GameSyncHttpCapabilities, create_game_sync_http_binding
 from app.contracts.transport.authored_lines import AnalysisPasteCommitRequest, AnalysisPastePreviewRequest, BranchRequest, RemoveBranchRequest
 from app.contracts.transport.content import CardRevisionRequest, PrefixSplitRequest, PrefixSplitResponse
 from app.contracts.transport.authored_integrity import CoverageMaiaSubmission, IntegrityResolutionRequest
-from app.contracts.transport.endgames import EndgameProbeRequest, EndgameTemplateRequest
-from app.contracts.transport.game_analysis import GameAnalysisRequest, GameAnalysisFailureRequest, GameAnalysisLeaseRequest, GameAnalysisPositionClaimRequest
-from app.contracts.transport.game_findings import GameFindingDecisionRequest, GameFindingCurationRequest, GameExclusionRequest, GameFindingCardRequest
-from app.contracts.transport.games import GamePublicRecord, GameSummaryRecord, GamesSummaryResponse
 from app.contracts.transport.authored_import import ImportResult
 from app.contracts.transport.authored_repertoire import PositionAnnotationRequest, RepertoireRenameRequest, RepertoireSettingsRequest
 from app.contracts.transport.study import ReviewRequest, QueueAttemptFailureRequest, TeachingStateRequest
 from app.contracts.transport.settings import Settings
 from app.contracts.transport.tactics import TacticAttemptRequest, TacticCaptureRequest, TacticCaptureResponse
-from app.contracts.transport.defense import ThreatAnalysisSubmission, ThreatAnalysisFailureRequest, DefenseAttemptRequest, DefenseRecognitionRequest
-from app.contracts.transport.discovery import DiscoveryAcceptanceRequest
 from .services import queue_application, queue_ordering
-from .services.analysis import AnalysisCapabilities
 from .services.analysis_paste import (
     PasteInputError, StalePastePreview, build_paste_preview, commit_pasted_lines,
     parse_pasted_lines,
@@ -101,23 +81,8 @@ from .services.review_reconciliation import card_schedule_state, save_schedule_s
 from .services.real_game_feedback import MISS_REASON
 from .services.real_game_feedback_adapter import prioritize_real_game_miss, has_outstanding_real_game_miss, promote_real_game_card, prioritize_queued_misses, clear_satisfied_miss_priority
 from tempo_legacy_database.adapters.real_game_miss_projection import outstanding_miss_query, outstanding_miss_sql
-from app.chess.evaluation import classify_swings
-from .services.game_analysis_worker import (
-    EVIDENCE_VERSION as GAME_WORKER_EVIDENCE_VERSION,
-    build_game_evaluations, claim_position, release_position, save_position_report,
-)
-from .services.game_findings import motif_recommendations
 
-from .services.threat_training import (
-    approve_defense_candidate, dismiss_defense_candidate, pause_defense_candidate,
-    train_defense_candidate_now, read_defense_exercise,
-    submit_defense_attempt, submit_defense_recognition, execute_defense_admission_slice,
-    enqueue_defense_admission, execute_defense_rubric_audit_slice,
-)
-from .services.tactical_opportunities import tactical_statistics
-from .services.repertoire_statistics import repertoire_statistics, repertoire_positions
 from .services.repertoire_game_refresh import execute_repertoire_game_refresh_slice, refreshing_game_scope
-from app.games.ingestion.serialization import serialize_job
 from tempo_legacy_database.adapters.database_executor import database_writer, submit_background_write, submit_foreground_write
 from .services.durable_tasks import annotate_queue_projection_workers, enqueue_task, enqueue_task_in_transaction, list_tasks, retry_task
 from .services.background_activity import report_progress, set_control
@@ -140,86 +105,17 @@ from .services.opening_graph import (
     enqueue_opening_graph_rebuild,
     execute_opening_graph_rebuild,
 )
-from .services.discovery_admission import (
-    create_admission_intent, enqueue_admission_intent,
-    execute_admission_intent_slice, execute_recommendation_request_slice,
-    recommend_missing_continuations,
-)
 
 
-def claim_analysis_request() -> dict | None:
-    from .services.threat_pipeline import claim_analysis_request as owner
-    return owner()
 
 
-def enqueue_candidate_validation(candidate_id: str, *, background: bool) -> None:
-    from .services.threat_pipeline import enqueue_candidate_validation as owner
-    return owner(candidate_id, background=background)
 
 
-def enqueue_threat_scan(game_id: str, analysis_version: int, *, background: bool) -> None:
-    from .services.threat_pipeline import enqueue_threat_scan as owner
-    return owner(game_id, analysis_version, background=background)
 
 
-def enqueue_threat_backfill() -> dict:
-    from .services.threat_pipeline import enqueue_threat_backfill as owner
-    return owner()
 
 
-def execute_threat_backfill_slice(task: dict) -> bool:
-    from .services.threat_pipeline import execute_threat_backfill_slice as owner
-    return owner(task)
 
-
-def execute_threat_report_audit(task: dict) -> bool:
-    from .services.threat_pipeline import execute_threat_report_audit as owner
-    return owner(task)
-
-
-def execute_threat_scan_slice(task: dict) -> bool:
-    from .services.threat_pipeline import execute_threat_scan_slice as owner
-    return owner(task)
-
-
-def execute_threat_validation(task: dict) -> bool | None:
-    from .services.threat_pipeline import execute_threat_validation as owner
-    return owner(task)
-
-
-def save_analysis_report(request_id: str, lease_id: str, raw_report: dict) -> tuple[str, ...]:
-    from .services.threat_pipeline import save_analysis_report as owner
-    return owner(request_id, lease_id, raw_report)
-
-
-def claim_maia_coverage_node() -> dict | None:
-    from .services.repertoire_coverage import claim_maia_coverage_node as owner
-    return owner()
-
-
-def coverage_gaps(repertoire_id: str) -> list[dict]:
-    from .services.repertoire_coverage import coverage_gaps as owner
-    return owner(repertoire_id)
-
-
-def coverage_summary(repertoire_id: str) -> dict:
-    from .services.repertoire_coverage import coverage_summary as owner
-    return owner(repertoire_id)
-
-
-def enqueue_coverage_refresh(repertoire_id: str, *, automatic: bool = False, background: bool = False) -> str:
-    from .services.repertoire_coverage import enqueue_coverage_refresh as owner
-    return owner(repertoire_id, automatic=automatic, background=background)
-
-
-def set_explorer_session_token(token: str | None) -> None:
-    from .services.repertoire_coverage import set_explorer_session_token as owner
-    return owner(token)
-
-
-def submit_maia_coverage(node_id: str, lease_id: str, moves: list[dict]) -> None:
-    from .services.repertoire_coverage import submit_maia_coverage as owner
-    return owner(node_id, lease_id, moves)
 
 
 def _compatibility_coordinator():
@@ -232,14 +128,8 @@ def __getattr__(name):
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-def enqueue_sync(request: GameSyncRequest, *, background: bool = False) -> str:
-    from .services.game_sync_coordinator import enqueue_sync as operation
-    return operation(request, background=background)
 
 
-def enqueue_game_derivation(game_id: str, *, background: bool = False) -> None:
-    from .services.game_sync_coordinator import enqueue_game_derivation as operation
-    return operation(game_id, background=background)
 
 
 @asynccontextmanager
@@ -303,11 +193,10 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="Tempo local API", version="0.2.0", lifespan=lifespan)
 from .services.background_runtime import StudyResponseTiming
 app.add_middleware(StudyResponseTiming)
-app.include_router(create_study_router(enqueue_daily_queue_refresh))
 from .game_evidence_routes import router as game_evidence_router
 app.include_router(game_evidence_router)
-from .product_composition.game_history_current import current_game_history_router
-app.include_router(current_game_history_router())
+from .opening_evidence_api import router as opening_evidence_router
+app.include_router(opening_evidence_router)
 from .product_composition.game_review import current_game_review_router
 app.include_router(current_game_review_router())
 from .product_composition.repertoire_runtime import current_repertoire_router, is_repertoire_command_path
@@ -363,219 +252,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-ANALYSIS_EVIDENCE_VERSION = 2
-MAX_ANALYSIS_CANDIDATES = 5
-
-
-def _analysis_error(message: str) -> HTTPException:
-    """Return a consistent, actionable validation error for engine evidence."""
-
-    return HTTPException(422, f"Invalid game analysis evidence: {message}")
-
-
-def _validate_analysis_line(board: chess.Board, line: list[str], label: str) -> None:
-    """Validate a UCI line against the exact position from which it was sent."""
-
-    line_board = board.copy()
-    for line_ply, move_uci in enumerate(line):
-        try:
-            move = chess.Move.from_uci(move_uci)
-        except (TypeError, ValueError) as error:
-            raise _analysis_error(f"{label} move {line_ply + 1} is not valid UCI: {move_uci!r}") from error
-        if move not in line_board.legal_moves:
-            raise _analysis_error(
-                f"{label} move {line_ply + 1} is illegal from the submitted position: {move_uci}"
-            )
-        line_board.push(move)
-
-
-def _validated_analysis_evaluations(
-    request: GameAnalysisRequest, game: sqlite3.Row
-) -> list[dict]:
-    """Normalize and validate submitted evidence before replacing persisted analysis."""
-
-    game_moves = json.loads(game["moves_json"])
-    seen_plies: set[int] = set()
-    validated: list[dict] = []
-    board = chess.Board(game["start_fen"])
-    positions: list[chess.Board] = [board.copy()]
-    for move_uci in game_moves:
-        try:
-            board.push_uci(move_uci)
-        except ValueError as error:
-            raise _analysis_error(f"stored game move is illegal at ply {len(positions) - 1}: {move_uci}") from error
-        positions.append(board.copy())
-
-    for submitted in request.evaluations:
-        item = submitted.model_dump(exclude_none=True)
-        item_ply = item["ply"]
-        if item_ply >= len(game_moves):
-            raise _analysis_error(f"ply {item_ply} is outside the game move list")
-        if item_ply in seen_plies:
-            raise _analysis_error(f"ply {item_ply} was submitted more than once")
-        seen_plies.add(item_ply)
-        position = positions[item_ply]
-        expected_color = "white" if position.turn else "black"
-        if item.get("mover_color") and item["mover_color"] != expected_color:
-            raise _analysis_error(
-                f"ply {item_ply} has mover_color={item['mover_color']!r}; expected {expected_color!r}"
-            )
-        actual_move_uci = item.get("actual_move_uci") or game_moves[item_ply]
-        if actual_move_uci != game_moves[item_ply]:
-            raise _analysis_error(
-                f"ply {item_ply} actual_move_uci does not match the imported game move {game_moves[item_ply]}"
-            )
-        _validate_analysis_line(position, [actual_move_uci], f"played move at ply {item_ply}")
-        if item.get("position_fen") and item["position_fen"] != position.fen():
-            raise _analysis_error(f"position_fen for ply {item_ply} does not match the imported game")
-        best_move_uci = item.get("best_move_uci")
-        principal_variation = item.get("principal_variation", [])
-        if best_move_uci:
-            _validate_analysis_line(position, [best_move_uci], f"best move at ply {item_ply}")
-            if principal_variation and principal_variation[0] != best_move_uci:
-                raise _analysis_error(
-                    f"principal_variation for ply {item_ply} must start with best_move_uci"
-                )
-        if principal_variation:
-            _validate_analysis_line(position, principal_variation, f"principal variation at ply {item_ply}")
-        candidates = item.get("candidate_lines") or item.get("candidates") or []
-        if len(candidates) > MAX_ANALYSIS_CANDIDATES:
-            raise _analysis_error(
-                f"ply {item_ply} has {len(candidates)} candidate lines; the maximum is {MAX_ANALYSIS_CANDIDATES}"
-            )
-        normalized_candidates: list[dict] = []
-        for rank, candidate in enumerate(candidates, start=1):
-            candidate_uci = candidate.get("uci") or candidate.get("move_uci")
-            if not candidate_uci:
-                raise _analysis_error(f"candidate {rank} at ply {item_ply} has no UCI move")
-            candidate_pv = candidate.get("pv")
-            if candidate_pv is None:
-                candidate_pv = candidate.get("principal_variation", [])
-            if not candidate_pv:
-                raise _analysis_error(f"candidate {rank} at ply {item_ply} has no principal variation")
-            if candidate_pv[0] != candidate_uci:
-                raise _analysis_error(
-                    f"candidate {rank} principal variation at ply {item_ply} must start with its UCI move"
-                )
-            if (
-                candidate.get("cp") is None
-                and candidate.get("score_cp") is None
-                and candidate.get("mate") is None
-                and candidate.get("score_mate") is None
-                and candidate.get("score") is None
-            ):
-                raise _analysis_error(
-                    f"candidate {rank} at ply {item_ply} must include cp, mate, or score"
-                )
-            _validate_analysis_line(position, candidate_pv, f"candidate {rank} at ply {item_ply}")
-            normalized_candidates.append(
-                {
-                    "uci": candidate_uci,
-                    "cp": candidate.get("cp") if candidate.get("cp") is not None else candidate.get("score_cp"),
-                    "mate": candidate.get("mate") if candidate.get("mate") is not None else candidate.get("score_mate"),
-                    "score": candidate.get("score"),
-                    "pv": candidate_pv,
-                }
-            )
-        item["mover_color"] = expected_color
-        item["actual_move_uci"] = actual_move_uci
-        item["position_fen"] = position.fen()
-        item["candidate_lines"] = normalized_candidates
-        validated.append(item)
-    return validated
-
-
-def _game_analysis_threshold() -> int:
-    with background_read_connection() as database:
-        row = system_storage.analysis_threshold(database)
-    if row is None:
-        raise HTTPException(503, "Analysis settings are unavailable")
-    return int(row[0])
-
-
 @app.middleware("http")
 async def prioritize_foreground_requests(request: Request, call_next):
     request.state.started_monotonic = time.monotonic()
     request_path_parts = request.url.path.strip("/").split("/")
-    prefix_evaluation_read = (
-        len(request_path_parts) == 5 and request_path_parts[:2] == ["api", "repertoires"]
-        and ((request_path_parts[3] == "prefix-evaluation"
-              and ((request.method == "GET" and request_path_parts[4] == "source")
-                   or (request.method == "POST" and request_path_parts[4] == "evaluate")))
-             or (request.method == "POST" and request_path_parts[3:] == ["prefix-transition", "plan"]))
-    )
-    read_only_post = (
-        request.method == "POST"
-        and (
-            request.url.path in {
-                "/api/repertoire/paste/preview",
-                "/api/endgames/probe",
-                "/api/cards/validate",
-                "/api/product/game-history/preview",
-            }
-            or (len(request_path_parts) == 5
-                and request_path_parts[:2] == ["api", "studies"]
-                and request_path_parts[3:] == ["import", "preview"])
-            or prefix_evaluation_read
-        )
-    )
-    if postgres_store.configured() and request.method not in {"GET", "HEAD", "OPTIONS"}:
+    read_only_post = request.method == "POST" and request.url.path in {
+        "/api/repertoire/paste/preview", "/api/cards/validate",
+    }
+    if (postgres_store.configured() and request.method not in {"GET", "HEAD", "OPTIONS"}
+            and any(route.matches(request.scope)[0] == Match.FULL for route in app.routes)):
         path_parts = request.url.path.strip("/").split("/")
-        study_root = path_parts[:2] == ["api", "studies"]
-        study_create = study_root and len(path_parts) == 2 and request.method == "POST"
-        study_update = study_root and len(path_parts) == 3 and request.method == "PATCH"
-        study_archive = (study_root and len(path_parts) == 4
-                         and path_parts[3] in {"archive", "unarchive"}
-                         and request.method == "POST")
-        study_import_commit = (study_root and len(path_parts) == 5
-                               and path_parts[3:] == ["import", "commit"]
-                               and request.method == "POST")
-        study_bundle_import = (study_root and path_parts[2:] == ["import-bundle"]
-                               and request.method == "POST")
-        exercise_create = (study_root and len(path_parts) == 4
-                           and path_parts[3] == "exercises" and request.method == "POST")
-        exercise_revise = (study_root and len(path_parts) == 5
-                           and path_parts[3] == "exercises" and request.method == "PUT")
-        exercise_enroll = (study_root and len(path_parts) == 6
-                           and path_parts[3] == "exercises" and path_parts[5] == "enroll"
-                           and request.method == "POST")
-        exercise_attempt = (study_root and len(path_parts) == 6
-                            and path_parts[3] == "exercises" and path_parts[5] == "attempts"
-                            and request.method == "POST")
-        exercise_self_assess = (study_root and len(path_parts) == 8
-                                and path_parts[3] == "exercises" and path_parts[5] == "attempts"
-                                and path_parts[7] == "self-assess" and request.method == "POST")
-        exercise_availability_command = (
-            study_root and len(path_parts) == 6 and path_parts[3] == "exercises"
-            and path_parts[5] in {"suspend", "resume", "archive", "train-now"}
-            and request.method == "POST"
-        )
-        chapter_create = (study_root and len(path_parts) == 4
-                          and path_parts[3] == "chapters" and request.method == "POST")
-        chapter_reorder = (study_root and len(path_parts) == 5
-                           and path_parts[3:] == ["chapters", "order"]
-                           and request.method == "PUT")
-        chapter_rename = (study_root and len(path_parts) == 5
-                          and path_parts[3] == "chapters" and request.method == "PATCH")
-        link_create = (study_root and len(path_parts) == 4
-                       and path_parts[3] == "links" and request.method == "POST")
         queue_entry_command = (len(path_parts) == 5 and path_parts[:3] == ["api", "queue", "entries"]
                                and path_parts[4] in {"fail", "bury"} and request.method == "POST")
         card_review_command = (path_parts[:2] == ["api", "cards"]
                                and path_parts[3:] in (["review"], ["review", "reconcile"])
                                and request.method == "POST")
-        opening_evidence_command = (path_parts == ["api", "opening-evidence", "checkpoints"]
-                                    and request.method == "POST")
         card_revision_command = (len(path_parts) == 3 and path_parts[:2] == ["api", "cards"]
                                  and request.method == "PUT")
         card_archive_command = (len(path_parts) == 3 and path_parts[:2] == ["api", "cards"]
                                 and request.method == "DELETE")
         card_teaching_command = (len(path_parts) == 4 and path_parts[:2] == ["api", "cards"]
                                  and path_parts[3] == "teaching" and request.method == "POST")
-        defense_answer_command = (len(path_parts) == 4
-                                  and path_parts[:2] == ["api", "defense-exercises"]
-                                  and path_parts[3] in {"attempt", "recognition"}
-                                  and request.method == "POST")
         main_repertoire_command = (len(path_parts) == 4
                                    and path_parts[:2] == ["api", "repertoires"]
                                    and path_parts[3] == "main" and request.method == "PUT")
@@ -591,126 +288,27 @@ async def prioritize_foreground_requests(request: Request, call_next):
         repertoire_delete_command = (len(path_parts) == 3
                                      and path_parts[:2] == ["api", "repertoires"]
                                      and request.method == "DELETE")
-        coverage_refresh_command = (
-            len(path_parts) == 5 and path_parts[:2] == ["api", "repertoires"]
-            and path_parts[3:] == ["coverage", "refresh"]
-            and request.method == "POST"
-        )
-        coverage_maia_command = (
-            len(path_parts) == 4 and path_parts[:3] == ["api", "repertoire-coverage", "maia"]
-            and path_parts[3] in {"claim", "submit", "heartbeat", "release", "failure"}
-            and request.method == "POST"
-        )
-        coverage_explorer_session = (
-            path_parts == ["api", "repertoire-coverage", "explorer-session"]
-            and request.method == "POST"
-        )
         browser_activity = (path_parts == ["api", "system", "browser-activity"]
                             and request.method == "POST")
-        activity_control_command = (path_parts == ["api", "system", "activity", "control"]
-                                    and request.method == "POST")
-        activity_progress_command = (path_parts == ["api", "system", "activity", "progress"]
-                                     and request.method == "POST")
         task_retry_command = (len(path_parts) == 5 and path_parts[:3] == ["api", "system", "tasks"]
                               and path_parts[4] == "retry" and request.method == "POST")
-        defensive_admin_command = (
-            request.method == "POST" and path_parts in (
-                ["api", "defensive-threats", "analysis", "audit"],
-                ["api", "defensive-threats", "backfill"],
-            )
-        )
-        defensive_candidate_command = (
-            request.method == "POST" and len(path_parts) == 5
-            and path_parts[:3] == ["api", "defensive-threats", "candidates"]
-            and path_parts[4] in {"dismiss", "approve", "train-now", "pause", "resume"}
-        )
-        defensive_analysis_command = (
-            request.method == "POST" and (
-                path_parts == ["api", "defensive-threats", "analysis", "claim"]
-                or (len(path_parts) == 5
-                    and path_parts[:3] == ["api", "defensive-threats", "analysis"]
-                    and path_parts[4] in {"report", "failure", "release", "retry"})
-            )
-        )
         tactic_capture_command = (path_parts == ["api", "tactics", "captures"]
                                   and request.method == "POST")
         tactic_attempt_command = (path_parts == ["api", "tactics", "attempt"]
                                   and request.method == "POST")
         tactic_activation_command = (path_parts == ["api", "tactics", "activation"]
                                      and request.method == "PUT")
-        game_accounts_command = (path_parts == ["api", "games", "accounts"]
-                                 and request.method == "PUT")
-        game_sync_command = (path_parts == ["api", "games", "sync"]
-                             and request.method == "POST")
-        game_exclusion_command = (len(path_parts) >= 4 and path_parts[:2] == ["api", "games"]
-                                  and path_parts[-1] == "exclusion" and request.method == "POST")
-        game_finding_decision_command = (
-            len(path_parts) == 4 and path_parts[:2] == ["api", "game-findings"]
-            and path_parts[-1] in {"curation", "decision"} and request.method == "POST"
-        )
-        game_finding_card_command = (
-            len(path_parts) == 4 and path_parts[:2] == ["api", "game-findings"]
-            and path_parts[-1] == "card" and request.method == "POST"
-        )
-        game_threat_refresh_command = (len(path_parts) >= 5
-                                       and path_parts[:2] == ["api", "games"]
-                                       and path_parts[-2:] == ["defensive-threats", "refresh"]
-                                       and request.method == "POST")
-        game_analysis_claim_command = (path_parts == ["api", "games", "analysis", "claim"]
-                                       and request.method == "POST")
-        game_analysis_repair_command = (
-            path_parts in (["api", "games", "analysis", "repair-timeout"],
-                           ["api", "games", "analysis", "repair-provenance"])
-            and request.method == "POST"
-        )
-        game_manual_analysis_command = (
-            len(path_parts) >= 4 and path_parts[:2] == ["api", "games"]
-            and path_parts[-1] == "analysis" and request.method == "POST"
-        )
-        discovery_accept_command = (
-            len(path_parts) == 4 and path_parts[:2] == ["api", "discoveries"]
-            and path_parts[-1] == "accept" and request.method == "POST"
-        )
-        game_position_claim_command = (path_parts == ["api", "games", "analysis", "position", "claim"]
-                                       and request.method == "POST")
-        game_position_callback_command = (
-            len(path_parts) == 6 and path_parts[:4] == ["api", "games", "analysis", "position"]
-            and path_parts[5] in {"report", "release", "failure"} and request.method == "POST"
-        )
-        game_position_finalize_command = (
-            path_parts == ["api", "games", "analysis", "position", "finalize"]
-            and request.method == "POST"
-        )
-        game_parent_callback_command = (
-            len(path_parts) >= 5 and path_parts[:3] == ["api", "games", "analysis"]
-            and path_parts[3] != "position"
-            and path_parts[-1] in {"failure", "heartbeat", "release", "retry"}
-            and request.method == "POST"
-        )
         settings_command = (path_parts == ["api", "settings"] and request.method == "PUT")
         operation_retry_command = (len(path_parts) == 4
                                    and path_parts[:2] == ["api", "operations"]
                                    and path_parts[3] == "retry" and request.method == "POST")
-        legacy_evidence_command = request.method == "POST" and (
-            path_parts == ["api", "game-evidence", "legacy", "deliveries"]
-            or (len(path_parts) == 6 and path_parts[:4] == ["api", "game-evidence", "legacy", "cards"]
-                and path_parts[5] == "queue"))
+        opening_checkpoint_command = (request.method == "POST" and path_parts == ["api", "opening-evidence", "checkpoints"])
         product_feedback_command = (request.method == "POST" and
             path_parts == ["api", "game-evidence", "product", "feedback"])
         product_review_command = (request.method == "POST" and request.url.path in {
             "/api/product/game-review/configuration", "/api/product/game-review/sync",
             "/api/product/game-review/refresh",
             "/api/product/game-review/feedback/retry"})
-        product_history_command = (request.method == "POST" and len(path_parts) == 4
-            and path_parts[:3] == ["api", "product", "game-history"]
-            and path_parts[3] in {"preview", "start", "run-ready", "resume"})
-        endgame_probe = (path_parts == ["api", "endgames", "probe"]
-                         and request.method == "POST")
-        endgame_template_command = (path_parts == ["api", "endgames", "templates"]
-                                    and request.method == "POST")
-        endgame_attempt_command = (len(path_parts) == 5
-                                   and path_parts[:3] == ["api", "endgames", "templates"]
-                                   and path_parts[4] == "attempt" and request.method == "POST")
         branch_add_command = (path_parts == ["api", "repertoire", "branches"]
                               and request.method == "POST")
         branch_remove_command = (path_parts == ["api", "repertoire", "branches", "remove"]
@@ -728,88 +326,34 @@ async def prioritize_foreground_requests(request: Request, call_next):
         )
         card_validation = (path_parts == ["api", "cards", "validate"]
                            and request.method == "POST")
-        segmentation_command = (
-            request.method == "POST" and path_parts[:2] == ["api", "repertoires"]
-            and ((len(path_parts) == 5 and path_parts[3:] == ["segmentation", "refresh"])
-                 or (len(path_parts) == 6 and path_parts[3] == "segmentation" and path_parts[5] == "preference"))
-        )
-        prefix_split_command = (
-            len(path_parts) in {4, 5}
-            and path_parts[:2] == ["api", "cards"]
-            and path_parts[3] == "prefix-split"
-            and (len(path_parts) == 4 or path_parts[4] == "reject")
-            and request.method == "POST"
-        )
-        prefix_transition_command = (request.method == 'POST' and len(path_parts) == 5 and path_parts[:2] == ['api','repertoires'] and path_parts[3:] == ['prefix-transition','apply'])
-        canonical_prefix_command = (path_parts[:2] == ["api", "repertoires"]
-            and len(path_parts) in {4, 5} and path_parts[3] == "canonical-prefix"
-            and request.method in {"POST", "PUT"})
         product_repertoire_command = is_repertoire_command_path(request.method, path_parts)
         next_card_preparation = request.method == 'POST' and path_parts == ['api','queue','prepare-next']
-        if not read_only_post and not any((next_card_preparation, product_repertoire_command, prefix_transition_command, canonical_prefix_command, study_create, study_update, study_archive,
-                    study_import_commit, study_bundle_import,
-                    exercise_create, exercise_revise,
-                    exercise_enroll, exercise_attempt, exercise_self_assess,
-                    exercise_availability_command,
-                    chapter_create, chapter_reorder,
-                    chapter_rename, link_create, queue_entry_command, card_review_command,
-                    card_revision_command, card_archive_command,
-                    card_teaching_command, defense_answer_command,
-                    main_repertoire_command, annotation_command, repertoire_rename_command,
-                    repertoire_settings_command,
-                    repertoire_delete_command,
-                    coverage_refresh_command,
-                    coverage_maia_command, coverage_explorer_session,
-                    browser_activity, activity_control_command, activity_progress_command,
-                    task_retry_command, tactic_attempt_command, tactic_capture_command,
-                    defensive_admin_command,
-                    defensive_candidate_command,
-                    defensive_analysis_command,
-                    tactic_activation_command, game_accounts_command, game_sync_command,
-                    game_exclusion_command, game_threat_refresh_command,
-                    game_finding_decision_command, game_finding_card_command,
-                    game_analysis_claim_command, game_analysis_repair_command,
-                    game_manual_analysis_command, discovery_accept_command,
-                    game_position_claim_command,
-                    game_position_callback_command, game_position_finalize_command,
-                    game_parent_callback_command,
-                    settings_command,
-                    operation_retry_command,
-                    legacy_evidence_command, product_feedback_command, product_history_command, product_review_command,
-                    endgame_probe, endgame_template_command,
-                    endgame_attempt_command, branch_add_command, branch_remove_command,
-                    pgn_import_command,
-                    analysis_paste_command,
-                    integrity_resolution_command,
-                    card_validation, prefix_split_command, segmentation_command, opening_evidence_command,
-                    prefix_transition_command)):
+        if not read_only_post and not any((
+            next_card_preparation, product_repertoire_command, queue_entry_command,
+            card_review_command, card_revision_command, card_archive_command,
+            card_teaching_command, main_repertoire_command, annotation_command,
+            repertoire_rename_command, repertoire_settings_command, repertoire_delete_command,
+            browser_activity, task_retry_command, tactic_attempt_command, tactic_capture_command,
+            tactic_activation_command, settings_command, operation_retry_command,
+            opening_checkpoint_command, product_feedback_command, product_review_command,
+            branch_add_command, branch_remove_command, pgn_import_command,
+            analysis_paste_command, integrity_resolution_command, card_validation,
+        )):
             return JSONResponse(
                 status_code=503,
                 content={"detail": "This write route is awaiting its Celery cutover; use the current local Docker service."},
             )
-    prefix_diagnostics_read = (
-        request.method == "GET" and len(request_path_parts) in {4, 5}
-        and request_path_parts[:2] == ["api", "repertoires"]
-        and request_path_parts[3] == "prefix-diagnostics"
-    )
     is_background = (
-        prefix_diagnostics_read or prefix_evaluation_read or request.headers.get("x-tempo-work-class", "").casefold() == "background"
+        request.headers.get("x-tempo-work-class", "").casefold() == "background"
         # Monitoring observes learner activity; it must not mint a learner
         # lease itself. Older clients and Docker health probes omit headers.
         or (request.method == "GET" and request.url.path in {
             "/api/health", "/api/system/foreground-active",
             "/api/system/foreground-requests-active", "/api/system/tasks",
         })
-        or (request.method == 'POST' and len(request_path_parts) == 5
-            and request_path_parts[:2] == ['api', 'repertoires']
-            and request_path_parts[3:] == ['prefix-transition', 'apply'])
-        # Its receipt read uses background admission too; a foreground request
-        # lease would wait on itself, including for older clients without headers.
         or (request.method == "POST" and request.url.path == "/api/opening-evidence/checkpoints")
-        or (request.method == "POST" and request.url.path == "/api/game-evidence/legacy/deliveries")
         or (request.method == "POST" and request.url.path == "/api/game-evidence/product/feedback")
         or (request.method == "GET" and request.url.path == "/api/game-evidence/product/effect")
-        or request.url.path.startswith("/api/product/game-history/")
         or request.url.path.startswith("/api/product/game-review/")
         or request.url.path.startswith("/api/product/repertoires/")
     )
@@ -960,94 +504,59 @@ def record_browser_activity(session_id: str = Query(default='legacy', pattern=r'
     return {"active": True, "session_id": session_id, "expires_in_ms": expires_in_ms}
 
 
+
+
+
+
+
+
+
+
+
+
+# Task identities are retained for repair journals and queue/graph recovery;
+# retired Jobs and optional producer tasks are not a public control surface.
+_RECOVERY_TASK_KINDS = frozenset({
+    "daily_queue", "opening_graph_rebuild", "integrity_repair", "integrity_scan", "canonical_prefix_preview",
+})
+
+
 @app.get("/api/system/tasks")
 def system_tasks():
-    tasks = list_tasks()
+    tasks = [task for task in list_tasks() if task["kind"] in _RECOVERY_TASK_KINDS]
     with read_connection() as database:
-        projections = [
-            dict(row)
-            for row in system_storage.recent_queue_projections(database)
-        ]
-    status = {
+        projections = [dict(row) for row in system_storage.recent_queue_projections(database)]
+    result = {
         "tasks": tasks,
         "counts": {
             "queued": sum(task["state"] in {"queued", "retrying"} for task in tasks),
             "active": sum(task["state"] == "leased" for task in tasks),
             "failed": sum(task["state"] == "failed" for task in tasks),
-            "oldest_queued_age_seconds": max(
-                (
-                    task["age_seconds"]
-                    for task in tasks
-                    if task["state"] in {"queued", "retrying"}
-                ),
-                default=0,
-            ),
+            "oldest_queued_age_seconds": max((task["age_seconds"] for task in tasks
+                                              if task["state"] in {"queued", "retrying"}), default=0),
         },
         "queue_projections": annotate_queue_projection_workers(projections, tasks, date.today().isoformat()),
     }
     if not postgres_store.configured():
-        status["writer"] = {"healthy": database_writer.healthy,
-                            **database_writer.queued_counts}
-    return status
-
-
-@app.get("/api/system/background-diagnostics", response_model=BackgroundDiagnostics)
-def system_background_diagnostics() -> BackgroundDiagnostics:
-    from .services.background_diagnostics import snapshot
-    return snapshot()
-
-
-@app.post("/api/system/activity/progress")
-def report_system_activity_progress(request: dict,
-                                    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    source = request.get("source")
-    work_id = request.get("id")
-    generation = request.get("generation")
-    phase = request.get("phase")
-    completed = request.get("completed")
-    total = request.get("total")
-    lease_id = request.get("lease_id")
-    if source != "game_analysis" or not all(isinstance(value, str) for value in (work_id, generation, phase, lease_id)):
-        raise HTTPException(422, "Invalid analysis progress")
-    if isinstance(completed, bool) or not isinstance(completed, int) or isinstance(total, bool) or not isinstance(total, int):
-        raise HTTPException(422, "Invalid analysis progress count")
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "activity.progress", {"source": source, "id": work_id, "generation": generation,
-                                  "phase": phase, "completed": completed, "total": total,
-                                  "lease_id": lease_id},
-            idempotency_key=idempotency_key, background=True,
-        )
-    try:
-        reported = report_progress(source, work_id, generation, phase, completed, total, background=True, lease_id=lease_id)
-    except ValueError as error:
-        raise HTTPException(422, str(error)) from error
-    if not reported:
-        raise HTTPException(409, "Analysis lease is no longer active")
-    return {"ok": True}
+        result["writer"] = {"healthy": database_writer.healthy, **database_writer.queued_counts}
+    return result
 
 
 @app.post("/api/system/tasks/{task_id}/retry")
-def retry_system_task(task_id: str,
-                      idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+def retry_system_task(task_id: str, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    with read_connection() as database:
+        task = durable_task_storage.read_task(database, (task_id,))
+    if task is None or task["kind"] not in _RECOVERY_TASK_KINDS:
+        raise HTTPException(404, "Recovery task not found")
     if postgres_store.configured():
         from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "activity.task.retry", {"task_id": task_id}, idempotency_key=idempotency_key,
-        )
+        return dispatch_command("activity.task.retry", {"task_id": task_id}, idempotency_key=idempotency_key)
     retried = retry_task(task_id)
     if retried is None:
         raise HTTPException(404, "Terminal task not found")
-    # Explicit Retry keeps its existing pause reset, like the PostgreSQL retry handler.
     set_control("durable", task_id, "resume", allow_settings_blocked_resume=True)
     _compatibility_coordinator().wake()
     return retried
-
-
-@app.get("/api/analysis/capabilities")
-def capabilities():
-    return AnalysisCapabilities()
 
 
 @app.get("/api/settings", response_model=Settings)
@@ -1067,13 +576,6 @@ def put_settings(s: Settings,
             {"settings": s.model_dump(mode="json"), "supplied_fields": sorted(s.model_fields_set)},
             idempotency_key=idempotency_key,
         )
-    coverage_fields = (
-        "coverage_reply_denominator",
-        "coverage_cumulative_target",
-        "coverage_horizon_fullmoves",
-        "coverage_path_floor",
-        "coverage_maia_elo",
-    )
     def persist_settings(db):
         previous_settings = settings_storage.previous_settings(db)
         settings_storage.save_settings(
@@ -1109,33 +611,8 @@ def put_settings(s: Settings,
                 account_storage.save_game_account(db, provider, username)
             else:
                 account_storage.delete_game_account(db, provider)
-        coverage_changed = previous_settings is None or any(
-            previous_settings[field] != getattr(s, field) for field in coverage_fields
-        )
-        eligible_repertoires = [
-            row["id"]
-            for row in settings_storage.clean_repertoires(db)
-        ] if coverage_changed else []
-        return eligible_repertoires
-
-    repertoire_ids = submit_foreground_write(
-        persist_settings,
-        label="settings-update",
-    )
+    submit_foreground_write(persist_settings, label="settings-update")
     enqueue_daily_queue_refresh()
-    enqueued_coverage = False
-    for repertoire_id in repertoire_ids:
-        try:
-            enqueue_coverage_refresh(
-                repertoire_id,
-                automatic=True,
-                background=False,
-            )
-            enqueued_coverage = True
-        except (KeyError, sqlite3.OperationalError):
-            continue
-    if enqueued_coverage:
-        _compatibility_coordinator().wake()
     from .services.study_priority import refresh_policy
     refresh_policy()
     return get_settings()
@@ -1519,7 +996,6 @@ async def import_pgn(
     try:
         enqueue_opening_graph_rebuild(rid, local_day=date.today().isoformat())
         enqueue_integrity_scans(rid)
-        enqueue_coverage_refresh(rid, automatic=True)
         _compatibility_coordinator().wake()
     except (KeyError, sqlite3.OperationalError):
         enqueue_status = "failed"
@@ -1609,25 +1085,6 @@ def repertoire_lines():
     }
 
 
-@app.get("/api/compare/cards")
-def comparison_cards():
-    """Return saved opening routes; chess replay belongs outside the database read."""
-    with read_connection() as db:
-        rows = repertoire_http_storage.comparison_card_rows(db)
-        records = [dict(row) for row in rows]
-    cards = []
-    for record in records:
-        if not cards or cards[-1]["id"] != record["id"]:
-            cards.append({
-                "id": record["id"], "start_fen": record["start_fen"],
-                "moves": json.loads(record["moves_json"]),
-                "state": record["state"], "kind": record["kind"],
-                "trained_color": record["trained_color"], "repertoires": [],
-            })
-        cards[-1]["repertoires"].append({
-            "id": record["repertoire_id"], "name": record["repertoire_name"],
-        })
-    return {"cards": cards}
 
 
 @app.get("/api/repertoire/conflicts")
@@ -1801,46 +1258,6 @@ def mark_teaching_state(identifier: str, request: TeachingStateRequest,
     }
 
 
-@app.get("/api/migration/snapshot")
-def migration_snapshot():
-    with read_connection() as db:
-        # Automatic coverage and Explorer cache rows are rebuildable enrichment.
-        # Keeping them out of a portable study snapshot preserves its checksum
-        # across a restart while background work continues independently.
-        automatic_coverage_run_ids = {
-            row["id"]
-            for row in snapshot_http_storage.automatic_coverage_runs(db)
-        }
-        automatic_coverage_node_ids = {
-            row["id"]
-            for row in snapshot_http_storage.coverage_nodes(db)
-            if row["run_id"] in automatic_coverage_run_ids
-        }
-        tables = {}
-        for name, source_rows in snapshot_http_storage.portable_table_rows(db):
-            rows = [dict(row) for row in source_rows]
-            if name == "repertoire_coverage_runs":
-                rows = [row for row in rows if row["id"] not in automatic_coverage_run_ids]
-            elif name == "repertoire_coverage_nodes":
-                rows = [row for row in rows if row["id"] not in automatic_coverage_node_ids]
-            elif name == "repertoire_coverage_candidates":
-                rows = [row for row in rows if row["node_id"] not in automatic_coverage_node_ids]
-            tables[name] = rows
-    counts = {name: len(rows) for name, rows in tables.items()}
-    canonical = json.dumps(
-        {"schemaVersion": 1, "tables": tables},
-        sort_keys=True,
-        separators=(",", ":"),
-        default=str,
-    )
-    return {
-        "schemaVersion": 1,
-        "exportedAt": datetime.now(timezone.utc).isoformat(),
-        "source": "tempo-postgres" if postgres_store.configured() else "tempo-sqlite",
-        "tables": tables,
-        "counts": counts,
-        "checksum": hashlib.sha256(canonical.encode()).hexdigest(),
-    }
 
 
 @app.put("/api/repertoires/{identifier}/main")
@@ -2056,7 +1473,6 @@ def commit_analysis_paste(request: AnalysisPasteCommitRequest,
     for repertoire_id in result["affected_repertoire_ids"]:
         enqueue_opening_graph_rebuild(repertoire_id, local_day=date.today().isoformat())
         enqueue_integrity_scans(repertoire_id)
-        enqueue_coverage_refresh(repertoire_id, automatic=True)
     if result["affected_repertoire_ids"]:
         _compatibility_coordinator().wake()
     return result
@@ -2117,7 +1533,6 @@ def branch(request: BranchRequest,
             request.repertoire_id, local_day=date.today().isoformat()
         )
         enqueue_integrity_scans(request.repertoire_id)
-        enqueue_coverage_refresh(request.repertoire_id, automatic=True)
         _compatibility_coordinator().wake()
     except (KeyError, sqlite3.OperationalError):
         pass
@@ -2178,7 +1593,6 @@ def remove_branch(request: RemoveBranchRequest,
             request.repertoire_id, local_day=date.today().isoformat()
         )
         enqueue_integrity_scans(request.repertoire_id)
-        enqueue_coverage_refresh(request.repertoire_id, automatic=True)
         _compatibility_coordinator().wake()
     except (KeyError, sqlite3.OperationalError):
         pass
@@ -2192,30 +1606,6 @@ def remove_branch(request: RemoveBranchRequest,
     }
 
 
-@app.get("/api/progress")
-def progress_summary():
-    day = date.today()
-    with read_connection() as db:
-        states = {
-            row["state"]: row["n"]
-            for row in practice_storage.card_state_rows(db)
-        }
-        activity = [
-            {
-                "date": (day - timedelta(days=offset)).isoformat(),
-                "count": practice_storage.review_count(db, (day - timedelta(days=offset)).isoformat()),
-            }
-            for offset in range(6, -1, -1)
-        ]
-        return {
-            "states": states,
-            "activity": activity,
-            "reviewedToday": activity[-1]["count"],
-            "cleanCards": practice_storage.clean_card_count(db),
-            "dueToday": practice_storage.queued_card_count(db, day.isoformat()),
-            "blockedDue": practice_storage.blocked_count(db, day.isoformat()),
-            "totalCards": sum(states.values()),
-        }
 
 
 def validated_line(starting_fen: str, values: list[str]):
@@ -2250,92 +1640,10 @@ def validate_card(request: CardRevisionRequest):
     }
 
 
-@app.get("/api/cards/{identifier}/prefix-split", response_model=PrefixSplitResponse)
-def prefix_split_preview(identifier: str):
-    with connection() as database:
-        try:
-            result = preview_prefix_split(database, identifier)
-            usage = card_authoring_storage.published_usage(database, identifier)
-            return {
-                **result,
-                "shared_line_count": max(1, usage["line_count"]),
-                "shared_repertoire_count": max(1, usage["repertoire_count"]),
-            }
-        except KeyError as error:
-            raise HTTPException(404, str(error)) from error
-        except ValueError as error:
-            raise HTTPException(422, str(error)) from error
 
 
-@app.post("/api/cards/{identifier}/prefix-split", response_model=PrefixSplitResponse)
-def prefix_split_accept(identifier: str, request: PrefixSplitRequest,
-                        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "cards.prefix_split.accept",
-            {"card_id": identifier, "request": request.model_dump(mode="json")},
-            idempotency_key=idempotency_key,
-        )
-    with connection() as database:
-        try:
-            result = apply_prefix_split(database, identifier, request.expected_revision)
-            repertoire_ids = [
-                row["repertoire_id"]
-                for row in card_authoring_storage.split_repertoire_rows(database, result["parent"]["card_id"], result["continuation"]["card_id"])
-            ]
-            if not result["idempotent"]:
-                prefix_split_storage.mark_split_pending_validation(database, result["parent"]["card_id"], result["continuation"]["card_id"])
-            usage = card_authoring_storage.published_usage(database, identifier)
-            result = {
-                **result,
-                "shared_line_count": max(1, usage["line_count"]),
-                "shared_repertoire_count": max(1, usage["repertoire_count"]),
-            }
-        except KeyError as error:
-            raise HTTPException(404, str(error)) from error
-        except ValueError as error:
-            raise HTTPException(422, str(error)) from error
-        except RuntimeError as error:
-            raise HTTPException(409, str(error)) from error
-        if not result["idempotent"]:
-            try:
-                for repertoire_id in set(repertoire_ids):
-                    enqueue_task_in_transaction(
-                        database,
-                        "opening_graph_rebuild",
-                        repertoire_id,
-                        {"repertoire_id": repertoire_id, "local_day": date.today().isoformat()},
-                        priority=40,
-                    )
-            except (RuntimeError, sqlite3.OperationalError) as error:
-                raise HTTPException(503, "Could not save the prefix split and queue its follow-up work. Retry.") from error
-    _compatibility_coordinator().wake()
-    return result
 
 
-@app.post("/api/cards/{identifier}/prefix-split/reject")
-def prefix_split_reject(identifier: str, request: PrefixSplitRequest,
-                        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "cards.prefix_split.reject",
-            {"card_id": identifier, "request": request.model_dump(mode="json")},
-            idempotency_key=idempotency_key,
-        )
-    with connection() as database:
-        try:
-            preview = preview_prefix_split(database, identifier)
-            if preview["source_revision"] != request.expected_revision:
-                raise HTTPException(409, "The card changed; refresh it and try again")
-            latest_failed_review_id = card_authoring_storage.latest_failed_review_id(database, identifier)
-            prefix_split_storage.store_split_rejection(database, latest_failed_review_id, identifier)
-        except KeyError as error:
-            raise HTTPException(404, str(error)) from error
-        except ValueError as error:
-            raise HTTPException(422, str(error)) from error
-    return {"rejected_after_review_id": latest_failed_review_id}
 
 
 @app.put("/api/cards/{identifier}")
@@ -2578,247 +1886,30 @@ def export_all():
     return export_repertoires()
 
 
-@app.post("/api/repertoires/{identifier}/coverage/refresh", status_code=202)
-def refresh_repertoire_coverage(identifier: str,
-                                idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "coverage.refresh.request", {"repertoire_id": identifier},
-            idempotency_key=idempotency_key,
-        )
-    try:
-        run_id = enqueue_coverage_refresh(identifier)
-    except KeyError as error:
-        raise HTTPException(404, str(error)) from error
-    _compatibility_coordinator().wake()
-    return {"run_id": run_id, "status": "queued"}
 
 
-@app.get("/api/repertoires/{identifier}/statistics")
-def repertoire_statistics_summary(identifier: str, window: str = "90d"):
-    try:
-        return repertoire_statistics(identifier, window)
-    except KeyError as error:
-        raise HTTPException(404, str(error)) from error
-    except ValueError as error:
-        raise HTTPException(422, str(error)) from error
 
 
-@app.get("/api/repertoires/{identifier}/statistics/positions")
-def repertoire_statistics_positions(identifier: str, window: str = "90d", sort: str = "attention",
-                                   cursor: str | None = None, limit: int = 20):
-    try:
-        return repertoire_positions(identifier, window, sort, cursor, limit)
-    except KeyError as error:
-        raise HTTPException(404, str(error)) from error
-    except ValueError as error:
-        raise HTTPException(422, str(error)) from error
 
 
-@app.get("/api/repertoires/{identifier}/coverage")
-def repertoire_coverage(identifier: str):
-    return coverage_summary(identifier)
 
 
-@app.get("/api/repertoires/{identifier}/coverage/gaps")
-def repertoire_coverage_gaps(identifier: str):
-    return {"gaps": coverage_gaps(identifier)}
 
 
-@app.get("/api/discoveries/{opportunity_id}/recommendations")
-def discovery_recommendations(opportunity_id: str):
-    try:
-        return recommend_missing_continuations(opportunity_id)
-    except KeyError as error:
-        raise HTTPException(404, str(error)) from error
-    except ValueError as error:
-        raise HTTPException(409, str(error)) from error
 
 
-@app.post("/api/discoveries/{opportunity_id}/accept", status_code=202)
-def accept_discovery_continuation(
-    opportunity_id: str, request: DiscoveryAcceptanceRequest,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        from .discovery_commands import prepare_discovery_acceptance
-        try:
-            prepared = prepare_discovery_acceptance(
-                opportunity_id, request.selected_move_uci, request.evidence_fingerprint,
-            )
-        except KeyError as error:
-            raise HTTPException(404, str(error)) from error
-        except ValueError as error:
-            raise HTTPException(409, str(error)) from error
-        return dispatch_command(
-            "discovery.accept", prepared, idempotency_key=idempotency_key,
-        )
-    try:
-        intent = create_admission_intent(opportunity_id, request.selected_move_uci,
-                                         request.evidence_fingerprint)
-    except KeyError as error:
-        raise HTTPException(404, str(error)) from error
-    except ValueError as error:
-        raise HTTPException(409, str(error)) from error
-    _compatibility_coordinator().wake()
-    return {"status": "preparing", "intent_id": intent["id"]}
 
 
-@app.get("/api/discovery-admissions/{intent_id}")
-def discovery_admission_status(intent_id: str):
-    with read_connection() as database:
-        intent = http_discovery_storage.admission_intent(database, intent_id)
-        if not intent:
-            raise HTTPException(404, "Discovery admission was not found")
-        task = http_discovery_storage.admission_task(database, intent_id)
-    failed = bool(task and task["state"] == "failed")
-    return {"state": "queued" if intent["state"] == "queued" else
-            "failed" if failed else "preparing",
-            "error": (task["last_error"] or intent["last_error"] or "Admission failed; retry Add and train")
-            if failed else None}
 
 
-@app.get("/api/repertoire-coverage/maia/available")
-def coverage_maia_available():
-    from .services.study_mode import study_only_enabled
-    if study_only_enabled():
-        return {"available": False, "paused_reason": "study_only_mode"}
-    if not postgres_store.configured():
-        return {"available": True}
-    read_section = background_read_connection if activity_gate.in_background else read_connection
-    with read_section() as database:
-        row = http_coverage_storage.maia_availability(database, lambda: datetime.now(timezone.utc).isoformat())
-    return {"available": bool(row[0])}
 
 
-@app.post("/api/repertoire-coverage/maia/claim")
-def coverage_maia_claim(idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command("coverage.maia.claim", {}, idempotency_key=idempotency_key,
-                                background=True)
-    return {"job": claim_maia_coverage_node()}
 
 
-@app.post("/api/repertoire-coverage/explorer-session")
-def coverage_explorer_session(authorization: str | None = Header(None)):
-    token = authorization[7:].strip() if authorization and authorization[:7].lower() == "bearer " else None
-    try:
-        set_explorer_session_token(token)
-    except RedisError as error:
-        raise HTTPException(503, "Explorer token store unavailable; retry registration") from error
-    if token and not postgres_store.configured():
-        _compatibility_coordinator().wake()
-    return {"registered": bool(token)}
 
 
-@app.post("/api/repertoire-coverage/maia/submit")
-def coverage_maia_submit(request: CoverageMaiaSubmission,
-                         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command("coverage.maia.submit", request.model_dump(mode="json"),
-                                idempotency_key=idempotency_key, background=True)
-    try:
-        submit_maia_coverage(
-            request.node_id,
-            request.lease_id,
-            [move.model_dump() for move in request.moves],
-        )
-    except RuntimeError as error:
-        raise HTTPException(409, str(error)) from error
-    return {"status": "complete"}
 
 
-@app.post("/api/repertoire-coverage/maia/heartbeat")
-def coverage_maia_heartbeat(request: dict,
-                            idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command("coverage.maia.heartbeat", request,
-                                idempotency_key=idempotency_key, background=True)
-    node_id = request.get("node_id")
-    lease_id = request.get("lease_id")
-    if not isinstance(node_id, str) or not isinstance(lease_id, str):
-        raise HTTPException(422, "Invalid coverage lease")
-    with connection(background=activity_gate.in_background) as database:
-        changed = http_coverage_storage.heartbeat(database, (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(), datetime.now(timezone.utc).isoformat(), node_id, lease_id)
-    if not changed:
-        raise HTTPException(409, "Coverage lease is no longer active")
-    return {"status": "leased"}
-
-
-@app.post("/api/repertoire-coverage/maia/release")
-def coverage_maia_release(request: dict,
-                          idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command("coverage.maia.release", request,
-                                idempotency_key=idempotency_key, background=True)
-    node_id = request.get("node_id")
-    lease_id = request.get("lease_id")
-    if not isinstance(node_id, str) or not isinstance(lease_id, str):
-        raise HTTPException(422, "Invalid coverage lease")
-    with connection(background=activity_gate.in_background) as database:
-        changed = http_coverage_storage.release(database, datetime.now(timezone.utc).isoformat(), node_id, lease_id)
-    return {"status": "queued" if changed else "stale"}
-
-
-@app.post("/api/repertoire-coverage/maia/failure")
-def coverage_maia_failure(request: dict,
-                          idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command("coverage.maia.failure", request,
-                                idempotency_key=idempotency_key, background=True)
-    node_id = request.get("node_id")
-    lease_id = request.get("lease_id")
-    error = request.get("error")
-    if not all(isinstance(value, str) and value for value in (node_id, lease_id, error)):
-        raise HTTPException(422, "Invalid coverage failure report")
-    with connection(background=activity_gate.in_background) as database:
-        node = http_coverage_storage.failed_lease(database, node_id, lease_id)
-        if not node:
-            raise HTTPException(409, "Coverage lease is no longer active")
-        now = datetime.now(timezone.utc).isoformat()
-        message = f"Maia coverage failed: {error[:900]}"
-        http_coverage_storage.fail_node(database, message, now, node_id)
-        http_coverage_storage.fail_run(database, message, now, node["run_id"])
-    return {"status": "failed"}
-
-
-@app.get("/api/explorer/{database_name}")
-async def explorer(
-    database_name: str,
-    fen: str,
-    speeds: str = "blitz,rapid,classical",
-    ratings: str = "1600,1800,2000,2200,2500",
-    since: int | None = None,
-    until: int | None = None,
-    authorization: str | None = Header(None),
-):
-    if database_name not in {"lichess", "masters"}:
-        raise HTTPException(404, "Unknown Explorer database")
-    params = {"variant": "standard", "fen": fen}
-    if database_name == "lichess":
-        params.update({"speeds": speeds, "ratings": ratings})
-    if since:
-        params["since"] = since
-    if until:
-        params["until"] = until
-    async with httpx.AsyncClient(timeout=15) as client:
-        response = await client.get(
-            f"https://explorer.lichess.org/{database_name}",
-            params=params,
-            headers={"Authorization": authorization} if authorization else {},
-        )
-    if response.status_code == 429:
-        raise HTTPException(429, "Explorer rate limit reached")
-    if not response.is_success:
-        raise HTTPException(response.status_code, "Explorer request failed")
-    return response.json()
 
 
 TACTIC_MOTIFS = [
@@ -2982,1279 +2073,3 @@ def tactic_progress():
             value["index"] = len(value["discoveredIds"])
             value["clean"] = len(value["cleanIds"])
     return data
-
-
-@app.post("/api/endgames/probe")
-async def probe_endgame(request: EndgameProbeRequest):
-    raise HTTPException(410, "On-demand endgame calculation has been removed")
-
-
-@app.get("/api/endgames/templates")
-def list_endgames():
-    with connection() as db:
-        rows = practice_storage.endgame_templates(db)
-    return {"templates": [dict(row) for row in rows]}
-
-
-@app.post("/api/endgames/templates")
-def create_endgame(request: EndgameTemplateRequest,
-                   idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    raise HTTPException(410, "On-demand endgame calculation has been removed")
-
-
-@app.post("/api/endgames/templates/{identifier}/attempt")
-async def create_endgame_attempt(
-    identifier: str,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    if idempotency_key and postgres_store.configured():
-        from .command_gateway import CommandConflict
-        try:
-            receipt = read_operation(idempotency_key, command_name="endgames.attempt.create")
-        except CommandConflict as error:
-            raise HTTPException(409, str(error)) from error
-        if receipt["state"] != "unknown":
-            with read_connection() as db:
-                saved = practice_storage.saved_endgame_payload(db, idempotency_key)
-            if not saved or json.loads(saved["payload_json"]).get("template_id") != identifier:
-                raise HTTPException(409, "Operation ID was already used for another template")
-        if receipt["state"] == "complete":
-            return receipt["response"]
-        if receipt["state"] == "failed":
-            failure = receipt["error"]
-            raise HTTPException(failure.get("status_code", 500), failure.get("message", "Save failed"))
-        if receipt["state"] != "unknown":
-            # Existing command recovery remains with its canonical operation
-            # endpoint/worker. Never regenerate its immutable input here.
-            return JSONResponse(status_code=202, content=receipt,
-                                headers={"Location": "/api/operations/" + idempotency_key})
-    raise HTTPException(410, "On-demand endgame calculation has been removed; saved attempts remain available")
-
-
-@app.put("/api/games/accounts")
-def accounts(a: AccountSettings,
-             idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "games.accounts.update", a.model_dump(mode="json"),
-            idempotency_key=idempotency_key,
-        )
-    s = get_settings().model_copy(update=a.model_dump())
-    put_settings(s)
-    return a
-
-
-def _dispatch_game_sync(name, payload, idempotency_key):
-    from .command_dispatch import dispatch_command
-    return dispatch_command(name, payload, idempotency_key=idempotency_key)
-
-
-_game_sync_enqueue, _game_sync_status = create_game_sync_http_binding(GameSyncHttpCapabilities(
-    postgres_configured=lambda: postgres_store.configured(),
-    dispatch=_dispatch_game_sync,
-    in_background=lambda: activity_gate.in_background,
-    enqueue=lambda request, **options: enqueue_sync(request, **options),
-    wake=lambda: _compatibility_coordinator().wake(),
-    connection=lambda **options: connection(**options),
-    job_status=lambda database, job_id: game_sync_storage.job_status(database, job_id),
-    provider_states=lambda database: game_sync_storage.provider_states(database),
-    latest_job=lambda database: game_sync_storage.latest_job(database),
-    serialize_job=lambda row: serialize_job(row),
-))
-app.include_router(create_game_sync_router(_game_sync_enqueue, _game_sync_status))
-app.include_router(create_next_opponent_router(read_next_opponent_profile))
-
-
-@app.post("/api/games/analysis/claim")
-def claim_game_analysis(
-    engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    # Tabs that loaded the former browser scanner before a Docker rollout keep
-    # polling this endpoint. Preserve its response shape without leasing work.
-    if engine_worker != "docker":
-        return {"job": None}
-    if postgres_store.configured():
-        with background_read_connection() as database:
-            available = game_analysis_control_storage.available(database, datetime.now(timezone.utc).isoformat())
-        if available is None:
-            return {"job": None}
-        from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "games.analysis.claim", {}, idempotency_key=idempotency_key, background=True,
-        )
-    return _claim_game_analysis()
-
-
-def _claim_game_analysis(preferred_game_id: str | None = None):
-    from .services.engine_scheduling import ordinary_selection_allowed, record_ordinary_selection
-    now = datetime.now(timezone.utc)
-    lease_expires_at = now + timedelta(minutes=5)
-    lease_id = str(uuid.uuid4())
-    with connection(background=activity_gate.in_background) as db:
-        game_analysis_control_storage.begin_claim(db)
-        if not ordinary_selection_allowed(db):
-            return {"job": None}
-        game_analysis_control_storage.expire_leases(db, now.isoformat(), now.isoformat())
-        job = game_analysis_control_storage.claimable_job(db, preferred_game_id)
-        if not job:
-            return {"job": None}
-        updated = game_analysis_control_storage.lease_queued_job(
-            db, lease_id, lease_expires_at.isoformat(), now.isoformat(), job["game_id"],
-        )
-        if not updated:
-            return {"job": None}
-        record_ordinary_selection(db)
-        game_analysis_control_storage.mark_analyzing(db, job["game_id"])
-    return {
-        "job": {
-            **dict(job),
-            "moves": json.loads(job["moves_json"]),
-            "lease_id": lease_id,
-            "lease_expires_at": lease_expires_at.isoformat(),
-        }
-    }
-
-
-def _require_docker_engine(engine_worker: str | None) -> None:
-    if engine_worker != "docker":
-        raise HTTPException(403, "Engine claims are handled by the Docker worker")
-
-
-@app.post("/api/games/analysis/position/claim")
-def claim_game_analysis_position(
-    request: GameAnalysisPositionClaimRequest | None = None,
-    engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    _require_docker_engine(engine_worker)
-    if postgres_store.configured():
-        from .game_analysis_commands import prepare_position_claim
-        from .command_dispatch import dispatch_command
-        preferred_game_id = request.preferred_game_id if request else None
-        claim_request_payload = {"preferred_game_id": preferred_game_id} if preferred_game_id is not None else {}
-        # A restarted journal must recover its original lease before preparing
-        # another position or treating a now-unavailable hint as an empty queue.
-        if idempotency_key:
-            try:
-                receipt = read_operation(idempotency_key,
-                    command_name="games.analysis.position.claim", background=True,
-                    position_claim_request_payload=claim_request_payload)
-            except CommandConflict as error:
-                raise HTTPException(409, str(error)) from error
-            if receipt["state"] == "complete":
-                return receipt["response"]
-            if receipt["state"] == "failed":
-                error = receipt["error"]
-                raise HTTPException(error.get("status_code", 500), error.get("detail", error["message"]))
-            if receipt["state"] != "unknown":
-                return JSONResponse(status_code=202,
-                    content={"operation_id": idempotency_key, "state": receipt["state"]},
-                    headers={"Location": f"/api/operations/{idempotency_key}"})
-        from .services.study_mode import study_only_enabled
-        if study_only_enabled():
-            return {"job": None, "paused_reason": "study_only_mode"}
-        plan = prepare_position_claim(preferred_game_id) if preferred_game_id is not None else prepare_position_claim()
-        if plan is None:
-            return {"job": None}
-        return dispatch_command(
-            "games.analysis.position.claim", {**plan, "claim_request": claim_request_payload},
-            idempotency_key=idempotency_key, background=True,
-        )
-    parent_job = _claim_game_analysis(request.preferred_game_id if request else None)["job"]
-    return {"job": claim_position(parent_job)}
-
-
-@app.post("/api/games/analysis/position/{report_id}/report")
-def submit_game_analysis_position(
-    report_id: str, request: ThreatAnalysisSubmission,
-    engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    _require_docker_engine(engine_worker)
-    if postgres_store.configured():
-        from .game_analysis_commands import prepare_position_report
-        from .command_dispatch import dispatch_command
-        try:
-            request_json = prepare_position_report(report_id, request.report)
-        except (KeyError, ValueError) as error:
-            raise HTTPException(422, str(error)) from error
-        return dispatch_command(
-            "games.analysis.position.report",
-            {"report_id": report_id, "lease_id": request.lease_id,
-             "request_json": request_json, "report": request.report, "diagnostics": request.diagnostics.model_dump() if request.diagnostics else None},
-            idempotency_key=idempotency_key, background=True,
-        )
-    try:
-        return {"status": save_position_report(report_id, request.lease_id, request.report)}
-    except (KeyError, ValueError) as error:
-        raise HTTPException(422, str(error)) from error
-
-
-@app.post("/api/games/analysis/position/{report_id}/release")
-def release_game_analysis_position(
-    report_id: str, request: GameAnalysisLeaseRequest,
-    engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    _require_docker_engine(engine_worker)
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "games.analysis.position.release",
-            {"report_id": report_id, "lease_id": request.lease_id, "diagnostics": request.diagnostics.model_dump() if request.diagnostics else None},
-            idempotency_key=idempotency_key, background=True,
-        )
-    return {"status": release_position(report_id, request.lease_id)}
-
-
-@app.post("/api/games/analysis/position/{report_id}/failure")
-def fail_game_analysis_position(
-    report_id: str, request: ThreatAnalysisFailureRequest,
-    engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    _require_docker_engine(engine_worker)
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "games.analysis.position.release",
-            {"report_id": report_id, "lease_id": request.lease_id, "error": request.error, "diagnostics": request.diagnostics.model_dump() if request.diagnostics else None},
-            idempotency_key=idempotency_key, background=True,
-        )
-    return {"status": release_position(report_id, request.lease_id, request.error)}
-
-
-@app.post("/api/games/analysis/position/finalize")
-def finalize_game_analysis_position(
-    request: GameAnalysisLeaseRequest,
-    engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    _require_docker_engine(engine_worker)
-    read_section = background_read_connection if postgres_store.configured() else read_connection
-    with read_section() as database:
-        row = game_analysis_control_storage.leased_parent(database, request.lease_id)
-    if not row:
-        raise HTTPException(409, "Analysis lease is no longer active")
-    parent_job = {**dict(row), "moves": json.loads(row["moves_json"])}
-    try:
-        evaluations = build_game_evaluations(parent_job)
-    except (KeyError, ValueError) as error:
-        raise HTTPException(409, f"Game analysis is incomplete: {error}") from error
-    submission = GameAnalysisRequest(
-        evaluations=evaluations, depth=14, lease_id=request.lease_id,
-        idempotency_key=f"{row['game_id']}:analysis:{row['analysis_version']}:evidence:{GAME_WORKER_EVIDENCE_VERSION}",
-        analysis_version=row["analysis_version"],
-        analysis_evidence_version=GAME_WORKER_EVIDENCE_VERSION,
-        engine_version="Stockfish 19 WASM", network_version="nn-61e7af4bb97d.nnue",
-    )
-    if postgres_store.configured():
-        normalized_evaluations = _validated_analysis_evaluations(submission, dict(row))
-        result = classify_swings(
-            normalized_evaluations, row["color"],
-            _game_analysis_threshold(),
-            "white" if chess.Board(row["start_fen"]).turn else "black",
-        )
-        from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "games.analysis.finalize.admit",
-            {"game_id": row["game_id"], "lease_id": request.lease_id,
-             "analysis_version": row["analysis_version"],
-             "expected_evidence_version": row["analysis_evidence_version"],
-             "analysis_evidence_version": submission.analysis_evidence_version,
-             "idempotency_key": submission.idempotency_key,
-             "result": result,
-             "prepared": {"game": {"color": row["color"],
-                                    "start_fen": row["start_fen"],
-                                    "moves_json": row["moves_json"]},
-                          "request": submission.model_dump(mode="json"),
-                          "evaluations": normalized_evaluations}},
-            idempotency_key=idempotency_key, background=True,
-        )
-    return save_game_analysis(row["game_id"], submission)
-
-
-@app.post("/api/games/analysis/repair-timeout")
-def repair_one_stockfish_timeout(
-    engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    _require_docker_engine(engine_worker)
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "games.analysis.repair_timeout", {}, idempotency_key=idempotency_key,
-            background=True,
-        )
-    with connection(background=activity_gate.in_background) as database:
-        row = game_analysis_control_storage.timeout_repair_candidate(database)
-        if not row:
-            return {"requeued": False}
-        game_analysis_control_storage.record_position_error(
-            database, f"legacy:{row['game_id']}", row["game_id"], row["last_error"],
-            datetime.now(timezone.utc).isoformat(),
-        )
-        game_analysis_control_storage.requeue_timeout(
-            database, datetime.now(timezone.utc).isoformat(), row["game_id"],
-        )
-        game_analysis_control_storage.mark_pending(database, row["game_id"])
-    return {"requeued": True, "game_id": row["game_id"]}
-
-
-@app.post("/api/games/analysis/repair-provenance")
-def repair_one_legacy_network_identity(
-    engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    _require_docker_engine(engine_worker)
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "games.analysis.repair_provenance", {}, idempotency_key=idempotency_key,
-            background=True,
-        )
-    with connection(background=activity_gate.in_background) as database:
-        row = game_analysis_control_storage.network_repair_candidate(database)
-        if not row:
-            return {"requeued": False}
-        now = datetime.now(timezone.utc).isoformat()
-        game_analysis_control_storage.requeue_network(
-            database, max(row["analysis_version"] + 1, row["published_version"] + 1),
-            now, row["game_id"],
-        )
-        game_analysis_control_storage.mark_pending(database, row["game_id"])
-        game_analysis_control_storage.record_position_error(
-            database, f"legacy-network:{row['game_id']}", row["game_id"],
-            "Stored network identity differs from the browser's loaded NNUE; queued for verified Docker reanalysis", now,
-        )
-    return {"requeued": True, "game_id": row["game_id"]}
-
-
-@app.post("/api/games/analysis/{game_id:path}/failure")
-def fail_game_analysis(game_id: str, request: GameAnalysisFailureRequest,
-                       idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "games.analysis.failure",
-            {"game_id": game_id, "lease_id": request.lease_id, "error": request.error},
-            idempotency_key=idempotency_key, background=True,
-        )
-    with connection(background=activity_gate.in_background) as db:
-        job = game_analysis_control_storage.lease_state(db, game_id)
-        if not job:
-            raise HTTPException(404, "Analysis job not found")
-        if job["status"] != "leased" or job["lease_id"] != request.lease_id:
-            raise HTTPException(409, "Analysis lease is no longer active")
-        game_analysis_control_storage.fail_job(db, request.error, datetime.now(timezone.utc).isoformat(), game_id)
-        game_analysis_control_storage.mark_failed(db, game_id)
-    return {"status": "failed", "retryable": True}
-
-
-@app.post("/api/games/analysis/{game_id:path}/heartbeat")
-def heartbeat_game_analysis(game_id: str, request: GameAnalysisLeaseRequest,
-                            idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "games.analysis.heartbeat", {"game_id": game_id, "lease_id": request.lease_id},
-            idempotency_key=idempotency_key, background=True,
-        )
-    now = datetime.now(timezone.utc)
-    with connection(background=activity_gate.in_background) as db:
-        updated = game_analysis_control_storage.renew_lease(
-            db, (now + timedelta(minutes=5)).isoformat(), now.isoformat(),
-            game_id, request.lease_id,
-        )
-    if not updated:
-        raise HTTPException(409, "Analysis lease is no longer active")
-    return {"status": "leased"}
-
-
-@app.post("/api/games/analysis/{game_id:path}/release")
-def release_game_analysis(game_id: str, request: GameAnalysisLeaseRequest,
-                          idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "games.analysis.release", {"game_id": game_id, "lease_id": request.lease_id},
-            idempotency_key=idempotency_key, background=True,
-        )
-    with connection(background=activity_gate.in_background) as db:
-        updated = game_analysis_control_storage.release_lease(db, datetime.now(timezone.utc).isoformat(), game_id, request.lease_id)
-        if updated:
-            game_analysis_control_storage.mark_pending(db, game_id)
-    return {"status": "queued" if updated else "stale"}
-
-
-@app.post("/api/games/analysis/{game_id:path}/retry")
-def retry_game_analysis(game_id: str,
-                        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "games.analysis.retry", {"game_id": game_id}, idempotency_key=idempotency_key,
-        )
-    with connection() as db:
-        updated = game_analysis_control_storage.retry_failed(db, datetime.now(timezone.utc).isoformat(), game_id)
-        if not updated:
-            raise HTTPException(409, "Only failed analysis jobs can be retried")
-        game_analysis_control_storage.mark_pending(db, game_id)
-        game_analysis_control_storage.queue_activity(db, datetime.now(timezone.utc).isoformat(), game_id)
-    set_control("game_analysis", game_id, "resume")
-    return {"status": "queued"}
-
-
-@app.post("/api/games/{game_id:path}/analysis")
-def save_game_analysis(
-    game_id: str, request: GameAnalysisRequest,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    if postgres_store.configured():
-        with read_connection() as database:
-            game_row = analysis_publication_storage.game_source(database, game_id)
-            if game_row is None:
-                raise HTTPException(404, "Game not found")
-            threshold_row = system_storage.analysis_threshold(database)
-        if threshold_row is None:
-            raise HTTPException(503, "Analysis settings are unavailable")
-        game = dict(game_row)
-        evaluations = _validated_analysis_evaluations(request, game)
-        result = classify_swings(
-            evaluations, game["color"], int(threshold_row[0]),
-            "white" if chess.Board(game["start_fen"]).turn else "black",
-        )
-        from .command_dispatch import dispatch_command
-        response = dispatch_command(
-            "games.analysis.manual.admit",
-            {"game_id": game_id, "prepared": {
-                "game": game, "request": request.model_dump(mode="json"),
-                "evaluations": evaluations,
-            }, "result": result},
-            idempotency_key=idempotency_key or request.idempotency_key,
-        )
-        return response if isinstance(response, JSONResponse) else JSONResponse(
-            status_code=200 if response.get("idempotent") else 202, content=response,
-        )
-    background = activity_gate.in_background
-    with connection(background=background) as db:
-        game_row = analysis_publication_storage.game_source(db, game_id)
-        if not game_row:
-            raise HTTPException(404, "Game not found")
-        game = dict(game_row)
-        job_row = analysis_publication_storage.analysis_job(db, game_id)
-        job = dict(job_row) if job_row else None
-        if request.idempotency_key and job and job["status"] == "complete":
-            if job["idempotency_key"] == request.idempotency_key:
-                return {
-                    "major_mistake_ply": analysis_publication_storage.major_mistake(db, game_id)[0],
-                    "missed_punishment_ply": analysis_publication_storage.missed_punishment(db, game_id)[0],
-                    "idempotent": True,
-                }
-            raise HTTPException(409, "A different analysis was already submitted")
-        if request.lease_id and (
-            not job or job["status"] != "leased" or job["lease_id"] != request.lease_id
-        ):
-            raise HTTPException(409, "Analysis lease is no longer active")
-        threshold = system_storage.analysis_threshold(db)[0]
-
-    submitted_evaluations = _validated_analysis_evaluations(request, game)
-    result = classify_swings(
-        submitted_evaluations,
-        game["color"],
-        threshold,
-        "white" if chess.Board(game["start_fen"]).turn else "black",
-    )
-    game_board = chess.Board(game["start_fen"])
-    game_moves = json.loads(game["moves_json"])
-    mover_color_by_ply: dict[int, str] = {}
-    for move_ply, move_uci in enumerate(game_moves):
-        mover_color_by_ply[move_ply] = "white" if game_board.turn else "black"
-        game_board.push_uci(move_uci)
-    analysis_rows: list[tuple] = []
-    candidate_rows: list[tuple] = []
-    for item in submitted_evaluations:
-        item_ply = int(item["ply"])
-        mover_color = item.get("mover_color") or mover_color_by_ply.get(item_ply)
-        if mover_color not in {"white", "black"}:
-            raise HTTPException(422, "Analysis move color is invalid")
-        is_player_move = mover_color == game["color"]
-        loss = (int(item["before_cp"]) - int(item["after_cp"])) * (
-            1 if mover_color == "white" else -1
-        )
-        label = (
-            "missed punishment"
-            if item_ply == result["missed_punishment_ply"]
-            else "major mistake"
-            if item_ply == result["major_mistake_ply"]
-            else None
-        )
-        analysis_rows.append(
-            (
-                game_id, item_ply, int(item["before_cp"]), int(item["after_cp"]),
-                loss, label, int(item.get("depth", request.depth)),
-                item.get("best_move_uci"), json.dumps(item.get("principal_variation", [])),
-                item.get("mate_before"), item.get("mate_after"), request.engine_version,
-                request.network_version, mover_color, int(is_player_move),
-                item.get("actual_move_uci") or game_moves[item_ply], item["position_fen"],
-            )
-        )
-        candidate_rows.extend(
-            (
-                game_id, item_ply, rank, candidate["uci"], candidate.get("cp"),
-                candidate.get("mate"), candidate.get("score"),
-                json.dumps(candidate["pv"]), int(item.get("depth", request.depth)),
-                item["position_fen"], request.engine_version, request.network_version,
-            )
-            for rank, candidate in enumerate(item["candidate_lines"], start=1)
-        )
-
-    if background:
-        activity_gate.wait_for_foreground()
-    with connection(background=background) as db:
-        analysis_publication_storage.begin_claim(db)
-        current_job = analysis_publication_storage.current_job(db, game_id)
-        if request.lease_id and (
-            not current_job
-            or current_job["status"] != "leased"
-            or current_job["lease_id"] != request.lease_id
-        ):
-            raise HTTPException(409, "Analysis lease is no longer active")
-        analysis_publication_storage.delete_analysis(db, game_id)
-        analysis_publication_storage.delete_candidates(db, game_id)
-        analysis_publication_storage.insert_analysis(db, analysis_rows)
-        analysis_publication_storage.insert_candidates(db, candidate_rows)
-        analysis_publication_storage.publish_game(
-            db, request.analysis_evidence_version, result["major_mistake_ply"],
-            result["missed_punishment_ply"], game_id,
-        )
-        analysis_publication_storage.mark_superseded_cards(db, game_id)
-        analysis_publication_storage.supersede_candidates(db, datetime.now(timezone.utc).isoformat(), game_id)
-        analysis_publication_storage.complete_job(
-            db, game_id, request.analysis_version, request.analysis_evidence_version,
-            request.idempotency_key, datetime.now(timezone.utc).isoformat(),
-        )
-    enqueue_game_derivation(game_id, background=background)
-    with read_connection() as database:
-        threat_analysis_version = analysis_publication_storage.published_version(database, game_id)[0]
-    enqueue_threat_scan(game_id, threat_analysis_version, background=background)
-    _compatibility_coordinator().wake()
-    return result
-
-
-@app.get("/api/defensive-threats/analysis/{request_id}/control")
-def defensive_engine_control(request_id: str, lease_id: str):
-    """One authoritative, read-only request probe; never traverse the engine backlog."""
-    # Foreground demand must stop the engine without waiting for background DB admission.
-    if activity_gate.foreground_waiting:
-        return {"foreground_active": True, "search_allowed": False}
-    if os.getenv('TEMPO_REDIS_URL'):
-        from .services.study_priority import control_snapshot
-        policy = control_snapshot()
-        if policy['active'] or policy['study_only_mode'] is not False:
-            return {"foreground_active": True, "search_allowed": False}
-    # The API reader connects to the authoritative primary without writer credentials.
-    with background_read_connection() as database:
-        row = defense_controls_storage.engine_request(database, request_id)
-    return {"foreground_active": activity_gate.foreground_waiting,
-            "search_allowed": bool(row and row['state'] == 'leased'
-                                   and row['lease_id'] == lease_id and row['search_allowed'])}
-
-
-@app.post("/api/defensive-threats/analysis/claim")
-def claim_defensive_threat_analysis(
-    engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    if engine_worker != "docker":
-        raise HTTPException(403, "Defensive engine claims are handled by the Docker worker")
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-
-        return dispatch_command(
-            "threat.analysis.claim", {}, idempotency_key=idempotency_key,
-            background=True,
-        )
-    return {"job": claim_analysis_request()}
-
-
-@app.post("/api/defensive-threats/analysis/audit")
-def audit_defensive_threat_reports(
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-
-        return dispatch_command(
-            "defensive.audit", {}, idempotency_key=idempotency_key,
-        )
-    task = enqueue_task(
-        "defensive_threat_report_audit", "saved-reports", {"cursor": ""}, priority=135,
-    )
-    _compatibility_coordinator().wake()
-    return {"status": "queued", "task_id": task["id"]}
-
-
-@app.post("/api/defensive-threats/backfill")
-def backfill_defensive_threats(
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-
-        return dispatch_command(
-            "defensive.backfill", {}, idempotency_key=idempotency_key,
-        )
-    task = enqueue_threat_backfill()
-    _compatibility_coordinator().wake()
-    return {"status": "queued", "task_id": task["id"]}
-
-
-@app.post("/api/defensive-threats/analysis/{request_id}/report")
-def submit_defensive_threat_analysis(
-    request_id: str, request: ThreatAnalysisSubmission,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-
-        return dispatch_command(
-            "threat.analysis.report",
-            {"request_id": request_id, "lease_id": request.lease_id,
-             "report": request.report, "diagnostics": request.diagnostics.model_dump() if request.diagnostics else None},
-            idempotency_key=idempotency_key, background=True,
-        )
-    try:
-        candidate_ids = save_analysis_report(request_id, request.lease_id, request.report)
-    except KeyError as error:
-        raise HTTPException(404, str(error)) from error
-    except (ValueError, TypeError, KeyError) as error:
-        raise HTTPException(409, str(error)) from error
-    for candidate_id in candidate_ids:
-        enqueue_candidate_validation(candidate_id, background=activity_gate.in_background)
-    if candidate_ids:
-        _compatibility_coordinator().wake()
-    return {"status": "complete", "candidate_count": len(candidate_ids)}
-
-
-@app.post("/api/defensive-threats/analysis/{request_id}/failure")
-def fail_defensive_threat_analysis(
-    request_id: str, request: ThreatAnalysisFailureRequest,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-
-        return dispatch_command(
-            "threat.analysis.failure",
-            {"request_id": request_id, "lease_id": request.lease_id,
-             "error": request.error, "diagnostics": request.diagnostics.model_dump() if request.diagnostics else None},
-            idempotency_key=idempotency_key, background=True,
-        )
-    with connection(background=activity_gate.in_background) as database:
-        updated = defense_controls_storage.fail_request(
-            database, request.error, datetime.now(timezone.utc).isoformat(), request_id,
-            request.lease_id,
-        )
-    if not updated:
-        raise HTTPException(409, "Analysis lease is no longer active")
-    with read_connection() as database:
-        state = defense_controls_storage.request_state(database, request_id)[0]
-    return {"status": "retrying" if state == "queued" else state}
-
-
-@app.post("/api/defensive-threats/analysis/{request_id}/release")
-def release_defensive_threat_analysis(
-    request_id: str, request: GameAnalysisLeaseRequest,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-
-        return dispatch_command(
-            "threat.analysis.release",
-            {"request_id": request_id, "lease_id": request.lease_id, "diagnostics": request.diagnostics.model_dump() if request.diagnostics else None},
-            idempotency_key=idempotency_key, background=True,
-        )
-    with connection(background=activity_gate.in_background) as database:
-        updated = defense_controls_storage.release_request(database, datetime.now(timezone.utc).isoformat(), request_id, request.lease_id)
-    return {"status": "queued" if updated else "stale"}
-
-
-@app.post("/api/defensive-threats/analysis/{request_id}/retry")
-def retry_defensive_threat_analysis(
-    request_id: str,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-
-        return dispatch_command(
-            "threat.analysis.retry", {"request_id": request_id},
-            idempotency_key=idempotency_key,
-        )
-    with connection() as database:
-        updated = defense_controls_storage.retry_request(database, datetime.now(timezone.utc).isoformat(), request_id)
-    if not updated:
-        raise HTTPException(409, "Only failed analysis can be retried")
-    return {"status": "queued"}
-
-
-@app.post("/api/games/{game_id:path}/defensive-threats/refresh")
-def refresh_game_defensive_threats(
-    game_id: str, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "games.defensive_threats.refresh", {"game_id": game_id},
-            idempotency_key=idempotency_key,
-        )
-    with read_connection() as database:
-        row = defense_controls_storage.analyzed_game(database, game_id)
-    if not row:
-        raise HTTPException(404, "Analyzed game not found")
-    enqueue_threat_scan(game_id, row["analysis_version"], background=False)
-    _compatibility_coordinator().wake()
-    return {"status": "queued", "analysis_version": row["analysis_version"]}
-
-
-@app.get("/api/defensive-threats/candidates")
-def list_defensive_threat_candidates(game_id: str | None = None):
-    with read_connection() as database:
-        rows = defense_controls_storage.current_candidates(database, game_id)
-        candidates = []
-        for row in rows:
-            requests = [dict(request) for request in defense_controls_storage.candidate_requests(database, row["id"])]
-            candidates.append({
-                **dict(row), "evidence": json.loads(row["evidence_json"]),
-                "validation": json.loads(row["validation_json"]),
-                "analysis_requests": requests,
-            })
-    return {"candidates": candidates}
-
-
-@app.post("/api/defensive-threats/candidates/{candidate_id}/dismiss")
-def dismiss_defensive_threat_candidate(
-    candidate_id: str,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-
-        return dispatch_command("defense.candidate.change",
-                                {"candidate_id": candidate_id, "action": "dismiss"},
-                                idempotency_key=idempotency_key)
-    try:
-        dismiss_defense_candidate(candidate_id)
-    except KeyError as error:
-        raise HTTPException(404, str(error)) from error
-    except ValueError as error:
-        raise HTTPException(409, str(error)) from error
-    return {"status": "dismissed"}
-
-
-@app.post("/api/defensive-threats/candidates/{candidate_id}/approve")
-def approve_defensive_threat_candidate(
-    candidate_id: str,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-
-        return dispatch_command("defense.candidate.change",
-                                {"candidate_id": candidate_id, "action": "approve"},
-                                idempotency_key=idempotency_key)
-    try:
-        card_id = approve_defense_candidate(candidate_id)
-    except KeyError as error:
-        raise HTTPException(404, str(error)) from error
-    except ValueError as error:
-        raise HTTPException(409, str(error)) from error
-    enqueue_daily_queue_refresh()
-    return {"status": "approved", "card_id": card_id}
-
-
-@app.post("/api/defensive-threats/candidates/{candidate_id}/train-now")
-def train_defensive_threat_candidate_now(
-    candidate_id: str,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-
-        return dispatch_command("defense.candidate.change",
-                                {"candidate_id": candidate_id, "action": "train-now"},
-                                idempotency_key=idempotency_key)
-    try:
-        card_id = train_defense_candidate_now(candidate_id)
-    except KeyError as error:
-        raise HTTPException(404, str(error)) from error
-    except ValueError as error:
-        raise HTTPException(409, str(error)) from error
-    return {"status": "queued", "card_id": card_id}
-
-
-@app.post("/api/defensive-threats/candidates/{candidate_id}/pause")
-def pause_defensive_threat_candidate(
-    candidate_id: str,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-
-        return dispatch_command("defense.candidate.change",
-                                {"candidate_id": candidate_id, "action": "pause"},
-                                idempotency_key=idempotency_key)
-    try:
-        pause_defense_candidate(candidate_id, True)
-    except KeyError as error:
-        raise HTTPException(404, str(error)) from error
-    except ValueError as error:
-        raise HTTPException(409, str(error)) from error
-    return {"status": "paused"}
-
-
-@app.post("/api/defensive-threats/candidates/{candidate_id}/resume")
-def resume_defensive_threat_candidate(
-    candidate_id: str,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-
-        return dispatch_command("defense.candidate.change",
-                                {"candidate_id": candidate_id, "action": "resume"},
-                                idempotency_key=idempotency_key)
-    try:
-        pause_defense_candidate(candidate_id, False)
-    except KeyError as error:
-        raise HTTPException(404, str(error)) from error
-    except ValueError as error:
-        raise HTTPException(409, str(error)) from error
-    enqueue_defense_admission(background=True)
-    _compatibility_coordinator().wake()
-    return {"status": "eligible"}
-
-
-@app.get("/api/defense-exercises/{candidate_id}")
-def get_defense_exercise(candidate_id: str):
-    try:
-        return read_defense_exercise(candidate_id)
-    except KeyError as error:
-        raise HTTPException(404, str(error)) from error
-    except ValueError as error:
-        raise HTTPException(409, str(error)) from error
-
-
-@app.post("/api/defense-exercises/{candidate_id}/attempt")
-def attempt_defense_exercise(candidate_id: str, request: DefenseAttemptRequest,
-                             idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "defense.attempt.submit",
-            {"candidate_id": candidate_id, "request": request.model_dump(mode="json"),
-             "light_first_interval_days": get_settings().light_first_interval_days},
-            idempotency_key=idempotency_key or f"defense-attempt:{request.attempt_id}",
-        )
-    try:
-        result = submit_defense_attempt(
-            candidate_id, attempt_id=request.attempt_id,
-            exercise_revision=request.exercise_revision,
-            queue_entry_id=request.queue_entry_id,
-            move_uci=request.move_uci,
-            recognition_attempt_id=request.recognition_attempt_id,
-            light_first_interval_days=get_settings().light_first_interval_days,
-        )
-    except KeyError as error:
-        raise HTTPException(404, str(error)) from error
-    except ValueError as error:
-        raise HTTPException(409, str(error)) from error
-    if result["status"] == "needs_analysis":
-        _compatibility_coordinator().wake()
-    return result
-
-
-@app.post("/api/defense-exercises/{candidate_id}/recognition")
-def recognize_defense_exercise(candidate_id: str, request: DefenseRecognitionRequest,
-                               idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "defense.recognition.submit",
-            {"candidate_id": candidate_id, "request": request.model_dump(mode="json")},
-            idempotency_key=idempotency_key or f"defense-recognition:{request.attempt_id}",
-        )
-    try:
-        return submit_defense_recognition(candidate_id, request)
-    except KeyError as error:
-        raise HTTPException(404, str(error)) from error
-    except ValueError as error:
-        raise HTTPException(409, str(error)) from error
-
-
-@app.get("/api/game-findings")
-def list_game_findings(
-    status: str | None = None, game_id: str | None = None,
-    offset: int = 0, limit: int | None = None,
-):
-    page_limit = limit if limit is not None else (500 if game_id else 100)
-    if offset < 0 or not 1 <= page_limit <= 1000:
-        raise HTTPException(422, "Use a nonnegative offset and a limit from 1 to 1000")
-    if status and status not in {"pending", "accepted", "ignored", "excluded"}:
-        raise HTTPException(422, "Unknown finding status")
-    with connection() as db:
-        total, rows = game_findings_storage.findings_page(db, status, game_id, page_limit, offset)
-    return {
-        "findings": [
-            {**dict(row), "evidence": json.loads(row["evidence_json"])} for row in rows
-        ],
-        "total": total,
-        "next_offset": offset + len(rows) if offset + len(rows) < total else None,
-    }
-
-
-@app.get("/api/game-findings/tactical-queue")
-def next_tactical_finding(motif: str | None = None):
-    now = datetime.now(timezone.utc).isoformat()
-    with connection() as db:
-        remaining, row = game_findings_storage.tactical_queue(db, now, motif)
-    if not row:
-        return {"item": None, "remaining": 0, "next_item_id": None}
-    item = dict(row)
-    item["evidence"] = json.loads(item.pop("evidence_json") or "{}")
-    item["opportunity_evidence"] = json.loads(item.pop("opportunity_evidence") or "{}")
-    item["accepted_moves"] = json.loads(item.pop("accepted_moves_json") or "[]")
-    return {"item": item, "remaining": remaining, "next_item_id": item["id"]}
-
-
-@app.post("/api/game-findings/{finding_id}/curation")
-def curate_tactical_finding(finding_id: str, request: GameFindingCurationRequest,
-                            idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "game_findings.curate",
-            {"finding_id": finding_id, "request": request.model_dump(mode="json")},
-            idempotency_key=idempotency_key,
-        )
-    now = datetime.now(timezone.utc)
-    with connection() as db:
-        finding = game_findings_storage.curation_finding(db, finding_id)
-        if not finding or finding["kind"] != "tactical miss":
-            raise HTTPException(404, "Pending tactical miss not found")
-        if finding["adaptive_excluded"]:
-            raise HTTPException(409, "This game is excluded from adaptation")
-        if request.action == "skip":
-            review_after = (now + timedelta(days=1)).isoformat()
-            game_findings_storage.defer_finding(db, finding_id, review_after, now.isoformat())
-            return {"id": finding_id, "status": "pending", "review_after": review_after}
-        game_findings_storage.ignore_finding(db, finding_id, now.isoformat())
-    return {"id": finding_id, "status": "ignored"}
-
-
-@app.get("/api/game-insights/tactical")
-def game_tactical_statistics(
-    from_date: str | None = None, to_date: str | None = None,
-    provider: str | None = None, speed: str | None = None,
-    color: str | None = None, motif: str | None = None,
-    outcome: str | None = None,
-):
-    for name, value in (("from_date", from_date), ("to_date", to_date)):
-        if value:
-            try:
-                date.fromisoformat(value)
-            except ValueError as error:
-                raise HTTPException(422, f"{name} must use YYYY-MM-DD") from error
-    if outcome and outcome not in {"exploited", "missed"}:
-        raise HTTPException(422, "outcome must be exploited or missed")
-    if color and color not in {"white", "black"}:
-        raise HTTPException(422, "color must be white or black")
-    return tactical_statistics({"from_date": from_date, "to_date": to_date, "provider": provider,
-                                "speed": speed, "color": color, "motif": motif, "outcome": outcome})
-
-
-@app.post("/api/game-findings/{finding_id}/decision")
-def decide_game_finding(finding_id: str, request: GameFindingDecisionRequest,
-                        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "game_findings.decide",
-            {"finding_id": finding_id, "request": request.model_dump(mode="json")},
-            idempotency_key=idempotency_key,
-        )
-    with connection() as db:
-        finding = game_findings_storage.decision_finding(db, finding_id)
-        if not finding:
-            raise HTTPException(404, "Gameplay finding not found")
-        if request.decision == "accepted" and finding["adaptive_excluded"]:
-            raise HTTPException(409, "This game is excluded from adaptation")
-        queued = False
-        if request.decision == "accepted" and finding["kind"] == "repertoire lapse":
-            if not finding["card_id"]:
-                raise HTTPException(
-                    422, "This repertoire lapse is not linked to a study card"
-                )
-            linked_event = game_findings_storage.linked_miss_event(db, finding["game_id"], finding["repertoire_id"], finding["ply"], finding["card_id"])
-            if not linked_event:
-                raise HTTPException(409, "Canonical game decision is unavailable. Reanalyze this game and try again.")
-            queued = prioritize_real_game_miss(db, linked_event["id"])
-        game_findings_storage.set_finding_decision(db, finding_id, request.decision, datetime.now(timezone.utc).isoformat())
-    return {
-        "id": finding_id,
-        "status": request.decision,
-        "scheduling": None,
-        "queued": queued,
-    }
-
-
-@app.post("/api/game-findings/{finding_id}/card")
-def create_card_from_game_finding(finding_id: str, request: GameFindingCardRequest,
-                                  idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
-    if postgres_store.configured():
-        if not request.save:
-            from .finding_card_commands import preview_finding_card
-            with read_connection() as database:
-                return preview_finding_card(database, finding_id, request)
-        from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "game_findings.card.save",
-            {"finding_id": finding_id, "request": request.model_dump(mode="json")},
-            idempotency_key=idempotency_key,
-        )
-    from .finding_card_commands import preview_finding_card, save_finding_card
-    if not request.save:
-        with read_connection() as database:
-            return preview_finding_card(database, finding_id, request)
-    result = submit_foreground_write(
-        lambda database: save_finding_card(database, {
-            "finding_id": finding_id, "request": request.model_dump(mode="json"),
-        }), label="finding-card-save",
-    )
-    enqueue_daily_queue_refresh()
-    return result
-
-
-@app.post("/api/games/{game_id:path}/exclusion")
-def exclude_game_from_adaptation(
-    game_id: str, request: GameExclusionRequest,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    if postgres_store.configured():
-        from .command_dispatch import dispatch_command
-        return dispatch_command(
-            "games.exclusion.set", {"game_id": game_id, "excluded": request.excluded},
-            idempotency_key=idempotency_key,
-        )
-    with connection() as db:
-        if not game_findings_storage.game_presence(db, game_id):
-            raise HTTPException(404, "Game not found")
-        game_findings_storage.set_adaptive_exclusion(db, game_id, request.excluded)
-        if request.excluded:
-            game_findings_storage.exclude_pending_findings(db, game_id, datetime.now(timezone.utc).isoformat())
-        else:
-            game_findings_storage.restore_excluded_findings(db, game_id, datetime.now(timezone.utc).isoformat())
-    enqueue_game_derivation(game_id)
-    _compatibility_coordinator().wake()
-    return {"game_id": game_id, "excluded": request.excluded}
-
-
-@app.get("/api/game-insights/motifs")
-def game_motif_insights():
-    return {"recommendations": motif_recommendations()}
-
-
-def public_game_record(row: sqlite3.Row) -> GamePublicRecord:
-    """Decode a database row without exposing persistence-only columns."""
-    opportunities = row["repertoire_opportunities"]
-    return GamePublicRecord(
-        id=row["id"],
-        provider=row["provider"],
-        username=row["username"],
-        played_at=row["played_at"],
-        speed=row["speed"],
-        rated=row["rated"],
-        color=row["color"],
-        result=row["result"],
-        start_fen=row["start_fen"],
-        moves=json.loads(row["moves_json"]),
-        game_url=row["game_url"],
-        opening_name=row["opening_name"],
-        analysis_state=row["analysis_state"],
-        analysis_version=row["analysis_version"],
-        major_mistake_ply=row["major_mistake_ply"],
-        missed_punishment_ply=row["missed_punishment_ply"],
-        repertoire_id=row["repertoire_id"],
-        classification=row["classification"],
-        divergence_ply=row["divergence_ply"],
-        divergence_fen=row["divergence_fen"],
-        expected=json.loads(row["expected_json"] or "[]"),
-        actual_uci=row["actual_uci"],
-        deviation_card_id=row["deviation_card_id"],
-        matched_player_decisions=row["matched_player_decisions"],
-        repertoire_opportunities=opportunities,
-        deepest_covered_ply=row["deepest_covered_ply"],
-        first_opponent_gap_ply=row["first_opponent_gap_ply"],
-        out_of_book_ply=row["out_of_book_ply"],
-        timeline=json.loads(row["timeline_json"] or "[]"),
-        adherence=(row["matched_player_decisions"] / opportunities if opportunities else None),
-    )
-
-
-@app.get("/api/games/summary", response_model=GamesSummaryResponse)
-def summary(
-    fen: str | None = None,
-    repertoire_id: str | None = None,
-    cursor: str | None = None,
-    limit: int = 50,
-    provider: str | None = None,
-    status: str | None = None,
-    color: str | None = None,
-    speed: str | None = None,
-    outcome: str | None = None,
-    played_from: str | None = None,
-):
-    limit = max(1, min(50, limit))
-    position_key = fen_key(fen) if fen else None
-    cursor_played_at: str | None = None
-    cursor_id: str | None = None
-    if cursor:
-        try:
-            cursor_played_at, cursor_id = json.loads(
-                base64.urlsafe_b64decode(cursor.encode()).decode()
-            )
-        except (ValueError, TypeError, json.JSONDecodeError):
-            raise HTTPException(422, "Invalid games cursor")
-    if outcome and outcome not in {"draw", "won", "lost"}:
-        raise HTTPException(422, "Unknown game outcome filter")
-    with connection() as db:
-        rows, total = game_reads_storage.summary_page(
-            db, position_key, repertoire_id, provider, status, color, speed, outcome,
-            played_from, cursor_played_at, cursor_id, limit,
-        )
-        position_plies = {
-            row["id"]: game_reads_storage.matched_position_ply(db, row["id"], repertoire_id, position_key)[0]
-            for row in rows[:limit]
-        } if position_key else {}
-    page_rows = rows[:limit]
-    next_cursor = None
-    if len(rows) > limit and page_rows:
-        last = page_rows[-1]
-        next_cursor = base64.urlsafe_b64encode(
-            json.dumps([last["played_at"], last["id"]], separators=(",", ":")).encode()
-        ).decode()
-    summary_rows = []
-    for row in page_rows:
-        opportunities = row["repertoire_opportunities"]
-        summary_rows.append(GameSummaryRecord(
-            id=row["id"], provider=row["provider"], played_at=row["played_at"],
-            speed=row["speed"], color=row["color"], result=row["result"],
-            opening_name=row["opening_name"], analysis_state=row["analysis_state"],
-            major_mistake_ply=row["major_mistake_ply"],
-            missed_punishment_ply=row["missed_punishment_ply"],
-            repertoire_id=row["repertoire_id"], classification=row["classification"],
-            divergence_ply=row["divergence_ply"],
-            matched_player_decisions=row["matched_player_decisions"],
-            repertoire_opportunities=opportunities,
-            adherence=(row["matched_player_decisions"] / opportunities if opportunities else None),
-            matched_position_ply=position_plies.get(row["id"]),
-        ))
-    return GamesSummaryResponse(
-        total=total, games=summary_rows, next_cursor=next_cursor,
-        aggregates={"page_count": len(page_rows)},
-    )
-
-
-@app.get("/api/games/position-summary")
-def game_position_summary(fen: str, repertoire_id: str | None = None):
-    position_key = fen_key(fen)
-    postgres_mode = game_reads_storage.position_query_mode()
-    with connection() as db:
-        occurrences = game_reads_storage.position_occurrences(db, position_key, repertoire_id, postgres_mode)
-    by_move: dict[str, dict] = {}
-    for row in occurrences:
-        if not row["move_uci"]:
-            continue
-        move = by_move.setdefault(
-            row["move_uci"],
-            {
-                "move_uci": row["move_uci"],
-                "games": 0,
-                "wins": 0,
-                "draws": 0,
-                "losses": 0,
-                "total_loss_cp": 0,
-                "analyzed": 0,
-                "mistakes": 0,
-            },
-        )
-        move["games"] += 1
-        result = str(row["result"]).lower()
-        if result in {"won", "win", "1-0" if row["color"] == "white" else "0-1"}:
-            move["wins"] += 1
-        elif result in {"draw", "1/2-1/2"}:
-            move["draws"] += 1
-        else:
-            move["losses"] += 1
-        if row["loss_cp"] is not None:
-            move["analyzed"] += 1
-            move["total_loss_cp"] += row["loss_cp"]
-            move["mistakes"] += int(row["label"] is not None)
-    moves = []
-    for move in by_move.values():
-        moves.append(
-            {
-                **move,
-                "score_percentage": round(
-                    100 * (move["wins"] + 0.5 * move["draws"]) / move["games"], 1
-                ),
-                "average_loss_cp": (
-                    round(move["total_loss_cp"] / move["analyzed"])
-                    if move["analyzed"]
-                    else None
-                ),
-            }
-        )
-    moves.sort(
-        key=lambda item: (-item["games"], -item["score_percentage"], item["move_uci"])
-    )
-    return {
-        "fen": position_key,
-        "encounters": len({row["game_id"] for row in occurrences}),
-        "analyzed_encounters": len(
-            {row["game_id"] for row in occurrences if row["loss_cp"] is not None}
-        ),
-        "moves": moves,
-    }
-
-
-@app.get("/api/games/{game_id:path}", response_model=GamePublicRecord)
-def game_detail(game_id: str):
-    with connection() as db:
-        row = game_reads_storage.public_game_row(db, game_id)
-    if not row:
-        raise HTTPException(404, "Game not found")
-    return public_game_record(row)
-
-
-
-
-from .opening_segmentation_api import router as opening_segmentation_router
-app.include_router(opening_segmentation_router)
-from .prefix_evaluation_api import router as prefix_evaluation_router
-app.include_router(prefix_evaluation_router)
-from .prefix_transition_api import router as prefix_transition_router
-app.include_router(prefix_transition_router)
-from .opening_evidence_api import router as opening_evidence_router
-app.include_router(opening_evidence_router)
-from .canonical_prefix_api import create_canonical_prefix_router
-app.include_router(create_canonical_prefix_router(lambda: _compatibility_coordinator().wake()))
-
-from .prefix_diagnostics_api import router as prefix_diagnostics_router
-app.include_router(prefix_diagnostics_router)
-from .prefix_transition_apply_api import router as prefix_transition_apply_router
-app.include_router(prefix_transition_apply_router)

@@ -1,7 +1,7 @@
 """Existing finite background progress/control/projection queries; caller owns policy."""
 
 from ... import postgres_store
-from ...defensive_analysis import task_admission_sql, search_admission_sql
+from ...defensive_analysis import task_admission_sql
 
 
 SOURCES = {
@@ -10,8 +10,6 @@ SOURCES = {
     "derivation": ("game_derivation_jobs", "game_id"),
     "integrity": ("repertoire_integrity_jobs", "repertoire_id"),
     "coverage": ("repertoire_coverage_runs", "id"),
-    "game_analysis": ("game_analysis_jobs", "game_id"),
-    "threat_analysis": ("threat_analysis_requests", "id"),
 }
 
 
@@ -19,14 +17,13 @@ def prepare_progress_read(source):
     generation_columns = {
         "durable": ("generation",), "derivation": ("derivation_version",),
         "integrity": ("run_id",), "coverage": ("id",),
-        "game_analysis": ("analysis_version", "analysis_evidence_version"),
     }
     table, id_column = SOURCES[source]
     columns = generation_columns.get(source)
 
     def read_current(database, work_id):
         return database.execute(
-            f"SELECT {','.join(columns)}{',status,lease_id' if source == 'game_analysis' else ''} FROM {table} WHERE {id_column}=?",
+            f"SELECT {','.join(columns)} FROM {table} WHERE {id_column}=?",
             (work_id,),
         ).fetchone()
 
@@ -35,10 +32,9 @@ def prepare_progress_read(source):
 
 def prepare_control_read(source, defensive_kinds):
     table, id_column = SOURCES[source]
-    state_column = 'state' if source in {'durable', 'threat_analysis'} else 'status'
+    state_column = 'state' if source == 'durable' else 'status'
     row_lock = ' FOR UPDATE' if postgres_store.configured() else ''
-    settings_admission = (task_admission_sql('kind', defensive_kinds) if source == 'durable' else
-                          search_admission_sql('threat_analysis_requests.id') if source == 'threat_analysis' else '1=1')
+    settings_admission = task_admission_sql('kind', defensive_kinds) if source == 'durable' else '1=1'
     native_explicit = source == 'durable' and postgres_store.configured()
     if native_explicit:
         from ...authored_repertoires.pgn_import.preparation import receipt_scope
@@ -99,34 +95,10 @@ def ensure_control(database, values):
     )
 
 
-def release_analysis_lease(database, values):
-    return database.execute(
-        """UPDATE game_analysis_jobs SET status='queued',lease_id=NULL,
-               lease_expires_at=NULL,updated_at=? WHERE game_id=? AND status='leased'""",
-        values,
-    )
-
-
-def mark_analysis_pending(database, values):
-    return database.execute(
-        "UPDATE imported_games SET analysis_state='pending' WHERE id=?",
-        values,
-    )
-
-
 def release_maia_lease(database, values):
     return database.execute(
         """UPDATE repertoire_coverage_nodes SET maia_status='queued',
                lease_id=NULL,lease_expires_at=NULL,updated_at=?
                WHERE run_id=? AND maia_status='leased'""",
-        values,
-    )
-
-
-def release_threat_lease(database, values):
-    return database.execute(
-        """UPDATE threat_analysis_requests SET state='queued',lease_id=NULL,
-                 lease_expires_at=NULL,updated_at=?
-               WHERE id=? AND state='leased'""",
         values,
     )

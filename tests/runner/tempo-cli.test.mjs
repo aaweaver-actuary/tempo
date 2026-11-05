@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { spawnSync as fsSpawnSync } from "node:child_process";
+import { createHash, createHmac, randomUUID } from 'node:crypto';
 const cliEntry = new URL("../../scripts/tempo-cli.mjs", import.meta.url).pathname;
 import fs, { existsSync, mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
@@ -9,10 +10,22 @@ import { join } from "node:path";
 import { schemaVersionFromSource, validateTarget, validateContainers, deploymentCanStart,
   acquireTargetLock, assessMainVerification, assessCandidate, qualityEvidence, atomicJson, selectCandidate, productVolumes, targetKey,
   CommandExecutionError, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, sourceFingerprint, sourceMatchesFingerprint } from "../../scripts/tempo-deployment.mjs";
-import { assessMigrationRecovery, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
+import { assessMigrationRecovery, cut62WitnessName, validateCut62Preflight, assertColdPreflightContainers, cut62MountDirectory, requirePrivateCut62Witness, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
 import { parseArguments, ensureDocker } from "../../scripts/tempo-cli.mjs";
+import { authenticateManagedSettlement, inspectRegisteredIsolation, matchesManagedPinnedHelper, runManagedPinnedChild } from "../../scripts/tempo-managed-isolation.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
+import { validateOwnedPostgresTelemetry } from '../../database/tests/managed_cli_rehearsal.mjs';
+
+test('owned PostgreSQL telemetry requires the full exact container identity', () => {
+  const id='a'.repeat(64), project='tempo-pg-regressions-owned-cli', image='sha256:owned';
+  const item={Id:id,Image:image,Config:{Labels:{'com.docker.compose.project':project,'com.docker.compose.service':'postgres'}}};
+  assert.equal(validateOwnedPostgresTelemetry([id],[item],project,image),item);
+  assert.throws(()=>validateOwnedPostgresTelemetry([id.slice(0,12)],[item],project,image),/ambiguous/);
+  assert.throws(()=>validateOwnedPostgresTelemetry(['b'.repeat(64)],[item],project,image),/identity differs/);
+  assert.throws(()=>validateOwnedPostgresTelemetry([id],[{...item,Image:'sha256:other'}],project,image),/identity differs/);
+  assert.throws(()=>validateOwnedPostgresTelemetry([id,id],[item],project,image),/ambiguous/);
+});
 
 test("actual CLI diagnostics explain current blocker before historical Redis failure", t => {
   const fixture = diagnosticFixture(t, { diagnostics: { runs: [{ ...diagnosticMainRun, status: "queued" }] } });
@@ -59,7 +72,6 @@ function fixture(t) {
       volumes: [{ type: "volume", source: "tempo-postgres-data", target: "/var/lib/postgresql" }] }, web: { ports: [{ host_ip: "127.0.0.1", published: "3000", target: 80 }] },
       redis: { volumes: [{ type: "volume", source: "tempo-redis-data", target: "/data" }] },
       "postgres-backup": { volumes: [{ type: "volume", source: "tempo-postgres-backups", target: "/backups" }], tmpfs: ["/var/lib/postgresql"] },
-      "defense-engine": { volumes: [{ type: "volume", source: "tempo-engine-operations", target: "/state" }] },
       api: { environment: { TEMPO_DATABASE_READ_URL: "postgresql://tempo_reader@postgres:5432/tempo" } } } };
   for (const name of ["foreground-worker", "background-worker"]) config.services[name] = {
     environment: { TEMPO_DATABASE_WRITE_URL: "postgresql://tempo_writer@postgres:5432/tempo",
@@ -70,6 +82,21 @@ function fixture(t) {
   config.services["background-scheduler"] = { environment: { TEMPO_REDIS_URL: "redis://redis:6379/0" } };
   return { path, secret, target, config };
 }
+
+test("retired engine journal is optional and retains the existing production deployment identity", t => {
+  const {target, config} = fixture(t);
+  const old = structuredClone(target);
+  old.volumes["tempo-engine-operations"] = {name: "tempo-engine-operations", external: true};
+  assert.equal(targetKey(old), targetKey(target));
+  assert.doesNotThrow(() => validateTarget(config, old));
+  const engine = { Config: { Labels: { "com.docker.compose.project": target.project, "com.docker.compose.service": "defense-engine" } },
+    State: { Running: true }, Mounts: [] };
+  assert.throws(() => validateContainers([engine], old), /retired defense-engine/);
+  const maia = structuredClone(engine);
+  maia.Config.Labels["com.docker.compose.service"] = "maia-worker";
+  assert.throws(() => validateContainers([maia], old), /retired maia-worker/);
+  assert.doesNotThrow(() => validateContainers([engine], {...old, project: "other"}));
+});
 
 test("restart compares numeric PostgreSQL schema versions rather than Python source or psql formatting", () => {
   assert.equal(schemaVersionFromSource('"""Schema."""\nPOSTGRES_SCHEMA_VERSION = 29\n'), 29);
@@ -336,6 +363,38 @@ test("start after merge verifies backup before migrations and publishes success 
   const { calls, handlers } = actions();
   await executeLifecycle({ recreate: true }, handlers);
   assert.deepEqual(calls, ["ensureImages", "stopApplications", "ensureDatabase", "checkSchema", "backup", "migrate", "checkSchema", "startServices", "verifyReady", "commitDeployment"]);
+});
+
+test("managed retry resolves the isolated target before ordinary schema preflight", async () => {
+  const { calls, handlers } = actions({ pending: [] });
+  handlers.checkMigrationRetry = async () => { calls.push('guard'); return true; };
+  handlers.authenticateManagedPreIsolation = async () => { calls.push('original-identity'); };
+  handlers.resumeManagedIsolation = async () => { calls.push('resume'); return true; };
+  handlers.preflightSchema = async () => { calls.push('preflight'); };
+  await executeLifecycle({ recreate: false }, handlers);
+  assert.deepEqual(calls.slice(0, 5), ['guard', 'ensureImages', 'original-identity', 'resume', 'preflight']);
+  assert(!calls.includes('backup') && !calls.includes('migrate'));
+  const failed = actions({ pending: [] });
+  failed.handlers.checkMigrationRetry = async () => true;
+  failed.handlers.resumeManagedIsolation = async () => { throw new Error('original receipt unavailable'); };
+  failed.handlers.preflightSchema = async () => { failed.calls.push('preflight'); };
+  await assert.rejects(executeLifecycle({ recreate: false }, failed.handlers), /receipt unavailable/);
+  assert(!failed.calls.includes('preflight') && !failed.calls.includes('startServices'));
+});
+
+test("interrupted managed selection copy cannot fall back to legacy migration", t => {
+  const { target, config } = fixture(t);
+  const result = assessMigrationRecovery({ guard: { state: 'pending', managed_selection_started: true },
+    operation: null, target, configuration: config, retry: true });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.code, 'managed_selection_incomplete');
+  assert.match(result.message, /do not recapture/);
+});
+
+test("unbound managed image receipt cannot be replaced on retry", t => {
+  const { target, config }=fixture(t);
+  const result=assessMigrationRecovery({guard:null,operation:{managed_image_receipt_started:true},target,configuration:config,retry:true});
+  assert.equal(result.status,'blocked');assert.equal(result.code,'managed_image_receipt_unbound');
 });
 
 test("changed dependency preparation stops writers before dependency recreation even on the same revision", async () => {
@@ -895,7 +954,7 @@ for (const [name, alter] of [
   ["Redis cannot additionally mount registered PostgreSQL data", config => config.services.redis.volumes.push({ type: "volume", source: "tempo-postgres-data", target: "/data" })],
   ["Redis cannot move its registered data to another destination", config => { config.services.redis.volumes[0].target = "/wrong-data"; }],
   ["PostgreSQL cannot substitute registered Redis data", config => { config.services.postgres.volumes[0].source = "tempo-redis-data"; }],
-  ["defense engine cannot mount registered PostgreSQL data", config => config.services["defense-engine"].volumes.push({ type: "volume", source: "tempo-postgres-data", target: "/state" })],
+  ["web cannot mount registered PostgreSQL data", config => { config.services.web.volumes = [{ type: "volume", source: "tempo-postgres-data", target: "/state" }]; }],
   ["required backup persistent mount cannot be removed", config => { config.services["postgres-backup"].volumes = []; }],
 ]) test(`CLI volume ownership: ${name}`, t => {
   const { config, target } = fixture(t);
@@ -1123,6 +1182,182 @@ test("CLI no-ci update skips Actions verification and records the explicit polic
   assert.equal(deployment.evidence.verification, "ci-disabled");
   assert.equal(parseArguments(["start", "--no-ci"]).flags.has("--no-ci"), true);
   assert.throws(() => parseArguments(["doctor", "--no-ci"]), /Invalid options/);
+});
+
+test('explicit candidate requires a canonical ref and exact SHA throughout selection', async () => {
+  const ref='refs/heads/codex/release-candidate', fixture=sourceSelectionFixture();
+  const options={candidateRef:ref,candidateSha:fixture.revision,noCi:true,expectedRevision:fixture.revision};
+  const calls=[];let remote=fixture.revision;
+  const run=async (program,args,settings)=>{calls.push(args);if(args[0]==='ls-remote')return {code:0,stdout:`${remote}\t${ref}\n`};return fixture.run(program,args,settings)};
+  const selected=await selectCandidate({root:'fixture'},run,fixture.fetchJson,options);
+  assert.equal(selected.revision,fixture.revision);assert.equal(selected.evidence.verification,'ci-disabled');
+  assert(calls.some(args=>args[0]==='fetch'&&args[1]==='origin'&&args[2]===ref));
+  assert(calls.some(args=>args[0]==='ls-remote'&&args[1]==='https://github.com/aaweaver-actuary/tempo'&&args[2]===ref));
+  remote='b'.repeat(40);await assert.rejects(selectCandidate({root:'fixture'},run,fixture.fetchJson,options),/exact SHA/);
+  await assert.rejects(assessCandidate({root:'fixture'},run,fixture.fetchJson,options),/exact SHA/);
+  const parsed=parseArguments(['start','--no-ci','--candidate-ref',ref,'--candidate-sha',fixture.revision]);
+  assert.equal(parsed.candidateRef,ref);assert.equal(parsed.candidateSha,fixture.revision);
+  for(const args of [ ['start','--candidate-ref',ref,'--candidate-sha',fixture.revision],
+    ['start','--no-ci','--candidate-ref','https://example.com/x','--candidate-sha',fixture.revision],
+    ['start','--no-ci','--candidate-ref',ref,'--candidate-sha','short'] ]) assert.throws(()=>parseArguments(args),/Candidate|Invalid options/);
+});
+
+test("managed Defense selection accepts one absolute first-attempt path", () => {
+  assert.equal(parseArguments(['migrate', '--defense-selection', '/private/selection.json']).defenseSelection, '/private/selection.json');
+  for (const args of [
+    ['migrate', '--defense-selection', 'relative'], ['migrate', '--retry', '--defense-selection', '/private/s'],
+    ['doctor', '--defense-selection', '/private/s'], ['migrate', '--defense-selection', '/private/s', '--defense-selection', '/private/t'],
+    ['migrate', '--defense-selection', '/private/a:b'], ['migrate', '--defense-selection', '/private/../selection'],
+  ]) assert.throws(() => parseArguments(args), /selection|Invalid options/i);
+});
+
+test("managed fence accepts only the original journaled pinned helper", () => {
+  const guard = { attempt_id: 'attempt', target: 'target', isolation: { identity: { containerId: 'database' } } };
+  const helper = { helper_id: 'helper', image: 'image', attempt_id: 'attempt', target: 'target', database_container: 'database' };
+  const item = { Id: 'helper', Image: 'image', Config: { Entrypoint: ['python'], Cmd: ['-c', 'from database.tooling.managed_isolation import managed_pinned_child; managed_pinned_child()'], Labels: { 'tempo.managed.attempt': 'attempt', 'tempo.managed.target': 'target' } }, HostConfig: { NetworkMode: 'container:database' } };
+  assert.equal(matchesManagedPinnedHelper(item, helper, { ...helper }, guard), true);
+  assert.equal(matchesManagedPinnedHelper(item, null, helper, guard), false);
+  for (const bad of [{ ...helper, helper_id: 'other' }, { ...helper, image: 'other' }, { ...helper, attempt_id: 'other' }, { ...helper, database_container: 'other' }])
+    assert.equal(matchesManagedPinnedHelper(item, bad, helper, guard), false);
+  assert.equal(matchesManagedPinnedHelper({ ...item, Config: { ...item.Config, Cmd: ['other'] } }, helper, helper, guard), false);
+  assert.equal(matchesManagedPinnedHelper({ ...item, HostConfig: { NetworkMode: 'bridge' } }, helper, helper, guard), false);
+});
+
+test("managed pinned child rejects an unfenced invocation before host action", async () => {
+  let actions = 0;
+  await assert.rejects(runManagedPinnedChild({ docker: async () => { actions++; },
+    verifyOriginalBackup: async () => { actions++; } }), /configuration is invalid/);
+  assert.equal(actions, 0);
+});
+
+test("stopped isolated topology retains exact identity and rejects exposure", t => {
+  const { target } = fixture(t); target.version = 1; target.daemonId = 'daemon';
+  const network = { Id: 'a'.repeat(64), Name: `${target.project}_default`, Driver: 'bridge', Scope: 'local',
+    Labels: { 'com.docker.compose.project': target.project }, Containers: { ['b'.repeat(64)]: { EndpointID: 'd'.repeat(64) } } };
+  const container = { Id: 'b'.repeat(64), Image: `sha256:${'c'.repeat(64)}`, State: { Running: true, Restarting: false },
+    Config: { Labels: { 'com.docker.compose.project': target.project, 'com.docker.compose.service': 'postgres' } },
+    HostConfig: { NetworkMode: network.Name, PublishAllPorts: false, PortBindings: {} },
+    NetworkSettings: { Ports: {}, Networks: { [network.Name]: { NetworkID: network.Id, EndpointID: 'd'.repeat(64), Aliases: ['postgres'] } } },
+    Mounts: [{ Type: 'volume', Destination: '/var/lib/postgresql', Name: target.volumes[target.postgresVolumeKey].name, Source: '/owned/data', RW: true }] };
+  const input = { target, daemonId: target.daemonId, container, network, expectedImage: container.Image, trustedDaemon: true };
+  const identity = inspectRegisteredIsolation(input).original;
+  const stopped = structuredClone(input); stopped.container.State.Running = false;
+  stopped.container.NetworkSettings.Networks = {}; stopped.network.Containers = {};
+  assert.equal(inspectRegisteredIsolation({ ...stopped, intent: identity, allowStopped: true }).attached, false);
+  for (const change of [
+    x => { x.container.Id = 'e'.repeat(64); }, x => { x.container.HostConfig.PortBindings = { '5432/tcp': [{ HostPort: '5432' }] }; },
+    x => { x.container.NetworkSettings.Networks.extra = {}; }, x => { x.daemonId = 'other'; },
+    x => { x.container.Image = `sha256:${'f'.repeat(64)}`; }, x => { x.network.Containers[container.Id] = {}; },
+  ]) { const altered = structuredClone(stopped); change(altered); assert.throws(() => inspectRegisteredIsolation({ ...altered, intent: identity, allowStopped: true }), /unsafe/); }
+});
+
+test("direct managed migration and preflight hold before side effects", async t => {
+  const { target } = fixture(t), stateDirectory = directory(t);
+  let calls = 0;
+  const runtime = createRuntime(target, { stateDirectory, revision: 'a'.repeat(40),
+    defenseSelection: '/private/selection.json', run: async () => { calls++; } });
+  await assert.rejects(runtime.preflightSchema(), /Approved Defense selection/);
+  await assert.rejects(runtime.migrate(), /Approved Defense selection/);
+  assert.equal(calls, 0);
+  assert.deepEqual(readdirSync(stateDirectory), []);
+});
+
+test("direct dependency recreation holds an unauthenticated original managed target", async t => {
+  const { target } = fixture(t), stateDirectory = directory(t);
+  atomicJson(join(stateDirectory,'migration-guard.json'),{state:'pending',defense_binding:{}});
+  let calls=0;
+  const runtime=createRuntime(target,{stateDirectory,revision:'a'.repeat(40),run:async()=>{calls++;}});
+  await assert.rejects(runtime.ensureDatabase({allowRecreation:true}),/identity has not been authenticated/);
+  assert.equal(calls,0);
+});
+
+test('managed deployment settlement recovers publication and permits a later candidate while rejecting tampering', async t => {
+  const { target, config } = fixture(t), root = directory(t);
+  target.composeFiles = []; target.postgresMajor = 18;
+  const attempt = randomUUID(), revision = 'a'.repeat(40), next = 'b'.repeat(40), secret = Buffer.alloc(32, 7);
+  const witness = `cut62-${attempt}.json`, folder = join(root, witness.slice(0, -5)); mkdirSync(folder, { mode: 0o700 });
+  const database = { name: 'tempo', volume: target.volumes[target.postgresVolumeKey].name };
+  const backup = { verified: true, filename: 'tempo-original.dump' }, binding = { backup_filename: backup.filename };
+  const receipt = { version: 1, target: targetKey(target), attempt_id: attempt, revision, database,
+    images: { postgres: 'sha256:original', migration: `sha256:${'1'.repeat(64)}` }, image_revisions: { migration: revision },
+    compose_files: ['/original/compose'], image_override: '/original/images',
+    config_fingerprint: 'original-config' };
+  const imageBytes = Buffer.from(JSON.stringify(receipt)), imageName = `pending-images-${attempt}.json`;
+  writeFileSync(join(root, imageName), imageBytes, { mode: 0o600 });
+  const guard = { version: 1, state: 'verified', verified_schema: 62, target: targetKey(target), attempt_id: attempt,
+    database, starting_schema: 59, intended_schema: 62, starting_versions: Array.from({length:59}, (_, i) => i + 1),
+    study_invariants: {}, backup, defense_binding: binding, managed_selection_started: true,
+    managed_image_receipt: { name: imageName, attempt_id: attempt, sha256: createHash('sha256').update(imageBytes).digest('hex') },
+    cut62_witness: witness, cut62_identity: { witness_id: 'original-id' }, pre62_witness: `pre62-${attempt}.json`, pre62_witness_id: 'pre-id',
+    isolation: { phase: 'reattached', identity: { target: targetKey(target) }, target_oid: 1,
+      system_identifier: 'cluster', control_oid: 2 } };
+  const resultReceipt = { attempt_id: attempt };
+  const payload = { version: 1, target: guard.target, attempt_id: attempt, identity: guard.isolation.identity,
+    target_oid: 1, system_identifier: 'cluster', control_oid: 2, backup: binding, pre62_witness_id: 'pre-id',
+    cut62_witness_id: 'original-id', receipt: resultReceipt };
+  const sorted = value => Array.isArray(value) ? value.map(sorted) : value && typeof value === 'object'
+    ? Object.fromEntries(Object.keys(value).sort().map(key => [key, sorted(value[key])])) : value;
+  const completion = { payload, signature: createHmac('sha256', secret).update('tempo-disposable-completion-v1\0').update(JSON.stringify(sorted(payload))).digest('hex') };
+  const completionBytes = Buffer.from(JSON.stringify(completion));
+  guard.isolation.completion = { filename: 'verified-completion.json', sha256: createHash('sha256').update(completionBytes).digest('hex') };
+  for (const [name, bytes] of [[witness, JSON.stringify({secret:secret.toString('hex')})], ['verified-receipt.json', JSON.stringify(resultReceipt)], ['verified-completion.json', completionBytes]])
+    writeFileSync(join(folder, name), bytes, { mode: 0o600 });
+  for (const name of ['defense-selection.json', 'binding.json']) writeFileSync(join(folder, name), '{}', { mode: 0o600 });
+  const preDir=join(root,guard.pre62_witness.slice(0,-5)); mkdirSync(preDir,{mode:0o700});
+  const prePath=join(preDir,guard.pre62_witness);writeFileSync(prePath,'original schema 59 witness',{mode:0o600});
+  const deployed = { revision, schema: 62, evidence: {commit:revision}, verified_at:'original', images:receipt.images,
+    composeFiles:receipt.compose_files, imageOverride:receipt.image_override, configFingerprint:receipt.config_fingerprint, backup };
+  atomicJson(join(root, 'deployment.json'), deployed); atomicJson(join(root, 'migration-guard.json'), guard);
+  atomicJson(join(root, 'maintenance.lock'), {pid:process.pid, token:randomUUID()});
+  let builds = 0;
+  const run = async (_program, args) => { if (args.includes('config')) return {stdout:JSON.stringify(config)};
+    if (args.includes('inspect')) return {stdout:JSON.stringify([{Id:receipt.images.migration,Config:{Labels:{'org.opencontainers.image.revision':revision}}}])};
+    if (args.includes('run')) return {stdout:JSON.stringify({witness_id:'original-id',completion_sha256:guard.isolation.completion.sha256})};
+    throw new Error('unexpected command'); };
+  const runtime = createRuntime(target, { stateDirectory:root, revision:next, previous:deployed, run,
+    buildImages:async () => { builds++; throw new Error('new candidate build'); } });
+  await runtime.config(); assert.equal(runtime.checkMigrationRetry(), false);
+  await assert.rejects(runtime.startServices(), /not been authenticated/);
+  await assert.rejects(runtime.ensureImages(), /authentication is incomplete/);
+  await runtime.authenticateManagedSettlement();
+  const settled = JSON.parse(readFileSync(join(root, 'migration-guard.json')));
+  assert.equal(authenticateManagedSettlement(root, settled), true);
+  writeFileSync(prePath,'changed schema 59 witness');
+  assert.throws(() => authenticateManagedSettlement(root, settled), /settlement authentication failed/);
+  writeFileSync(prePath,'original schema 59 witness');
+  await assert.rejects(runtime.ensureImages(), /new candidate build/); assert.equal(builds, 1);
+  atomicJson(join(root, 'maintenance.lock'), {pid:process.pid, token:randomUUID()});
+  await assert.rejects(runtime.ensureImages(), /lock/i); assert.equal(builds, 1);
+  const altered = structuredClone(settled); altered.managed_image_settlement.payload.deployment_sha256 = '0'.repeat(64);
+  atomicJson(join(root, 'migration-guard.json'), altered);
+  assert.equal(runtime.checkMigrationRetry(), false);
+  await assert.rejects(runtime.authenticateManagedSettlement(), /settlement authentication failed/);
+});
+
+test("pending managed image receipt reuses exact images without a build and rejects drift", t => {
+  const { target, config } = fixture(t); target.postgresMajor=18;target.composeFiles=[];
+  const code=`import fs from 'node:fs';import {join} from 'node:path';import {tmpdir} from 'node:os';import {randomUUID,createHash} from 'node:crypto';import assert from 'node:assert/strict';
+import {createRuntime,configurationFingerprint} from ${JSON.stringify(new URL('../../scripts/tempo-runtime.mjs',import.meta.url).href)};
+import {targetKey} from ${JSON.stringify(new URL('../../scripts/tempo-deployment.mjs',import.meta.url).href)};
+const {target,config}=JSON.parse(fs.readFileSync(0,'utf8'));const root=fs.mkdtempSync(join(tmpdir(),'tempo-image-receipt-'));fs.chmodSync(root,0o700);
+try{const release=join(root,'releases','original');fs.mkdirSync(release,{recursive:true,mode:0o700});const files=[join(release,'compose.yml'),join(release,'images.json')];for(const p of files)fs.writeFileSync(p,'original',{mode:0o600});
+ const revision='a'.repeat(40),tree='b'.repeat(40),attempt=randomUUID(),images={},labels={};let n=0;for(const [name,service] of Object.entries(config.services)){const id='sha256:'+String(++n).padStart(64,'0');images[name]=id;service.image=id;labels[name]=null;}config.services.api.build={context:'owned'};labels.api=revision;
+ const hashes=Object.fromEntries(files.map(p=>[p,createHash('sha256').update(fs.readFileSync(p)).digest('hex')]));
+ const receipt={version:1,target:targetKey(target),attempt_id:attempt,revision,tree,database:{name:'tempo',volume:target.volumes[target.postgresVolumeKey].name},config_fingerprint:configurationFingerprint(config),compose_files:[files[0]],image_override:files[1],mode_override:null,files:hashes,images,image_revisions:labels};
+ const bytes=Buffer.from(JSON.stringify(receipt)),name='pending-images-'+attempt+'.json';fs.writeFileSync(join(root,name),bytes,{mode:0o600});
+ const guard={state:'pending',attempt_id:attempt,database:receipt.database,backup:{verified:true},managed_selection_started:true,defense_binding:{},managed_image_receipt:{name,attempt_id:attempt,sha256:createHash('sha256').update(bytes).digest('hex')}};
+ fs.writeFileSync(join(root,'migration-guard.json'),JSON.stringify(guard),{mode:0o600});fs.writeFileSync(join(root,'maintenance.lock'),JSON.stringify({pid:process.pid,token:randomUUID()}),{mode:0o600});
+ let variant='',builds=0;const run=async(program,args)=>{if(program==='git')return{stdout:args.includes('status')?(variant==='dirty'?'?? drift':''):(args.at(-1)==='HEAD'?revision:tree)};if(args.includes('build')||args.includes('buildx')){builds++;throw Error('unexpected build')};if(args.includes('config')){const c=structuredClone(config);if(variant==='config')c.services.api.environment.EXTRA='changed';return{stdout:JSON.stringify(c)}};if(args.includes('image')&&args.includes('inspect')){const id=args.at(-1),name=Object.keys(images).find(k=>images[k]===id);if(variant==='missing')throw Error('missing image');return{stdout:JSON.stringify([{Id:id,Config:{Labels:{'org.opencontainers.image.revision':variant==='label'&&name==='api'?'changed':labels[name]}}}])}};if(args.includes('--version'))return{stdout:'postgres (PostgreSQL) 18.6'};throw Error('unexpected command')};
+ const create=()=>createRuntime(target,{run,stateDirectory:root,revision});await create().ensureImages();
+ const verified={...guard,state:'verified',verified_schema:62};fs.writeFileSync(join(root,'migration-guard.json'),JSON.stringify(verified));await create().ensureImages();fs.writeFileSync(join(root,'migration-guard.json'),JSON.stringify(guard));
+ for(variant of ['missing','label','config','dirty'])await assert.rejects(create().ensureImages());variant='';
+ const incomplete=structuredClone(guard);delete incomplete.defense_binding;fs.writeFileSync(join(root,'migration-guard.json'),JSON.stringify(incomplete));await assert.rejects(create().ensureImages(),/selection binding is incomplete/);fs.writeFileSync(join(root,'migration-guard.json'),JSON.stringify(guard));
+ fs.writeFileSync(files[0],'changed');await assert.rejects(create().ensureImages(),/input changed/);fs.writeFileSync(files[0],'original');
+ fs.unlinkSync(join(root,name));await assert.rejects(create().ensureImages());assert.equal(builds,0);
+}finally{fs.rmSync(root,{recursive:true,force:true})}`;
+  const child=fsSpawnSync(process.execPath,['--input-type=module','-e',code],{
+    input:JSON.stringify({target,config}),encoding:'utf8',timeout:30000});
+  assert.equal(child.status,0,child.stderr);
 });
 
 test("source update rejects exact main revisions when every eligible run fails or lacks required jobs", async () => {
@@ -2535,4 +2770,347 @@ test('Docker availability uses bounded server endpoint without optional info dia
   },false,() => assert.fail('unexpected Docker launch'));
   assert.equal(calls.length,1);
   await assert.rejects(ensureDocker({context:'owned-context'}, async () => ({code:1}),false,() => {}),/Docker is unavailable/);
+});
+
+test("schema 62 comparator accepts only the exact guarded crossing", () => {
+  const guard = { starting_schema: 61, intended_schema: 62, attempt_id: "01234567-89ab-cdef-0123-456789abcdef" };
+  assert.equal(cut62WitnessName(guard), `cut62-${guard.attempt_id}.json`);
+  assert.equal(cut62WitnessName({ ...guard, starting_schema: 59 }), `cut62-${guard.attempt_id}.json`);
+  assert.equal(cut62WitnessName({ ...guard, starting_schema: 62, intended_schema: 62 }), null);
+  assert.equal(cut62WitnessName({ ...guard, starting_schema: 59, intended_schema: 61 }), null);
+  for (const change of [{ starting_schema: 60 }, { intended_schema: 63 }, { attempt_id: "../witness" }])
+    assert.throws(() => cut62WitnessName({ ...guard, ...change }), /Unsupported/);
+});
+
+test("schema 62 retry requires an existing private regular witness", t => {
+  const path = join(directory(t), "original.json");
+  assert.throws(() => requirePrivateCut62Witness(path), /missing/);
+  writeFileSync(path, "original", { mode: 0o644 });
+  assert.throws(() => requirePrivateCut62Witness(path), /private regular/);
+  fs.chmodSync(path, 0o600);
+  assert.doesNotThrow(() => requirePrivateCut62Witness(path));
+  assert.equal(readFileSync(path, "utf8"), "original");
+});
+
+test("schema 62 bind source is absolute and cannot alter volume syntax", () => {
+  const name = "cut62-01234567-89ab-cdef-0123-456789abcdef.json";
+  assert.equal(cut62MountDirectory("/private/example", name), "/private/example/cut62-01234567-89ab-cdef-0123-456789abcdef");
+  for (const path of ["relative", "/private/a:b", "/private/a,b", "/private/a\nb"])
+    assert.throws(() => cut62MountDirectory(path, name), /mount/);
+});
+
+test("schema 62 runtime preserves original witness across failed verification and retry", async t => {
+  let schema = 61, shouldFail = true, captures = 0;
+  const events = [], paths = new Map();
+  const originalOpen = fs.openSync, originalFsync = fs.fsyncSync;
+  t.mock.method(fs, "openSync", (...args) => { const fd = originalOpen(...args); paths.set(fd, args[0]); return fd; });
+  t.mock.method(fs, "fsyncSync", fd => { events.push(["sync", paths.get(fd)]); return originalFsync(fd); });
+  syncBuiltinESMExports();
+  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+  const { runtime, calls, fixture } = imageRuntimeFixture(t, "postgres:18.6-trixie", 18, false, args => {
+    if (args.includes("database/tooling/apply_postgres_migrations.py")) {
+      if (!args.includes("--check")) { events.push(["migrate"]); schema = 62; return ""; }
+      return JSON.stringify({ initialized: true, roles_ready: true, credentials_ready: true, expected_version: 62,
+        applied_versions: Array.from({ length: schema }, (_, index) => index + 1), pending_versions: schema === 61 ? [62] : [] });
+    }
+    if (args.includes("--cut62-capture")) {
+      captures += 1;
+      events.push(["capture"]);
+      const directory = args[args.indexOf("--volume") + 1].slice(0, -":/cut62".length);
+      writeFileSync(join(directory, args.at(-1).split("/").at(-1)), "original", { mode: 0o600 });
+      return JSON.stringify({ witness_id: "cut-id" });
+    }
+    if (args.includes("--cut62-verify")) {
+      if (shouldFail) throw new Error("injected verification failure");
+      return JSON.stringify({ witness_id: "cut-id" });
+    }
+    if (args.includes("--cut62-check-captured")) return JSON.stringify({ witness_id: "cut-id" });
+    if (args.includes("database/tooling/verify_postgres_cli_state.py")) return JSON.stringify({ reviews: { digest: "original" } });
+  });
+  fs.chmodSync(fixture.stateDirectory, 0o700);
+  await runtime.config(); await runtime.checkSchema(); await runtime.backup();
+  await assert.rejects(runtime.migrate(), /Original migration history verification failed/);
+  const guard = JSON.parse(readFileSync(join(fixture.stateDirectory, "migration-guard.json"), "utf8"));
+  assert.equal(guard.state, "pending");
+  const witness = join(cut62MountDirectory(fixture.stateDirectory, guard.cut62_witness), guard.cut62_witness);
+  assert.equal(readFileSync(witness, "utf8"), "original");
+  const captureIndex = events.findIndex(event => event[0] === "capture");
+  const directorySync = events.findIndex((event, index) => index > captureIndex && event[0] === "sync" && event[1] === cut62MountDirectory(fixture.stateDirectory, guard.cut62_witness));
+  const parentSync = events.findIndex((event, index) => index > directorySync && event[0] === "sync" && event[1] === fixture.stateDirectory);
+  const migrateIndex = events.findIndex(event => event[0] === "migrate");
+  assert(captureIndex >= 0 && directorySync > captureIndex && parentSync > directorySync && migrateIndex > parentSync);
+  rmSync(witness);
+  await assert.rejects(runtime.migrate(), /witness is missing/);
+  assert.equal(captures, 1);
+  writeFileSync(witness, "original", { mode: 0o600 });
+  shouldFail = false;
+  await runtime.checkSchema(); await runtime.migrate();
+  assert.equal(captures, 1);
+  assert.equal(calls.filter(args => args.includes("--cut62-verify")).length, 2);
+  assert(calls.filter(args => args.includes("--cut62-verify")).every(args => args.includes("--volume") && !args.includes("--mount")));
+});
+
+test("schema 62 rejects a different valid witness before migration and after migration", async t => {
+  let schema = 61, swapped = true, captures = 0;
+  const { runtime, fixture } = imageRuntimeFixture(t, "postgres:18.6-trixie", 18, false, args => {
+    if (args.includes("database/tooling/apply_postgres_migrations.py")) {
+      if (args.includes("--check")) return JSON.stringify({ initialized: true, roles_ready: true, credentials_ready: true,
+        expected_version: 62, applied_versions: Array.from({ length: schema }, (_, index) => index + 1), pending_versions: schema === 61 ? [62] : [] });
+      schema = 62; swapped = true; return "";
+    }
+    if (args.includes("--cut62-capture")) {
+      captures += 1;
+      const directory = args[args.indexOf("--volume") + 1].slice(0, -":/cut62".length);
+      writeFileSync(join(directory, args.at(-1).split("/").at(-1)), "original", { mode: 0o600 });
+      return JSON.stringify({ witness_id: "original" });
+    }
+    if (args.includes("--cut62-check-captured") || args.includes("--cut62-verify"))
+      return JSON.stringify({ witness_id: swapped ? "other-valid-witness" : "original" });
+    if (args.includes("database/tooling/verify_postgres_cli_state.py")) return JSON.stringify({ reviews: { digest: "original" } });
+  });
+  fs.chmodSync(fixture.stateDirectory, 0o700);
+  await runtime.config(); await runtime.checkSchema(); await runtime.backup();
+  await assert.rejects(runtime.migrate(), /witness identity differs/);
+  assert.equal(schema, 61); assert.equal(captures, 1);
+  swapped = false;
+  await assert.rejects(runtime.migrate(), /witness identity differs/);
+  assert.equal(schema, 62); assert.equal(captures, 1);
+  const guard = JSON.parse(readFileSync(join(fixture.stateDirectory, "migration-guard.json"), "utf8"));
+  assert.equal(guard.state, "pending");
+  swapped = false;
+  await runtime.checkSchema(); await runtime.migrate();
+  assert.equal(captures, 1);
+});
+
+test("schema 62 interrupted capture leaves original guard fenced and never rebaselines", async t => {
+  let captures = 0;
+  const { runtime, fixture } = imageRuntimeFixture(t, "postgres:18.6-trixie", 18, false, args => {
+    if (args.includes("database/tooling/apply_postgres_migrations.py") && args.includes("--check"))
+      return JSON.stringify({ initialized: true, roles_ready: true, credentials_ready: true, expected_version: 62,
+        applied_versions: Array.from({ length: 61 }, (_, index) => index + 1), pending_versions: [62] });
+    if (args.includes("--cut62-capture")) { captures += 1; throw new Error("interrupted capture"); }
+    if (args.includes("database/tooling/verify_postgres_cli_state.py")) return JSON.stringify({ reviews: { digest: "original" } });
+  });
+  fs.chmodSync(fixture.stateDirectory, 0o700);
+  await runtime.config(); await runtime.checkSchema(); await runtime.backup();
+  await assert.rejects(runtime.migrate(), /interrupted capture/);
+  const guard = JSON.parse(readFileSync(join(fixture.stateDirectory, "migration-guard.json"), "utf8"));
+  assert.equal(guard.state, "pending");
+  await assert.rejects(runtime.migrate(), /witness is missing/);
+  assert.equal(captures, 1);
+});
+
+test("schema preflight refuses unsupported crossing before any writer stop", async () => {
+  for (const [current, expected] of [[58, 62], [60, 62], [59, 63], [62, 63]]) {
+    const status = { applied_versions: Array.from({ length: current }, (_, index) => index + 1), expected_version: expected };
+    const { calls, handlers } = actions();
+    handlers.preflightSchema = async () => { calls.push("preflight"); validateCut62Preflight(status, null); };
+    await assert.rejects(executeLifecycle({ recreate: true }, handlers), /Unsupported/);
+    assert(!calls.includes("stopApplications") && !calls.includes("ensureDatabase"));
+  }
+  for (const current of [59, 61, 62])
+    assert.doesNotThrow(() => validateCut62Preflight({ applied_versions: [current], expected_version: 62 }, null));
+  assert.doesNotThrow(() => validateCut62Preflight({ applied_versions: [60], expected_version: 62 },
+    { state: "pending", starting_schema: 59, intended_schema: 62 }));
+});
+
+test("schema preflight failure leaves writers untouched", async () => {
+  const { calls, handlers } = actions();
+  handlers.preflightSchema = async () => { calls.push("preflight"); throw new Error("database unavailable"); };
+  await assert.rejects(executeLifecycle({ recreate: true }, handlers), /database unavailable/);
+  assert.deepEqual(calls, ["ensureImages", "preflight", "recordFailure"]);
+});
+
+for (const failure of ["intermediate_verification", "capture", "witness_check", "post_migration_verification"]) {
+  test(`schema 59 cutover retains original guard through ${failure}`, async t => {
+    let schema = 59, captures = 0, failed = false;
+    const order = [];
+    const { runtime, fixture } = imageRuntimeFixture(t, "postgres:18.6-trixie", 18, false, args => {
+      if (args.includes("database/tooling/apply_postgres_migrations.py")) {
+        if (args.includes("--check")) return JSON.stringify({ initialized: true, roles_ready: true, credentials_ready: true,
+          expected_version: 62, applied_versions: Array.from({ length: schema }, (_, index) => index + 1),
+          pending_versions: Array.from({ length: 62 - schema }, (_, index) => schema + index + 1) });
+        if (args.includes("--target-version")) { order.push("to61"); schema = 61; return ""; }
+        order.push("to62"); schema = 62; return "";
+      }
+      if (args.includes("--pre62-capture59")) {
+        order.push("capture59");
+        const directory = args[args.indexOf("--volume") + 1].slice(0, -":/cut62".length);
+        writeFileSync(join(directory, args.at(-1).split("/").at(-1)), "original59", { mode: 0o600 });
+        return JSON.stringify({ witness_id: "original-id" });
+      }
+      if (args.includes("--pre62-verify59")) { order.push("check59"); return JSON.stringify({ witness_id: "original-id", observed_schema: schema }); }
+      if (args.includes("--pre62-authenticate59")) return JSON.stringify({ witness_id: "original-id" });
+      if (args.includes("--expected")) {
+        order.push("verify59");
+        if (failure === "intermediate_verification" && !failed) { failed = true; throw new Error("injected intermediate failure"); }
+        return "{}";
+      }
+      if (args.includes("--cut62-capture")) {
+        captures += 1; order.push("capture");
+        if (failure === "capture" && !failed) { failed = true; throw new Error("injected capture failure"); }
+        const directory = args[args.indexOf("--volume") + 1].slice(0, -":/cut62".length);
+        writeFileSync(join(directory, args.at(-1).split("/").at(-1)), "original", { mode: 0o600 });
+        return JSON.stringify({ witness_id: "cut-id" });
+      }
+      if (args.includes("--cut62-check-captured")) {
+        order.push("check61");
+        if (failure === "witness_check" && !failed) { failed = true; throw new Error("injected witness failure"); }
+        return JSON.stringify({ witness_id: "cut-id" });
+      }
+      if (args.includes("--cut62-verify")) {
+        order.push("verify62");
+        if (failure === "post_migration_verification" && !failed) { failed = true; throw new Error("injected post-migration failure"); }
+        return JSON.stringify({ witness_id: "cut-id" });
+      }
+      if (args.includes("database/tooling/verify_postgres_cli_state.py")) return JSON.stringify({ reviews: { digest: "schema59-original" } });
+    });
+    fs.chmodSync(fixture.stateDirectory, 0o700);
+    await runtime.config(); await runtime.checkSchema(); await runtime.backup();
+    await assert.rejects(runtime.migrate(), /injected/);
+    const guardPath = join(fixture.stateDirectory, "migration-guard.json");
+    const original = JSON.parse(readFileSync(guardPath, "utf8"));
+    assert.equal(original.starting_schema, 59); assert.equal(original.backup.verified, true);
+    if (failure === "capture") {
+      await assert.rejects(runtime.migrate(), /witness is missing/);
+      assert.equal(captures, 1); assert.equal(schema, 61); return;
+    }
+    await runtime.checkSchema(); await runtime.migrate();
+    const retried = JSON.parse(readFileSync(guardPath, "utf8"));
+    assert.equal(retried.attempt_id, original.attempt_id);
+    assert.deepEqual(retried.backup, original.backup);
+    assert.equal(retried.study_invariants.reviews.digest, "schema59-original");
+    assert.equal(captures, 1); assert.equal(schema, 62);
+    assert(order.indexOf("capture59") < order.indexOf("check59"));
+    assert(order.indexOf("check59") < order.indexOf("to61"));
+    assert(order.slice(order.indexOf("to61") + 1, order.indexOf("capture")).includes("check59"));
+    assert(order.indexOf("to61") < order.indexOf("verify59"));
+    assert(order.indexOf("verify59") < order.indexOf("capture"));
+    assert(order.indexOf("check61") < order.indexOf("to62"));
+  });
+}
+
+test("schema 59 cutover resumes interrupted schema 60 using the original backup", async t => {
+  let schema = 59, interrupted = false, captures = 0, preCaptures = 0, tampered = false;
+  const { runtime, calls, fixture } = imageRuntimeFixture(t, "postgres:18.6-trixie", 18, false, args => {
+    if (args.includes("database/tooling/apply_postgres_migrations.py")) {
+      if (args.includes("--check")) return JSON.stringify({ initialized: true, roles_ready: true, credentials_ready: true,
+        expected_version: 62, applied_versions: Array.from({ length: schema }, (_, index) => index + 1),
+        pending_versions: Array.from({ length: 62 - schema }, (_, index) => schema + index + 1) });
+      if (args.includes("--target-version")) {
+        if (!interrupted) { interrupted = true; schema = 60; throw new Error("interrupted after 060"); }
+        assert.equal(schema, 60); schema = 61; return "";
+      }
+      schema = 62; return "";
+    }
+    if (args.includes("--pre62-capture59")) {
+      preCaptures += 1;
+      const directory = args[args.indexOf("--volume") + 1].slice(0, -":/cut62".length);
+      writeFileSync(join(directory, args.at(-1).split("/").at(-1)), "original59", { mode: 0o600 });
+      return JSON.stringify({ witness_id: "original-id" });
+    }
+    if (args.includes("--pre62-verify59")) {
+      if (tampered) throw new Error("witness authentication failed");
+      return JSON.stringify({ witness_id: "original-id", observed_schema: schema });
+    }
+    if (args.includes("--cut62-capture")) {
+      captures += 1;
+      const directory = args[args.indexOf("--volume") + 1].slice(0, -":/cut62".length);
+      writeFileSync(join(directory, args.at(-1).split("/").at(-1)), "original", { mode: 0o600 });
+      return JSON.stringify({ witness_id: "cut-id" });
+    }
+    if (args.includes("--cut62-check-captured") || args.includes("--cut62-verify")) return JSON.stringify({ witness_id: "cut-id" });
+    if (args.includes("database/tooling/verify_postgres_cli_state.py")) return JSON.stringify({ reviews: { digest: "original59" } });
+  });
+  fs.chmodSync(fixture.stateDirectory, 0o700);
+  await runtime.config(); await runtime.checkSchema(); await runtime.backup();
+  await assert.rejects(runtime.migrate(), /interrupted after 060/);
+  const guardPath = join(fixture.stateDirectory, "migration-guard.json");
+  const original = JSON.parse(readFileSync(guardPath, "utf8"));
+  assert.equal(schema, 60); assert.equal(original.starting_schema, 59);
+  const prePath = join(cut62MountDirectory(fixture.stateDirectory, original.pre62_witness), original.pre62_witness);
+  rmSync(prePath);
+  await runtime.checkSchema(); await assert.rejects(runtime.migrate(), /witness is missing/);
+  assert.equal(schema, 60); assert.equal(preCaptures, 1);
+  writeFileSync(prePath, "original59", { mode: 0o600 });
+  tampered = true;
+  await assert.rejects(runtime.migrate(), /witness authentication failed/);
+  assert.equal(schema, 60); assert.equal(preCaptures, 1);
+  tampered = false;
+  await runtime.checkSchema(); await runtime.migrate();
+  const final = JSON.parse(readFileSync(guardPath, "utf8"));
+  assert.equal(schema, 62); assert.equal(captures, 1); assert.equal(preCaptures, 1);
+  assert.equal(final.attempt_id, original.attempt_id); assert.deepEqual(final.backup, original.backup);
+  assert.equal(calls.filter(args => args.some(arg => arg.includes("pg_dump"))).length, 1);
+});
+
+test("bounded migrator resolves all sources and permits only 59 or interrupted 60 through 61", () => {
+  const proof = String.raw`
+import contextlib, importlib.util, pathlib, sys, tempfile, types
+state = {'version': 59, 'writes': [], 'sources': []}
+class Result:
+    def __init__(self, rows): self.rows = rows
+    def fetchone(self): return self.rows[0]
+    def fetchall(self): return self.rows
+class Database:
+    def __enter__(self): return self
+    def __exit__(self, *args): pass
+    def transaction(self): return contextlib.nullcontext()
+    def commit(self): pass
+    def execute(self, sql, **kwargs):
+        if "to_regclass" in sql: return Result([(True,)])
+        if "SELECT version FROM" in sql: return Result([(i,) for i in range(1, state['version'] + 1)])
+        if "SELECT COALESCE" in sql: return Result([(state['version'],)])
+        assert sql.startswith('migration '), sql
+        state['version'] = int(sql.split()[1]); state['writes'].append(state['version'])
+        return Result([])
+sys.modules['psycopg'] = types.SimpleNamespace(connect=lambda *args, **kwargs: Database())
+spec = importlib.util.spec_from_file_location('migration_owner', 'database/tooling/apply_postgres_migrations.py')
+module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+with tempfile.TemporaryDirectory() as tmp:
+    module.MIGRATIONS = pathlib.Path(tmp)
+    for i in range(1, 63): (module.MIGRATIONS / f'{i:03}_fixture.sql').touch()
+    def source(path):
+        version = int(path.name[:3]); state['sources'].append(version); return f'migration {version}'
+    module.migration_source = source
+    for start, expected in [(59, [60, 61]), (60, [61])]:
+        state.update(version=start, writes=[], sources=[])
+        module.apply_migrations('synthetic', target_version=61)
+        assert state['sources'] == list(range(1, 63)) and state['writes'] == expected
+    for start, target in [(58, 61), (61, 61), (62, 61), (59, 60), (59, 62)]:
+        state.update(version=start, writes=[], sources=[])
+        try: module.apply_migrations('synthetic', target_version=target)
+        except RuntimeError: pass
+        else: raise AssertionError((start, target))
+        assert not state['writes'] and state['sources'] == list(range(1, 63))
+`;
+  const result = fsSpawnSync("python3", ["-c", proof], { encoding: "utf8", cwd: process.cwd() });
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test("schema 62 no-op preflight preserves an already running application", async () => {
+  const { calls, handlers } = actions({ pending: [], build: false });
+  handlers.preflightSchema = async () => {
+    calls.push("preflight");
+    validateCut62Preflight({ applied_versions: Array.from({ length: 62 }, (_, index) => index + 1), expected_version: 62 }, null);
+  };
+  await executeLifecycle({ recreate: false }, handlers);
+  assert.deepEqual(calls, ["preflight", "ensureDatabase", "checkSchema", "startServices", "verifyReady", "commitDeployment"]);
+  assert(!calls.includes("stopApplications") && !calls.includes("backup") && !calls.includes("migrate"));
+});
+
+test("cold schema preflight rejects active or restarting registered writers", () => {
+  const project = "tempo-owned";
+  const container = (service, state) => ({ Config: { Labels: { "com.docker.compose.project": project,
+    "com.docker.compose.service": service } }, State: state });
+  assert.doesNotThrow(() => assertColdPreflightContainers([container("redis", { Running: true })], project));
+  for (const service of ["foreground-worker", "background-worker", "background-scheduler", "game-feedback-worker", "api", "unknown"]) {
+    for (const state of [{ Running: true }, { Running: false, Restarting: true }])
+      assert.throws(() => assertColdPreflightContainers([container(service, state)], project), /may be active/);
+  }
+  assert.throws(() => assertColdPreflightContainers([container("postgres", { Running: true })], project), /may be active/);
+  assert.doesNotThrow(() => assertColdPreflightContainers([container("postgres", { Running: true }),
+    container("redis", { Running: true })], project, { databaseStarted: true }));
+  assert.throws(() => assertColdPreflightContainers([container("foreground-worker", { Running: true })],
+    project, { databaseStarted: true }), /may be active/);
 });

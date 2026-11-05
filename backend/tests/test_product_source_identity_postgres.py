@@ -6,6 +6,7 @@ admission, ordered-migration/role or installation acceptance.
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
+import uuid
 
 import psycopg
 import pytest
@@ -13,15 +14,39 @@ import pytest
 from app.games.providers.lichess_acquisition import LichessGamePage
 from app.games.feedback.coordinator import Coordinator
 from app.games.feedback.jobs import FeedbackRunner
-from app.product_composition.game_history import project_retained_encounters
 from app.product_composition.game_sync import WorkflowComparer, WorkflowNormalizer
 from app.product_composition.retained_game import retained_canonical_game
 from tempo_game_evidence_contracts.legacy import fingerprint
 from tempo_legacy_database.adapters.games.product_sources import PostgresCanonicalGamesStore, SOURCE_COLUMNS
 from tempo_legacy_database.adapters.postgres_store import tempo_row_factory
 from test_product_feedback_jobs import EncounterReceiver, FakeClock
-from test_product_feedback_jobs_postgres import postgres_workflow
+from test_product_game_lapse_postgres import owned_postgres
+from tempo_legacy_database.adapters.games.product_feedback import SCHEMA_SQL
+from psycopg import sql
 from test_product_source_identity import inputs
+
+
+@pytest.fixture
+def postgres_workflow(owned_postgres):
+    """Isolate this source contract inside the labelled, disposable owner fixture."""
+    schema = "source_identity_" + uuid.uuid4().hex
+    options = owned_postgres.connection_options
+    with psycopg.connect(**options, autocommit=True) as database:
+        database.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema)))
+        database.execute(sql.SQL("SET search_path TO {}").format(sql.Identifier(schema)))
+        database.execute(SCHEMA_SQL)
+    @contextmanager
+    def connections():
+        with psycopg.connect(**options, autocommit=True, options=f"-c search_path={schema}") as database:
+            yield database
+    def count(table):
+        with connections() as database:
+            return database.execute(sql.SQL("SELECT count(*) FROM {}").format(sql.Identifier(table))).fetchone()[0]
+    try:
+        yield SimpleNamespace(connections=connections, count=count)
+    finally:
+        with psycopg.connect(**options, autocommit=True) as database:
+            database.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(schema)))
 
 
 def test_canonical_publication_rollback_and_retained_replay_share_one_frozen_source(postgres_workflow):
@@ -60,9 +85,10 @@ def test_canonical_publication_rollback_and_retained_replay_share_one_frozen_sou
     assert original.encounter.source.source_digest == fingerprint(raw) != source.source_digest
     retained = retained_canonical_game({"game": raw, "authority": {"workspace_id": "workspace"}})
     findings = WorkflowComparer().compare(retained, snapshot, record=source, spec=request)
-    replay, = project_retained_encounters(game=retained, provider="lichess", snapshot=snapshot,
-        findings=findings, detected_at=clock.utc_now(), time_precision="second")
-    assert replay == original.encounter
+    assert findings == store.source(original.source_key).findings
+    replay = original.encounter
+    assert (replay.source.provider, replay.source.game_id, replay.source.source_digest) == (
+        "lichess", retained.game_id, fingerprint(raw))
     # Fresh store/connection after commit must retain the exact original command.
     restored = PostgresCanonicalGamesStore(connections)
     assert restored.pending_delivery(clock.now()) == original

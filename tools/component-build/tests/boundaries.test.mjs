@@ -63,57 +63,6 @@ test("M02 TypeScript rejects private exports and undeclared dependency metadata"
   assert.throws(() => checkConsumer('import { hidden } from "@tempo/chess-line";', "@tempo/chess-line", chess.publicExports), /Unavailable export/);
   assert.throws(() => checkConsumer('async function hidden() { return import("@tempo/chess-line/private"); }', "@tempo/chess-line", chess.publicExports), /Private/);
 });
-function workbenchStorageFixture(t) {
-  const root = mkdtempSync(join(tmpdir(), "tempo-m02-workbench-storage-"));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  const directory = join(root, "apps/workbench-web"), owner = join(root, "database/browser/adapters/workbench");
-  mkdirSync(join(directory, "src"), { recursive: true });
-  mkdirSync(owner, { recursive: true });
-  writeFileSync(join(directory, "package.json"), JSON.stringify({ name: "@tempo/workbench-web", version: "0.1.0", type: "module", exports: { ".": "./lib/index.js" }, dependencies: {} }));
-  writeFileSync(join(directory, "src/index.ts"), 'export { read } from "../../../database/browser/adapters/workbench/storage.mjs";');
-  writeFileSync(join(owner, "storage.mts"), 'import { value } from "./compatibility.cjs"; export function read() { return value; }');
-  writeFileSync(join(owner, "compatibility.cts"), 'export const value = "fixture";');
-  const component = { id: "workbench-web", root: "apps/workbench-web", artifact: { name: "@tempo/workbench-web", version: "0.1.0" }, dependencies: [], publicExports: ["read"], buildInputs: ["src", "../../database/browser/adapters/workbench"] };
-  return { root, directory, owner, component, check: () => checkTypeScript(directory, component, root) };
-}
-test("M02 TypeScript checks the declared canonical Workbench owner with mjs/mts and cjs/cts mappings", t => {
-  const fixture = workbenchStorageFixture(t);
-  assert.deepEqual(fixture.check(), { files: 3, exports: ["read"] });
-});
-test("M02 TypeScript rejects a neighboring database owner even when listed as a build input", t => {
-  const fixture = workbenchStorageFixture(t), neighbor = join(fixture.root, "database/browser/adapters/neighbor");
-  mkdirSync(neighbor);
-  writeFileSync(join(neighbor, "private.mts"), "export const hidden = true;");
-  fixture.component.buildInputs.push("../../database/browser/adapters/neighbor");
-  writeFileSync(join(fixture.directory, "src/index.ts"), 'import "../../../database/browser/adapters/neighbor/private.mjs"; export const read = true;');
-  assert.throws(fixture.check, /Source escape/);
-});
-test("M02 TypeScript rejects an unlisted file inside the canonical Workbench owner", t => {
-  const fixture = workbenchStorageFixture(t);
-  fixture.component.buildInputs = ["src", "../../database/browser/adapters/workbench/storage.mts"];
-  assert.throws(fixture.check, /Source escape/);
-});
-test("M02 TypeScript rejects a canonical Workbench owner absent from build inputs", t => {
-  const fixture = workbenchStorageFixture(t);
-  fixture.component.buildInputs = ["src"];
-  assert.throws(fixture.check, /Source escape/);
-});
-test("M02 TypeScript checks every declared Workbench owner source for transitive private imports", t => {
-  const fixture = workbenchStorageFixture(t);
-  writeFileSync(join(fixture.owner, "unimported.mts"), 'import "services/learning/private";');
-  assert.throws(fixture.check, /Undeclared dependency/);
-});
-test("M02 TypeScript rejects symlinked Workbench owner sources and input roots", t => {
-  const fixture = workbenchStorageFixture(t), outside = join(fixture.root, "outside");
-  mkdirSync(outside);
-  writeFileSync(join(outside, "hidden.mts"), "export const hidden = true;");
-  symlinkSync(join(outside, "hidden.mts"), join(fixture.owner, "hidden.mts"));
-  assert.throws(fixture.check, /Source symlink/);
-  rmSync(join(fixture.owner, "hidden.mts"));
-  rmSync(fixture.owner, { recursive: true });
-  symlinkSync(outside, fixture.owner);
-  assert.throws(fixture.check, /Source symlink\/escape/);
-});
 for (const [kind, invalidImport] of [
   ["direct", "import fastapi"],
   ["lazy", "def hidden():\n    import app.main"],
@@ -245,15 +194,28 @@ test("M02 separate test discovery preserves every legacy unit and runner file", 
 });
 
 test("M02 Python rejects undeclared dependency metadata and accidental public exports", t => {
-  const directory = fixture(t, scheduling);
+  const directory = mkdtempSync(join(tmpdir(), "tempo-m02-python-contract-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const packageDirectory = join(directory, "src/tempo_scheduling");
+  mkdirSync(packageDirectory, { recursive: true });
   const metadataPath = join(directory, "pyproject.toml");
+  cpSync(resolve(repository, scheduling.root, "pyproject.toml"), metadataPath);
   const original = readFileSync(metadataPath, "utf8");
-  writeFileSync(metadataPath, original.replace('"fsrs==6.3.2"', '"fsrs==6.3.2", "psycopg==3.3.6"'));
-  assert.match(checkPython(directory).stderr, /Dependencies differ/);
+  const entry = join(packageDirectory, "__init__.py");
+  writeFileSync(entry, `__all__ = ${JSON.stringify(scheduling.publicExports)}\n`);
+  const baseline = checkPython(directory);
+  assert.equal(baseline.status, 0, baseline.stderr);
+  const modified = original.replace('"fsrs==6.3.2"', '"fsrs==6.3.2", "psycopg==3.3.6"');
+  assert.notEqual(modified, original);
+  writeFileSync(metadataPath, modified);
+  const dependencyFailure = checkPython(directory);
+  assert.notEqual(dependencyFailure.status, 0);
+  assert.match(dependencyFailure.stderr, /Dependencies differ/);
   writeFileSync(metadataPath, original);
-  const entry = join(directory, "src/tempo_scheduling/__init__.py");
-  writeFileSync(entry, readFileSync(entry, "utf8").replace('"unlock_ready"]', '"unlock_ready", "_scheduler"]'));
-  assert.match(checkPython(directory).stderr, /public exports differ/);
+  writeFileSync(entry, `__all__ = ${JSON.stringify([...scheduling.publicExports, "_scheduler"])}\n`);
+  const exportFailure = checkPython(directory);
+  assert.notEqual(exportFailure.status, 0);
+  assert.match(exportFailure.stderr, /public exports differ/);
 });
 
 // Each fixture runs both entry points without importing package product source.

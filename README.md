@@ -2,37 +2,15 @@
 
 ## Product specification
 
-**[Read SPEC.md](SPEC.md)** for the current product requirements, decided policies, delivery slices, and specific reuse map. It includes real-game feedback, probability-driven introductions, a 30 CP repair tolerance, and adaptive card recombination after three consecutive clean reviews.
+Tempo is a single-user chess study app. The [product specification](SPEC.md) defines three journeys.
 
-Keep working Study and Tactics in place; selectively restart unfinished workflows when faster. Replacement-runtime adoption, full history migration, and broad cleanup are not prerequisites for the next useful feature. The spec governs product scope where older plans or the implementation notes below conflict; it is not a claim that all target behavior is already available.
+- **Study** opens an existing repertoire, teaches and reviews moves, saves the result and continues to the next playable card. Import and correction, blocking answer conflicts, and Study settings are available from Train.
+- **Tactics** captures puzzles including Chess.com Puzzle Rush PGN, activates packs, and saves solving progress. Captured tactics can enter ordinary Training.
+- **Game Review** lists and replays games from their original position, using configured Chess.com and Lichess refresh. It identifies the first repertoire departure and submits eligible own departures to Study through the existing learning authority.
 
-Tempo is a functional local-first chess-opening spaced-repetition trainer. The interface is deliberately board-first: a large responsive chessboard, immediate move feedback, guided corrections, compact progress, and a fixed daily queue.
+The local product uses PostgreSQL for durable records, with Redis and Celery for command execution and recovery. Browser journals preserve offline review and retry identity. The normal Mac entry is **Start Tempo.command**. See [phone training](docs/PHONE-TRAINING.md) for prepared offline practice.
 
-## Local product
-
-Docker Tempo is the full product. After the [PostgreSQL maintenance cutover](docs/POSTGRES-MAINTENANCE.md), PostgreSQL is authoritative for repertoires, daily queues, reviews, accounts, and games. The former SQLite volume remains a read-only historical recovery source. The public GitHub Pages build is a limited practice demo: it does not sync personal games or promise Docker persistence. Use **Start Tempo.command** for the full application.
-
-For prepared daily training on an iPhone while the computer is unavailable, see [phone training](docs/PHONE-TRAINING.md).
-
-Defects actually fixed need discoverable named regression coverage; existing appropriate coverage can suffice. Closing a duplicate, deferred, or not-planned report is not a claim of a fix. Select checks for the affected component and contracts; `make full` is the current whole-repository integration gate, not a universal entrance requirement. `make legacy-sqlite` runs the optional full SQLite compatibility runner. See [CONTRIBUTING.md](CONTRIBUTING.md), [testing scopes](docs/testing.md), and [tests/REGRESSIONS.md](tests/REGRESSIONS.md).
-
-- Interactive opening and tactics drills using Lichess's Chessground board, with click-to-move or drag-and-drop.
-- Fluid responsive sizing, Cburnett and Merida piece sets, three board palettes, legal-move markers, last-move highlighting, automatic opponent replies, and native SVG teaching arrows.
-- Teaching arrows on first exposure and immediately after a wrong attempted move; picking up and replacing a piece does nothing.
-- Answers remain hidden: the move trail reveals only moves already played.
-- One-click Lichess analysis for the exact current move history, plus a repertoire tree browser for stepping through positions and branches.
-- Train, Repertoire, Builder, Games, Progress, PGN import, wrong-answer, guided-review, and completed-card states.
-- Binary Correct/Again grading with automatic clean solves, first-pass reinforcement at the end of the day, Again placement after four cards, and persisted queue ordering.
-- Production Docker Compose with a compiled React + TypeScript application, Nginx, and a FastAPI backend.
-- Local PostgreSQL storage for settings, repertoires, cards, locked child cards, and review history, with Redis and Celery for durable commands and background work.
-- PGN variation parsing and stable SHA-256 card IDs derived from canonical starting FEN plus normalized UCI moves.
-- FSRS 6 scheduling at 92% desired retention, capped lateness benefit, 2.5× interval growth, and a 365-day maximum.
-- A stability-based descendant gate requiring three successful review days and no recent lapse.
-- Thirteen tactical motifs, each with Easy, Medium, and Hard stages of 100 puzzles and a 250-puzzle focused stage. Discovery through play controls admission to the daily queue.
-- A playable analysis board with live repertoire filtering, authenticated Lichess and Masters Explorer results, real local Stockfish 19 and Maia 3 analysis, branch editing, 80/90/95% coverage targets, persistent preferences, source-aware arrows, and keyboard history navigation.
-- Incremental Lichess and Chess.com game ingestion, locally cached normalized PGNs, divergence classification, comparison summaries, and a Games workspace for sending gaps to Builder.
-- A browser-first Rust core for canonical FEN/UCI validation, stable card identity, and chess-aware position distance, compiled to WebAssembly behind a typed adapter.
-- Versioned IndexedDB stores plus verified one-time SQLite transfer and passphrase-encrypted portable backups. The stopped SQLite volume remains historical evidence after cutover.
+Use [the testing guide](docs/testing.md) to select component and boundary checks. See [CONTRIBUTING.md](CONTRIBUTING.md) for delivery and resource ownership.
 
 ## Run locally
 
@@ -63,30 +41,13 @@ If macOS blocks the launcher the first time, right-click **Start Tempo.command**
 
 Use `tempo start` for normal operation. The manual Compose procedures below remain available for maintenance diagnosis; they do not replace the CLI's source, backup, migration, and readiness checks.
 
-To keep Lichess Explorer coverage running while the browser is closed, set
-`TEMPO_LICHESS_EXPLORER_TOKEN` in your Docker Compose environment before starting
-Tempo. A missing or rejected token appears as an actionable coverage job error;
-replace the token and restart `background-worker` to retry. This credential is
-passed to the worker environment, not saved in PostgreSQL. The Celery workers
-and `maia-worker` continue durable analysis with the tab closed.
-
-Open `http://localhost:3000`. The local API is available at `http://localhost:8000`. PostgreSQL data, Redis state, engine operation IDs, and database backups use distinct external Docker volumes. See the [maintenance guide](docs/POSTGRES-MAINTENANCE.md) for backup and restore.
-
-Reviews, FSRS state, daily queue order, reinforcement, guided attempts, tactic discovery progress, repertoire notes, and teaching history are saved in PostgreSQL. Recreating the containers retains the external volumes. The disposable PostgreSQL gate recreates containers, replays a command receipt, checks queue order, and restores a backup into a second database before browser tests.
-
-To bring Lichess analysis back into Tempo, choose **Paste analysis** in Repertoire or Builder. Paste SAN lines separated by blank lines or PGN with variations; a PGN FEN tag or the current Builder/coverage-gap position supplies the start for a partial line. Review each line’s destination and any trained-move conflict before saving.
-
-New cards get one unassisted reinforcement later today and a review tomorrow before normal FSRS intervals. Later reviews do not automatically reveal teaching arrows; a mistake or Show move still provides guidance. Clean tactic discovery uses the configured light first interval; failed discoveries and subsequent lapses join normal review scheduling.
-
-Tempo preloads tab data and the first unfinished Hanging Pieces stage in the background. Puzzle validation, repertoire diagnostics/indexing, similarity, and transposition matching run in a study worker. Builder opens with a source-comparison table, including covered moves, rather than burying those details below editing tools. Move and capture audio use the official Lichess standard chess recordings.
-
-The hosted private Site uses local browser storage and representative game data. Docker Compose runs the full local FastAPI + PostgreSQL path, including provider sync and durable review state.
+Open Tempo at `http://localhost:3000`. Its local API is at `http://localhost:8000`. External volumes preserve PostgreSQL and Redis state across container replacement. See the [maintenance guide](docs/POSTGRES-MAINTENANCE.md) for backup and restore.
 
 ### Static browser-only preview
 
 Double-click **Preview Tempo Static.command** to build the Rust/WebAssembly bundle when needed, serve the generated site over HTTP, and open [http://127.0.0.1:4173/tempo/](http://127.0.0.1:4173/tempo/). Keep its Terminal window open while using the preview.
 
-Do not open `static/index.html` directly. It is Vite source, not the generated application, and `file://` pages cannot run Tempo's modules, Web Workers, WebAssembly engines, or service worker. The launcher serves the deployable `pages-dist/` output with the browser security context those features require.
+Do not open `static/index.html` directly. It is Vite source, not the generated application, and `file://` pages cannot run Tempo's modules, Web Workers, the chess WebAssembly core, or service worker. The launcher serves the deployable `pages-dist/` output with the browser security context those features require.
 
 ## Structure
 
@@ -118,7 +79,7 @@ npm run verify:static
 npm run preview:static
 ```
 
-This compiles `tempo-core` to WebAssembly and emits an offline-capable static site in `pages-dist/`. Network orchestration, IndexedDB, encrypted backups, engines, and UI state remain in TypeScript. This describes the static build; it does not assign a general Rust port or runtime migration. Docker/Python support is not contingent on completing every deterministic service port.
+This compiles `tempo-core` to WebAssembly and emits an offline-capable static site in `pages-dist/`. Network orchestration, IndexedDB, encrypted backups and UI state remain in TypeScript. This describes the static build; it does not assign a general Rust port or runtime migration. Docker/Python support is not contingent on completing every deterministic service port.
 
 The public practice demo is [https://aaweaver-actuary.github.io/tempo/](https://aaweaver-actuary.github.io/tempo/). GitHub Actions runs the complete local-product suite before publishing the limited `pages-dist/` demonstration. Rust identity/validation/prefix fixtures are shared with Python; scheduling remains Python-authoritative until full parity is proven.
 
@@ -139,22 +100,6 @@ Tempo now uses the official `@lichess-org/chessground` package instead of a hand
 
 The Lichess puzzle database is public domain and provides FEN, UCI solution moves, rating, popularity, motifs, and source-game URLs. Tempo includes 7,150 globally distinct, validated records in `public/data/tactics-decks.json`: 100 in each fundamental stage and 250 in each focused stage for thirteen motifs. Focused stages cover ratings 1250–2000. Opening and puzzle scheduling stay independent even when their due cards are shuffled into one session.
 
-Lichess now requires authentication for Opening Explorer requests. Interactive Explorer requests use Lichess's PKCE flow and keep the access token in browser session storage. Unattended repertoire-coverage work uses `TEMPO_LICHESS_EXPLORER_TOKEN` in the analysis worker environment. The token is not stored with queued work or Explorer cache entries. Interactive Stockfish 19 and Maia 3 analysis runs in browser workers; durable Stockfish and Maia analysis runs in Docker workers with the same packaged models.
-
-## Earlier maturity and depth policy
-
-This earlier proposal is retained for context, not as an additional prerequisite. The current target is [probability-driven introductions](SPEC.md#s02--probability-driven-introductions) and [adaptive card recombination](SPEC.md#6-r11--adaptive-card-recombination).
-
-The optimization target is practical recall from the beginning of a playable line, not maximum theoretical depth. A child card unlocks only when its parent has:
-
-1. successful reviews on three distinct calendar days;
-2. a current scheduled interval of at least 14 days; and
-3. no “Again” among its two most recent reviews.
-
-All ancestors are therefore mature before a deeper child can appear. A later lapse pauses further unlocking along that branch but does not relock descendants the learner has already encountered.
-
-Local response cards alone can become disconnected fragments, so Tempo should also create a low-frequency **integration checkpoint** after every four newly learned user moves. A checkpoint tests the line from the repertoire’s starting FEN through the newest frontier. New descendants beyond that checkpoint remain locked until the checkpoint matures. This preserves fast, focused response cards while regularly proving that the learner can still reach the deep position from the start.
-
 ## Validated domain and responsive boards
 
 Zod 4 schemas live in `app/domain/schemas`. Transport adapters validate external
@@ -169,8 +114,7 @@ lock flag. Background queue refreshes preserve an active attempt; replacement
 entries cancel old reply and completion timers.
 
 Queue/repertoire validation, puzzle preparation, and position comparisons run in
-the study worker. Maia inference runs in a separate worker. Board input and DOM
-updates remain in TypeScript; Python/SQLite remains authoritative. Rust/WASM
+the study worker. Board input and DOM updates remain in TypeScript. Rust/WASM
 continues behind the existing golden parity fixtures. Recent readiness, move
 paint, and workspace switch timings are available in the browser Performance
 panel as `tempo:*` measurements. PostgreSQL is authoritative for Docker product

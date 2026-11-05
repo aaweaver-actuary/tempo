@@ -96,7 +96,7 @@ export function phaseGuidance(phase) {
     checking_schema: { services: ["postgres"], action: "Next: repair the reported schema or permission problem before tempo start; preserve study data." },
     verifying_backup: { services: ["postgres", "migration", "postgres-backup"], action: "Next: repair the backup/restore error using the saved evidence. Keep the original backup and study data; do not restore older data over new writes." },
     applying_migrations: { services: ["postgres", "migration"], action: "Next: repair the migration error using the saved evidence and original backup, then explicitly run tempo migrate --retry." },
-    starting_services: { services: ["api", "foreground-worker", "background-worker", "background-scheduler", "web", "defense-engine", "maia-worker"], action: "Next: correct the affected service error in the saved logs, then run tempo start." },
+    starting_services: { services: ["api", "foreground-worker", "background-worker", "background-scheduler", "web"], action: "Next: correct the affected service error in the saved logs, then run tempo start." },
     checking_readiness: { services: ["api", "foreground-worker", "background-worker", "background-scheduler", "web", "redis"], action: "Next: correct the readiness error in the saved logs, then run tempo start." },
   };
   return phases[phase] ?? { services: ["api", "foreground-worker", "background-worker", "postgres", "redis"],

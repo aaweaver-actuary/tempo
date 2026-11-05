@@ -12,11 +12,14 @@ test('real worker upgrade retains and replays the original pending review', asyn
   page.on('pageerror', error => diagnostics.push(`pageerror: ${error.message}`));
   page.on('requestfailed', request => diagnostics.push(`requestfailed: ${request.method()} ${request.url()} ${request.failure()?.errorText}`));
   page.on('response', response => { if (response.status() >= 400) diagnostics.push(`response ${response.status()}: ${response.url()}`); });
-  const root = process.env.TEMPO_SW_CANDIDATE_ARTIFACT;
-  if (!root) throw new Error('TEMPO_SW_CANDIDATE_ARTIFACT must name the task-owned candidate build');
-  const directory = resolve(root);
-  const worker = await readFile(resolve(directory, 'sw.js'), 'utf8');
-  if (!worker.includes('const CACHE = "tempo-static-v7";')) throw new Error('Unexpected product worker version');
+  const previousRoot = process.env.TEMPO_SW_PREVIOUS_ARTIFACT;
+  const candidateRoot = process.env.TEMPO_SW_CANDIDATE_ARTIFACT;
+  if (!previousRoot || !candidateRoot) throw new Error('Both task-owned previous and candidate builds are required');
+  const previous = resolve(previousRoot), candidate = resolve(candidateRoot);
+  const previousWorker = await readFile(resolve(previous, 'sw.js'), 'utf8');
+  const candidateWorker = await readFile(resolve(candidate, 'sw.js'), 'utf8');
+  if (!previousWorker.includes('const CACHE = "tempo-static-v7";') ||
+      !candidateWorker.includes('const CACHE = "tempo-static-v8";')) throw new Error('Expected the shipped v7 and candidate v8 workers');
   let version = 7;
   const types: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.wasm': 'application/wasm', '.json': 'application/json', '.webmanifest': 'application/manifest+json' };
   const server = createServer(async (request, response) => {
@@ -26,9 +29,10 @@ test('real worker upgrade retains and replays the original pending review', asyn
       const path = new URL(request.url!, 'http://localhost').pathname;
       if (path === '/sw.js') {
         response.writeHead(200, { 'Content-Type': 'text/javascript', 'Cache-Control': 'no-store' });
-        response.end(version === 7 ? worker : worker.replace('const CACHE = "tempo-static-v7";', 'const CACHE = "tempo-static-v8";'));
+        response.end(version === 7 ? previousWorker : candidateWorker);
         return;
       }
+      const directory = version === 7 ? previous : candidate;
       const file = resolve(directory, '.' + (path === '/' ? '/index.html' : path));
       if (!file.startsWith(directory + sep)) throw new Error('Invalid artifact path');
       const data = await readFile(file);
@@ -68,6 +72,13 @@ test('real worker upgrade retains and replays the original pending review', asyn
     await page.goto(origin);
     await page.waitForFunction(() => Boolean(navigator.serviceWorker?.controller));
     await page.evaluate(async () => { await (await caches.open('unrelated-cache')).put('/sentinel', new Response('keep')); });
+    // Exercise a real retired engine asset through the previous worker, so
+    // cache cleanup is proved against content that v7 actually retained.
+    await page.evaluate(async () => {
+      const response = await fetch('/engines/sf_19_smallnet.js');
+      if (!response.ok) throw new Error('Previous build lacks retired engine asset');
+    });
+    await expect.poll(() => page.evaluate(async () => Boolean(await (await caches.open('tempo-static-v7')).match('/engines/sf_19_smallnet.js')))).toBe(true);
     await expect(page.locator('.phone-study-heading h2')).toHaveText('London System');
     await move(page, 'd2', 'd4');
     await expect.poll(async () => (await nativeStudyRecords(page)).filter(item => item.kind === 'review' && item.state !== 'committed').length).toBe(1);
@@ -75,10 +86,16 @@ test('real worker upgrade retains and replays the original pending review', asyn
     const original = (await nativeStudyRecords(page)).find(item => item.kind === 'review' && item.state !== 'committed')!;
     expect(original.key).toMatch(/^review:/);
     expect(original.requestId).toBe(`review-attempt:${original.key.slice('review:'.length)}`);
+    expect((original.payload as { queueEntryId: number }).queueEntryId).toBe(41);
     version = 8;
     await page.evaluate(async () => { await (await navigator.serviceWorker.ready).update(); });
     await expect.poll(() => page.evaluate(async () => (await caches.keys()).sort())).toContain('tempo-static-v8');
     await expect.poll(() => page.evaluate(async () => (await caches.keys()).sort())).not.toContain('tempo-static-v7');
+    expect(await page.evaluate(async () => {
+      const keys = await caches.keys();
+      const requests = (await Promise.all(keys.filter(key => key.startsWith('tempo-static-')).map(async key => (await (await caches.open(key)).keys()).map(request => new URL(request.url).pathname)))).flat();
+      return requests.filter(path => path.startsWith('/engines/') || path.startsWith('/ort/') || path.startsWith('/maia3/'));
+    })).toEqual([]);
     await expect.poll(() => page.evaluate(() => new Promise<string>(resolveVersion => {
       const channel = new MessageChannel();
       channel.port1.onmessage = event => resolveVersion(event.data.version);

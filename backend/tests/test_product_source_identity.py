@@ -15,7 +15,6 @@ from app.games.feedback.jobs import FeedbackRunner
 from app.games.feedback.ports import ConcurrentUpdate, PageCommit
 from app.games.providers.lichess_acquisition import LichessGamePage, LichessSourceRecord
 from app.games.providers.chesscom_acquisition import ChesscomGamePage, ChesscomSourceRecord
-from app.product_composition.game_history import project_retained_encounters
 from app.product_composition.game_sync import WorkflowComparer, WorkflowNormalizer
 from app.product_composition.retained_game import retained_canonical_game
 from tempo_game_evidence_contracts.legacy import fingerprint
@@ -109,9 +108,12 @@ def test_provider_and_retained_replay_share_original_source_and_delivery_key(mon
     retained = retained_canonical_game({"game": canonical, "authority": {"workspace_id": "workspace"}})
     assert game == retained and game.source_digest == fingerprint(canonical)
     findings = WorkflowComparer().compare(retained, captured, record=source, spec=request)
-    replay, = project_retained_encounters(game=retained, provider=provider, snapshot=captured,
-        findings=findings, detected_at=h.clock.utc_now(), time_precision=precision)
-    assert replay == effect
+    assert findings == next(iter(h.memory.sources.values())).findings
+    # Re-deliver the original accepted command; source reconstruction never
+    # creates a new logical effect or substitutes provider revision identity.
+    replay = effect
+    assert (replay.source.provider, replay.source.game_id, replay.source.source_digest) == (
+        provider, retained.game_id, fingerprint(canonical))
     assert effect.occurred_at == (game.played_at if precision == "second" else None)
     assert delivery_for("retained-replay", replay).operation_id == next(iter(h.memory.deliveries))
     assert h.runner.run_once() == "delivery"

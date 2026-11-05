@@ -15,6 +15,24 @@ registered target. `tempo migrate` uses the same checked workflow; `--plan` is
 read-only. Initial import, destructive restore, and PostgreSQL major upgrades
 remain separate operations requiring their own verified maintenance window.
 
+## Failed Defense history cut
+
+If the approved offline Defense cut fails, keep the API, web, workers, scheduler,
+and collectors stopped. Preserve the original migration guard, private selection,
+both witnesses, and the named restore-verified backup and checksum. Confirm the
+registered Docker context, database, and volume before any recovery action.
+
+Before applications have accepted new writes, the recovery owner may restore
+that original backup to the registered database in the stopped maintenance
+window. First verify the saved checksum and restore the backup into a separate
+disposable database; compare the original schema and protected history there.
+Only after that check may the owner replace the failed target from the same
+backup, verify its ledger and original history, and restart the normal services.
+Keep the original evidence until the restart and product checks pass.
+
+If applications have already accepted writes after the cut, do **not** restore
+the older backup over them. Preserve the new work and repair forward instead.
+
 ## Manual PostgreSQL schema upgrades after cutover
 
 Use this only after approval of the exact product database and maintenance
@@ -45,8 +63,8 @@ verified, read-only SQLite snapshot.
 
 ```sh
 docker compose -f docker-compose.yml -f docker-compose.postgres-maintenance.yml build migration
-docker compose build api foreground-worker background-worker background-scheduler web defense-engine maia-worker
-docker compose stop web defense-engine maia-worker api foreground-worker background-worker background-scheduler
+docker compose build api foreground-worker background-worker background-scheduler web maia-worker
+docker compose stop web maia-worker api foreground-worker background-worker background-scheduler
 docker compose up -d postgres redis postgres-backup
 ```
 
@@ -80,7 +98,7 @@ then start workers before the API because readiness requires both queues:
 ```sh
 docker compose up -d foreground-worker background-worker background-scheduler api
 curl --silent --show-error --include --max-time 10 http://127.0.0.1:8000/api/health
-docker compose up -d web defense-engine maia-worker
+docker compose up -d web maia-worker
 docker compose ps -a
 ```
 

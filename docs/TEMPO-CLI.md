@@ -61,6 +61,25 @@ need to decide whether a merge requires a rebuild or a migration.
 
 ## Reading diagnostics and a blocked update
 
+For the approved one-time Defense history retirement, end the Study session and
+use the reviewed private selection file for the registered target:
+
+```sh
+tempo start --no-ci --no-open --candidate-ref REF --candidate-sha SHA --defense-selection /absolute/private/selection.json
+```
+
+Use the exact reviewed `refs/heads/codex/...` ref and 40-character SHA. The
+selection file and its directory must be private to the current user. The
+command verifies the target, stops dependent services, restore-checks a backup,
+and verifies the selected history before starting services again. `--no-ci`
+records that hosted CI was disabled; it does not replace the local rehearsal or
+product checks. Normal future starts continue to use `tempo start`.
+
+If the cut fails, leave dependent services stopped and preserve the original
+backup, selection, and migration state. Follow the failed-cut recovery
+instructions in [PostgreSQL maintenance](POSTGRES-MAINTENANCE.md) before
+starting applications.
+
 
 Normally, **run `tempo start`**. You do not need to watch GitHub or apply migrations
 separately. The command tells you when it is waiting, preparing images, pausing
@@ -269,8 +288,8 @@ fails closed on a dependency mismatch and directs you to `tempo start` first.
 Before the first verified deployment, a blocked update is an error.
 
 Persistent volumes have fixed owners and destinations: PostgreSQL data belongs
-to `postgres:/var/lib/postgresql`, backups to `postgres-backup:/backups`, Redis
-data to `redis:/data`, and engine operations to `defense-engine:/state`. Extra,
+to `postgres:/var/lib/postgresql`, backups to `postgres-backup:/backups`, and Redis
+data to `redis:/data`. Extra,
 swapped, relocated, and missing persistent mounts block maintenance. Secrets
 and temporary memory mounts are separate from persistent data.
 

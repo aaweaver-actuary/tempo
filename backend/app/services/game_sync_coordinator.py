@@ -24,7 +24,6 @@ from .game_sync import sync_providers
 from app.games.ingestion.serialization import serialize_job
 from .repertoire_comparison import compare_games
 from .activity_gate import activity_gate
-from .repertoire_coverage import claim_coverage_node, execute_coverage_node
 from .statistics import refresh_game_features
 from .repertoire_integrity import (
     claim_integrity_slice,
@@ -117,9 +116,6 @@ def _execute_job(job: dict) -> None:
             request = GameSyncRequest.model_validate_json(job["request_json"])
             emit_progress("sync", job["id"], job["id"], "Fetching provider games")
             result = asyncio.run(sync_providers(request))
-            changed_game_ids = result.pop("_changed_game_ids", [])
-            for game_id in changed_game_ids:
-                _retry_sync_database_write(lambda game_id=game_id: enqueue_game_derivation(game_id, background=True))
             _retry_sync_database_write(lambda: _finish_job(job["id"], result))
             emit_progress("sync", job["id"], job["id"], f"Imported {result['imported']} games")
         except Exception as error:  # The job error must not overwrite provider state.
@@ -337,7 +333,6 @@ class GameSyncCoordinator:
             "durable",
             "sync",
             "derivation",
-            "coverage",
             "integrity",
         )
         while True:
@@ -347,13 +342,12 @@ class GameSyncCoordinator:
                 source = sources[source_index]
                 try:
                     if source == "durable":
-                        item = await asyncio.to_thread(claim_task)
+                        kinds = tuple(_durable_task_handlers)
+                        item = await asyncio.to_thread(claim_task, allowed_kinds=kinds) if kinds else None
                     elif source == "sync":
                         item = await asyncio.to_thread(_claim_job)
                     elif source == "derivation":
                         item = await asyncio.to_thread(_claim_derivation)
-                    elif source == "coverage":
-                        item = await asyncio.to_thread(claim_coverage_node)
                     elif source == "integrity":
                         item = await asyncio.to_thread(claim_integrity_slice)
                 except sqlite3.OperationalError:
@@ -413,8 +407,6 @@ class GameSyncCoordinator:
                         await asyncio.to_thread(_execute_job, item)
                     elif source == "derivation":
                         await asyncio.to_thread(_execute_derivation, item)
-                    elif source == "coverage":
-                        await asyncio.to_thread(execute_coverage_node, item)
                     elif source == "integrity":
                         await asyncio.to_thread(execute_integrity_slice, item)
                 except sqlite3.OperationalError as error:
@@ -469,7 +461,6 @@ def _requeue_interrupted_background_work() -> None:
     with connection() as database:
         storage.requeue_interrupted_syncs(database, now)
         storage.requeue_interrupted_derivations(database, now)
-        storage.requeue_interrupted_coverage(database, now)
         storage.requeue_interrupted_integrity_jobs(database, now)
         storage.requeue_interrupted_integrity_state(database)
 

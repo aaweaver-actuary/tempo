@@ -17,8 +17,6 @@ import subprocess
 import sys
 import tempfile
 import time
-from contextlib import contextmanager
-from datetime import date
 from unittest.mock import patch
 
 ROOT=Path(__file__).resolve().parents[2]
@@ -26,9 +24,7 @@ sys.path.insert(0,str(ROOT/'backend'))
 sys.path.insert(0,str(ROOT/'scripts'))
 import psycopg
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory, close_pools
-from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 from app.services import frozen_opening_order as order,postgres_queue_refresh as refresh
-from app.services.frozen_maia_plan import create_plan
 from app.chess.cards import card_id
 from database.tooling.provision_postgres_roles import provision
 import chess
@@ -37,11 +33,6 @@ from qualification_cpu import cpu_arguments, cpu_nanos, require_managed_docker, 
 
 def command(arguments):
     return subprocess.run(arguments,text=True,capture_output=True,check=True).stdout.strip()
-
-
-def fake_maia(fen):
-    legal=[move.uci() for move in chess.Board(fen).legal_moves]
-    return [{'move_uci':move,'probability':.6 if move=='e7e5' else .4/(len(legal)-1)} for move in legal]
 
 
 def model_provenance():
@@ -53,6 +44,8 @@ def model_provenance():
 
 
 def main():
+    from app.product_composition.database_infrastructure import bind_database_infrastructure
+    bind_database_infrastructure()
     require_managed_docker()
     cpus = selected_cpus()
     # This disposable PostgreSQL proof owns local admission, not the separate
@@ -114,8 +107,10 @@ def main():
                     scored_lines.append(['e2e4',black_move.uci(),white_move.uci()])
                     if len(scored_lines)==100:break
                 if len(scored_lines)==100:break
+            scored_ids=[]
             for index,moves in enumerate(scored_lines):
                 identifier=card_id(chess.STARTING_FEN,moves)
+                scored_ids.append(identifier)
                 database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type,trained_color) VALUES(?,'fixture','prefix',?,?,'new',?,'opening','white')",(identifier,chess.STARTING_FEN,json.dumps(moves),day))
                 line_id=f'line-{index:03d}'
                 database.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,'fixture','fixture','white',?,?,?)",(line_id,chess.STARTING_FEN,json.dumps(moves),day+str(index)))
@@ -126,20 +121,12 @@ def main():
             database.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES('missing-line','fixture','missing','white',?,?,?)",(missing_fen,json.dumps(unknown_moves),day+'missing'))
             database.execute("INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,parent_card_id,decision_fen_key,starting_fen,moves_json,trained_color,segment_kind,first_decision_index,last_decision_index,decision_fen_keys_json) VALUES('fixture',1,'missing-line',0,?,NULL,?, ?,?,'white','prefix',0,0,'[]')",(unknown_id,' '.join(missing_fen.split()[:4]),missing_fen,json.dumps(unknown_moves)))
 
-        cli_spec=importlib.util.spec_from_file_location('frozen_cli',ROOT/'database/tooling/frozen-maia-order.py')
-        cli=importlib.util.module_from_spec(cli_spec);cli_spec.loader.exec_module(cli)
-        config={'scenarios':[{'name':'Fixture','repertoire_id':'fixture','color':'white','prefix':['e4'],'weight':1.0}],
-            'expected_database':'postgres','expected_schema':'public','maia_elo_override':None,'study_timezone':'America/New_York'}
-        snapshot=cli.capture()
-        plan=create_plan(snapshot,config,fake_maia,model_provenance(),allow_unscored_tail=True)
-        assert plan['activation_safe'] and plan['deferred_count']==1 and plan['scored_count']==100
-        assert plan['deferred_fraction']<=0.01 and plan['lineage_diagnostic_count']==1
-        assert plan['deferred_cards'][0]['id']==unknown_id and plan['deferred_cards'][0]['marginal_score'] is None
-        strict=create_plan(snapshot,config,fake_maia,model_provenance())
-        try:cli.validate_plan(strict)
-        except ValueError as error:assert 'incomplete' in str(error).lower()
-        else:raise AssertionError('Strict incomplete plan unexpectedly validated')
-        cli.validate_plan(plan)
+        from fixtures.frozen_order_staged_plan import staged_plan
+        with psycopg.connect(url,row_factory=tempo_row_factory) as raw:
+            plan=staged_plan(PostgresConnection(raw), [*scored_ids, unknown_id],
+                             run_id='synthetic-frozen-plan', provenance=model_provenance(),
+                             deferred_id=unknown_id)
+        assert plan['deferred_fraction']<=0.01 and plan['deferred_cards'][0]['id']==unknown_id
         ids=[plan['ranks'][1]['id'],plan['ranks'][0]['id']]
         run_id=plan['run_id']
         with psycopg.connect(url,row_factory=tempo_row_factory) as raw:
@@ -239,50 +226,6 @@ def main():
             database=PostgresConnection(raw)
             assert refresh._publish_queue_randomization(database,tail_day,tail_refresh)
             assert [row[0] for row in database.execute('SELECT card_id FROM daily_queue WHERE queue_date=? ORDER BY position',(tail_day,))]==tail_ids
-        # Exercise the capture relation across multiple pages, including a
-        # composite key and all three freshness-filtered priority views.
-        cli_spec=importlib.util.spec_from_file_location('frozen_cli',ROOT/'database/tooling/frozen-maia-order.py')
-        cli=importlib.util.module_from_spec(cli_spec);cli_spec.loader.exec_module(cli)
-        pagination_ids=[]
-        with psycopg.connect(url,row_factory=tempo_row_factory) as raw:
-            database=PostgresConnection(raw)
-            scope_generation=database.execute('SELECT generation FROM repertoire_game_scope WHERE id=1').fetchone()[0]
-            prefix_revision=database.execute('SELECT canonical_prefix_revision FROM repertoires WHERE id=?',('fixture',)).fetchone()[0]
-            database.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json) VALUES('reader-page-game','fixture','fixture',?,'rapid',1,'white','win',?,'[]')",(day,chess.STARTING_FEN))
-            database.execute("INSERT INTO repertoire_priority_publications(repertoire_id,generation,updated_at) VALUES('fixture',7,?)",(day,))
-            for index in range(260):
-                identifier=f'reader-page-{index:04d}';pagination_ids.append(identifier)
-                database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type,trained_color) VALUES(?,'fixture','prefix',?,'[]','new',?,'opening','white')",(identifier,chess.STARTING_FEN,day))
-                evidence=json.dumps({'canonical_prefix_revision':prefix_revision,
-                                     'game_scope_generation':scope_generation if index<259 else scope_generation-1})
-                database.execute("INSERT INTO repertoire_card_introduction_priorities(repertoire_id,card_id,scoring_version,evidence_json,updated_at) VALUES('fixture',?,1,?,?)",(identifier,evidence,day))
-                database.execute("INSERT INTO repertoire_card_priority_generations(repertoire_id,generation,card_id,scoring_version,evidence_json,updated_at) VALUES('fixture',7,?,1,?,?)",(identifier,evidence,day))
-                finding=f'reader-page-finding-{index:04d}'
-                database.execute("INSERT INTO game_findings(id,game_id,analysis_version,ply,kind,confidence,evidence_json,card_id,status,created_at,updated_at) VALUES(?,'reader-page-game',1,1,'fixture',1,'{}',?,'accepted',?,?)",(finding,identifier,day,day))
-                database.execute("INSERT INTO gameplay_card_priorities(card_id,source_game_id,finding_id,priority_date,reason,created_at) VALUES(?,'reader-page-game',?,?,?,?)",(identifier,finding,day,'fixture',day))
-                database.execute("INSERT INTO queue_attempt_origins(queue_entry_id,card_id,revision,queue_date,cycle,admission_kind,attempt_failed,last_status,legacy,start_fen,moves_json,content_type) VALUES(?,?,?,?,0,'new',0,'queued',1,?,'[]','opening')",(100000+index,identifier,1,day,chess.STARTING_FEN))
-
-        @contextmanager
-        def reader_factory():
-            with psycopg.connect(reader_url,row_factory=tempo_row_factory) as raw:
-                yield PostgresConnection(raw)
-
-        with psycopg.connect(reader_url,row_factory=tempo_row_factory) as reader:
-            identity=reader.execute("SELECT current_user,current_setting('transaction_read_only'),role.rolsuper,role.rolconfig FROM pg_roles role WHERE role.rolname=current_user").fetchone()
-            assert identity['current_user']=='tempo_reader' and identity['current_setting']=='on' and not identity['rolsuper']
-            assert 'default_transaction_read_only=on' in identity['rolconfig']
-            for relation in set(cli.TABLES.values()):
-                grants=reader.execute("SELECT c.relowner::regrole::text AS owner,has_table_privilege(current_user,%s,'SELECT') AS can_select,has_table_privilege(current_user,%s,'INSERT') AS can_insert,has_table_privilege(current_user,%s,'UPDATE') AS can_update,has_table_privilege(current_user,%s,'DELETE') AS can_delete FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname=%s",(relation,relation,relation,relation,relation)).fetchone()
-                assert grants and grants['owner']!='tempo_reader' and grants['can_select'] and not any(grants[key] for key in ('can_insert','can_update','can_delete')),(relation,grants)
-
-        captured=cli.capture(reader_factory)
-        assert len(captured['cards'])==361 and captured['metadata'][0]['schema_version']==POSTGRES_SCHEMA_VERSION
-        assert [row['id'] for row in captured['cards'] if row['id'] in pagination_ids]==pagination_ids
-        assert len({row['id'] for row in captured['cards']})==len(captured['cards'])
-        assert len([row for row in captured['origins'] if row['queue_entry_id']>=100000])==260
-        assert len([row for row in captured['priorities'] if row['card_id'] in pagination_ids])==259
-        assert len([row for row in captured['generated'] if row['card_id'] in pagination_ids])==259
-        assert len([row for row in captured['gameplay'] if row['card_id'] in pagination_ids])==260
         close_pools()
         command(['docker','restart',container])
         port=command(['docker','inspect',container,'--format','{{(index (index .NetworkSettings.Ports "5432/tcp") 0).HostPort}}'])
@@ -356,13 +299,9 @@ def main():
             database.execute('UPDATE queue_attempt_origins SET issued_as_head=1 WHERE queue_entry_id=? AND card_id=?',(legacy_queue_id,legacy_id))
             assert legacy_queue_id in [row[0] for row in database.execute(_AVAILABLE_ATTEMPT_SQL,(day,)).fetchall()]
         from app import main as application
-        # The native fixture deliberately spans fixed queue days. Match the API's
-        # clock to its owning queue instead of reading the host calendar.
-        class FixtureDay(date):
-            @classmethod
-            def today(cls):
-                return cls.fromisoformat(day)
-        with patch.object(application, 'date', FixtureDay):
+        # The queue projection now obtains its day from the queue owner.
+        from app import queue_commands
+        with patch.object(queue_commands, 'current_study_day', return_value=day):
             assert legacy_id in {row['id'] for row in application._queue_payload()['cards']}
         print(json.dumps({'test_frozen_legacy_confirmation_uses_fixture_day': day}))
         legacy_moves=['e2e4','e7e5','g1f3','b8c6','f1b5','a7a6','b5a4']
@@ -411,7 +350,7 @@ def main():
             assert any('Index' in node for node in nodes(explained['Plan'])),explained
             assert explained['Plan']['Actual Rows']==16
             print(json.dumps({'static_rows':35400,'page_rows':16,'server_execution_ms':explained['Execution Time'],'plan_nodes':list(nodes(explained['Plan']))}))
-        print(json.dumps({'result':'PASS','proofs':['schema migration','safe deferred-tail publication','strict incomplete-plan refusal','study-only rank paging','native scored and deferred admission','locked/invalid/changed tail fences','dedup/idempotency','scored and deferred queue refresh','issued-during-prepare fence','stale-content serving hold','read-only CLI capture','tail day boundary and restart','rollback preserves study','concurrent stale-plan guard'],'scored':plan['scored_count'],'deferred':plan['deferred_count'],'deferred_fraction':plan['deferred_fraction'],'deferred_rank':plan['deferred_cards'][0]['rank'],'seconds':round(time.monotonic()-started,2),'container':container,'volume':volume}))
+        print(json.dumps({'result':'PASS','proofs':['schema migration','staged deferred-tail rank serving','study-only rank paging','native scored and deferred admission','locked/invalid/changed tail fences','dedup/idempotency','scored and deferred queue refresh','issued-during-prepare fence','stale-content serving hold','tail day boundary and restart','rollback preserves study','concurrent stale-plan guard'],'scored':plan['scored_count'],'deferred':plan['deferred_count'],'deferred_fraction':plan['deferred_fraction'],'deferred_rank':plan['deferred_cards'][0]['rank'],'seconds':round(time.monotonic()-started,2),'container':container,'volume':volume}))
     finally:
         try:
             diagnostic=subprocess.run(['docker','logs',container],text=True,capture_output=True)

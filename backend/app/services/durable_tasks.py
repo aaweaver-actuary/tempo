@@ -267,6 +267,13 @@ def claim_task(
     kind: str | None = None, *, allowed_kinds: tuple[str, ...] | None = None,
     lease_seconds: int = 60, explicit_imports_only: bool = False,
 ) -> dict | None:
+    from ..contracts.command_registry import RETIRED_TASK_KINDS
+    if kind in RETIRED_TASK_KINDS:
+        return None
+    if allowed_kinds is not None:
+        allowed_kinds = tuple(item for item in allowed_kinds if item not in RETIRED_TASK_KINDS)
+        if not allowed_kinds:
+            return None
     if explicit_imports_only and (kind is not None or allowed_kinds is not None):
         raise ValueError("Explicit import claims use only their receipt-bound scope")
     if kind is not None and allowed_kinds is not None:
@@ -459,15 +466,6 @@ def fail_task(task_id: str, generation: int, lease_token: str, error: Exception)
                 ("failed" if terminal else "retrying", sanitized_error,
                  integrity_payload["repertoire_id"], f"{task_id}:{generation}"),
             )
-        if terminal and row["kind"] in {"coverage_seed", "coverage_explorer"}:
-            coverage_payload = json.loads(row["payload_json"])
-            storage.fail_coverage_run(database, (sanitized_error, _iso(now), coverage_payload["run_id"]))
-        if terminal and row["kind"] == "game_analysis_publish":
-            publication_payload = json.loads(row["payload_json"])
-            game_id = publication_payload["game_id"]
-            storage.fail_analysis_publication(database, (sanitized_error, _iso(now), game_id))
-            storage.fail_analysis_job(database, (sanitized_error, _iso(now), game_id))
-            storage.fail_imported_game(database, (game_id,))
         if terminal and postgres_store.configured():
             from .prefix_transition_application import record_linked_failure
             record_linked_failure(database, task_id, generation, sanitized_error)
@@ -578,6 +576,9 @@ def retry_task(task_id: str) -> dict | None:
         row = storage.failed_task(database, (task_id,))
         if not row:
             return None
+        from ..contracts.command_registry import RETIRED_TASK_KINDS
+        if row["kind"] in RETIRED_TASK_KINDS:
+            return None
         now = _iso()
         write_retry = storage.prepare_manual_retry()
         write_retry(database, (now, now, task_id))
@@ -596,8 +597,10 @@ def retry_task(task_id: str) -> dict | None:
 def requeue_interrupted_tasks() -> None:
     def operation(database: sqlite3.Connection) -> None:
         now = _iso()
-        interrupted = storage.interrupted_tasks(database)
-        write_interrupted = storage.prepare_interrupted_requeue()
+        from ..contracts.command_registry import RETIRED_TASK_KINDS
+        excluded_kinds = tuple(sorted(RETIRED_TASK_KINDS))
+        interrupted = storage.interrupted_tasks(database, excluded_kinds)
+        write_interrupted = storage.prepare_interrupted_requeue(excluded_kinds)
         write_interrupted(database, (now,))
         for row in interrupted:
             _record_event(database, row["id"], row["generation"], "reclaimed", "queued", kind=row["kind"])

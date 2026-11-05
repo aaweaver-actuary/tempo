@@ -225,6 +225,9 @@ def _execute_command(
     operation_id: str, command_name: str, payload: dict[str, Any], *, background: bool = False,
     attempt_token: str | None = None,
 ) -> Any:
+    from .contracts.command_registry import is_retired_command
+    if is_retired_command(command_name):
+        raise ValueError(f"Retired command: {command_name}")
     if command_name not in _handlers:
         raise ValueError(f"Unknown command: {command_name}")
     if not operation_id or len(operation_id) > 128:

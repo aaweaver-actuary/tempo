@@ -37,106 +37,6 @@
       }
     },
     {
-      "id": "workbench-web",
-      "type": "app",
-      "maintainer": "Tempo / C #4",
-      "status": "implemented",
-      "root": "apps/workbench-web",
-      "publicExports": [
-        "IntelligenceClient",
-        "PendingCommands",
-        "PendingMutation",
-        "RunCreationRequest",
-        "gameFrames",
-        "gameSourceUrl",
-        "mountWorkbench",
-        "GamesReader",
-        "GameScope",
-        "GamePage",
-        "Game",
-        "WorkbenchOptions",
-        "intelligenceOrigin",
-        "intelligenceOriginForBuild",
-        "studyHandoffNotice",
-        "studyUrl",
-        "studyUrlForBuild"
-      ],
-      "dependencies": [
-        "@lichess-org/chessground",
-        "chess.js",
-        "zod"
-      ],
-      "buildInputs": [
-        "src",
-        "../../database/browser/adapters/workbench",
-        "public",
-        "index.html",
-        "tsconfig.json",
-        "vite.config.ts",
-        "package.json",
-        "package-lock.json",
-        "tests",
-        "test.mjs",
-        "qualify.mjs",
-        "README.md",
-        "REGRESSIONS.md"
-      ],
-      "buildCommand": "npm ci --workspaces=false && npm run build",
-      "artifact": {
-        "name": "@tempo/workbench-web",
-        "version": "0.1.0",
-        "format": "static web + npm tarball"
-      },
-      "tests": [
-        {
-          "owner": "workbench-web",
-          "kind": "node",
-          "cwd": ".",
-          "command": "npm --prefix apps/workbench-web test",
-          "inputs": [
-            "apps/workbench-web/src",
-            "database/browser/adapters/workbench",
-            "apps/workbench-web/tests",
-            "apps/workbench-web/public",
-            "apps/workbench-web/index.html",
-            "apps/workbench-web/tsconfig.json",
-            "apps/workbench-web/package.json",
-            "apps/workbench-web/package-lock.json",
-            "apps/workbench-web/test.mjs",
-            "apps/workbench-web/vite.config.ts"
-          ]
-        },
-        {
-          "owner": "workbench-web",
-          "kind": "node",
-          "cwd": ".",
-          "command": "npm --prefix apps/workbench-web run test:browser -- tests/fixtures/producer.json",
-          "inputs": [
-            "apps/workbench-web/src",
-            "database/browser/adapters/workbench",
-            "apps/workbench-web/tests",
-            "apps/workbench-web/public",
-            "apps/workbench-web/package.json",
-            "apps/workbench-web/package-lock.json",
-            "apps/workbench-web/index.html",
-            "apps/workbench-web/tsconfig.json",
-            "apps/workbench-web/vite.config.ts"
-          ]
-        }
-      ],
-      "toolchain": {
-        "node": ">=22.13.0",
-        "qualificationNode": "26.10.0",
-        "browser": "Playwright 1.63.0 Chromium"
-      },
-      "dataOwnership": {
-        "authority": null,
-        "databases": [],
-        "migrations": []
-      },
-      "testInventory": "REGRESSIONS.md"
-    },
-    {
       "id": "learning",
       "type": "service",
       "maintainer": "Tempo",
@@ -481,99 +381,6 @@
           "../../database/tempo_intelligence_database/ddl/migrations/manifest.json"
         ],
         "productionAdoption": false
-      },
-      "testInventory": "REGRESSIONS.md"
-    },
-    {
-      "id": "maia",
-      "type": "worker",
-      "maintainer": "Tempo / #110",
-      "status": "implemented",
-      "root": "workers/maia",
-      "publicExports": [
-        "PROBABILITY_TOLERANCE",
-        "SUPPORTED_RATINGS",
-        "VOCABULARY_SIZE",
-        "createModel",
-        "decodePredictions",
-        "inspectModel",
-        "mirrorFen",
-        "mirrorMove",
-        "mirrorSquare",
-        "preparePosition",
-        "validatePosition",
-        "validateRating",
-        "validateVocabularies"
-      ],
-      "dependencies": [
-        "ajv",
-        "chess.js",
-        "onnxruntime-web"
-      ],
-      "buildInputs": [
-        "package.json",
-        "package-lock.json",
-        "index.mjs",
-        "core.mjs",
-        "model.mjs",
-        "errors.mjs",
-        "model-descriptor.json",
-        "build-inputs.json",
-        "build.mjs",
-        "qualify.mjs",
-        "fixtures",
-        "tests",
-        "test.mjs",
-        "README.md",
-        "REGRESSIONS.md"
-      ],
-      "buildCommand": "node qualify.mjs restricted",
-      "artifact": {
-        "name": "@tempo/maia-worker",
-        "version": "1.0.0",
-        "qualifier": "qualify.mjs",
-        "formats": [
-          "npm-tarball"
-        ],
-        "contract": "Low-level offline inference API; shared schema fixtures retained",
-        "immutableInputs": "build-inputs.json",
-        "modelDescriptor": "model-descriptor.json"
-      },
-      "tests": [
-        {
-          "owner": "maia",
-          "kind": "node",
-          "command": "node test.mjs pure",
-          "inputs": [
-            "tests",
-            "fixtures",
-            "test.mjs",
-            "core.mjs",
-            "model.mjs",
-            "model-descriptor.json",
-            "build-inputs.json"
-          ]
-        },
-        {
-          "owner": "maia",
-          "kind": "python",
-          "command": "python -I -m pytest tests/contracts/test_exchange.py --import-mode=importlib -q",
-          "inputs": [
-            "tests/contracts"
-          ]
-        }
-      ],
-      "toolchain": {
-        "node": "26.10.0",
-        "runtime": "onnxruntime-web/wasm 1.23.0",
-        "chess": "chess.js 1.4.0",
-        "normalConcurrency": 1,
-        "resourcePolicy": "Low-level computation only; caller owns admission, cancellation and process limits."
-      },
-      "dataOwnership": {
-        "authority": "#110 model computation; root coverage scripts retain process lifecycle",
-        "databases": [],
-        "migrations": []
       },
       "testInventory": "REGRESSIONS.md"
     },
@@ -1880,33 +1687,6 @@
   ],
   "suites": [
     {
-      "id": "engine-image-packaging",
-      "owner": "engine worker",
-      "kind": "node",
-      "cwd": ".",
-      "command": "node tools/component-build/test-lane.mjs runners engine-image-packaging",
-      "inputs": [
-        "Dockerfile.engine",
-        ".dockerignore",
-        "components.json",
-        "package.json",
-        "tests/runner/engine-image-packaging.test.mjs",
-        "scripts/defense-engine-worker.mjs",
-        "scripts/stockfish-process.mjs",
-        "scripts/stockfish-child.mjs",
-        "scripts/engine-search.mjs",
-        "scripts/engine-worker-cycle.mjs",
-        "scripts/engine-attempt-diagnostics.mjs",
-        "scripts/maia-coverage-client.mjs",
-        "scripts/durable-engine-request.mjs",
-        "scripts/engine-job-recovery.mjs",
-        "scripts/engine-job-families.mjs",
-        "public/engines/sf_19_smallnet.js",
-        "public/engines/sf_19_smallnet.wasm",
-        "public/engines/nn-61e7af4bb97d.nnue"
-      ]
-    },
-    {
       "id": "postgres-backup-lifecycle",
       "owner": "database backup tooling",
       "kind": "node",
@@ -2183,13 +1963,9 @@
       "command": "python -m pytest database/tests/games_collection/test_packaged_collection.py -q",
       "inputs": [
         "backend/app/games",
-        "backend/app/product_composition/game_history_scripts.py",
-        "backend/tests/test_game_history_scripts.py",
         "backend/tests/test_historical_time_precision.py",
         "backend/tests/test_historical_provider_pagination.py",
         "backend/tests/test_historical_chesscom_daily.py",
-        "scripts/import-game-history.py",
-        "scripts/check-game-history.py",
         "backend/app/product_composition/game_sync.py",
         "backend/app/product_composition/game_sync_current.py",
         "backend/app/product_composition/game_collection_status.py",
