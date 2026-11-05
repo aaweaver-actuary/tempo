@@ -7,6 +7,9 @@ import { assertDevelopmentProjectOwned, validateDevelopmentBudgetOwner } from ".
 
 const packId = "hangingPiece-easy-01";
 
+// Fault injection must reach the network rather than a service-worker cache.
+test.use({ serviceWorkers: "block" });
+
 async function confirmed(request: APIRequestContext, response: APIResponse) {
   const body = await response.json();
   expect(response.ok(), JSON.stringify(body)).toBe(true);
@@ -80,11 +83,23 @@ test("pack activation and solved progress survive an owned service restart; miss
   await expect.poll(async () => (await (await request.get(`${api}/tactics/catalog`)).json()).packs
     .find((pack: { id: string }) => pack.id === packId).active).toBe(false);
 
+  // Remove only the disposable static pack cache; keep progress and journals intact.
+  await page.evaluate((id) => {
+    for (let index = localStorage.length - 1; index >= 0; index--) {
+      const key = localStorage.key(index);
+      if (key?.startsWith("tempo-workspace-cache-v3:") && key.endsWith(`/data/tactics-packs/${id}.json`)) localStorage.removeItem(key);
+    }
+  }, packId);
   // Fail the actual static pack request, then navigate back to the real Study queue.
-  await page.route(`**/data/tactics-packs/${packId}.json`, route => route.abort("failed"));
+  let failedPackRequests = 0;
+  await page.route(`**/data/tactics-packs/${packId}.json`, route => {
+    failedPackRequests += 1;
+    return route.abort("failed");
+  });
   await page.reload();
   await nav(page, "Tactics");
-  await expect(page.getByText(/Could not load|No validated puzzles/i).first()).toBeVisible();
+  await expect.poll(() => failedPackRequests).toBeGreaterThan(0);
+  await expect(page.getByRole("status").filter({ hasText: /Failed to fetch|Could not load|No validated puzzles/i })).toBeVisible();
   await nav(page, "Train");
   await expect(page.locator("#train")).toBeVisible();
   await expect(page.locator(".board-frame").first()).toHaveAttribute("data-input-enabled", "true");
