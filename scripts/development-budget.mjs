@@ -340,6 +340,7 @@ export function composeResourceLimits(services, owner, allocations = resourceBud
 
 export async function waitForStudyQuiet({ activityUrl = process.env.TEMPO_STUDY_ACTIVITY_URL ?? 'http://127.0.0.1:8000/api/system/foreground-active',
   read = fetch, pause = wait, signal, hostActivity = readHostStudyActivity,
+  offlineCheck = null,
   legacyAbsent = process.env.TEMPO_STUDY_ACTIVITY_LEGACY === 'absent' ||
     process.env.GITHUB_ACTIONS === 'true' && process.env.RUNNER_ENVIRONMENT === 'github-hosted' && !process.env.TEMPO_STUDY_ACTIVITY_URL } = {}) {
   for (;;) {
@@ -358,6 +359,7 @@ export async function waitForStudyQuiet({ activityUrl = process.env.TEMPO_STUDY_
       if (["EPERM", "EACCES"].includes(error.cause?.code)) throw new Error("Study activity cannot be checked: local network permission is required");
       // Refusal is unavailable control, never proof that no protected Study exists.
     }
+    if (offlineCheck && await offlineCheck()) return;
     await pause(500);
   }
 }

@@ -1,6 +1,6 @@
 // Bounded deployment stages. No work is scheduled from application startup.
 import { createHash, randomUUID } from "node:crypto";
-import { managedComposeBuild } from './development-budget.mjs';
+import { managedComposeBuild, waitForStudyQuiet } from './development-budget.mjs';
 import { closeSync, constants, existsSync, fstatSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
@@ -73,6 +73,16 @@ export function assertColdPreflightContainers(containers, project, { databaseSta
     if (!allowed.has(service))
       throw new Error(`Registered ${service || "unknown"} container may be active while PostgreSQL is unavailable; applications were not stopped. Inspect the registered target before retrying.`);
   }
+}
+
+export function assertOfflineBuildContainers(containers, target, previous) {
+  const project=containers.filter(item=>item.Config?.Labels?.['com.docker.compose.project']===target.project);
+  const api=project.filter(item=>item.Config?.Labels?.['com.docker.compose.service']==='api');
+  const db=project.filter(item=>item.Config?.Labels?.['com.docker.compose.service']==='postgres');
+  if(api.length!==1 || db.length!==1 || !previous?.images?.postgres || db[0].Image!==previous.images.postgres ||
+      !db[0].Mounts?.some(m=>m.Type==='volume'&&m.Name===target.volumes[target.postgresVolumeKey].name&&m.Destination==='/var/lib/postgresql'&&m.RW))
+    throw new Error('Offline build cannot verify the registered API and database identity.');
+  assertColdPreflightContainers(containers,target.project,{databaseStarted:true});
 }
 
 export function cut62MountDirectory(stateDirectory, witnessName) {
@@ -399,8 +409,17 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     atomicJson(labelsFile, { services: Object.fromEntries(buildServices.map(name => [name,
       { image: `${target.project}-${name}:tempo-${revision}`, build: { labels: { "org.opencontainers.image.revision": revision } } }])) });
     composeFiles.push(labelsFile);
+    const buildLock = captureManagedTargetLock(stateDirectory);
+    const offlineCheck = async () => {
+      assertManagedTargetLock(stateDirectory,buildLock);
+      await inspectTarget();
+      assertManagedTargetLock(stateDirectory,buildLock);
+      assertOfflineBuildContainers(containers,target,previous);
+      return true;
+    };
     await buildImages(async () => (await compose(["--profile", "maintenance", "build", "--print", ...buildServices])).stdout,
-      args => docker(args, {echo:true}), { docker: async args => (await docker(args)).stdout });
+      args => docker(args, {echo:true}), { docker: async args => (await docker(args)).stdout,
+        quiet: () => waitForStudyQuiet({offlineCheck}) });
     const pulledServices = Object.entries(configuration.services).filter(([, service]) => !service.build && service.image).map(([name]) => name);
     if (pulledServices.length) await compose(["--profile", "maintenance", "pull", ...pulledServices], { echo: true });
     await config();
