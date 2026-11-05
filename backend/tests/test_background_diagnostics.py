@@ -735,3 +735,32 @@ def test_local_game_ingest_and_replay_do_not_create_analysis_jobs(diagnostic_dat
     with database.read_connection() as connection:
         assert connection.execute("SELECT content_hash FROM imported_games WHERE id='lichess:one'").fetchone()[0] == 'changed'
         assert connection.execute('SELECT COUNT(*) FROM game_analysis_jobs').fetchone()[0] == 0
+
+
+@pytest.mark.parametrize('kind', ['coverage_seed', 'coverage_explorer'])
+@pytest.mark.parametrize('payload', [{}, {'run_id': 'saved-run'}], ids=['missing-run', 'existing-run'])
+def test_retired_coverage_terminal_failure_preserves_owner_rows_and_generic_event(diagnostic_database, monkeypatch, kind, payload):
+    statements = []
+    original = database.background_connection
+    @contextmanager
+    def traced_connection(**options):
+        with original(**options) as connection:
+            connection.set_trace_callback(statements.append)
+            yield connection
+    monkeypatch.setattr(database, 'background_connection', traced_connection)
+    # A stale payload need not have the retired feature's run identity.
+    with database.connection() as connection:
+        connection.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('rep','Synthetic','fixture','2026-01-01')")
+        connection.execute("INSERT INTO repertoire_coverage_runs(id,repertoire_id,status,settings_json,created_at,updated_at) VALUES('saved-run','rep','queued','{}','2026-01-01','2026-01-01')")
+    stale = durable_tasks.enqueue_task(kind, 'old', payload, max_attempts=1)
+    with database.connection() as connection:
+        connection.execute("UPDATE background_tasks SET state='leased',lease_token='old-lease',attempt_count=1 WHERE id=?", (stale['id'],))
+    assert durable_tasks.claim_task(kind) is None
+    result = durable_tasks.fail_task(stale['id'], stale['generation'], 'old-lease', RuntimeError('old delivery'))
+    assert result['state'] == 'failed'
+    with database.read_connection() as connection:
+        assert connection.execute('SELECT state FROM background_tasks WHERE id=?', (stale['id'],)).fetchone()[0] == 'failed'
+        assert connection.execute("SELECT 1 FROM background_task_events WHERE task_id=? AND event='failed'", (stale['id'],)).fetchone()
+        assert tuple(connection.execute("SELECT status,last_error FROM repertoire_coverage_runs WHERE id='saved-run'").fetchone()) == ('queued', None)
+    assert not any('repertoire_coverage_runs' in sql or 'repertoire_coverage_nodes' in sql for sql in statements)
+    assert durable_tasks.retry_task(stale['id']) is None
