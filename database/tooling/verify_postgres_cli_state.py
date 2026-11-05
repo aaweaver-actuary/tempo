@@ -324,6 +324,77 @@ def load_cut62_attempt_binding(path, selection, selection_sha256):
 
 
 # Draft only: static typed ownership predicates need catalog and owner review.
+CUT62_DEFENSE_FK_LEDGER_SQL = '''
+WITH expected(target_table,source_schema,source_table,source_column,delete_rule) AS (VALUES
+('cards','public','cards','unlock_after_card_id','n'),
+('cards','public','daily_queue','card_id','c'),
+('cards','public','defense_attempts','card_id','c'),
+('cards','public','gameplay_card_priorities','card_id','c'),
+('cards','public','opening_card_schedule_seeds','card_id','c'),
+('cards','public','opening_card_schedule_seeds','source_card_id','c'),
+('cards','public','opening_graph_legacy_mappings','decision_card_id','c'),
+('cards','public','opening_graph_legacy_mappings','legacy_card_id','c'),
+('cards','public','prefix_splits','continuation_card_id','c'),
+('cards','public','prefix_splits','shortened_card_id','c'),
+('cards','public','prefix_splits','source_card_id','c'),
+('cards','public','repertoire_card_introduction_priorities','card_id','c'),
+('cards','public','repertoire_card_priority_generations','card_id','c'),
+('cards','public','repertoire_cards','card_id','c'),
+('cards','public','repertoire_decision_events_legacy','card_id','n'),
+('cards','public','repertoire_decision_events_staged','card_id','n'),
+('cards','public','repertoire_integrity_card_blocks','card_id','c'),
+('cards','public','repertoire_opportunities','card_id','n'),
+('cards','public','repertoire_priority_prepared_rows','card_id','c'),
+('cards','public','reviews','card_id','c'),
+('cards','public','study_attempts','card_id','a'),
+('cards','public','tactic_captures','card_id','c'),
+('cards','public','teaching_states','card_id','c'),
+('cards','public','threat_training_candidates','card_id','n'),
+('daily_queue','public','defense_recognition_submissions','queue_entry_id','c'),
+('daily_queue','public','study_attempts','queue_entry_id','a')
+), actual AS (
+ SELECT target.relname::text,n.nspname::text,source.relname::text,
+        CASE WHEN cardinality(con.conkey)=1 AND cardinality(con.confkey)=1 AND target_col.attname='id' THEN source_col.attname::text ELSE '<unexpected-composite>' END,
+        con.confdeltype::text
+ FROM pg_constraint con JOIN pg_class target ON target.oid=con.confrelid
+ JOIN pg_class source ON source.oid=con.conrelid JOIN pg_namespace n ON n.oid=source.relnamespace
+ LEFT JOIN pg_attribute source_col ON source_col.attrelid=source.oid AND source_col.attnum=con.conkey[1]
+ LEFT JOIN pg_attribute target_col ON target_col.attrelid=target.oid AND target_col.attnum=con.confkey[1]
+ WHERE con.contype='f' AND con.confrelid IN ('public.cards'::regclass,'public.daily_queue'::regclass)
+)
+SELECT NOT EXISTS ((SELECT * FROM actual EXCEPT ALL SELECT * FROM expected) UNION ALL (SELECT * FROM expected EXCEPT ALL SELECT * FROM actual))
+'''
+
+CUT62_DEFENSE_TRIGGER_LEDGER_SQL = '''
+WITH expected(table_name,trigger_name,enabled,trigger_type,function_name) AS (VALUES
+('cards','canonical_card_delete_source','O',9,'advance_canonical_prefix_source'),
+('cards','canonical_card_insert_source','O',5,'advance_canonical_prefix_source'),
+('cards','canonical_card_promote','O',19,'promote_canonical_card_source'),
+('cards','canonical_card_source','O',17,'advance_canonical_prefix_source'),
+('cards','deleted_card_recreation_guard','O',23,'prevent_deleted_card_recreation'),
+('cards','frozen_guard_cards','O',28,'frozen_invalidate_pending'),
+('cards','opening_evidence_01_saved_presentation','O',21,'opening_evidence_capture_presentation'),
+('cards','opening_evidence_edited_scope','O',17,'opening_evidence_capture_edited_scope'),
+('cards','prefix_transition_card_write','O',31,'guard_prefix_transition_write'),
+('cards','priority_source_cards','O',29,'priority_card_source_changed'),
+('cards','queue_attempt_origin_revision','O',17,'retain_queue_attempt_revision'),
+('cards','study_position_guard_legacy_fsrs_id','O',23,'study_position_guard_legacy_fsrs_id'),
+('daily_queue','frozen_guard_daily_queue','O',28,'frozen_invalidate_pending'),
+('daily_queue','opening_evidence_queue_scope','O',21,'opening_evidence_capture_queue_context'),
+('daily_queue','prefix_transition_queue_write','O',30,'reserve_prefix_transition_queue_write'),
+('daily_queue','queue_attempt_origin_delete','O',11,'retain_queue_attempt_origin'),
+('daily_queue','queue_attempt_origin_insert','O',5,'retain_queue_attempt_origin'),
+('daily_queue','queue_attempt_origin_update','O',17,'retain_queue_attempt_origin'),
+('queue_attempt_origins','frozen_guard_queue_attempt_origins','O',28,'frozen_invalidate_pending'),
+('queue_attempt_origins','queue_attempt_abandoned_origin_immutable','O',27,'protect_abandoned_queue_origin')
+), actual AS (
+ SELECT c.relname::text,t.tgname::text,t.tgenabled::text,t.tgtype::int,p.proname::text
+ FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace JOIN pg_proc p ON p.oid=t.tgfoid
+ WHERE n.nspname='public' AND NOT t.tgisinternal AND c.relname IN ('cards','daily_queue','queue_attempt_origins','threat_training_candidates','priority_repertoire_source_epochs','frozen_opening_runs')
+)
+SELECT NOT EXISTS ((SELECT * FROM actual EXCEPT ALL SELECT * FROM expected) UNION ALL (SELECT * FROM expected EXCEPT ALL SELECT * FROM actual))
+'''
+
 CUT62_DRAFT_DEFENSE_SELECTOR = '''
 WITH typed_receipts AS MATERIALIZED (
  SELECT CASE WHEN pg_input_is_valid(payload_json,'jsonb') THEN payload_json::jsonb END AS payload,
@@ -344,9 +415,9 @@ AND NOT EXISTS (SELECT 1 FROM public.defense_recognition_submissions r WHERE r.c
 AND NOT EXISTS (SELECT 1 FROM public.daily_queue q WHERE q.card_id=c.id AND (q.status NOT IN ('queued','blocked') OR q.review_result_json IS NOT NULL))
 AND NOT EXISTS (SELECT 1 FROM public.queue_attempt_origins o WHERE o.card_id=c.id AND o.review_result_json IS NOT NULL)
 AND NOT EXISTS (SELECT 1 FROM typed_receipts r WHERE
- r.payload->>'card_id'=c.id OR r.payload#>>'{review,prepared_next,card_id}'=c.id OR r.response->>'card_id'=c.id OR
+ r.payload->>'card_id'=c.id OR r.payload#>>'{review,prepared_next,card_id}'=c.id OR r.payload#>>'{checkpoint,manifest,card_id}'=c.id OR r.response->>'card_id'=c.id OR
  EXISTS (SELECT 1 FROM public.daily_queue q WHERE q.card_id=c.id AND q.id::text IN
- (r.payload->>'entry_id',r.payload->>'queue_entry_id',r.payload#>>'{review,queue_entry_id}',r.payload#>>'{review,prepared_next,queue_entry_id}',r.response->>'entry_id',r.response->>'queue_entry_id')))
+ (r.payload->>'entry_id',r.payload->>'queue_entry_id',r.payload#>>'{review,queue_entry_id}',r.payload#>>'{review,prepared_next,queue_entry_id}',r.payload#>>'{checkpoint,origin_queue_entry_id}',r.payload#>>'{checkpoint,queue_entry_id}',r.response->>'entry_id',r.response->>'queue_entry_id')))
 AND NOT EXISTS (SELECT 1 FROM public.queue_attempt_origins o WHERE o.card_id=c.id AND o.issuance_sequence IS NOT NULL)
 AND NOT EXISTS (SELECT 1 FROM public.daily_queue q WHERE q.card_id=c.id AND ((q.admission_source IS NOT NULL AND q.admission_source<>'defense:' || t.id) OR NOT EXISTS (SELECT 1 FROM public.queue_attempt_origins o WHERE o.queue_entry_id=q.id AND o.card_id=c.id AND o.revision=c.revision AND o.queue_date=q.queue_date AND o.cycle=q.cycle AND o.content_type='defense' AND o.start_fen=c.start_fen AND o.moves_json=c.moves_json)))
 AND NOT EXISTS (SELECT 1 FROM public.queue_attempt_origins o WHERE o.card_id=c.id AND (o.revision<>c.revision OR o.content_type<>'defense' OR o.start_fen<>c.start_fen OR o.moves_json<>c.moves_json OR NOT EXISTS (SELECT 1 FROM public.daily_queue q WHERE q.id=o.queue_entry_id AND q.card_id=c.id AND q.queue_date=o.queue_date AND q.cycle=o.cycle)))
@@ -599,12 +670,22 @@ def capture_cut62_v6(database, secret, selection, binding):
     database.execute("SET LOCAL statement_timeout='30s'")
     migration = (Path(__file__).resolve().parents[1] / 'tempo_legacy_database/ddl/migrations/062_three_journey_retirement.sql').read_text()
     selectors = [part.split('\n-- END CUT62 DEFENSE SELECTOR', 1)[0] for part in migration.split('-- BEGIN CUT62 DEFENSE SELECTOR\n')[1:]]
+    trigger_ledger = migration.split('-- BEGIN CUT62 DEFENSE TRIGGER LEDGER\n', 1)[1].split('\n-- END CUT62 DEFENSE TRIGGER LEDGER', 1)[0]
+    if trigger_ledger != CUT62_DEFENSE_TRIGGER_LEDGER_SQL.strip():
+        raise RuntimeError('cut62 Defense trigger ledger differs from migration')
+    fk_ledger = migration.split('-- BEGIN CUT62 DEFENSE FK LEDGER\n', 1)[1].split('\n-- END CUT62 DEFENSE FK LEDGER', 1)[0]
+    if fk_ledger != CUT62_DEFENSE_FK_LEDGER_SQL.strip():
+        raise RuntimeError('cut62 Defense foreign-key ledger differs from migration')
     if len(selectors) != 2 or any(part != CUT62_DRAFT_DEFENSE_SELECTOR.strip() for part in selectors):
         raise RuntimeError('cut62 Defense selector differs from migration')
     reference = migration.split('-- BEGIN CUT62 REFERENCE DIGEST\n',1)[1].split('\n-- END CUT62 REFERENCE DIGEST',1)[0].strip()
     expected_reference = CUT62_DEFENSE_REFERENCE_SQL.replace('{selector}', '\n-- BEGIN CUT62 DEFENSE SELECTOR\n'+CUT62_DRAFT_DEFENSE_SELECTOR.strip()+'\n-- END CUT62 DEFENSE SELECTOR\n').replace('%s::jsonb', "(current_setting('tempo.cut62_defense_manifest', true)::jsonb->'keys')").replace("SELECT (SELECT count(*) FROM chosen), encode(sha256(convert_to(value::text,'UTF8')),'hex') FROM evidence", "SELECT (SELECT count(*) FROM chosen) AS selected_count, encode(sha256(convert_to(value::text,'UTF8')),'hex') AS reference_digest FROM evidence").strip()
     if reference != expected_reference:
         raise RuntimeError('cut62 reference digest differs from migration')
+    if not database.execute(CUT62_DEFENSE_FK_LEDGER_SQL).fetchone()[0]:
+        raise RuntimeError('cut62 Defense foreign-key ledger changed')
+    if not database.execute(CUT62_DEFENSE_TRIGGER_LEDGER_SQL).fetchone()[0]:
+        raise RuntimeError('cut62 Defense trigger ledger changed')
     count, digest = _cut62_defense_reference_digest(database, selection['keys'])
     if count != selection['expected']['count'] or digest != selection['expected']['reference_digest']:
         raise RuntimeError('approved Defense reference evidence changed')

@@ -338,6 +338,10 @@ def test_schema61_defense_exclusive_rehearsal_preserves_shared_history(tmp_path)
             db.execute("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,payload_json) VALUES ('retained-issue','queue.issue_head','x','pending','{\"entry_id\":900004,\"card_id\":\"census-exclusive\",\"expected_revision\":1}')")
             assert db.execute(cohort_sql).fetchall() == []
             db.execute('ROLLBACK TO SAVEPOINT retained_receipt_hold')
+            db.execute('SAVEPOINT retained_checkpoint_hold')
+            db.execute("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,payload_json) VALUES ('retained-checkpoint','opening_evidence.checkpoint','x','pending','{\"checkpoint\":{\"origin_queue_entry_id\":900004}}')")
+            assert db.execute(cohort_sql).fetchall() == []
+            db.execute('ROLLBACK TO SAVEPOINT retained_checkpoint_hold')
             db.execute('SAVEPOINT opaque_result_hold')
             db.execute("UPDATE daily_queue SET review_result_json='{}' WHERE id=900004")
             assert db.execute(cohort_sql).fetchall() == []
@@ -383,6 +387,16 @@ def test_schema61_defense_exclusive_rehearsal_preserves_shared_history(tmp_path)
             selection = {'version': 1, 'target': 'synthetic', 'cohort': 'defense-no-activity', 'keys': selected_keys, 'expected': {'count': reference_count, 'reference_digest': reference_digest}}
             binding = {'version': 1, 'target': 'synthetic', 'attempt_id': 'synthetic', 'backup_filename': 'synthetic', 'backup_sha256': 'a'*64, 'selection_sha256': 'b'*64}
             db.row_factory = tuple_row
+            db.execute('SAVEPOINT unexpected_foreign_key')
+            db.execute('ALTER TABLE tactic_progress ADD CONSTRAINT synthetic_unknown_card_fk FOREIGN KEY(card_id) REFERENCES cards(id)')
+            with pytest.raises(RuntimeError, match='foreign-key ledger changed'):
+                guard.capture_cut62_v6(db, b'x'*32, selection, binding)
+            db.execute('ROLLBACK TO SAVEPOINT unexpected_foreign_key')
+            db.execute('SAVEPOINT changed_trigger')
+            db.execute('ALTER TABLE cards DISABLE TRIGGER frozen_guard_cards')
+            with pytest.raises(RuntimeError, match='trigger ledger changed'):
+                guard.capture_cut62_v6(db, b'x'*32, selection, binding)
+            db.execute('ROLLBACK TO SAVEPOINT changed_trigger')
             v6 = guard.capture_cut62_v6(db, b'x'*32, selection, binding)
             assert guard.check_captured_cut62_v6(db, v6, b'x'*32)['unchanged']
             from database.tooling.apply_postgres_migrations import MIGRATIONS, migration_source
@@ -391,6 +405,18 @@ def test_schema61_defense_exclusive_rehearsal_preserves_shared_history(tmp_path)
                 db.execute(migration_source(MIGRATIONS / '062_three_journey_retirement.sql'), prepare=False)
             db.execute('ROLLBACK TO SAVEPOINT missing_approval')
             assert db.execute('SELECT max(version) FROM tempo_schema_migrations').fetchone()[0] == 61
+            db.execute('SAVEPOINT migration_changed_trigger')
+            db.execute('ALTER TABLE cards DISABLE TRIGGER frozen_guard_cards')
+            db.execute("SELECT set_config('tempo.cut62_defense_manifest',%s,true)", (json.dumps(selection),))
+            with pytest.raises(psycopg.Error, match='trigger ledger changed'):
+                db.execute(migration_source(MIGRATIONS / '062_three_journey_retirement.sql'), prepare=False)
+            db.execute('ROLLBACK TO SAVEPOINT migration_changed_trigger')
+            db.execute('SAVEPOINT migration_unknown_foreign_key')
+            db.execute('ALTER TABLE tactic_progress ADD CONSTRAINT synthetic_unknown_card_fk FOREIGN KEY(card_id) REFERENCES cards(id)')
+            db.execute("SELECT set_config('tempo.cut62_defense_manifest',%s,true)", (json.dumps(selection),))
+            with pytest.raises(psycopg.Error, match='foreign-key ledger changed'):
+                db.execute(migration_source(MIGRATIONS / '062_three_journey_retirement.sql'), prepare=False)
+            db.execute('ROLLBACK TO SAVEPOINT migration_unknown_foreign_key')
             db.execute('SAVEPOINT changed_reference')
             db.execute("UPDATE threat_analysis_requests SET state='complete' WHERE id='shared-request'")
             db.execute("SELECT set_config('tempo.cut62_defense_manifest',%s,true)", (json.dumps(selection),))
