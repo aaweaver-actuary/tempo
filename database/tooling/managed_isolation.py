@@ -9,6 +9,10 @@ from __future__ import annotations
 
 import os
 import re
+import hashlib
+import hmac
+import json
+import stat
 from psycopg.pq import TransactionStatus
 
 from database.tooling.verify_postgres_cli_state import (
@@ -122,3 +126,61 @@ def verify_committed_in_fenced_transaction(database, guard, expected_backend, *,
     if verify_cut62_v6(database, witness, secret).get('witness_id') != witness_id:
         raise RuntimeError('Original managed committed history differs')
     return witness_id
+
+
+def authenticate_managed_completion(guard, *, selection_path, binding_path, witness_path,
+                                    receipt_path, completion_path, pre62_path=None):
+    """Authenticate immutable completion after ordinary writes may resume.
+
+    This verifies recorded evidence only; it deliberately does not compare old
+    row snapshots with a database that may contain later accepted Study work.
+    The host must independently validate ownership, target identity and lock.
+    """
+    isolation = guard.get('isolation') or {}
+    identity = isolation.get('identity') or {}
+    if (guard.get('state') not in ('pending', 'verified') or isolation.get('phase') not in ('verified', 'reattached') or
+            identity.get('target') != guard.get('target') or identity.get('trustedDaemon') is not True):
+        raise RuntimeError('Original managed completion state is invalid')
+    directory = os.path.dirname(witness_path)
+    if (not all(os.path.isabs(path or '') and os.path.normpath(path) == path for path in (receipt_path, completion_path)) or
+            os.path.dirname(receipt_path) != directory or os.path.dirname(completion_path) != directory or
+            os.path.basename(receipt_path) != 'verified-receipt.json' or os.path.basename(completion_path) != 'verified-completion.json'):
+        raise RuntimeError('Original managed completion paths are invalid')
+
+    def private_bytes(path):
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+        with os.fdopen(descriptor, 'rb') as stream:
+            info = os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o600 or info.st_size > 1048576:
+                raise RuntimeError('Original managed completion file is invalid')
+            return stream.read()
+
+    _, witness, secret, witness_id, _, _ = _load_original_evidence(
+        guard, selection_path=selection_path, binding_path=binding_path, witness_path=witness_path, pre62_path=pre62_path)
+    receipt = json.loads(private_bytes(receipt_path))
+    completion_bytes = private_bytes(completion_path)
+    completion = json.loads(completion_bytes)
+    binding = guard['defense_binding']
+    expected_receipt = {'version': 1, 'target': guard['target'], 'attempt_id': guard['attempt_id'],
+        'target_oid': isolation.get('target_oid'), 'target_name': isolation.get('target_name'),
+        'system_identifier': isolation.get('system_identifier'), 'control_oid': isolation.get('control_oid'),
+        'control_name': isolation.get('control_name'), 'admin_role': isolation.get('admin_role'),
+        'daemon_id': identity.get('daemonId'), 'container_id': identity.get('containerId'),
+        'network_id': identity.get('networkId'), 'image_id': identity.get('imageId'),
+        'backup_filename': binding['backup_filename'], 'backup_sha256': binding['backup_sha256'],
+        'selection_sha256': binding['selection_sha256'],
+        'pre62_witness_id': guard.get('pre62_witness_id') if guard['starting_schema'] == 59 else None,
+        'cut62_witness_id': witness_id, 'schema': 62}
+    expected_payload = {'version': 1, 'target': guard['target'], 'attempt_id': guard['attempt_id'], 'identity': identity,
+        'target_oid': isolation.get('target_oid'), 'system_identifier': isolation.get('system_identifier'),
+        'control_oid': isolation.get('control_oid'), 'backup': binding,
+        'pre62_witness_id': expected_receipt['pre62_witness_id'], 'cut62_witness_id': witness_id, 'receipt': expected_receipt}
+    canonical = json.dumps(expected_payload, sort_keys=True, separators=(',', ':')).encode()
+    signature = hmac.new(secret, b'tempo-disposable-completion-v1\0' + canonical, hashlib.sha256).hexdigest()
+    digest = hashlib.sha256(completion_bytes).hexdigest()
+    if (receipt != expected_receipt or set(completion) != {'payload', 'signature'} or completion['payload'] != expected_payload or
+            not isinstance(completion['signature'], str) or not hmac.compare_digest(completion['signature'], signature) or
+            (guard['state'] == 'verified' and (guard.get('verified_schema') != 62 or isolation['phase'] != 'reattached' or
+             isolation.get('completion') != {'filename': 'verified-completion.json', 'sha256': digest}))):
+        raise RuntimeError('Original managed completion binding differs')
+    return {'witness_id': witness_id, 'completion_sha256': digest}

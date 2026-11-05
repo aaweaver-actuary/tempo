@@ -12,7 +12,7 @@ import { schemaVersionFromSource, validateTarget, validateContainers, deployment
   CommandExecutionError, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, sourceFingerprint, sourceMatchesFingerprint } from "../../scripts/tempo-deployment.mjs";
 import { assessMigrationRecovery, cut62WitnessName, privateSelection, inspectDisposableIsolation, inspectRegisteredIsolation, classifyManagedIsolationRecovery, classifyDisposableIsolationRecovery, persistDisposableIsolationIntent, advanceDisposableIsolationMarker, syncDisposableIsolationEvidence, validateCut62Preflight, assertColdPreflightContainers, cut62MountDirectory, requirePrivateCut62Witness, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
 import { parseArguments, ensureDocker } from "../../scripts/tempo-cli.mjs";
-import { captureManagedTargetLock, assertManagedTargetLock } from "../../scripts/tempo-managed-isolation.mjs";
+import { captureManagedTargetLock, assertManagedTargetLock, inspectManagedOriginalEvidence, inspectManagedFence, assertManagedPinnedBackend, prepareManagedDetachedTarget } from "../../scripts/tempo-managed-isolation.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
 
@@ -2673,6 +2673,110 @@ test("managed isolation retains the exact original target lock token", t => {
   writeFileSync(path, originalBytes, { mode: 0o600 });
 });
 
+test("managed isolation inspects only the original bound backup and witness paths", t => {
+  const { target } = fixture(t), root = directory(t); fs.chmodSync(root, 0o700);
+  const attempt = "12345678-1234-1234-1234-123456789abc", name = `cut62-${attempt}.json`, pre = `pre62-${attempt}.json`;
+  const cutDir = join(root, name.slice(0, -5)), preDir = join(root, pre.slice(0, -5));
+  mkdirSync(cutDir, { mode: 0o700 }); mkdirSync(preDir, { mode: 0o700 });
+  const selection = { version: 1, target: targetKey(target), cohort: "defense-no-activity", keys: [["synthetic", "candidate"]],
+    expected: { count: 1, reference_digest: "a".repeat(64) } };
+  const selectionPath = join(cutDir, "defense-selection.json"); writeFileSync(selectionPath, JSON.stringify(selection), { mode: 0o600 });
+  const binding = { version: 1, target: targetKey(target), attempt_id: attempt, backup_filename: "tempo-original.dump",
+    backup_sha256: "b".repeat(64), selection_sha256: createHash("sha256").update(readFileSync(selectionPath)).digest("hex") };
+  atomicJson(join(cutDir, "binding.json"), binding); writeFileSync(join(cutDir, name), "original", { mode: 0o600 });
+  writeFileSync(join(preDir, pre), "original-pre", { mode: 0o600 });
+  const guard = { version: 1, state: "pending", target: targetKey(target), attempt_id: attempt, starting_schema: 59, intended_schema: 62,
+    starting_versions: Array.from({ length: 59 }, (_, index) => index + 1), database: { name: "tempo", volume: target.volumes[target.postgresVolumeKey].name },
+    backup: { verified: true, filename: binding.backup_filename }, defense_binding: binding, cut62_witness: name,
+    cut62_identity: { witness_id: "c".repeat(64), attempt_id: attempt, backup_filename: binding.backup_filename },
+    pre62_witness: pre, pre62_witness_id: "d".repeat(64), cut62_intermediate_verified: { schema: 61, attempt_id: attempt,
+      pre62_witness: pre, pre62_witness_id: "d".repeat(64), backup_filename: binding.backup_filename } };
+  const input = { target, stateDirectory: root, guard, verifiedBackupSha256: binding.backup_sha256 };
+  assert.equal(inspectManagedOriginalEvidence(input).selectionCount, 1);
+  for (const change of [
+    x => { x.verifiedBackupSha256 = "e".repeat(64); }, x => { x.guard.defense_binding.attempt_id = "other"; },
+    x => { x.guard.cut62_identity.witness_id = "bad"; }, x => { x.guard.cut62_intermediate_verified.schema = 60; },
+  ]) {
+    const altered = structuredClone(input); change(altered);
+    assert.throws(() => inspectManagedOriginalEvidence(altered), /differs|invalid/);
+  }
+  assert.equal(readFileSync(join(cutDir, name), "utf8"), "original");
+});
+
+test("managed fence inspection uses the registered role and rejects foreign peers or changed control identity", async t => {
+  const { target, config } = fixture(t), root = directory(t); fs.chmodSync(root, 0o700);
+  target.version = 1; target.daemonId = "daemon"; config.services.postgres.environment.POSTGRES_USER = "tempo";
+  const release = acquireTargetLock(root); t.after(release); const lock = captureManagedTargetLock(root);
+  const network = { Id: "a".repeat(64), Name: "tempo_default", Driver: "bridge", Scope: "local",
+    Labels: { "com.docker.compose.project": target.project }, Containers: { ["b".repeat(64)]: { EndpointID: "d".repeat(64) } } };
+  const container = { Id: "b".repeat(64), Image: `sha256:${"c".repeat(64)}`, State: { Running: true },
+    Config: { Labels: { "com.docker.compose.project": target.project, "com.docker.compose.service": "postgres" } },
+    HostConfig: { NetworkMode: network.Name, PublishAllPorts: false, PortBindings: {} },
+    NetworkSettings: { Ports: {}, Networks: { [network.Name]: { NetworkID: network.Id, EndpointID: "d".repeat(64), Aliases: ["postgres"], IPAMConfig: null } } },
+    Mounts: [{ Type: "volume", Destination: "/var/lib/postgresql", Name: target.volumes[target.postgresVolumeKey].name, Source: "/owned/volume", RW: true }] };
+  const control = { targetOid: 123, targetName: "tempo", controlOid: 5, controlName: "postgres", adminRole: "tempo",
+    systemIdentifier: "987", allowConnections: true, backendPids: [], backendDetails: [], preparedTransactions: 0 };
+  const calls = [];
+  const docker = async args => {
+    calls.push(args);
+    if (args[0] === "info") return { stdout: "daemon\n" };
+    if (args[0] === "ps") return { stdout: container.Id };
+    if (args[0] === "inspect") return { stdout: JSON.stringify([container]) };
+    if (args[0] === "network") return { stdout: JSON.stringify([network]) };
+    if (args[0] === "exec") return { stdout: JSON.stringify(control) };
+    throw new Error("unexpected command");
+  };
+  const guard = { state: "pending", target: targetKey(target), database: { name: "tempo", volume: target.volumes[target.postgresVolumeKey].name } };
+  const input = { target, configuration: config, expectedImage: container.Image, guard, stateDirectory: root, lock, docker, exclusiveAdministrator: true };
+  const observed = await inspectManagedFence(input);
+  assert.equal(observed.adminRole, "tempo"); assert(calls.find(args => args[0] === "exec").includes("tempo"));
+  config.services.postgres.environment.POSTGRES_USER = "postgres"; control.adminRole = "postgres";
+  assert.equal((await inspectManagedFence(input)).adminRole, "postgres");
+  config.services.postgres.environment.POSTGRES_USER = "tempo"; control.adminRole = "tempo";
+  guard.isolation = { identity: observed.original, target_oid: 123, target_name: "tempo", control_oid: 5,
+    control_name: "postgres", admin_role: "tempo", system_identifier: "987" };
+  control.targetOid = 124;
+  await assert.rejects(inspectManagedFence(input), /control identity differs/);
+  control.targetOid = 123; network.Containers["e".repeat(64)] = { EndpointID: "f".repeat(64) };
+  await assert.rejects(inspectManagedFence(input), /unregistered peer/);
+  await assert.rejects(inspectManagedFence({ ...input, exclusiveAdministrator: false }), /exclusive administrator/);
+  delete network.Containers["e".repeat(64)];
+  const lockPath = join(root, "maintenance.lock"), originalLock = readFileSync(lockPath);
+  const changedLockDocker = async args => {
+    if (args[0] === "info") {
+      const replacement = JSON.parse(originalLock); replacement.token = "00000000-0000-0000-0000-000000000000";
+      writeFileSync(lockPath, JSON.stringify(replacement), { mode: 0o600 });
+    }
+    return docker(args);
+  };
+  try { await assert.rejects(inspectManagedFence({ ...input, docker: changedLockDocker }), /lock changed/); }
+  finally { writeFileSync(lockPath, originalLock, { mode: 0o600 }); }
+});
+
+test("closed managed isolation gate prevents any backup or Docker action", async () => {
+  let actions = 0;
+  await assert.rejects(prepareManagedDetachedTarget({ verifyOriginalBackup: async () => { actions++; },
+    docker: async () => { actions++; }, exclusiveAdministrator: true }), /Nonempty Defense cleanup is unavailable/);
+  assert.equal(actions, 0);
+});
+
+test("managed pinned backend proof requires the sole original loopback session", () => {
+  const identity = { target: "original" }, backend = { pid: 44, role: "tempo", address: "127.0.0.1", start: "123.456" };
+  const guard = { state: "pending", isolation: { phase: "detached", identity, admin_role: "tempo" } };
+  const observation = { original: identity, attached: false, allowConnections: false, preparedTransactions: 0,
+    backendPids: [44], backendDetails: [backend] };
+  assert.doesNotThrow(() => assertManagedPinnedBackend({ guard, observation, backend }));
+  for (const change of [
+    x => { x.observation.attached = true; }, x => { x.observation.allowConnections = true; },
+    x => { x.observation.preparedTransactions = 1; }, x => { x.observation.backendPids.push(45); },
+    x => { x.backend = { ...x.backend, start: "changed" }; }, x => { x.backend.role = "other"; },
+    x => { x.backend.address = "172.18.0.2"; }, x => { x.observation.original = { target: "other" }; },
+  ]) {
+    const altered = structuredClone({ guard, observation, backend }); change(altered);
+    assert.throws(() => assertManagedPinnedBackend(altered), /unsafe or changed/);
+  }
+});
+
 test("managed pinned session inspection rejects changed identity or admission without mutation", () => {
   const proof = String.raw`
 import importlib.util,sys,types
@@ -2761,6 +2865,45 @@ guard['cut62_identity']['witness_id']='substitute'
 try:module.verify_originals_in_fenced_transaction(DB(),guard,backend,**args)
 except RuntimeError:pass
 else:raise AssertionError('substituted witness accepted')
+`;
+  const result = fsSpawnSync("python3", ["-c", proof], { cwd: process.cwd(), encoding: "utf8" });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
+test("managed completion authenticates the original receipt without rechecking mutable rows", () => {
+  const proof = String.raw`
+import hashlib,hmac,importlib.util,json,pathlib,sys,tempfile,types
+pq=types.ModuleType('psycopg.pq');pq.TransactionStatus=types.SimpleNamespace(INTRANS=2)
+psycopg=types.ModuleType('psycopg');psycopg.pq=pq;sys.modules['psycopg']=psycopg;sys.modules['psycopg.pq']=pq
+verify=types.ModuleType('database.tooling.verify_postgres_cli_state')
+for name in ('authenticate_pre62_59','check_captured_cut62_v6','cut62_witness_id','load_cut62_attempt_binding','load_cut62_defense_selection','load_cut62_witness','load_pre62_59','verify_cut62_v6','verify_pre62_59'):setattr(verify,name,lambda *a,**k:None)
+sys.modules['database.tooling.verify_postgres_cli_state']=verify
+spec=importlib.util.spec_from_file_location('owned_managed_isolation','database/tooling/managed_isolation.py')
+module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+secret=b's'*32;module._load_original_evidence=lambda *a,**k:({'keys':[['c','t']]},{},secret,'cut-id',None,None)
+identity={'target':'target','trustedDaemon':True,'daemonId':'daemon','containerId':'container','networkId':'network','imageId':'image'}
+binding={'backup_filename':'backup','backup_sha256':'a'*64,'selection_sha256':'b'*64}
+guard={'state':'verified','verified_schema':62,'target':'target','attempt_id':'attempt','starting_schema':61,'defense_binding':binding,
+ 'isolation':{'phase':'reattached','identity':identity,'target_oid':123,'target_name':'tempo','system_identifier':'987','control_oid':5,'control_name':'postgres','admin_role':'tempo'}}
+receipt={'version':1,'target':'target','attempt_id':'attempt','target_oid':123,'target_name':'tempo','system_identifier':'987','control_oid':5,
+ 'control_name':'postgres','admin_role':'tempo','daemon_id':'daemon','container_id':'container','network_id':'network','image_id':'image',
+ 'backup_filename':'backup','backup_sha256':'a'*64,'selection_sha256':'b'*64,'pre62_witness_id':None,'cut62_witness_id':'cut-id','schema':62}
+payload={'version':1,'target':'target','attempt_id':'attempt','identity':identity,'target_oid':123,'system_identifier':'987','control_oid':5,
+ 'backup':binding,'pre62_witness_id':None,'cut62_witness_id':'cut-id','receipt':receipt}
+def envelope(value):
+ canonical=json.dumps(value,sort_keys=True,separators=(',',':')).encode()
+ return {'payload':value,'signature':hmac.new(secret,b'tempo-disposable-completion-v1\0'+canonical,hashlib.sha256).hexdigest()}
+with tempfile.TemporaryDirectory() as tmp:
+ root=pathlib.Path(tmp);rp=root/'verified-receipt.json';cp=root/'verified-completion.json'
+ rp.write_text(json.dumps(receipt));rp.chmod(0o600);cp.write_text(json.dumps(envelope(payload)));cp.chmod(0o600)
+ guard['isolation']['completion']={'filename':cp.name,'sha256':hashlib.sha256(cp.read_bytes()).hexdigest()}
+ args=dict(selection_path=str(root/'defense-selection.json'),binding_path=str(root/'binding.json'),witness_path=str(root/'witness.json'),receipt_path=str(rp),completion_path=str(cp))
+ assert module.authenticate_managed_completion(guard,**args)['witness_id']=='cut-id'
+ changed=dict(payload);changed['attempt_id']='different';cp.write_text(json.dumps(envelope(changed)))
+ guard['isolation']['completion']['sha256']=hashlib.sha256(cp.read_bytes()).hexdigest()
+ try:module.authenticate_managed_completion(guard,**args)
+ except RuntimeError:pass
+ else:raise AssertionError('validly signed substituted completion accepted')
 `;
   const result = fsSpawnSync("python3", ["-c", proof], { cwd: process.cwd(), encoding: "utf8" });
   assert.equal(result.status, 0, result.stdout + result.stderr);
@@ -2959,12 +3102,13 @@ test("authenticated disposable completion preserves PostgreSQL while retaining R
     selection_sha256: binding.selection_sha256, pre62_witness_id: null, cut62_witness_id: guard.cut62_identity.witness_id, schema: 62 };
   const payload = { version: 1, target: targetId, attempt_id: attempt, identity, target_oid: 123, system_identifier: "987", control_oid: 5,
     backup: binding, pre62_witness_id: null, cut62_witness_id: guard.cut62_identity.witness_id, receipt };
-  checked = { witness_id: guard.cut62_identity.witness_id, binding, receipt, payload, database: ["tempo", "postgres", "987", 123, true, 62, 5] };
+  checked = { witness_id: guard.cut62_identity.witness_id, database: ["tempo", "postgres", "987", 123, true, 62, 5] };
   fs.chmodSync(fixture.stateDirectory, 0o700);
   const dir = cut62MountDirectory(fixture.stateDirectory, name); mkdirSync(dir, { mode: 0o700 });
   atomicJson(join(dir, "verified-receipt.json"), receipt); atomicJson(join(dir, "verified-completion.json"), { payload, signature: "fixture" });
   guard.isolation.completion = { filename: "verified-completion.json", sha256: createHash("sha256").update(readFileSync(join(dir, "verified-completion.json"))).digest("hex") };
   const guardPath = join(fixture.stateDirectory, "migration-guard.json"); atomicJson(guardPath, guard); const original = readFileSync(guardPath);
+  checked.guard_sha256 = createHash("sha256").update(original).digest("hex"); checked.completion_sha256 = guard.isolation.completion.sha256;
   await runtime.config(); assert.equal(runtime.checkMigrationRetry(), false); await runtime.ensureImages(); await runtime.preflightSchema();
   await runtime.ensureDatabase({ allowRecreation: true });
   const postgresUp = calls.find(args => args.includes("up") && args.includes("postgres"));

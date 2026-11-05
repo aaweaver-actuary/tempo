@@ -293,6 +293,20 @@ def set_disposable_admission(target, identity, allow):
         raise RuntimeError('Disposable admission could not be changed')
 
 
+def assert_shared_pinned_backend(target, guard, topology, control, backend):
+    """Use the managed owner's pinned comparison for the disposable proof."""
+    source = """import {pathToFileURL} from 'node:url';
+let input='';for await(const part of process.stdin)input+=part;
+const data=JSON.parse(input);const api=await import(pathToFileURL(data.module).href);
+api.assertManagedPinnedBackend(data.arguments);"""
+    payload = {'module': str(Path(target['root']) / 'scripts' / 'tempo-managed-isolation.mjs'),
+               'arguments': {'guard': guard, 'observation': {**topology, **control}, 'backend': backend}}
+    result = subprocess.run(['node', '--input-type=module', '-e', source], input=json.dumps(payload),
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)
+    if result.returncode:
+        raise RuntimeError('Disposable pinned fence differs from the managed owner')
+
+
 def _safe_helper_diagnostic(output):
     """Keep only fixed failure labels or SQLSTATE, never database detail."""
     fixed = (
@@ -635,9 +649,9 @@ def run_fenced_helper(*, target, expected_image, maintenance_image, maintenance_
     set_disposable_admission(target, identity, False)
     control = inspect_control_database(target, identity, guard)
     topology = inspect_owned_topology(target, expected_image, guard, trusted_daemon=trusted_daemon)
-    if (control['allowConnections'] or control['backendPids'] != [ready['pid']] or control['backendDetails'] != [detail] or
-            topology['attached'] or topology['original'] != identity or authenticate_attempt(**arguments) != guard):
+    if authenticate_attempt(**arguments) != guard:
         raise RuntimeError('Disposable pinned fence changed before acknowledgement')
+    assert_shared_pinned_backend(target, guard, topology, control, detail)
     _check_lock(root, lock_pid, lock_token)
     verify_candidate_provenance(target, maintenance_revision)
     _check_lock(root, lock_pid, lock_token)

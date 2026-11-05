@@ -2,7 +2,8 @@
 import { basename, dirname, isAbsolute, join } from 'node:path';
 import { closeSync, constants, fstatSync, fsyncSync, lstatSync, openSync, readFileSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
-import { atomicJson, targetKey } from './tempo-deployment.mjs';
+import { atomicJson, targetKey, validateContainers, validateTarget } from './tempo-deployment.mjs';
+import { createHash } from 'node:crypto';
 
 // Source review and an owned managed qualification are required before the
 // nonempty path can be enabled. No CLI flag or environment value opens it.
@@ -221,6 +222,151 @@ export function assertManagedTargetLock(stateDirectory, original) {
   if (!isDeepStrictEqual(current, original)) throw new Error('Managed isolation target lock changed; keep writers stopped.');
 }
 
+// Read only. The caller must hold the original target lock and explicitly
+// assume exclusive Docker/host-administrator control for the entire cut.
+export async function inspectManagedFence({ target, configuration, expectedImage, guard, stateDirectory, lock, docker, exclusiveAdministrator }) {
+  if (exclusiveAdministrator !== true || typeof docker !== 'function')
+    throw new Error('Managed isolation requires exclusive administrator control.');
+  assertManagedTargetLock(stateDirectory, lock);
+  validateTarget(configuration, target);
+  if (guard?.state !== 'pending' || guard.target !== targetKey(target) || guard.database?.name !== 'tempo' ||
+      guard.database?.volume !== target.volumes?.[target.postgresVolumeKey]?.name)
+    throw new Error('Original managed isolation target differs.');
+  const admin = configuration.services.postgres.environment.POSTGRES_USER ?? 'postgres';
+  if (!/^[a-z_][a-z0-9_]*$/.test(admin) || configuration.services.postgres.environment.POSTGRES_DB !== 'tempo')
+    throw new Error('Managed isolation database credentials are invalid.');
+  const daemonId = (await docker(['info', '--format', '{{.ID}}'])).stdout.trim();
+  assertManagedTargetLock(stateDirectory, lock);
+  const ids = (await docker(['ps', '-aq'])).stdout.trim().split(/\s+/).filter(Boolean);
+  if (!ids.length) throw new Error('Managed isolation container inventory is unavailable.');
+  const containers = JSON.parse((await docker(['inspect', ...ids])).stdout);
+  if (!Array.isArray(containers) || containers.length !== ids.length || ids.some(id => !containers.some(item => item.Id?.startsWith(id))))
+    throw new Error('Managed isolation container inventory is incomplete.');
+  validateContainers(containers, target);
+  const project = containers.filter(item => item.Config?.Labels?.['com.docker.compose.project'] === target.project);
+  for (const item of project) if ((item.State?.Running || item.State?.Restarting) &&
+      !['postgres', 'redis'].includes(item.Config?.Labels?.['com.docker.compose.service']))
+    throw new Error('Managed isolation has an active application or maintenance container.');
+  const databases = project.filter(item => item.Config?.Labels?.['com.docker.compose.service'] === 'postgres');
+  if (databases.length !== 1) throw new Error('Managed isolation database container is ambiguous.');
+  const container = databases[0], intent = guard?.isolation?.identity ?? null;
+  const attached = Object.values(container.NetworkSettings?.Networks ?? {});
+  const networkId = intent?.networkId ?? (attached.length === 1 ? attached[0]?.NetworkID : null);
+  if (!/^[0-9a-f]{64}$/.test(networkId ?? '')) throw new Error('Managed isolation network identity is invalid.');
+  const networks = JSON.parse((await docker(['network', 'inspect', networkId])).stdout);
+  if (!Array.isArray(networks) || networks.length !== 1) throw new Error('Managed isolation network inventory is invalid.');
+  const network = networks[0];
+  const topology = inspectRegisteredIsolation({ target, daemonId, container, network, expectedImage,
+    trustedDaemon: exclusiveAdministrator, intent });
+  for (const peer of Object.keys(network.Containers ?? {})) {
+    const owner = containers.find(item => item.Id === peer);
+    if (!owner || owner.Config?.Labels?.['com.docker.compose.project'] !== target.project)
+      throw new Error('Managed isolation network contains an unregistered peer.');
+  }
+  const sql = `SELECT json_build_object('targetOid',(SELECT oid::bigint FROM pg_database WHERE datname='tempo'),
+    'targetName','tempo','controlOid',(SELECT oid::bigint FROM pg_database WHERE datname=current_database()),
+    'controlName',current_database(),'adminRole',current_user,
+    'systemIdentifier',(SELECT system_identifier::text FROM pg_control_system()),
+    'allowConnections',(SELECT datallowconn FROM pg_database WHERE datname='tempo'),
+    'backendPids',COALESCE((SELECT json_agg(pid ORDER BY pid) FROM pg_stat_activity WHERE datname='tempo'),'[]'::json),
+    'backendDetails',COALESCE((SELECT json_agg(json_build_object('pid',pid,'role',usename,'address',host(client_addr),
+      'start',extract(epoch FROM backend_start)::text) ORDER BY pid) FROM pg_stat_activity WHERE datname='tempo'),'[]'::json),
+    'preparedTransactions',(SELECT count(*) FROM pg_prepared_xacts WHERE database='tempo'))`;
+  let control;
+  try { control = JSON.parse((await docker(['exec', '--user', 'postgres', container.Id, 'psql', '-X', '-A', '-t',
+    '-v', 'ON_ERROR_STOP=1', '-U', admin, '-d', 'postgres', '-c', sql])).stdout); }
+  catch { throw new Error('Managed isolation control database is unavailable.'); }
+  assertManagedTargetLock(stateDirectory, lock);
+  if (control.targetName !== 'tempo' || control.controlName !== 'postgres' || control.adminRole !== admin ||
+      !Number.isSafeInteger(control.targetOid) || !Number.isSafeInteger(control.controlOid) ||
+      control.targetOid <= 0 || control.controlOid <= 0 || control.targetOid === control.controlOid ||
+      !/^[0-9]+$/.test(control.systemIdentifier ?? '') || typeof control.allowConnections !== 'boolean' ||
+      !Array.isArray(control.backendPids) || control.backendPids.some(pid => !Number.isSafeInteger(pid) || pid <= 0) ||
+      !Array.isArray(control.backendDetails) || control.backendDetails.length !== control.backendPids.length ||
+      control.backendDetails.some((item, index) => item?.pid !== control.backendPids[index] || typeof item.role !== 'string' ||
+        (item.address !== null && typeof item.address !== 'string') || typeof item.start !== 'string') ||
+      control.preparedTransactions !== 0)
+    throw new Error('Managed isolation control database identity is unsafe.');
+  if (guard.isolation && (guard.isolation.target_oid !== control.targetOid || guard.isolation.target_name !== control.targetName ||
+      guard.isolation.system_identifier !== control.systemIdentifier || guard.isolation.control_oid !== control.controlOid ||
+      guard.isolation.control_name !== control.controlName || guard.isolation.admin_role !== control.adminRole))
+    throw new Error('Original managed isolation control identity differs.');
+  return { ...topology, ...control };
+}
+
+// The caller obtains this observation after re-closing admission. It must
+// independently authenticate the helper's ready challenge and hold the lock.
+export function assertManagedPinnedBackend({ guard, observation, backend }) {
+  const isolation = guard?.isolation;
+  if (guard?.state !== 'pending' || !['detached', 'verified'].includes(isolation?.phase) ||
+      !isDeepStrictEqual(observation?.original, isolation?.identity) || observation?.attached !== false ||
+      observation.allowConnections !== false || observation.preparedTransactions !== 0 ||
+      !backend || Object.keys(backend).sort().join() !== 'address,pid,role,start' ||
+      !Number.isSafeInteger(backend.pid) || backend.pid <= 0 || backend.role !== isolation.admin_role ||
+      !['127.0.0.1', '::1'].includes(backend.address) || typeof backend.start !== 'string' || !backend.start ||
+      !isDeepStrictEqual(observation.backendPids, [backend.pid]) ||
+      !isDeepStrictEqual(observation.backendDetails, [backend]))
+    throw new Error('Managed isolation pinned backend is unsafe or changed.');
+}
+
+// The production gate deliberately remains closed. This phase documents the
+// concrete first physical transition; later phases must be completed and
+// reviewed before the gate can be changed.
+export async function prepareManagedDetachedTarget({ target, configuration, expectedImage, stateDirectory,
+  lock, docker, exclusiveAdministrator, verifyOriginalBackup }) {
+  requireManagedIsolationGate();
+  if (typeof verifyOriginalBackup !== 'function') throw new Error('Original backup verification is unavailable.');
+  const guardPath = join(stateDirectory, 'migration-guard.json');
+  const readGuard = () => JSON.parse(readOwnedPrivateBytes(guardPath));
+  let guard = readGuard();
+  const originalBackupSha = await verifyOriginalBackup(guard.backup);
+  assertManagedTargetLock(stateDirectory, lock);
+  inspectManagedOriginalEvidence({ target, stateDirectory, guard, verifiedBackupSha256: originalBackupSha });
+  let observed = await inspectManagedFence({ target, configuration, expectedImage, guard, stateDirectory,
+    lock, docker, exclusiveAdministrator });
+  if (observed.backendPids.length || observed.preparedTransactions)
+    throw new Error('Managed isolation target still has admitted work.');
+  if (!guard.isolation) {
+    if (!observed.attached || !observed.allowConnections)
+      throw new Error('Managed isolation original topology or admission is unsafe.');
+    assertManagedTargetLock(stateDirectory, lock);
+    guard = persistManagedIsolationIntent({ guardPath, guard, identity: observed.original,
+      targetOid: observed.targetOid, systemIdentifier: observed.systemIdentifier, controlOid: observed.controlOid,
+      controlName: observed.controlName, adminRole: observed.adminRole, targetName: observed.targetName,
+      attached: observed.attached, allowConnections: observed.allowConnections, backendPids: observed.backendPids,
+      preparedTransactions: observed.preparedTransactions });
+  }
+  syncManagedIsolationEvidence({ guardPath, guard });
+  assertManagedTargetLock(stateDirectory, lock);
+  if (!isDeepStrictEqual(readGuard(), guard) || await verifyOriginalBackup(guard.backup) !== originalBackupSha)
+    throw new Error('Original managed migration evidence changed; keep writers stopped.');
+  inspectManagedOriginalEvidence({ target, stateDirectory, guard, verifiedBackupSha256: originalBackupSha });
+  observed = await inspectManagedFence({ target, configuration, expectedImage, guard, stateDirectory,
+    lock, docker, exclusiveAdministrator });
+  const action = classifyManagedIsolationRecovery({ guard, identity: observed.original, attached: observed.attached,
+    targetOid: observed.targetOid, systemIdentifier: observed.systemIdentifier, controlOid: observed.controlOid,
+    controlName: observed.controlName, adminRole: observed.adminRole, targetName: observed.targetName,
+    allowConnections: observed.allowConnections, backendPids: observed.backendPids,
+    preparedTransactions: observed.preparedTransactions });
+  if (action === 'detach') {
+    assertManagedTargetLock(stateDirectory, lock);
+    if (!isDeepStrictEqual(readGuard(), guard)) throw new Error('Original migration guard changed; keep writers stopped.');
+    await docker(['network', 'disconnect', observed.original.networkId, observed.original.containerId]);
+    observed = await inspectManagedFence({ target, configuration, expectedImage, guard, stateDirectory,
+      lock, docker, exclusiveAdministrator });
+  } else if (action !== 'record-detached') {
+    throw new Error('Managed isolation is not ready to record detachment.');
+  }
+  assertManagedTargetLock(stateDirectory, lock);
+  if (observed.attached || observed.backendPids.length || observed.preparedTransactions ||
+      await verifyOriginalBackup(guard.backup) !== originalBackupSha)
+    throw new Error('Managed isolation did not reach the original drained detached target.');
+  inspectManagedOriginalEvidence({ target, stateDirectory, guard, verifiedBackupSha256: originalBackupSha });
+  guard = advanceManagedIsolationMarker({ guardPath, guard, observation: { ...observed, identity: observed.original } });
+  syncManagedIsolationEvidence({ guardPath, guard });
+  return guard;
+}
+
 export function syncDirectory(path) {
   const fd = openSync(path, "r");
   try { fsyncSync(fd); } finally { closeSync(fd); }
@@ -289,4 +435,59 @@ export function advanceManagedIsolationMarker({ guardPath, guard, observation })
 export const syncDisposableIsolationEvidence = syncManagedIsolationEvidence;
 export const persistDisposableIsolationIntent = persistManagedIsolationIntent;
 export const advanceDisposableIsolationMarker = advanceManagedIsolationMarker;
+
+
+export function privateSelection(path, expectedTarget) {
+  const bytes = readOwnedPrivateBytes(path);
+  let value;
+  try { value = JSON.parse(bytes); } catch { throw new Error("Approved Defense selection is invalid."); }
+  const keys = value?.keys;
+  if (Object.keys(value ?? {}).sort().join() !== "cohort,expected,keys,target,version" || value.version !== 1 ||
+      value.target !== expectedTarget || value.cohort !== "defense-no-activity" || !Array.isArray(keys) || keys.length > 11 ||
+      Object.keys(value.expected ?? {}).sort().join() !== "count,reference_digest" || value.expected.count !== keys.length ||
+      !/^[0-9a-f]{64}$/.test(value.expected.reference_digest ?? "") ||
+      keys.some(pair => !Array.isArray(pair) || pair.length !== 2 || pair.some(item => typeof item !== "string" || !item)) ||
+      keys.some((pair, index) => index && (Buffer.compare(Buffer.from(keys[index - 1][0]), Buffer.from(pair[0])) > 0 ||
+        (keys[index - 1][0] === pair[0] && Buffer.compare(Buffer.from(keys[index - 1][1]), Buffer.from(pair[1])) >= 0))))
+    throw new Error("Approved Defense selection is invalid for this target.");
+  return { bytes, digest: createHash("sha256").update(bytes).digest("hex"), count: keys.length };
+}
+
+// Validate the original paths and binding before any topology change. The
+// pinned database owner separately authenticates the witness and source rows.
+export function inspectManagedOriginalEvidence({ target, stateDirectory, guard, verifiedBackupSha256 }) {
+  if (!isAbsolute(stateDirectory ?? '') || /[:,\n\r]/.test(stateDirectory) || guard?.version !== 1 ||
+      guard.state !== 'pending' || guard.target !== targetKey(target) || guard.intended_schema !== 62 ||
+      ![59, 61].includes(guard.starting_schema) || !Array.isArray(guard.starting_versions) ||
+      guard.starting_versions.length !== guard.starting_schema ||
+      guard.starting_versions.some((version, index) => version !== index + 1) ||
+      guard.database?.name !== 'tempo' || guard.database?.volume !== target.volumes?.[target.postgresVolumeKey]?.name ||
+      !guard.backup?.verified || !/^tempo-[0-9A-Za-z-]+\.dump$/.test(guard.backup.filename ?? '') ||
+      !/^[0-9a-f]{64}$/.test(verifiedBackupSha256 ?? ''))
+    throw new Error('Original managed migration evidence is invalid; keep writers stopped.');
+  const witnessName = cut62WitnessName(guard), witnessDirectory = join(stateDirectory, witnessName.slice(0, -5));
+  if (guard.cut62_witness !== witnessName) throw new Error('Original managed witness identity differs; keep writers stopped.');
+  const selectionPath = join(witnessDirectory, 'defense-selection.json'), bindingPath = join(witnessDirectory, 'binding.json');
+  const witnessPath = join(witnessDirectory, witnessName), selection = privateSelection(selectionPath, guard.target);
+  let binding;
+  try { binding = JSON.parse(readOwnedPrivateBytes(bindingPath)); readOwnedPrivateBytes(witnessPath); }
+  catch { throw new Error('Original managed witness files are unavailable; keep writers stopped.'); }
+  if (!isDeepStrictEqual(binding, guard.defense_binding) || binding.version !== 1 || binding.target !== guard.target ||
+      binding.attempt_id !== guard.attempt_id || binding.backup_filename !== guard.backup.filename ||
+      binding.backup_sha256 !== verifiedBackupSha256 || binding.selection_sha256 !== selection.digest ||
+      guard.cut62_identity?.attempt_id !== guard.attempt_id || guard.cut62_identity?.backup_filename !== guard.backup.filename ||
+      !/^[0-9a-f]{64}$/.test(guard.cut62_identity?.witness_id ?? ''))
+    throw new Error('Original managed selection, backup or witness binding differs; keep writers stopped.');
+  let pre62Path = null;
+  if (guard.starting_schema === 59) {
+    const preName = `pre62-${guard.attempt_id}.json`, checkpoint = guard.cut62_intermediate_verified;
+    if (guard.pre62_witness !== preName || !/^[0-9a-f]{64}$/.test(guard.pre62_witness_id ?? '') ||
+        checkpoint?.schema !== 61 || checkpoint.attempt_id !== guard.attempt_id || checkpoint.pre62_witness !== preName ||
+        checkpoint.pre62_witness_id !== guard.pre62_witness_id || checkpoint.backup_filename !== guard.backup.filename)
+      throw new Error('Original managed schema 59 checkpoint differs; keep writers stopped.');
+    pre62Path = join(stateDirectory, preName.slice(0, -5), preName);
+    try { readOwnedPrivateBytes(pre62Path); } catch { throw new Error('Original managed schema 59 witness is unavailable; keep writers stopped.'); }
+  }
+  return { witnessName, witnessPath, pre62Path, selectionPath, bindingPath, selectionCount: selection.count };
+}
 

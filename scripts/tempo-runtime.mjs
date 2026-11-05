@@ -8,8 +8,8 @@ import { isDeepStrictEqual } from 'node:util';
 import {modeOverrideFor, modeRecordArgs, modes, modeStatusArgs} from './managed-games-control.mjs';
 import { atomicJson, deploymentCanStart, redact, targetKey, validateContainers, validateTarget } from "./tempo-deployment.mjs";
 import { TempoProblem, classifyRedisReply, phaseGuidance } from "./tempo-guidance.mjs";
-import { cut62WitnessName, inspectDisposableIsolation, inspectRegisteredIsolation, classifyDisposableIsolationRecovery, syncDisposableIsolationEvidence, persistDisposableIsolationIntent, advanceDisposableIsolationMarker, readOwnedPrivateBytes, syncDirectory, requireManagedIsolationGate } from './tempo-managed-isolation.mjs';
-export { cut62WitnessName, inspectDisposableIsolation, inspectRegisteredIsolation, classifyManagedIsolationRecovery, classifyDisposableIsolationRecovery, syncDisposableIsolationEvidence, persistDisposableIsolationIntent, advanceDisposableIsolationMarker } from './tempo-managed-isolation.mjs';
+import { cut62WitnessName, inspectDisposableIsolation, inspectRegisteredIsolation, classifyDisposableIsolationRecovery, syncDisposableIsolationEvidence, persistDisposableIsolationIntent, advanceDisposableIsolationMarker, readOwnedPrivateBytes, syncDirectory, privateSelection, requireManagedIsolationGate } from './tempo-managed-isolation.mjs';
+export { cut62WitnessName, inspectDisposableIsolation, inspectRegisteredIsolation, classifyManagedIsolationRecovery, classifyDisposableIsolationRecovery, syncDisposableIsolationEvidence, persistDisposableIsolationIntent, advanceDisposableIsolationMarker, privateSelection } from './tempo-managed-isolation.mjs';
 
 import { isTimingPublicationFailure } from "./test-scenario-timings.mjs";
 import { probeLifecycleRedis } from "../database/tooling/cli/probes.mjs";
@@ -76,22 +76,6 @@ export function requirePrivateCut62Witness(path) {
   let info;
   try { info = lstatSync(path); } catch { throw new Error('Schema 62 original witness is missing; keep writers stopped. Preserve the guard and verified backup for manual recovery; never recapture after an interrupted attempt.'); }
   if (!info.isFile() || (info.mode & 0o077)) throw new Error('Schema 62 witness is not a private regular file; keep writers stopped.');
-}
-
-export function privateSelection(path, expectedTarget) {
-  const bytes = readOwnedPrivateBytes(path);
-  let value;
-  try { value = JSON.parse(bytes); } catch { throw new Error("Approved Defense selection is invalid."); }
-  const keys = value?.keys;
-  if (Object.keys(value ?? {}).sort().join() !== "cohort,expected,keys,target,version" || value.version !== 1 ||
-      value.target !== expectedTarget || value.cohort !== "defense-no-activity" || !Array.isArray(keys) || keys.length > 11 ||
-      Object.keys(value.expected ?? {}).sort().join() !== "count,reference_digest" || value.expected.count !== keys.length ||
-      !/^[0-9a-f]{64}$/.test(value.expected.reference_digest ?? "") ||
-      keys.some(pair => !Array.isArray(pair) || pair.length !== 2 || pair.some(item => typeof item !== "string" || !item)) ||
-      keys.some((pair, index) => index && (Buffer.compare(Buffer.from(keys[index - 1][0]), Buffer.from(pair[0])) > 0 ||
-        (keys[index - 1][0] === pair[0] && Buffer.compare(Buffer.from(keys[index - 1][1]), Buffer.from(pair[1])) >= 0))))
-    throw new Error("Approved Defense selection is invalid for this target.");
-  return { bytes, digest: createHash("sha256").update(bytes).digest("hex"), count: keys.length };
 }
 
 function writeExclusivePrivate(path, bytes) {
@@ -519,10 +503,13 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   }
 
   async function maintenance(script, args = [], options = {}) {
-    const { cut62Mount = null, ...runOptions } = options;
+    const { cut62Mount = null, stateMount = false, ...runOptions } = options;
+    if (cut62Mount && stateMount) throw new Error("Conflicting private migration mounts.");
+    if (stateMount && (!isAbsolute(stateDirectory) || /[:,\n\r]/.test(stateDirectory)))
+      throw new Error("Cannot mount private migration state safely; preserve the original guard.");
     const mountDirectory = cut62Mount ? cut62MountDirectory(stateDirectory, cut62Mount) : null;
     return compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T",
-      ...(mountDirectory ? ["--volume", `${mountDirectory}:/cut62`] : []),
+      ...(mountDirectory ? ["--volume", `${mountDirectory}:/cut62`] : stateMount ? ["--volume", `${stateDirectory}:/state:ro`] : []),
       "migration", script, ...args], runOptions);
   }
 
@@ -595,50 +582,27 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     if (databases.length !== 1 || !inspectDisposableIsolation({ target, daemonId, container: databases[0], network,
       expectedImage: identity.imageId, trustedDaemon: true, intent: identity }).attached)
       throw new Error("Original disposable network is unavailable; keep writers stopped.");
-    const source = `import hashlib,hmac,json,os,sys,psycopg
-from database.tooling.verify_postgres_cli_state import load_cut62_defense_selection,load_cut62_attempt_binding,load_cut62_witness,cut62_witness_id
+    const guardSha = createHash("sha256").update(readOwnedPrivateBytes(guardPath)).digest("hex");
+    if (guard.starting_schema === 59) cut62MountDirectory(stateDirectory, guard.pre62_witness);
+    const source = `import hashlib,json,os,sys,psycopg
+from database.tooling.managed_isolation import authenticate_managed_completion
 try:
- selection,digest=load_cut62_defense_selection('/cut62/defense-selection.json')
- binding=load_cut62_attempt_binding('/cut62/binding.json',selection,digest)
- witness,secret=load_cut62_witness('/cut62/'+sys.argv[1])
- receipt=json.load(open('/cut62/verified-receipt.json'))
- completion=json.load(open('/cut62/verified-completion.json'))
- canonical=json.dumps(completion['payload'],sort_keys=True,separators=(',',':')).encode()
- signature=hmac.new(secret,b'tempo-disposable-completion-v1\\0'+canonical,hashlib.sha256).hexdigest()
- if not hmac.compare_digest(signature,completion['signature']) or witness.get('binding')!=binding or witness.get('selection')!=selection or not selection['keys']: raise ValueError('evidence')
+ raw=open('/state/migration-guard.json','rb').read(); guard=json.loads(raw)
+ directory='/state/'+sys.argv[1][:-5]
+ pre='/state/'+guard['pre62_witness'][:-5]+'/'+guard['pre62_witness'] if guard.get('starting_schema')==59 else None
+ result=authenticate_managed_completion(guard,selection_path=directory+'/defense-selection.json',binding_path=directory+'/binding.json',witness_path=directory+'/'+sys.argv[1],receipt_path=directory+'/verified-receipt.json',completion_path=directory+'/verified-completion.json',pre62_path=pre)
  with psycopg.connect(os.environ['TEMPO_POSTGRES_ADMIN_URL'],options='-c default_transaction_read_only=on') as db:
   row=db.execute("SELECT current_database(),current_user,(SELECT system_identifier::text FROM pg_control_system()),(SELECT oid FROM pg_database WHERE datname=current_database()),(SELECT datallowconn FROM pg_database WHERE datname=current_database()),(SELECT COALESCE(max(version),0) FROM public.tempo_schema_migrations),(SELECT oid FROM pg_database WHERE datname='postgres')").fetchone()
- print(json.dumps({'witness_id':cut62_witness_id(witness,secret),'binding':binding,'receipt':receipt,'payload':completion['payload'],'database':row}))
+ print(json.dumps({**result,'guard_sha256':hashlib.sha256(raw).hexdigest(),'database':row}))
 except Exception: sys.exit('Disposable completion authentication failed')`;
     let checked;
-    try { checked = JSON.parse((await maintenance("-c", [source, witnessName], { cut62Mount: witnessName })).stdout); }
+    try { checked = JSON.parse((await maintenance("-c", [source, witnessName], { stateMount: true })).stdout); }
     catch { throw new Error("Original disposable completion authentication failed; keep writers stopped."); }
-    const expectedReceipt = { version: 1, target: guard.target, attempt_id: guard.attempt_id, target_oid: isolation.target_oid,
-      target_name: isolation.target_name, system_identifier: isolation.system_identifier, control_oid: isolation.control_oid,
-      control_name: isolation.control_name, admin_role: isolation.admin_role, daemon_id: identity.daemonId,
-      container_id: identity.containerId, network_id: identity.networkId, image_id: identity.imageId,
-      backup_filename: guard.defense_binding?.backup_filename, backup_sha256: guard.defense_binding?.backup_sha256,
-      selection_sha256: guard.defense_binding?.selection_sha256, pre62_witness_id: guard.starting_schema === 59 ? guard.pre62_witness_id : null,
-      cut62_witness_id: guard.cut62_identity?.witness_id, schema: 62 };
-    const expectedPayload = { version: 1, target: guard.target, attempt_id: guard.attempt_id, identity,
-      target_oid: isolation.target_oid, system_identifier: isolation.system_identifier, control_oid: isolation.control_oid,
-      backup: guard.defense_binding, pre62_witness_id: expectedReceipt.pre62_witness_id,
-      cut62_witness_id: expectedReceipt.cut62_witness_id, receipt: expectedReceipt };
-    if (!isDeepStrictEqual(receipt, expectedReceipt) || !isDeepStrictEqual(checked.receipt, receipt) ||
-        !isDeepStrictEqual(checked.payload, expectedPayload) || !isDeepStrictEqual(checked.binding, guard.defense_binding) ||
+    if (checked.guard_sha256 !== guardSha || checked.completion_sha256 !== isolation.completion.sha256 ||
         checked.witness_id !== guard.cut62_identity?.witness_id ||
         !isDeepStrictEqual(checked.database, [isolation.target_name, isolation.admin_role, isolation.system_identifier, isolation.target_oid, true, 62, isolation.control_oid]) ||
         await verifiedBackupDigest(guard.backup) !== guard.defense_binding?.backup_sha256)
       throw new Error("Original disposable completion or target differs; keep writers stopped.");
-    if (guard.starting_schema === 59) {
-      const preName = guard.pre62_witness;
-      const pre = JSON.parse((await maintenance("database/tooling/verify_postgres_cli_state.py",
-        ["--pre62-authenticate59", `/cut62/${preName}`], { cut62Mount: preName })).stdout);
-      if (pre.witness_id !== guard.pre62_witness_id || guard.cut62_intermediate_verified?.pre62_witness_id !== pre.witness_id ||
-          guard.cut62_intermediate_verified?.attempt_id !== guard.attempt_id || guard.cut62_intermediate_verified?.schema !== 61 ||
-          guard.cut62_intermediate_verified?.backup_filename !== guard.backup.filename)
-        throw new Error("Original schema 59 completion differs; keep writers stopped.");
-    }
     if (!isDeepStrictEqual(JSON.parse(readOwnedPrivateBytes(guardPath)), guard))
       throw new Error("Original disposable guard changed; keep writers stopped.");
     completedIsolationPending = false;
