@@ -191,3 +191,19 @@ def test_sqlite_restart_preserves_old_engine_rows_without_bootstrapping_new_work
         assert db.execute("SELECT COUNT(*) FROM imported_games WHERE id IN ('old','new')").fetchone()[0] == 2
         assert db.execute("SELECT 1 FROM sqlite_master WHERE name='game_age_insert'").fetchone() is None
         assert db.execute("SELECT 1 FROM sqlite_master WHERE name='idx_background_tasks_diagnostic_state'").fetchone()
+
+
+def test_retired_threat_activity_preserves_request_and_cannot_resume_search(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, 'DB_PATH', tmp_path / 'tempo.db')
+    database.initialize()
+    now = datetime.now(timezone.utc).isoformat()
+    with database.connection() as db:
+        db.execute("INSERT INTO threat_analysis_requests(id,request_json,state,lease_id,created_at,updated_at) VALUES('request','{}','leased','original',?,?)", (now, now))
+        before = tuple(db.execute("SELECT * FROM threat_analysis_requests WHERE id='request'").fetchone())
+    assert not set_control('threat_analysis', 'request', 'pause')
+    assert not set_control('threat_analysis', 'request', 'resume')
+    with pytest.raises(ValueError, match='Unknown background work source'):
+        report_progress('threat_analysis', 'request', 'original', 'Running', 0, 1)
+    with database.read_connection() as db:
+        assert tuple(db.execute("SELECT * FROM threat_analysis_requests WHERE id='request'").fetchone()) == before
+        assert db.execute("SELECT COUNT(*) FROM background_activity WHERE source='threat_analysis'").fetchone()[0] == 0

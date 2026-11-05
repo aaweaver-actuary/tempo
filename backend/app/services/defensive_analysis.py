@@ -1,4 +1,4 @@
-"""Persisted defensive-only admission policy; recommendations share engine requests."""
+"""Persisted defensive-only admission policy for durable tasks."""
 
 from fastapi import HTTPException
 from tempo_legacy_database.adapters import defensive_analysis as storage
@@ -18,15 +18,3 @@ def analysis_enabled(database) -> bool:
 
 def task_admission_sql(kind_expression: str) -> str:
     return storage.task_admission_sql(kind_expression, DEFENSIVE_TASK_KINDS)
-
-
-def recommendation_sql(request_id_expression: str) -> str:
-    return storage.recommendation_sql(request_id_expression)
-
-
-def search_admission_sql(request_id_expression: str) -> str:
-    return storage.search_admission_sql(request_id_expression)
-
-
-def recommendation_request_ids_sql() -> str:
-    return storage.recommendation_request_ids_sql()
