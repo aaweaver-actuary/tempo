@@ -181,6 +181,19 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
         "--label", `com.docker.compose.volume=${key}`, volume.name]);
     }
     await compose(["up", "-d", "--no-build", "--no-deps", "--wait", "postgres", "redis"], { echo: true });
+    if (environment.TEMPO_LIFECYCLE_SHIPPING_REHEARSAL === '1') {
+      if (!target.disposable || !/^tempo-pg-regressions-[a-z0-9-]+-cli$/.test(childProject) ||
+          config.services.postgres.environment.POSTGRES_DB !== 'tempo') throw new Error('Owned shipping database identity differs');
+      const id=(await compose(['ps','-q','postgres'])).stdout.trim();
+      const items=JSON.parse((await docker(['inspect',id])).stdout), postgres=items[0];
+      if(items.length!==1 || !/^[0-9a-f]{64}$/.test(postgres.Id??'') || !postgres.State?.Running || postgres.Image!==images.postgres ||
+          postgres.Config?.Labels?.['com.docker.compose.project']!==childProject ||
+          postgres.Config?.Labels?.['com.docker.compose.service']!=='postgres' ||
+          !postgres.Mounts?.some(mount=>mount.Name===target.volumes[target.postgresVolumeKey].name && mount.Destination==='/var/lib/postgresql' && mount.RW))
+        throw new Error('Owned shipping database identity differs');
+      await docker(['exec','--user','postgres',postgres.Id,'psql','-X','-v','ON_ERROR_STOP=1','-U','postgres','-d','postgres',
+        '-c',"COMMENT ON DATABASE tempo IS 'tempo-disposable-postgres-test'"]);
+    }
     await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration", "database/tests/check_postgres_cli_lifecycle.py", ...(schema59Only ? ["--seed59"] : [])], { echo: true });
     const readHistory = async () => JSON.parse((await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration",
       "database/tests/check_postgres_cli_lifecycle.py", "--history"])).stdout);
