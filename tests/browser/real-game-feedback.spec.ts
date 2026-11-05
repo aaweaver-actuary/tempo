@@ -112,7 +112,7 @@ test("packaged first-departure feedback uses real browser saves and issuance", a
     const detailResponse = page.waitForResponse(response => response.request().method() === "GET"
       && new URL(response.url()).pathname === `/api/product/game-review/games/lichess/${encodeURIComponent(gameId)}`);
     if (reload) await page.reload();
-    await page.getByRole("button", { name: "Games", exact: true }).first().click();
+    await page.getByRole("button", { name: "Game Review", exact: true }).first().click();
     await page.getByRole("button", { name: new RegExp(`Lichess · ${gameId}`) }).click();
     const response = await detailResponse;
     expect(response.status()).toBe(200);

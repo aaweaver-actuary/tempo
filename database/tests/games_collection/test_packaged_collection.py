@@ -355,7 +355,14 @@ console.log(JSON.stringify({activation_ready:blockers.length===0,blockers,
         inputs['lichess'].sort(key=lambda row: row['createdAt'])
         inputs['chesscom']['09'].append(dict(inputs['chesscom']['09'][0], uuid='latevisible'))
         review.enqueue(configs[0], configured_job(configs[0], 'manual-interleaved'), now+1)
-        inputs['now'] += 601
+        # Recurrence is measured from actual persisted completion, which may
+        # be later than the synthetic provider clock used to enqueue the job.
+        with connections() as db:
+            completed_at = db.execute("""SELECT MAX((payload->>'last_checkpoint_at')::timestamptz)
+                FROM product_feedback_jobs WHERE status='complete'
+                AND payload->'spec'->>'stream'='reconciliation'""").fetchone()[0]
+        assert completed_at is not None
+        inputs['now'] = max(inputs['now'], datetime.now(timezone.utc).timestamp(), completed_at.timestamp()) + 601
         run('worker')  # Fresh packaged process: the actual reconciler revisits the same games.
         with connections() as db:
             sources = [r[0] for r in db.execute('SELECT payload FROM product_feedback_sources')]
