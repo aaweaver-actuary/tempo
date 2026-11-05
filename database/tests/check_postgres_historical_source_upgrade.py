@@ -113,7 +113,7 @@ def check_upgrade(boundary):
             assert len(defense_attempts) == 1
             secret = secrets.token_bytes(32)
             witness = capture_cut62(database, secret)
-            assert witness['version'] == 4 and len(CUT62_RETIRED_TABLES) == 11
+            assert witness['version'] == 5 and len(CUT62_RETIRED_TABLES) == 12
             assert 'defense_attempts' in CUT62_PROTECTED_TABLES and 'defense_attempts' in witness['rows']
         for _ in range(2):
             apply_migrations(dsn)
@@ -129,7 +129,7 @@ def check_upgrade(boundary):
                               'idx_cards_locked_openings', 'idx_cards_mature_parent'):
                     assert database.execute('SELECT to_regclass(%s)', (index,)).fetchone()[0] == index
                 result = verify_cut62(database, witness, secret)
-                assert result['version'] == 4 and set(result['retired']) == CUT62_RETIRED_TABLES
+                assert result['version'] == 5 and set(result['retired']) == CUT62_RETIRED_TABLES
                 assert database.execute("SELECT * FROM defense_attempts ORDER BY attempt_id").fetchall() == defense_attempts
                 for retired in (*CUT62_RETIRED_TABLES,
                                 'idx_next_opponent_account_time', 'idx_next_opponent_speed_rating_time'):
