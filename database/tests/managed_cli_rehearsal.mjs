@@ -2,9 +2,9 @@
 import assert from 'node:assert/strict';
 import { createHash, createHmac } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { targetKey } from '../../scripts/tempo-deployment.mjs';
+import { atomicJson, targetKey } from '../../scripts/tempo-deployment.mjs';
 import { studyDurabilityPgn } from './postgres-test-fixture.mjs';
 import { Chess } from 'chess.js';
 
@@ -12,6 +12,13 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
   revision, environment, stateRoot, stateDirectory, registration, directory, compose, docker, readHistory, expected, readLatestMigration, manifest }) {
   const harness = environment.W08_MANAGED_HARNESS;
   if (!harness || !environment.W08_REAL_DOCKER?.startsWith('/')) throw new Error('Owned managed harness paths are missing');
+  if (!environment.W08_OWNED_CLONE || !environment.W08_OWNED_BARE || realpathSync(root)!==realpathSync(environment.W08_OWNED_CLONE) ||
+      !realpathSync(root).startsWith('/private/tmp/') || !realpathSync(environment.W08_OWNED_BARE).startsWith('/private/tmp/'))
+    throw new Error('Owned managed clone identity differs');
+  const git=(...args)=>{const result=spawnSync('git',args,{cwd:root,encoding:'utf8',timeout:30000});if(result.status!==0)throw new Error('Owned git inspection failed');return result.stdout.trim()};
+  if(git('rev-parse','HEAD')!==revision || git('symbolic-ref','--short','HEAD')!=='main' ||
+      git('status','--porcelain','--untracked-files=all')!=='' || realpathSync(git('remote','get-url','origin'))!==realpathSync(environment.W08_OWNED_BARE))
+    throw new Error('Owned managed clone provenance differs');
   const selectionDirectory = join(directory, 'approved'); mkdirSync(selectionDirectory, { mode: 0o700 }); chmodSync(selectionDirectory, 0o700);
   const selectionPath = join(selectionDirectory, 'selection.json');
   assert.deepEqual(manifest.expected.groups, { no_activity: 1, recognition_only: 1, reviewed: 1 });
@@ -21,6 +28,10 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
   const db = JSON.parse((await docker(['inspect',dbId])).stdout)[0];
   const endpoints = Object.values(db.NetworkSettings.Networks); assert.equal(endpoints.length,1);
   const sha = path => createHash('sha256').update(readFileSync(path)).digest('hex');
+  for(const name of ['migration','api','web']) {
+    const image=JSON.parse((await docker(['image','inspect',images[name]])).stdout)[0];
+    assert.equal(image.Id,images[name]);assert.equal(image.Config?.Labels?.['org.opencontainers.image.revision'],revision);
+  }
   const policyDir = join(directory,'harness-policy'); mkdirSync(policyDir,{mode:0o700}); chmodSync(policyDir,0o700);
   const policyPath = join(policyDir,'policy.json');
   const policy = { context, daemon:daemonId, db_id:dbId, db_image:db.Image, image:images.migration, revision,
@@ -28,6 +39,18 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
     hook_path:join(harness,'sitecustomize.py'), hook_sha256:sha(join(harness,'sitecustomize.py')),
     owner_sha256:sha(join(root,'database/tooling/managed_isolation.py')), network_id:endpoints[0].NetworkID };
   writeFileSync(policyPath,JSON.stringify(policy),{mode:0o600});
+  const sourceText=readFileSync(join(root,'scripts/tempo-managed-isolation.mjs'),'utf8');
+  const gate="export function requireManagedIsolationGate() {\n  throw new Error('Nonempty Defense cleanup is unavailable without a verified writer and DDL fence.');\n}";
+  assert.equal(sourceText.split(gate).length,2);
+  const evidence={revision,project,daemonId,context,images,dbId,networkId:policy.network_id,
+    ownerSourceSha256:sha(join(root,'scripts/tempo-managed-isolation.mjs')),
+    ownerTransformedSha256:createHash('sha256').update(sourceText.replace(gate,'export function requireManagedIsolationGate() {}')).digest('hex'),
+    pythonOwnerSha256:policy.owner_sha256,loaderSha256:sha(join(harness,'loader.mjs')),registerSha256:sha(join(harness,'register.mjs')),
+    hookSha256:policy.hook_sha256,proxySha256:sha(join(harness,'docker')),policySha256:sha(policyPath),
+    pythonOverride:'task-only sitecustomize enables the closed owner gate only in the verified pinned child',
+    clone:realpathSync(root),bareOrigin:realpathSync(environment.W08_OWNED_BARE),ci:'disabled'};
+  atomicJson(join(directory,'managed-rehearsal-preflight.json'),evidence);
+  const record=episode=>writeFileSync(join(directory,'managed-rehearsal-evidence.json'),JSON.stringify({...evidence,episode}),{mode:0o600});
   const commonEnv = { ...environment, PATH:`${harness}:${process.env.PATH}`, NODE_OPTIONS:`--import=${join(harness,'register.mjs')}`,
     W08_REAL_DOCKER:environment.W08_REAL_DOCKER, W08_POLICY:policyPath, W08_OWNER_PATH:join(root,'scripts/tempo-managed-isolation.mjs'),
     W08_EXPECTED_OWNER_SHA:sha(join(root,'scripts/tempo-managed-isolation.mjs')), W08_HOOK_DIR:harness,
@@ -38,6 +61,11 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
     if (result.error) throw result.error;
     return result;
   };
+  const fired = fault => {
+    const path=join(policyDir,`fault-${fault}.json`);
+    assert.deepEqual(JSON.parse(readFileSync(path,'utf8')),{fault,project,db_id:dbId});
+    assert.equal(statSync(path).mode & 0o777,0o600);
+  };
   const closed = spawnSync(process.execPath,['scripts/tempo-cli.mjs','start','--no-ci','--no-open','--defense-selection',selectionPath,'--config',registration],
     {cwd:root,env:{...commonEnv,NODE_OPTIONS:'',W08_FAULT:''},encoding:'utf8',timeout:30000});
   assert.notEqual(closed.status,0);assert.match(closed.stderr,/Nonempty Defense cleanup is unavailable/);
@@ -45,7 +73,7 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
   const assertFailed = result => assert.notEqual(result.status,0,'owned fault must interrupt real CLI');
   const isolatedSchema = async () => {
     const inspect = async () => JSON.parse((await docker(['inspect',dbId])).stdout)[0];
-    assert.equal(Object.keys((await inspect()).NetworkSettings.Networks).length,0);
+    const current=await inspect();assert.equal(current.Id,dbId);assert.equal(Object.keys(current.NetworkSettings.Networks).length,0);
     const sql = async (database, statement) => (await docker(['exec','--user','postgres',dbId,'psql','-X','-A','-t','-v','ON_ERROR_STOP=1',
       '-U','postgres','-d',database,'-c',statement])).stdout.trim();
     assert.equal(await sql('postgres',"SELECT count(*) FROM pg_stat_activity WHERE datname='tempo'"),'0');
@@ -59,17 +87,17 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
   };
   if (environment.W08_COPY_ONLY === '1') {
     const failure=cli('selection-copy','start','--no-ci','--no-open','--defense-selection',selectionPath);
-    assertFailed(failure);assert.match(failure.stderr,/W08_INJECT_SELECTION_COPY/);
+    assertFailed(failure);fired('selection-copy');assert.match(failure.stderr,/W08_INJECT_SELECTION_COPY/);
     const guard=readGuard();assert.equal(guard.starting_schema,59);assert.equal(guard.backup.verified,true);
     assert.equal(guard.managed_selection_started,true);assert.equal(guard.defense_binding,undefined);
     assert.equal(Number((await readLatestMigration(compose)).stdout.trim()),59);
     assertFailed(cli('','start','--retry','--no-ci','--no-open'));
     const after=readGuard();assert.equal(after.attempt_id,guard.attempt_id);assert.deepEqual(after.backup,guard.backup);
     assert.equal(after.defense_binding,undefined);assert.equal(Number((await readLatestMigration(compose)).stdout.trim()),59);
-    return { copyOnly:true };
+    record('selection-copy-failure');return { copyOnly:true };
   }
   if (environment.W08_CAPTURE_ONLY === '1') {
-    assertFailed(cli('capture-after-file','start','--no-ci','--no-open','--defense-selection',selectionPath));
+    assertFailed(cli('capture-after-file','start','--no-ci','--no-open','--defense-selection',selectionPath));fired('capture-after-file');
     const guard=readGuard();assert.equal(guard.starting_schema,59);assert.equal(guard.backup.verified,true);
     assert.equal(guard.cut62_capture_started,true);assert.equal(guard.cut62_identity,undefined);
     const path=join(stateDirectory,guard.cut62_witness.slice(0,-5),guard.cut62_witness);
@@ -78,9 +106,9 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
     assert.equal(statSync(path).ino,inode);assert.deepEqual(readFileSync(path),bytes);
     const after=readGuard();assert.equal(after.attempt_id,guard.attempt_id);assert.deepEqual(after.backup,guard.backup);
     assert.equal(after.cut62_identity,undefined);assert.equal(Number((await readLatestMigration(compose)).stdout.trim()),61);
-    return { captureOnly:true };
+    record('capture-file-before-id');return { captureOnly:true };
   }
-  const first = cli('schema60','start','--no-ci','--no-open','--defense-selection',selectionPath); assertFailed(first);
+  const first = cli('schema60','start','--no-ci','--no-open','--defense-selection',selectionPath); assertFailed(first);fired('schema60');
   const original = readGuard(); assert.equal(original.starting_schema,59); assert.equal(original.backup.verified,true);
   assert.equal(original.managed_selection_started,true);assert.match(original.defense_binding.backup_sha256,/^[0-9a-f]{64}$/);
   const preWitness=join(stateDirectory,original.pre62_witness.slice(0,-5),original.pre62_witness);
@@ -98,8 +126,9 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
   const selectionBytes = readFileSync(selectionCopy), bindingBytes = readFileSync(bindingPath), selectionInode = statSync(selectionCopy).ino;
   assert.deepEqual(selectionBytes,readFileSync(selectionPath));
   assert.equal(JSON.parse(bindingBytes).backup_filename,original.backup.filename);
-  const capturedResult = cli('before-detach','start','--retry','--no-ci','--no-open'); assertFailed(capturedResult);
+  const capturedResult = cli('before-detach','start','--retry','--no-ci','--no-open'); assertFailed(capturedResult);fired('before-detach');
   const captured = readGuard(); assert.equal(captured.attempt_id,original.attempt_id); assert.deepEqual(captured.backup,original.backup);
+  assert.equal(captured.isolation.phase,'intent');
   assert.deepEqual(captured.defense_binding,original.defense_binding);assert.deepEqual(readFileSync(preWitness),preBytes);assert.equal(statSync(preWitness).ino,preInode);
   assert.deepEqual(readFileSync(selectionCopy),selectionBytes); assert.deepEqual(readFileSync(bindingPath),bindingBytes);
   assert.equal(statSync(selectionCopy).ino,selectionInode); assert.equal(Number((await readLatestMigration(compose)).stdout.trim()),61);
@@ -113,11 +142,14 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
     try { await callback(); } finally { unlinkSync(witness); renameSync(witness+'.original',witness); } };
   // Fault after physical detach but before its marker; preserve true admission
   // across an exact-container cold stop and let the normal retry reconcile it.
+  const admission = async () => (await docker(['exec','--user','postgres',dbId,'psql','-X','-A','-t','-U','postgres','-d','postgres','-c',
+    "SELECT datallowconn FROM pg_database WHERE datname='tempo'"])).stdout.trim();
+  assert.equal(await admission(),'t');
   await docker(['network','disconnect',policy.network_id,dbId]); await docker(['stop','--time','10',dbId]);
   let coldTopology=JSON.parse((await docker(['inspect',dbId])).stdout)[0];
   assert.equal(coldTopology.State.Running,false);assert.equal(Object.keys(coldTopology.NetworkSettings.Networks).length,0);
   await substitute(async()=>{ assertFailed(cli('','start','--retry','--no-ci','--no-open')); assert.equal(await isolatedSchema(),61); });
-  const afterCommit=cli('after-commit','start','--retry','--no-ci','--no-open'); assertFailed(afterCommit);
+  const afterCommit=cli('after-commit','start','--retry','--no-ci','--no-open'); assertFailed(afterCommit);fired('after-commit');
   const pending=readGuard(); assert.equal(pending.attempt_id,original.attempt_id); assert.deepEqual(pending.backup,original.backup);
   assert.equal(pending.isolation.phase,'detached');
   assert.deepEqual(pending.defense_binding,original.defense_binding);assert.deepEqual(readFileSync(preWitness),preBytes);assert.equal(statSync(preWitness).ino,preInode);
@@ -125,14 +157,15 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
   const receipt=join(witnessDir,'verified-receipt.json'); assert(!existsSync(receipt));
   // Let retry reconcile the previous helper journal, then interrupt before it
   // reopens closed admission. The next cold retry must use the same DB ID.
-  assertFailed(cli('before-admission-open','start','--retry','--no-ci','--no-open'));
+  assertFailed(cli('before-admission-open','start','--retry','--no-ci','--no-open'));fired('before-admission-open');
   assert(!existsSync(join(witnessDir,'pinned-helper.json')));
+  assert.equal(await admission(),'f');
   await docker(['stop','--time','10',dbId]);
   coldTopology=JSON.parse((await docker(['inspect',dbId])).stdout)[0];
   assert.equal(coldTopology.State.Running,false);assert.equal(Object.keys(coldTopology.NetworkSettings.Networks).length,0);
   await substitute(async()=>{ assertFailed(cli('','start','--retry','--no-ci','--no-open')); assert(!existsSync(receipt)); assert.equal(await isolatedSchema(),62); });
   assert.equal(statSync(witness).ino,witnessInode); assert.deepEqual(readFileSync(witness),witnessBytes);
-  const afterReceipt=cli('after-receipt','start','--retry','--no-ci','--no-open'); assertFailed(afterReceipt); assert(existsSync(receipt));
+  const afterReceipt=cli('after-receipt','start','--retry','--no-ci','--no-open'); assertFailed(afterReceipt);fired('after-receipt');assert(existsSync(receipt));
   assert.equal(await isolatedSchema(),62);
   const originalReceiptBytes=readFileSync(receipt), originalReceiptInode=statSync(receipt).ino;
   const originalReceipt=JSON.parse(originalReceiptBytes), alternateReceipt={...originalReceipt,attempt_id:'00000000-0000-0000-0000-000000000000'};
@@ -153,16 +186,19 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
   try { assertFailed(cli('','start','--retry','--no-ci','--no-open')); assert.equal(await isolatedSchema(),62); }
   finally { unlinkSync(receipt);renameSync(receipt+'.original',receipt);unlinkSync(completionPath); }
   assert.equal(statSync(receipt).ino,originalReceiptInode);assert.deepEqual(readFileSync(receipt),originalReceiptBytes);
-  assertFailed(cli('before-reattach','start','--retry','--no-ci','--no-open'));
+  assertFailed(cli('before-reattach','start','--retry','--no-ci','--no-open'));fired('before-reattach');
   let phase=readGuard();assert.equal(phase.isolation.phase,'verified');assert(existsSync(completionPath));
   let topology=JSON.parse((await docker(['inspect',dbId])).stdout)[0];assert.equal(Object.keys(topology.NetworkSettings.Networks).length,0);
-  assertFailed(cli('after-reattach','start','--retry','--no-ci','--no-open'));
+  assertFailed(cli('after-reattach','start','--retry','--no-ci','--no-open'));fired('after-reattach');
   phase=readGuard();assert.equal(phase.isolation.phase,'verified');
   topology=JSON.parse((await docker(['inspect',dbId])).stdout)[0];assert.equal(Object.keys(topology.NetworkSettings.Networks).length,1);
-  assertFailed(cli('before-app-start','start','--retry','--no-ci','--no-open'));
+  assertFailed(cli('before-app-start','start','--retry','--no-ci','--no-open'));fired('before-app-start');
   assert.equal(readGuard().state,'verified');
   const completed=cli('','start','--no-ci','--no-open'); assert.equal(completed.status,0,completed.stderr);
   const final=readGuard(); assert.equal(final.state,'verified'); assert.equal(final.attempt_id,original.attempt_id); assert.deepEqual(final.backup,original.backup);
+  assert.deepEqual(final.defense_binding,original.defense_binding);assert.equal(final.cut62_identity.witness_id,captured.cut62_identity.witness_id);
+  assert.equal(statSync(preWitness).ino,preInode);assert.deepEqual(readFileSync(preWitness),preBytes);
+  assert.equal(statSync(selectionCopy).ino,selectionInode);assert.deepEqual(readFileSync(selectionCopy),selectionBytes);assert.deepEqual(readFileSync(bindingPath),bindingBytes);
   assert.equal(statSync(witness).ino,witnessInode); assert.deepEqual(readFileSync(witness),witnessBytes);
   assert.deepEqual(await readHistory(),expected);
   const completion=join(witnessDir,'verified-completion.json'), completionBytes=readFileSync(completion), completionInode=statSync(completion).ino;
@@ -194,5 +230,6 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
   const playable=(await request('queue/today')).cards.find(item=>item.moves?.length&&item.start_fen);
   assert(playable&&new Chess(playable.start_fen).move(playable.moves[0]));
   assert.equal(statSync(completion).ino,completionInode);assert.deepEqual(readFileSync(completion),completionBytes);
+  record('full-managed-lifecycle');
   return { cli, final, original, completion, completionBytes, completionInode, witness, witnessBytes, witnessInode };
 }
