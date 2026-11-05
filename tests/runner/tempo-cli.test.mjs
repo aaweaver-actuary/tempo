@@ -3108,6 +3108,68 @@ with tempfile.TemporaryDirectory() as tmp:
   assert.equal(result.status, 0, result.stdout + result.stderr);
 });
 
+test("disposable handoff allocation requires private owned ancestors and creates fresh retries", () => {
+  const proof = String.raw`
+import ast,os,pathlib,stat,tempfile
+from unittest.mock import patch
+source=pathlib.Path('database/tests/check_postgres_cli_lifecycle.py').read_text()
+node=next(n for n in ast.parse(source).body if isinstance(n,ast.FunctionDef) and n.name=='create_disposable_handoff')
+scope={'os':os,'stat':stat};exec(compile(ast.Module(body=[node],type_ignores=[]),'<fixture>','exec'),scope)
+create=scope['create_disposable_handoff']
+with tempfile.TemporaryDirectory(dir='/private/tmp') as root:
+ first,nonce1=create(root); second,nonce2=create(root)
+ assert first!=second and nonce1!=nonce2 and len(nonce1)==32
+ assert stat.S_IMODE(os.lstat(first).st_mode)==0o700
+ with patch.object(os,'urandom',return_value=b'\\x01'*16):
+  fixed,_=create(root)
+  try:create(root)
+  except FileExistsError:pass
+  else:raise AssertionError('handoff collision accepted')
+ os.chmod(root,0o755)
+ try:create(root)
+ except RuntimeError:pass
+ else:raise AssertionError('nonprivate root accepted')
+ os.chmod(root,0o700)
+ link=root+'-link';os.symlink(root,link)
+ try:
+  try:create(link)
+  except RuntimeError:pass
+  else:raise AssertionError('symlink root accepted')
+ finally:os.unlink(link)
+`;
+  const result = fsSpawnSync("python3", ["-c", proof], { cwd: process.cwd(), encoding: "utf8" });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
+test("disposable receipt retry verifies and syncs the original without replacing it", () => {
+  const proof = String.raw`
+import ast,json,os,pathlib,stat,tempfile
+from unittest.mock import patch
+source=pathlib.Path('database/tests/check_postgres_cli_lifecycle.py').read_text()
+names={'_read_private_json','_reuse_verified_receipt'}
+nodes=[n for n in ast.parse(source).body if isinstance(n,ast.FunctionDef) and n.name in names]
+scope={'os':os,'json':json,'stat':stat};exec(compile(ast.Module(body=nodes,type_ignores=[]),'<fixture>','exec'),scope)
+reuse=scope['_reuse_verified_receipt']
+with tempfile.TemporaryDirectory() as tmp:
+ path=os.path.join(tmp,'receipt.json')
+ with open(path,'w') as stream:json.dump({'schema':62},stream)
+ os.chmod(path,0o600); original=os.stat(path).st_ino
+ sync=os.fsync; calls=[]
+ def record(fd): calls.append(fd); sync(fd)
+ with patch.object(os,'fsync',record):reuse(path,{'schema':62})
+ assert len(calls)==2 and os.stat(path).st_ino==original
+ try:reuse(path,{'schema':61})
+ except RuntimeError:pass
+ else:raise AssertionError('different receipt accepted')
+ os.unlink(path); os.symlink('/dev/null',path)
+ try:reuse(path,{'schema':62})
+ except OSError:pass
+ else:raise AssertionError('symlink accepted')
+`;
+  const result = fsSpawnSync("python3", ["-c", proof], { cwd: process.cwd(), encoding: "utf8" });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
 test("shipped migration CLI exposes no disposable isolation supervisor", () => {
   const proof = String.raw`
 import runpy,sys,types

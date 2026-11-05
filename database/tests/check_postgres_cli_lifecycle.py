@@ -90,6 +90,59 @@ def _write_private_json_once(path, value):
             pass
 
 
+def _reuse_verified_receipt(path, expected):
+    # Called only after the pinned connection has authenticated the original
+    # witness against schema 62. Re-sync a previously published receipt before
+    # the supervisor can rely on it after an interrupted directory fsync.
+    if _read_private_json(path) != expected:
+        raise RuntimeError('Original disposable receipt differs')
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    directory = os.open(os.path.dirname(path), os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+    if _read_private_json(path) != expected:
+        raise RuntimeError('Original disposable receipt changed')
+
+
+def create_disposable_handoff(root):
+    """Allocate a new host-owned test handoff; callers own the daemon boundary."""
+    if not os.path.isabs(root) or os.path.normpath(root) != root:
+        raise RuntimeError('Disposable handoff root is invalid')
+    uid = os.geteuid()
+    current = root
+    first = True
+    while True:
+        info = os.lstat(current)
+        mode = stat.S_IMODE(info.st_mode)
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid not in (0, uid):
+            raise RuntimeError('Disposable handoff ancestor is untrusted')
+        if first:
+            if info.st_uid != uid or mode != 0o700:
+                raise RuntimeError('Disposable handoff root is not private and owned')
+        elif mode & 0o022 and not (info.st_uid == 0 and mode & stat.S_ISVTX):
+            raise RuntimeError('Disposable handoff ancestor is writable')
+        parent = os.path.dirname(current)
+        if parent == current:
+            break
+        first = False
+        current = parent
+    nonce = os.urandom(16).hex()
+    handoff = os.path.join(root, 'handoff-' + os.urandom(16).hex())
+    os.mkdir(handoff, 0o700)
+    directory = os.open(root, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+    return handoff, nonce
+
+
 @migration_owner.safe_postgres_errors
 def run_disposable_pinned_isolation(database_url, *, guard_path, selection_path, binding_path, witness_path,
                                     pre62_path, handoff_directory, nonce):
@@ -202,7 +255,13 @@ def run_disposable_pinned_isolation(database_url, *, guard_path, selection_path,
                    'backup_filename': binding['backup_filename'], 'backup_sha256': binding['backup_sha256'],
                    'selection_sha256': selection_sha, 'pre62_witness_id': guard.get('pre62_witness_id') if guard['starting_schema'] == 59 else None,
                    'cut62_witness_id': witness_id, 'schema': 62}
-        _write_private_json_once(os.path.join(os.path.dirname(witness_path), 'verified-receipt.json'), receipt)
+        receipt_path = os.path.join(os.path.dirname(witness_path), 'verified-receipt.json')
+        if os.path.lexists(receipt_path):
+            if version != 62:
+                raise RuntimeError('Receipt predates the committed schema')
+            _reuse_verified_receipt(receipt_path, receipt)
+        else:
+            _write_private_json_once(receipt_path, receipt)
 
 
 
