@@ -2,6 +2,7 @@
 -- RESTRICT aborts the transaction if an unreviewed dependency remains.
 -- Stopped-writer preflight: the runner provides the verified approved selection
 -- as a parameterized transaction-local setting, never as SQL text or argv keys.
+SET LOCAL search_path=public,pg_catalog;
 SET LOCAL TIME ZONE 'UTC';
 SET LOCAL DateStyle = 'ISO, YMD';
 SET LOCAL extra_float_digits=3;
@@ -115,6 +116,25 @@ WITH expected(table_name,trigger_name,enabled,trigger_type,function_schema,funct
 SELECT NOT EXISTS ((SELECT * FROM actual EXCEPT ALL SELECT * FROM expected) UNION ALL (SELECT * FROM expected EXCEPT ALL SELECT * FROM actual))
 -- END CUT62 DEFENSE TRIGGER LEDGER
  ) THEN RAISE EXCEPTION 'cut62 Defense trigger ledger changed'; END IF;
+ IF NOT (
+-- BEGIN CUT62 DEFENSE HELPER LEDGER
+WITH expected(function_schema,function_name,arguments,digest) AS (VALUES
+('public','bump_priority_repertoire_source','target_repertoire_id text','fb608697361d49ffc403eeb81d33036a1adbc13ea1e5098e8011a8cdf9e31ba5'),
+('public','guard_prefix_transition_scope','scope_kind text, scope_id text','5e165e76a49e555c576c20b648072e258915f52a852d7a29d353823861d1ed46'),
+('public','opening_evidence_bind_queue','queue_identifier bigint, card_identifier text, admission_repertoire text','a1a451192b69cb037186d4f1f23ff0f5bd139355fcbb838f3ec8b2fa57e4d577')
+), actual AS (
+ SELECT n.nspname::text,p.proname::text,pg_get_function_identity_arguments(p.oid),encode(sha256(convert_to(pg_get_functiondef(p.oid),'UTF8')),'hex')
+ FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+ WHERE n.nspname='public' AND p.proname IN ('bump_priority_repertoire_source','guard_prefix_transition_scope','opening_evidence_bind_queue')
+)
+SELECT NOT EXISTS ((SELECT * FROM actual EXCEPT ALL SELECT * FROM expected) UNION ALL (SELECT * FROM expected EXCEPT ALL SELECT * FROM actual))
+-- END CUT62 DEFENSE HELPER LEDGER
+ ) THEN RAISE EXCEPTION 'cut62 Defense helper ledger changed'; END IF;
+ IF NOT (
+-- BEGIN CUT62 DEFENSE RULE LEDGER
+SELECT NOT EXISTS (SELECT 1 FROM pg_rewrite r JOIN pg_class c ON c.oid=r.ev_class JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname IN ('cards','daily_queue','queue_attempt_origins','threat_training_candidates','priority_repertoire_source_epochs','frozen_opening_runs'))
+-- END CUT62 DEFENSE RULE LEDGER
+ ) THEN RAISE EXCEPTION 'cut62 Defense rewrite-rule ledger changed'; END IF;
  END IF;
  SELECT selected_count,reference_digest INTO actual_count,actual_digest FROM (
 -- BEGIN CUT62 REFERENCE DIGEST
@@ -364,21 +384,21 @@ WITH approved AS MATERIALIZED (
 END $$;
 DO $$ DECLARE selected_count bigint; queue_count bigint; origin_count bigint; affected bigint;
 BEGIN
- SELECT count(*) INTO selected_count FROM cut62_defense_selected;
+ SELECT count(*) INTO selected_count FROM pg_temp.cut62_defense_selected;
  IF selected_count<>jsonb_array_length(current_setting('tempo.cut62_defense_manifest',true)::jsonb->'keys') THEN RAISE EXCEPTION 'Approved Defense selection changed'; END IF;
  IF selected_count>0 THEN
   SELECT count(*) INTO queue_count FROM daily_queue q JOIN cut62_defense_selected s ON s.card_id=q.card_id;
   SELECT count(*) INTO origin_count FROM queue_attempt_origins o JOIN cut62_defense_selected s ON s.card_id=o.card_id;
-  UPDATE threat_training_candidates t SET card_id=NULL FROM cut62_defense_selected s WHERE t.id=s.candidate_id AND t.card_id=s.card_id;
+  UPDATE public.threat_training_candidates t SET card_id=NULL FROM pg_temp.cut62_defense_selected s WHERE t.id=s.candidate_id AND t.card_id=s.card_id;
   GET DIAGNOSTICS affected = ROW_COUNT;
   IF affected<>selected_count THEN RAISE EXCEPTION 'Defense candidate count changed'; END IF;
-  DELETE FROM daily_queue q USING cut62_defense_selected s WHERE q.card_id=s.card_id;
+  DELETE FROM public.daily_queue q USING pg_temp.cut62_defense_selected s WHERE q.card_id=s.card_id;
   GET DIAGNOSTICS affected = ROW_COUNT;
   IF affected<>queue_count THEN RAISE EXCEPTION 'Defense queue count changed'; END IF;
-  DELETE FROM queue_attempt_origins o USING cut62_defense_selected s WHERE o.card_id=s.card_id AND o.content_type='defense';
+  DELETE FROM public.queue_attempt_origins o USING pg_temp.cut62_defense_selected s WHERE o.card_id=s.card_id AND o.content_type='defense';
   GET DIAGNOSTICS affected = ROW_COUNT;
   IF affected<>origin_count THEN RAISE EXCEPTION 'Defense origin count changed'; END IF;
-  DELETE FROM cards c USING cut62_defense_selected s WHERE c.id=s.card_id AND c.content_type='defense';
+  DELETE FROM public.cards c USING pg_temp.cut62_defense_selected s WHERE c.id=s.card_id AND c.content_type='defense';
   GET DIAGNOSTICS affected = ROW_COUNT;
   IF affected<>selected_count THEN RAISE EXCEPTION 'Defense card count changed'; END IF;
  END IF;

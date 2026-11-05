@@ -410,6 +410,21 @@ def test_schema61_defense_exclusive_rehearsal_preserves_shared_history(tmp_path)
             with pytest.raises(RuntimeError, match='updated-column foreign-key ledger changed'):
                 guard.capture_cut62_v6(db, b'x'*32, selection, binding)
             db.execute('ROLLBACK TO SAVEPOINT changed_epoch_dependency')
+            for changed_helper in (
+                "CREATE OR REPLACE FUNCTION public.bump_priority_repertoire_source(target_repertoire_id text) RETURNS void LANGUAGE plpgsql AS $$ BEGIN RETURN; END $$",
+                "CREATE OR REPLACE FUNCTION public.guard_prefix_transition_scope(scope_kind text,scope_id text) RETURNS void LANGUAGE plpgsql AS $$ BEGIN RETURN; END $$",
+                "CREATE OR REPLACE FUNCTION public.opening_evidence_bind_queue(queue_identifier bigint,card_identifier text,admission_repertoire text) RETURNS void LANGUAGE sql AS $$ SELECT NULL::void $$",
+            ):
+                db.execute('SAVEPOINT changed_transitive_helper')
+                db.execute(changed_helper)
+                with pytest.raises(RuntimeError, match='helper ledger changed'):
+                    guard.capture_cut62_v6(db, b'x'*32, selection, binding)
+                db.execute('ROLLBACK TO SAVEPOINT changed_transitive_helper')
+            db.execute('SAVEPOINT unexpected_rewrite_rule')
+            db.execute("CREATE RULE synthetic_extra AS ON DELETE TO public.cards DO ALSO UPDATE public.frozen_opening_runs SET invalidated=1")
+            with pytest.raises(RuntimeError, match='rewrite-rule ledger changed'):
+                guard.capture_cut62_v6(db, b'x'*32, selection, binding)
+            db.execute('ROLLBACK TO SAVEPOINT unexpected_rewrite_rule')
             db.execute('SAVEPOINT changed_trigger_function')
             db.execute("CREATE OR REPLACE FUNCTION frozen_invalidate_pending() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$")
             with pytest.raises(RuntimeError, match='trigger ledger changed'):
@@ -429,6 +444,8 @@ def test_schema61_defense_exclusive_rehearsal_preserves_shared_history(tmp_path)
             db.execute('ROLLBACK TO SAVEPOINT missing_approval')
             assert db.execute('SELECT max(version) FROM tempo_schema_migrations').fetchone()[0] == 61
             for savepoint, mutation, message in (
+                ('migration_changed_helper', "CREATE OR REPLACE FUNCTION public.bump_priority_repertoire_source(target_repertoire_id text) RETURNS void LANGUAGE plpgsql AS $$ BEGIN RETURN; END $$", 'helper ledger changed'),
+                ('migration_extra_rule', "CREATE RULE synthetic_extra AS ON DELETE TO public.cards DO ALSO UPDATE public.frozen_opening_runs SET invalidated=1", 'rewrite-rule ledger changed'),
                 ('migration_origin_fk', 'ALTER TABLE queue_attempt_abandonments ADD CONSTRAINT synthetic_extra_origin_fk FOREIGN KEY(queue_entry_id,card_id,revision) REFERENCES queue_attempt_origins(queue_entry_id,card_id,revision)', 'origin foreign-key ledger changed'),
                 ('migration_trigger_function', "CREATE OR REPLACE FUNCTION frozen_invalidate_pending() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$", 'trigger ledger changed'),
                 ('migration_replica', "SET LOCAL session_replication_role='replica'", 'Unsupported Defense cutover database session'),
@@ -688,3 +705,23 @@ def test_defense_selection_is_private_sorted_and_bound_to_exact_bytes(tmp_path):
     path.chmod(0o644)
     with pytest.raises(RuntimeError, match='private regular file'):
         guard.load_cut62_defense_selection(path)
+
+
+def test_verifier_cli_redacts_database_error_details(tmp_path, monkeypatch, capsys):
+    import runpy
+    import sys
+    import psycopg
+    path = tmp_path / 'selection.json'
+    path.write_text(json.dumps({'version': 1, 'target': 'synthetic', 'cohort': 'defense-no-activity', 'keys': [], 'expected': {'count': 0, 'reference_digest': 'a'*64}}))
+    path.chmod(0o600)
+    def fail(*args, **kwargs):
+        raise psycopg.DatabaseError('sensitive-card-id')
+    monkeypatch.setattr(psycopg, 'connect', fail)
+    monkeypatch.setenv('TEMPO_POSTGRES_ADMIN_URL', 'synthetic')
+    monkeypatch.setattr(sys, 'argv', [guard.__file__, '--cut62-reference-digest', '--defense-selection', str(path)])
+    with pytest.raises(SystemExit) as exc:
+        runpy.run_path(guard.__file__, run_name='__main__')
+    assert exc.value.code == 1
+    captured = capsys.readouterr()
+    assert 'sensitive-card-id' not in captured.err
+    assert json.loads(captured.err) == {'error': 'DatabaseError', 'sqlstate': None}

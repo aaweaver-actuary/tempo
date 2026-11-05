@@ -409,6 +409,23 @@ SELECT NOT EXISTS (
 )
 '''
 
+CUT62_DEFENSE_HELPER_LEDGER_SQL = '''
+WITH expected(function_schema,function_name,arguments,digest) AS (VALUES
+('public','bump_priority_repertoire_source','target_repertoire_id text','fb608697361d49ffc403eeb81d33036a1adbc13ea1e5098e8011a8cdf9e31ba5'),
+('public','guard_prefix_transition_scope','scope_kind text, scope_id text','5e165e76a49e555c576c20b648072e258915f52a852d7a29d353823861d1ed46'),
+('public','opening_evidence_bind_queue','queue_identifier bigint, card_identifier text, admission_repertoire text','a1a451192b69cb037186d4f1f23ff0f5bd139355fcbb838f3ec8b2fa57e4d577')
+), actual AS (
+ SELECT n.nspname::text,p.proname::text,pg_get_function_identity_arguments(p.oid),encode(sha256(convert_to(pg_get_functiondef(p.oid),'UTF8')),'hex')
+ FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+ WHERE n.nspname='public' AND p.proname IN ('bump_priority_repertoire_source','guard_prefix_transition_scope','opening_evidence_bind_queue')
+)
+SELECT NOT EXISTS ((SELECT * FROM actual EXCEPT ALL SELECT * FROM expected) UNION ALL (SELECT * FROM expected EXCEPT ALL SELECT * FROM actual))
+'''
+
+CUT62_DEFENSE_RULE_LEDGER_SQL = '''
+SELECT NOT EXISTS (SELECT 1 FROM pg_rewrite r JOIN pg_class c ON c.oid=r.ev_class JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname IN ('cards','daily_queue','queue_attempt_origins','threat_training_candidates','priority_repertoire_source_epochs','frozen_opening_runs'))
+'''
+
 CUT62_DRAFT_DEFENSE_SELECTOR = '''
 WITH typed_receipts AS MATERIALIZED (
  SELECT CASE WHEN pg_input_is_valid(payload_json,'jsonb') THEN payload_json::jsonb END AS payload,
@@ -679,6 +696,7 @@ def capture_cut62(database, secret):
 
 def capture_cut62_v6(database, secret, selection, binding):
     """Capture original and exact approved projected state in one read snapshot."""
+    database.execute('SET LOCAL search_path=public,pg_catalog')
     database.execute('SET LOCAL join_collapse_limit=1')
     database.execute('SET LOCAL jit=off')
     database.execute("SET LOCAL statement_timeout='30s'")
@@ -687,6 +705,10 @@ def capture_cut62_v6(database, secret, selection, binding):
     updated_fk = migration.split('-- BEGIN CUT62 DEFENSE UPDATED COLUMN FK\n', 1)[1].split('\n-- END CUT62 DEFENSE UPDATED COLUMN FK', 1)[0]
     if updated_fk != CUT62_DEFENSE_UPDATED_COLUMN_FK_SQL.strip():
         raise RuntimeError('cut62 Defense updated-column ledger differs from migration')
+    for label, expected in (('HELPER LEDGER', CUT62_DEFENSE_HELPER_LEDGER_SQL), ('RULE LEDGER', CUT62_DEFENSE_RULE_LEDGER_SQL)):
+        found = migration.split('-- BEGIN CUT62 DEFENSE ' + label + '\n', 1)[1].split('\n-- END CUT62 DEFENSE ' + label, 1)[0]
+        if found != expected.strip():
+            raise RuntimeError('cut62 Defense dependency ledger differs from migration')
     origin_fk = migration.split('-- BEGIN CUT62 DEFENSE ORIGIN FK\n', 1)[1].split('\n-- END CUT62 DEFENSE ORIGIN FK', 1)[0]
     if origin_fk != CUT62_DEFENSE_ORIGIN_FK_SQL.strip():
         raise RuntimeError('cut62 Defense origin foreign-key ledger differs from migration')
@@ -717,6 +739,10 @@ def capture_cut62_v6(database, secret, selection, binding):
             raise RuntimeError('cut62 Defense updated-column foreign-key ledger changed')
         if not database.execute(CUT62_DEFENSE_TRIGGER_LEDGER_SQL).fetchone()[0]:
             raise RuntimeError('cut62 Defense trigger ledger changed')
+        if not database.execute(CUT62_DEFENSE_HELPER_LEDGER_SQL).fetchone()[0]:
+            raise RuntimeError('cut62 Defense helper ledger changed')
+        if not database.execute(CUT62_DEFENSE_RULE_LEDGER_SQL).fetchone()[0]:
+            raise RuntimeError('cut62 Defense rewrite-rule ledger changed')
     count, digest = _cut62_defense_reference_digest(database, selection['keys'])
     if count != selection['expected']['count'] or digest != selection['expected']['reference_digest']:
         raise RuntimeError('approved Defense reference evidence changed')
@@ -1184,4 +1210,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except psycopg.Error as error:
+        print(json.dumps({'error': type(error).__name__, 'sqlstate': error.sqlstate}), file=sys.stderr)
+        sys.exit(1)
