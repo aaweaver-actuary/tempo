@@ -93,6 +93,7 @@ def main():
     mode.add_argument("--seed59", action="store_true", help="Seed populated historical data and advance only through schema 59")
     mode.add_argument("--seed-defense-v2", metavar="TARGET", help="Seed and describe the owned all-group Defense fixture")
     mode.add_argument("--seed-defense-v2-15", metavar="TARGET", help="Seed the owned fifteen-card mixed Defense fixture")
+    mode.add_argument("--refresh-defense-v2-15", metavar="TARGET", help="Read the final owned synthetic selection after writers stop")
     mode.add_argument("--inspect-defense-v2-15", action="store_true", help="Inspect only the owned synthetic retirement fixture")
     mode.add_argument("--seed-retained-frozen", action="store_true", help="Seed the owned pending frozen fixture after writers stop")
     mode.add_argument("--history", action="store_true", help="Read only the original fixture history, allowing unrelated worker receipts")
@@ -100,6 +101,27 @@ def main():
     mode.add_argument("--seed-abandon-orphan", action="store_true", help="Seed one fixed synthetic orphan after the owned CLI target upgrades")
     mode.add_argument("--abandon-inspection", action="store_true", help="Read retained origin/receipt bytes and complete Study history for abandonment proof")
     options = parser.parse_args()
+    if options.refresh_defense_v2_15:
+        if not re.fullmatch(r'tempo-pg-regressions-[a-z0-9-]+-cli', os.environ.get('TEMPO_TEST_COMPOSE_PROJECT', '')):
+            raise RuntimeError('Defense fixture requires the owned CLI test project')
+        from urllib.parse import urlparse
+        parsed=urlparse(dsn)
+        if parsed.hostname != 'postgres' or parsed.path != '/tempo' or parsed.username != 'postgres':
+            raise RuntimeError('Defense fixture requires the owned disposable database')
+        from database.tooling import verify_postgres_cli_state as guard
+        keys=[[f'cli-defense-15-card-{i:02d}',f'cli-defense-15-candidate-{i:02d}',
+               'no_activity' if i < 11 else 'recognition_only' if i < 13 else 'reviewed'] for i in range(15)]
+        with psycopg.connect(dsn) as database:
+            database.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ WRITE')
+            if database.execute('SELECT max(version) FROM tempo_schema_migrations').fetchone()[0] != 59:
+                raise RuntimeError('Defense fixture requires the owned schema 59 database')
+            guard._cut62_history_session(database)
+            count,groups,digest=guard._cut62_draft_history_reference(database,keys)
+            if (count,groups)!=(15,{'no_activity':11,'recognition_only':2,'reviewed':2}):
+                raise RuntimeError('Owned fifteen-card fixture does not match its approved cohorts')
+        print(json.dumps({'version':2,'target':options.refresh_defense_v2_15,'cohort':'defense-history','keys':keys,
+                          'expected':{'count':count,'groups':groups,'reference_digest':digest}}))
+        return
     if options.seed_retained_frozen:
         from urllib.parse import urlparse
         parsed=urlparse(dsn)

@@ -199,7 +199,7 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
       "database/tests/check_postgres_cli_lifecycle.py", "--history"])).stdout);
     const expected = await readHistory();
     if (schema59Only) {
-      const managedManifest = (environment.TEMPO_LIFECYCLE_MANAGED_REHEARSAL === '1' || environment.TEMPO_LIFECYCLE_SHIPPING_REHEARSAL === '1')
+      let managedManifest = (environment.TEMPO_LIFECYCLE_MANAGED_REHEARSAL === '1' || environment.TEMPO_LIFECYCLE_SHIPPING_REHEARSAL === '1')
         ? JSON.parse((await compose(['--profile','maintenance','run','--rm','--no-deps','-T',
           '-e', `TEMPO_TEST_COMPOSE_PROJECT=${childProject}`, 'migration','database/tests/check_postgres_cli_lifecycle.py',
           environment.TEMPO_LIFECYCLE_SHIPPING_REHEARSAL === '1' ? '--seed-defense-v2-15' : '--seed-defense-v2',targetKey(target)])).stdout) : null;
@@ -253,6 +253,13 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
             '-e',`TEMPO_TEST_COMPOSE_PROJECT=${childProject}`,'migration','database/tests/check_postgres_cli_lifecycle.py','--seed-retained-frozen'])).stdout);
           assert.deepEqual(frozen,{seeded:true,schema:59});
           originalDefense=await readDefenseFixture();
+          const finalManifest=JSON.parse((await compose(['--profile','maintenance','run','--rm','--no-deps','-T',
+            '-e',`TEMPO_TEST_COMPOSE_PROJECT=${childProject}`,'migration','database/tests/check_postgres_cli_lifecycle.py',
+            '--refresh-defense-v2-15',targetKey(target)])).stdout);
+          assert.deepEqual(finalManifest.keys,managedManifest.keys);assert.equal(finalManifest.target,managedManifest.target);
+          assert.deepEqual(finalManifest.expected.groups,managedManifest.expected.groups);assert.equal(finalManifest.expected.count,managedManifest.expected.count);
+          atomicJson(join(directory,'shipping-selection-comparison.json'),{before:managedManifest.expected,after:finalManifest.expected});
+          managedManifest=finalManifest;
         }
         await compose(['stop','--timeout','60','redis','postgres'],{echo:true});
         const active=(await compose(['ps','--status','running','--services'])).stdout.trim().split(/\s+/).filter(Boolean);
