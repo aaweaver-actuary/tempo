@@ -13,6 +13,7 @@ test("imported miss retains one lapse then ordinary Study saves and settles with
     "/source/backend/tests/fixtures/product_feedback.py", action, identity], { encoding: "utf8", timeout: 30_000 }));
   const facts = fixture("seed");
   const before = await (await request.get(`${api}/queue/window?limit=20`)).json();
+  expect(before.local_date).toBe(facts.study_day);
   expect(before.cards[0].id).toBe(facts.protected_id);
   const operation = randomUUID();
   const submit = async () => {
