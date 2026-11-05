@@ -1,8 +1,12 @@
-# Workbench mutation outbox storage
+# Workbench mutation outbox storage — historical
 
-Current source storage is implemented in
+The standalone Workbench consumer is retired. This describes its historical
+storage contract, not a current Study or Game Review journal. The former
+consumer and its source are pinned at [aec931f9](https://github.com/aaweaver-actuary/tempo/blob/aec931f9820b8cd6b219074ae0c32d6686c21684/apps/workbench-web/src/commands.ts).
+
+The retained adapter source is implemented in
 [`pending-command-storage.mts`](pending-command-storage.mts). The Workbench
-[`PendingCommands`](../../../../apps/workbench-web/src/commands.ts) coordinator
+[`PendingCommands`](https://github.com/aaweaver-actuary/tempo/blob/aec931f9820b8cd6b219074ae0c32d6686c21684/apps/workbench-web/src/commands.ts) coordinator
 supplies its existing injected browser `Storage` (the UI supplies `sessionStorage`).
 It owns request construction, digest/authority validation, legacy migration and
 conflict decisions, dispatch fences, network retry and authoritative receipt
@@ -44,11 +48,11 @@ recovery. No key, payload version, identity, retention policy or browser-storage
 API changes are made by this relocation. Actual browser/session contents have
 not been inspected.
 
-The package's TypeScript build emits the single canonical adapter at
+The historical package build emitted the single canonical adapter at
 `lib/database/browser/adapters/workbench/pending-command-storage.mjs`; the public
 entry and declarations are under `lib/apps/workbench-web/src/`. The `.mts` source explicitly preserves ESM output in the isolated source copy,
 without depending on repository-root package metadata. All relative
-runtime imports remain inside the packed `lib/` tree. The finite qualifier source
-copy includes this owner directory and the existing Workbench inputs, and removes
+runtime imports remain inside the packed `lib/` tree. The historical finite qualifier source
+copy included this owner directory and the existing Workbench inputs, and removed
 the whole copied source tree before installed-package checks. No root app runtime
 or other database owner is imported.

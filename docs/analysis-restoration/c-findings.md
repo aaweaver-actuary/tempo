@@ -1,6 +1,13 @@
 # C — Source-backed findings / analysis-v1
 
-Current handoff: [final R6–R8 corrective repair](#final-corrective-repair--r6r8-2026-10-16). Earlier sections retain their dated source and qualification history.
+**Historical evidence:** This document records the October 2026 Intelligence and
+Workbench qualification. Those analysis workflows are retired; commands, readiness
+claims and recommendations below describe that dated rehearsal and are not current
+operating instructions. The original document and its then-current source are pinned
+at [aec931f9](https://github.com/aaweaver-actuary/tempo/blob/aec931f9820b8cd6b219074ae0c32d6686c21684/docs/analysis-restoration/c-findings.md).
+The retained Game Review and Study contracts are defined by [SPEC](../../SPEC.md).
+
+Final dated handoff: [R6–R8 corrective repair](#final-corrective-repair--r6r8-2026-10-16).
 
 ## Ownership and checkpoint
 
