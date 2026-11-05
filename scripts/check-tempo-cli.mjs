@@ -194,7 +194,7 @@ m.apply_migrations(os.environ["TEMPO_POSTGRES_ADMIN_URL"], target_version=61)`;
         if (args.includes("--cut62-capture")) captures += 1;
         const result = await run(command, args, options);
         if (args.includes("--target-version") && !interrupted61) { interrupted61 = true; throw new Error("injected after schema61"); }
-        if (args.includes("--cut62-capture") && !interruptedCapture) { interruptedCapture = true; throw new Error("injected after cut62 capture"); }
+        if (args.includes("--cut62-check-captured") && !interruptedCapture) { interruptedCapture = true; throw new Error("injected after cut62 capture"); }
         return result;
       };
       const initial = makeRuntime(target, { run: inject, stateDirectory, revision, evidence, preparedImages });
@@ -380,7 +380,7 @@ m.apply_migrations(os.environ["TEMPO_POSTGRES_ADMIN_URL"], target_version=61)`;
     let interruptedCapture = false;
     const cutRun = async (command, args, options) => {
       const result = await run(command, args, options);
-      if (args.includes("--cut62-capture") && !interruptedCapture) {
+      if (args.includes("--cut62-check-captured") && !interruptedCapture) {
         interruptedCapture = true; throw new Error("injected post-capture interruption");
       }
       return result;

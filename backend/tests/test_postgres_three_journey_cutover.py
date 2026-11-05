@@ -147,14 +147,21 @@ def test_cut62_native_schema61_to62(tmp_path):
         original_attempt = db.execute("SELECT row_to_json(a)::text FROM defense_attempts a WHERE attempt_id='attempt'").fetchone()[0]
     path = tmp_path / 'cut62-original.json'
     with psycopg.connect(dsn) as db:
-        guard.save_cut62_witness(path, db)
+        captured_id = guard.save_cut62_witness(path, db)
     witness, secret = guard.load_cut62_witness(path)
     assert witness['rows']['defense_attempts']['count'] == 1
     assert witness['version'] == 3
     assert all(witness['rows'][name]['count'] == 1 for name in guard.CUT62_RETIRED_TABLES)
     assert witness['sequences']['retired']['count'] == 1
     with psycopg.connect(dsn) as db:
-        assert guard.check_captured_cut62(db, witness, secret)['unchanged']
+        assert guard.check_captured_cut62(db, witness, secret)['witness_id'] == captured_id
+        db.execute("UPDATE endgame_attempts SET target='win' WHERE id='end-attempt'")
+        alternate_path = tmp_path / 'cut62-alternate.json'
+        alternate_id = guard.save_cut62_witness(alternate_path, db)
+        alternate, alternate_secret = guard.load_cut62_witness(alternate_path)
+        assert guard.check_captured_cut62(db, alternate, alternate_secret)['witness_id'] == alternate_id
+        assert alternate_id != captured_id
+        db.rollback()
         db.execute("UPDATE repertoires SET name='tampered-before-cut' WHERE id='synthetic'")
         with pytest.raises(RuntimeError, match='source changed'):
             guard.check_captured_cut62(db, witness, secret)
@@ -162,7 +169,9 @@ def test_cut62_native_schema61_to62(tmp_path):
         assert guard.check_captured_cut62(db, witness, secret)['unchanged']
     apply_migrations(dsn)
     with psycopg.connect(dsn) as db:
-        guard.verify_cut62(db, witness, secret)
+        assert guard.verify_cut62(db, witness, secret)['witness_id'] == captured_id
+        assert guard.verify_cut62(db, alternate, alternate_secret)['witness_id'] == alternate_id
+        assert alternate_id != captured_id  # Caller must reject a valid swapped witness.
         assert db.execute("SELECT row_to_json(a)::text FROM defense_attempts a WHERE attempt_id='attempt'").fetchone()[0] == original_attempt
         db.execute("UPDATE defense_attempts SET move_uci='d2d4' WHERE attempt_id='attempt'")
         with pytest.raises(RuntimeError, match='retained rows changed in defense_attempts'):
@@ -446,3 +455,12 @@ def test_pre62_native_original_59_survives_interrupted_60_and_61(tmp_path):
         db.execute("INSERT INTO legacy_content_historical_origins(legacy_target_id,legacy_workspace_id,export_id,receipt_id,payload,receipt_digest) VALUES ('t','w','e','r','synthetic','digest')")
     with pytest.raises(RuntimeError,match='not empty'):
         verify()
+
+
+def test_cut62_witness_id_binds_retired_evidence_and_secret():
+    original = {'version': guard.CUT62_EVIDENCE_VERSION, 'rows': {'retired': {'digest': 'one'}}}
+    changed = {'version': guard.CUT62_EVIDENCE_VERSION, 'rows': {'retired': {'digest': 'two'}}}
+    identifier = guard.cut62_witness_id(original, b'x' * 32)
+    assert identifier == guard.cut62_witness_id(dict(original), b'x' * 32)
+    assert identifier != guard.cut62_witness_id(changed, b'x' * 32)
+    assert identifier != guard.cut62_witness_id(original, b'y' * 32)
