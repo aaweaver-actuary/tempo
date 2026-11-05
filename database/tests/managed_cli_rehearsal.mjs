@@ -35,7 +35,7 @@ export async function prepareOwnedStudyProgression({ target, directory }) {
   form.set('trained_color','white');form.set('initial_depth','2');
   const imported=await request('imports/pgn',{method:'POST',body:form});assert(imported.repertoire_id);
   await request(`repertoires/${imported.repertoire_id}/settings`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({new_cards_per_day:2})});
-  let queue,card;for(let i=0;i<120;i++){queue=await request('queue/today');card=queue.cards.find(item=>item.repertoire_id===imported.repertoire_id&&item.queue_entry_id&&item.moves?.length);if(card)break;await new Promise(resolve=>setTimeout(resolve,250));}
+  let queue,card;for(let i=0;i<120;i++){queue=await request('queue/today');card=queue.cards.find(item=>item.repertoire_id===imported.repertoire_id&&item.queue_entry_id&&item.moves?.length);if(card&&queue.projection?.state==='ready'&&!queue.projection?.refresh_pending)break;card=null;await new Promise(resolve=>setTimeout(resolve,250));}
   atomicJson(join(directory,'shipping-study-preflight.json'),{repertoire_id:imported.repertoire_id,cards_created:imported.cards_created,queue_count:queue?.count,projection:queue?.projection,card:card??null});
   assert(card&&new Chess(card.start_fen).move(card.moves[0]),'Owned Study source must issue a legal card before cut');
   return {repertoire_id:imported.repertoire_id,card_id:card.id,queue_entry_id:card.queue_entry_id};
