@@ -592,16 +592,16 @@ def _pre62_added_objects(database, version, owner, expected_acl):
                 or args != '' or result != 'trigger' or language != 'plpgsql' or not default_acl):
             raise RuntimeError('pre62 immutable function definition changed')
     triggers = database.execute("""SELECT t.tgname, c.relname, p.proname, t.tgtype::int, t.tgenabled,
-             n2.nspname FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid
+             n2.nspname,t.tgnargs,t.tgqual IS NULL,t.tgconstraint=0 FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid
        JOIN pg_namespace n ON n.oid=c.relnamespace JOIN pg_proc p ON p.oid=t.tgfoid
        JOIN pg_namespace n2 ON n2.oid=p.pronamespace
        WHERE n.nspname='public' AND NOT t.tgisinternal AND t.tgname=ANY(%s) ORDER BY 1""", (list(PRE62_TRIGGERS),)).fetchall()
     expected_triggers = {name for name, (_, _, _, introduced) in PRE62_TRIGGERS.items() if version >= introduced}
     if {row[0] for row in triggers} != expected_triggers or len(triggers) != len(expected_triggers):
         raise RuntimeError('pre62 immutable trigger inventory changed')
-    for name, table, function, kind, enabled, namespace in triggers:
+    for name, table, function, kind, enabled, namespace, nargs, no_condition, no_constraint in triggers:
         expected_table, expected_function, expected_kind, _ = PRE62_TRIGGERS[name]
-        if (table, function, kind, enabled, namespace) != (expected_table, expected_function, expected_kind, 'O', 'public'):
+        if (table, function, kind, enabled, namespace, nargs, no_condition, no_constraint) != (expected_table, expected_function, expected_kind, 'O', 'public', 0, True, True):
             raise RuntimeError('pre62 immutable trigger definition changed')
     exists = database.execute('SELECT to_regclass(%s)', ('public.' + PRE62_NEW_TABLE,)).fetchone()[0] is not None
     if exists != (version >= 61):
@@ -659,6 +659,21 @@ def capture_pre62_59(database, secret):
             'catalog':_pre62_catalog(database,secret),'sequences':_pre62_sequences(database,secret)}
 
 
+
+def authenticate_pre62_59(witness, secret):
+    """Identify a valid original file without asserting it was verified at 61."""
+    if not isinstance(secret, bytes) or len(secret) != 32:
+        raise ValueError('pre62 secret must be 32 bytes')
+    if (witness.get('domain'),witness.get('version'),witness.get('from'),witness.get('through')) != ('pre62-source-59',PRE62_EVIDENCE_VERSION,59,61):
+        raise RuntimeError('unsupported pre62 witness')
+    if set(witness.get('layout',{})) != PRE62_SOURCE_TABLES or set(witness.get('rows',{})) != PRE62_SOURCE_TABLES - {CUT62_LEDGER}:
+        raise RuntimeError('pre62 witness coverage changed')
+    for name in ('owner','new_table_acl','catalog','sequences'):
+        if name not in witness:
+            raise RuntimeError('pre62 witness incomplete')
+    canonical=json.dumps(witness,sort_keys=True,separators=(',',':'))
+    return _cut62_mac(secret,'pre62:witness-id',[canonical])['digest']
+
 def verify_pre62_59(database, witness, secret):
     if not isinstance(secret, bytes) or len(secret) != 32:
         raise ValueError('pre62 secret must be 32 bytes')
@@ -666,6 +681,7 @@ def verify_pre62_59(database, witness, secret):
         raise RuntimeError('unsupported pre62 witness')
     if set(witness.get('layout',{})) != PRE62_SOURCE_TABLES or set(witness.get('rows',{})) != PRE62_SOURCE_TABLES - {CUT62_LEDGER}:
         raise RuntimeError('pre62 witness coverage changed')
+    witness_id = authenticate_pre62_59(witness,secret)
     _pre62_session(database)
     version = database.execute('SELECT COALESCE(max(version),0) FROM public.tempo_schema_migrations').fetchone()[0]
     if version not in (59,60,61):
@@ -687,13 +703,14 @@ def verify_pre62_59(database, witness, secret):
     for name in sorted(PRE62_SOURCE_TABLES - {CUT62_LEDGER}):
         if _pre62_table(database,name,layout[name][0],secret) != witness['rows'][name]:
             raise RuntimeError('pre62 retained rows changed in ' + name)
-    return {'domain':'pre62-source-59','version':PRE62_EVIDENCE_VERSION,'observed_schema':version,'unchanged':True}
+    return {'domain':'pre62-source-59','version':PRE62_EVIDENCE_VERSION,'observed_schema':version,'unchanged':True,'witness_id':witness_id}
 
 
 def save_pre62_59(path, database):
     import secrets
     secret = secrets.token_bytes(32)
     witness = capture_pre62_59(database, secret)
+    witness_id = authenticate_pre62_59(witness,secret)
     signature = _cut62_mac(secret,'pre62:witness',[json.dumps(witness,sort_keys=True,separators=(',',':'))])['digest']
     descriptor = os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
     try:
@@ -704,6 +721,7 @@ def save_pre62_59(path, database):
     except BaseException:
         os.unlink(path)
         raise
+    return witness_id
 
 
 def load_pre62_59(path):
@@ -731,18 +749,23 @@ def main():
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--pre62-capture59', metavar='PRIVATE_WITNESS_PATH')
     group.add_argument('--pre62-verify59', metavar='PRIVATE_WITNESS_PATH')
+    group.add_argument('--pre62-authenticate59', metavar='PRIVATE_WITNESS_PATH')
     group.add_argument('--cut62-capture', metavar='PRIVATE_WITNESS_PATH')
     group.add_argument('--cut62-verify', metavar='PRIVATE_WITNESS_PATH')
     group.add_argument('--cut62-check-captured', metavar='PRIVATE_WITNESS_PATH')
     args = parser.parse_args()
-    if (args.pre62_capture59 or args.pre62_verify59 or args.cut62_capture or args.cut62_verify or args.cut62_check_captured) and args.expected:
+    if (args.pre62_capture59 or args.pre62_verify59 or args.pre62_authenticate59 or args.cut62_capture or args.cut62_verify or args.cut62_check_captured) and args.expected:
         parser.error('--expected cannot be combined with a cut62 operation')
+    if args.pre62_authenticate59:
+        witness,secret=load_pre62_59(args.pre62_authenticate59)
+        print(json.dumps({'domain':'pre62-source-59','version':PRE62_EVIDENCE_VERSION,'authenticated':True,'witness_id':authenticate_pre62_59(witness,secret)}))
+        return
     if args.pre62_capture59 or args.pre62_verify59:
         with psycopg.connect(os.environ['TEMPO_POSTGRES_ADMIN_URL'],
                              options='-c default_transaction_read_only=on') as database:
             if args.pre62_capture59:
-                save_pre62_59(args.pre62_capture59,database)
-                print(json.dumps({'domain':'pre62-source-59','version':PRE62_EVIDENCE_VERSION,'captured':True}))
+                witness_id=save_pre62_59(args.pre62_capture59,database)
+                print(json.dumps({'domain':'pre62-source-59','version':PRE62_EVIDENCE_VERSION,'captured':True,'witness_id':witness_id}))
             else:
                 witness,secret=load_pre62_59(args.pre62_verify59)
                 print(json.dumps(verify_pre62_59(database,witness,secret)))

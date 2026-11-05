@@ -336,7 +336,9 @@ def test_pre62_original_witness_survives_only_expected_checkpoints(monkeypatch):
 
 
 def test_pre62_file_never_overwrites_and_rejects_other_domain(tmp_path,monkeypatch):
-    witness={'domain':'pre62-source-59','version':1,'from':59,'through':61}
+    witness={'domain':'pre62-source-59','version':1,'from':59,'through':61,
+             'layout':dict.fromkeys(guard.PRE62_SOURCE_TABLES),'rows':dict.fromkeys(guard.PRE62_SOURCE_TABLES - {guard.CUT62_LEDGER}),
+             'owner':'owner','new_table_acl':[],'catalog':{},'sequences':{}}
     monkeypatch.setattr(guard,'capture_pre62_59',lambda database,secret: dict(witness))
     path=tmp_path/'pre62.json'
     guard.save_pre62_59(path,None)
@@ -382,17 +384,30 @@ def test_pre62_native_original_59_survives_interrupted_60_and_61(tmp_path):
         db.execute("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,created_at,updated_at) VALUES ('kept','synthetic','synthetic','complete','2026-01-01','2026-01-01')")
     witness_path=tmp_path/'pre62-original.json'
     with psycopg.connect(dsn) as db:
-        guard.save_pre62_59(witness_path,db)
+        captured_id=guard.save_pre62_59(witness_path,db)
     raw=witness_path.read_bytes()
     witness,secret=guard.load_pre62_59(witness_path)
+    assert guard.authenticate_pre62_59(witness,secret)==captured_id
+    import subprocess
+    import sys
+    result=subprocess.run([sys.executable, guard.__file__, '--pre62-authenticate59', str(witness_path)],
+                          check=True, capture_output=True, text=True)
+    assert json.loads(result.stdout)['witness_id']==captured_id
     def verify():
         with psycopg.connect(dsn) as db:
-            return guard.verify_pre62_59(db,witness,secret)['observed_schema']
+            result=guard.verify_pre62_59(db,witness,secret)
+            assert result['witness_id']==captured_id
+            return result['observed_schema']
     assert verify()==59
     with psycopg.connect(dsn) as db:
         db.execute(migration_source(MIGRATIONS/'060_position_first_response_immutable.sql'),prepare=False)
     assert verify()==60
     assert witness_path.read_bytes()==raw
+    with psycopg.connect(dsn) as db:
+        with pytest.raises(psycopg.errors.CheckViolation):
+            db.execute("DELETE FROM study_position_first_responses WHERE event_id='first'")
+        db.rollback()
+    assert verify()==60
     with psycopg.connect(dsn) as db:
         db.execute("UPDATE defense_attempts SET move_uci='d2d4' WHERE attempt_id='attempt'")
     with pytest.raises(RuntimeError,match='retained rows changed in defense_attempts'):
@@ -409,6 +424,11 @@ def test_pre62_native_original_59_survives_interrupted_60_and_61(tmp_path):
         verify()
     with psycopg.connect(dsn) as db:
         db.execute("ALTER TABLE cards ENABLE TRIGGER frozen_guard_cards")
+        db.execute('CREATE INDEX pre62_unexpected ON cards(id)')
+    with pytest.raises(RuntimeError,match='retained catalog changed'):
+        verify()
+    with psycopg.connect(dsn) as db:
+        db.execute('DROP INDEX pre62_unexpected')
         old=db.execute('SELECT last_value,is_called FROM reviews_id_seq').fetchone()
         db.execute("SELECT setval('reviews_id_seq',5,true)")
     try:
