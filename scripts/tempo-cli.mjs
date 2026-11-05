@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TempoProblem, classifyRedisReply, phaseGuidance, assertInstallationUnchanged, inspectMaintenance, installationFingerprint, recoveryAssessment, verificationProblem, waitForVerification } from "./tempo-guidance.mjs";
 import { acquireTargetLock, assessCandidate, assessMainVerification, atomicJson, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, portsFromConfig, productVolumes,
@@ -32,6 +32,14 @@ After a merge, the normal command is: tempo start
 
 export function parseArguments(argumentsList) {
   const args = [...argumentsList];
+  let defenseSelection = null;
+  const selectionIndex = args.indexOf('--defense-selection');
+  if (selectionIndex >= 0) {
+    const path = args[selectionIndex + 1];
+    if (!path || !isAbsolute(path) || /[:,\n\r]/.test(path) || args.lastIndexOf('--defense-selection') !== selectionIndex)
+      throw new Error('Defense selection requires one private absolute file path.');
+    defenseSelection = path; args.splice(selectionIndex, 2);
+  }
   let configPath = process.env.TEMPO_CLI_CONFIG ?? join(homedir(), ".config", "tempo", "config.json");
   const configIndex = args.indexOf("--config");
   if (configIndex >= 0) {
@@ -48,8 +56,9 @@ export function parseArguments(argumentsList) {
     || (command !== "logs" && services.length) || services.length > 1
     || (flags.has("--follow") && command !== "logs")
     || (flags.has("--no-wait") && !["start", "restart", "migrate"].includes(command))
-    || (flags.has("--no-ci") && !["start", "restart"].includes(command))) throw new Error("Invalid options. Run tempo help.");
-  return { command, configPath, flags, services };
+    || (flags.has("--no-ci") && !["start", "restart"].includes(command))
+    || (defenseSelection && (!['start', 'restart', 'migrate'].includes(command) || flags.has('--retry') || flags.has('--plan')))) throw new Error("Invalid options. Run tempo help.");
+  return { command, configPath, flags, services, ...(defenseSelection ? { defenseSelection } : {}) };
 }
 
 function readJson(path) { return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null; }
@@ -271,6 +280,11 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
   if (!target || target.version !== 1) throw new Error("Tempo is not registered. Run ./tempo install from the main checkout once.");
   if (!existsSync(target.root) || !target.context || !target.daemonId || !target.project || !target.composeFiles?.length || !target.postgresVolumeKey)
     throw new Error("Tempo registration is incomplete; inspect the config file before proceeding.");
+  if (options.defenseSelection) {
+    const { privateDefenseHistorySelection, requireManagedIsolationGate } = await import('./tempo-managed-isolation.mjs');
+    privateDefenseHistorySelection(options.defenseSelection, targetKey(target));
+    requireManagedIsolationGate();
+  }
   const { assessMigrationRecovery, createRuntime, executeLifecycle } = await import("./tempo-runtime.mjs");
   const secrets = Object.entries(process.env).filter(([key]) => /TOKEN|PASSWORD|SECRET/i.test(key)).map(([, value]) => value);
   const commandEnvironment = { ...process.env };

@@ -1139,6 +1139,15 @@ test("CLI no-ci update skips Actions verification and records the explicit polic
   assert.throws(() => parseArguments(["doctor", "--no-ci"]), /Invalid options/);
 });
 
+test("managed Defense selection accepts one absolute first-attempt path", () => {
+  assert.equal(parseArguments(['migrate', '--defense-selection', '/private/selection.json']).defenseSelection, '/private/selection.json');
+  for (const args of [
+    ['migrate', '--defense-selection', 'relative'], ['migrate', '--retry', '--defense-selection', '/private/s'],
+    ['doctor', '--defense-selection', '/private/s'], ['migrate', '--defense-selection', '/private/s', '--defense-selection', '/private/t'],
+    ['migrate', '--defense-selection', '/private/a:b'],
+  ]) assert.throws(() => parseArguments(args), /selection|Invalid options/i);
+});
+
 test("source update rejects exact main revisions when every eligible run fails or lacks required jobs", async () => {
   const fixture = sourceSelectionFixture({ runs: [{ id: 1 }, { id: 2 }], failedRuns: [1], incompleteRuns: [2] });
   await assert.rejects(selectCandidate({ root: "fixture" }, fixture.run, fixture.fetchJson), /quality/);
