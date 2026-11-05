@@ -163,3 +163,37 @@ def test_native_graph_owner_contention_is_nonblocking_and_distinct_from_missing(
         assert monotonic() - started < 2.0
     with postgres_store.connection(read_only=False) as database:
         assert storage.try_materialization_fence(database, 'absent-' + token) == 'graph_prerequisite_missing'
+
+
+def test_native_certificate_current_pending_and_stale_are_distinct(owned_database):
+    """Synthetic owner rows exercise the SQL fence, not graph/scan execution."""
+    from app.services.postgres_integrity import try_inspect_retained_integrity
+
+    token = uuid.uuid4().hex
+    repertoire, graph, scan = 'cert-rep-' + token, 'cert-graph-' + token, 'cert-scan-' + token
+    now = datetime.now(timezone.utc).isoformat()
+    with postgres_store.connection(read_only=False) as database:
+        database.execute_native("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,%s,'fixture',%s)",
+                                (repertoire, 'Certificate fixture', now))
+        database.execute_native("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES(%s,1,'ready',%s)",
+                                (repertoire, now))
+        for task_id, kind, payload in ((graph, 'opening_graph_rebuild', {'repertoire_id': repertoire}),
+                                       (scan, 'integrity_scan', {'repertoire_id': repertoire, 'graph_generation': 1})):
+            database.execute_native(
+                "INSERT INTO background_tasks(id,kind,deduplication_key,generation,state,payload_json,"
+                "next_attempt_at,created_at,updated_at) VALUES(%s,%s,%s,1,'complete',%s,%s,%s,%s)",
+                (task_id, kind, repertoire, json.dumps(payload), now, now, now))
+        database.execute_native(
+            "INSERT INTO repertoire_integrity_state(repertoire_id,status,checked_at,scan_status,scan_generation,"
+            "scan_completed_sources,scan_total_sources) VALUES(%s,'clean',%s,'idle',%s,1,1)",
+            (repertoire, now, scan + ':1'))
+    with postgres_store.connection(read_only=False) as database:
+        assert try_inspect_retained_integrity(database, repertoire).state == 'current'
+    with postgres_store.connection(read_only=False) as database:
+        database.execute_native("UPDATE background_tasks SET state='queued' WHERE id=%s", (scan,))
+    with postgres_store.connection(read_only=False) as database:
+        assert try_inspect_retained_integrity(database, repertoire).state == 'pending'
+    with postgres_store.connection(read_only=False) as database:
+        database.execute_native("UPDATE background_tasks SET state='complete',generation=2 WHERE id=%s", (scan,))
+    with postgres_store.connection(read_only=False) as database:
+        assert try_inspect_retained_integrity(database, repertoire).state == 'stale'
