@@ -223,6 +223,13 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
   const capturedResult = cli('before-detach','start','--retry','--no-ci','--no-open'); assertFailed(capturedResult);fired('before-detach');
   const captured = readGuard(); assert.equal(captured.attempt_id,original.attempt_id); assert.deepEqual(captured.backup,original.backup);
   assert.equal(captured.isolation.phase,'intent');
+  const preparedBindingPath=join(policyDir,'prepared-image-binding.json');
+  const preparedBindingBytes=readFileSync(preparedBindingPath), preparedBinding=JSON.parse(preparedBindingBytes);
+  assert.deepEqual(preparedBinding.receipt,captured.managed_image_receipt);
+  assert.equal(preparedBinding.attempt_id,captured.attempt_id);assert.equal(preparedBinding.revision,revision);
+  assert.equal(preparedBinding.owner_sha256,policy.owner_sha256);
+  atomicJson(join(directory,'managed-prepared-image.json'),{bindingSha256:createHash('sha256').update(preparedBindingBytes).digest('hex'),
+    bootstrapImage:images.migration,preparedImage:preparedBinding.image,receipt:preparedBinding.receipt,revision});
   assert.deepEqual(captured.defense_binding,original.defense_binding);assert.deepEqual(readFileSync(preWitness),preBytes);assert.equal(statSync(preWitness).ino,preInode);
   assert.deepEqual(readFileSync(selectionCopy),selectionBytes); assert.deepEqual(readFileSync(bindingPath),bindingBytes);
   assert.equal(statSync(selectionCopy).ino,selectionInode); assert.equal(Number((await readLatestMigration(compose)).stdout.trim()),61);
@@ -244,7 +251,7 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
   assert.equal(coldTopology.State.Running,false);assert.equal(Object.keys(coldTopology.NetworkSettings.Networks).length,0);
   await substitute(async()=>{ assertFailed(cli('','start','--retry','--no-ci','--no-open')); assert.equal(await isolatedSchema(),61); });
   assert.deepEqual(JSON.parse(readFileSync(join(policyDir,'shipping-python-gate.json'),'utf8')),
-    {image:images.migration,revision,owner_sha256:policy.owner_sha256,closed:true});
+    {image:preparedBinding.image,revision,owner_sha256:policy.owner_sha256,closed:true});
   const afterCommit=cli('after-commit','start','--retry','--no-ci','--no-open'); assertFailed(afterCommit);fired('after-commit');
   const pending=readGuard(); assert.equal(pending.attempt_id,original.attempt_id); assert.deepEqual(pending.backup,original.backup);
   assert.equal(pending.isolation.phase,'detached');
