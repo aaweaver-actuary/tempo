@@ -261,6 +261,7 @@ def test_schema61_defense_mixed_read_only_census(tmp_path):
             db.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json) VALUES ('exclusive-game','synthetic','synthetic','2026-01-01','rapid',0,'white','draw','synthetic','[]')")
             db.execute("INSERT INTO game_findings(id,game_id,analysis_version,ply,kind,confidence,evidence_json,created_at,updated_at) VALUES ('exclusive-finding','exclusive-game',1,1,'synthetic',1,'{}','2026-01-01','2026-01-01')")
             db.execute("INSERT INTO threat_training_candidates(id,finding_id,game_id,analysis_version,incident_id,player_ply,evidence_json,source_fingerprint,detector_version,policy_json,created_at,updated_at,card_id) VALUES ('exclusive-candidate','exclusive-finding','exclusive-game',1,'incident',1,'{}','synthetic',1,'{}','2026-01-01','2026-01-01','census-exclusive')")
+            db.execute("INSERT INTO threat_training_candidates(id,finding_id,game_id,analysis_version,incident_id,player_ply,evidence_json,source_fingerprint,detector_version,policy_json,created_at,updated_at,card_id) VALUES ('mixed-candidate','exclusive-finding','exclusive-game',1,'mixed',2,'{}','synthetic',1,'{}','2026-01-01','2026-01-01','census-shared')")
             db.execute("INSERT INTO threat_analysis_requests(id,request_json,created_at,updated_at) VALUES ('shared-request','{}','2026-01-01','2026-01-01')")
             db.execute("INSERT INTO threat_candidate_requests(candidate_id,request_id,role) VALUES ('exclusive-candidate','shared-request','best')")
             db.execute("INSERT INTO daily_queue(id,queue_date,card_id,position,status,admission_source) VALUES (900004,'2026-01-01','census-exclusive',4,'queued','defense:exclusive-candidate')")
@@ -292,6 +293,8 @@ def test_schema61_defense_mixed_read_only_census(tmp_path):
             assert db.execute("SELECT count(*) AS n FROM repertoire_lines WHERE id='accepted-line'").fetchone()['n'] == 1
             assert db.execute("SELECT count(*) AS n FROM review_attempt_receipts WHERE attempt_id='census-receipt' AND queue_entry_id=900002 AND review_id=900002").fetchone()['n'] == 1
             assert db.execute("SELECT count(*) AS n FROM operation_receipts WHERE operation_id='mixed-envelope'").fetchone()['n'] == 1
+            # Independent Tactics ownership excludes an otherwise typed Defense candidate.
+            assert db.execute("SELECT count(*) AS n FROM threat_training_candidates t JOIN tactic_captures capture ON capture.card_id=t.card_id WHERE t.id='mixed-candidate'").fetchone()['n'] == 1
             # The exact candidate link and its original legacy typed origin agree.
             assert db.execute("SELECT count(*) AS n FROM cards c JOIN threat_training_candidates t ON t.card_id=c.id JOIN daily_queue q ON q.card_id=c.id JOIN queue_attempt_origins o ON (o.queue_entry_id,o.card_id,o.revision)=(q.id,c.id,c.revision) WHERE c.id='census-exclusive' AND c.content_type='defense' AND o.content_type='defense' AND o.legacy=1 AND q.admission_source='defense:' || t.id").fetchone()['n'] == 1
             assert db.execute("SELECT count(*) AS n FROM threat_candidate_requests WHERE candidate_id='exclusive-candidate' AND request_id='shared-request'").fetchone()['n'] == 1
