@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { spawnSync as fsSpawnSync } from "node:child_process";
+import { createHash } from 'node:crypto';
 const cliEntry = new URL("../../scripts/tempo-cli.mjs", import.meta.url).pathname;
 import fs, { existsSync, mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
@@ -377,6 +378,12 @@ test("interrupted managed selection copy cannot fall back to legacy migration", 
   assert.equal(result.status, 'blocked');
   assert.equal(result.code, 'managed_selection_incomplete');
   assert.match(result.message, /do not recapture/);
+});
+
+test("unbound managed image receipt cannot be replaced on retry", t => {
+  const { target, config }=fixture(t);
+  const result=assessMigrationRecovery({guard:null,operation:{managed_image_receipt_started:true},target,configuration:config,retry:true});
+  assert.equal(result.status,'blocked');assert.equal(result.code,'managed_image_receipt_unbound');
 });
 
 test("changed dependency preparation stops writers before dependency recreation even on the same revision", async () => {
@@ -1221,6 +1228,34 @@ test("direct dependency recreation holds an unauthenticated original managed tar
   const runtime=createRuntime(target,{stateDirectory,revision:'a'.repeat(40),run:async()=>{calls++;}});
   await assert.rejects(runtime.ensureDatabase({allowRecreation:true}),/identity has not been authenticated/);
   assert.equal(calls,0);
+});
+
+test("pending managed image receipt reuses exact images without a build and rejects drift", t => {
+  const { target, config } = fixture(t); target.postgresMajor=18;target.composeFiles=[];
+  const owner=new URL('../../scripts/tempo-managed-isolation.mjs',import.meta.url).pathname;
+  const ownerSha=createHash('sha256').update(readFileSync(owner)).digest('hex');
+  const loader=`import {createHash} from 'node:crypto';export async function load(url,ctx,next){const r=await next(url,ctx);if(url!==new URL('file://'+process.env.TEST_OWNER).href)return r;const s=Buffer.from(r.source).toString();if(createHash('sha256').update(s).digest('hex')!==process.env.TEST_OWNER_SHA)throw Error('source');const x="export function requireManagedIsolationGate() {\\n  throw new Error('Nonempty Defense cleanup is unavailable without a verified writer and DDL fence.');\\n}";if(s.split(x).length!==2)throw Error('gate');return {...r,source:s.replace(x,'export function requireManagedIsolationGate() {}')}}`;
+  const loaderUrl='data:text/javascript;base64,'+Buffer.from(loader).toString('base64');
+  const registration='data:text/javascript;base64,'+Buffer.from(`import {register} from 'node:module';register(${JSON.stringify(loaderUrl)},import.meta.url)`).toString('base64');
+  const code=`import fs from 'node:fs';import {join} from 'node:path';import {tmpdir} from 'node:os';import {randomUUID,createHash} from 'node:crypto';import assert from 'node:assert/strict';
+import {createRuntime,configurationFingerprint} from ${JSON.stringify(new URL('../../scripts/tempo-runtime.mjs',import.meta.url).href)};
+import {targetKey} from ${JSON.stringify(new URL('../../scripts/tempo-deployment.mjs',import.meta.url).href)};
+const {target,config}=JSON.parse(fs.readFileSync(0,'utf8'));const root=fs.mkdtempSync(join(tmpdir(),'tempo-image-receipt-'));fs.chmodSync(root,0o700);
+try{const release=join(root,'releases','original');fs.mkdirSync(release,{recursive:true,mode:0o700});const files=[join(release,'compose.yml'),join(release,'images.json')];for(const p of files)fs.writeFileSync(p,'original',{mode:0o600});
+ const revision='a'.repeat(40),tree='b'.repeat(40),attempt=randomUUID(),images={},labels={};let n=0;for(const [name,service] of Object.entries(config.services)){const id='sha256:'+String(++n).padStart(64,'0');images[name]=id;service.image=id;labels[name]=null;}config.services.api.build={context:'owned'};labels.api=revision;
+ const hashes=Object.fromEntries(files.map(p=>[p,createHash('sha256').update(fs.readFileSync(p)).digest('hex')]));
+ const receipt={version:1,target:targetKey(target),attempt_id:attempt,revision,tree,database:{name:'tempo',volume:target.volumes[target.postgresVolumeKey].name},config_fingerprint:configurationFingerprint(config),compose_files:[files[0]],image_override:files[1],mode_override:null,files:hashes,images,image_revisions:labels};
+ const bytes=Buffer.from(JSON.stringify(receipt)),name='pending-images-'+attempt+'.json';fs.writeFileSync(join(root,name),bytes,{mode:0o600});
+ const guard={state:'pending',attempt_id:attempt,database:receipt.database,backup:{verified:true},defense_binding:{},managed_image_receipt:{name,attempt_id:attempt,sha256:createHash('sha256').update(bytes).digest('hex')}};
+ fs.writeFileSync(join(root,'migration-guard.json'),JSON.stringify(guard),{mode:0o600});fs.writeFileSync(join(root,'maintenance.lock'),JSON.stringify({pid:process.pid,token:randomUUID()}),{mode:0o600});
+ let variant='',builds=0;const run=async(program,args)=>{if(program==='git')return{stdout:args.includes('status')?(variant==='dirty'?'?? drift':''):(args.at(-1)==='HEAD'?revision:tree)};if(args.includes('build')||args.includes('buildx')){builds++;throw Error('unexpected build')};if(args.includes('config')){const c=structuredClone(config);if(variant==='config')c.services.api.environment.EXTRA='changed';return{stdout:JSON.stringify(c)}};if(args.includes('image')&&args.includes('inspect')){const id=args.at(-1),name=Object.keys(images).find(k=>images[k]===id);if(variant==='missing')throw Error('missing image');return{stdout:JSON.stringify([{Id:id,Config:{Labels:{'org.opencontainers.image.revision':variant==='label'&&name==='api'?'changed':labels[name]}}}])}};if(args.includes('--version'))return{stdout:'postgres (PostgreSQL) 18.6'};throw Error('unexpected command')};
+ const create=()=>createRuntime(target,{run,stateDirectory:root,revision});await create().ensureImages();for(variant of ['missing','label','config','dirty'])await assert.rejects(create().ensureImages());variant='';
+ fs.writeFileSync(files[0],'changed');await assert.rejects(create().ensureImages(),/input changed/);fs.writeFileSync(files[0],'original');
+ fs.unlinkSync(join(root,name));await assert.rejects(create().ensureImages());assert.equal(builds,0);
+}finally{fs.rmSync(root,{recursive:true,force:true})}`;
+  const child=fsSpawnSync(process.execPath,['--import',registration,'--input-type=module','-e',code],{
+    input:JSON.stringify({target,config}),encoding:'utf8',timeout:30000,env:{...process.env,TEST_OWNER:owner,TEST_OWNER_SHA:ownerSha}});
+  assert.equal(child.status,0,child.stderr);
 });
 
 test("source update rejects exact main revisions when every eligible run fails or lacks required jobs", async () => {

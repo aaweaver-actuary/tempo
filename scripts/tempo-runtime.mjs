@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { managedComposeBuild } from './development-budget.mjs';
 import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { basename, dirname, isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { isDeepStrictEqual } from 'node:util';
 import {modeOverrideFor, modeRecordArgs, modes, modeStatusArgs} from './managed-games-control.mjs';
 import { atomicJson, deploymentCanStart, redact, targetKey, validateContainers, validateTarget } from "./tempo-deployment.mjs";
@@ -109,6 +109,8 @@ export function assessMigrationRecovery({ guard, operation, target, configuratio
       if (!retry) return { status: "blocked", code: "migration_pending", backup: guard.backup.filename, message: `Previous migration failed or was interrupted. Inspect tempo doctor and original backup ${guard.backup.filename}, fix the cause, then explicitly run tempo migrate --retry.` };
       return { status: "retry-authorized", code: "migration_retry", message: "Original-history verification remains unresolved until the real lifecycle successfully performs it." };
     }
+  } else if (operation?.managed_image_receipt_started) {
+    return { status: 'blocked', code: 'managed_image_receipt_unbound', message: 'Original managed image preparation has no bound migration guard. Preserve its operation and receipt for recovery.' };
   } else if (operation?.phase === "applying_migrations"
     || (operation?.phase === "failed" && operation.failed_phase === "applying_migrations")) {
     return { status: "blocked", code: "migration_guard_missing", message: "Previous migration failed or was interrupted without a durable original guard. Preserve the original backup and operation; inspect tempo doctor and recover its original history before tempo migrate --retry." };
@@ -123,6 +125,7 @@ export async function executeLifecycle(plan, actions) {
   let interruptedApplications = false;
   try {
     const imagePreparation = await actions.ensureImages();
+    await actions.persistManagedImageReceipt?.();
     await actions.authenticateManagedPreIsolation?.();
     if (await actions.resumeManagedIsolation?.()) migrationVerificationRequired = false;
     await actions.preflightSchema?.();
@@ -197,6 +200,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   let managedCompletionAuthenticated = false;
   let managedPreIsolationPending = false;
   let managedPreIsolationAuthenticated = false;
+  let managedImageReceipt = null;
   let verifiedPostgresImage;
   const operation = { id: randomUUID(), revision, started_at: new Date().toISOString(), phase: "checking", target: target.project };
   const docker = (args, options) => run("docker", ["--context", target.context, ...args], options);
@@ -288,6 +292,53 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   async function ensureImages() {
     await config();
     let desiredFingerprint = configurationFingerprint(configuration);
+    if (migrationGuard?.state === 'pending' && migrationGuard.defense_binding) {
+      requireManagedIsolationGate();
+      const lock = captureManagedTargetLock(stateDirectory), reference = migrationGuard.managed_image_receipt;
+      if (reference?.name !== `pending-images-${migrationGuard.attempt_id}.json` ||
+          reference.attempt_id !== migrationGuard.attempt_id || !/^[0-9a-f]{64}$/.test(reference.sha256 ?? '') ||
+          !migrationGuard.backup?.verified) throw new Error('Original managed image receipt is missing; keep writers stopped.');
+      const path = join(stateDirectory, reference.name), bytes = readOwnedPrivateBytes(path);
+      if (createHash('sha256').update(bytes).digest('hex') !== reference.sha256)
+        throw new Error('Original managed image receipt changed; keep writers stopped.');
+      const receipt = JSON.parse(bytes), source = (await run('git',['rev-parse','HEAD'],{timeout:5000})).stdout.trim(),
+        tree = (await run('git',['rev-parse','HEAD^{tree}'],{timeout:5000})).stdout.trim();
+      const changes=(await run('git',['--no-optional-locks','status','--porcelain'],{timeout:5000})).stdout.trim();
+      if (receipt?.version !== 1 || receipt.target !== targetKey(target) || receipt.attempt_id !== migrationGuard.attempt_id ||
+          receipt.revision !== revision || source !== receipt.revision || tree !== receipt.tree || changes ||
+          !isDeepStrictEqual(receipt.database,migrationGuard.database) ||
+          !/^[0-9a-f]{40}$/.test(receipt.tree ?? '') || receipt.config_fingerprint !== desiredFingerprint ||
+          !Array.isArray(receipt.compose_files) || !receipt.compose_files.length ||
+          typeof receipt.image_override !== 'string' || !receipt.files || !receipt.images || !receipt.image_revisions ||
+          !isDeepStrictEqual(Object.keys(receipt.images).sort(),Object.keys(configuration.services).sort()) ||
+          !isDeepStrictEqual(Object.keys(receipt.image_revisions).sort(),Object.keys(receipt.images).sort()))
+        throw new Error('Original managed image receipt identity differs; keep writers stopped.');
+      const paths = [...receipt.compose_files,receipt.image_override,...(receipt.mode_override ? [receipt.mode_override] : [])];
+      if (new Set(paths).size !== paths.length || !isDeepStrictEqual(Object.keys(receipt.files).sort(),[...paths].sort()))
+        throw new Error('Original managed image inputs differ; keep writers stopped.');
+      for (const file of paths) {
+        if (resolve(file)!==file || !file.startsWith(join(stateDirectory,'releases') + '/') ||
+            createHash('sha256').update(readOwnedPrivateBytes(file)).digest('hex') !== receipt.files[file])
+          throw new Error('Original managed image input changed; keep writers stopped.');
+      }
+      for (const [name, id] of Object.entries(receipt.images)) {
+        if (!/^sha256:[0-9a-f]{64}$/.test(id)) throw new Error('Original managed image identity is invalid.');
+        const inspected = JSON.parse((await docker(['image','inspect',id])).stdout);
+        if (!Array.isArray(inspected) || inspected.length!==1 || inspected[0].Id!==id ||
+            (inspected[0].Config?.Labels?.['org.opencontainers.image.revision'] ?? null)!==receipt.image_revisions[name] ||
+            (configuration.services[name].build && inspected[0].Config?.Labels?.['org.opencontainers.image.revision']!==revision))
+          throw new Error('Original managed image is unavailable or changed; keep writers stopped.');
+      }
+      assertManagedTargetLock(stateDirectory,lock);
+      composeFiles=receipt.compose_files; imageOverride=receipt.image_override; modeOverride=receipt.mode_override;
+      images=receipt.images; await config();
+      if (configurationFingerprint(configuration)!==receipt.config_fingerprint ||
+          Object.entries(configuration.services).some(([name,service])=>service.image!==images[name]))
+        throw new Error('Original managed Compose configuration differs; keep writers stopped.');
+      assertManagedTargetLock(stateDirectory,lock);
+      await verifySelectedPostgresImage();
+      return { dependenciesMayChange:false };
+    }
     if (!fallback && previous?.revision === revision && previous.gamesMode?.baseFingerprint === desiredFingerprint) {
       composeFiles = previous.composeFiles; imageOverride = previous.imageOverride; modeOverride = previous.gamesMode.override;
       await config(); desiredFingerprint = configurationFingerprint(configuration);
@@ -354,6 +405,50 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     await config();
     await verifySelectedPostgresImage();
     return { dependenciesMayChange: true };
+  }
+
+  async function persistManagedImageReceipt() {
+    if (!defenseSelection) return;
+    requireManagedIsolationGate();
+    if (migrationGuard?.state === 'pending') throw new Error('Managed retry cannot replace original image evidence.');
+    const lock=captureManagedTargetLock(stateDirectory);
+    const source=(await run('git',['rev-parse','HEAD'],{timeout:5000})).stdout.trim();
+    const tree=(await run('git',['rev-parse','HEAD^{tree}'],{timeout:5000})).stdout.trim();
+    const changes=(await run('git',['--no-optional-locks','status','--porcelain'],{timeout:5000})).stdout.trim();
+    if (source!==revision || changes || !/^[0-9a-f]{40}$/.test(tree) || !imageOverride || !composeFiles.length ||
+        !isDeepStrictEqual(Object.keys(images).sort(),Object.keys(configuration.services).sort()))
+      throw new Error('Managed image preparation evidence is incomplete.');
+    const paths=[...composeFiles,imageOverride,...(modeOverride?[modeOverride]:[])], files={};
+    if (new Set(paths).size!==paths.length) throw new Error('Managed image input identity is ambiguous.');
+    for(const file of paths) {
+      if(!file.startsWith(join(stateDirectory,'releases')+'/')) throw new Error('Managed image input is outside the original release.');
+      files[file]=createHash('sha256').update(readOwnedPrivateBytes(file)).digest('hex');
+    }
+    const imageRevisions={};
+    for(const [name,id] of Object.entries(images)) {
+      if(!/^sha256:[0-9a-f]{64}$/.test(id))throw new Error('Managed image identity is invalid.');
+      const inspected=JSON.parse((await docker(['image','inspect',id])).stdout);
+      if(!Array.isArray(inspected)||inspected.length!==1||inspected[0].Id!==id)
+        throw new Error('Managed image identity is unavailable.');
+      imageRevisions[name]=inspected[0].Config?.Labels?.['org.opencontainers.image.revision']??null;
+      if(configuration.services[name].build&&imageRevisions[name]!==revision)
+        throw new Error('Managed image revision differs.');
+    }
+    assertManagedTargetLock(stateDirectory,lock);
+    const name=`pending-images-${operation.id}.json`, path=join(stateDirectory,name);
+    operation.managed_image_receipt_started=true; operation.managed_image_receipt_name=name;
+    atomicJson(journalPath,operation);
+    const receipt={version:1,target:targetKey(target),attempt_id:operation.id,revision,tree,
+      database:{name:configuration.services.postgres.environment.POSTGRES_DB,volume:target.volumes[target.postgresVolumeKey].name},
+      config_fingerprint:configurationFingerprint(configuration),compose_files:composeFiles,image_override:imageOverride,
+      mode_override:modeOverride,files,images,image_revisions:imageRevisions};
+    const bytes=Buffer.from(JSON.stringify(receipt));
+    const fd=openSync(path,'wx',0o600);
+    try { writeFileSync(fd,bytes);fsyncSync(fd); } finally { closeSync(fd); }
+    const directory=openSync(stateDirectory,'r');try {fsyncSync(directory)} finally {closeSync(directory)}
+    assertManagedTargetLock(stateDirectory,lock);
+    managedImageReceipt={name,sha256:createHash('sha256').update(bytes).digest('hex'),attempt_id:operation.id};
+    operation.managed_image_receipt=managedImageReceipt; atomicJson(journalPath,operation);
   }
 
   async function verifySelectedPostgresImage() {
@@ -806,6 +901,11 @@ print(json.dumps({**result,'database':row}))`;
         starting_versions: status.applied_versions, intended_schema: status.expected_version,
         study_invariants: JSON.parse((await maintenance("database/tooling/verify_postgres_cli_state.py")).stdout),
         backup: backupRecord, state: "pending", created_at: new Date().toISOString() };
+      if (defenseSelection) {
+        if (!managedImageReceipt || managedImageReceipt.attempt_id !== operation.id)
+          throw new Error('Original managed image receipt is missing; keep writers stopped.');
+        migrationGuard.managed_image_receipt = managedImageReceipt;
+      }
     }
     const witnessName = cut62WitnessName(migrationGuard);
     if (witnessName && migrationGuard.cut62_witness !== undefined && migrationGuard.cut62_witness !== witnessName)
@@ -1123,7 +1223,7 @@ print(json.dumps({'witness_id':witness_id}))`;
     operation.phase = "backup_verified"; atomicJson(journalPath, operation);
   }
 
-  return { config, inspectTarget, compose, docker, runningServices, inspectRunningRevision, ensureImages, recordedApplicationsMatch, ensureDatabase, resumeManagedIsolation, authenticateManagedPreIsolation,
+  return { config, inspectTarget, compose, docker, runningServices, inspectRunningRevision, ensureImages, persistManagedImageReceipt, recordedApplicationsMatch, ensureDatabase, resumeManagedIsolation, authenticateManagedPreIsolation,
     checkSchema, preflightSchema, checkMigrationRetry, resolveMigrationGuard, stopApplications, backup, migrate, startServices, verifyReady, commitDeployment,
     recordFailure, stopAll, backupOnly, secretValues, get configuration() { return configuration; } };
 }
