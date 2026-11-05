@@ -392,6 +392,9 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
     throw new Error('Owned later candidate must be an exact-tree descendant');
   git('merge-base','--is-ancestor',revision,nextRemote[0]);
   const settledGuardBytes=readFileSync(join(stateDirectory,'migration-guard.json'));
+  const nextStop=cli('','stop');assert.equal(nextStop.status,0,nextStop.stderr);
+  const stoppedDb=JSON.parse((await docker(['inspect',dbId])).stdout)[0];
+  assert.equal(stoppedDb.State.Running,false);assert.equal(stoppedDb.Id,dbId);
   commonEnv.W08_CANDIDATE_REF=nextRef;
   const nextStart=cli('','start','--no-ci','--no-open');assert.equal(nextStart.status,0,nextStart.stderr);
   assert(nextStart.stdout.includes('Tempo: preparing images'),'later revision must perform a real candidate build');
