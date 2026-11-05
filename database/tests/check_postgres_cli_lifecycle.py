@@ -137,6 +137,8 @@ def main():
               'retainedDigest':retained,'epochs':database.execute("SELECT count(*) FROM priority_repertoire_source_epochs WHERE repertoire_id LIKE 'cli-defense-15-rep-%'").fetchone()[0],
               'londonChoices':database.execute("SELECT count(DISTINCT moves_json) FROM repertoire_lines WHERE repertoire_id='cli-retained-london'").fetchone()[0],
               'frozen':database.execute("SELECT invalidated FROM frozen_opening_runs WHERE run_id='cli-retained-frozen'").fetchone()[0],
+              'frozenActivation':database.execute("SELECT row_to_json(t) FROM frozen_opening_activation t WHERE id=1").fetchone()[0],
+              'frozenRanks':database.execute("SELECT count(*) FROM frozen_opening_ranks").fetchone()[0],
               'retired':{name:database.execute('SELECT to_regclass(%s)',('public.'+name,)).fetchone()[0] is not None for name in tables}}
         print(json.dumps(data));return
     if options.seed_defense_v2_15:

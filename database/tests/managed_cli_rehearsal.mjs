@@ -42,6 +42,7 @@ export async function runShippingManagedCliRehearsal({ root, project, target, re
   assert.deepEqual(Object.fromEntries(['schema','cards','queues','origins','recognitions','attempts','reviews','linkedCandidates','epochs','frozen']
     .map(key=>[key,originalDefense[key]])),{schema:59,cards:15,queues:243,origins:243,recognitions:6,attempts:3,reviews:3,linkedCandidates:15,epochs:0,frozen:0});
   assert.equal(originalDefense.londonChoices,5);
+  assert.equal(originalDefense.frozenActivation.run_id,null);assert.equal(originalDefense.frozenRanks,0);
   assert(Object.values(originalDefense.retired).every(Boolean));
   const selection=join(approved,'selection.json');writeFileSync(selection,JSON.stringify(manifest),{mode:0o600});
   const selectionHash=createHash('sha256').update(readFileSync(selection)).digest('hex');
@@ -73,6 +74,7 @@ export async function runShippingManagedCliRehearsal({ root, project, target, re
     assert.deepEqual(Object.fromEntries(['schema','cards','queues','origins','recognitions','attempts','reviews','linkedCandidates','epochs','frozen']
       .map(key=>[key,current[key]])),{schema:62,cards:0,queues:0,origins:0,recognitions:0,attempts:0,reviews:0,linkedCandidates:0,epochs:15,frozen:1});
     assert.equal(current.retainedDigest,originalDefense.retainedDigest);assert.equal(current.londonChoices,5);
+    assert.deepEqual(current.frozenActivation,originalDefense.frozenActivation);assert.equal(current.frozenRanks,originalDefense.frozenRanks);
     assert(Object.values(current.retired).every(value=>!value));
   };
   await checkDefense();
