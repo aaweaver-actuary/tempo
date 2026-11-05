@@ -2618,6 +2618,9 @@ test("disposable isolation inspection rejects changed identities, exposed ports 
     x => { delete x.container.HostConfig.NetworkMode; },
     x => { x.container.Mounts[0].RW = false; },
     x => { x.container.Mounts.push({ Destination: "/var/lib/postgresql/subdir" }); },
+    x => { x.container.Mounts.push({ Destination: "/var/lib/postgresql/." }); },
+    x => { x.container.Mounts.push({ Destination: "/var/lib/" }); },
+    x => { x.container.Mounts.push(null); },
     x => { x.container.NetworkSettings.Networks[network.Name].Aliases = ["other"]; },
     x => { x.container.NetworkSettings.Networks[network.Name].IPAMConfig = { IPv4Address: "172.18.0.2" }; },
     x => { x.network.Id = "e".repeat(64); },
@@ -2631,29 +2634,39 @@ test("disposable isolation inspection rejects changed identities, exposed ports 
 });
 
 test("disposable recovery classifies physical crash states and refuses an unbound receipt", () => {
-  const identity = { target: "target", trustedDaemon: true };
+  const identity = { target: "target", trustedDaemon: true, daemonId: "daemon", containerId: "container", networkId: "network", imageId: "image" };
   const attempt = "12345678-1234-1234-1234-123456789abc";
   const preWitness = `pre62-${attempt}.json`;
   const binding = { target: "target", attempt_id: attempt, backup_filename: "backup", backup_sha256: "a".repeat(64), selection_sha256: "b".repeat(64) };
   const guard = { version: 1, state: "pending", target: "target", attempt_id: attempt, starting_schema: 59, intended_schema: 62,
     cut62_witness: `cut62-${attempt}.json`,
-    backup: { verified: true, filename: "backup" }, defense_binding: binding, pre62_witness: preWitness, pre62_witness_id: "c".repeat(64),
+    database: { name: "tempo" }, backup: { verified: true, filename: "backup" }, defense_binding: binding, pre62_witness: preWitness, pre62_witness_id: "c".repeat(64),
     cut62_identity: { attempt_id: attempt, backup_filename: "backup", witness_id: "d".repeat(64) },
     cut62_intermediate_verified: { schema: 61, attempt_id: attempt, backup_filename: "backup", pre62_witness: preWitness, pre62_witness_id: "c".repeat(64) },
-    isolation: { phase: "intent", identity, target_oid: 123, original_allow_connections: true } };
-  const input = { guard, identity, attached: true, targetOid: 123, allowConnections: true, otherBackends: 0, preparedTransactions: 0 };
+    isolation: { phase: "intent", identity, target_oid: 123, target_name: "tempo", system_identifier: "987654321", control_oid: 5, control_name: "postgres", admin_role: "tempo", original_allow_connections: true } };
+  const input = { guard, identity, attached: true, targetOid: 123, allowConnections: true, backendPids: [], preparedTransactions: 0, systemIdentifier: "987654321", controlOid: 5, controlName: "postgres", adminRole: "tempo", targetName: "tempo" };
   assert.equal(classifyDisposableIsolationRecovery(input), "detach");
   const detached = { ...input, attached: false };
-  assert.equal(classifyDisposableIsolationRecovery(detached), "pin-and-reclose");
-  assert.equal(classifyDisposableIsolationRecovery({ ...detached, allowConnections: false }), "reopen-isolated-and-pin");
-  assert.equal(classifyDisposableIsolationRecovery({ ...detached, allowConnections: false, pinnedPid: 42, schema: 61 }), "verify-and-migrate");
-  assert.equal(classifyDisposableIsolationRecovery({ ...detached, allowConnections: false, pinnedPid: 42, schema: 62 }), "verify-committed");
-  const receipt = { version: 1, target: "target", attempt_id: attempt, target_oid: 123, backup_filename: "backup", backup_sha256: "a".repeat(64),
+  assert.equal(classifyDisposableIsolationRecovery(detached), "record-detached");
+  const isolated = { ...detached, guard: { ...guard, isolation: { ...guard.isolation, phase: "detached" } } };
+  assert.equal(classifyDisposableIsolationRecovery(isolated), "pin-and-reclose");
+  assert.equal(classifyDisposableIsolationRecovery({ ...isolated, allowConnections: false }), "reopen-isolated-and-pin");
+  assert.equal(classifyDisposableIsolationRecovery({ ...isolated, allowConnections: false, pinnedPid: 42, backendPids: [42], schema: 61 }), "verify-and-migrate");
+  assert.equal(classifyDisposableIsolationRecovery({ ...isolated, allowConnections: false, pinnedPid: 42, backendPids: [42], schema: 62 }), "verify-committed");
+  const receipt = { version: 1, target: "target", attempt_id: attempt, target_oid: 123, target_name: "tempo", system_identifier: "987654321", control_oid: 5, control_name: "postgres", admin_role: "tempo", daemon_id: "daemon", container_id: "container", network_id: "network", image_id: "image", backup_filename: "backup", backup_sha256: "a".repeat(64),
     selection_sha256: "b".repeat(64), pre62_witness_id: "c".repeat(64), cut62_witness_id: "d".repeat(64), schema: 62 };
-  assert.equal(classifyDisposableIsolationRecovery({ ...detached, allowConnections: false, receipt }), "restore-after-receipt");
-  assert.equal(classifyDisposableIsolationRecovery({ ...input, receipt }), "complete");
+  assert.equal(classifyDisposableIsolationRecovery({ ...isolated, allowConnections: false, receipt, receiptValidated: true }), "record-verified");
+  const verifiedGuard = { ...guard, isolation: { ...guard.isolation, phase: "verified" } };
+  assert.equal(classifyDisposableIsolationRecovery({ ...isolated, guard: verifiedGuard, allowConnections: false, receipt, receiptValidated: true }), "restore-after-receipt");
+  assert.equal(classifyDisposableIsolationRecovery({ ...input, guard: verifiedGuard, receipt, receiptValidated: true }), "record-reattached");
+  const reattachedGuard = { ...guard, isolation: { ...guard.isolation, phase: "reattached" } };
+  assert.equal(classifyDisposableIsolationRecovery({ ...input, guard: reattachedGuard, receipt, receiptValidated: true }), "complete");
+  assert.throws(() => classifyDisposableIsolationRecovery({ ...input, receipt, receiptValidated: true }), /unsafe/);
+  assert.throws(() => classifyDisposableIsolationRecovery({ ...isolated, guard: reattachedGuard, receipt, receiptValidated: true }), /unsafe/);
+  assert.throws(() => classifyDisposableIsolationRecovery({ ...isolated, allowConnections: false, receipt }), /unsafe/);
   for (const change of [
-    x => { x.otherBackends = 1; }, x => { x.preparedTransactions = 1; }, x => { x.targetOid = 124; },
+    x => { x.backendPids = [42]; }, x => { x.preparedTransactions = 1; }, x => { x.targetOid = 124; },
+    x => { x.controlOid = 123; }, x => { x.controlName = "tempo"; }, x => { x.systemIdentifier = "123"; }, x => { x.adminRole = "other"; },
     x => { x.pinnedPid = 42; }, x => { x.guard.isolation.phase = "detached"; },
     x => { x.guard.cut62_intermediate_verified.pre62_witness_id = "e".repeat(64); },
     x => { x.receipt = { ...receipt, selection_sha256: "f".repeat(64) }; },

@@ -143,7 +143,7 @@ export function inspectDisposableIsolation({ target, daemonId, container, networ
   const mounts = Array.isArray(container?.Mounts) ? container.Mounts : [];
   const destination = "/var/lib/postgresql";
   const overlap = path => path === destination || destination.startsWith(path + "/") || path.startsWith(destination + "/") || path === "/";
-  const storage = mounts.filter(m => typeof m.Destination === "string" && overlap(m.Destination));
+  const storage = mounts.filter(m => typeof m?.Destination === "string" && overlap(m.Destination));
   if (trustedDaemon !== true || !target?.disposable || !/^tempo-pg-regressions-[a-zA-Z0-9-]+$/.test(target.project ?? "") ||
       !target.daemonId || daemonId !== target.daemonId || labels["com.docker.compose.project"] !== target.project ||
       labels["com.docker.compose.service"] !== "postgres" || container?.State?.Running !== true || !id(container.Id) ||
@@ -157,7 +157,8 @@ export function inspectDisposableIsolation({ target, daemonId, container, networ
       projectNetwork !== target.project || !object(network.Containers) ||
       !target.volumes?.[target.postgresVolumeKey]?.name ||
       mounts.some(m => !object(m) || typeof m.Destination !== "string" || !m.Destination.startsWith("/") ||
-        m.Destination.includes("//") || m.Destination.split("/").includes("..")) || storage.length !== 1 ||
+        m.Destination.includes("//") || (m.Destination !== "/" && m.Destination.endsWith("/")) ||
+        m.Destination.split("/").some(part => part === "." || part === "..")) || storage.length !== 1 ||
       storage[0].Type !== "volume" || storage[0].Destination !== destination || storage[0].RW !== true ||
       storage[0].Name !== target.volumes[target.postgresVolumeKey].name ||
       typeof storage[0].Source !== "string" || !isAbsolute(storage[0].Source)) fail();
@@ -193,7 +194,8 @@ export function inspectDisposableIsolation({ target, daemonId, container, networ
 // Classify physical state only after Docker identity has been checked. This
 // returns a next step; it does not mutate admission, network or database state.
 export function classifyDisposableIsolationRecovery({ guard, identity, attached, targetOid, allowConnections,
-  otherBackends, preparedTransactions, pinnedPid = null, schema = null, receipt = null }) {
+  backendPids, preparedTransactions, systemIdentifier, controlOid, controlName, adminRole, targetName,
+  pinnedPid = null, schema = null, receipt = null, receiptValidated = false }) {
   const fail = () => { throw new Error("Disposable isolation recovery state is unsafe or ambiguous."); };
   const isolation = guard?.isolation;
   const binding = guard?.defense_binding;
@@ -205,10 +207,16 @@ export function classifyDisposableIsolationRecovery({ guard, identity, attached,
       !isDeepStrictEqual(isolation.identity, identity) || identity?.trustedDaemon !== true || guard.target !== identity?.target ||
       ![59, 61].includes(guard.starting_schema) || guard.intended_schema !== 62 ||
       !Number.isSafeInteger(targetOid) || targetOid <= 0 || isolation.target_oid !== targetOid ||
+      typeof systemIdentifier !== "string" || !/^[0-9]+$/.test(systemIdentifier) || isolation.system_identifier !== systemIdentifier ||
+      !Number.isSafeInteger(controlOid) || controlOid <= 0 || controlOid === targetOid || isolation.control_oid !== controlOid ||
+      controlName !== "postgres" || isolation.control_name !== controlName ||
+      typeof adminRole !== "string" || !/^[a-z_][a-z0-9_]*$/.test(adminRole) || isolation.admin_role !== adminRole ||
+      typeof targetName !== "string" || !targetName || isolation.target_name !== targetName || guard.database?.name !== targetName ||
       isolation.original_allow_connections !== true || typeof attached !== "boolean" || typeof allowConnections !== "boolean" ||
-      !Number.isSafeInteger(otherBackends) || otherBackends !== 0 ||
+      !Array.isArray(backendPids) || backendPids.some(pid => !Number.isSafeInteger(pid) || pid <= 0) ||
+      (pinnedPid === null ? backendPids.length !== 0 :
+        !Number.isSafeInteger(pinnedPid) || pinnedPid <= 0 || backendPids.length !== 1 || backendPids[0] !== pinnedPid) ||
       !Number.isSafeInteger(preparedTransactions) || preparedTransactions !== 0 ||
-      (pinnedPid !== null && (!Number.isSafeInteger(pinnedPid) || pinnedPid <= 0)) ||
       (schema !== null && ![61, 62].includes(schema)) || !guard.backup?.verified ||
       binding?.target !== guard.target || binding.attempt_id !== guard.attempt_id ||
       binding.backup_filename !== guard.backup.filename || !digest(binding.backup_sha256) || !digest(binding.selection_sha256) ||
@@ -220,20 +228,39 @@ export function classifyDisposableIsolationRecovery({ guard, identity, attached,
         guard.cut62_intermediate_verified.pre62_witness_id !== guard.pre62_witness_id ||
         guard.cut62_intermediate_verified.backup_filename !== guard.backup.filename))) fail();
   const expectedReceipt = { version: 1, target: guard.target, attempt_id: guard.attempt_id, target_oid: targetOid,
+    target_name: targetName, system_identifier: systemIdentifier, control_oid: controlOid, control_name: controlName, admin_role: adminRole,
+    daemon_id: identity.daemonId, container_id: identity.containerId, network_id: identity.networkId, image_id: identity.imageId,
     backup_filename: binding.backup_filename, backup_sha256: binding.backup_sha256, selection_sha256: binding.selection_sha256,
     pre62_witness_id: guard.starting_schema === 59 ? guard.pre62_witness_id : null, cut62_witness_id: cut.witness_id, schema: 62 };
-  if (receipt && !isDeepStrictEqual(receipt, expectedReceipt)) fail();
+  if (receipt && (!receiptValidated || !isDeepStrictEqual(receipt, expectedReceipt))) fail();
   if (receipt) {
     if (schema !== null && schema !== 62) fail();
-    if (attached && !allowConnections) return "reopen-after-receipt";
-    if (attached) return "complete";
-    return "restore-after-receipt";
+    if (isolation.phase === "intent") fail();
+    if (isolation.phase === "detached") {
+      if (attached || allowConnections) fail();
+      return "record-verified";
+    }
+    if (isolation.phase === "verified") {
+      if (!attached) return "restore-after-receipt";
+      if (!allowConnections || pinnedPid !== null) fail();
+      return "record-reattached";
+    }
+    if (isolation.phase === "reattached") {
+      if (!attached || !allowConnections || pinnedPid !== null) fail();
+      return "complete";
+    }
+    fail();
   }
   if (isolation.phase === "verified" || isolation.phase === "reattached") fail();
-  if (attached) {
-    if (isolation.phase !== "intent" || !allowConnections || pinnedPid !== null || (schema !== null && schema !== 61)) fail();
-    return "detach";
+  if (isolation.phase === "intent") {
+    if (pinnedPid !== null || schema !== null) fail();
+    if (attached) {
+      if (!allowConnections) fail();
+      return "detach";
+    }
+    return "record-detached";
   }
+  if (attached) fail();
   if (pinnedPid !== null) {
     if (allowConnections || schema === null) fail();
     return schema === 61 ? "verify-and-migrate" : "verify-committed";
