@@ -12,7 +12,7 @@ import { TempoProblem, classifyRedisReply, phaseGuidance } from "./tempo-guidanc
 import { isTimingPublicationFailure } from "./test-scenario-timings.mjs";
 import { probeLifecycleRedis } from "../database/tooling/cli/probes.mjs";
 import { createBackupRestoreDatabase, createPostgresBackup, removeBackupRestoreDatabase, restorePostgresBackup } from "../database/tooling/cli/backup.mjs";
-import { advanceManagedIsolationMarker, assertManagedTargetLock, captureManagedTargetLock, inspectManagedCompletedTarget, inspectManagedFence, inspectManagedHistorySelectionBinding, inspectManagedPreIsolationTarget, persistManagedHistoryWitnessIdentity, privateDefenseHistorySelection, readOwnedPrivateBytes, startManagedStoppedDetachedTarget, syncDirectory, syncManagedIsolationEvidence,
+import { advanceManagedIsolationMarker, assertManagedTargetLock, authenticateManagedSettlement, captureManagedTargetLock, createManagedSettlement, inspectManagedCompletedTarget, inspectManagedFence, inspectManagedHistorySelectionBinding, inspectManagedPreIsolationTarget, persistManagedHistoryWitnessIdentity, privateDefenseHistorySelection, readOwnedPrivateBytes, startManagedStoppedDetachedTarget, syncDirectory, syncManagedIsolationEvidence,
   prepareManagedDetachedTarget, runManagedPinnedChild, restoreManagedCompletedTarget, requireManagedIsolationGate } from './tempo-managed-isolation.mjs';
 
 export const applicationServices = ["web", "api",
@@ -199,6 +199,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   let managedIsolationRetry = false;
   let managedCompletionPending = false;
   let managedCompletionAuthenticated = false;
+  let managedSettlementAuthenticated = false;
   let managedPreIsolationPending = false;
   let managedPreIsolationAuthenticated = false;
   let managedImageReceipt = null;
@@ -293,8 +294,8 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   async function ensureImages() {
     await config();
     let desiredFingerprint = configurationFingerprint(configuration);
-    const pendingManagedImages = migrationGuard?.state === 'pending' || (migrationGuard?.state === 'verified' &&
-      (!previous || previous.revision!==revision || previous.evidence?.commit!==revision || !previous.verified_at));
+    const pendingManagedImages = !managedSettlementAuthenticated && (migrationGuard?.state === 'pending' || (migrationGuard?.state === 'verified' &&
+      (!previous || previous.revision!==revision || previous.evidence?.commit!==revision || !previous.verified_at)));
     if (pendingManagedImages && (migrationGuard.defense_binding || migrationGuard.managed_image_receipt || migrationGuard.managed_selection_started)) {
       requireManagedIsolationGate();
       if (!migrationGuard.defense_binding || migrationGuard.managed_selection_started !== true)
@@ -560,7 +561,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   }
 
   async function ensureDatabase({ allowRecreation = false } = {}) {
-    if (allowRecreation && migrationGuard?.defense_binding &&
+    if (allowRecreation && migrationGuard?.defense_binding && !managedSettlementAuthenticated &&
         !managedCompletionAuthenticated && !managedPreIsolationAuthenticated)
       throw new Error('Original managed PostgreSQL identity has not been authenticated; keep writers stopped.');
     await verifySelectedPostgresImage();
@@ -670,14 +671,63 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     return checkSchema();
   }
 
+  function settleManagedDeployment() {
+    const lock = captureManagedTargetLock(stateDirectory);
+    const reference = migrationGuard.managed_image_receipt;
+    if (reference?.name !== `pending-images-${migrationGuard.attempt_id}.json` ||
+        reference.attempt_id !== migrationGuard.attempt_id || !/^[0-9a-f]{64}$/.test(reference.sha256 ?? ''))
+      throw new Error('Original managed image receipt is invalid.');
+    const receiptBytes = readOwnedPrivateBytes(join(stateDirectory, reference.name));
+    if (createHash('sha256').update(receiptBytes).digest('hex') !== reference.sha256)
+      throw new Error('Original managed image receipt changed.');
+    const receipt = JSON.parse(receiptBytes), deploymentPath = join(stateDirectory, 'deployment.json');
+    if (!existsSync(deploymentPath)) return;
+    const bytes = readOwnedPrivateBytes(deploymentPath), deployed = JSON.parse(bytes);
+    if (deployed.revision !== receipt.revision) return;
+    if (receipt.version !== 1 || receipt.target !== migrationGuard.target || receipt.attempt_id !== migrationGuard.attempt_id ||
+        !isDeepStrictEqual(receipt.database, migrationGuard.database) || deployed.schema !== 62 ||
+        deployed.evidence?.commit !== receipt.revision || !deployed.verified_at ||
+        !isDeepStrictEqual(deployed.images, receipt.images) || !isDeepStrictEqual(deployed.composeFiles, receipt.compose_files) ||
+        deployed.imageOverride !== receipt.image_override || deployed.configFingerprint !== receipt.config_fingerprint ||
+        !isDeepStrictEqual(deployed.backup, migrationGuard.backup))
+      throw new Error('Original managed deployment does not match its attempt.');
+    syncManagedIsolationEvidence({ guardPath, guard: migrationGuard, receiptPath: deploymentPath, receipt: deployed });
+    syncManagedIsolationEvidence({ guardPath, guard: migrationGuard, receiptPath: join(stateDirectory, reference.name), receipt });
+    const directory = join(stateDirectory, migrationGuard.cut62_witness.slice(0, -5));
+    for (const name of ['verified-receipt.json', 'verified-completion.json']) {
+      const path = join(directory, name), evidence = JSON.parse(readOwnedPrivateBytes(path));
+      syncManagedIsolationEvidence({ guardPath, guard: migrationGuard, receiptPath: path, receipt: evidence });
+    }
+    const marker = createManagedSettlement(stateDirectory, migrationGuard, bytes);
+    assertManagedTargetLock(stateDirectory, lock);
+    migrationGuard = { ...migrationGuard, managed_image_settlement: marker };
+    atomicJson(guardPath, migrationGuard);
+    authenticateManagedSettlement(stateDirectory, migrationGuard);
+    assertManagedTargetLock(stateDirectory, lock);
+    managedSettlementAuthenticated = true;
+  }
+
   function checkMigrationRetry() {
     // Read under the maintenance lock, including the backup path whose runtime
     // was created during the earlier read-only inspection.
+    managedSettlementAuthenticated = false;
+    managedCompletionAuthenticated = false;
+    managedIsolationRetry = false;
+    managedCompletionPending = false;
+    managedPreIsolationPending = false;
+    managedPreIsolationAuthenticated = false;
     migrationGuard = existsSync(guardPath) ? JSON.parse(readFileSync(guardPath, "utf8")) : null;
     const previousOperation = !migrationGuard && existsSync(journalPath) ? JSON.parse(readFileSync(journalPath, "utf8")) : null;
     const assessment = assessMigrationRecovery({ guard: migrationGuard, operation: previousOperation, target, configuration, retry });
     if (assessment.status === "blocked") throw new Error(assessment.message);
-    if (migrationGuard?.defense_binding || migrationGuard?.isolation) {
+    if (migrationGuard?.state === 'verified' && migrationGuard?.managed_image_receipt && !migrationGuard.managed_image_settlement)
+      settleManagedDeployment();
+    if (migrationGuard?.managed_image_settlement) {
+      authenticateManagedSettlement(stateDirectory, migrationGuard);
+      syncManagedIsolationEvidence({ guardPath, guard: migrationGuard });
+      managedSettlementAuthenticated = true;
+    }
+    if (!managedSettlementAuthenticated && (migrationGuard?.defense_binding || migrationGuard?.isolation)) {
       requireManagedIsolationGate();
       managedIsolationRetry = migrationGuard.state === 'pending' && Boolean(migrationGuard.isolation);
       managedCompletionPending = migrationGuard.state === 'verified';
@@ -907,13 +957,25 @@ print(json.dumps({**result,'database':row}))`;
   }
 
   async function migrate() {
-    if (defenseSelection || migrationGuard?.defense_binding) requireManagedIsolationGate();
+    if (defenseSelection || (migrationGuard?.defense_binding && !managedSettlementAuthenticated)) requireManagedIsolationGate();
     const managedLock = defenseSelection || migrationGuard?.defense_binding ? captureManagedTargetLock(stateDirectory) : null;
     originalHistoryVerified = false;
     stage("applying_migrations");
     const newGuard = migrationGuard?.state !== "pending";
     if (newGuard) {
       if (!backupRecord?.verified) throw new Error("Migration requires a restore-verified backup before capturing history.");
+      if (migrationGuard?.managed_image_settlement) {
+        if (!managedSettlementAuthenticated) throw new Error('Original managed settlement was not authenticated.');
+        const archive = join(stateDirectory, `settled-migration-${migrationGuard.attempt_id}.json`);
+        const bytes = Buffer.from(`${JSON.stringify(migrationGuard, null, 2)}\n`);
+        if (existsSync(archive)) {
+          if (!readOwnedPrivateBytes(archive).equals(bytes)) throw new Error('Original managed settlement archive differs.');
+        } else {
+          const descriptor = openSync(archive, 'wx', 0o600);
+          try { writeFileSync(descriptor, bytes); fsyncSync(descriptor); } finally { closeSync(descriptor); }
+          syncDirectory(stateDirectory);
+        }
+      }
       // H0 belongs to this database attempt, not to a process or revision.
       // Persist it before any migration transaction can commit. Retries never
       // replace it, including when the ledger already reached the target.
@@ -1191,6 +1253,11 @@ print(json.dumps({'witness_id':witness_id}))`;
       operation.phase = "ready_previous_version";
     } else {
       atomicJson(join(stateDirectory, "deployment.json"), record);
+      if (migrationGuard?.state === 'verified' && migrationGuard.managed_image_receipt && !migrationGuard.managed_image_settlement) {
+        if (!managedCompletionAuthenticated) throw new Error('Managed completion was not authenticated before deployment settlement.');
+        settleManagedDeployment();
+        if (!managedSettlementAuthenticated) throw new Error('Managed deployment was not settled.');
+      }
       operation.phase = "ready";
     }
     atomicJson(journalPath, operation);

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { spawnSync as fsSpawnSync } from "node:child_process";
-import { createHash } from 'node:crypto';
+import { createHash, createHmac, randomUUID } from 'node:crypto';
 const cliEntry = new URL("../../scripts/tempo-cli.mjs", import.meta.url).pathname;
 import fs, { existsSync, mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
@@ -12,7 +12,7 @@ import { schemaVersionFromSource, validateTarget, validateContainers, deployment
   CommandExecutionError, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, sourceFingerprint, sourceMatchesFingerprint } from "../../scripts/tempo-deployment.mjs";
 import { assessMigrationRecovery, cut62WitnessName, validateCut62Preflight, assertColdPreflightContainers, cut62MountDirectory, requirePrivateCut62Witness, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
 import { parseArguments, ensureDocker } from "../../scripts/tempo-cli.mjs";
-import { inspectRegisteredIsolation, runManagedPinnedChild } from "../../scripts/tempo-managed-isolation.mjs";
+import { authenticateManagedSettlement, inspectRegisteredIsolation, runManagedPinnedChild } from "../../scripts/tempo-managed-isolation.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
 
@@ -1228,6 +1228,53 @@ test("direct dependency recreation holds an unauthenticated original managed tar
   const runtime=createRuntime(target,{stateDirectory,revision:'a'.repeat(40),run:async()=>{calls++;}});
   await assert.rejects(runtime.ensureDatabase({allowRecreation:true}),/identity has not been authenticated/);
   assert.equal(calls,0);
+});
+
+test('managed deployment settlement recovers publication and permits a later candidate while rejecting tampering', async t => {
+  const { target, config } = fixture(t), root = directory(t);
+  target.composeFiles = []; target.postgresMajor = 18;
+  const attempt = randomUUID(), revision = 'a'.repeat(40), next = 'b'.repeat(40), secret = Buffer.alloc(32, 7);
+  const witness = `cut62-${attempt}.json`, folder = join(root, witness.slice(0, -5)); mkdirSync(folder, { mode: 0o700 });
+  const database = { name: 'tempo', volume: target.volumes[target.postgresVolumeKey].name };
+  const backup = { verified: true, filename: 'tempo-original.dump' }, binding = { backup_filename: backup.filename };
+  const receipt = { version: 1, target: targetKey(target), attempt_id: attempt, revision, database,
+    images: { postgres: 'sha256:original' }, compose_files: ['/original/compose'], image_override: '/original/images',
+    config_fingerprint: 'original-config' };
+  const imageBytes = Buffer.from(JSON.stringify(receipt)), imageName = `pending-images-${attempt}.json`;
+  writeFileSync(join(root, imageName), imageBytes, { mode: 0o600 });
+  const guard = { version: 1, state: 'verified', verified_schema: 62, target: targetKey(target), attempt_id: attempt,
+    database, starting_schema: 61, intended_schema: 62, starting_versions: Array.from({length:61}, (_, i) => i + 1),
+    study_invariants: {}, backup, defense_binding: binding, managed_selection_started: true,
+    managed_image_receipt: { name: imageName, attempt_id: attempt, sha256: createHash('sha256').update(imageBytes).digest('hex') },
+    cut62_witness: witness, cut62_identity: { witness_id: 'original-id' },
+    isolation: { phase: 'reattached', identity: { target: targetKey(target) }, target_oid: 1,
+      system_identifier: 'cluster', control_oid: 2 } };
+  const resultReceipt = { attempt_id: attempt };
+  const payload = { version: 1, target: guard.target, attempt_id: attempt, identity: guard.isolation.identity,
+    target_oid: 1, system_identifier: 'cluster', control_oid: 2, backup: binding, pre62_witness_id: null,
+    cut62_witness_id: 'original-id', receipt: resultReceipt };
+  const sorted = value => Array.isArray(value) ? value.map(sorted) : value && typeof value === 'object'
+    ? Object.fromEntries(Object.keys(value).sort().map(key => [key, sorted(value[key])])) : value;
+  const completion = { payload, signature: createHmac('sha256', secret).update('tempo-disposable-completion-v1\0').update(JSON.stringify(sorted(payload))).digest('hex') };
+  const completionBytes = Buffer.from(JSON.stringify(completion));
+  guard.isolation.completion = { filename: 'verified-completion.json', sha256: createHash('sha256').update(completionBytes).digest('hex') };
+  for (const [name, bytes] of [[witness, JSON.stringify({secret:secret.toString('hex')})], ['verified-receipt.json', JSON.stringify(resultReceipt)], ['verified-completion.json', completionBytes]])
+    writeFileSync(join(folder, name), bytes, { mode: 0o600 });
+  const deployed = { revision, schema: 62, evidence: {commit:revision}, verified_at:'original', images:receipt.images,
+    composeFiles:receipt.compose_files, imageOverride:receipt.image_override, configFingerprint:receipt.config_fingerprint, backup };
+  atomicJson(join(root, 'deployment.json'), deployed); atomicJson(join(root, 'migration-guard.json'), guard);
+  atomicJson(join(root, 'maintenance.lock'), {pid:process.pid, token:randomUUID()});
+  let builds = 0;
+  const run = async (_program, args) => { if (args.includes('config')) return {stdout:JSON.stringify(config)}; throw new Error('unexpected command'); };
+  const runtime = createRuntime(target, { stateDirectory:root, revision:next, previous:deployed, run,
+    buildImages:async () => { builds++; throw new Error('new candidate build'); } });
+  await runtime.config(); assert.equal(runtime.checkMigrationRetry(), false);
+  const settled = JSON.parse(readFileSync(join(root, 'migration-guard.json')));
+  assert.equal(authenticateManagedSettlement(root, settled), true);
+  await assert.rejects(runtime.ensureImages(), /new candidate build/); assert.equal(builds, 1);
+  const altered = structuredClone(settled); altered.managed_image_settlement.payload.deployment_sha256 = '0'.repeat(64);
+  atomicJson(join(root, 'migration-guard.json'), altered);
+  assert.throws(() => runtime.checkMigrationRetry(), /settlement authentication failed/);
 });
 
 test("pending managed image receipt reuses exact images without a build and rejects drift", t => {

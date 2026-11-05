@@ -207,6 +207,71 @@ export function readOwnedPrivateBytes(path) {
   return bytes;
 }
 
+// Verify the immutable completion without consulting post-cut Study rows.
+export function authenticateManagedCompletionEvidence(stateDirectory, guard) {
+  if (!/^(?:cut62)-[0-9a-f-]{36}\.json$/i.test(guard.cut62_witness ?? '')) throw new Error('Invalid original witness identity.');
+  const directory = join(stateDirectory, guard.cut62_witness.slice(0, -5));
+  const receiptPath = join(directory, 'verified-receipt.json'), completionPath = join(directory, 'verified-completion.json');
+  const receipt = JSON.parse(readOwnedPrivateBytes(receiptPath)), completionBytes = readOwnedPrivateBytes(completionPath);
+  const completion = JSON.parse(completionBytes), witnessPath = join(directory, guard.cut62_witness);
+  const fd = openSync(witnessPath, constants.O_RDONLY | constants.O_NOFOLLOW);
+  let envelope;
+  try {
+    const info = fstatSync(fd);
+    if (!info.isFile() || info.uid !== process.getuid() || (info.mode & 0o777) !== 0o600 || info.size > 64 * 1024 * 1024) throw new Error('Invalid original witness.');
+    envelope = JSON.parse(readFileSync(fd));
+  } finally { closeSync(fd); }
+  if (!/^[0-9a-f]{64}$/.test(envelope?.secret ?? '')) throw new Error('Original managed witness secret is invalid.');
+  const payload = { version: 1, target: guard.target, attempt_id: guard.attempt_id, identity: guard.isolation.identity,
+    target_oid: guard.isolation.target_oid, system_identifier: guard.isolation.system_identifier,
+    control_oid: guard.isolation.control_oid, backup: guard.defense_binding,
+    pre62_witness_id: guard.starting_schema === 59 ? guard.pre62_witness_id : null,
+    cut62_witness_id: guard.cut62_identity.witness_id, receipt };
+  const sorted = value => Array.isArray(value) ? value.map(sorted) : value && typeof value === 'object'
+    ? Object.fromEntries(Object.keys(value).sort().map(key => [key, sorted(value[key])])) : value;
+  const canonical = JSON.stringify(sorted(payload)).replace(/[\u007f-\uffff]/g, character => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`);
+  const signature = createHmac('sha256', Buffer.from(envelope.secret, 'hex')).update('tempo-disposable-completion-v1\0').update(canonical).digest();
+  const supplied = /^[0-9a-f]{64}$/.test(completion.signature ?? '') ? Buffer.from(completion.signature, 'hex') : Buffer.alloc(0);
+  const digest = createHash('sha256').update(completionBytes).digest('hex');
+  if (!isDeepStrictEqual(completion.payload, payload) || Object.keys(completion).sort().join() !== 'payload,signature' ||
+      supplied.length !== signature.length || !timingSafeEqual(supplied, signature))
+    throw new Error('Original managed completion authentication failed.');
+  return { receipt, completion, receiptPath, completionPath, digest, secret: Buffer.from(envelope.secret, 'hex') };
+}
+
+function settlementMac(secret, payload) {
+  return createHmac('sha256', secret).update('tempo-managed-deployment-settlement-v1\0').update(JSON.stringify(payload)).digest('hex');
+}
+
+export function authenticateManagedSettlement(stateDirectory, guard) {
+  const marker = guard.managed_image_settlement;
+  if (!marker || Object.keys(marker).sort().join() !== 'payload,signature') throw new Error('Managed deployment settlement is invalid.');
+  const evidence = authenticateManagedCompletionEvidence(stateDirectory, guard);
+  const original = { ...guard }; delete original.managed_image_settlement;
+  const payload = marker.payload;
+  if (guard.state !== 'verified' || guard.verified_schema !== 62 || guard.isolation?.phase !== 'reattached' ||
+      guard.isolation.completion?.sha256 !== evidence.digest || payload?.version !== 1 ||
+      Object.keys(payload).sort().join() !== 'attempt_id,completion_sha256,deployment_sha256,guard_sha256,target,version' ||
+      payload.target !== guard.target || payload.attempt_id !== guard.attempt_id || payload.completion_sha256 !== evidence.digest ||
+      payload.guard_sha256 !== createHash('sha256').update(JSON.stringify(original)).digest('hex') ||
+      !/^[0-9a-f]{64}$/.test(payload.deployment_sha256 ?? '') ||
+      !/^[0-9a-f]{64}$/.test(marker.signature ?? '') ||
+      !timingSafeEqual(Buffer.from(marker.signature, 'hex'), Buffer.from(settlementMac(evidence.secret, payload), 'hex')))
+    throw new Error('Managed deployment settlement authentication failed.');
+  return true;
+}
+
+export function createManagedSettlement(stateDirectory, guard, deploymentBytes) {
+  if (guard.managed_image_settlement) throw new Error('Managed deployment settlement already exists.');
+  const evidence = authenticateManagedCompletionEvidence(stateDirectory, guard);
+  if (guard.state !== 'verified' || guard.verified_schema !== 62 || guard.isolation?.phase !== 'reattached' ||
+      guard.isolation.completion?.sha256 !== evidence.digest) throw new Error('Managed completion is not ready to settle.');
+  const payload = { version: 1, target: guard.target, attempt_id: guard.attempt_id, completion_sha256: evidence.digest,
+    deployment_sha256: createHash('sha256').update(deploymentBytes).digest('hex'),
+    guard_sha256: createHash('sha256').update(JSON.stringify(guard)).digest('hex') };
+  return { payload, signature: settlementMac(evidence.secret, payload) };
+}
+
 // A lock token is evidence only while the original CLI process continuously
 // holds the registered target lock. This check does not acquire that lock.
 export function captureManagedTargetLock(stateDirectory) {
@@ -782,32 +847,8 @@ export async function runManagedPinnedChild({ target, configuration, expectedIma
       throw new Error('Managed pinned child did not leave the target isolated and drained.');
     assertManagedTargetLock(stateDirectory, lock);
     unlinkSync(helperJournal); syncDirectory(journalDirectory);
-    const directory = join(stateDirectory, guard.cut62_witness.slice(0, -5));
-    const receiptPath = join(directory, 'verified-receipt.json'), completionPath = join(directory, 'verified-completion.json');
-    const receipt = JSON.parse(readOwnedPrivateBytes(receiptPath)), completionBytes = readOwnedPrivateBytes(completionPath);
-    const completion = JSON.parse(completionBytes), witnessPath = join(directory, guard.cut62_witness);
-    const fd = openSync(witnessPath, constants.O_RDONLY | constants.O_NOFOLLOW);
-    let envelope;
-    try {
-      const info = fstatSync(fd);
-      if (!info.isFile() || info.uid !== process.getuid() || (info.mode & 0o777) !== 0o600 || info.size > 64 * 1024 * 1024) throw new Error();
-      envelope = JSON.parse(readFileSync(fd));
-    } finally { closeSync(fd); }
-    if (!/^[0-9a-f]{64}$/.test(envelope?.secret ?? '')) throw new Error('Original managed witness secret is invalid.');
-    const payload = { version: 1, target: guard.target, attempt_id: guard.attempt_id, identity: guard.isolation.identity,
-      target_oid: guard.isolation.target_oid, system_identifier: guard.isolation.system_identifier,
-      control_oid: guard.isolation.control_oid, backup: guard.defense_binding,
-      pre62_witness_id: guard.starting_schema === 59 ? guard.pre62_witness_id : null,
-      cut62_witness_id: guard.cut62_identity.witness_id, receipt };
-    const sorted = value => Array.isArray(value) ? value.map(sorted) : value && typeof value === 'object'
-      ? Object.fromEntries(Object.keys(value).sort().map(key => [key, sorted(value[key])])) : value;
-    const canonical = JSON.stringify(sorted(payload)).replace(/[\u007f-\uffff]/g, character => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`);
-    const signature = createHmac('sha256', Buffer.from(envelope.secret, 'hex')).update('tempo-disposable-completion-v1\0').update(canonical).digest();
-    const supplied = /^[0-9a-f]{64}$/.test(completion.signature ?? '') ? Buffer.from(completion.signature, 'hex') : Buffer.alloc(0);
-    if (!isDeepStrictEqual(completion.payload, payload) || Object.keys(completion).sort().join() !== 'payload,signature' ||
-        supplied.length !== signature.length || !timingSafeEqual(supplied, signature) ||
-        createHash('sha256').update(completionBytes).digest('hex') !== result.completion_sha256)
-      throw new Error('Original managed completion authentication failed.');
+    const { receipt, completion, receiptPath, completionPath, digest } = authenticateManagedCompletionEvidence(stateDirectory, guard);
+    if (digest !== result.completion_sha256) throw new Error('Original managed completion authentication failed.');
     const action = classifyManagedIsolationRecovery({ guard, identity: observed.original, attached: false,
       targetOid: observed.targetOid, systemIdentifier: observed.systemIdentifier, controlOid: observed.controlOid,
       controlName: observed.controlName, adminRole: observed.adminRole, targetName: observed.targetName,
