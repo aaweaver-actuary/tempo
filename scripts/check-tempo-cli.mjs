@@ -227,6 +227,9 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
           return JSON.parse(result.stdout.trim().split('\n').at(-1));
         };
         if (environment.TEMPO_LIFECYCLE_SHIPPING_REHEARSAL === '1') assert.equal(gameWitness('seed').seeded,true);
+        const studyPreflight = environment.TEMPO_LIFECYCLE_SHIPPING_REHEARSAL === '1'
+          ? await (await import('../database/tests/managed_cli_rehearsal.mjs')).prepareOwnedStudyProgression({target,directory}) : null;
+        if (environment.TEMPO_LIFECYCLE_STUDY_PREFLIGHT_ONLY === '1') return;
         assert.equal(Number((await readLatestMigration(compose)).stdout.trim()),59);
         assert.deepEqual(await readHistory(),expected);
         const postgresId=(await compose(['ps','-q','postgres'])).stdout.trim();
@@ -261,7 +264,7 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
         await runRehearsal({ root, project:childProject, target, config, context, daemonId, images,
           revision, environment:childEnvironment, stateRoot, stateDirectory, registration, directory, compose, docker,
           readHistory, expected, readLatestMigration, manifest:managedManifest, readDefenseFixture, originalDefense,
-          checkGameReview: environment.TEMPO_LIFECYCLE_SHIPPING_REHEARSAL === '1' ? () => gameWitness('check') : null });
+          checkGameReview: environment.TEMPO_LIFECYCLE_SHIPPING_REHEARSAL === '1' ? () => gameWitness('check') : null, studyPreflight });
         console.log('PASS owned managed CLI rehearsal');
         return;
       }

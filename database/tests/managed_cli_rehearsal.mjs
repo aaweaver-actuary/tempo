@@ -15,10 +15,36 @@ export function validateOwnedPostgresTelemetry(ids, items, project, expectedImag
   return item;
 }
 
+export async function prepareOwnedStudyProgression({ target, directory }) {
+  const { Chess } = await import('chess.js');
+  const request = async (path, options = {}) => {
+    let response = await fetch(`${target.webUrl}/api/${path}`, { ...options, signal: AbortSignal.timeout(10000) });
+    let body = await response.json();
+    if (!response.ok) throw new Error(`Owned Study preflight ${path} failed: ${response.status}`);
+    if (response.status !== 202) return body;
+    for (let i=0;i<120;i++) { await new Promise(resolve=>setTimeout(resolve,250));
+      response=await fetch(`${target.webUrl}/api/operations/${encodeURIComponent(body.operation_id)}`,{signal:AbortSignal.timeout(10000)});
+      const status=await response.json(); if (!response.ok || status.state==='failed') throw new Error('Owned Study preflight operation failed');
+      if(status.state==='complete')return status.response;
+    }
+    throw new Error('Owned Study preflight operation did not settle');
+  };
+  const settings=await request('settings');
+  await request('settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({...settings,new_cards_per_day:100,study_new_per_day:100})});
+  const form=new FormData();form.set('file',new Blob(['[Event "Progression"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 *'],{type:'application/x-chess-pgn'}),'owned-progression.pgn');
+  form.set('trained_color','white');form.set('initial_depth','2');
+  const imported=await request('imports/pgn',{method:'POST',body:form});assert(imported.repertoire_id);
+  await request(`repertoires/${imported.repertoire_id}/settings`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({new_cards_per_day:2})});
+  let queue,card;for(let i=0;i<120;i++){queue=await request('queue/today');card=queue.cards.find(item=>item.repertoire_id===imported.repertoire_id&&item.queue_entry_id&&item.moves?.length);if(card)break;await new Promise(resolve=>setTimeout(resolve,250));}
+  atomicJson(join(directory,'shipping-study-preflight.json'),{repertoire_id:imported.repertoire_id,cards_created:imported.cards_created,queue_count:queue?.count,projection:queue?.projection,card:card??null});
+  assert(card&&new Chess(card.start_fen).move(card.moves[0]),'Owned Study source must issue a legal card before cut');
+  return {repertoire_id:imported.repertoire_id,card_id:card.id,queue_entry_id:card.queue_entry_id};
+}
+
 // One unmodified shipping CLI invocation on an owned, stopped schema-59 stack.
 // Product journey checks remain the delivery owner's assembled proof.
 export async function runShippingManagedCliRehearsal({ root, project, target, revision, environment, stateRoot,
-  stateDirectory, registration, directory, compose, readHistory, expected, readLatestMigration, manifest, readDefenseFixture, originalDefense, checkGameReview }) {
+  stateDirectory, registration, directory, compose, readHistory, expected, readLatestMigration, manifest, readDefenseFixture, originalDefense, checkGameReview, studyPreflight }) {
   const ref=environment.TEMPO_LIFECYCLE_CANDIDATE_REF;
   if(!/^refs\/heads\/codex\/[a-z0-9][a-z0-9/-]*$/.test(ref??'') || !/^[0-9a-f]{40}$/.test(revision) ||
       !root.startsWith('/private/tmp/') || !target.disposable || target.project!==project)
@@ -92,6 +118,8 @@ export async function runShippingManagedCliRehearsal({ root, project, target, re
     throw new Error('Owned operation did not settle');
   };
   const post=(path,payload,id)=>request(path,{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':id},body:JSON.stringify(payload)});
+  const retainedQueue=await request('queue/today');
+  assert(retainedQueue.cards.some(item=>item.id===studyPreflight.card_id&&item.queue_entry_id===studyPreflight.queue_entry_id&&item.repertoire_id===studyPreflight.repertoire_id),'Original issued Study identity must survive the cut');
   const settings=await request('settings');
   await request('settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({...settings,new_cards_per_day:100,study_new_per_day:100})});
   const text='[Event "Owned release"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 *';
@@ -104,7 +132,7 @@ export async function runShippingManagedCliRehearsal({ root, project, target, re
   assert.deepEqual(await post('repertoire/paste/commit',paste,'cli-shipping-paste'),pasted);
   await assert.rejects(post('repertoire/paste/commit',paste,'cli-shipping-paste-stale'),/409/);
   let card,lastQueue,lastQueueError;
-  for(let i=0;i<120;i++){try{lastQueue=await request('queue/today');card=lastQueue.cards.find(item=>item.moves?.length&&item.start_fen);if(card)break}catch(error){lastQueueError=String(error.message)}await new Promise(resolve=>setTimeout(resolve,250))}
+  for(let i=0;i<120;i++){try{lastQueue=await request('queue/today');card=lastQueue.cards.find(item=>item.id===studyPreflight.card_id&&item.queue_entry_id===studyPreflight.queue_entry_id&&item.moves?.length&&item.start_fen);if(card)break}catch(error){lastQueueError=String(error.message)}await new Promise(resolve=>setTimeout(resolve,250))}
   if(!card)atomicJson(join(directory,'shipping-study-queue-diagnostic.json'),{queue:lastQueue??null,error:lastQueueError??null});
   assert(card?.queue_entry_id&&new Chess(card.start_fen).move(card.moves[0]));
   await post(`cards/${card.id}/teaching`,{revision:card.revision,ply:0},'cli-shipping-teaching');
