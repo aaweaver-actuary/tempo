@@ -90,13 +90,21 @@ async function exerciseIsolatedDefense({ target, run, compose, docker, makeRunti
       root: stateDirectory, guard_path: guardPath, selection_path: join(witnessDirectory, "defense-selection.json"),
       binding_path: join(witnessDirectory, "binding.json"), witness_path: witnessPath, pre62_path: prePath,
       lock_pid: process.pid, lock_token: lock.token, trusted_daemon: true };
+    const supervisorDiagnostics = [];
     const supervise = crash => new Promise((resolve, reject) => {
       const child = spawn(componentPython, [join(target.root, "database/tests/cli_isolation_supervisor.py")],
         { cwd: target.root, env: { ...process.env, ...childEnvironment, PYTHONPATH: `${target.root}:${join(target.root, "database")}`, TEMPO_TEST_INSTANCE: "disposable" },
           stdio: ["pipe", "pipe", "pipe"] });
       let stdout = "", stderr = "";
       child.stdout.on("data", data => { stdout += data; }); child.stderr.on("data", data => { stderr += data; });
-      child.once("error", reject); child.once("close", code => resolve({ code, stdout, stderr }));
+      child.once("error", reject); child.once("close", code => {
+        const errorLine = stderr.trim().split(/\r?\n/).findLast(line => /^(?:RuntimeError|AssertionError|FileNotFoundError|PermissionError|TimeoutExpired):/.test(line)) ?? "";
+        const match = errorLine.match(/^(RuntimeError|AssertionError|FileNotFoundError|PermissionError|TimeoutExpired):\s*([A-Za-z0-9 .;,'-]{1,180})$/);
+        const summary = match ? `${match[1]}: ${match[2]}` : errorLine.split(":", 1)[0] || "No safe supervisor diagnostic";
+        supervisorDiagnostics.push({ fault: crash, code, summary });
+        atomicJson(join(target.root, "test-results", "tempo-cli", target.project, "isolation-diagnostics.json"), supervisorDiagnostics);
+        resolve({ code, stdout, stderr, summary });
+      });
       child.stdin.end(JSON.stringify({ ...config, crash }));
     });
     if (environment.TEMPO_LIFECYCLE_ISOLATION_LATE_WRITER === "1") {
@@ -140,6 +148,7 @@ async function exerciseIsolatedDefense({ target, run, compose, docker, makeRunti
       assert.equal(result.code, expectedCode, `Disposable ${fault} must stop at its intended boundary.`);
       assert.deepEqual(readFileSync(witnessPath), originalWitness); assert.deepEqual(readFileSync(prePath), originalPre);
       const observedGuard = JSON.parse(readFileSync(guardPath, "utf8"));
+      assert(observedGuard.isolation, `Disposable ${fault} failed before isolation: ${result.summary}`);
       assert.equal(observedGuard.attempt_id, attempt); assert.deepEqual(observedGuard.defense_binding, binding);
       assert.equal(observedGuard.cut62_identity.witness_id, captured.witness_id);
       assert.equal(observedGuard.pre62_witness_id, captured59.witness_id);
