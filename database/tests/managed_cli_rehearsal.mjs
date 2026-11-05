@@ -15,6 +15,68 @@ export function validateOwnedPostgresTelemetry(ids, items, project, expectedImag
   return item;
 }
 
+// One unmodified shipping CLI invocation on an owned, stopped schema-59 stack.
+// Product journey checks remain the delivery owner's assembled proof.
+export async function runShippingManagedCliRehearsal({ root, project, target, revision, environment, stateRoot,
+  stateDirectory, registration, directory, compose, readHistory, expected, readLatestMigration, manifest }) {
+  const ref=environment.TEMPO_LIFECYCLE_CANDIDATE_REF;
+  if(!/^refs\/heads\/codex\/[a-z0-9][a-z0-9/-]*$/.test(ref??'') || !/^[0-9a-f]{40}$/.test(revision) ||
+      !root.startsWith('/private/tmp/') || !target.disposable || target.project!==project)
+    throw new Error('Owned shipping rehearsal identity is invalid');
+  const git=(...args)=>{const result=spawnSync('git',args,{cwd:root,encoding:'utf8',timeout:30000});if(result.status!==0)throw new Error('Owned shipping Git inspection failed');return result.stdout.trim()};
+  const secretsPath=realpathSync(environment.TEMPO_PG_TEST_SECRETS), info=statSync(secretsPath);
+  if(dirname(secretsPath)!==realpathSync(root)||!/^\.tempo-pg-test-secrets-[A-Za-z0-9]+$/.test(basename(secretsPath))||
+      !info.isDirectory()||info.uid!==process.getuid()||(info.mode&0o777)!==0o700)throw new Error('Owned runner secrets differ');
+  const excludePath=join(root,'.git','info','exclude'), existing=readFileSync(excludePath,'utf8');
+  const pattern=`/${basename(secretsPath)}/`,entries=existing.split('\n').map(line=>line.trim()).filter(line=>line&&!line.startsWith('#'));
+  if(entries.some(line=>line!==pattern)||entries.length>1)throw new Error('Owned Git exclusions differ');
+  if(!entries.length){const fd=openSync(excludePath,'a');try{writeFileSync(fd,`\n${pattern}\n`);fsyncSync(fd)}finally{closeSync(fd)};
+    const parent=openSync(dirname(excludePath),'r');try{fsyncSync(parent)}finally{closeSync(parent)}}
+  const remote=git('ls-remote','origin',ref).split(/\s+/),tree=git('rev-parse','HEAD^{tree}');
+  if(git('rev-parse','HEAD')!==revision||git('symbolic-ref','--short','HEAD')!=='main'||git('status','--porcelain','--untracked-files=all')!==''||
+      git('remote','get-url','origin')!=='https://github.com/aaweaver-actuary/tempo.git'||remote.length!==2||remote[0]!==revision||remote[1]!==ref)
+    throw new Error('Owned shipping source identity differs');
+  const approved=join(directory,'approved');mkdirSync(approved,{mode:0o700});chmodSync(approved,0o700);
+  const selection=join(approved,'selection.json');writeFileSync(selection,JSON.stringify(manifest),{mode:0o600});
+  const selectionHash=createHash('sha256').update(readFileSync(selection)).digest('hex');
+  const secretValues=['admin_password','reader_password','writer_password','admin_pgpass','reader_pgpass','writer_pgpass']
+    .map(name=>readFileSync(join(secretsPath,name),'utf8').trim());
+  const childEnvironment={...environment,TEMPO_CLI_STATE_DIR:stateRoot};delete childEnvironment.NODE_OPTIONS;delete childEnvironment.PYTHONPATH;
+  for(const key of Object.keys(childEnvironment))if(key.startsWith('W08_'))delete childEnvironment[key];
+  const dockerLookup=spawnSync('which',['docker'],{env:childEnvironment,encoding:'utf8',timeout:5000});
+  if(dockerLookup.status!==0)throw new Error('Owned shipping Docker executable is unavailable');
+  const dockerExecutable=realpathSync(dockerLookup.stdout.trim());
+  if(dockerExecutable.startsWith('/private/tmp/'))throw new Error('Owned shipping rehearsal refuses a task-only Docker proxy');
+  const common=['--no-ci','--no-open','--candidate-ref',ref,'--candidate-sha',revision,'--config',registration];
+  const call=(name,args)=>{
+    const result=spawnSync(join(root,'tempo'),args,{cwd:root,env:childEnvironment,encoding:'utf8',timeout:600000,maxBuffer:20*1024*1024});
+    if(result.error)throw result.error;
+    atomicJson(join(directory,`shipping-cli-${name}.json`),{command:args,status:result.status,signal:result.signal,
+      stdout:redact(result.stdout??'',secretValues),stderr:redact(result.stderr??'',secretValues)});
+    if(result.status!==0)throw new Error(`Owned shipping ${name} failed; inspect its saved redacted log`);
+  };
+  call('start',['start',...common,'--defense-selection',selection]);
+  const guard=JSON.parse(readFileSync(join(stateDirectory,'migration-guard.json')));
+  if(guard.state!=='verified'||guard.verified_schema!==62||guard.isolation?.phase!=='reattached'||
+      !guard.managed_image_settlement||guard.defense_binding?.selection_sha256!==selectionHash||!guard.backup?.verified||
+      !/^tempo-[0-9A-Za-z-]+\.dump$/.test(guard.backup.filename??''))throw new Error('Owned shipping cut evidence is incomplete');
+  if(Number((await readLatestMigration(compose)).stdout.trim())!==62)throw new Error('Owned shipping schema differs');
+  assert.deepEqual(await readHistory(),expected);
+  await compose(['exec','-T','postgres-backup','sh','-ec','cd /backups && sha256sum -c "$1.sha256"','sh',guard.backup.filename]);
+  const originalGuard=readFileSync(join(stateDirectory,'migration-guard.json'));
+  call('restart',['restart',...common]);
+  assert.deepEqual(readFileSync(join(stateDirectory,'migration-guard.json')),originalGuard);
+  assert.deepEqual(await readHistory(),expected);
+  const finalRemote=git('ls-remote','origin',ref).split(/\s+/);
+  if(finalRemote.length!==2||finalRemote[0]!==revision||finalRemote[1]!==ref||git('rev-parse','HEAD')!==revision||git('rev-parse','HEAD^{tree}')!==tree)
+    throw new Error('Owned shipping candidate changed during rehearsal');
+  atomicJson(join(directory,'shipping-rehearsal.json'),{revision,tree,ref,project,selectionSha256:selectionHash,
+    backup:guard.backup.filename,backupSha256:guard.defense_binding.backup_sha256,witnessId:guard.cut62_identity.witness_id,
+    command:'tempo start --no-ci --no-open --candidate-ref REF --candidate-sha SHA --config FILE --defense-selection FILE',
+    restart:'tempo restart --no-ci --no-open --candidate-ref REF --candidate-sha SHA --config FILE',
+    dockerExecutable,gateOrSelectorOverrides:false,disposableCompose:true,ci:'disabled'});
+}
+
 export async function runOwnedManagedCliRehearsal({ root, project, target, config, context, daemonId, images,
   revision, environment, stateRoot, stateDirectory, registration, directory, compose, docker, readHistory, expected, readLatestMigration, manifest }) {
   const { Chess } = await import('chess.js');

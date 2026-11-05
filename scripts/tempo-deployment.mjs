@@ -427,7 +427,14 @@ export async function inspectCandidateSource(target, run, { signal } = {}) {
   return { branch, head, changes, origin, problem, failures };
 }
 
-export async function assessCandidate(target, run, fetchJson, { signal, expectedSource, noCi = false } = {}) {
+function validateExplicitCandidate(candidateRef, candidateSha, noCi) {
+  if (candidateRef === 'refs/heads/main' && candidateSha === null) return;
+  if (!noCi || !/^refs\/heads\/codex\/[a-z0-9][a-z0-9/-]*$/.test(candidateRef ?? '') || !/^[0-9a-f]{40}$/.test(candidateSha ?? ''))
+    throw new Error('Explicit candidate requires a reviewed codex ref, exact SHA, and ci-disabled mode.');
+}
+
+export async function assessCandidate(target, run, fetchJson, { signal, expectedSource, noCi = false, candidateRef = 'refs/heads/main', candidateSha = null } = {}) {
+  validateExplicitCandidate(candidateRef, candidateSha, noCi);
   const source = await inspectCandidateSource(target, run, { signal });
   if (expectedSource && !sourceMatchesFingerprint(source, expectedSource))
     throw new TempoProblem("source_changed", "Local source changed while update verification was running. Local work is preserved; main was not fast-forwarded.",
@@ -436,9 +443,11 @@ export async function assessCandidate(target, run, fetchJson, { signal, expected
   const requestSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000);
   let revision;
   try {
-    const remote = await run("git", ["ls-remote", "https://github.com/aaweaver-actuary/tempo", "refs/heads/main"],
+    const remote = await run("git", ["ls-remote", "https://github.com/aaweaver-actuary/tempo", candidateRef],
       { allowFailure: true, timeout: 15_000, signal: requestSignal });
-    revision = remote.stdout.trim().split(/\s+/)[0];
+    const parts = remote.stdout.trim().split(/\s+/); revision = parts[0];
+    if (candidateSha && (parts.length !== 2 || parts[1] !== candidateRef || revision !== candidateSha))
+      throw new TempoProblem('candidate_changed', 'The reviewed candidate ref no longer matches its exact SHA.');
     if (remote.code !== 0 || !/^[a-f0-9]{40}$/.test(revision ?? ""))
       return { source, revision: source.head, verification: { status: "unavailable", message: `Remote main could not be read${remote.stderr?.trim() ? `: ${remote.stderr.trim().slice(-400)}` : "."}` } };
   } catch (error) {
@@ -456,18 +465,20 @@ export async function assessCandidate(target, run, fetchJson, { signal, expected
     : await assessMainVerification(revision, fetchJson, { signal: requestSignal }) };
 }
 
-export async function selectCandidate(target, run, fetchJson = githubJson, { expectedRevision, expectedSource, signal, noCi = false } = {}) {
+export async function selectCandidate(target, run, fetchJson = githubJson, { expectedRevision, expectedSource, signal, noCi = false, candidateRef = 'refs/heads/main', candidateSha = null } = {}) {
+  validateExplicitCandidate(candidateRef, candidateSha, noCi);
   signal?.throwIfAborted();
   if (!target.root) throw new Error("Tempo checkout is not registered.");
   const source = await inspectCandidateSource(target, run, { signal });
   if (source.problem) throw source.problem;
   if (expectedSource && !sourceMatchesFingerprint(source, expectedSource))
     throw new TempoProblem("source_changed", "Local source changed while update verification was running. Local work is preserved; main was not fast-forwarded.");
-  await run("git", ["fetch", "origin", "main"], { timeout: 60_000, signal });
+  await run("git", ["fetch", "origin", candidateRef === 'refs/heads/main' ? 'main' : candidateRef], { timeout: 60_000, signal });
   const revision = (await run("git", ["rev-parse", "FETCH_HEAD"])).stdout.trim();
   const current = (await run("git", ["rev-parse", "HEAD"])).stdout.trim();
   if (expectedRevision && revision !== expectedRevision)
     throw new TempoProblem("main_changed", "Main advanced while verification was being checked.");
+  if (candidateSha && revision !== candidateSha) throw new TempoProblem('candidate_changed', 'Fetched candidate differs from the approved SHA.');
   if (current !== source.head)
     throw new TempoProblem("source_changed", "Local source changed while update verification was running. Local work is preserved; main was not fast-forwarded.");
   if ((await run("git", ["merge-base", "--is-ancestor", current, revision], { allowFailure: true })).code !== 0)
@@ -476,7 +487,10 @@ export async function selectCandidate(target, run, fetchJson = githubJson, { exp
     : await verifiedMainEvidence(revision, fetchJson, signal);
   signal?.throwIfAborted();
   if (expectedRevision) {
-    const latest = (await run("git", ["ls-remote", "https://github.com/aaweaver-actuary/tempo", "refs/heads/main"], { timeout: 15_000, signal })).stdout.trim().split(/\s+/)[0];
+    const observed = (await run("git", ["ls-remote", "https://github.com/aaweaver-actuary/tempo", candidateRef], { timeout: 15_000, signal })).stdout.trim().split(/\s+/);
+    const latest = observed[0];
+    if (candidateSha && (observed.length !== 2 || observed[1] !== candidateRef || latest !== candidateSha))
+      throw new TempoProblem('candidate_changed', 'The reviewed candidate ref no longer matches its exact SHA.');
     if (latest !== revision) throw new TempoProblem("main_changed", "Main advanced while verification was being checked.");
   }
   if (revision !== current) {

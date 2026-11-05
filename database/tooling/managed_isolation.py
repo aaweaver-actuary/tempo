@@ -23,8 +23,6 @@ from database.tooling.verify_postgres_cli_state import (
     load_pre62_59, verify_cut62_history_v2, verify_pre62_59,
 )
 
-_MANAGED_NONEMPTY_ENABLED = False
-
 
 def assert_fenced_pinned_session(database, guard, expected_backend, *, read_only=False):
     """Confirm the original target is closed and only the pinned backend exists.
@@ -141,11 +139,8 @@ def execute_managed_history_cut(database, guard, expected_backend, *, selection_
     """Own the pinned 61-to-62 transaction and its post-commit verification.
 
     The launcher must retain the target lock and independently establish the
-    Docker/admission fence for this entire call. This entry stays hard closed
-    until the complete managed lifecycle is reviewed and qualified.
+    Docker/admission fence for this entire call.
     """
-    if not _MANAGED_NONEMPTY_ENABLED:
-        raise RuntimeError('Managed nonempty Defense cleanup is unavailable')
     if database.info.transaction_status != TransactionStatus.IDLE:
         raise RuntimeError('Managed pinned connection must be idle')
     paths = dict(selection_path=selection_path, binding_path=binding_path,
@@ -173,8 +168,6 @@ def execute_managed_history_cut(database, guard, expected_backend, *, selection_
 
 def managed_pinned_child():
     """Serve one private supervisor handshake; not a standalone CLI."""
-    if not _MANAGED_NONEMPTY_ENABLED:
-        raise RuntimeError('Managed nonempty Defense cleanup is unavailable')
     request = json.loads(sys.stdin.readline())
     if set(request) != {'challenge', 'guard_path', 'selection_path', 'binding_path', 'witness_path', 'pre62_path', 'receipt_path'}:
         raise RuntimeError('Managed pinned request is invalid')

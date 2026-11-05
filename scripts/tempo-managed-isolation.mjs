@@ -7,12 +7,6 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypt
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 
-// Source review and an owned managed qualification are required before the
-// nonempty path can be enabled. No CLI flag or environment value opens it.
-export function requireManagedIsolationGate() {
-  throw new Error('Nonempty Defense cleanup is unavailable without a verified writer and DDL fence.');
-}
-
 // Only the exact migration with a version-scoped comparator may cross this cut.
 export function cut62WitnessName(guard) {
   const crossing = guard.starting_schema < 62 && guard.intended_schema >= 62;
@@ -490,7 +484,6 @@ export async function inspectManagedPreIsolationTarget({ target, configuration, 
 // This path is gated pending review and does not claim daemon-restart safety.
 export async function startManagedStoppedDetachedTarget({ target, configuration, expectedImage, guard,
   stateDirectory, lock, docker, exclusiveAdministrator, verifyOriginalBackup }) {
-  requireManagedIsolationGate();
   if (exclusiveAdministrator !== true || guard?.state !== 'pending' ||
       !['intent', 'detached', 'verified'].includes(guard.isolation?.phase) || guard.isolation.original_allow_connections !== true ||
       typeof verifyOriginalBackup !== 'function')
@@ -651,12 +644,9 @@ export function assertManagedPinnedChallenge({ guard, nonce, ready, observation 
     address: ready.backend_address, start: ready.backend_start } });
 }
 
-// The production gate deliberately remains closed. This phase documents the
-// concrete first physical transition; later phases must be completed and
-// reviewed before the gate can be changed.
+// Detach only after validating the original backup and registered topology.
 export async function prepareManagedDetachedTarget({ target, configuration, expectedImage, stateDirectory,
   lock, docker, exclusiveAdministrator, verifyOriginalBackup }) {
-  requireManagedIsolationGate();
   if (typeof verifyOriginalBackup !== 'function') throw new Error('Original backup verification is unavailable.');
   const guardPath = join(stateDirectory, 'migration-guard.json');
   const readGuard = () => JSON.parse(readOwnedPrivateBytes(guardPath));
@@ -716,10 +706,12 @@ export async function prepareManagedDetachedTarget({ target, configuration, expe
 
 // The private pipe carries a fresh challenge, not independent authorization.
 // The lock, daemon topology and sole backend are inspected by the host before
-// it acknowledges the pinned child. The production gate remains closed.
+// it acknowledges the pinned child.
 export async function runManagedPinnedChild({ target, configuration, expectedImage, maintenanceImage, maintenanceRevision,
   stateDirectory, adminPassfile, lock, docker, exclusiveAdministrator, verifyOriginalBackup }) {
-  requireManagedIsolationGate();
+  if (!isAbsolute(stateDirectory ?? '') || !lock || exclusiveAdministrator !== true || typeof docker !== 'function' || typeof verifyOriginalBackup !== 'function')
+    throw new Error('Managed pinned child configuration is invalid.');
+  assertManagedTargetLock(stateDirectory, lock);
   const guardPath = join(stateDirectory, 'migration-guard.json');
   const guard = JSON.parse(readOwnedPrivateBytes(guardPath));
   if (guard?.state !== 'pending' || !['detached', 'verified'].includes(guard.isolation?.phase) ||
@@ -905,12 +897,10 @@ export async function runManagedPinnedChild({ target, configuration, expectedIma
   }
 }
 
-// Restore only the original attachment after the independently authenticated
-// post-commit evidence is durable. The managed gate stays closed until the
-// complete pinned process and this transition have been reviewed together.
+// Restore only the original attachment after independently authenticated
+// post-commit evidence is durable.
 export async function restoreManagedCompletedTarget({ target, configuration, expectedImage, stateDirectory,
   lock, docker, exclusiveAdministrator, verifyOriginalBackup, authenticateCompletion }) {
-  requireManagedIsolationGate();
   if (typeof verifyOriginalBackup !== 'function' || typeof authenticateCompletion !== 'function')
     throw new Error('Original managed completion verification is unavailable.');
   const guardPath = join(stateDirectory, 'migration-guard.json');

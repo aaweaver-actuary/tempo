@@ -1184,6 +1184,24 @@ test("CLI no-ci update skips Actions verification and records the explicit polic
   assert.throws(() => parseArguments(["doctor", "--no-ci"]), /Invalid options/);
 });
 
+test('explicit candidate requires a canonical ref and exact SHA throughout selection', async () => {
+  const ref='refs/heads/codex/release-candidate', fixture=sourceSelectionFixture();
+  const options={candidateRef:ref,candidateSha:fixture.revision,noCi:true,expectedRevision:fixture.revision};
+  const calls=[];let remote=fixture.revision;
+  const run=async (program,args,settings)=>{calls.push(args);if(args[0]==='ls-remote')return {code:0,stdout:`${remote}\t${ref}\n`};return fixture.run(program,args,settings)};
+  const selected=await selectCandidate({root:'fixture'},run,fixture.fetchJson,options);
+  assert.equal(selected.revision,fixture.revision);assert.equal(selected.evidence.verification,'ci-disabled');
+  assert(calls.some(args=>args[0]==='fetch'&&args[1]==='origin'&&args[2]===ref));
+  assert(calls.some(args=>args[0]==='ls-remote'&&args[1]==='https://github.com/aaweaver-actuary/tempo'&&args[2]===ref));
+  remote='b'.repeat(40);await assert.rejects(selectCandidate({root:'fixture'},run,fixture.fetchJson,options),/exact SHA/);
+  await assert.rejects(assessCandidate({root:'fixture'},run,fixture.fetchJson,options),/exact SHA/);
+  const parsed=parseArguments(['start','--no-ci','--candidate-ref',ref,'--candidate-sha',fixture.revision]);
+  assert.equal(parsed.candidateRef,ref);assert.equal(parsed.candidateSha,fixture.revision);
+  for(const args of [ ['start','--candidate-ref',ref,'--candidate-sha',fixture.revision],
+    ['start','--no-ci','--candidate-ref','https://example.com/x','--candidate-sha',fixture.revision],
+    ['start','--no-ci','--candidate-ref',ref,'--candidate-sha','short'] ]) assert.throws(()=>parseArguments(args),/Candidate|Invalid options/);
+});
+
 test("managed Defense selection accepts one absolute first-attempt path", () => {
   assert.equal(parseArguments(['migrate', '--defense-selection', '/private/selection.json']).defenseSelection, '/private/selection.json');
   for (const args of [
@@ -1193,10 +1211,10 @@ test("managed Defense selection accepts one absolute first-attempt path", () => 
   ]) assert.throws(() => parseArguments(args), /selection|Invalid options/i);
 });
 
-test("managed pinned child is blocked before any host action", async () => {
+test("managed pinned child rejects an unfenced invocation before host action", async () => {
   let actions = 0;
   await assert.rejects(runManagedPinnedChild({ docker: async () => { actions++; },
-    verifyOriginalBackup: async () => { actions++; } }), /unavailable/);
+    verifyOriginalBackup: async () => { actions++; } }), /configuration is invalid/);
   assert.equal(actions, 0);
 });
 
@@ -1226,8 +1244,8 @@ test("direct managed migration and preflight hold before side effects", async t 
   let calls = 0;
   const runtime = createRuntime(target, { stateDirectory, revision: 'a'.repeat(40),
     defenseSelection: '/private/selection.json', run: async () => { calls++; } });
-  await assert.rejects(runtime.preflightSchema(), /unavailable/);
-  await assert.rejects(runtime.migrate(), /unavailable/);
+  await assert.rejects(runtime.preflightSchema(), /Approved Defense selection/);
+  await assert.rejects(runtime.migrate(), /Approved Defense selection/);
   assert.equal(calls, 0);
   assert.deepEqual(readdirSync(stateDirectory), []);
 });
@@ -1306,11 +1324,6 @@ test('managed deployment settlement recovers publication and permits a later can
 
 test("pending managed image receipt reuses exact images without a build and rejects drift", t => {
   const { target, config } = fixture(t); target.postgresMajor=18;target.composeFiles=[];
-  const owner=new URL('../../scripts/tempo-managed-isolation.mjs',import.meta.url).pathname;
-  const ownerSha=createHash('sha256').update(readFileSync(owner)).digest('hex');
-  const loader=`import {createHash} from 'node:crypto';export async function load(url,ctx,next){const r=await next(url,ctx);if(url!==new URL('file://'+process.env.TEST_OWNER).href)return r;const s=Buffer.from(r.source).toString();if(createHash('sha256').update(s).digest('hex')!==process.env.TEST_OWNER_SHA)throw Error('source');const x="export function requireManagedIsolationGate() {\\n  throw new Error('Nonempty Defense cleanup is unavailable without a verified writer and DDL fence.');\\n}";if(s.split(x).length!==2)throw Error('gate');return {...r,source:s.replace(x,'export function requireManagedIsolationGate() {}')}}`;
-  const loaderUrl='data:text/javascript;base64,'+Buffer.from(loader).toString('base64');
-  const registration='data:text/javascript;base64,'+Buffer.from(`import {register} from 'node:module';register(${JSON.stringify(loaderUrl)},import.meta.url)`).toString('base64');
   const code=`import fs from 'node:fs';import {join} from 'node:path';import {tmpdir} from 'node:os';import {randomUUID,createHash} from 'node:crypto';import assert from 'node:assert/strict';
 import {createRuntime,configurationFingerprint} from ${JSON.stringify(new URL('../../scripts/tempo-runtime.mjs',import.meta.url).href)};
 import {targetKey} from ${JSON.stringify(new URL('../../scripts/tempo-deployment.mjs',import.meta.url).href)};
@@ -1330,8 +1343,8 @@ try{const release=join(root,'releases','original');fs.mkdirSync(release,{recursi
  fs.writeFileSync(files[0],'changed');await assert.rejects(create().ensureImages(),/input changed/);fs.writeFileSync(files[0],'original');
  fs.unlinkSync(join(root,name));await assert.rejects(create().ensureImages());assert.equal(builds,0);
 }finally{fs.rmSync(root,{recursive:true,force:true})}`;
-  const child=fsSpawnSync(process.execPath,['--import',registration,'--input-type=module','-e',code],{
-    input:JSON.stringify({target,config}),encoding:'utf8',timeout:30000,env:{...process.env,TEST_OWNER:owner,TEST_OWNER_SHA:ownerSha}});
+  const child=fsSpawnSync(process.execPath,['--input-type=module','-e',code],{
+    input:JSON.stringify({target,config}),encoding:'utf8',timeout:30000});
   assert.equal(child.status,0,child.stderr);
 });
 

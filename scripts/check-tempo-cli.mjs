@@ -22,7 +22,7 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
   const directory = join(root, "test-results", "tempo-cli", childProject +
     (environment.W08_CAPTURE_ONLY === '1' ? '-capture' : environment.W08_COPY_ONLY === '1' ? '-copy' : ''));
   mkdirSync(directory, { recursive: true });
-  if (environment.TEMPO_LIFECYCLE_MANAGED_REHEARSAL === '1') {
+  if (environment.TEMPO_LIFECYCLE_MANAGED_REHEARSAL === '1' || environment.TEMPO_LIFECYCLE_SHIPPING_REHEARSAL === '1') {
     // The disposable test stack supplies a locally built migration image as an
     // image-only service. Declare its real build inputs to the normal launcher
     // so it builds the candidate instead of pulling the task-owned local tag.
@@ -101,7 +101,7 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     ...composeFiles.flatMap(file => ["-f", file])];
   const compose = (args, options) => docker([...composeArguments, ...args], options);
   const config = JSON.parse((await compose(["--profile", "maintenance", "--profile", "games-feedback", "config", "--format", "json"])).stdout);
-  if (environment.TEMPO_LIFECYCLE_MANAGED_REHEARSAL === '1') {
+  if (environment.TEMPO_LIFECYCLE_MANAGED_REHEARSAL === '1' || environment.TEMPO_LIFECYCLE_SHIPPING_REHEARSAL === '1') {
     assert.equal(config.services.migration.build.context, root);
     assert.equal(config.services.migration.build.dockerfile, 'Dockerfile.postgres-maintenance');
   }
@@ -139,7 +139,7 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     }
     const tag = service.image ?? `${project}-${name}`;
     const inspected = JSON.parse((await docker(["image", "inspect", tag])).stdout)[0];
-    if (environment.TEMPO_LIFECYCLE_MANAGED_REHEARSAL === '1' && name === 'migration')
+    if ((environment.TEMPO_LIFECYCLE_MANAGED_REHEARSAL === '1' || environment.TEMPO_LIFECYCLE_SHIPPING_REHEARSAL === '1') && name === 'migration')
       assert.equal(inspected.Config?.Labels?.['org.opencontainers.image.revision'], revision);
     images[name] = inspected.Id;
   }
@@ -185,7 +185,7 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
       "database/tests/check_postgres_cli_lifecycle.py", "--history"])).stdout);
     const expected = await readHistory();
     if (schema59Only) {
-      const managedManifest = environment.TEMPO_LIFECYCLE_MANAGED_REHEARSAL === '1'
+      const managedManifest = (environment.TEMPO_LIFECYCLE_MANAGED_REHEARSAL === '1' || environment.TEMPO_LIFECYCLE_SHIPPING_REHEARSAL === '1')
         ? JSON.parse((await compose(['--profile','maintenance','run','--rm','--no-deps','-T',
           '-e', `TEMPO_TEST_COMPOSE_PROJECT=${childProject}`, 'migration','database/tests/check_postgres_cli_lifecycle.py',
           '--seed-defense-v2',targetKey(target)])).stdout) : null;
@@ -193,7 +193,7 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
       atomicJson(oldOverlay, { services: Object.fromEntries(Object.entries(schema61Images).map(([name, image]) => [name, { image }])) });
       await compose(["-f", oldOverlay, "up", "-d", "--no-build", "--no-deps", "--wait",
         "foreground-worker", "background-worker", "background-scheduler", "api", "web", "postgres-backup"], { echo: true });
-      if (environment.TEMPO_LIFECYCLE_MANAGED_REHEARSAL === '1') {
+      if (environment.TEMPO_LIFECYCLE_MANAGED_REHEARSAL === '1' || environment.TEMPO_LIFECYCLE_SHIPPING_REHEARSAL === '1') {
         const oldServices=['foreground-worker','background-worker','background-scheduler','api','web','postgres-backup'];
         const oldIds=(await compose(['ps','-q',...oldServices])).stdout.trim().split(/\s+/).filter(Boolean);
         const oldContainers=JSON.parse((await docker(['inspect',...oldIds])).stdout);
@@ -222,8 +222,9 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
         assert.deepEqual(active,[],'All owned baseline services are stopped before CLI image preparation');
         const stopped=JSON.parse((await docker(['inspect',postgresId])).stdout)[0];
         assert.equal(stopped.Id,postgresId);assert.equal(stopped.State.Running,false);
-        const { runOwnedManagedCliRehearsal } = await import('../database/tests/managed_cli_rehearsal.mjs');
-        await runOwnedManagedCliRehearsal({ root, project:childProject, target, config, context, daemonId, images,
+        const { runOwnedManagedCliRehearsal, runShippingManagedCliRehearsal } = await import('../database/tests/managed_cli_rehearsal.mjs');
+        const runRehearsal = environment.TEMPO_LIFECYCLE_SHIPPING_REHEARSAL === '1' ? runShippingManagedCliRehearsal : runOwnedManagedCliRehearsal;
+        await runRehearsal({ root, project:childProject, target, config, context, daemonId, images,
           revision, environment:childEnvironment, stateRoot, stateDirectory, registration, directory, compose, docker,
           readHistory, expected, readLatestMigration, manifest:managedManifest });
         console.log('PASS owned managed CLI rehearsal');

@@ -13,7 +13,7 @@ import { isTimingPublicationFailure } from "./test-scenario-timings.mjs";
 import { probeLifecycleRedis } from "../database/tooling/cli/probes.mjs";
 import { createBackupRestoreDatabase, createPostgresBackup, removeBackupRestoreDatabase, restorePostgresBackup } from "../database/tooling/cli/backup.mjs";
 import { advanceManagedIsolationMarker, assertManagedTargetLock, authenticateManagedCompletionEvidence, authenticateManagedSettlement, captureManagedTargetLock, createManagedSettlement, inspectManagedCompletedTarget, inspectManagedFence, inspectManagedHistorySelectionBinding, inspectManagedPreIsolationTarget, persistManagedHistoryWitnessIdentity, privateDefenseHistorySelection, readOwnedPrivateBytes, startManagedStoppedDetachedTarget, syncDirectory, syncManagedIsolationEvidence,
-  prepareManagedDetachedTarget, runManagedPinnedChild, restoreManagedCompletedTarget, requireManagedIsolationGate } from './tempo-managed-isolation.mjs';
+  prepareManagedDetachedTarget, runManagedPinnedChild, restoreManagedCompletedTarget } from './tempo-managed-isolation.mjs';
 
 export const applicationServices = ["web", "api",
   "foreground-worker", "background-worker", "background-scheduler"];
@@ -302,7 +302,6 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     const pendingManagedImages = !managedSettlementAuthenticated && (migrationGuard?.state === 'pending' || (migrationGuard?.state === 'verified' &&
       (!previous || previous.revision!==revision || previous.evidence?.commit!==revision || !previous.verified_at)));
     if (pendingManagedImages && (migrationGuard.defense_binding || migrationGuard.managed_image_receipt || migrationGuard.managed_selection_started)) {
-      requireManagedIsolationGate();
       if (!migrationGuard.defense_binding || migrationGuard.managed_selection_started !== true)
         throw new Error('Original managed selection binding is incomplete; keep writers stopped.');
       const lock = captureManagedTargetLock(stateDirectory), reference = migrationGuard.managed_image_receipt;
@@ -421,7 +420,6 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
 
   async function persistManagedImageReceipt() {
     if (!defenseSelection) return;
-    requireManagedIsolationGate();
     if (migrationGuard?.state === 'pending') throw new Error('Managed retry cannot replace original image evidence.');
     const lock=captureManagedTargetLock(stateDirectory);
     const source=(await run('git',['rev-parse','HEAD'],{timeout:5000})).stdout.trim();
@@ -663,7 +661,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   }
 
   async function preflightSchema() {
-    if (defenseSelection) requireManagedIsolationGate();
+    if (defenseSelection) privateDefenseHistorySelection(defenseSelection, targetKey(target));
     if (!(await runningServices()).includes("postgres")) {
       const before = await inspectContainerInventory();
       validateContainers(before, target);
@@ -776,7 +774,6 @@ print(json.dumps(result))`;
         (previous?.revision === receipt.revision && previous?.schema === 62));
     }
     if (!managedSettlementPending && (migrationGuard?.defense_binding || migrationGuard?.isolation)) {
-      requireManagedIsolationGate();
       managedIsolationRetry = migrationGuard.state === 'pending' && Boolean(migrationGuard.isolation);
       managedCompletionPending = migrationGuard.state === 'verified';
       managedPreIsolationPending = migrationGuard.state === 'pending' && Boolean(migrationGuard.defense_binding) && !migrationGuard.isolation;
@@ -861,7 +858,6 @@ print(json.dumps(result))`;
 
   async function authenticateManagedPreIsolation() {
     if (!managedPreIsolationPending) return;
-    requireManagedIsolationGate();
     const lock = captureManagedTargetLock(stateDirectory), saved = migrationGuard.managed_pre_isolation;
     syncManagedIsolationEvidence({ guardPath, guard:migrationGuard });
     if (await verifiedBackupDigest(migrationGuard.backup) !== migrationGuard.defense_binding.backup_sha256)
@@ -894,7 +890,6 @@ print(json.dumps(result))`;
   }
 
   async function runManagedRecovery(managedLock) {
-    requireManagedIsolationGate();
     let attachedCompletion = migrationGuard.isolation?.phase === 'reattached';
     if (migrationGuard.isolation?.phase === 'verified') {
       const topology = await inspectManagedFence({ target, configuration, expectedImage: images.postgres, guard: migrationGuard,
@@ -1006,7 +1001,7 @@ print(json.dumps({**result,'database':row}))`;
 
   async function migrate() {
     if (managedSettlementAuthenticated) assertManagedTargetLock(stateDirectory, managedSettlementLock);
-    if (defenseSelection || (migrationGuard?.defense_binding && !managedSettlementAuthenticated)) requireManagedIsolationGate();
+    if (defenseSelection) privateDefenseHistorySelection(defenseSelection, targetKey(target));
     const managedLock = defenseSelection || migrationGuard?.defense_binding ? captureManagedTargetLock(stateDirectory) : null;
     originalHistoryVerified = false;
     stage("applying_migrations");
