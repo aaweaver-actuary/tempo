@@ -356,10 +356,11 @@ test("start after merge verifies backup before migrations and publishes success 
 test("managed retry resolves the isolated target before ordinary schema preflight", async () => {
   const { calls, handlers } = actions({ pending: [] });
   handlers.checkMigrationRetry = async () => { calls.push('guard'); return true; };
+  handlers.authenticateManagedPreIsolation = async () => { calls.push('original-identity'); };
   handlers.resumeManagedIsolation = async () => { calls.push('resume'); return true; };
   handlers.preflightSchema = async () => { calls.push('preflight'); };
   await executeLifecycle({ recreate: false }, handlers);
-  assert.deepEqual(calls.slice(0, 4), ['guard', 'ensureImages', 'resume', 'preflight']);
+  assert.deepEqual(calls.slice(0, 5), ['guard', 'ensureImages', 'original-identity', 'resume', 'preflight']);
   assert(!calls.includes('backup') && !calls.includes('migrate'));
   const failed = actions({ pending: [] });
   failed.handlers.checkMigrationRetry = async () => true;

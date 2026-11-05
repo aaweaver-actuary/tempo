@@ -135,6 +135,10 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
   fired('schema60');
   const original = readGuard(); assert.equal(original.starting_schema,59); assert.equal(original.backup.verified,true);
   assert.equal(original.isolation,undefined);
+  assert.equal(original.managed_pre_isolation.identity.containerId,dbId);
+  assert.equal(original.managed_pre_isolation.system_identifier,originalCluster.system);
+  assert.equal(original.managed_pre_isolation.target_oid,originalCluster.target);
+  assert.equal(original.managed_pre_isolation.control_oid,originalCluster.control);
   assert.equal(original.managed_selection_started,true);assert.match(original.defense_binding.backup_sha256,/^[0-9a-f]{64}$/);
   const preWitness=join(stateDirectory,original.pre62_witness.slice(0,-5),original.pre62_witness);
   const preBytes=readFileSync(preWitness), preInode=statSync(preWitness).ino;
@@ -145,6 +149,12 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
   renameSync(preWitness,preWitness+'.original');writeFileSync(preWitness,'tampered',{mode:0o600});
   try { assertFailed(cli('','start','--retry','--no-ci','--no-open'));assert.equal(Number((await readLatestMigration(compose)).stdout.trim()),60); }
   finally { unlinkSync(preWitness);renameSync(preWitness+'.original',preWitness); }
+  assert.equal(statSync(preWitness).ino,preInode);assert.deepEqual(readFileSync(preWitness),preBytes);
+  const second60=cli('schema60-repeat','start','--retry','--no-ci','--no-open');assertFailed(second60);fired('schema60-repeat');
+  const repeated=readGuard();assert.deepEqual(repeated.managed_pre_isolation,original.managed_pre_isolation);
+  assert.equal(repeated.attempt_id,original.attempt_id);assert.deepEqual(repeated.backup,original.backup);
+  assert.equal((await compose(['ps','-q','postgres'])).stdout.trim(),dbId);
+  assert.deepEqual(await clusterFacts(dbId),originalCluster);assert.equal(Number((await readLatestMigration(compose)).stdout.trim()),60);
   assert.equal(statSync(preWitness).ino,preInode);assert.deepEqual(readFileSync(preWitness),preBytes);
   const selectionCopy = join(stateDirectory,original.cut62_witness.slice(0,-5),'defense-selection.json');
   const bindingPath = join(stateDirectory,original.cut62_witness.slice(0,-5),'binding.json');

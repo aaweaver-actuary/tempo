@@ -12,7 +12,7 @@ import { TempoProblem, classifyRedisReply, phaseGuidance } from "./tempo-guidanc
 import { isTimingPublicationFailure } from "./test-scenario-timings.mjs";
 import { probeLifecycleRedis } from "../database/tooling/cli/probes.mjs";
 import { createBackupRestoreDatabase, createPostgresBackup, removeBackupRestoreDatabase, restorePostgresBackup } from "../database/tooling/cli/backup.mjs";
-import { advanceManagedIsolationMarker, assertManagedTargetLock, captureManagedTargetLock, inspectManagedCompletedTarget, inspectManagedFence, inspectManagedHistorySelectionBinding, persistManagedHistoryWitnessIdentity, privateDefenseHistorySelection, readOwnedPrivateBytes, startManagedStoppedDetachedTarget, syncManagedIsolationEvidence,
+import { advanceManagedIsolationMarker, assertManagedTargetLock, captureManagedTargetLock, inspectManagedCompletedTarget, inspectManagedFence, inspectManagedHistorySelectionBinding, inspectManagedPreIsolationTarget, persistManagedHistoryWitnessIdentity, privateDefenseHistorySelection, readOwnedPrivateBytes, startManagedStoppedDetachedTarget, syncManagedIsolationEvidence,
   prepareManagedDetachedTarget, runManagedPinnedChild, restoreManagedCompletedTarget, requireManagedIsolationGate } from './tempo-managed-isolation.mjs';
 
 export const applicationServices = ["web", "api",
@@ -123,6 +123,7 @@ export async function executeLifecycle(plan, actions) {
   let interruptedApplications = false;
   try {
     const imagePreparation = await actions.ensureImages();
+    await actions.authenticateManagedPreIsolation?.();
     if (await actions.resumeManagedIsolation?.()) migrationVerificationRequired = false;
     await actions.preflightSchema?.();
     const allowDependencyRecreation = Boolean(plan.recreate || imagePreparation?.dependenciesMayChange);
@@ -194,6 +195,8 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   let managedIsolationRetry = false;
   let managedCompletionPending = false;
   let managedCompletionAuthenticated = false;
+  let managedPreIsolationPending = false;
+  let managedPreIsolationAuthenticated = false;
   let verifiedPostgresImage;
   const operation = { id: randomUUID(), revision, started_at: new Date().toISOString(), phase: "checking", target: target.project };
   const docker = (args, options) => run("docker", ["--context", target.context, ...args], options);
@@ -452,7 +455,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
       "-ec", 'files=$(find /data -maxdepth 4 -type f -name PG_VERSION); test "$(printf "%s\\n" "$files" | grep -c .)" = 1; cat "$files"']);
     if (Number(cluster.stdout.trim()) !== expectedMajor)
       throw new Error("Existing PostgreSQL cluster does not match the registered major version; a separate major-upgrade procedure is required.");
-    if (allowRecreation && managedCompletionAuthenticated) {
+    if (allowRecreation && (managedCompletionAuthenticated || managedPreIsolationAuthenticated)) {
       await compose(["up", "-d", "--no-build", "--no-deps", "--no-recreate", "postgres"], { echo: true });
       await compose(["up", "-d", "--no-build", "--no-deps", "--force-recreate", "redis"], { echo: true });
     } else {
@@ -558,6 +561,9 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
       requireManagedIsolationGate();
       managedIsolationRetry = migrationGuard.state === 'pending' && Boolean(migrationGuard.isolation);
       managedCompletionPending = migrationGuard.state === 'verified';
+      managedPreIsolationPending = migrationGuard.state === 'pending' && Boolean(migrationGuard.defense_binding) && !migrationGuard.isolation;
+      if (managedPreIsolationPending && !migrationGuard.managed_pre_isolation)
+        throw new Error('Original pre-isolation identity is incomplete; keep writers stopped.');
     }
     if (migrationGuard?.managed_selection_started && !migrationGuard.defense_binding)
       throw new Error('Original managed selection binding is incomplete; keep writers stopped.');
@@ -633,6 +639,40 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     const digest = result.stdout.trim();
     if (!/^[0-9a-f]{64}$/.test(digest)) throw new Error('Original backup checksum is invalid; keep writers stopped.');
     return digest;
+  }
+
+  async function authenticateManagedPreIsolation() {
+    if (!managedPreIsolationPending) return;
+    requireManagedIsolationGate();
+    const lock = captureManagedTargetLock(stateDirectory), saved = migrationGuard.managed_pre_isolation;
+    syncManagedIsolationEvidence({ guardPath, guard:migrationGuard });
+    if (await verifiedBackupDigest(migrationGuard.backup) !== migrationGuard.defense_binding.backup_sha256)
+      throw new Error('Original managed backup changed; keep writers stopped.');
+    inspectManagedHistorySelectionBinding({ target, stateDirectory, guard:migrationGuard,
+      verifiedBackupSha256:migrationGuard.defense_binding.backup_sha256 });
+    let topology = await inspectManagedPreIsolationTarget({ target, configuration, expectedImage:images.postgres, guard:migrationGuard,
+      stateDirectory, lock, docker, exclusiveAdministrator:true, allowStopped:true });
+    if (!topology.running) {
+      assertManagedTargetLock(stateDirectory, lock);
+      const started = (await docker(['start', saved.identity.containerId])).stdout.trim();
+      if (started.length < 12 || !saved.identity.containerId.startsWith(started)) throw new Error('Original pre-isolation start identity differs.');
+      topology = await inspectManagedPreIsolationTarget({ target, configuration, expectedImage:images.postgres, guard:migrationGuard,
+        stateDirectory, lock, docker, exclusiveAdministrator:true });
+    }
+    let observed;
+    for (let attempt=0; attempt<60; attempt++) {
+      try { observed=await inspectManagedFence({target,configuration,expectedImage:images.postgres,guard:migrationGuard,
+        stateDirectory,lock,docker,exclusiveAdministrator:true}); break; }
+      catch(error) { if(error?.message!=='Managed isolation control database is starting.'||attempt===59)throw error;
+        await new Promise(resolve=>setTimeout(resolve,500)); }
+    }
+    if (!isDeepStrictEqual(observed.original,saved.identity) || observed.systemIdentifier!==saved.system_identifier ||
+        observed.targetOid!==saved.target_oid || observed.controlOid!==saved.control_oid || observed.targetName!==saved.target_name ||
+        observed.controlName!==saved.control_name || observed.adminRole!==saved.admin_role || !observed.allowConnections ||
+        observed.backendPids.length || observed.preparedTransactions)
+      throw new Error('Original pre-isolation database identity differs; keep writers stopped.');
+    assertManagedTargetLock(stateDirectory,lock);
+    managedPreIsolationAuthenticated=true;
   }
 
   async function runManagedRecovery(managedLock) {
@@ -807,6 +847,18 @@ print(json.dumps({**result,'database':row}))`;
       const digest = await verifiedBackupDigest(migrationGuard.backup);
       assertManagedTargetLock(stateDirectory, managedLock);
       inspectManagedHistorySelectionBinding({ target, stateDirectory, guard: migrationGuard, verifiedBackupSha256: digest });
+      if (!migrationGuard.managed_pre_isolation) {
+        if (!newGuard) throw new Error('Original pre-isolation identity is incomplete; keep writers stopped.');
+        const observed=await inspectManagedFence({target,configuration,expectedImage:images.postgres,guard:migrationGuard,
+          stateDirectory,lock:managedLock,docker,exclusiveAdministrator:true});
+        if (!observed.attached || !observed.allowConnections || observed.backendPids.length || observed.preparedTransactions)
+          throw new Error('Original pre-isolation target is not stopped and drained.');
+        migrationGuard.managed_pre_isolation = { identity:observed.original,system_identifier:observed.systemIdentifier,
+          target_oid:observed.targetOid,control_oid:observed.controlOid,target_name:observed.targetName,
+          control_name:observed.controlName,admin_role:observed.adminRole };
+        assertManagedTargetLock(stateDirectory, managedLock);
+        atomicJson(guardPath,migrationGuard);
+      }
     }
     if (witnessName) {
       if (migrationGuard.starting_schema === 59) {
@@ -1068,7 +1120,7 @@ print(json.dumps({'witness_id':witness_id}))`;
     operation.phase = "backup_verified"; atomicJson(journalPath, operation);
   }
 
-  return { config, inspectTarget, compose, docker, runningServices, inspectRunningRevision, ensureImages, recordedApplicationsMatch, ensureDatabase, resumeManagedIsolation,
+  return { config, inspectTarget, compose, docker, runningServices, inspectRunningRevision, ensureImages, recordedApplicationsMatch, ensureDatabase, resumeManagedIsolation, authenticateManagedPreIsolation,
     checkSchema, preflightSchema, checkMigrationRetry, resolveMigrationGuard, stopApplications, backup, migrate, startServices, verifyReady, commitDeployment,
     recordFailure, stopAll, backupOnly, secretValues, get configuration() { return configuration; } };
 }

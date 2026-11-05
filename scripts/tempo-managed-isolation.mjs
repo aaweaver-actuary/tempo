@@ -371,6 +371,37 @@ export async function inspectManagedCompletedTarget({ target, configuration, exp
   return topology;
 }
 
+// A pending pre-isolation retry may start only its previously recorded
+// PostgreSQL container. Stopped endpoint ambiguity is a hold, not adoption.
+export async function inspectManagedPreIsolationTarget({ target, configuration, expectedImage, guard, stateDirectory, lock, docker, exclusiveAdministrator, allowStopped = false }) {
+  const saved = guard?.managed_pre_isolation, identity = saved?.identity;
+  if (exclusiveAdministrator !== true || guard?.state !== 'pending' || guard.isolation || !identity ||
+      identity.target !== guard.target || guard.target !== targetKey(target)) throw new Error('Original pre-isolation identity is invalid.');
+  assertManagedTargetLock(stateDirectory, lock);
+  validateTarget(configuration, target);
+  const daemonId = (await docker(['info', '--format', '{{.ID}}'])).stdout.trim();
+  const ids = (await docker(['ps', '-aq'])).stdout.trim().split(/\s+/).filter(Boolean);
+  if (!ids.length) throw new Error('Original pre-isolation inventory is unavailable.');
+  const containers = JSON.parse((await docker(['inspect', ...ids])).stdout);
+  if (!Array.isArray(containers) || containers.length !== ids.length || ids.some(id => !containers.some(item => item.Id?.startsWith(id))))
+    throw new Error('Original pre-isolation inventory is incomplete.');
+  validateContainers(containers, target);
+  const originals = containers.filter(item => item.Id === identity.containerId);
+  if (originals.length !== 1 || containers.some(item => item.State?.Running && item.Id !== identity.containerId &&
+      ((typeof item.HostConfig?.NetworkMode === 'string' && item.HostConfig.NetworkMode.startsWith('container:') &&
+        (identity.containerId.startsWith(item.HostConfig.NetworkMode.slice(10)) || item.HostConfig.NetworkMode.slice(10) === originals[0]?.Name?.replace(/^\//, ''))) ||
+       (item.Config?.Labels?.['com.docker.compose.project'] === target.project &&
+        !['postgres','redis'].includes(item.Config?.Labels?.['com.docker.compose.service'])))))
+    throw new Error('Original pre-isolation target has an active writer or changed container.');
+  const networks = JSON.parse((await docker(['network', 'inspect', identity.networkId])).stdout);
+  if (!Array.isArray(networks) || networks.length !== 1) throw new Error('Original pre-isolation network is unavailable.');
+  const topology = inspectRegisteredIsolation({ target, daemonId, container: originals[0], network: networks[0],
+    expectedImage, trustedDaemon: true, intent: identity, allowStopped });
+  if (!topology.attached) throw new Error('Original pre-isolation target is detached.');
+  assertManagedTargetLock(stateDirectory, lock);
+  return { ...topology, running: originals[0].State.Running };
+}
+
 // A stopped isolated target may only be started by its exact registered ID.
 // This path is gated pending review and does not claim daemon-restart safety.
 export async function startManagedStoppedDetachedTarget({ target, configuration, expectedImage, guard,
@@ -551,6 +582,11 @@ export async function prepareManagedDetachedTarget({ target, configuration, expe
   inspectManagedOriginalEvidence({ target, stateDirectory, guard, verifiedBackupSha256: originalBackupSha });
   let observed = await inspectManagedFence({ target, configuration, expectedImage, guard, stateDirectory,
     lock, docker, exclusiveAdministrator });
+  const pre = guard.managed_pre_isolation;
+  if (!pre || !isDeepStrictEqual(pre.identity, observed.original) || pre.system_identifier !== observed.systemIdentifier ||
+      pre.target_oid !== observed.targetOid || pre.control_oid !== observed.controlOid || pre.target_name !== observed.targetName ||
+      pre.control_name !== observed.controlName || pre.admin_role !== observed.adminRole)
+    throw new Error('Original pre-isolation identity changed; keep writers stopped.');
   if (observed.backendPids.length || observed.preparedTransactions)
     throw new Error('Managed isolation target still has admitted work.');
   if (!guard.isolation) {
