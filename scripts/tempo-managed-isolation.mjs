@@ -432,8 +432,9 @@ export async function startManagedStoppedDetachedTarget({ target, configuration,
         const factsSql = `SELECT json_build_object('system',(SELECT system_identifier::text FROM pg_control_system()),
           'target',(SELECT oid::bigint FROM pg_database WHERE datname='tempo'),
           'control',(SELECT oid::bigint FROM pg_database WHERE datname=current_database()),'name',current_database(),'role',current_user,
-          'clients',(SELECT count(*) FROM pg_stat_activity WHERE pid<>pg_backend_pid() AND
-            (backend_type IS NULL OR backend_type NOT IN ('background writer','checkpointer','walwriter','autovacuum launcher','logical replication launcher','archiver','startup','walreceiver'))),
+          'clients',(SELECT count(*) FROM pg_stat_activity WHERE pid<>pg_backend_pid() AND NOT COALESCE((
+            (backend_type IN ('background writer','checkpointer','walwriter','autovacuum launcher','logical replication launcher','archiver','startup','walreceiver') AND datname IS NULL AND client_addr IS NULL) OR
+            (backend_type='io worker' AND datname IS NULL AND usename IS NULL AND client_addr IS NULL)),false)),
           'prepared',(SELECT count(*) FROM pg_prepared_xacts))`;
         const facts = JSON.parse((await docker([...psql, factsSql])).stdout);
         if (facts.system !== guard.isolation.system_identifier || facts.target !== guard.isolation.target_oid ||
