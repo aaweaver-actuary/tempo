@@ -191,14 +191,22 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
         assert.deepEqual(await readHistory(),expected);
         const postgresId=(await compose(['ps','-q','postgres'])).stdout.trim();
         const postgres=JSON.parse((await docker(['inspect',postgresId])).stdout)[0];
+        const dataVolume=target.volumes[target.postgresVolumeKey].name;
+        assert(postgres.Mounts.some(mount=>mount.Name===dataVolume&&mount.Destination==='/var/lib/postgresql'&&mount.RW));
+        const postgresNetworks=Object.values(postgres.NetworkSettings.Networks);assert.equal(postgresNetworks.length,1);
         const facts=JSON.parse((await docker(['exec','--user','postgres',postgresId,'psql','-X','-A','-t','-U','postgres','-d','postgres','-c',
           "SELECT json_build_object('system',(select system_identifier::text from pg_control_system()),'target',(select oid::bigint from pg_database where datname='tempo'),'control',(select oid::bigint from pg_database where datname='postgres'))"])).stdout);
+        const historySql="SELECT encode(sha256(convert_to(jsonb_build_object('cards',(select jsonb_agg(to_jsonb(t) order by id) from cards t where id='cli-history' or id like 'cli-defense-%'),'reviews',(select jsonb_agg(to_jsonb(t) order by id) from reviews t where card_id='cli-history' or card_id like 'cli-defense-%'),'queue',(select jsonb_agg(to_jsonb(t) order by id) from daily_queue t where card_id='cli-history' or card_id like 'cli-defense-%'),'receipt',(select jsonb_agg(to_jsonb(t) order by operation_id) from operation_receipts t where operation_id='cli-preserved-receipt'))::text,'UTF8')),'hex')";
+        const historyDigest=(await docker(['exec','--user','postgres',postgresId,'psql','-X','-A','-t','-U','postgres','-d','tempo','-c',historySql])).stdout.trim();
+        assert.match(historyDigest,/^[0-9a-f]{64}$/);
         atomicJson(join(directory,'managed-baseline.json'),{project:childProject,schema:59,postgresId,postgresImage:postgres.Image,
-          facts,historySha256:createHash('sha256').update(JSON.stringify(expected)).digest('hex'),
+          facts,dataVolume,networkId:postgresNetworks[0].NetworkID,historyDigest,historySha256:createHash('sha256').update(JSON.stringify(expected)).digest('hex'),
           oldServices:Object.fromEntries(oldServices.map(service=>[service,oldContainers.find(item=>item.Config.Labels['com.docker.compose.service']===service).Image]))});
-        await compose(['stop','--timeout','60',...oldServices,'redis'],{echo:true});
+        await compose(['stop','--timeout','60',...oldServices,'redis','postgres'],{echo:true});
         const active=(await compose(['ps','--status','running','--services'])).stdout.trim().split(/\s+/).filter(Boolean);
-        assert.deepEqual(active,['postgres'],'Only the owned PostgreSQL target remains running before CLI image preparation');
+        assert.deepEqual(active,[],'All owned baseline services are stopped before CLI image preparation');
+        const stopped=JSON.parse((await docker(['inspect',postgresId])).stdout)[0];
+        assert.equal(stopped.Id,postgresId);assert.equal(stopped.State.Running,false);
         const { runOwnedManagedCliRehearsal } = await import('../database/tests/managed_cli_rehearsal.mjs');
         await runOwnedManagedCliRehearsal({ root, project:childProject, target, config, context, daemonId, images,
           revision, environment:childEnvironment, stateRoot, stateDirectory, registration, directory, compose, docker,
