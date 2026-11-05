@@ -403,6 +403,73 @@ export async function prepareManagedDetachedTarget({ target, configuration, expe
   return guard;
 }
 
+// Restore only the original attachment after the independently authenticated
+// post-commit evidence is durable. The managed gate stays closed until the
+// complete pinned process and this transition have been reviewed together.
+export async function restoreManagedCompletedTarget({ target, configuration, expectedImage, stateDirectory,
+  lock, docker, exclusiveAdministrator, verifyOriginalBackup, authenticateCompletion }) {
+  requireManagedIsolationGate();
+  if (typeof verifyOriginalBackup !== 'function' || typeof authenticateCompletion !== 'function')
+    throw new Error('Original managed completion verification is unavailable.');
+  const guardPath = join(stateDirectory, 'migration-guard.json');
+  const readGuard = () => JSON.parse(readOwnedPrivateBytes(guardPath));
+  let guard = readGuard();
+  if (guard?.state !== 'pending' || !['verified', 'reattached'].includes(guard.isolation?.phase))
+    throw new Error('Managed completion is not ready to restore.');
+  const verify = async () => {
+    assertManagedTargetLock(stateDirectory, lock);
+    if (!isDeepStrictEqual(readGuard(), guard)) throw new Error('Original migration guard changed; keep writers stopped.');
+    const sha = await verifyOriginalBackup(guard.backup);
+    inspectManagedOriginalEvidence({ target, stateDirectory, guard, verifiedBackupSha256: sha });
+    const evidence = await authenticateCompletion(guard);
+    if (!evidence || typeof evidence.receiptPath !== 'string' || !evidence.receipt ||
+        typeof evidence.completionPath !== 'string' || !evidence.completion)
+      throw new Error('Original managed completion is unavailable.');
+    syncManagedIsolationEvidence({ guardPath, guard, receiptPath: evidence.receiptPath, receipt: evidence.receipt });
+    syncManagedIsolationEvidence({ guardPath, guard, receiptPath: evidence.completionPath, receipt: evidence.completion });
+    assertManagedTargetLock(stateDirectory, lock);
+    return evidence;
+  };
+  let evidence = await verify();
+  let observed = await inspectManagedFence({ target, configuration, expectedImage, guard, stateDirectory,
+    lock, docker, exclusiveAdministrator });
+  const classify = () => classifyManagedIsolationRecovery({ guard, identity: observed.original, attached: observed.attached,
+    targetOid: observed.targetOid, systemIdentifier: observed.systemIdentifier, controlOid: observed.controlOid,
+    controlName: observed.controlName, adminRole: observed.adminRole, targetName: observed.targetName,
+    allowConnections: observed.allowConnections, backendPids: observed.backendPids,
+    preparedTransactions: observed.preparedTransactions, schema: 62, receipt: evidence.receipt, receiptValidated: true });
+  let action = classify();
+  if (action === 'restore-after-receipt') {
+    if (!observed.allowConnections) {
+      assertManagedTargetLock(stateDirectory, lock);
+      await docker(['exec', '--user', 'postgres', observed.original.containerId, 'psql', '-X', '-v', 'ON_ERROR_STOP=1',
+        '-U', observed.adminRole, '-d', observed.controlName, '-c', 'ALTER DATABASE tempo ALLOW_CONNECTIONS true']);
+      observed = await inspectManagedFence({ target, configuration, expectedImage, guard, stateDirectory,
+        lock, docker, exclusiveAdministrator });
+      if (classify() !== 'restore-after-receipt' || !observed.allowConnections)
+        throw new Error('Managed admission restoration is unsafe; keep writers stopped.');
+    }
+    evidence = await verify();
+    assertManagedTargetLock(stateDirectory, lock);
+    const args = ['network', 'connect'];
+    for (const alias of observed.original.aliases) args.push('--alias', alias);
+    args.push(observed.original.networkId, observed.original.containerId);
+    await docker(args);
+    observed = await inspectManagedFence({ target, configuration, expectedImage, guard, stateDirectory,
+      lock, docker, exclusiveAdministrator });
+    action = classify();
+  }
+  if (action === 'record-reattached') {
+    evidence = await verify();
+    guard = advanceManagedIsolationMarker({ guardPath, guard, observation: { ...observed, identity: observed.original,
+      schema: 62, receipt: evidence.receipt, receiptValidated: true } });
+    syncManagedIsolationEvidence({ guardPath, guard });
+  } else if (action !== 'complete') {
+    throw new Error('Managed completion topology is unsafe; keep writers stopped.');
+  }
+  return guard;
+}
+
 export function syncDirectory(path) {
   const fd = openSync(path, "r");
   try { fsyncSync(fd); } finally { closeSync(fd); }

@@ -12,7 +12,7 @@ import { schemaVersionFromSource, validateTarget, validateContainers, deployment
   CommandExecutionError, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, sourceFingerprint, sourceMatchesFingerprint } from "../../scripts/tempo-deployment.mjs";
 import { assessMigrationRecovery, cut62WitnessName, privateSelection, inspectDisposableIsolation, inspectRegisteredIsolation, classifyManagedIsolationRecovery, classifyDisposableIsolationRecovery, persistDisposableIsolationIntent, advanceDisposableIsolationMarker, syncDisposableIsolationEvidence, validateCut62Preflight, assertColdPreflightContainers, cut62MountDirectory, requirePrivateCut62Witness, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
 import { parseArguments, ensureDocker } from "../../scripts/tempo-cli.mjs";
-import { captureManagedTargetLock, assertManagedTargetLock, inspectManagedOriginalEvidence, inspectManagedHistorySelectionBinding, inspectManagedFence, assertManagedPinnedBackend, managedPinnedChallenge, assertManagedPinnedChallenge, prepareManagedDetachedTarget, privateDefenseHistorySelection } from "../../scripts/tempo-managed-isolation.mjs";
+import { captureManagedTargetLock, assertManagedTargetLock, inspectManagedOriginalEvidence, inspectManagedHistorySelectionBinding, inspectManagedFence, assertManagedPinnedBackend, managedPinnedChallenge, assertManagedPinnedChallenge, prepareManagedDetachedTarget, restoreManagedCompletedTarget, privateDefenseHistorySelection } from "../../scripts/tempo-managed-isolation.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
 
@@ -2822,6 +2822,9 @@ test("closed managed isolation gate prevents any backup or Docker action", async
   let actions = 0;
   await assert.rejects(prepareManagedDetachedTarget({ verifyOriginalBackup: async () => { actions++; },
     docker: async () => { actions++; }, exclusiveAdministrator: true }), /Nonempty Defense cleanup is unavailable/);
+  await assert.rejects(restoreManagedCompletedTarget({ verifyOriginalBackup: async () => { actions++; },
+    authenticateCompletion: async () => { actions++; }, docker: async () => { actions++; },
+    exclusiveAdministrator: true }), /Nonempty Defense cleanup is unavailable/);
   assert.equal(actions, 0);
 });
 
