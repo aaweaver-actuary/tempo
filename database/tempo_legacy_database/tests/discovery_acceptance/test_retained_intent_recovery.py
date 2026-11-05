@@ -129,6 +129,8 @@ def test_native_missing_graph_parks_accepted_intent_without_changing_identity(ow
     task = {'id': task_id, 'kind': 'discovery_admission', 'deduplication_key': intent_id,
             'generation': 3, 'lease_token': lease, 'payload': payload}
     monkeypatch.setattr(discovery_admission.activity_gate, 'wait_for_foreground', lambda: None)
+    monkeypatch.setattr(discovery_admission, 'connection', lambda **_: postgres_store.connection(read_only=False))
+    monkeypatch.setattr(discovery_admission, 'background_read_connection', lambda: postgres_store.connection(read_only=True))
     assert discovery_admission.execute_admission_intent_slice(task) is True
     postgres_store.close_pools()
     with postgres_store.connection(read_only=True) as database:
