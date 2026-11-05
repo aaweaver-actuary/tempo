@@ -872,9 +872,17 @@ def test_schema61_defense_recognition_review_history_rehearsal(monkeypatch):
                              UNION ALL SELECT card_id,candidate_id,repertoire_id,cohort_group FROM historical),
                 approved AS (SELECT value->>0 card_id,value->>1 candidate_id,value->>2 cohort_group FROM jsonb_array_elements(%s::jsonb) value)
                 SELECT e.card_id,e.candidate_id,e.repertoire_id FROM eligible e JOIN approved a USING(card_id,candidate_id,cohort_group)""".format(ordinary=guard.CUT62_DRAFT_DEFENSE_SELECTOR,historical=guard._cut62_draft_history_selector())
+            # Resolve the old selector once, then hash its resulting exact
+            # rows. Nesting its full plan inside every oracle cursor itself
+            # exceeds the production memory limit, even for this tiny fixture.
+            prior_rows = db.execute('SELECT * FROM ('+prior_cohort+') prior ORDER BY card_id,candidate_id',
+                (json.dumps(history_keys,separators=(',',':')),)).fetchall()
+            assert [(row[0],row[1]) for row in prior_rows] == [(row[0],row[1]) for row in history_keys]
+            prior_values = json.dumps(prior_rows,separators=(',',':'))
+            prior_bounded = "SELECT value->>0 card_id,value->>1 candidate_id,value->>2 repertoire_id FROM jsonb_array_elements(%s::jsonb)"
             for name in sorted(guard.CUT62_HISTORY_PROJECTED_TABLES):
-                assert guard._cut62_projected_history_table(db,name,layout[name][0],b'h'*32,prior_cohort,
-                    (json.dumps(history_keys,separators=(',',':')),)) == original['projected'][name]
+                assert guard._cut62_projected_history_table(db,name,layout[name][0],b'h'*32,prior_bounded,
+                    (prior_values,)) == original['projected'][name]
             db.execute('SAVEPOINT history_gate_drift')
             db.execute('ALTER TABLE public.reviews DISABLE TRIGGER priority_source_reviews')
             with pytest.raises(RuntimeError,match='history catalog changed'):
