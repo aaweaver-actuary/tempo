@@ -3331,6 +3331,18 @@ assert 'secret' not in safe('ValueError: private-key-secret-value')
   assert.equal(result.status, 0, result.stdout + result.stderr);
 });
 
+test("fenced migration calls the original 59 verifier in its existing write transaction", () => {
+  const proof = String.raw`
+import ast,pathlib
+tree=ast.parse(pathlib.Path('database/tooling/apply_postgres_migrations.py').read_text())
+calls=[n for n in ast.walk(tree) if isinstance(n,ast.Call) and isinstance(n.func,ast.Name) and n.func.id=='verify_pre62_59']
+assert len(calls)==1
+assert any(k.arg=='in_write_transaction' and isinstance(k.value,ast.Constant) and k.value.value is True for k in calls[0].keywords)
+`;
+  const result = fsSpawnSync("python3", ["-c", proof], { cwd: process.cwd(), encoding: "utf8" });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
 test("shipped migration CLI exposes no disposable isolation supervisor", () => {
   const proof = String.raw`
 import runpy,sys,types

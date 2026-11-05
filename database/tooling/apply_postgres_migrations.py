@@ -163,7 +163,7 @@ def apply_migrations(database_url: str, *, target_version: int | None = None,
                             if guard.get('starting_schema') == 59:
                                 from database.tooling.verify_postgres_cli_state import load_pre62_59, verify_pre62_59
                                 old, old_secret = load_pre62_59(_isolated_test_context['pre62_path'])
-                                checked = verify_pre62_59(database, old, old_secret)
+                                checked = verify_pre62_59(database, old, old_secret, in_write_transaction=True)
                                 if checked.get('witness_id') != guard.get('pre62_witness_id') or checked.get('observed_schema') != 61:
                                     raise RuntimeError('Original schema 59 witness differs inside the fence')
                         binding = load_cut62_attempt_binding(cut62_binding, selection, selection_digest)
