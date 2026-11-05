@@ -94,3 +94,50 @@ def test_native_owner_retry_disabled_and_missing_intent_preserve_parked_task(own
         assert database.execute_native(
             "SELECT count(*) FROM background_task_events WHERE task_id=%s AND event='manual_retry'",
             (task_id,)).fetchone()[0] == 0
+
+
+def test_native_missing_graph_parks_accepted_intent_without_changing_identity(owned_database, monkeypatch):
+    """An accepted operation with no graph owner is held, not anonymously retried."""
+    import chess
+    from app.services import discovery_admission
+
+    token = uuid.uuid4().hex
+    repertoire, opportunity = 'rep-' + token, 'opp-' + token
+    intent_id, task_id, lease = 'intent-' + token, 'task-' + token, 'lease-' + token
+    now = datetime.now(timezone.utc).isoformat()
+    payload = {'intent_id': intent_id}
+    with postgres_store.connection(read_only=False) as database:
+        database.execute_native(
+            "INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,%s,'fixture',%s)",
+            (repertoire, 'Retained recovery fixture', now))
+        database.execute_native(
+            "INSERT INTO repertoire_opportunities(id,repertoire_id,kind,fen_key,status,score,evidence_json,"
+            "evidence_fingerprint,created_at,updated_at) VALUES(%s,%s,'missing_response',%s,'active',1,"
+            "'{}','fixture-revision',%s,%s)",
+            (opportunity, repertoire, ' '.join(chess.STARTING_FEN.split()[:4]), now, now))
+        database.execute_native(
+            "INSERT INTO discovery_admission_intents(id,opportunity_id,repertoire_id,evidence_fingerprint,"
+            "starting_fen,selected_move_uci,preview_moves_json,recommendation_json,line_id,state,created_at,updated_at) "
+            "VALUES(%s,%s,%s,'fixture-revision',%s,'e2e4','[\"e2e4\"]','{}',%s,'preparing',%s,%s)",
+            (intent_id, opportunity, repertoire, chess.STARTING_FEN, 'line-' + token, now, now))
+        database.execute_native(
+            "INSERT INTO background_tasks(id,kind,deduplication_key,generation,priority,state,phase,"
+            "payload_version,payload_json,attempt_count,max_attempts,next_attempt_at,lease_token,"
+            "lease_expires_at,created_at,updated_at) VALUES(%s,'discovery_admission',%s,3,80,'leased',"
+            "'queued',1,%s,1,5,%s,%s,%s,%s,%s)",
+            (task_id, intent_id, json.dumps(payload), now, lease, '2099-01-01T00:00:00+00:00', now, now))
+    task = {'id': task_id, 'kind': 'discovery_admission', 'deduplication_key': intent_id,
+            'generation': 3, 'lease_token': lease, 'payload': payload}
+    monkeypatch.setattr(discovery_admission.activity_gate, 'wait_for_foreground', lambda: None)
+    assert discovery_admission.execute_admission_intent_slice(task) is True
+    postgres_store.close_pools()
+    with postgres_store.connection(read_only=True) as database:
+        row = database.execute_native(
+            'SELECT id,generation,state,next_attempt_at,lease_token FROM background_tasks WHERE id=%s',
+            (task_id,)).fetchone()
+        assert tuple(row) == (task_id, 3, 'queued', '9999-12-31T23:59:59+00:00', None)
+        intent = database.execute_native(
+            'SELECT id,state,last_error FROM discovery_admission_intents WHERE id=%s', (intent_id,)).fetchone()
+        assert tuple(intent) == (intent_id, 'preparing', 'graph_prerequisite_missing')
+        assert database.execute_native('SELECT count(*) FROM repertoire_lines WHERE id=%s',
+                                       ('line-' + token,)).fetchone()[0] == 0
