@@ -634,7 +634,7 @@ def _cut62_projected_defense_table(database, table, primary_key, secret, cohort_
         'daily_queue': "SELECT t.* FROM public.daily_queue t WHERE NOT EXISTS (SELECT 1 FROM cohort c WHERE c.card_id=t.card_id)",
         'queue_attempt_origins': "SELECT t.* FROM public.queue_attempt_origins t WHERE NOT EXISTS (SELECT 1 FROM cohort c WHERE c.card_id=t.card_id)",
         'threat_training_candidates': "SELECT (json_populate_record(t, CASE WHEN EXISTS (SELECT 1 FROM cohort c WHERE c.candidate_id=t.id) THEN '{\"card_id\":null}'::json ELSE '{}'::json END)).* FROM public.threat_training_candidates t",
-        'priority_repertoire_source_epochs': "SELECT (json_populate_record(t, json_build_object('version',t.version+(SELECT count(*) FROM cohort c WHERE c.repertoire_id=t.repertoire_id)))).* FROM public.priority_repertoire_source_epochs t",
+        'priority_repertoire_source_epochs': "SELECT (json_populate_record(t, json_build_object('version',t.version+(SELECT count(*) FROM cohort c WHERE c.repertoire_id=t.repertoire_id)))).* FROM public.priority_repertoire_source_epochs t UNION ALL SELECT r.id AS repertoire_id,(SELECT count(*) FROM cohort c WHERE c.repertoire_id=r.id)::bigint AS version FROM public.repertoires r WHERE EXISTS (SELECT 1 FROM cohort c WHERE c.repertoire_id=r.id) AND NOT EXISTS (SELECT 1 FROM public.priority_repertoire_source_epochs e WHERE e.repertoire_id=r.id)",
         'frozen_opening_runs': "SELECT (json_populate_record(t, CASE WHEN EXISTS (SELECT 1 FROM cohort) AND EXISTS (SELECT 1 FROM public.frozen_opening_pending p WHERE p.run_id=t.run_id) AND t.invalidated=0 THEN '{\"invalidated\":1}'::json ELSE '{}'::json END)).* FROM public.frozen_opening_runs t",
     }
     if table not in views:

@@ -571,7 +571,7 @@ def test_schema61_defense_recognition_review_history_rehearsal(monkeypatch):
             db.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES ('history-rep','synthetic','synthetic','2026-01-01')")
             db.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES ('history-missing','synthetic','synthetic','2026-01-01')")
             for card, kind in [('ordinary','opening'),('themed','tactic'),('recognition','defense'),('move','defense'),('control','defense'),('mixed','defense'),('quiet','defense')]:
-                db.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,content_type) VALUES (%s,%s,'prefix','fen','[]','2026-01-01',%s)", (card,'history-missing' if card=='quiet' else 'history-rep',kind))
+                db.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,content_type) VALUES (%s,%s,'prefix','fen','[]','2026-01-01',%s)", (card,'history-missing' if card in ('quiet','move') else 'history-rep',kind))
             db.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json) VALUES ('history-game','synthetic','synthetic','2026-01-01','rapid',0,'white','draw','fen','[]')")
             db.execute("INSERT INTO game_findings(id,game_id,analysis_version,ply,kind,confidence,evidence_json,created_at,updated_at) VALUES ('history-finding','history-game',1,1,'synthetic',1,'{}','2026-01-01','2026-01-01')")
             for number, card in enumerate(('recognition','move','control','mixed','quiet'), 1):
@@ -800,8 +800,8 @@ def test_schema61_defense_recognition_review_history_rehearsal(monkeypatch):
             }.items(): expected[name] = [row for row in expected[name] if not pred(row)]
             for row in expected['threat_training_candidates']:
                 if row['card_id'] in chosen: row['card_id'] = None
-            next(row for row in expected['priority_repertoire_source_epochs'] if row['repertoire_id']=='history-rep')['version'] += 5
-            expected['priority_repertoire_source_epochs'].append({'repertoire_id':'history-missing','version':1})
+            next(row for row in expected['priority_repertoire_source_epochs'] if row['repertoire_id']=='history-rep')['version'] += 3
+            expected['priority_repertoire_source_epochs'].append({'repertoire_id':'history-missing','version':3})
             expected['priority_repertoire_source_epochs'].sort(key=lambda row: json.dumps(row,separators=(',',':'))) 
             next(row for row in expected['frozen_opening_runs'] if row['run_id']=='history-run')['invalidated'] = 1
             # Production-format HMAC projection is checked separately from
@@ -809,6 +809,16 @@ def test_schema61_defense_recognition_review_history_rehearsal(monkeypatch):
             cohort_sql = "SELECT id AS card_id, 'candidate-'||id AS candidate_id, repertoire_id FROM public.cards WHERE id IN ('recognition','move','control','quiet')"
             layout = guard.table_layout(db)
             history_projected = {name: guard._cut62_projected_history_table(db, name, layout[name][0], b'h'*32, cohort_sql) for name in guard.CUT62_HISTORY_PROJECTED_TABLES}
+            # Legacy C11 projection must model the same absent-row upsert.
+            quiet_cohort = "SELECT id card_id,'candidate-'||id candidate_id,repertoire_id FROM public.cards WHERE id='quiet'"
+            old_epoch_projection=guard._cut62_projected_defense_table(db,'priority_repertoire_source_epochs',layout['priority_repertoire_source_epochs'][0],b'h'*32,quiet_cohort)
+            db.execute('SAVEPOINT legacy_missing_epoch')
+            db.execute("UPDATE threat_training_candidates SET card_id=NULL WHERE id='candidate-quiet'")
+            db.execute('DELETE FROM daily_queue WHERE id=910006')
+            db.execute('DELETE FROM queue_attempt_origins WHERE queue_entry_id=910006')
+            db.execute("DELETE FROM cards WHERE id='quiet'")
+            assert guard._cut62_table(db,'priority_repertoire_source_epochs',layout['priority_repertoire_source_epochs'][0],b'h'*32)==old_epoch_projection
+            db.execute('ROLLBACK TO SAVEPOINT legacy_missing_epoch')
             projected_digests = keyed_digests(expected)
             witness_mac = guard._cut62_mac(b'h'*32, 'history-projection', [json.dumps(selection_mac,sort_keys=True), reference_digest, json.dumps(groups,sort_keys=True), json.dumps(before_digests,sort_keys=True), json.dumps(projected_digests,sort_keys=True)])
             assert witness_mac
