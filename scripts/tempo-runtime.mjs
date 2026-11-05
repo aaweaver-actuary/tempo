@@ -715,23 +715,35 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
         throw new Error('Schema 62 witness directory must be private; keep writers stopped.');
       if (firstCapture) {
         if (existsSync(witnessPath)) throw new Error('Schema 62 witness already exists; refusing to recapture.');
-        await maintenance("database/tooling/verify_postgres_cli_state.py", ["--cut62-capture", `/cut62/${witnessName}`], { cut62Mount: witnessName });
+        const capture = JSON.parse((await maintenance("database/tooling/verify_postgres_cli_state.py", ["--cut62-capture", `/cut62/${witnessName}`], { cut62Mount: witnessName })).stdout);
+        if (typeof capture.witness_id !== "string" || !capture.witness_id) throw new Error("Schema 62 witness identity is invalid; keep writers stopped.");
         const directoryFd = openSync(witnessDirectory, "r");
         try { fsyncSync(directoryFd); } finally { closeSync(directoryFd); }
         // Persist the new directory entry as well as its contents before migration.
         const stateDirectoryFd = openSync(stateDirectory, "r");
         try { fsyncSync(stateDirectoryFd); } finally { closeSync(stateDirectoryFd); }
+        migrationGuard.cut62_identity = { witness_id: capture.witness_id, attempt_id: migrationGuard.attempt_id,
+          backup_filename: migrationGuard.backup.filename };
+        atomicJson(guardPath, migrationGuard);
       }
       requirePrivateCut62Witness(witnessPath);
-      if (status.applied_versions.at(-1) === 61)
-        await maintenance("database/tooling/verify_postgres_cli_state.py",
-          ["--cut62-check-captured", `/cut62/${witnessName}`], { cut62Mount: witnessName });
+      const identity = migrationGuard.cut62_identity;
+      if (!identity?.witness_id || identity.attempt_id !== migrationGuard.attempt_id || identity.backup_filename !== migrationGuard.backup.filename)
+        throw new Error("Original schema 62 witness identity is missing; keep writers stopped.");
+      if (status.applied_versions.at(-1) === 61) {
+        const checked = JSON.parse((await maintenance("database/tooling/verify_postgres_cli_state.py",
+          ["--cut62-check-captured", `/cut62/${witnessName}`], { cut62Mount: witnessName })).stdout);
+        if (checked.witness_id !== identity.witness_id) throw new Error("Original schema 62 witness identity differs; keep writers stopped.");
+      }
     }
     if (status.pending_versions.length) await maintenance("database/tooling/apply_postgres_migrations.py", [], { echo: true });
     try {
-      if (witnessName) await maintenance("database/tooling/verify_postgres_cli_state.py",
-        ["--cut62-verify", `/cut62/${witnessName}`], { cut62Mount: witnessName });
-      else await maintenance("database/tooling/verify_postgres_cli_state.py", ["--expected", JSON.stringify(migrationGuard.study_invariants)]);
+      if (witnessName) {
+        const verified = JSON.parse((await maintenance("database/tooling/verify_postgres_cli_state.py",
+          ["--cut62-verify", `/cut62/${witnessName}`], { cut62Mount: witnessName })).stdout);
+        if (verified.witness_id !== migrationGuard.cut62_identity.witness_id)
+          throw new Error("Original schema 62 witness identity differs; keep writers stopped.");
+      } else await maintenance("database/tooling/verify_postgres_cli_state.py", ["--expected", JSON.stringify(migrationGuard.study_invariants)]);
       originalHistoryVerified = true;
     } catch (error) {
       throw new Error(`Original migration history verification failed; keep writers stopped. Preserve backup ${migrationGuard.backup.filename} and guard ${guardPath}. ${error.message}`, { cause: error });

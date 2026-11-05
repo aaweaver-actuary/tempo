@@ -2597,12 +2597,13 @@ test("schema 62 runtime preserves original witness across failed verification an
       events.push(["capture"]);
       const directory = args[args.indexOf("--volume") + 1].slice(0, -":/cut62".length);
       writeFileSync(join(directory, args.at(-1).split("/").at(-1)), "original", { mode: 0o600 });
-      return "{}";
+      return JSON.stringify({ witness_id: "cut-id" });
     }
     if (args.includes("--cut62-verify")) {
       if (shouldFail) throw new Error("injected verification failure");
-      return "{}";
+      return JSON.stringify({ witness_id: "cut-id" });
     }
+    if (args.includes("--cut62-check-captured")) return JSON.stringify({ witness_id: "cut-id" });
     if (args.includes("database/tooling/verify_postgres_cli_state.py")) return JSON.stringify({ reviews: { digest: "original" } });
   });
   fs.chmodSync(fixture.stateDirectory, 0o700);
@@ -2626,6 +2627,38 @@ test("schema 62 runtime preserves original witness across failed verification an
   assert.equal(captures, 1);
   assert.equal(calls.filter(args => args.includes("--cut62-verify")).length, 2);
   assert(calls.filter(args => args.includes("--cut62-verify")).every(args => args.includes("--volume") && !args.includes("--mount")));
+});
+
+test("schema 62 rejects a different valid witness before migration and after migration", async t => {
+  let schema = 61, swapped = true, captures = 0;
+  const { runtime, fixture } = imageRuntimeFixture(t, "postgres:18.6-trixie", 18, false, args => {
+    if (args.includes("database/tooling/apply_postgres_migrations.py")) {
+      if (args.includes("--check")) return JSON.stringify({ initialized: true, roles_ready: true, credentials_ready: true,
+        expected_version: 62, applied_versions: Array.from({ length: schema }, (_, index) => index + 1), pending_versions: schema === 61 ? [62] : [] });
+      schema = 62; swapped = true; return "";
+    }
+    if (args.includes("--cut62-capture")) {
+      captures += 1;
+      const directory = args[args.indexOf("--volume") + 1].slice(0, -":/cut62".length);
+      writeFileSync(join(directory, args.at(-1).split("/").at(-1)), "original", { mode: 0o600 });
+      return JSON.stringify({ witness_id: "original" });
+    }
+    if (args.includes("--cut62-check-captured") || args.includes("--cut62-verify"))
+      return JSON.stringify({ witness_id: swapped ? "other-valid-witness" : "original" });
+    if (args.includes("database/tooling/verify_postgres_cli_state.py")) return JSON.stringify({ reviews: { digest: "original" } });
+  });
+  fs.chmodSync(fixture.stateDirectory, 0o700);
+  await runtime.config(); await runtime.checkSchema(); await runtime.backup();
+  await assert.rejects(runtime.migrate(), /witness identity differs/);
+  assert.equal(schema, 61); assert.equal(captures, 1);
+  swapped = false;
+  await assert.rejects(runtime.migrate(), /witness identity differs/);
+  assert.equal(schema, 62); assert.equal(captures, 1);
+  const guard = JSON.parse(readFileSync(join(fixture.stateDirectory, "migration-guard.json"), "utf8"));
+  assert.equal(guard.state, "pending");
+  swapped = false;
+  await runtime.checkSchema(); await runtime.migrate();
+  assert.equal(captures, 1);
 });
 
 test("schema 62 interrupted capture leaves original guard fenced and never rebaselines", async t => {
@@ -2697,17 +2730,17 @@ for (const failure of ["intermediate_verification", "capture", "witness_check", 
         if (failure === "capture" && !failed) { failed = true; throw new Error("injected capture failure"); }
         const directory = args[args.indexOf("--volume") + 1].slice(0, -":/cut62".length);
         writeFileSync(join(directory, args.at(-1).split("/").at(-1)), "original", { mode: 0o600 });
-        return "{}";
+        return JSON.stringify({ witness_id: "cut-id" });
       }
       if (args.includes("--cut62-check-captured")) {
         order.push("check61");
         if (failure === "witness_check" && !failed) { failed = true; throw new Error("injected witness failure"); }
-        return "{}";
+        return JSON.stringify({ witness_id: "cut-id" });
       }
       if (args.includes("--cut62-verify")) {
         order.push("verify62");
         if (failure === "post_migration_verification" && !failed) { failed = true; throw new Error("injected post-migration failure"); }
-        return "{}";
+        return JSON.stringify({ witness_id: "cut-id" });
       }
       if (args.includes("database/tooling/verify_postgres_cli_state.py")) return JSON.stringify({ reviews: { digest: "schema59-original" } });
     });
@@ -2763,8 +2796,9 @@ test("schema 59 cutover resumes interrupted schema 60 using the original backup"
       captures += 1;
       const directory = args[args.indexOf("--volume") + 1].slice(0, -":/cut62".length);
       writeFileSync(join(directory, args.at(-1).split("/").at(-1)), "original", { mode: 0o600 });
-      return "{}";
+      return JSON.stringify({ witness_id: "cut-id" });
     }
+    if (args.includes("--cut62-check-captured") || args.includes("--cut62-verify")) return JSON.stringify({ witness_id: "cut-id" });
     if (args.includes("database/tooling/verify_postgres_cli_state.py")) return JSON.stringify({ reviews: { digest: "original59" } });
   });
   fs.chmodSync(fixture.stateDirectory, 0o700);
