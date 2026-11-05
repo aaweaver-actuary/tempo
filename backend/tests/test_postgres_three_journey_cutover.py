@@ -28,7 +28,7 @@ def test_cut62_guard_retains_full_fixed_ledger_and_rejects_tamper(monkeypatch):
     monkeypatch.setattr(guard, '_cut62_layout', lambda database, names: {name: layout[name] for name in names})
     monkeypatch.setattr(guard, '_cut62_table', lambda database, name, key, secret: state[name].copy())
     witness = guard.capture_cut62(FakeDatabase(), b'x' * 32)
-    assert len(guard.CUT62_PROTECTED_TABLES) == 185
+    assert len(guard.CUT62_PROTECTED_TABLES) == 182
     assert guard.verify_cut62(FakeDatabase(), witness, b'x' * 32)['to'] == 62
     name = next(iter(guard.CUT62_PROTECTED_TABLES))
     state[name]['digest'] = 'tampered'
@@ -66,7 +66,7 @@ def test_cut62_layout_rejects_unexpected_table(monkeypatch):
 
 def test_cut62_rejects_reintroduced_retired_relation(monkeypatch):
     source = guard.CUT62_PROTECTED_TABLES | guard.CUT62_RETIRED_TABLES | {guard.CUT62_LEDGER}
-    witness = {'version': 3, 'from': 61, 'to': 62,
+    witness = {'version': guard.CUT62_EVIDENCE_VERSION, 'from': 61, 'to': 62,
                'layout': dict.fromkeys(source), 'rows': dict.fromkeys(source - {guard.CUT62_LEDGER})}
     monkeypatch.setattr(guard, '_cut62_session', lambda database: None)
     monkeypatch.setattr(guard, '_cut62_versions', lambda database, version: None)
@@ -127,6 +127,11 @@ def test_cut62_native_schema61_to62(tmp_path):
         db.execute("INSERT INTO defense_attempts(attempt_id,candidate_id,card_id,queue_entry_id,exercise_revision,move_uci,grade_json,reviewed_at) VALUES ('attempt','candidate','defense',700002,1,'e2e4','{\"status\":\"incorrect\",\"diagnostic\":\"original\"}','2026-01-01')")
         db.execute("INSERT INTO endgame_templates(id,card_id,name,white_material,black_material,trained_color,goal_mix,created_at) VALUES ('template','endgame','synthetic','K','K','white','{}','2026-01-01')")
         db.execute("INSERT INTO endgame_attempts(id,template_id,start_fen,target,created_at) VALUES ('end-attempt','template','synthetic','draw','2026-01-01')")
+        db.execute("INSERT INTO tactic_pack_activation(pack_id,active) VALUES ('synthetic-pack',1)")
+        db.execute("INSERT INTO tactic_progress(puzzle_id,deck_id,card_id) VALUES ('synthetic-puzzle','synthetic-pack','tactic')")
+        db.execute("INSERT INTO daily_chess_insights(id,local_day,kind,evidence_json,created_at,updated_at) VALUES ('insight','2026-01-01','synthetic','{}','2026-01-01','2026-01-01')")
+        db.execute("INSERT INTO daily_statistics_jobs(local_day,updated_at) VALUES ('2026-01-01','2026-01-01')")
+        db.execute("INSERT INTO game_insight_recommendations(motif,miss_count,total_loss_cp,supporting_games_json,recommended_pack_id,updated_at) VALUES ('fork',1,100,'[\"fixture-game\"]','synthetic-pack','2026-01-01')")
         db.execute("INSERT INTO next_opponent_snapshots(version,account,method_version,profile_json,published_at) VALUES ('version','synthetic','1','{}','2026-01-01')")
         db.execute("INSERT INTO next_opponent_accounts(account,profile_version) VALUES ('synthetic','version')")
         db.execute("INSERT INTO game_analysis_jobs(game_id,updated_at) VALUES ('fixture-game','2026-01-01')")
@@ -150,7 +155,7 @@ def test_cut62_native_schema61_to62(tmp_path):
         captured_id = guard.save_cut62_witness(path, db)
     witness, secret = guard.load_cut62_witness(path)
     assert witness['rows']['defense_attempts']['count'] == 1
-    assert witness['version'] == 3
+    assert witness['version'] == 4
     assert all(witness['rows'][name]['count'] == 1 for name in guard.CUT62_RETIRED_TABLES)
     assert witness['sequences']['retired']['count'] == 1
     with psycopg.connect(dsn) as db:
@@ -180,7 +185,7 @@ def test_cut62_native_schema61_to62(tmp_path):
         guard.verify_cut62(db, witness, secret)
         assert db.execute("SELECT to_regclass('public.game_analysis_position_errors_id_seq')").fetchone()[0] is None
         old = copy.deepcopy(witness)
-        old['version'] = 2
+        old['version'] = 3
         with pytest.raises(RuntimeError, match='unsupported'):
             guard.verify_cut62(db, old, secret)
     apply_migrations(dsn)
