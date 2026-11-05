@@ -63,8 +63,6 @@ def create_canonical_prefix_router(wake: Callable[[], None]) -> APIRouter:
             return dispatch_command("repertoire.canonical_prefix.save", payload, idempotency_key=idempotency_key)
         with connection() as database:
             result = save_prefix(database, payload)
-        from .services.repertoire_coverage import enqueue_coverage_refresh
-        enqueue_coverage_refresh(identifier, automatic=True)
         wake()
         return result
 
