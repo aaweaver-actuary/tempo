@@ -340,6 +340,7 @@ export function composeResourceLimits(services, owner, allocations = resourceBud
 
 export async function waitForStudyQuiet({ activityUrl = process.env.TEMPO_STUDY_ACTIVITY_URL ?? 'http://127.0.0.1:8000/api/system/foreground-active',
   read = fetch, pause = wait, signal, hostActivity = readHostStudyActivity,
+  offlineCheck = null,
   legacyAbsent = process.env.TEMPO_STUDY_ACTIVITY_LEGACY === 'absent' ||
     process.env.GITHUB_ACTIONS === 'true' && process.env.RUNNER_ENVIRONMENT === 'github-hosted' && !process.env.TEMPO_STUDY_ACTIVITY_URL } = {}) {
   for (;;) {
@@ -347,17 +348,20 @@ export async function waitForStudyQuiet({ activityUrl = process.env.TEMPO_STUDY_
     const host = await hostActivity();
     if (!host.available || host.active) { await pause(500); continue; }
     if (legacyAbsent) return;
+    let offline = true;
     try {
       const response = await read(activityUrl, { signal: AbortSignal.any([AbortSignal.timeout(200), ...(signal ? [signal] : [])]),
         headers: { 'X-Tempo-Work-Class': 'background' } });
       if (response.ok) { const state = await response.json();
         if (state.active === false && state.available !== false) return;
+        if (state.active === true || state.available !== false) offline = false;
       }
     } catch (error) {
       signal?.throwIfAborted();
       if (["EPERM", "EACCES"].includes(error.cause?.code)) throw new Error("Study activity cannot be checked: local network permission is required");
       // Refusal is unavailable control, never proof that no protected Study exists.
     }
+    if (offline && offlineCheck && await offlineCheck()) return;
     await pause(500);
   }
 }

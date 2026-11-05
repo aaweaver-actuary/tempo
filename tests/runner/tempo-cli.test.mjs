@@ -10,12 +10,23 @@ import { join } from "node:path";
 import { schemaVersionFromSource, validateTarget, validateContainers, deploymentCanStart,
   acquireTargetLock, assessMainVerification, assessCandidate, qualityEvidence, atomicJson, selectCandidate, productVolumes, targetKey,
   CommandExecutionError, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, sourceFingerprint, sourceMatchesFingerprint } from "../../scripts/tempo-deployment.mjs";
-import { assessMigrationRecovery, cut62WitnessName, validateCut62Preflight, assertColdPreflightContainers, cut62MountDirectory, requirePrivateCut62Witness, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
+import { assessMigrationRecovery, cut62WitnessName, validateCut62Preflight, assertColdPreflightContainers, assertOfflineBuildContainers, cut62MountDirectory, requirePrivateCut62Witness, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
 import { parseArguments, ensureDocker } from "../../scripts/tempo-cli.mjs";
 import { authenticateManagedSettlement, inspectRegisteredIsolation, matchesManagedPinnedHelper, runManagedPinnedChild } from "../../scripts/tempo-managed-isolation.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
 import { validateOwnedPostgresTelemetry } from '../../database/tests/managed_cli_rehearsal.mjs';
+
+test('offline image build requires stopped registered API and all writers', () => {
+  const target={project:'tempo',postgresVolumeKey:'data',volumes:{data:{name:'owned'}}};
+  const service=(name,running=false)=>({Config:{Labels:{'com.docker.compose.project':'tempo','com.docker.compose.service':name}},State:{Running:running,Restarting:false}});
+  const api=service('api'),db={...service('postgres'),Image:'sha256:original',Mounts:[{Type:'volume',Name:'owned',Destination:'/var/lib/postgresql',RW:true}]};
+  const previous={images:{postgres:'sha256:original'}};
+  assert.doesNotThrow(()=>assertOfflineBuildContainers([api,db,service('foreground-worker')],target,previous));
+  assert.throws(()=>assertOfflineBuildContainers([service('api',true),db],target,previous),/active/);
+  assert.throws(()=>assertOfflineBuildContainers([api,db,service('unknown',true)],target,previous),/active/);
+  assert.throws(()=>assertOfflineBuildContainers([api,{...db,Image:'sha256:other'}],target,previous),/identity/);
+});
 
 test('owned PostgreSQL telemetry requires the full exact container identity', () => {
   const id='a'.repeat(64), project='tempo-pg-regressions-owned-cli', image='sha256:owned';
