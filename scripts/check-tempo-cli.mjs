@@ -11,6 +11,7 @@ import { applicationServices, configurationFingerprint, createRuntime, executeLi
 import { postgresCommandTiming } from "./test-scenario-timings.mjs";
 import { studyDurabilityPgn } from "../database/tests/postgres-test-fixture.mjs";
 import { Chess } from "chess.js";
+import { createHash } from 'node:crypto';
 import { verifyPersistedRedisReadiness } from "../database/tests/redis/check-redis-readiness.mjs";
 import { forgetMigrationSuffix, markHistoryIncorrect, markHistoryCorrect, readLatestMigration } from "../database/tests/cli/lifecycle-storage.mjs";
 
@@ -178,6 +179,26 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
       await compose(["-f", oldOverlay, "up", "-d", "--no-build", "--no-deps", "--wait",
         "foreground-worker", "background-worker", "background-scheduler", "api", "web", "postgres-backup"], { echo: true });
       if (environment.TEMPO_LIFECYCLE_MANAGED_REHEARSAL === '1') {
+        const oldServices=['foreground-worker','background-worker','background-scheduler','api','web','postgres-backup'];
+        const oldIds=(await compose(['ps','-q',...oldServices])).stdout.trim().split(/\s+/).filter(Boolean);
+        const oldContainers=JSON.parse((await docker(['inspect',...oldIds])).stdout);
+        for (const service of oldServices) {
+          const item=oldContainers.find(container=>container.Config?.Labels?.['com.docker.compose.service']===service);
+          assert(item?.State?.Running,`Owned historical ${service} must be running before the baseline stop`);
+          assert.equal(item.Image,schema61Images[service]);
+        }
+        assert.equal(Number((await readLatestMigration(compose)).stdout.trim()),59);
+        assert.deepEqual(await readHistory(),expected);
+        const postgresId=(await compose(['ps','-q','postgres'])).stdout.trim();
+        const postgres=JSON.parse((await docker(['inspect',postgresId])).stdout)[0];
+        const facts=JSON.parse((await docker(['exec','--user','postgres',postgresId,'psql','-X','-A','-t','-U','postgres','-d','postgres','-c',
+          "SELECT json_build_object('system',(select system_identifier::text from pg_control_system()),'target',(select oid::bigint from pg_database where datname='tempo'),'control',(select oid::bigint from pg_database where datname='postgres'))"])).stdout);
+        atomicJson(join(directory,'managed-baseline.json'),{project:childProject,schema:59,postgresId,postgresImage:postgres.Image,
+          facts,historySha256:createHash('sha256').update(JSON.stringify(expected)).digest('hex'),
+          oldServices:Object.fromEntries(oldServices.map(service=>[service,oldContainers.find(item=>item.Config.Labels['com.docker.compose.service']===service).Image]))});
+        await compose(['stop','--timeout','60',...oldServices,'redis'],{echo:true});
+        const active=(await compose(['ps','--status','running','--services'])).stdout.trim().split(/\s+/).filter(Boolean);
+        assert.deepEqual(active,['postgres'],'Only the owned PostgreSQL target remains running before CLI image preparation');
         const { runOwnedManagedCliRehearsal } = await import('../database/tests/managed_cli_rehearsal.mjs');
         await runOwnedManagedCliRehearsal({ root, project:childProject, target, config, context, daemonId, images,
           revision, environment:childEnvironment, stateRoot, stateDirectory, registration, directory, compose, docker,
