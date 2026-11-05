@@ -144,6 +144,32 @@ def test_native_missing_graph_parks_accepted_intent_without_changing_identity(ow
         assert database.execute_native('SELECT count(*) FROM repertoire_lines WHERE id=%s',
                                        ('line-' + token,)).fetchone()[0] == 0
 
+    # Fixture-only synthetic prerequisite facts exercise the owner retry, not
+    # the real graph/scan lifecycle. The actual claimant stays disabled.
+    from app import activity_commands
+    graph_id, scan_id = 'graph-' + token, 'scan-' + token
+    with postgres_store.connection(read_only=False) as database:
+        database.execute_native("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES(%s,1,'ready',%s)", (repertoire, now))
+        for owner_id, kind in ((graph_id, 'opening_graph_rebuild'), (scan_id, 'integrity_scan')):
+            database.execute_native(
+                "INSERT INTO background_tasks(id,kind,deduplication_key,generation,state,payload_json,next_attempt_at,created_at,updated_at) "
+                "VALUES(%s,%s,%s,1,'complete',%s,%s,%s,%s)",
+                (owner_id, kind, repertoire, json.dumps({'repertoire_id': repertoire, 'graph_generation': 1}), now, now, now))
+        database.execute_native(
+            "INSERT INTO repertoire_integrity_state(repertoire_id,status,checked_at,scan_status,scan_generation,scan_completed_sources,scan_total_sources) "
+            "VALUES(%s,'clean',%s,'idle',%s,1,1)", (repertoire, now, scan_id + ':1'))
+    monkeypatch.setattr(activity_commands, '_DISCOVERY_RECOVERY_QUALIFIED', True)
+    request = {'task_id': task_id, 'generation': 3, 'intent_id': intent_id, 'hold_reason': 'graph_prerequisite_missing'}
+    with postgres_store.connection(read_only=False) as database:
+        result = activity_commands._retry_retained_discovery(database, request)
+        assert result['id'] == task_id and result['generation'] == 3
+    postgres_store.close_pools()
+    with postgres_store.connection(read_only=True) as database:
+        row = database.execute_native('SELECT id,generation,state,next_attempt_at,lease_token FROM background_tasks WHERE id=%s', (task_id,)).fetchone()
+        assert row['id'] == task_id and row['generation'] == 3 and row['state'] == 'queued'
+        assert row['next_attempt_at'] != '9999-12-31T23:59:59+00:00' and row['lease_token'] is None
+        assert database.execute_native("SELECT count(*) FROM background_task_events WHERE task_id=%s AND event='manual_retry'", (task_id,)).fetchone()[0] == 1
+
 
 def test_native_graph_owner_contention_is_nonblocking_and_distinct_from_missing(owned_database):
     from time import monotonic
