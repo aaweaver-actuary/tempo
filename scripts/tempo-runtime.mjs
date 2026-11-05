@@ -433,6 +433,9 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   const guardPath = join(stateDirectory, "migration-guard.json");
   let migrationGuard = existsSync(guardPath) ? JSON.parse(readFileSync(guardPath, "utf8")) : null;
   let originalHistoryVerified = false;
+  // A completed disposable isolation record is authenticated in preflight
+  // before any application startup, including direct calls to startServices.
+  let completedIsolationPending = Boolean(migrationGuard?.isolation);
   let approvedSelection;
   let verifiedPostgresImage;
   const operation = { id: randomUUID(), revision, started_at: new Date().toISOString(), phase: "checking", target: target.project };
@@ -764,7 +767,105 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     return status;
   }
 
+  async function authenticateCompletedIsolation() {
+    const guard = migrationGuard, isolation = guard?.isolation, identity = isolation?.identity;
+    if (!target.disposable || guard?.state !== "verified" || guard.verified_schema !== 62 ||
+        isolation?.phase !== "reattached" || identity?.trustedDaemon !== true || identity.target !== targetKey(target))
+      throw new Error("Original disposable completion is invalid; keep writers stopped.");
+    const witnessName = cut62WitnessName(guard), directory = cut62MountDirectory(stateDirectory, witnessName);
+    const receiptPath = join(directory, "verified-receipt.json"), completionPath = join(directory, "verified-completion.json");
+    let receipt, completion, completionBytes;
+    try {
+      receipt = JSON.parse(privateBytes(receiptPath)); completionBytes = privateBytes(completionPath);
+      completion = JSON.parse(completionBytes);
+    } catch { throw new Error("Original disposable completion evidence is invalid; keep writers stopped."); }
+    if (isolation.completion?.filename !== "verified-completion.json" ||
+        createHash("sha256").update(completionBytes).digest("hex") !== isolation.completion?.sha256)
+      throw new Error("Original disposable completion identity differs; keep writers stopped.");
+    syncDisposableIsolationEvidence({ guardPath, guard, receiptPath, receipt });
+    syncDisposableIsolationEvidence({ guardPath, guard, receiptPath: completionPath, receipt: completion });
+    let inventory = await inspectContainerInventory(); validateContainers(inventory, target);
+    const projectDatabases = () => inventory.filter(container => container.Config?.Labels?.["com.docker.compose.project"] === target.project &&
+      container.Config?.Labels?.["com.docker.compose.service"] === "postgres");
+    let databases = projectDatabases();
+    if (databases.length !== 1 || databases[0].Id !== identity.containerId || databases[0].Image !== identity.imageId)
+      throw new Error("Original disposable database container differs; keep writers stopped.");
+    let network = JSON.parse((await docker(["network", "inspect", identity.networkId])).stdout)[0];
+    const daemonId = (await docker(["info", "--format", "{{.ID}}"])).stdout.trim();
+    if (!databases[0].State?.Running) {
+      assertColdPreflightContainers(inventory, target.project);
+      const stopped = databases[0], host = stopped.HostConfig ?? {}, networks = Object.values(stopped.NetworkSettings?.Networks ?? {});
+      const ports = stopped.NetworkSettings?.Ports;
+      const mounts = (stopped.Mounts ?? []).filter(mount => typeof mount?.Destination === "string" &&
+        (mount.Destination === "/" || mount.Destination === "/var/lib/postgresql" ||
+          "/var/lib/postgresql".startsWith(mount.Destination + "/") || mount.Destination.startsWith("/var/lib/postgresql/")));
+      if (daemonId !== identity.daemonId || host.NetworkMode !== identity.networkName || host.PublishAllPorts !== false ||
+          !(host.PortBindings === null || (host.PortBindings && typeof host.PortBindings === "object" && !Array.isArray(host.PortBindings) && !Object.keys(host.PortBindings).length)) ||
+          !(ports === null || (ports && typeof ports === "object" && !Array.isArray(ports) &&
+            Object.values(ports).every(value => value === null || (Array.isArray(value) && value.length === 0)))) || networks.length > 1 ||
+          (networks.length && networks[0].NetworkID !== identity.networkId) || mounts.length !== 1 ||
+          mounts[0].Type !== "volume" || mounts[0].Name !== identity.volumeName || mounts[0].Source !== identity.volumeSource || mounts[0].RW !== true ||
+          network?.Id !== identity.networkId || network?.Name !== identity.networkName || network?.Driver !== "bridge" ||
+          network?.Labels?.["com.docker.compose.project"] !== target.project)
+        throw new Error("Stopped disposable database topology differs; keep writers stopped.");
+      await ensureDatabase({ allowRecreation: false });
+      inventory = await inspectContainerInventory(); validateContainers(inventory, target); databases = projectDatabases();
+      network = JSON.parse((await docker(["network", "inspect", identity.networkId])).stdout)[0];
+    }
+    if (databases.length !== 1 || !inspectDisposableIsolation({ target, daemonId, container: databases[0], network,
+      expectedImage: identity.imageId, trustedDaemon: true, intent: identity }).attached)
+      throw new Error("Original disposable network is unavailable; keep writers stopped.");
+    const source = `import hashlib,hmac,json,os,sys,psycopg
+from database.tooling.verify_postgres_cli_state import load_cut62_defense_selection,load_cut62_attempt_binding,load_cut62_witness,cut62_witness_id
+try:
+ selection,digest=load_cut62_defense_selection('/cut62/defense-selection.json')
+ binding=load_cut62_attempt_binding('/cut62/binding.json',selection,digest)
+ witness,secret=load_cut62_witness('/cut62/'+sys.argv[1])
+ receipt=json.load(open('/cut62/verified-receipt.json'))
+ completion=json.load(open('/cut62/verified-completion.json'))
+ canonical=json.dumps(completion['payload'],sort_keys=True,separators=(',',':')).encode()
+ signature=hmac.new(secret,b'tempo-disposable-completion-v1\\0'+canonical,hashlib.sha256).hexdigest()
+ if not hmac.compare_digest(signature,completion['signature']) or witness.get('binding')!=binding or witness.get('selection')!=selection or not selection['keys']: raise ValueError('evidence')
+ with psycopg.connect(os.environ['TEMPO_POSTGRES_ADMIN_URL'],options='-c default_transaction_read_only=on') as db:
+  row=db.execute("SELECT current_database(),current_user,(SELECT system_identifier::text FROM pg_control_system()),(SELECT oid FROM pg_database WHERE datname=current_database()),(SELECT datallowconn FROM pg_database WHERE datname=current_database()),(SELECT COALESCE(max(version),0) FROM public.tempo_schema_migrations),(SELECT oid FROM pg_database WHERE datname='postgres')").fetchone()
+ print(json.dumps({'witness_id':cut62_witness_id(witness,secret),'binding':binding,'receipt':receipt,'payload':completion['payload'],'database':row}))
+except Exception: sys.exit('Disposable completion authentication failed')`;
+    let checked;
+    try { checked = JSON.parse((await maintenance("-c", [source, witnessName], { cut62Mount: witnessName })).stdout); }
+    catch { throw new Error("Original disposable completion authentication failed; keep writers stopped."); }
+    const expectedReceipt = { version: 1, target: guard.target, attempt_id: guard.attempt_id, target_oid: isolation.target_oid,
+      target_name: isolation.target_name, system_identifier: isolation.system_identifier, control_oid: isolation.control_oid,
+      control_name: isolation.control_name, admin_role: isolation.admin_role, daemon_id: identity.daemonId,
+      container_id: identity.containerId, network_id: identity.networkId, image_id: identity.imageId,
+      backup_filename: guard.defense_binding?.backup_filename, backup_sha256: guard.defense_binding?.backup_sha256,
+      selection_sha256: guard.defense_binding?.selection_sha256, pre62_witness_id: guard.starting_schema === 59 ? guard.pre62_witness_id : null,
+      cut62_witness_id: guard.cut62_identity?.witness_id, schema: 62 };
+    const expectedPayload = { version: 1, target: guard.target, attempt_id: guard.attempt_id, identity,
+      target_oid: isolation.target_oid, system_identifier: isolation.system_identifier, control_oid: isolation.control_oid,
+      backup: guard.defense_binding, pre62_witness_id: expectedReceipt.pre62_witness_id,
+      cut62_witness_id: expectedReceipt.cut62_witness_id, receipt: expectedReceipt };
+    if (!isDeepStrictEqual(receipt, expectedReceipt) || !isDeepStrictEqual(checked.receipt, receipt) ||
+        !isDeepStrictEqual(checked.payload, expectedPayload) || !isDeepStrictEqual(checked.binding, guard.defense_binding) ||
+        checked.witness_id !== guard.cut62_identity?.witness_id ||
+        !isDeepStrictEqual(checked.database, [isolation.target_name, isolation.admin_role, isolation.system_identifier, isolation.target_oid, true, 62, isolation.control_oid]) ||
+        await verifiedBackupDigest(guard.backup) !== guard.defense_binding?.backup_sha256)
+      throw new Error("Original disposable completion or target differs; keep writers stopped.");
+    if (guard.starting_schema === 59) {
+      const preName = guard.pre62_witness;
+      const pre = JSON.parse((await maintenance("database/tooling/verify_postgres_cli_state.py",
+        ["--pre62-authenticate59", `/cut62/${preName}`], { cut62Mount: preName })).stdout);
+      if (pre.witness_id !== guard.pre62_witness_id || guard.cut62_intermediate_verified?.pre62_witness_id !== pre.witness_id ||
+          guard.cut62_intermediate_verified?.attempt_id !== guard.attempt_id || guard.cut62_intermediate_verified?.schema !== 61 ||
+          guard.cut62_intermediate_verified?.backup_filename !== guard.backup.filename)
+        throw new Error("Original schema 59 completion differs; keep writers stopped.");
+    }
+    if (!isDeepStrictEqual(JSON.parse(privateBytes(guardPath)), guard))
+      throw new Error("Original disposable guard changed; keep writers stopped.");
+    completedIsolationPending = false;
+  }
+
   async function preflightSchema() {
+    if (completedIsolationPending) await authenticateCompletedIsolation();
     if (!(await runningServices()).includes("postgres")) {
       const before = await inspectContainerInventory();
       validateContainers(before, target);
@@ -801,8 +902,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     const assessment = assessMigrationRecovery({ guard: migrationGuard, operation: previousOperation, target, configuration, retry });
     if (assessment.status === "blocked") throw new Error(assessment.message);
     if (migrationGuard?.isolation) {
-      if (!target.disposable || assessment.status !== "retry-authorized")
-        throw new Error("Isolation recovery is restricted to the original disposable attempt; keep writers stopped.");
+      if (!target.disposable) throw new Error("Isolation recovery is restricted to the original disposable attempt; keep writers stopped.");
       const receiptPath = join(cut62MountDirectory(stateDirectory, cut62WitnessName(migrationGuard)), "verified-receipt.json");
       let receipt = null;
       if (existsSync(receiptPath)) {
@@ -813,6 +913,17 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
       // A prior rename can be visible despite its directory fsync failing.
       syncDisposableIsolationEvidence({ guardPath, guard: migrationGuard,
         ...(receipt === null ? {} : { receiptPath, receipt }) });
+      if (assessment.status === "clear" && migrationGuard.state === "verified" && migrationGuard.verified_schema === 62 &&
+          migrationGuard.isolation.phase === "reattached" && receipt !== null &&
+          migrationGuard.isolation.completion?.filename === "verified-completion.json" &&
+          /^[0-9a-f]{64}$/.test(migrationGuard.isolation.completion?.sha256 ?? "")) {
+        const completionPath = join(dirname(receiptPath), "verified-completion.json");
+        let completion;
+        try { completion = JSON.parse(privateBytes(completionPath)); } catch { throw new Error("Original isolation completion is unavailable or invalid; keep writers stopped."); }
+        syncDisposableIsolationEvidence({ guardPath, guard: migrationGuard, receiptPath: completionPath, receipt: completion });
+        completedIsolationPending = true;
+        return false;
+      }
       // No physical recovery action is enabled until the isolated pinned
       // handoff, reauthentication and native crash proof are reviewed.
       throw new Error("Disposable isolation recovery requires the reviewed pinned handoff; keep writers stopped.");
@@ -1078,7 +1189,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   }
 
   function requireVerifiedMigration() {
-    if (migrationGuard?.state === "pending") throw new Error("Original migration verification is unresolved; keep writers stopped.");
+    if (migrationGuard?.state === "pending" || completedIsolationPending) throw new Error("Original migration verification is unresolved; keep writers stopped.");
   }
 
   async function startServices({ recreate = false } = {}) {
@@ -1170,6 +1281,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     }
     let failure, failedPhase;
     try {
+      if (completedIsolationPending) await authenticateCompletedIsolation();
       await ensureDatabase(); await checkSchema();
       await stopApplications();
       await backup();

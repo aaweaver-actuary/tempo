@@ -2744,6 +2744,29 @@ test("locked disposable retry resyncs isolation guard and receipt before holding
   assert(!calls.some(args => args.includes("disconnect") || args.includes("connect") || args.includes("stop") || args.includes("up")));
 });
 
+test("completed disposable guard defers startup until completion is authenticated", async t => {
+  const { runtime, calls, fixture } = imageRuntimeFixture(t, "postgres:18.6-trixie", 18, false, () => undefined);
+  await runtime.config(); fixture.target.disposable = true; fs.chmodSync(fixture.stateDirectory, 0o700);
+  const attempt = "12345678-1234-1234-1234-123456789abc", name = `cut62-${attempt}.json`;
+  const guard = { version: 1, target: targetKey(fixture.target), database: { name: "tempo", volume: fixture.target.volumes[fixture.target.postgresVolumeKey].name },
+    state: "verified", verified_schema: 62, attempt_id: attempt, starting_schema: 61, intended_schema: 62,
+    starting_versions: Array.from({ length: 61 }, (_, index) => index + 1), study_invariants: { reviews: {} },
+    backup: { verified: true, filename: "original.dump" }, cut62_witness: name,
+    isolation: { phase: "reattached", completion: { filename: "verified-completion.json", sha256: "a".repeat(64) } } };
+  const guardPath = join(fixture.stateDirectory, "migration-guard.json");
+  const witnessDirectory = cut62MountDirectory(fixture.stateDirectory, name); mkdirSync(witnessDirectory, { mode: 0o700 });
+  const receiptPath = join(witnessDirectory, "verified-receipt.json"), completionPath = join(witnessDirectory, "verified-completion.json");
+  atomicJson(guardPath, guard); atomicJson(receiptPath, { version: 1 }); atomicJson(completionPath, { version: 1 });
+  const original = readFileSync(guardPath);
+  assert.equal(runtime.checkMigrationRetry(), false);
+  await assert.rejects(runtime.startServices(), /verification is unresolved/);
+  assert.deepEqual(readFileSync(guardPath), original);
+  assert(!calls.some(args => args.includes("up")), "Deferral must not start applications.");
+  rmSync(completionPath);
+  assert.throws(() => runtime.checkMigrationRetry(), /completion is unavailable or invalid/);
+  assert.deepEqual(readFileSync(guardPath), original);
+});
+
 test("isolation retry resyncs a guard visible after rename-before-directory-fsync failure", t => {
   const dir = directory(t), guardPath = join(dir, "migration-guard.json");
   const old = { state: "pending", isolation: { phase: "previous" } }, next = { state: "pending", isolation: { phase: "intent" } };

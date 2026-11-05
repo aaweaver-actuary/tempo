@@ -1,11 +1,12 @@
 // Real CLI maintenance on its own populated PostgreSQL volumes. All images are
 // reused from this test invocation; no live product target is adopted.
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { closeSync, existsSync, fsyncSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { acquireTargetLock, atomicJson, commandExecutor, portsFromConfig, productVolumes, redact, schemaVersionFromSource, targetKey, validateTarget } from "./tempo-deployment.mjs";
 import { applicationServices, configurationFingerprint, createRuntime, executeLifecycle, releaseComposeFiles } from "./tempo-runtime.mjs";
 import { postgresCommandTiming } from "./test-scenario-timings.mjs";
@@ -14,8 +15,119 @@ import { Chess } from "chess.js";
 import { verifyPersistedRedisReadiness } from "../database/tests/redis/check-redis-readiness.mjs";
 import { forgetMigrationSuffix, markHistoryIncorrect, markHistoryCorrect, readLatestMigration } from "../database/tests/cli/lifecycle-storage.mjs";
 
+async function exerciseIsolatedDefense({ target, run, compose, docker, makeRuntime, lifecycle, stateDirectory,
+  revision, evidence, preparedImages, selectionPath, componentPython, environment, childEnvironment, images }) {
+  const release = acquireTargetLock(stateDirectory);
+  const syncDirectory = path => { const fd = openSync(path, "r"); try { fsyncSync(fd); } finally { closeSync(fd); } };
+  const writeOnce = (path, value) => {
+    const fd = openSync(path, "wx", 0o600);
+    try { writeFileSync(fd, value); fsyncSync(fd); } finally { closeSync(fd); }
+  };
+  const maintenance = (script, args = [], mount = null) => compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T",
+    ...(mount ? ["--volume", `${mount}:/cut62`] : []), "migration", script, ...args]);
+  try {
+    const runtime = makeRuntime(target, { run, stateDirectory, revision, evidence, preparedImages, defenseSelection: selectionPath });
+    await runtime.inspectTarget(); await runtime.ensureImages();
+    await assert.rejects(runtime.preflightSchema(), /Nonempty Defense cleanup is unavailable/,
+      "The shipped launcher must still reject nonempty Defense cleanup.");
+    await runtime.stopApplications(); await runtime.ensureDatabase({ allowRecreation: false });
+    const status = await runtime.checkSchema();
+    assert.equal(status.applied_versions.at(-1), 59); assert.equal(status.expected_version, 62);
+    const backup = await runtime.backup();
+    assert.equal(backup.verified, true); assert.equal(backup.restore_removed, true);
+    const operation = JSON.parse(readFileSync(join(stateDirectory, "operation.json"), "utf8"));
+    const attempt = operation.id;
+    assert.match(attempt, /^[0-9a-f-]{36}$/i);
+    const guardPath = join(stateDirectory, "migration-guard.json");
+    assert(!existsSync(guardPath), "An original migration guard must never be replaced.");
+    const witnessName = `cut62-${attempt}.json`, preName = `pre62-${attempt}.json`;
+    const witnessDirectory = join(stateDirectory, witnessName.slice(0, -5));
+    const preDirectory = join(stateDirectory, preName.slice(0, -5));
+    if (/[:,\n\r]/.test(stateDirectory)) throw new Error("Disposable private mount path is unsafe.");
+    const study = JSON.parse((await maintenance("database/tooling/verify_postgres_cli_state.py")).stdout);
+    let guard = { version: 1, target: targetKey(target), database: { name: "tempo", volume: target.volumes[target.postgresVolumeKey].name },
+      attempt_id: attempt, origin_revision: revision, starting_schema: 59, starting_versions: status.applied_versions,
+      intended_schema: 62, study_invariants: study, backup, state: "pending", created_at: new Date().toISOString(),
+      cut62_witness: witnessName, pre62_witness: preName };
+    atomicJson(guardPath, guard);
+    mkdirSync(witnessDirectory, { mode: 0o700 }); mkdirSync(preDirectory, { mode: 0o700 });
+    const selection = readFileSync(selectionPath);
+    const digestResult = await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "--entrypoint", "sh",
+      "postgres-backup", "-ec", 'cd /backups; sha256sum -c "$1.sha256" >/dev/null; sha256sum "$1" | cut -d " " -f1', "sh", backup.filename]);
+    const backupDigest = digestResult.stdout.trim(); assert.match(backupDigest, /^[0-9a-f]{64}$/);
+    const binding = { version: 1, target: targetKey(target), attempt_id: attempt, backup_filename: backup.filename,
+      backup_sha256: backupDigest, selection_sha256: createHash("sha256").update(selection).digest("hex") };
+    writeOnce(join(witnessDirectory, "defense-selection.json"), selection);
+    writeOnce(join(witnessDirectory, "binding.json"), JSON.stringify(binding));
+    syncDirectory(witnessDirectory); syncDirectory(stateDirectory);
+    guard.defense_binding = binding; atomicJson(guardPath, guard);
+    const captured59 = JSON.parse((await maintenance("database/tooling/verify_postgres_cli_state.py", ["--pre62-capture59", `/cut62/${preName}`], preDirectory)).stdout);
+    syncDirectory(preDirectory); syncDirectory(stateDirectory);
+    guard.pre62_witness_id = captured59.witness_id; atomicJson(guardPath, guard);
+    const check59 = async version => {
+      const checked = JSON.parse((await maintenance("database/tooling/verify_postgres_cli_state.py", ["--pre62-verify59", `/cut62/${preName}`], preDirectory)).stdout);
+      assert.equal(checked.witness_id, guard.pre62_witness_id); assert.equal(checked.observed_schema, version);
+    };
+    await check59(59);
+    await maintenance("database/tooling/apply_postgres_migrations.py", ["--target-version", "61"]);
+    await check59(61);
+    await maintenance("database/tooling/verify_postgres_cli_state.py", ["--expected", JSON.stringify(study)]);
+    guard.cut62_intermediate_verified = { schema: 61, pre62_witness: preName, pre62_witness_id: guard.pre62_witness_id,
+      attempt_id: attempt, backup_filename: backup.filename, verified_at: new Date().toISOString() };
+    guard.cut62_capture_started = true; atomicJson(guardPath, guard);
+    const defenseArgs = ["--defense-selection", "/cut62/defense-selection.json", "--cut62-binding", "/cut62/binding.json"];
+    const captured = JSON.parse((await maintenance("database/tooling/verify_postgres_cli_state.py",
+      ["--cut62-capture", `/cut62/${witnessName}`, ...defenseArgs], witnessDirectory)).stdout);
+    syncDirectory(witnessDirectory); syncDirectory(stateDirectory);
+    guard.cut62_identity = { witness_id: captured.witness_id, attempt_id: attempt, backup_filename: backup.filename };
+    atomicJson(guardPath, guard);
+    const witnessPath = join(witnessDirectory, witnessName), prePath = join(preDirectory, preName);
+    const originalWitness = readFileSync(witnessPath), originalPre = readFileSync(prePath);
+    const lock = JSON.parse(readFileSync(join(stateDirectory, "maintenance.lock"), "utf8"));
+    assert.equal(lock.pid, process.pid); assert(lock.token);
+    const config = { target, expected_image: images.postgres, maintenance_image: images.migration,
+      maintenance_revision: revision, approved_revision: revision, pgpass_path: join(environment.TEMPO_PG_TEST_SECRETS, "admin_pgpass"),
+      root: stateDirectory, guard_path: guardPath, selection_path: join(witnessDirectory, "defense-selection.json"),
+      binding_path: join(witnessDirectory, "binding.json"), witness_path: witnessPath, pre62_path: prePath,
+      lock_pid: process.pid, lock_token: lock.token, trusted_daemon: true };
+    const supervise = crash => new Promise((resolve, reject) => {
+      const child = spawn(componentPython, [join(target.root, "database/tests/cli_isolation_supervisor.py")],
+        { cwd: target.root, env: { ...process.env, ...childEnvironment, PYTHONPATH: `${target.root}:${join(target.root, "database")}`, TEMPO_TEST_INSTANCE: "disposable" },
+          stdio: ["pipe", "pipe", "pipe"] });
+      let stdout = "", stderr = "";
+      child.stdout.on("data", data => { stdout += data; }); child.stderr.on("data", data => { stderr += data; });
+      child.once("error", reject); child.once("close", code => resolve({ code, stdout, stderr }));
+      child.stdin.end(JSON.stringify({ ...config, crash }));
+    });
+    for (const [fault, expectedCode] of [["after-commit", 1], ["after-receipt", 1], ["before-completion", 79],
+      ["after-completion", 80], ["after-reattach", 81], ["after-guard", 82]]) {
+      const result = await supervise(fault);
+      assert.equal(result.code, expectedCode, `Disposable ${fault} must stop at its intended boundary.`);
+      assert.deepEqual(readFileSync(witnessPath), originalWitness); assert.deepEqual(readFileSync(prePath), originalPre);
+      assert.equal(JSON.parse(readFileSync(guardPath, "utf8")).attempt_id, attempt);
+    }
+    const resumed = await supervise(null);
+    assert.equal(resumed.code, 0, "Disposable original attempt must resume without recapture.");
+    guard = JSON.parse(readFileSync(guardPath, "utf8"));
+    assert.equal(guard.state, "verified"); assert.equal(guard.attempt_id, attempt);
+    assert.deepEqual(readFileSync(witnessPath), originalWitness); assert.deepEqual(readFileSync(prePath), originalPre);
+  } finally { release(); }
+  const final = makeRuntime(target, { run, stateDirectory, revision, evidence, preparedImages });
+  await final.inspectTarget(); await lifecycle("isolated_completed_start", { recreate: true }, final);
+  return final;
+}
+
 export async function verifyTempoCliLifecycle({ project, environment, composeFiles, revision, measure = null }) {
   const root = process.cwd();
+  const isolatedDefense = environment.TEMPO_LIFECYCLE_ISOLATED_DEFENSE === "1";
+  const componentPython = environment.TEMPO_COMPONENT_PYTHON;
+  if (isolatedDefense) {
+    if (environment.TEMPO_LIFECYCLE_P0_59_ONLY !== "1" || !componentPython || !isAbsolute(componentPython))
+      throw new Error("Disposable Defense proof requires schema59 mode and an explicit absolute TEMPO_COMPONENT_PYTHON.");
+    const probe = spawnSync(componentPython, ["-c", "import psycopg; import database.tooling.verify_postgres_cli_state; import database.tests.check_postgres_cli_lifecycle; assert int(psycopg.__version__.split('.')[0]) == 3"],
+      { cwd: root, env: { ...process.env, PYTHONPATH: `${root}:${join(root, 'database')}` }, encoding: "utf8" });
+    if (probe.status !== 0) throw new Error("Disposable Defense proof requires the supplied Python with psycopg 3 and the fixture dependencies.");
+  }
   composeFiles = releaseComposeFiles({ root, composeFiles });
   const childProject = `${project}-cli`;
   const directory = join(root, "test-results", "tempo-cli", childProject);
@@ -167,23 +279,28 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
         "--label", `com.docker.compose.volume=${key}`, volume.name]);
     }
     await compose(["up", "-d", "--no-build", "--no-deps", "--wait", "postgres", "redis"], { echo: true });
-    await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration", "database/tests/check_postgres_cli_lifecycle.py", ...(schema59Only ? ["--seed59"] : [])], { echo: true });
+    await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration", "database/tests/check_postgres_cli_lifecycle.py", ...(schema59Only ? ["--seed59", ...(isolatedDefense ? ["--isolation-defense"] : [])] : [])], { echo: true });
     const readHistory = async () => JSON.parse((await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration",
       "database/tests/check_postgres_cli_lifecycle.py", "--history"])).stdout);
     const expected = await readHistory();
     if (schema59Only) {
       const syntheticReference = JSON.parse((await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration",
-        "database/tests/check_postgres_cli_lifecycle.py", "--defense-reference"])).stdout);
-      assert.equal(syntheticReference.count, 0);
+        "database/tests/check_postgres_cli_lifecycle.py", "--defense-reference", ...(isolatedDefense ? ["--isolation-defense"] : [])])).stdout);
+      assert.equal(syntheticReference.count, isolatedDefense ? 1 : 0);
       mkdirSync(stateDirectory, { recursive: true, mode: 0o700 });
       const selectionPath = join(stateDirectory, "synthetic-approved-selection.json");
       atomicJson(selectionPath, { version: 1, target: targetKey(target), cohort: "defense-no-activity",
-        keys: [], expected: syntheticReference });
+        keys: isolatedDefense ? [["cli-isolation-card", "cli-isolation-candidate"]] : [], expected: syntheticReference });
       const oldOverlay = join(directory, "schema59-images.json");
       atomicJson(oldOverlay, { services: Object.fromEntries(Object.entries(schema61Images).map(([name, image]) => [name, { image }])) });
       await compose(["-f", oldOverlay, "up", "-d", "--no-build", "--no-deps", "--wait",
         "foreground-worker", "background-worker", "background-scheduler", "api", "web", "postgres-backup"], { echo: true });
       const preparedImages = { revision, images, configFingerprint: configurationFingerprint(config) };
+      let final;
+      if (isolatedDefense) {
+        final = await exerciseIsolatedDefense({ target, run, compose, docker, makeRuntime, lifecycle, stateDirectory,
+          revision, evidence, preparedImages, selectionPath, componentPython, environment, childEnvironment, images });
+      } else {
       let interrupted60 = false, interrupted61 = false, interruptedCapture = false, interrupted62 = false, captures = 0;
       const inject = async (command, args, options) => {
         if (args.includes("--cut62-verify") && !interrupted62) {
@@ -292,10 +409,11 @@ m.apply_migrations(os.environ["TEMPO_POSTGRES_ADMIN_URL"], target_version=61)`;
         await assert.rejects(lifecycle("p0_alternate_witness_62", { recreate: true }, swapped62), /witness identity differs/);
         assert.equal(JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8")).state, "pending");
       } finally { writeFileSync(witness, witnessBytes, { mode: 0o600 }); }
-      const final = makeRuntime(target, { run, stateDirectory, revision, evidence, preparedImages, retry: true });
+      final = makeRuntime(target, { run, stateDirectory, revision, evidence, preparedImages, retry: true });
       await final.inspectTarget(); await lifecycle("p0_resume_original", { recreate: true }, final);
       assert(!commandLog.slice(retryStart).some(call => call.args.includes("--cut62-capture")));
       assert.deepEqual(readFileSync(witness), witnessBytes);
+      }
       assert.deepEqual(await readHistory(), expected, "schema59 original review, queue and receipt survive cutover");
       assert.equal(JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8")).state, "verified");
       assert.equal(Number((await readLatestMigration(compose)).stdout.trim()), 62);

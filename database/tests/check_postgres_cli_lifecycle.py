@@ -466,6 +466,8 @@ def main():
                     VALUES ('cli-isolation-finding','cli-isolation-game',1,1,'synthetic',1,'{}','2000-01-01','2000-01-01')""")
                 database.execute("""INSERT INTO threat_training_candidates(id,finding_id,game_id,analysis_version,incident_id,player_ply,evidence_json,source_fingerprint,detector_version,policy_json,created_at,updated_at,card_id)
                     VALUES ('cli-isolation-candidate','cli-isolation-finding','cli-isolation-game',1,'synthetic',1,'{}','synthetic',1,'{}','2000-01-01','2000-01-01','cli-isolation-card')""")
+                database.execute("""INSERT INTO daily_queue(id,queue_date,card_id,cycle,position,status,admission_source)
+                    VALUES (190000,'2000-01-02','cli-isolation-card',1,0,'queued','defense:cli-isolation-candidate')""")
                 from psycopg import sql
                 name = database.execute('SELECT current_database()').fetchone()[0]
                 database.execute(sql.SQL("COMMENT ON DATABASE {} IS 'tempo-disposable-postgres-test'").format(sql.Identifier(name)))
