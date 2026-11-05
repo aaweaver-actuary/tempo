@@ -229,7 +229,6 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
         if (environment.TEMPO_LIFECYCLE_SHIPPING_REHEARSAL === '1') assert.equal(gameWitness('seed').seeded,true);
         assert.equal(Number((await readLatestMigration(compose)).stdout.trim()),59);
         assert.deepEqual(await readHistory(),expected);
-        if (readDefenseFixture) originalDefense = await readDefenseFixture();
         const postgresId=(await compose(['ps','-q','postgres'])).stdout.trim();
         const postgres=JSON.parse((await docker(['inspect',postgresId])).stdout)[0];
         const dataVolume=target.volumes[target.postgresVolumeKey].name;
@@ -243,7 +242,16 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
         atomicJson(join(directory,'managed-baseline.json'),{project:childProject,schema:59,postgresId,postgresImage:postgres.Image,
           facts,dataVolume,networkId:postgresNetworks[0].NetworkID,historyDigest,historySha256:createHash('sha256').update(JSON.stringify(expected)).digest('hex'),
           oldServices:Object.fromEntries(oldServices.map(service=>[service,oldContainers.find(item=>item.Config.Labels['com.docker.compose.service']===service).Image]))});
-        await compose(['stop','--timeout','60',...oldServices,'redis','postgres'],{echo:true});
+        await compose(['stop','--timeout','60',...oldServices],{echo:true});
+        if (readDefenseFixture) {
+          const running=(await compose(['ps','--status','running','--services'])).stdout.trim().split(/\s+/).filter(Boolean).sort();
+          assert.deepEqual(running,['postgres','redis'],'Only owned dependencies may run while seeding pending frozen evidence');
+          const frozen=JSON.parse((await compose(['--profile','maintenance','run','--rm','--no-deps','-T',
+            '-e',`TEMPO_TEST_COMPOSE_PROJECT=${childProject}`,'migration','database/tests/check_postgres_cli_lifecycle.py','--seed-retained-frozen'])).stdout);
+          assert.deepEqual(frozen,{seeded:true,schema:59});
+          originalDefense=await readDefenseFixture();
+        }
+        await compose(['stop','--timeout','60','redis','postgres'],{echo:true});
         const active=(await compose(['ps','--status','running','--services'])).stdout.trim().split(/\s+/).filter(Boolean);
         assert.deepEqual(active,[],'All owned baseline services are stopped before CLI image preparation');
         const stopped=JSON.parse((await docker(['inspect',postgresId])).stdout)[0];

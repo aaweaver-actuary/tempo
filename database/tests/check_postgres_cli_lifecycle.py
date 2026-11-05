@@ -94,11 +94,24 @@ def main():
     mode.add_argument("--seed-defense-v2", metavar="TARGET", help="Seed and describe the owned all-group Defense fixture")
     mode.add_argument("--seed-defense-v2-15", metavar="TARGET", help="Seed the owned fifteen-card mixed Defense fixture")
     mode.add_argument("--inspect-defense-v2-15", action="store_true", help="Inspect only the owned synthetic retirement fixture")
+    mode.add_argument("--seed-retained-frozen", action="store_true", help="Seed the owned pending frozen fixture after writers stop")
     mode.add_argument("--history", action="store_true", help="Read only the original fixture history, allowing unrelated worker receipts")
     mode.add_argument("--normalization", action="store_true", help="Read the qualifying legacy migration-025 card and queue row")
     mode.add_argument("--seed-abandon-orphan", action="store_true", help="Seed one fixed synthetic orphan after the owned CLI target upgrades")
     mode.add_argument("--abandon-inspection", action="store_true", help="Read retained origin/receipt bytes and complete Study history for abandonment proof")
     options = parser.parse_args()
+    if options.seed_retained_frozen:
+        from urllib.parse import urlparse
+        parsed=urlparse(dsn)
+        if (not re.fullmatch(r'tempo-pg-regressions-[a-z0-9-]+-cli',os.environ.get('TEMPO_TEST_COMPOSE_PROJECT','')) or
+                parsed.hostname!='postgres' or parsed.path!='/tempo' or parsed.username!='postgres'):
+            raise RuntimeError('Frozen fixture requires the owned disposable database')
+        with psycopg.connect(dsn) as database:
+            if database.execute('SELECT max(version) FROM tempo_schema_migrations').fetchone()[0]!=59:
+                raise RuntimeError('Frozen fixture requires schema 59')
+            database.execute("INSERT INTO frozen_opening_runs(run_id,plan_checksum,plan_json,created_at,reader_version) VALUES ('cli-retained-frozen','cli-retained-frozen-hash','{}','2026-01-01','1')")
+            database.execute("INSERT INTO frozen_opening_pending(run_id) VALUES ('cli-retained-frozen')")
+        print(json.dumps({'seeded':True,'schema':59}));return
     if options.inspect_defense_v2_15:
         with psycopg.connect(dsn, options='-c default_transaction_read_only=on') as database:
             def count(table, column, pattern):
@@ -193,8 +206,6 @@ def main():
             database.execute("INSERT INTO game_analysis_position_errors(report_id,game_id,error,recorded_at) VALUES ('cli-retired-report','cli-defense-15-game-00','synthetic','2026-01-01')")
             database.execute("INSERT INTO game_analysis_publications(game_id,analysis_version,analysis_evidence_version,prepared_json,result_json,updated_at) VALUES ('cli-defense-15-game-00',1,1,'{}','{}','2026-01-01')")
             database.execute("UPDATE engine_scheduling_state SET automated_streak=1 WHERE id=1")
-            database.execute("INSERT INTO frozen_opening_runs(run_id,plan_checksum,plan_json,created_at,reader_version) VALUES ('cli-retained-frozen','cli-retained-frozen-hash','{}','2026-01-01','1')")
-            database.execute("INSERT INTO frozen_opening_pending(run_id) VALUES ('cli-retained-frozen')")
             guard._cut62_history_session(database)
             count,groups,digest=guard._cut62_draft_history_reference(database,keys)
             if (count,groups)!=(15,{'no_activity':11,'recognition_only':2,'reviewed':2}):
