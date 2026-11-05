@@ -161,6 +161,7 @@ async function exerciseIsolatedDefense({ target, run, compose, docker, makeRunti
         assert.equal(handoffs.length, 1, `Disposable ${fault} needs one fresh pinned handoff.`);
         const handoff = join(stateDirectory, handoffs[0]);
         const ready = JSON.parse(readFileSync(join(handoff, "ready.json"), "utf8"));
+        assert(existsSync(join(handoff, "committed.json")), `Disposable ${fault} failed before schema62: ${result.summary}`);
         const committed = JSON.parse(readFileSync(join(handoff, "committed.json"), "utf8"));
         const peer = JSON.parse(readFileSync(join(handoff, "peer.json"), "utf8"));
         assert.equal(peer.version, 1); assert.equal(peer.attempt_id, attempt);

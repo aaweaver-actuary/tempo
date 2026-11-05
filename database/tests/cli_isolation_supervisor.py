@@ -293,6 +293,44 @@ def set_disposable_admission(target, identity, allow):
         raise RuntimeError('Disposable admission could not be changed')
 
 
+def _safe_helper_diagnostic(output):
+    """Keep only fixed failure labels or SQLSTATE, never database detail."""
+    fixed = (
+        'Disposable pinned database identity or admission changed',
+        'Disposable pinned backend changed', 'Disposable pinned handoff changed',
+        'Original schema 59 history changed', 'Original schema 61 history changed',
+        'Original committed witness differs', 'Disposable committed witness differs',
+        'Original disposable isolation guard changed', 'Disposable post-commit schema differs',
+        'Pinned migration connection must be idle before migration',
+        'Nonempty Defense cleanup requires a verified writer and DDL fence',
+        'Original schema 59 witness differs inside the fence', 'Original Defense witness or binding differs',
+        'Post-migration witness identity differs; transaction rolled back',
+        'cut62 source changed since original capture', 'approved Defense reference evidence changed',
+        'cut62 Defense foreign-key ledger changed', 'cut62 Defense origin foreign-key ledger changed',
+        'cut62 Defense updated-column foreign-key ledger changed', 'cut62 Defense trigger ledger changed',
+        'cut62 Defense helper ledger changed', 'cut62 Defense rewrite-rule ledger changed',
+        'pre62 retained table layout changed', 'pre62 retained catalog changed', 'pre62 retained sequences changed',
+        'cut62 retained table layout changed', 'cut62 retained catalog changed', 'cut62 retained sequences changed',
+    )
+    lines = output.splitlines()
+    for line in reversed(lines):
+        for message in fixed:
+            if line == 'RuntimeError: ' + message:
+                return message
+        if re.fullmatch(r'RuntimeError: pre62 retained rows changed in [a-z0-9_]+', line):
+            return 'pre62 retained rows changed'
+        if re.fullmatch(r'RuntimeError: cut62 retained rows changed in [a-z0-9_]+', line):
+            return 'cut62 retained rows changed'
+        match = re.fullmatch(r'RuntimeError: PostgreSQL migration operation failed \([A-Za-z][A-Za-z0-9_]*, SQLSTATE ([0-9A-Z]{5}|unknown)\); keep writers stopped\.', line)
+        if match:
+            return 'PostgreSQL SQLSTATE ' + match.group(1)
+    for line in reversed(lines):
+        match = re.match(r'^(RuntimeError|ValueError|TypeError|OSError|PermissionError|FileNotFoundError):', line)
+        if match:
+            return 'helper exception ' + match.group(1)
+    return 'helper failure without safe detail'
+
+
 def verify_original_backup(target, guard):
     """Recheck the verified original backup and its sidecar, never replace it."""
     backup, binding = guard.get('backup') or {}, guard.get('defense_binding') or {}
@@ -608,10 +646,15 @@ def run_fenced_helper(*, target, expected_image, maintenance_image, maintenance_
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=50)
     if waited.returncode:
         raise RuntimeError('Disposable pinned helper interrupted; keep the original target isolated')
+    detail = None
+    if waited.stdout.strip() != '0':
+        logs = subprocess.run(['docker', '--context', target['context'], 'logs', helper_id],
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)
+        detail = _safe_helper_diagnostic(logs.stdout + '\n' + logs.stderr) if logs.returncode == 0 else 'helper logs unavailable'
     subprocess.run(['docker', '--context', target['context'], 'rm', helper_id],
                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30, check=True)
     if waited.stdout.strip() != '0':
-        raise RuntimeError('Disposable pinned helper interrupted; keep the original target isolated')
+        raise RuntimeError('Disposable pinned helper interrupted; ' + detail)
     control = inspect_control_database(target, identity, guard)
     if control['allowConnections'] or control['backendPids'] or control['preparedTransactions']:
         raise RuntimeError('Disposable pinned helper did not close cleanly')

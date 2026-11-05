@@ -3315,6 +3315,22 @@ else:raise AssertionError('text oid accepted')
   assert.equal(result.status, 0, result.stdout + result.stderr);
 });
 
+test("disposable helper diagnostics retain only fixed labels or SQLSTATE", () => {
+  const proof = String.raw`
+import ast,pathlib,re
+source=pathlib.Path('database/tests/cli_isolation_supervisor.py').read_text()
+node=next(n for n in ast.parse(source).body if isinstance(n,ast.FunctionDef) and n.name=='_safe_helper_diagnostic')
+scope={'re':re};exec(compile(ast.Module(body=[node],type_ignores=[]),'<supervisor>','exec'),scope)
+safe=scope['_safe_helper_diagnostic']
+assert safe('RuntimeError: pre62 retained rows changed in reviews')=='pre62 retained rows changed'
+assert safe('RuntimeError: PostgreSQL migration operation failed (UniqueViolation, SQLSTATE 23505); keep writers stopped.')=='PostgreSQL SQLSTATE 23505'
+assert safe('RuntimeError: private-key-secret-value')=='helper exception RuntimeError'
+assert 'secret' not in safe('ValueError: private-key-secret-value')
+`;
+  const result = fsSpawnSync("python3", ["-c", proof], { cwd: process.cwd(), encoding: "utf8" });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
 test("shipped migration CLI exposes no disposable isolation supervisor", () => {
   const proof = String.raw`
 import runpy,sys,types
