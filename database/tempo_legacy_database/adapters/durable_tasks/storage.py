@@ -379,14 +379,6 @@ def update_integrity_failure(database, values):
     )
 
 
-def fail_coverage_run(database, values):
-    return database.execute(
-        "UPDATE repertoire_coverage_runs SET status='failed',last_error=?,updated_at=? "
-                "WHERE id=? AND status IN ('building','queued','running')",
-        values,
-    )
-
-
 def defer_for_foreground(database, values):
     return database.execute(
         """UPDATE background_tasks SET state='retrying',
