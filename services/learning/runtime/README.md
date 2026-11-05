@@ -94,11 +94,6 @@ flowchart TB
   Loop -->|"bounded-memory request entry / exit"| Activity["HostActivity request counter and maximum quiet deadline"]
   Activity -->|"wake event; no publication I/O wait"| Publisher["Optional host daemon: snapshot under memory lock"]
   Publisher -->|"release memory lock then mkdir / write / replace"| Files[("HostActivity filesystem")]
-  Endgame["PROPOSED: new probe / generation request"] -->|"no calculation, provider or DB phase"| Removed["410: calculation removed"]
-  Saved["Saved templates / existing operation ID"] -->|"read-only saved facts"| Store["endgame_store"]
-  Store -->|"only existing immutable attempt payload"| Gateway["Canonical gateway replay / settlement"]
-  Gateway --> Foreground
-  Store --> Foreground
   Loop -->|"ordinary Study transactions"| Foreground[("Foreground reader / writer pools")]
   Foreground --> DB[("Shared Learning PostgreSQL")]
   Shutdown["Learning shutdown"] -->|"signal; no publication or cleanup join"| Publisher
@@ -111,19 +106,9 @@ flowchart TB
 | Essential request memory accounting | [`HostActivity.request`](src/tempo_learning_runtime/host_activity.py) updates a counter and maximum quiet deadline. At most 1,024 browser sessions bound shared snapshot memory work. [`request_activity`](src/tempo_learning_runtime/api.py) has no filesystem or daemon-result await, including cancellation. This is bounded-memory synchronization, not hard real-time, lock-free progress or a scheduler latency guarantee. |
 | Optional publication and cleanup | `HostActivity.start` starts its daemon without initial file I/O. The daemon releases the memory lock before publishing; `close` signals without joining publication or cleanup. An optional activity 200 acknowledges memory submission against the last healthy lease; missing/known-failed/stale publication or browser capacity returns 503. |
 | Explicit admission tradeoff and deployment prerequisite | The unchanged [native reader](../../../scripts/host-study-activity.mjs) can retain an idle snapshot until its 15-second producer lease expires. A new essential request may overlap admitted managed work during that remaining lease; asynchronous publication provides no immediate foreground exclusion. Present stale evidence is unavailable. Missing/startup/removed-source denial requires configuring protected workspace identities in the managed runners' `TEMPO_STUDY_ACTIVITY_EXPECTED_SOURCES` before deployment; default `[]` accepts absence as idle. No live configuration or lease protocol changed. |
-| Removed calculation boundary (PROPOSED) | Probe and fresh anonymous attempt requests return 410 before DB/provider access. A supplied operation key permits only a saved receipt lookup; unknown keys return 410. The route can replay an already-recorded immutable FEN/payload through the unchanged canonical gateway. No position generation, cache lookup, provider fallback, optional daemon or optional pool remains. Legacy probe/template-generation/new-attempt triggers are likewise disabled. |
-| Saved state and connection ownership | [`endgame_store`](../../../database/tempo_learning_database/adapters/endgame_store.py) retains saved template/receipt reads; cards, attempts, history and caches are not migrated, rewritten or deleted. Ordinary [`Database`](../../../database/tempo_learning_database/connections.py) foreground reader/writer pools plus maintenance remain; total maximum returns to `2 * pool_size + 1`. Study/review/receipt transactions retain their existing owners. |
+| Standalone Endgames | The Learning API has no probe, template list or attempt route. The command registry rejects `endgames.attempt.create` before it opens an operation receipt. |
 
-**Evidence and limits:** the owning removal regressions cover actual ASGI
-410/no-database behavior, immutable receipt recovery and legacy thin-trigger
-removal without importing its host dependency closure. Browser unit coverage
-includes the actual queue mapping → Home move handler → ordinary review caller,
-and checks that material-only
-cards expose their saved position and Bury, without fabricated grading.
-The native saved-attempt/review and deterministic browser contracts are updated;
-they have not been run for this change. Historical worker/provider/cache-isolation
-proofs describe retired behavior, not current serving requirements. No schema,
-stored data, live service, deployment or security setting is changed.
+The Study browser fixture retains ordinary review coverage for historical cards with saved lines and the unavailable notice for a material-only card.
 
 ### Review commit and recovery (MAIN)
 
@@ -227,7 +212,7 @@ uv sync --project services/learning/runtime --locked --no-editable
 npm ci --prefix services/learning/runtime/browser --workspaces=false --ignore-scripts
 ```
 
-The JavaScript dependencies are qualification-only. Normal service startup needs only the installed Python environment and PostgreSQL. The native runner also installs the separate Game Evidence producer in its own component environment for the real HTTP integration proofs; it is absent from the Learning image and production dependency closure. Use separate database-owner, reader and restricted writer roles. `migrate.provision` deliberately accepts only explicitly disposable `learning_*` database names; the owning test runner provisions these itself. Live provisioning is outside this change. Migrations never run implicitly at server startup.
+The JavaScript dependencies are qualification-only. Normal service startup needs only the installed Python environment and PostgreSQL. The native remediation tests submit evidence through the authenticated Learning HTTP receiver. Use separate database-owner, reader and restricted writer roles. `migrate.provision` deliberately accepts only explicitly disposable `learning_*` database names; the owning test runner provisions these itself. Live provisioning is outside this change. Migrations never run implicitly at server startup.
 
 ```sh
 services/learning/runtime/.venv/bin/tempo-learning migrate \
@@ -286,8 +271,7 @@ used. The configured connection maximum is `2 * TEMPO_LEARNING_POOL_SIZE + 1`
 pools have been deleted.
 
 Saved templates, immutable attempt receipts, cards, reviews and histories remain
-stored. Supplying an existing attempt operation ID may recover its original
-saved payload/result through the canonical gateway. New positions return 410.
+stored. The standalone Endgames routes and practice command are retired.
 Ordinary practice uses an authored/persisted legal FEN and nonempty legal line;
 a material-only card has no saved solution, so it shows its saved position and
 an explicit unavailable notice with Bury. No calculated continuation or success
@@ -362,7 +346,7 @@ chunk that takes accumulated input over the limit before JSON/model/backend proc
 reject a smaller wire document. V1's 128-definition limit, V2's 10,000 definitions
 and 8,192 aliases, authentication and singular activation transaction are
 unchanged. This is one bounded complete source, without chunked activation or
-truncation. Content's independent full-export limit remains 64 MiB.
+truncation.
 
 The receiver bound is not a memory reservation or proof of database admission.
 The offline owning qualification uses the existing runtime under a 512 MiB
@@ -409,7 +393,6 @@ An attempt frontier binds only at first authoritative queue-head issuance, inclu
 
 The append-only manifest now registers `learning.remediation/0001` after `learning.runtime/0002`, loading the library's installed `001_remediation.sql` resource. Existing migration checksums are unchanged; reapply restricted grants after owner-only migration. Startup never migrates. Historical v1 transport receipts replay exactly; new delivery IDs at an unconverted historical frontier conflict, and older revisions remain stale. Their old obligation rows are retained without fabricated provenance, but historical v1 obligation conversion is explicitly separate #224 cutover work. The retired default writer and broad timestamp settlement no longer run alongside remediation. This is an integration into the independent runtime, not a live-data conversion or deployment.
 
-The Game Evidence worker targets `/internal/evidence` with `TEMPO_GAME_EVIDENCE_LEARNING_ENDPOINT` and a private `TEMPO_GAME_EVIDENCE_LEARNING_TOKEN_FILE` containing this runtime's distinct evidence credential. HTTP occurs outside the producer's transactions. Its immutable outbox, completed-receipt validation, leases and acknowledgement-aware correction protocol remain the delivery authority.
 
 ## Build and qualification
 

@@ -17,7 +17,7 @@ ENTRYPOINTS = (
 )
 
 
-def test_database_snapshot_cli_help_needs_no_pythonpath_or_storage(tmp_path):
+def test_postgres_backup_cli_help_needs_no_pythonpath_or_storage(tmp_path):
     probe = r"""
 import runpy
 import sys
@@ -39,7 +39,7 @@ else:
             "-I",
             "-c",
             probe,
-            str(ROOT / "database/tooling/create_sqlite_cutover_snapshot.py"),
+            str(ROOT / "database/tooling/verify_postgres_backup.py"),
         ],
         cwd=tmp_path,
         capture_output=True,

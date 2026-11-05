@@ -7,7 +7,6 @@ ROOT = Path(__file__).resolve().parents[3]
 APPLICATION = ROOT / "services/learning/application"
 sys.path.insert(0, str(APPLICATION))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from fixture_plan import fixture_components
 from qualification import (
     controlled_environment,
     junit_destination,
@@ -24,32 +23,15 @@ def docker(*arguments):
 
 def main(test_paths=None, additional_environment=None, extra_sources=(), evidence_directory=None,
          *, fixture_profile="full"):
-    components = fixture_components(fixture_profile)
+    if fixture_profile not in ("essential", "full"):
+        raise ValueError(f"Unknown Learning fixture profile: {fixture_profile!r}")
     selected_files = [Path(str(path).split("::", 1)[0]) for path in (test_paths or ())]
-    optional_sources = (
-        ROOT / "services/game-evidence",
-        ROOT / "services/content",
-        ROOT / "tools/analysis-restoration/a_bridge",
-    )
-    optional_variables = (
-        "TEMPO_LEARNING_TEST_GAME_EVIDENCE_PYTHON",
-        "TEMPO_LEARNING_TEST_CONTENT_CLI",
-        "TEMPO_LEARNING_TEST_BRIDGE_CLI",
-        "TEMPO_LEARNING_TEST_BRIDGE_EVIDENCE",
-    )
     if fixture_profile == "essential":
         if not selected_files or any(
             path.suffix != ".py" or not (ROOT / path).is_file()
             for path in selected_files
         ):
             raise ValueError("essential requires explicit existing test files or node IDs; directories are refused")
-        for source in extra_sources:
-            source = (ROOT / source).resolve()
-            if any(source.is_relative_to(optional.resolve()) or optional.resolve().is_relative_to(source)
-                   for optional in optional_sources):
-                raise ValueError("essential cannot include optional fixture private sources")
-        if any(variable in (additional_environment or {}) for variable in optional_variables):
-            raise ValueError("essential omits optional fixture CLI variables; use fixture_profile='full'")
     if len(sys.argv) > 2:
         raise SystemExit("Only an evidence directory is accepted")
     evidence = Path(
@@ -78,7 +60,7 @@ def main(test_paths=None, additional_environment=None, extra_sources=(), evidenc
     report = {
         "identity": identity,
         "fixture_profile": fixture_profile,
-        "fixture_components": components,
+        "fixture_components": ["learning"],
         "process": {"pid":os.getpid(),"pgid":os.getpgid(0)},
         "complete": False,
         "container_absent": None,
@@ -111,7 +93,7 @@ def main(test_paths=None, additional_environment=None, extra_sources=(), evidenc
         "learning-transfer-contracts",
     }
     if fixture_profile == "full":
-        owners.update({*components[1:], "browser-intents", "study-session"})
+        owners.update({"browser-intents", "study-session"})
     for component in manifest["components"]:
         if component["id"] not in owners:
             continue
@@ -262,50 +244,18 @@ def main(test_paths=None, additional_environment=None, extra_sources=(), evidenc
         )
         environment.update(additional_environment or {})
         environment.pop("PYTHONPATH", None)
-        # A separately installed producer is an integration-test input only. It
-        # is absent from the Learning artifact and service container closure.
-        if "game-evidence" in components:
-            producer = ROOT / "services/game-evidence"
-            installed = subprocess.run(
-                [
-                    "uv",
-                    "sync",
-                    "--project",
-                    str(producer),
-                    "--locked",
-                    "--no-editable",
-                    "--python",
-                    "3.12",
-                    "--reinstall-package",
-                    "tempo-game-evidence",
-                ],
-                env=environment,
-                capture_output=True,
-                text=True,
-            )
-            (evidence / "producer-install.log").write_text(
-                installed.stdout + installed.stderr
-            )
-            if installed.returncode:
-                raise RuntimeError("Installed Game Evidence producer unavailable")
-            environment["TEMPO_LEARNING_TEST_GAME_EVIDENCE_PYTHON"] = str(
-                producer / ".venv/bin/python"
-            )
-        installations = [
-            (ROOT / 'services/learning/runtime','tempo-learning-runtime','TEMPO_LEARNING_TEST_RUNTIME_CLI','tempo-learning'),
-        ]
-        if "content" in components:
-            installations.append((ROOT / 'services/content','tempo-content','TEMPO_LEARNING_TEST_CONTENT_CLI','tempo-content'))
-        if "analysis-a-bridge" in components:
-            installations.append((ROOT / 'tools/analysis-restoration/a_bridge','tempo-a-bridge','TEMPO_LEARNING_TEST_BRIDGE_CLI','tempo-a-bridge'))
-        for component, package, variable, executable in installations:
-            installed = subprocess.run(['uv','sync','--project',str(component),'--locked','--no-editable','--python','3.12','--reinstall-package',package],env=environment,capture_output=True,text=True)
-            (evidence / (package+'-install.log')).write_text(installed.stdout+installed.stderr)
-            if installed.returncode:
-                raise RuntimeError('Installed bridge component unavailable: '+package)
-            environment[variable] = str(component / '.venv/bin' / executable)
-        if "analysis-a-bridge" in components:
-            environment['TEMPO_LEARNING_TEST_BRIDGE_EVIDENCE'] = str(evidence / 'bridge')
+        runtime = ROOT / "services/learning/runtime"
+        installed = subprocess.run(
+            ["uv", "sync", "--project", str(runtime), "--locked", "--no-editable",
+             "--python", "3.12", "--reinstall-package", "tempo-learning-runtime"],
+            env=environment, capture_output=True, text=True,
+        )
+        (evidence / "tempo-learning-runtime-install.log").write_text(installed.stdout + installed.stderr)
+        if installed.returncode:
+            raise RuntimeError("Installed Learning runtime unavailable")
+        environment["TEMPO_LEARNING_TEST_RUNTIME_CLI"] = str(runtime / ".venv/bin/tempo-learning")
+        if fixture_profile == "full":
+            environment["TEMPO_LEARNING_TEST_BRIDGE_EVIDENCE"] = str(evidence / "bridge")
         receipts = {}
         for stage, extra in [
             ("collected", ["--collect-only", "-q"]),
@@ -346,11 +296,7 @@ def main(test_paths=None, additional_environment=None, extra_sources=(), evidenc
             if result.stderr:
                 print(result.stderr[-1000:], file=sys.stderr)
             if result.returncode:
-                raise RuntimeError(
-                    "Runtime " + stage + " failed: " + str(result.returncode)
-                    + ("; essential supplies only Learning; use fixture_profile='full' for tests requiring Game Evidence, Content or a_bridge fixtures"
-                       if fixture_profile == "essential" else "")
-                )
+                raise RuntimeError(f"Runtime {stage} failed: {result.returncode}")
             receipts[stage] = json.loads(receipt.read_text())
         report["identities"] = validate_inventory(
             receipts["collected"], receipts["executed"], evidence / "native.xml"

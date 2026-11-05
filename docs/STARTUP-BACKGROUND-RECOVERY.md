@@ -149,7 +149,4 @@ row deletion and foreground writes were committed on the isolated copy.
 The probe used direct database operations and did not run the full HTTP API,
 queue dispatch, or an engine report for a threat claim. It establishes the
 database contention behavior of these paths; sustained product-request
-latency and production deployment performance remain unverified. Run
-`database/tooling/measure_postgres_incident_workloads.py` only
-against an explicitly isolated restore with `--isolated-restore --dsn ...`;
-`--explain` adds estimated and actual rows plus shared buffer counts.
+latency and production deployment performance remain unverified.

@@ -59,10 +59,10 @@ base = types.ModuleType('hatchling.builders.hooks.plugin.interface')
 base.BuildHookInterface = object
 sys.modules['hatchling.builders.hooks.plugin.interface'] = base
 repository = Path(sys.argv[1])
-for owner, name, excludes_cache in [('services/learning/runtime', 'tempo_learning_database', True), ('services/learning/remediation', 'tempo_remediation_database', True), ('services/content', 'tempo_content_database', False), ('services/game-evidence', 'tempo_game_evidence_database', False)]:
+for owner, name in [('services/learning/runtime', 'tempo_learning_database'), ('services/learning/remediation', 'tempo_remediation_database')]:
     hook = runpy.run_path(str(repository / owner / 'hatch_build.py'))['CustomBuildHook']
     with TemporaryDirectory() as directory:
-        root = Path(directory)
+        root = Path(directory) / owner
         database = root / 'database' / name
         database.mkdir(parents=True)
         for entry in ['__init__.py', 'ddl', 'adapters', 'tests', 'tooling', '__pycache__']:
@@ -74,7 +74,7 @@ for owner, name, excludes_cache in [('services/learning/runtime', 'tempo_learnin
         instance.target_name = 'wheel'
         data = {'force_include': {}}
         instance.initialize(None, data)
-        assert {Path(path).name for path in data['force_include']} == {'__init__.py', 'ddl', 'adapters'} | (set() if excludes_cache else {'__pycache__'})
+        assert {Path(path).name for path in data['force_include']} == {'__init__.py', 'ddl', 'adapters'}
         instance.target_name = 'sdist'
         data = {'force_include': {}}
         instance.initialize(None, data)

@@ -16,12 +16,6 @@ ROOT = Path(__file__).resolve().parents[2]
 @pytest.mark.parametrize(
     "path,memory,pids",
     [
-        ("database/tempo_content_database/tooling/run_postgres.py", "512m", "256"),
-        (
-            "database/tempo_game_evidence_database/tooling/run_postgres.py",
-            "384m",
-            "256",
-        ),
         (
             "database/tempo_legacy_database/tooling/learning_review/run_postgres.py",
             "384m",

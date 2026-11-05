@@ -41,17 +41,3 @@ def restart_derivation(database, game_id, now):
         "SELECT derivation_version FROM game_derivation_jobs WHERE game_id=?",
         (game_id,),
     ).fetchone()
-
-
-def affected_repertoire_ids(database, game_id):
-    return [row[0] for row in database.execute(
-        "SELECT repertoire_id FROM current_game_repertoire_matches game_repertoire_matches WHERE game_id=?",
-        (game_id,),
-    )]
-
-
-def analyzed_game(database, game_id):
-    return database.execute(
-        "SELECT analysis_version FROM imported_games WHERE id=? AND analysis_state='ready'",
-        (game_id,),
-    ).fetchone()

@@ -25,7 +25,9 @@ COPY packages/game-classification /packages/game-classification
 ENV PYTHONPATH=/packages/game-review-contracts/src:/packages/evidence-math/src:/packages/game-ingestion/src:/packages/repertoire-comparison/src:/packages/game-classification/src:/contracts/analysis-jobs/src
 COPY backend/app ./app
 COPY backend/managed-runtime-entrypoint.sh ./managed-runtime-entrypoint.sh
-COPY database/tempo_legacy_database ./tempo_legacy_database
+COPY database/tempo_legacy_database/*.py ./tempo_legacy_database/
+COPY database/tempo_legacy_database/adapters ./tempo_legacy_database/adapters
+COPY database/tempo_legacy_database/ddl ./tempo_legacy_database/ddl
 COPY public/data/tactics-catalog.json ./public/data/tactics-catalog.json
 COPY public/data/tactics-packs ./public/data/tactics-packs
 ENV TEMPO_CATALOG_ROOT=/app/public

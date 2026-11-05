@@ -10,4 +10,3 @@ fixtures = importlib.util.module_from_spec(specification)
 sys.modules[specification.name] = fixtures
 specification.loader.exec_module(fixtures)
 case = fixtures.case
-from test_game_evidence_runtime import producer

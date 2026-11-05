@@ -13,7 +13,6 @@ import uuid
 import psycopg
 from psycopg import sql
 
-DOMAINS = ("learning", "content", "game_evidence")
 IMAGE = "postgres:18.6-trixie"
 
 
@@ -24,12 +23,14 @@ def docker(*arguments, check=True):
 
 
 class OwnershipFixture:
+    domains = ("learning",)
+
     def __init__(self):
         self.identity = "tempo264-" + uuid.uuid4().hex
         self.container = self.identity + "-postgres"
         self.port = None
         self.admin_password = secrets.token_urlsafe(32)
-        self.passwords = {domain: secrets.token_urlsafe(32) for domain in DOMAINS}
+        self.passwords = {domain: secrets.token_urlsafe(32) for domain in self.domains}
         self.image_id = None
         self.started = False
 
@@ -110,14 +111,9 @@ class OwnershipFixture:
     def admin(self, database):
         return self.connection(database, "postgres", self.admin_password)
 
-    def runtime(self, domain, database=None):
-        return self.connection(
-            database or domain, domain + "_runtime", self.passwords[domain]
-        )
-
     def provision(self):
         with self.admin("postgres") as administration:
-            for domain in DOMAINS:
+            for domain in self.domains:
                 owner = domain + "_owner"
                 runtime = domain + "_runtime"
                 administration.execute(
@@ -147,7 +143,7 @@ class OwnershipFixture:
                         sql.Identifier(domain), sql.Identifier(runtime)
                     )
                 )
-        for domain in DOMAINS:
+        for domain in self.domains:
             owner = domain + "_owner"
             runtime = domain + "_runtime"
             with self.admin(domain) as connection:
@@ -188,18 +184,6 @@ class OwnershipFixture:
                         "ALTER DEFAULT PRIVILEGES IN SCHEMA domain GRANT USAGE,SELECT ON SEQUENCES TO {}"
                     ).format(sql.Identifier(runtime))
                 )
-                connection.execute(
-                    "CREATE TABLE domain.settings (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, setting_key text UNIQUE NOT NULL, setting_value text NOT NULL)"
-                )
-                connection.execute(
-                    "CREATE TABLE domain.migration_history (revision integer PRIMARY KEY)"
-                )
-                connection.execute(
-                    sql.SQL(
-                        "REVOKE INSERT,UPDATE,DELETE ON domain.migration_history FROM {}"
-                    ).format(sql.Identifier(runtime))
-                )
-                connection.execute("INSERT INTO domain.migration_history VALUES (1)")
                 connection.execute("RESET ROLE")
 
     def close(self):
@@ -236,42 +220,9 @@ class OwnershipFixture:
         print("Verified cleanup: " + self.identity, flush=True)
 
 
-def assert_component_credential(connection, domain):
-    role = connection.execute("SELECT current_user").fetchone()[0]
-    if role != domain + "_runtime":
-        raise ValueError("component credential is not its isolated runtime role")
-    flags = connection.execute(
-        "SELECT rolsuper,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls,rolinherit FROM pg_roles WHERE rolname=current_user"
-    ).fetchone()
-    if any(flags):
-        raise ValueError("component role has administrative or inherited privileges")
-    if connection.execute(
-        "SELECT 1 FROM pg_auth_members WHERE member=(SELECT oid FROM pg_roles WHERE rolname=current_user)"
-    ).fetchone():
-        raise ValueError("component role has undeclared role membership")
-    ownership = connection.execute(
-        "SELECT current_database(), pg_get_userbyid(datdba) FROM pg_database WHERE datname=current_database()"
-    ).fetchone()
-    if ownership != (domain, domain + "_owner"):
-        raise ValueError("wrong domain database or ownership")
-    if connection.execute(
-        "SELECT has_database_privilege(current_user,current_database(),'CREATE'),has_database_privilege(current_user,current_database(),'TEMP'),has_schema_privilege(current_user,'public','CREATE'),has_schema_privilege(current_user,'public','USAGE'),has_schema_privilege(current_user,'domain','CREATE')"
-    ).fetchone() != (False, False, False, False, False):
-        raise ValueError("unexpected database or schema privilege")
-
-
-def prepare_remediation_learning(fixture, schema):
-    """Apply the existing remediation native-test setup to its owned Learning target."""
-    with fixture.admin("learning") as database:
-        database.execute("SET statement_timeout=5000")
-        database.execute("SET ROLE learning_owner")
-        database.execute("SET search_path=domain,pg_catalog")
-        database.execute(schema.decode())
-        database.execute("CREATE TABLE remediation_test_schedule(workspace_id text,card_id text,fsrs_json text NOT NULL,history_json text NOT NULL,PRIMARY KEY(workspace_id,card_id));"
-            "CREATE TABLE remediation_test_queue(workspace_id text,card_id text,position integer,protected boolean DEFAULT false,PRIMARY KEY(workspace_id,card_id));")
-
-
 class BoundedFixture(OwnershipFixture):
+    domains = ("source", "restored")
+
     def connection(self, database, role, password):
         import psycopg
         return psycopg.connect(host="127.0.0.1", port=self.port, dbname=database,

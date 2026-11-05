@@ -7,8 +7,8 @@ from app.repertoire import build_index
 from app.repertoire.interfaces.position_schedule_occurrences import inventory_from_snapshot
 from tempo_evidence_math.position_learning import SourceCertificate
 from tempo_legacy_database.adapters.authored_repertoires import position_study_source as owner
-from tooling.position_study_inventory import InventoryRequest, SourceFacts
-from tooling.position_study_seed import preview_seed_page
+from tempo_legacy_database.adapters.study.position_seed_inventory import InventoryRequest, SourceFacts
+from tempo_legacy_database.adapters.study.position_seed import preview_seed_page
 from test_position_source_authority import setup
 
 
@@ -42,7 +42,7 @@ def test_preview_refuses_unprepared_or_unbounded_requests(monkeypatch):
 
 
 def test_legacy_preflight_pages_and_rejects_bad_or_reserved_ids():
-    from tooling.position_study_seed import scan_legacy_id_page
+    from tempo_legacy_database.adapters.study.position_seed import scan_legacy_id_page
     class Result:
         def __init__(self, rows): self.rows = rows
         def fetchall(self): return self.rows
@@ -64,7 +64,7 @@ def test_legacy_preflight_pages_and_rejects_bad_or_reserved_ids():
 def test_writer_holds_when_namespace_guard_unavailable(monkeypatch):
     from datetime import datetime, timezone
     import importlib.util
-    from tooling.position_study_seed import seed_shadow_page
+    from tempo_legacy_database.adapters.study.position_seed import seed_shadow_page
     if importlib.util.find_spec('tempo_legacy_database.adapters.study.position_fsrs_namespace') is not None:
         pytest.skip('installed namespace guard is tested with native PostgreSQL')
     db = setup(monkeypatch)
@@ -88,8 +88,8 @@ def test_native_seed_restart_clone_and_original_unchanged(monkeypatch, introduce
     import psycopg
     from psycopg import sql
     from tempo_legacy_database.adapters.postgres_store import tempo_row_factory
-    from tooling.position_study_inventory import DonorFact
-    from tooling.position_study_seed import seed_shadow_page, verify_seed_receipts_page
+    from tempo_legacy_database.adapters.study.position_seed_inventory import DonorFact
+    from tempo_legacy_database.adapters.study.position_seed import seed_shadow_page, verify_seed_receipts_page
 
     dsn = os.environ.get('TEMPO_POSITION_TEST_DSN')
     if not dsn:
@@ -243,8 +243,8 @@ def test_native_seed_restart_clone_and_original_unchanged(monkeypatch, introduce
 
 
 def test_donor_fence_rejects_changed_or_busy_physical_owner():
-    from tooling.position_study_inventory import DonorFact
-    from tooling.position_study_seed import fence_donor_facts
+    from tempo_legacy_database.adapters.study.position_seed_inventory import DonorFact
+    from tempo_legacy_database.adapters.study.position_seed import fence_donor_facts
     fact = DonorFact('card', 'rep', 2, 'learning', '2026-11-03', '{}',
                      '2026-10-01T00:00:00Z', False, False, None, False, ('rep',), deleted=False)
     row = dict(card_id='card', repertoire_id='rep', revision=2, state='learning',
@@ -278,7 +278,7 @@ def test_donor_fence_rejects_changed_or_busy_physical_owner():
 
 def test_seed_preparation_requires_writer_read_only_repeatable_read():
     from test_inventory_readonly import FakeReader
-    from tooling.position_study_inventory import InventoryHold, read_card_page, read_seed_donor_page
+    from tempo_legacy_database.adapters.study.position_seed_inventory import InventoryHold, read_card_page, read_seed_donor_page
     writer = FakeReader(('tempo_writer', 'on', 'repeatable read'))
     assert read_seed_donor_page(writer, candidate_card_ids=('card',)) == [('card',)]
     with pytest.raises(InventoryHold, match='postgres_read_only_role_required'):

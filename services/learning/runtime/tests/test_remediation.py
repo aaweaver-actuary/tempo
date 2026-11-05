@@ -19,6 +19,30 @@ from test_evidence_revisions import send, drain, domain_state
 from concurrency_helpers import extend_gate_budget, wait_for_lock
 
 
+def activate_without_queue_work(case, payload=None):
+    payload = payload or bundle()
+    headers = {"Authorization": "Bearer " + case.configuration.operator_token}
+    assert (
+        case.client.post(
+            "/internal/publications/stage", json=payload, headers=headers
+        ).status_code
+        == 200
+    )
+    activation_id = uuid.uuid4().hex
+    response = case.client.post(
+        "/internal/publications/activate",
+        json={
+            "activation_id": activation_id,
+            "publication_id": "publication-a",
+            "publication_generation": 1,
+            "expected_activation_revision": 0,
+        },
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    return payload, activation_id, response.json()
+
+
 def current_remediation_task(case):
     with case.database.scope(), connection() as database:
         return dict(database.execute_native(
@@ -61,7 +85,6 @@ def test_remediation_refresh_preserves_active_cursor_and_lease(case, state):
 
 
 def test_repeated_refreshes_do_not_starve_later_remediation_card(case):
-    from test_game_evidence_runtime import activate_without_queue_work
     from tempo_learning_runtime.queue_application import request_queue_refresh_in_transaction
     from tempo_learning_runtime.maintenance import apply_task
     payload, _, _ = activate_without_queue_work(case, opening_definitions(['e2e4', 'd2d4']))
@@ -869,7 +892,6 @@ def test_intake_uses_learning_definitions_instead_of_producer_claimed_authority(
 
 
 def test_repeated_remediation_arrivals_yield_to_ordinary_introductions(case):
-    from test_game_evidence_runtime import activate_without_queue_work
 
     payload = opening_definitions(["e2e4", "d2d4", "c2c4"])
     activate_without_queue_work(case, payload)

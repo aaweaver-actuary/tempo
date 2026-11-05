@@ -51,7 +51,7 @@ def integrity_row(status="clean", graph_generation=7):
 def fixture():
     source = json.loads(
         (
-            ROOT / "services/game-evidence/fixtures/legacy-authority-input.json"
+            ROOT / "backend/tests/fixtures/legacy-authority-input.json"
         ).read_text()
     )
     tables = deepcopy(source["tables"])

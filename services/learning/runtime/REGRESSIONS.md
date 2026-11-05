@@ -96,14 +96,6 @@ It retains both card-edit lock namespaces and verifies receipt replay. The owned
 native PostgreSQL startup declares and records shared lock capacity; it does not
 change production settings or increase the transaction timeout.
 
-`test_C3_copied_review_identity_advances_without_reusing_or_reordering_history`
-reproduces an actual sequence collision after explicit copied review IDs, repairs
-it through the Learning-owned rehearsal helper, preserves the original review,
-and saves the next ordinary Study review with a new ID. Its second case requires
-an already advanced sequence to remain ahead. Empty-rehearsal restoration now
-finishes review identity allocation; explicit repair refuses changed copied
-history and remains restricted to verified disposable C3 storage.
-
 ## A authoritative bridge
 
 `test_content_bridge.py` owns measured complete 129/512/2,048-definition activation
@@ -113,13 +105,6 @@ identity conflict rollback, historical status versus replacement, and retirement
 Accepted historical aliases cannot be silently dropped by a successor. The
 2,048-definition metadata successor test measures actual writer/lock durations,
 concurrent foreground reads and a predecessor-issued attempt saving after commit.
-`test_authoritative_bridge.py` owns actual installed Content import/approval,
-authenticated operator activation with real response loss/restart, installed
-producer delivery to the existing receiver, late-evidence and qualifying Study
-settlement, immutable offline export/replay, proposal draft versus approval and
-application, three-domain role denial, and complete authored-source capacity.
-These tests are discovered by the regular native runner; its dependency closure
-now records Content and the database-free operator tool as test inputs only.
 
 The complete native inventory is discovered by `../../../database/tempo_learning_database/tooling/run_postgres.py` from `tests/`; collection, every setup/call/teardown phase and JUnit must agree. No selection flags or skips are accepted. `components.json` registers the owning native suite and its real client/runner inputs. Installation checks also run in source-removed Python consumers through `qualify.py`.
 
@@ -132,8 +117,7 @@ The complete native inventory is discovered by `../../../database/tempo_learning
 | `test_review_policy.py` | `test_review_policy_reads_borrowed_settings_without_nested_connection` forbids nested connection acquisition and proves settings come from the borrowed command transaction; `test_review_policy_preserves_injected_provider_without_database_read` retains injected policy semantics. These infrastructure-free adapter checks do not establish native locking/rollback behavior. |
 | `test_families.py` | All five typed specifications, practice/review/self-assessment/feedback; tactical discovery and binding; defense recognition, covered grading and uncovered durable intent |
 | `test_eligibility.py` | Parent exposure, integrity fences, competing issuance, middlegame review, guided typed attempts/sibling burial, local evidence promotion and required settlement |
-| `test_endgames.py` | Native saved immutable attempt replay, template binding, explicit calculation removal and ordinary review/history persistence |
-| `test_endgame_calculation_removed.py` | ASGI removal before database/provider, saved immutable receipt recovery, legacy trigger and template binding, absence of optional worker/pool/provider composition |
+| `test_endgame_calculation_removed.py` | Removed Endgames routes and command, preserved validation of historical material definitions |
 | `test_publications.py` | Immutable staging, completeness and latest-generation recheck; accepted frozen ranks; migration/workspace/privileged-role readiness; unique route positions and memberships; every-line learner-turn validation for both colors; exact multi-membership graph completeness and rollback; competing owners, retirement/replacement locking (including removed memberships), independent repertoires and retryable owner contention |
 | `test_evidence_revisions.py` | Monotonic revisions, original transport replay, semantic retries without re-promoting settled misses, conflicting content, empty corrections, transaction-wide rollback, both concurrent revision orders, installed HTTP process restart, historical receipt migration and restricted-role access, custom receiver authority; actual PostgreSQL cross-evidence obligation/delivery identity races and loser rollback |
 | `test_enqueue.py` | Barrier-controlled creator rollback with waiting insertion; existing leased task replacement; authoritative generations/event identities |
@@ -160,16 +144,7 @@ Prepared-continuation coverage asserts that prefetch has no frontier, the actual
 receipt-authorized issuance binds it once, reload/replay retains it, and neither
 review submission nor an old already-issued origin can invent a missing binding.
 
-`test_game_evidence_runtime.py` owns actual installed producer CLI -> authenticated
-Learning HTTP -> separate PostgreSQL database integration. A real forwarding proxy
-drops the acknowledgement after Learning commits; a new producer process replays
-after Learning restarts. Role-denial checks prove the runtime identities cannot
-connect to the other domain database. Its Chromium proof stops the producer and
-Learning, restarts only Learning, settles remediation with real response-loss/reload
-recovery, then follows existing reinforcement and saves ordinary newly introduced
-work. No optional provider/model/broker is started, and browser traffic to any
-other origin is rejected. These are focused client/API proofs, not the complete
-Study UI switch owned by F2.
+`test_game_evidence_runtime.py` sends a public evidence delivery to Learning, restarts Learning, and verifies the browser settles the accepted obligation and saves the next ordinary card after a lost acknowledgement.
 
 The existing `test_evidence_revisions.py` cases now exercise the same remediation
 authority using coherent accepted v1 observations. Their original monotonicity,
@@ -208,11 +183,6 @@ The regular native `test_remediation.py` inventory adds:
 independent source identities without shared obligation locks),
 `test_stale_receipt_failure_rolls_back_without_acceptance_effects`, and
 `test_v2_historical_semantic_replay_is_unchanged_by_v1_stale_policy`.
-
-`test_installed_producer_auth_recovery_accepts_once_in_independent_learning` in
-`test_game_evidence_runtime.py` uses actual installed CLI processes, authenticated
-Learning HTTP and separate disposable databases. Correcting the private token and
-restarting retries the original delivery and produces one logical acceptance.
 
 `test_installed_receipt_policy_replays_stale_identity_without_content_or_writes`
 in `test_installation.py` checks optional installed receipt arguments, immutable
@@ -276,7 +246,6 @@ The authenticated activity endpoint regression verifies its stable workspace sou
 ## PR #294 repair regressions
 
 - `tests/test_content_bridge.py::test_A_historical_alias_move_membership_accepts_new_alternative`: genuine prior review, retained physical ID/schedule/history, accepted original and new alternative, legal unaccepted move and obsolete executable revision. Existing activation compatibility/retirement regressions remain selected.
-- `tests/test_authoritative_bridge.py::test_A_corrected_source_activates_after_original_terminal_failure`: installed Content/operator, actual failed Learning receipt, restart, source release, corrected revision and immutable failed-operation retry.
 - `test_A_actual_evidence_delivery_export_proposal_and_optional_off_study` additionally loads historical then current snapshots into a separate fresh installed producer; the original producer still proves current-then-historical rejection without current-pointer mutation. Post-retirement observations are genuine HTTP-produced fixtures.
 
 The complete regular native and production Study suites retain credential separation, issuance, review, retirement, optional-services-off and resource-budget owners.
@@ -304,24 +273,12 @@ Regular `tests/test_content_bridge.py` owns:
   `test_A_publication_abort_serializes_with_activation`: durable receipt equality,
   both lock winners and queued retry authority using separate sessions.
 
-Regular installed `tests/test_authoritative_bridge.py` owns
-`test_A_installed_pre_activation_recovery` (unsupported source, impossible initial
-retirement, real stage conflict, lost stage/abort response),
-`test_A_installed_preflight_preserves_previous_serving_authority` (active predecessor,
-already retired source, retirement changing after preflight), and
-`test_A_installed_concurrent_operators_preserve_one_authority` (two installed apply
-or abandon commands). All use actual restricted databases, installed CLIs and
-Learning HTTP authority, including corrected approval and stale-operation denial.
-
 `test_A_selected_maintenance_cannot_resurrect_terminally_fenced_retirement` pauses
 actual maintenance after selecting a queued retirement and before execution;
 fencing wins before it resumes, preserving active cards and the original revision.
 Abort/activation race parameters use the actual activation and retry HTTP routes.
 `test_A_publication_fence_measured_under_existing_budgets` retains API and owner
 transaction timings without changing production budgets or asserting a host SLO.
-`test_A_installed_completion_cannot_substitute_checkpointed_request` verifies a real
-wrong-publication completion cannot release the original reservation.
-
 The installed conflicting-authority regression also creates a genuine queued
 wrong-publication retirement by timing out execution behind its publication lock.
 Neither reconcile nor abandon may retry it or change either publication. The
@@ -339,23 +296,7 @@ fence a genuinely queued retirement without changing the active predecessor.
 `test_host_activity_clock_retains_reader_domain_after_host_sleep` protects the shared-host clock contract. macOS Python uptime excludes sleep while the native Node reader includes it; the producer uses `CLOCK_MONOTONIC_RAW` on macOS and the ordinary monotonic clock elsewhere. The regression simulates a suspend offset without requiring Node, a broker, or a database for Learning progress. Real Python 3.12/3.14 and Node clock brackets are retained in the task's qualification evidence.
 
 
-The user-directed calculation removal replaces the former
-`test_endgame_isolation.py` worker/pool/cancellation/provider cases with
-`test_endgame_calculation_removed.py`: no optional worker or pool remains to
-qualify. Actual ASGI probes/new anonymous attempts return 410 without DB work;
-keyed requests can only recover an existing immutable receipt. The unchanged
-canonical gateway remains responsible for effects, replay and failures. Legacy
-probe/template/new-attempt function bodies are exercised without importing the
-unrelated legacy host closure; saved legacy receipt binding is retained.
-
-`test_endgames.py` retains native PostgreSQL saved-attempt replay and ordinary
-review/history proof, but has not been executed for this removal. Provider/cache
-serving and generation legality cases are retired because those behaviors are
-removed, not skipped. The historical integration receipt remains dated evidence
-for the earlier worker architecture. Browser contracts now use deterministic
-saved-line/material-only scenarios rather than searching generated positions;
-no browser/server build or run is claimed for this change.
-
+The Learning route and registry check in `test_endgame_calculation_removed.py` exercises the removal of standalone Endgames. The Study browser fixture still checks historical cards with saved lines and unavailable material-only cards.
 
 ## Database file separation: frozen Study facts and guards
 
@@ -396,7 +337,7 @@ no browser/server build or run is claimed for this change.
 
 ## Database separation: HTTP projections and defense practice
 
-`tests/test_api_defense_storage_separation.py` owns twenty infrastructure-free cases: handled reconciliation savepoint order; saved endgame retirement recheck under card lock before clocks/writes; actual/expected migration readiness mapping; queue entry day/status/head mapping without SQL-fragment consumption; missing evidence rejection before the second event-read scope; safe exercise presentation and committed feedback scope; prepared v2 publication retry; defense card → queue lock → current/replay ordering; missing queue/replay gates before clocks; original scheduling/repeat/order/receipt sequence; rubric rejection before database access; and recognition evidence recheck before answer persistence. Eleven existing `test_queue_persistence.py` checks retain queue/HTTP/review refresh composition proof. Native runtime/transaction/family suites retain actual PostgreSQL rollback, locking, graded recognition and atomic queue/review/attempt ownership; they were not run for this relocation. All original Learning mixed-file paths are separated; initial-adapter application policy classification and any necessary extraction remain unfinished.
+`tests/test_api_defense_storage_separation.py` covers handled reconciliation savepoint order; actual/expected migration readiness mapping; queue entry day/status/head mapping without SQL-fragment consumption; missing evidence rejection before the second event-read scope; safe exercise presentation and committed feedback scope; prepared v2 publication retry; defense card → queue lock → current/replay ordering; missing queue/replay gates before clocks; original scheduling/repeat/order/receipt sequence; rubric rejection before database access; and recognition evidence recheck before answer persistence. Eleven existing `test_queue_persistence.py` checks retain queue/HTTP/review refresh composition proof. Native runtime/transaction/family suites retain actual PostgreSQL rollback, locking, graded recognition and atomic queue/review/attempt ownership; they were not run for this relocation. All original Learning mixed-file paths are separated; initial-adapter application policy classification and any necessary extraction remain unfinished.
 
 ## Database separation: opening-evidence application policy
 

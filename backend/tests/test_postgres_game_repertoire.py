@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from contextlib import contextmanager, nullcontext
 from concurrent.futures import ThreadPoolExecutor
-import sys
 from pathlib import Path
 import threading
 
@@ -13,12 +12,6 @@ from app.services import postgres_game_repertoire, repertoire_comparison
 
 
 def test_postgres_game_repertoire_import_keeps_three_legacy_views_until_publication():
-    scripts = Path(__file__).resolve().parents[2] / "scripts"
-    sys.path.insert(0, str(scripts))
-    try:
-        from database.tooling.migrate_sqlite_to_postgres import COPY_TARGETS
-    finally:
-        sys.path.pop(0)
     migration = (
         Path(__file__).resolve().parents[2]
         / "database/tempo_legacy_database/ddl/migrations"
@@ -29,7 +22,6 @@ def test_postgres_game_repertoire_import_keeps_three_legacy_views_until_publicat
         "repertoire_decision_events",
         "repertoire_comparisons",
     ):
-        assert COPY_TARGETS[table] == f"{table}_legacy"
         assert f"CREATE VIEW {table} AS" in migration
     assert migration.count("COALESCE(job.published_repertoire_version,0)=0") == 3
     assert (

@@ -996,18 +996,6 @@ export const endgameTemplatesSchema = z.strictObject({
     }),
   ),
 });
-export const endgameCreatedSchema = z.strictObject({
-  id: identifierSchema,
-  card_id: cardIdSchema,
-  sample_fen: fenStringSchema,
-  already_exists: z.boolean(),
-});
-export const endgameAttemptSchema = z.strictObject({
-  id: identifierSchema,
-  fen: fenStringSchema,
-  target: z.enum(["win", "draw"]),
-  moves: z.array(z.unknown()),
-});
 export const oauthTokenSchema = z.looseObject({
   access_token: z.string().min(1),
 });

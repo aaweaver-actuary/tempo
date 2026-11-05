@@ -15,7 +15,7 @@ import os
 
 import psycopg
 
-from database.tooling.migrate_sqlite_to_postgres import destination_fingerprint
+from database.tooling.postgres_fingerprint import destination_fingerprint
 from database.tooling.verify_postgres_backup import table_layout
 
 

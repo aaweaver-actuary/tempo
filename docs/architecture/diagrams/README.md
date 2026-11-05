@@ -112,7 +112,6 @@ replaceable plugin.
 | Opportunity and adaptive-priority producers | [Opportunity flow](../../../backend/app/services/README.md#opportunity-production-and-optional-api-retirement) and [priority flow](../../../backend/app/services/README.md#adaptive-priority-producer-retirement) remove refresh/scoring/worker edges. Ordinary queue owners still read saved opportunity/score/miss facts and retain fallback, source invalidation and canonical writing. |
 | Browser extension seam | [Study browser capabilities](../../../app/README.md#public-browser-capabilities-and-extension-limits) names connection/session exports and injected workspace callbacks. The physical Study entry excludes the legacy workspace; the full build still shares shell/runtime/state. This is not dynamic plugin discovery. |
 | Policy versus command composition | [Backend public surfaces](../../../backend/app/README.md#public-surfaces-and-extension-boundary) distinguishes supplied-fact policy, named contracts and borrowed storage from the legacy global command registry and HTTP/worker root. Local guards are scoped, not a repository-wide no-cycle proof. |
-| Graph recovery and serving | [Fresh graph helper](../../../database/tooling/opening_graph_fresh_learning/README.md) composes public Content/bridge/Learning commands; [title activation](../../../database/tempo_learning_database/adapters/publication-execution/README.md#optional-repertoire-display-title) preserves optional titles atomically. The source recovery bundle remains separate from Learning's reduced serving projection. |
 | Launcher and installed runtime | [Scripts](../../../scripts/README.md) expose planning, readiness, transition and fail-closed v2 routing; [persistent quarantine](../../../config/study-persistent/README.md) is non-serving preparation. Merged source does not establish a configured default provider, completed installed admission or live startup acceptance. |
 
 The [graph-preserving fresh-start disposition](../../../database/PERSISTENCE-DISPOSITION.md)
@@ -173,7 +172,7 @@ have not been requalified by this update.
 
 | Priority / bounded owner task | Public boundary to preserve | Evidence needed before claiming closure |
 | --- | --- | --- |
-| 1. Game Evidence export count reconciled | The earlier five-versus-ten observation is historical. Current [`components.json`](../../../components.json) and [package `__all__`](../../../services/game-evidence/src/tempo_game_evidence/__init__.py) both list the same ten supported exports, including legacy authority/preview types. | Exact registry/source list comparison passed on November 1. This is metadata correspondence, not a fresh import, installed artifact or production-adoption claim. No export removal is assigned. |
+| 1. Game Evidence export count reconciled | The earlier five-versus-ten observation is historical. Current [`components.json`](../../../components.json) and [package `__all__`](https://github.com/aaweaver-actuary/tempo/blob/d0f1ecf03778f165ba29bbb09120fceabfc65e46/services/game-evidence/src/tempo_game_evidence/__init__.py) both list the same ten supported exports, including legacy authority/preview types. | Exact registry/source list comparison passed on November 1. This is metadata correspondence, not a fresh import, installed artifact or production-adoption claim. No export removal is assigned. |
 | 2. Finish the installed launcher composition, only after its dependencies are reviewed | Keep [planning/readiness/transition](../../../scripts/README.md) separate from normal start/stop/status. Review the unmerged #469–473 owner surfaces and bind the selected image, configuration, database readback and completed admission; do not add a second launcher or bypass fail-closed routing. | Exact installed-source/target correspondence, public-command readback and bounded startup/shutdown proof. Fake/synthetic receipts are not real-target acceptance or cutover authorization. |
 | 3. Worker/HTTP reverse imports removed in source | [Merged C1 / PR #734](https://github.com/aaweaver-actuary/tempo/pull/734) moves registration to [`compatibility_coordinator`](../../../backend/app/product_composition/compatibility_coordinator.py). The SQLite worker uses that composition; authored Studies receives its refresh callback through a router factory. The existing singleton, task names and lifecycle remain. | Fresh-process HTTP-root rejection, repeated registration, two-router callbacks and existing Studies/durable-queue checks passed. This does not establish broker/native/installed acceptance or completion of the separate all-domain `tasks.py` registrar work. |
 | 4. Narrow one legacy Study facade at a time | Start with [frozen-order composition](../../../backend/app/study/frozen_order/README.md), which already has pure public policy/fact exports but still binds feedback and private queue-order helpers. Keep the caller transaction and canonical queue writer. | Fake semantic-capability tests plus the retained borrowed-transaction/queue-order regression for that changed boundary; check the actual imports, not just folder placement. |
@@ -191,30 +190,8 @@ reconciliation is not a reason to repeat runtime suites.
 The [proposed local pgAdmin companion](../../../config/pgadmin/README.md#ownership-and-startup)
 has its own bounded operational view. It is not activated or a Study dependency.
 
-**MAIN:** these implementations coexist with the
-[legacy assembly](../../../backend/README.md#legacy-assembly-and-existing-coupling). This
-view shows source interfaces available for explicit composition, not a claim that
-all users or live data have moved to them. `apps/study-web` remains a planned
-independent artifact; the Learning-connected Study build reuses `static`/`app`.
-`R/W` storage edges mean reads/writes by that state's owning component.
+The installed backend serves Study, Tactics and Game Review using its existing PostgreSQL authority. The independently selectable Learning runtime also uses the shared review and remediation packages. The standalone Content and Game Evidence services, their dedicated databases and the external A bridge have been removed.
 
-```mermaid
-flowchart TB
-  Study["Study browser<br/>static / app"] -->|"queue / review HTTP"| Learning["Learning runtime<br/>Queue / settlement owner"]
-  Learning -->|"R/W"| LDB[("Learning PostgreSQL")]
-  Bridge["A bridge operator<br/>Public CLI/HTTP adapters"] -->|"prepare / approve / export"| Content["Content<br/>Sources / publications"]
-  Content -->|"R/W"| CDB[("Content PostgreSQL")]
-  Bridge -->|"stage / activate / retire"| Learning
-  Content -.->|"record CLI: authenticated<br/>original receipt GET"| Learning
-  GE["Game Evidence<br/>Sources / comparisons / outbox"] -->|"R/W"| GDB[("Game Evidence PostgreSQL")]
-  Bridge -.->|"explicit snapshot load"| GE
-  GE -->|"EvidenceDelivery HTTP"| Learning
-```
-
-The bridge is an explicit operator tool, not an automatically invoked Learning
-dependency. Content's explicit record CLI also makes its own authenticated
-Learning receipt read before recording a result; see the
-[publication sequence](../../../services/content/README.md#content-publication-and-serving-activation-main).
 The former external A-export pilot is retired from maintained source; its
 [last source snapshot](https://github.com/aaweaver-actuary/tempo/tree/b39dd3a9ac2e846f1d2a9242a9d8a2eda682f9a8/tools/analysis-restoration/c_pilot)
 is historical reference, not an active edge in this view. Standalone Workbench,
@@ -226,8 +203,6 @@ current product. Their earlier source boundaries remain available in the
 | --- | --- |
 | Study build and connection | [Vite target](../../../vite.static.config.ts), [static entry](../../../static/src/main.tsx), [Study connection](../../../app/lib/study-connection.ts) (`learningFetch`, origin/path allowlist). [Study artifact status](../../../apps/study-web/README.md) is still planned. |
 | Learning HTTP, transaction and install closure | [`create_app`](../../../services/learning/runtime/src/tempo_learning_runtime/api.py), [`Database`](../../../database/tempo_learning_database/connections.py), [installed dependencies](../../../services/learning/runtime/pyproject.toml). Game Evidence **contracts**, not its service implementation, are installed. |
-| Content/bridge and activation | [Content `Store`](../../../database/tempo_content_database/adapters/store.py), [bridge domain](../../../services/content/src/tempo_content/bridge/__init__.py), [operator](../../../tools/analysis-restoration/a_bridge/src/tempo_a_bridge/cli.py), [Learning publication bridge](../../../services/learning/runtime/src/tempo_learning_runtime/publication_bridge.py). See [activation flow](../../../services/content/README.md#content-publication-and-serving-activation-main). |
-| Game Evidence output and delivery | [`Store`](../../../database/tempo_game_evidence_database/adapters/store.py), [`deliver_one`](../../../services/game-evidence/src/tempo_game_evidence/delivery.py), [analysis export](../../../services/game-evidence/src/tempo_game_evidence/analysis_export.py), [Learning receiver](../../../services/learning/runtime/src/tempo_learning_runtime/receivers.py). |
 | Shared libraries | [scheduling](../../../packages/scheduling/README.md), [chess identity](../../../packages/chess-core/README.md), [browser intents](../../../database/browser-intents/README.md), [Study session](../../../packages/study-session/README.md), [board renderer](../../../packages/board-ui/README.md), [contract index](../../../contracts/README.md). Package existence is not proof of every consumer's adoption. |
 
 ## Views and maintenance owners
@@ -247,7 +222,7 @@ ownership; its status alone does not prove adoption.
 
 | View / canonical README section | Level / question | Maintenance owner and source entry |
 | --- | --- | --- |
-| [Extracted component map](#implemented-component-increments) | System: what can run separately, and who owns each database? | Composition/affected service owners; [Learning](../../../services/learning/runtime/README.md), [Content](../../../services/content/README.md), [Game Evidence](../../../services/game-evidence/README.md). |
+| [Extracted component map](#implemented-component-increments) | System: what can run separately, and who owns each database? | Composition/affected service owners; [Learning](../../../services/learning/runtime/README.md) and [installed PostgreSQL](../../../database/README.md#installed-database). |
 | [Legacy assembly](../../../backend/README.md#legacy-assembly-and-existing-coupling) | System: where do current full-app dependencies cross those target boundaries? | Legacy app/backend owners; [Home](../../../app/views/home_view.tsx), [backend root](../../../backend/app/main.py), [Compose](../../../docker-compose.yml). |
 | [Data, resource and lifecycle ownership](system.md#data-resource-and-lifecycle-owners) | Component: migrations, pools, shutdown and shared failure domains | Each state/resource owner; source links in the table. |
 | [Managed builder allocation](../../../scripts/README.md#managed-builder-allocation) | Development resource boundary: how do unrestricted/default or explicit CPU limits, memory admission, Study quiet control and verified cleanup compose? | Shared builder guard owner; [development-budget](../../../scripts/development-budget.mjs). Ordinary CPU quotas and fixed internal fanout removed in source; memory/Study/ownership controls retained. Installed Study responsiveness and a real builder workload remain unproved. |
@@ -258,8 +233,6 @@ ownership; its status alone does not prove adoption.
 | [Game Review commands and Settings recovery](../../../backend/app/product_composition/README.md#durable-game-review-commands-and-settings-recovery-590) | Sequence: original browser intent, reader API dispatch, borrowed writer and durable receipt | Games command/API owner #590; current-main extraction untested, provider activation and Study settlement separate. |
 | [Game-bound repertoire preparation](../../../backend/app/repertoire/README.md#game-bound-first-boundary-preparation) | Component/authority: complete authored route proof, complete candidate bindings and independent Study selection/fencing | Repertoire pure owner, authored database adapter and Study receiving owner; recovery candidate source, assembled timing and installation unverified. |
 | [Review and lost-response recovery](../../../services/learning/runtime/README.md#review-commit-and-recovery-main) | Sequence: durable browser intent, transaction owner, logical settlement, next load | Study session, Learning review and queue owners. |
-| [Evidence and asynchronous admission](../../../services/game-evidence/README.md#observed-game-evidence-to-learning-main) | Sequence/data flow: independent producer, immutable delivery, receipts, lease fencing and queue effects | Game Evidence delivery, Learning receiver/remediation/admission owners. |
-| [Publication and activation](../../../services/content/README.md#content-publication-and-serving-activation-main) | Data flow: immutable definitions versus serving authority | Content, bridge operator and Learning publication owners. |
 | [Historical Games read and failure](https://github.com/aaweaver-actuary/tempo/blob/aec931f9820b8cd6b219074ae0c32d6686c21684/apps/workbench-web/README.md#games-read-failure-and-disposal-main-merged-pr322) | Dated standalone Workbench sequence | Retired; PR322 evidence is historical. |
 | [Standalone Explorer evidence](../../../backend/app/analysis/probability/README.md) | Component/sequence: bounded optional acquisition, explicit population, unknown mass and cancellation | #493 provider adapter; injected HTTP/cache resource owners. Proposed source integration; product/deployment isolation unverified. |
 
