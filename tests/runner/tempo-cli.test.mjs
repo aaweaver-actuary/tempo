@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { schemaVersionFromSource, validateTarget, validateContainers, deploymentCanStart,
   acquireTargetLock, assessMainVerification, assessCandidate, qualityEvidence, atomicJson, selectCandidate, productVolumes, targetKey,
   CommandExecutionError, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, sourceFingerprint, sourceMatchesFingerprint } from "../../scripts/tempo-deployment.mjs";
-import { assessMigrationRecovery, cut62WitnessName, privateSelection, inspectDisposableIsolation, classifyDisposableIsolationRecovery, validateCut62Preflight, assertColdPreflightContainers, cut62MountDirectory, requirePrivateCut62Witness, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
+import { assessMigrationRecovery, cut62WitnessName, privateSelection, inspectDisposableIsolation, classifyDisposableIsolationRecovery, persistDisposableIsolationIntent, advanceDisposableIsolationMarker, validateCut62Preflight, assertColdPreflightContainers, cut62MountDirectory, requirePrivateCut62Witness, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
 import { parseArguments, ensureDocker } from "../../scripts/tempo-cli.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
@@ -2633,11 +2633,11 @@ test("disposable isolation inspection rejects changed identities, exposed ports 
   assert.throws(() => inspectDisposableIsolation(production), /unsafe/);
 });
 
-test("disposable recovery classifies physical crash states and refuses an unbound receipt", () => {
+test("disposable recovery classifies physical crash states and refuses an unbound receipt", t => {
   const identity = { target: "target", trustedDaemon: true, daemonId: "daemon", containerId: "container", networkId: "network", imageId: "image" };
   const attempt = "12345678-1234-1234-1234-123456789abc";
   const preWitness = `pre62-${attempt}.json`;
-  const binding = { target: "target", attempt_id: attempt, backup_filename: "backup", backup_sha256: "a".repeat(64), selection_sha256: "b".repeat(64) };
+  const binding = { version: 1, target: "target", attempt_id: attempt, backup_filename: "backup", backup_sha256: "a".repeat(64), selection_sha256: "b".repeat(64) };
   const guard = { version: 1, state: "pending", target: "target", attempt_id: attempt, starting_schema: 59, intended_schema: 62,
     cut62_witness: `cut62-${attempt}.json`,
     database: { name: "tempo" }, backup: { verified: true, filename: "backup" }, defense_binding: binding, pre62_witness: preWitness, pre62_witness_id: "c".repeat(64),
@@ -2658,9 +2658,31 @@ test("disposable recovery classifies physical crash states and refuses an unboun
   assert.equal(classifyDisposableIsolationRecovery({ ...isolated, allowConnections: false, receipt, receiptValidated: true }), "record-verified");
   const verifiedGuard = { ...guard, isolation: { ...guard.isolation, phase: "verified" } };
   assert.equal(classifyDisposableIsolationRecovery({ ...isolated, guard: verifiedGuard, allowConnections: false, receipt, receiptValidated: true }), "restore-after-receipt");
+  assert.equal(classifyDisposableIsolationRecovery({ ...isolated, guard: verifiedGuard, allowConnections: false, receipt, receiptValidated: true, pinnedPid: 42, backendPids: [42], schema: 62 }), "close-pinned-after-receipt");
+  assert.throws(() => classifyDisposableIsolationRecovery({ ...isolated, guard: verifiedGuard, allowConnections: true, receipt, receiptValidated: true, pinnedPid: 42, backendPids: [42], schema: 62 }), /unsafe/);
+  assert.throws(() => classifyDisposableIsolationRecovery({ ...isolated, allowConnections: false, receipt, receiptValidated: "true" }), /unsafe/);
   assert.equal(classifyDisposableIsolationRecovery({ ...input, guard: verifiedGuard, receipt, receiptValidated: true }), "record-reattached");
   const reattachedGuard = { ...guard, isolation: { ...guard.isolation, phase: "reattached" } };
   assert.equal(classifyDisposableIsolationRecovery({ ...input, guard: reattachedGuard, receipt, receiptValidated: true }), "complete");
+  const guardDirectory = directory(t), guardPath = join(guardDirectory, "migration-guard.json");
+  const beforeIntent = structuredClone(guard); delete beforeIntent.isolation;
+  atomicJson(guardPath, beforeIntent);
+  const writtenIntent = persistDisposableIsolationIntent({ ...input, guardPath, guard: beforeIntent });
+  assert.equal(JSON.parse(readFileSync(guardPath, "utf8")).isolation.phase, "intent");
+  const writtenDetached = advanceDisposableIsolationMarker({ guardPath, guard: writtenIntent, observation: detached });
+  assert.equal(JSON.parse(readFileSync(guardPath, "utf8")).isolation.phase, "detached");
+  const beforeRejected = readFileSync(guardPath, "utf8");
+  assert.throws(() => advanceDisposableIsolationMarker({ guardPath, guard: writtenIntent, observation: detached }), /guard changed/);
+  assert.throws(() => advanceDisposableIsolationMarker({ guardPath, guard: writtenDetached,
+    observation: { ...isolated, allowConnections: false, receipt } }), /unsafe/);
+  assert.equal(readFileSync(guardPath, "utf8"), beforeRejected);
+  const writtenVerified = advanceDisposableIsolationMarker({ guardPath, guard: writtenDetached,
+    observation: { ...isolated, allowConnections: false, receipt, receiptValidated: true } });
+  assert.equal(JSON.parse(readFileSync(guardPath, "utf8")).isolation.phase, "verified");
+  const writtenReattached = advanceDisposableIsolationMarker({ guardPath, guard: writtenVerified,
+    observation: { ...input, receipt, receiptValidated: true } });
+  assert.equal(JSON.parse(readFileSync(guardPath, "utf8")).isolation.phase, "reattached");
+  assert.deepEqual(writtenReattached.backup, beforeIntent.backup);
   assert.throws(() => classifyDisposableIsolationRecovery({ ...input, receipt, receiptValidated: true }), /unsafe/);
   assert.throws(() => classifyDisposableIsolationRecovery({ ...isolated, guard: reattachedGuard, receipt, receiptValidated: true }), /unsafe/);
   assert.throws(() => classifyDisposableIsolationRecovery({ ...isolated, allowConnections: false, receipt }), /unsafe/);

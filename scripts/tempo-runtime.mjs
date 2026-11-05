@@ -218,7 +218,7 @@ export function classifyDisposableIsolationRecovery({ guard, identity, attached,
         !Number.isSafeInteger(pinnedPid) || pinnedPid <= 0 || backendPids.length !== 1 || backendPids[0] !== pinnedPid) ||
       !Number.isSafeInteger(preparedTransactions) || preparedTransactions !== 0 ||
       (schema !== null && ![61, 62].includes(schema)) || !guard.backup?.verified ||
-      binding?.target !== guard.target || binding.attempt_id !== guard.attempt_id ||
+      binding?.version !== 1 || binding.target !== guard.target || binding.attempt_id !== guard.attempt_id ||
       binding.backup_filename !== guard.backup.filename || !digest(binding.backup_sha256) || !digest(binding.selection_sha256) ||
       cut?.attempt_id !== guard.attempt_id || cut.backup_filename !== guard.backup.filename || !digest(cut.witness_id) ||
       (guard.starting_schema === 59 && (guard.pre62_witness !== `pre62-${guard.attempt_id}.json` || !digest(guard.pre62_witness_id) ||
@@ -232,15 +232,19 @@ export function classifyDisposableIsolationRecovery({ guard, identity, attached,
     daemon_id: identity.daemonId, container_id: identity.containerId, network_id: identity.networkId, image_id: identity.imageId,
     backup_filename: binding.backup_filename, backup_sha256: binding.backup_sha256, selection_sha256: binding.selection_sha256,
     pre62_witness_id: guard.starting_schema === 59 ? guard.pre62_witness_id : null, cut62_witness_id: cut.witness_id, schema: 62 };
-  if (receipt && (!receiptValidated || !isDeepStrictEqual(receipt, expectedReceipt))) fail();
+  if (receipt && (receiptValidated !== true || !isDeepStrictEqual(receipt, expectedReceipt))) fail();
   if (receipt) {
-    if (schema !== null && schema !== 62) fail();
+    if ((schema !== null && schema !== 62) || (pinnedPid !== null && schema !== 62)) fail();
     if (isolation.phase === "intent") fail();
     if (isolation.phase === "detached") {
       if (attached || allowConnections) fail();
       return "record-verified";
     }
     if (isolation.phase === "verified") {
+      if (!attached && pinnedPid !== null) {
+        if (allowConnections) fail();
+        return "close-pinned-after-receipt";
+      }
       if (!attached) return "restore-after-receipt";
       if (!allowConnections || pinnedPid !== null) fail();
       return "record-reattached";
@@ -267,6 +271,40 @@ export function classifyDisposableIsolationRecovery({ guard, identity, attached,
   }
   if (schema !== null) fail();
   return allowConnections ? "pin-and-reclose" : "reopen-isolated-and-pin";
+}
+
+// Persist only evidence-backed phase markers; Docker and database actions are
+// deliberately separate, so an interrupted action is reconciled by inspection.
+function requireCurrentIsolationGuard(guardPath, expectedGuard) {
+  if (!isAbsolute(guardPath) || basename(guardPath) !== "migration-guard.json")
+    throw new Error("Disposable isolation guard path is invalid.");
+  let actual;
+  try { actual = JSON.parse(privateBytes(guardPath)); } catch { throw new Error("Original migration guard is unavailable or invalid."); }
+  if (!isDeepStrictEqual(actual, expectedGuard)) throw new Error("Original migration guard changed; keep writers stopped.");
+}
+export function persistDisposableIsolationIntent({ guardPath, guard, identity, targetOid, systemIdentifier,
+  controlOid, controlName, adminRole, targetName, attached, allowConnections, backendPids, preparedTransactions }) {
+  requireCurrentIsolationGuard(guardPath, guard);
+  if (guard.isolation) throw new Error("Original migration already has an isolation intent.");
+  const next = structuredClone(guard);
+  next.isolation = { phase: "intent", identity: structuredClone(identity), target_oid: targetOid, target_name: targetName,
+    system_identifier: systemIdentifier, control_oid: controlOid, control_name: controlName, admin_role: adminRole,
+    original_allow_connections: true };
+  if (classifyDisposableIsolationRecovery({ guard: next, identity, targetOid, systemIdentifier, controlOid, controlName,
+    adminRole, targetName, attached, allowConnections, backendPids, preparedTransactions }) !== "detach")
+    throw new Error("Disposable isolation cannot begin from this state.");
+  atomicJson(guardPath, next);
+  return next;
+}
+export function advanceDisposableIsolationMarker({ guardPath, guard, observation }) {
+  requireCurrentIsolationGuard(guardPath, guard);
+  const action = classifyDisposableIsolationRecovery({ ...observation, guard });
+  const phase = { "record-detached": "detached", "record-verified": "verified", "record-reattached": "reattached" }[action];
+  if (!phase) throw new Error("No durable isolation marker is valid for this state.");
+  const next = structuredClone(guard);
+  next.isolation.phase = phase;
+  atomicJson(guardPath, next);
+  return next;
 }
 
 // Read-only classification shared by diagnostics and lock-time preflight.
