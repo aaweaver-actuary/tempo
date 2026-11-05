@@ -62,6 +62,10 @@ def verify_candidate_provenance(target, revision):
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)
     if head.returncode or head.stdout.strip() != revision:
         raise RuntimeError('Disposable candidate revision differs')
+    status = subprocess.run(['git', '-C', str(checkout), 'status', '--porcelain', '--untracked-files=no'],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)
+    if status.returncode or status.stdout:
+        raise RuntimeError('Disposable candidate has modified tracked source')
     for relative in ('database/tests/check_postgres_cli_lifecycle.py', 'database/tests/cli_isolation_supervisor.py'):
         path = checkout / relative
         info = os.lstat(path)

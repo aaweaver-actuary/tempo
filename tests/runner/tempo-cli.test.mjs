@@ -3212,8 +3212,10 @@ with tempfile.TemporaryDirectory(dir='/private/tmp') as tmp:
  root=pathlib.Path(tmp); tests=root/'database'/'tests';tests.mkdir(parents=True)
  fixture=tests/'check_postgres_cli_lifecycle.py'; supervisor=tests/'cli_isolation_supervisor.py'
  fixture.write_text('fixture original\n');supervisor.write_text('supervisor original\n')
+ runtime=root/'scripts'/'tempo-runtime.mjs';runtime.parent.mkdir();runtime.write_text('runtime original\n')
+ verifier=root/'database'/'tooling'/'verify_postgres_cli_state.py';verifier.parent.mkdir();verifier.write_text('verifier original\n')
  def git(*args):return subprocess.run(['git','-C',str(root),*args],check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True).stdout.strip()
- git('init','-q');git('add','database');git('-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','-qm','fixture')
+ git('init','-q');git('add','database','scripts');git('-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','-qm','fixture')
  revision=git('rev-parse','HEAD')
  scope={'Path':pathlib.Path,'__file__':str(supervisor),'re':re,'subprocess':subprocess,'os':os,'stat':stat,'hmac':hmac,'hashlib':hashlib}
  exec(compile(ast.Module(body=[node],type_ignores=[]),'<supervisor>','exec'),scope)
@@ -3222,6 +3224,13 @@ with tempfile.TemporaryDirectory(dir='/private/tmp') as tmp:
  try:check({'root':str(root)},revision)
  except RuntimeError:pass
  else:raise AssertionError('changed mounted fixture accepted')
+ git('checkout','--','database/tests/check_postgres_cli_lifecycle.py')
+ for changed in (runtime,verifier):
+  original=changed.read_text();changed.write_text('unapproved source\n')
+  try:check({'root':str(root)},revision)
+  except RuntimeError:pass
+  else:raise AssertionError('dirty execution dependency accepted')
+  changed.write_text(original)
 `;
   const result = fsSpawnSync("python3", ["-c", proof], { cwd: process.cwd(), encoding: "utf8" });
   assert.equal(result.status, 0, result.stdout + result.stderr);
