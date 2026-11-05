@@ -277,6 +277,7 @@ def test_schema61_defense_exclusive_rehearsal_preserves_shared_history(tmp_path)
             db.execute("INSERT INTO frozen_opening_runs(run_id,plan_checksum,plan_json,created_at,reader_version) VALUES ('census-run','census-hash','{}','2026-01-01','1')")
             db.execute("INSERT INTO frozen_opening_ranks(run_id,card_id,ordinal,fingerprint,memberships_json,definition_json) VALUES ('census-run','census-opening',1,'synthetic','[]','{}')")
             db.execute("UPDATE frozen_opening_activation SET run_id='census-run',epoch=1 WHERE id=1")
+            db.execute("INSERT INTO frozen_opening_pending(run_id) VALUES ('census-run')")
             db.execute("INSERT INTO study_position_epochs(repertoire_id,epoch,source_digest,created_at) VALUES ('census-rep','epoch','synthetic',now())")
             db.execute("INSERT INTO study_position_states(repertoire_id,variant,position,expected_uci,policy_version,owner_epoch,source_digest,fsrs_internal_card_id,fsrs_json,due_at,donor_card_id,donor_card_revision,donor_fingerprint,donor_selection_policy) VALUES ('census-rep','standard','position','e2e4','1','epoch','synthetic',4503599627370496,'{}',now(),'census-opening',1,'synthetic','synthetic')")
             db.execute("INSERT INTO study_position_issued_plans(attempt_id,queue_entry_id,card_id,card_revision,repertoire_id,variant,owner_epoch,source_digest,issue_study_day,plan_digest,plan_json,issued_at) VALUES ('position-plan',900001,'census-opening',1,'census-rep','standard','epoch','synthetic','2026-01-01','synthetic','{}',now())")
@@ -316,14 +317,20 @@ def test_schema61_defense_exclusive_rehearsal_preserves_shared_history(tmp_path)
                 expected[name] = [row for row in expected[name] if not predicate(row)]
             next(row for row in expected['threat_training_candidates'] if row['id']=='exclusive-candidate')['card_id'] = None
             next(row for row in expected['priority_repertoire_source_epochs'] if row['repertoire_id']=='census-rep')['version'] += 1
+            next(row for row in expected['frozen_opening_runs'] if row['run_id']=='census-run')['invalidated'] = 1
             old_epoch = db.execute("SELECT version FROM priority_repertoire_source_epochs WHERE repertoire_id='census-rep'").fetchone()[0]
+            assert db.execute("SELECT invalidated FROM frozen_opening_runs WHERE run_id='census-run'").fetchone()[0] == 0
+            db.execute('SAVEPOINT zero_row_trigger')
+            assert db.execute("DELETE FROM cards WHERE id='synthetic-no-such-card'").rowcount == 0
+            assert db.execute("SELECT invalidated FROM frozen_opening_runs WHERE run_id='census-run'").fetchone()[0] == 1
+            db.execute('ROLLBACK TO SAVEPOINT zero_row_trigger')
             db.execute('SAVEPOINT exclusive_rehearsal')
             assert db.execute("UPDATE threat_training_candidates SET card_id=NULL WHERE id='exclusive-candidate' AND card_id='census-exclusive'").rowcount == 1
             assert db.execute("DELETE FROM daily_queue WHERE id=900004 AND card_id='census-exclusive'").rowcount == 1
             assert db.execute("DELETE FROM queue_attempt_origins WHERE queue_entry_id=900004 AND card_id='census-exclusive' AND revision=1 AND content_type='defense'").rowcount == 1
             assert db.execute("DELETE FROM cards WHERE id='census-exclusive' AND content_type='defense'").rowcount == 1
             assert db.execute("SELECT version FROM priority_repertoire_source_epochs WHERE repertoire_id='census-rep'").fetchone()[0] == old_epoch + 1
-            assert db.execute("SELECT invalidated FROM frozen_opening_runs WHERE run_id='census-run'").fetchone()[0] == 0
+            assert db.execute("SELECT invalidated FROM frozen_opening_runs WHERE run_id='census-run'").fetchone()[0] == 1
             assert db.execute("SELECT card_id FROM threat_training_candidates WHERE id='exclusive-candidate'").fetchone()[0] is None
             assert retained_digest() == before
             assert changed_rows() == expected
