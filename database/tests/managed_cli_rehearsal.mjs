@@ -113,8 +113,28 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
     const result = spawnSync(process.execPath,['scripts/tempo-cli.mjs',...args,'--config',registration],
       {cwd:root,env:{...commonEnv,W08_FAULT:fault},encoding:'utf8',timeout:600000,maxBuffer:20*1024*1024});
     if (result.error) throw result.error;
-    atomicJson(join(directory,`managed-cli-${String(++invocation).padStart(2,'0')}.json`),{
+    const sequence=String(++invocation).padStart(2,'0');
+    atomicJson(join(directory,`managed-cli-${sequence}.json`),{
       fault,status:result.status,signal:result.signal,stdout:redact(result.stdout??'',secrets),stderr:redact(result.stderr??'',secrets)});
+    const dockerCall=(...args)=>spawnSync(environment.W08_REAL_DOCKER,['--context',context,...args],{encoding:'utf8',timeout:15000});
+    const listed=dockerCall('ps','-aq','--filter',`label=com.docker.compose.project=${project}`,'--filter','label=com.docker.compose.service=postgres');
+    if(listed.status!==0)throw new Error('Owned PostgreSQL telemetry inventory failed');
+    const ids=listed.stdout.trim().split(/\s+/).filter(Boolean);if(ids.length>1)throw new Error('Owned PostgreSQL telemetry identity is ambiguous');
+    const telemetry={sequence,fault,cumulative_since_container_start:true,available:false};
+    if(ids.length){
+      const inspected=dockerCall('inspect',ids[0]);if(inspected.status!==0)throw new Error('Owned PostgreSQL telemetry inspection failed');
+      const items=JSON.parse(inspected.stdout),item=items[0];
+      if(items.length!==1||item.Id!==ids[0]||item.Image!==db.Image||item.Config?.Labels?.['com.docker.compose.project']!==project||
+          item.Config?.Labels?.['com.docker.compose.service']!=='postgres')throw new Error('Owned PostgreSQL telemetry identity differs');
+      Object.assign(telemetry,{containerId:item.Id,image:item.Image,running:item.State.Running,oomKilled:item.State.OOMKilled,memoryLimit:item.HostConfig.Memory});
+      if(item.State.Running){
+        const sample=dockerCall('exec',item.Id,'sh','-c','cat /sys/fs/cgroup/memory.current; cat /sys/fs/cgroup/memory.peak; cat /sys/fs/cgroup/memory.events');
+        if(sample.status!==0)throw new Error('Owned PostgreSQL cgroup telemetry unavailable');
+        const lines=sample.stdout.trim().split('\n');if(!/^\d+$/.test(lines[0]??'')||!/^\d+$/.test(lines[1]??''))throw new Error('Owned PostgreSQL cgroup telemetry malformed');
+        Object.assign(telemetry,{available:true,currentBytes:Number(lines[0]),peakBytes:Number(lines[1]),events:lines.slice(2).join('\n')});
+      }
+    }
+    atomicJson(join(directory,`managed-pg-cgroup-${sequence}.json`),telemetry);
     return result;
   };
   const fired = fault => {
@@ -235,6 +255,14 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
   assert.equal(statSync(selectionCopy).ino,selectionInode); assert.equal(Number((await readLatestMigration(compose)).stdout.trim()),61);
   const witnessDir=join(stateDirectory,captured.cut62_witness.slice(0,-5)), witness=join(witnessDir,captured.cut62_witness);
   const witnessBytes=readFileSync(witness), witnessInode=statSync(witness).ino;
+  const planScript=`import json,os,time,psycopg\nfrom psycopg import sql\nfrom database.tooling import verify_postgres_cli_state as g\nselection=json.load(open('/selection.json')); started=time.monotonic()\nwith psycopg.connect(os.environ['TEMPO_POSTGRES_ADMIN_URL']) as db:\n db.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');db.execute('SET LOCAL join_collapse_limit=1');db.execute('SET LOCAL jit=off');db.execute("SET LOCAL statement_timeout='30s'")\n layout=g._cut62_layout(db,g.CUT62_PROTECTED_TABLES|g.CUT62_RETIRED_TABLES|{g.CUT62_LEDGER});keys=layout['threat_training_candidates'][0]\n cohort=\"SELECT c.id card_id,t.id candidate_id,c.repertoire_id FROM jsonb_array_elements(%s::jsonb) approved JOIN public.cards c ON c.id=approved->>0 JOIN public.threat_training_candidates t ON t.id=approved->>1 AND t.card_id=c.id\"\n view=\"SELECT (json_populate_record(t, CASE WHEN EXISTS (SELECT 1 FROM cohort c WHERE c.candidate_id=t.id) THEN '{\\\"card_id\\\":null}'::json ELSE '{}'::json END)).* FROM public.threat_training_candidates t\"\n query=sql.SQL('EXPLAIN (FORMAT JSON) WITH cohort AS ({cohort}), projected AS ({projection}) SELECT row_to_json(t)::text FROM projected t ORDER BY {keys}').format(cohort=sql.SQL(cohort),projection=sql.SQL(view),keys=sql.SQL(',').join(sql.Identifier(k) for k in keys))\n plan=db.execute(query,(json.dumps(selection['keys'],separators=(',',':')),)).fetchone()[0]\n print(json.dumps({'elapsed_seconds':time.monotonic()-started,'plan':plan}))`;
+  const plan=JSON.parse((await docker(['run','--rm','--network',policy.network_id,'--memory','256m','--label',`tempo.disposable.owner=${project}`,
+    '--volume',`${selectionCopy}:/selection.json:ro`,'--volume',`${config.secrets.admin_pgpass.file}:/run/secrets/admin_pgpass:ro`,
+    '--env','PGPASSFILE=/run/secrets/admin_pgpass','--env','TEMPO_POSTGRES_ADMIN_URL=postgresql://postgres@postgres:5432/tempo',
+    '--entrypoint','python',preparedBinding.image,'-c',planScript])).stdout);
+  assert(Array.isArray(plan.plan)&&Number.isFinite(plan.elapsed_seconds));
+  atomicJson(join(directory,'managed-optimized-projection-plan.json'),{revision,image:preparedBinding.image,schema:61,
+    joinCollapseLimit:1,jit:false,statementTimeoutMs:30000,...plan});
   const alternateScript=`import json,os,psycopg\nfrom database.tooling.verify_postgres_cli_state import load_cut62_history_selection,load_cut62_attempt_binding,save_cut62_history_v2\ns,d=load_cut62_history_selection('/cut62/defense-selection.json')\nb=load_cut62_attempt_binding('/cut62/binding.json',s,d)\nwith psycopg.connect(os.environ['TEMPO_POSTGRES_ADMIN_URL']) as db:\n with db.transaction():\n  db.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ WRITE')\n  print(json.dumps({'witness_id':save_cut62_history_v2('/cut62/alternate.json',db,s,b,d,b)}))`;
   const alternate=JSON.parse((await compose(['--profile','maintenance','run','--rm','--no-deps','-T','--volume',`${witnessDir}:/cut62`,
     'migration','-c',alternateScript])).stdout); assert.notEqual(alternate.witness_id,captured.cut62_identity.witness_id);
@@ -390,7 +418,7 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
   git('fetch','origin',nextRef);
   if(git('rev-parse','FETCH_HEAD')!==nextRemote[0]||git('rev-parse','FETCH_HEAD^{tree}')!==candidateTree)
     throw new Error('Owned later candidate must be an exact-tree descendant');
-  git('merge-base','--is-ancestor',revision,nextRemote[0]);
+  if(git('rev-parse','FETCH_HEAD^')!==revision)throw new Error('Owned later candidate must directly follow the original');
   const settledGuardBytes=readFileSync(join(stateDirectory,'migration-guard.json'));
   const nextStop=cli('','stop');assert.equal(nextStop.status,0,nextStop.stderr);
   const stoppedDb=JSON.parse((await docker(['inspect',dbId])).stdout)[0];
@@ -407,6 +435,8 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
   assert.deepEqual(await request('operations/w08-managed-review'),reviewReceipt);
   const nextPlayable=(await request('queue/today')).cards.find(item=>item.moves?.length&&item.start_fen);
   assert(nextPlayable&&new Chess(nextPlayable.start_fen).move(nextPlayable.moves[0]));
+  if(git('ls-remote','origin',nextRef).trim()!==`${nextRemote[0]}\t${nextRef}`)
+    throw new Error('Owned later candidate ref changed during the run');
   atomicJson(join(directory,'managed-later-candidate.json'),{initialRevision:revision,nextRevision:nextRemote[0],nextRef,
     tree:candidateTree,migrationImage:nextDeployment.images.migration,guardSha256:createHash('sha256').update(settledGuardBytes).digest('hex'),
     ci:'disabled'});
