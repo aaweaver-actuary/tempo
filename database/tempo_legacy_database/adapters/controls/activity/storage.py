@@ -1,7 +1,7 @@
 """Existing finite background progress/control/projection queries; caller owns policy."""
 
 from ... import postgres_store
-from ...defensive_analysis import task_admission_sql, search_admission_sql
+from ...defensive_analysis import task_admission_sql
 
 
 SOURCES = {
@@ -10,7 +10,6 @@ SOURCES = {
     "derivation": ("game_derivation_jobs", "game_id"),
     "integrity": ("repertoire_integrity_jobs", "repertoire_id"),
     "coverage": ("repertoire_coverage_runs", "id"),
-    "threat_analysis": ("threat_analysis_requests", "id"),
 }
 
 
@@ -33,10 +32,9 @@ def prepare_progress_read(source):
 
 def prepare_control_read(source, defensive_kinds):
     table, id_column = SOURCES[source]
-    state_column = 'state' if source in {'durable', 'threat_analysis'} else 'status'
+    state_column = 'state' if source == 'durable' else 'status'
     row_lock = ' FOR UPDATE' if postgres_store.configured() else ''
-    settings_admission = (task_admission_sql('kind', defensive_kinds) if source == 'durable' else
-                          search_admission_sql('threat_analysis_requests.id') if source == 'threat_analysis' else '1=1')
+    settings_admission = task_admission_sql('kind', defensive_kinds) if source == 'durable' else '1=1'
     native_explicit = source == 'durable' and postgres_store.configured()
     if native_explicit:
         from ...authored_repertoires.pgn_import.preparation import receipt_scope
@@ -102,14 +100,5 @@ def release_maia_lease(database, values):
         """UPDATE repertoire_coverage_nodes SET maia_status='queued',
                lease_id=NULL,lease_expires_at=NULL,updated_at=?
                WHERE run_id=? AND maia_status='leased'""",
-        values,
-    )
-
-
-def release_threat_lease(database, values):
-    return database.execute(
-        """UPDATE threat_analysis_requests SET state='queued',lease_id=NULL,
-                 lease_expires_at=NULL,updated_at=?
-               WHERE id=? AND state='leased'""",
         values,
     )

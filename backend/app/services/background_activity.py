@@ -87,6 +87,4 @@ def set_control_in_transaction(database, source: str, work_id: str, action: str,
     write_control(database, (value, now, source, work_id))
     if source == "coverage" and action == "pause":
         storage.release_maia_lease(database, (now, work_id))
-    if source == "threat_analysis" and action == "pause":
-        storage.release_threat_lease(database, (now, work_id))
     return True
