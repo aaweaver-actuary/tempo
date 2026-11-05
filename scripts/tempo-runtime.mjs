@@ -436,6 +436,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   // A completed disposable isolation record is authenticated in preflight
   // before any application startup, including direct calls to startServices.
   let completedIsolationPending = Boolean(migrationGuard?.isolation);
+  let completedIsolationAuthenticated = false;
   let approvedSelection;
   let verifiedPostgresImage;
   const operation = { id: randomUUID(), revision, started_at: new Date().toISOString(), phase: "checking", target: target.project };
@@ -685,7 +686,13 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   async function ensureDatabase({ allowRecreation = false } = {}) {
     // A completed disposable cut is bound to its original database container.
     // Recreate application workers as requested, but never replace that DB.
-    const preserveCompletedDatabase = Boolean(migrationGuard?.state === "verified" && migrationGuard.isolation);
+    if (target.disposable && allowRecreation && migrationGuard?.isolation && !completedIsolationAuthenticated)
+      throw new Error("Disposable completion is not authenticated; keep writers stopped.");
+    const preserveCompletedDatabase = Boolean(target.disposable && completedIsolationAuthenticated &&
+      migrationGuard?.state === "verified" && migrationGuard.verified_schema === 62 &&
+      migrationGuard.isolation?.phase === "reattached");
+    if (preserveCompletedDatabase && images.postgres !== migrationGuard.isolation.identity?.imageId)
+      throw new Error("Completed disposable database image differs; keep writers stopped.");
     await verifySelectedPostgresImage();
     stage("checking_database");
     const volume = target.volumes[target.postgresVolumeKey];
@@ -870,6 +877,7 @@ except Exception: sys.exit('Disposable completion authentication failed')`;
     if (!isDeepStrictEqual(JSON.parse(privateBytes(guardPath)), guard))
       throw new Error("Original disposable guard changed; keep writers stopped.");
     completedIsolationPending = false;
+    completedIsolationAuthenticated = true;
   }
 
   async function preflightSchema() {
@@ -930,6 +938,7 @@ except Exception: sys.exit('Disposable completion authentication failed')`;
         try { completion = JSON.parse(privateBytes(completionPath)); } catch { throw new Error("Original isolation completion is unavailable or invalid; keep writers stopped."); }
         syncDisposableIsolationEvidence({ guardPath, guard: migrationGuard, receiptPath: completionPath, receipt: completion });
         completedIsolationPending = true;
+        completedIsolationAuthenticated = false;
         return false;
       }
       // No physical recovery action is enabled until the isolated pinned

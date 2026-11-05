@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { spawnSync as fsSpawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 const cliEntry = new URL("../../scripts/tempo-cli.mjs", import.meta.url).pathname;
 import fs, { existsSync, mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
@@ -2760,6 +2761,7 @@ test("completed disposable guard defers startup until completion is authenticate
   const original = readFileSync(guardPath);
   assert.equal(runtime.checkMigrationRetry(), false);
   await assert.rejects(runtime.startServices(), /verification is unresolved/);
+  await assert.rejects(runtime.ensureDatabase({ allowRecreation: true }), /completion is not authenticated/);
   assert.deepEqual(readFileSync(guardPath), original);
   assert(!calls.some(args => args.includes("up")), "Deferral must not start applications.");
   // This command fixture uses product-shaped volume mounts; its disposable
@@ -2768,14 +2770,83 @@ test("completed disposable guard defers startup until completion is authenticate
   await runtime.ensureImages();
   await runtime.ensureDatabase({ allowRecreation: true });
   const databaseUp = calls.find(args => args.includes("up") && args.includes("postgres"));
-  assert(databaseUp?.includes("--no-recreate"), "Completed isolation must retain the bound database container.");
-  assert(!databaseUp.includes("--force-recreate"));
-  const redisUp = calls.find(args => args.includes("up") && args.includes("redis"));
-  assert(redisUp?.includes("--force-recreate"), "Unbound Redis keeps the requested recreation behavior.");
+  assert(databaseUp?.includes("--force-recreate"), "A non-disposable spoof guard must not activate the disposable policy.");
   fixture.target.disposable = true;
   rmSync(completionPath);
   assert.throws(() => runtime.checkMigrationRetry(), /completion is unavailable or invalid/);
   assert.deepEqual(readFileSync(guardPath), original);
+});
+
+test("authenticated disposable completion preserves PostgreSQL while retaining Redis recreation", async t => {
+  let config, container, network, checked;
+  const prepared = {};
+  const result = imageRuntimeFixture(t, "postgres:18.6-trixie", 18, false, args => {
+    if (args.includes("config")) return JSON.stringify(config);
+    if (args.includes("network") && args.includes("inspect")) return JSON.stringify([network]);
+    if (args.includes("info")) return "fixture-daemon";
+    if (args.includes("ps") && args.includes("-aq")) return container.Id;
+    if (args.includes("inspect") && !args.includes("image")) return JSON.stringify([container]);
+    if (args.includes("ps") && args.includes("--format")) return JSON.stringify([{ Service: "postgres", State: "running" }]);
+    if (args.includes("migration") && args.includes("-c")) return JSON.stringify(checked);
+    if (args.some(arg => typeof arg === "string" && arg.includes("sha256sum -c"))) return "b".repeat(64);
+    if (args.includes("--check")) return JSON.stringify({ initialized: true, roles_ready: true, credentials_ready: true,
+      expected_version: 62, applied_versions: Array.from({ length: 62 }, (_, index) => index + 1), pending_versions: [] });
+    if (args.includes("--mount")) return "18";
+    if (args.includes("ping")) return "PONG\n";
+  }, { preparedImages: prepared, defenseSelection: null });
+  const { runtime, calls, fixture } = result, target = fixture.target;
+  config = readFixtureJson(fixture, "fixture.json").config;
+  const sourceNames = { "tempo-postgres-data": "postgres-test-data", "tempo-postgres-backups": "postgres-test-backups", "tempo-redis-data": "redis-test-data" };
+  target.disposable = true; target.project = "tempo-pg-regressions-completion-test"; target.postgresVolumeKey = "postgres-test-data";
+  target.volumes = Object.fromEntries(Object.values(sourceNames).map(name => [name, { name: `${target.project}_${name}`, external: false }]));
+  config.name = target.project; config.volumes = target.volumes; config.services.api.environment.TEMPO_TEST_INSTANCE = "disposable";
+  for (const service of Object.values(config.services)) for (const mount of service.volumes ?? [])
+    if (sourceNames[mount.source]) mount.source = sourceNames[mount.source];
+  const record = readFixtureJson(fixture, "deployment.json", true), image = `sha256:${"c".repeat(64)}`;
+  prepared.revision = record.revision; prepared.configFingerprint = configurationFingerprint(config);
+  prepared.images = Object.fromEntries(Object.keys(config.services).map(name => [name, name === "postgres" ? image : record.images[name]]));
+  network = { Id: "a".repeat(64), Name: `${target.project}_default`, Driver: "bridge", Scope: "local",
+    Labels: { "com.docker.compose.project": target.project }, Containers: { ["b".repeat(64)]: { EndpointID: "d".repeat(64) } } };
+  container = { Id: "b".repeat(64), Image: image, State: { Running: true },
+    Config: { Labels: { "com.docker.compose.project": target.project, "com.docker.compose.service": "postgres" } },
+    HostConfig: { NetworkMode: network.Name, PublishAllPorts: false, PortBindings: {} },
+    NetworkSettings: { Ports: {}, Networks: { [network.Name]: { NetworkID: network.Id, EndpointID: "d".repeat(64), Aliases: ["postgres"], IPAMConfig: null } } },
+    Mounts: [{ Type: "volume", Destination: "/var/lib/postgresql", Name: target.volumes[target.postgresVolumeKey].name, Source: "/owned/volume", RW: true }] };
+  const identity = inspectDisposableIsolation({ target, daemonId: target.daemonId, container, network, expectedImage: image, trustedDaemon: true }).original;
+  const attempt = "12345678-1234-1234-1234-123456789abc", name = `cut62-${attempt}.json`, targetId = targetKey(target);
+  const binding = { version: 1, target: targetId, attempt_id: attempt, backup_filename: "tempo-original.dump", backup_sha256: "b".repeat(64), selection_sha256: "e".repeat(64) };
+  const guard = { version: 1, target: targetId, database: { name: "tempo", volume: identity.volumeName }, state: "verified", verified_schema: 62,
+    attempt_id: attempt, starting_schema: 61, intended_schema: 62, starting_versions: Array.from({ length: 61 }, (_, index) => index + 1),
+    study_invariants: { reviews: {} }, backup: { verified: true, filename: binding.backup_filename }, defense_binding: binding,
+    cut62_witness: name, cut62_identity: { witness_id: "f".repeat(64), attempt_id: attempt, backup_filename: binding.backup_filename },
+    isolation: { phase: "reattached", identity, target_oid: 123, target_name: "tempo", system_identifier: "987", control_oid: 5, control_name: "postgres", admin_role: "postgres" } };
+  const receipt = { version: 1, target: targetId, attempt_id: attempt, target_oid: 123, target_name: "tempo", system_identifier: "987", control_oid: 5,
+    control_name: "postgres", admin_role: "postgres", daemon_id: identity.daemonId, container_id: identity.containerId,
+    network_id: identity.networkId, image_id: identity.imageId, backup_filename: binding.backup_filename, backup_sha256: binding.backup_sha256,
+    selection_sha256: binding.selection_sha256, pre62_witness_id: null, cut62_witness_id: guard.cut62_identity.witness_id, schema: 62 };
+  const payload = { version: 1, target: targetId, attempt_id: attempt, identity, target_oid: 123, system_identifier: "987", control_oid: 5,
+    backup: binding, pre62_witness_id: null, cut62_witness_id: guard.cut62_identity.witness_id, receipt };
+  checked = { witness_id: guard.cut62_identity.witness_id, binding, receipt, payload, database: ["tempo", "postgres", "987", 123, true, 62, 5] };
+  fs.chmodSync(fixture.stateDirectory, 0o700);
+  const dir = cut62MountDirectory(fixture.stateDirectory, name); mkdirSync(dir, { mode: 0o700 });
+  atomicJson(join(dir, "verified-receipt.json"), receipt); atomicJson(join(dir, "verified-completion.json"), { payload, signature: "fixture" });
+  guard.isolation.completion = { filename: "verified-completion.json", sha256: createHash("sha256").update(readFileSync(join(dir, "verified-completion.json"))).digest("hex") };
+  const guardPath = join(fixture.stateDirectory, "migration-guard.json"); atomicJson(guardPath, guard); const original = readFileSync(guardPath);
+  await runtime.config(); assert.equal(runtime.checkMigrationRetry(), false); await runtime.ensureImages(); await runtime.preflightSchema();
+  await runtime.ensureDatabase({ allowRecreation: true });
+  const postgresUp = calls.find(args => args.includes("up") && args.includes("postgres"));
+  const redisUp = calls.find(args => args.includes("up") && args.includes("redis"));
+  assert(postgresUp?.includes("--no-recreate") && !postgresUp.includes("--force-recreate"));
+  assert(redisUp?.includes("--force-recreate")); assert.deepEqual(readFileSync(guardPath), original);
+  prepared.images.postgres = `sha256:${"9".repeat(64)}`;
+  await runtime.ensureImages();
+  const beforeMismatch = calls.length;
+  await assert.rejects(runtime.ensureDatabase({ allowRecreation: true }), /database image differs/);
+  assert(!calls.slice(beforeMismatch).some(args => args.includes("up")));
+  const malformed = structuredClone(guard); malformed.isolation.completion.sha256 = "0".repeat(64);
+  atomicJson(guardPath, malformed); assert.equal(runtime.checkMigrationRetry(), false);
+  await assert.rejects(runtime.preflightSchema(), /completion identity differs/);
+  await assert.rejects(runtime.ensureDatabase({ allowRecreation: true }), /completion is not authenticated/);
 });
 
 test("isolation retry resyncs a guard visible after rename-before-directory-fsync failure", t => {
