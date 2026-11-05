@@ -129,6 +129,8 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
   };
   const closed = spawnSync(process.execPath,['scripts/tempo-cli.mjs','start','--no-ci','--no-open','--defense-selection',selectionPath,'--config',registration],
     {cwd:root,env:{...commonEnv,NODE_OPTIONS:'',W08_FAULT:''},encoding:'utf8',timeout:30000});
+  atomicJson(join(directory,'managed-cli-shipping-gate.json'),{status:closed.status,signal:closed.signal,
+    stdout:redact(closed.stdout??'',secrets),stderr:redact(closed.stderr??'',secrets)});
   assert.notEqual(closed.status,0);assert.match(closed.stderr,/Nonempty Defense cleanup is unavailable/);
   atomicJson(join(directory,'managed-shipping-js-gate.json'),{revision,closed:true,status:closed.status});
   const readGuard = () => JSON.parse(readFileSync(join(stateDirectory,'migration-guard.json')));
