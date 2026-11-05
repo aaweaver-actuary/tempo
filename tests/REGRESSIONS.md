@@ -1652,8 +1652,6 @@ Issue 12 acceptance coverage (persistence only; issue 14 owns recurrence promoti
 - A queued graph rebuild publishes after its repertoire is deleted and fails on a foreign key: `backend/tests/test_postgres_cutover.py::test_postgres_repertoire_delete_cancels_stale_graph_before_parent_removal`.
 - A confirmed PostgreSQL repertoire deletion remains visible while the training queue refreshes: `tests/browser/workspace-flows.spec.ts::sample deletion uses repertoire identity and does not delete its same-filename sibling`.
 - Removed legacy template generation still dispatches new calculation: `backend/tests/test_postgres_cutover.py::test_removed_endgame_template_generation_rejects_before_dispatch`.
-- Endgame template admission remains pending and reuses its operation ID: `tests/unit/endgame-template-pending-regressions.test.ts`.
-- A pending endgame attempt retains its operation ID without creating another position: `tests/unit/endgame-attempt-pending-regressions.test.ts`.
 - Saved legacy attempt recovery must retain its original immutable payload instead of regenerating: `backend/tests/test_postgres_cutover.py::test_saved_endgame_pending_receipt_recovers_without_preparation`. Former provider/cache/generation cases are retired because calculation is removed.
 - PostgreSQL migration 002 is applied but the API rejects its own current schema at startup: `backend/tests/test_postgres_cutover.py::test_postgres_startup_accepts_latest_checked_in_schema`.
 - Opening-graph traversal holds a PostgreSQL read transaction or per-line slicing changes graph identity: `backend/tests/test_postgres_opening_graph.py::test_postgres_graph_line_slices_match_whole_graph_and_close_read_before_traversal`.
