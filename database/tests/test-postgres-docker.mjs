@@ -69,6 +69,14 @@ writeFileSync(resourceLimits, JSON.stringify(composeResourceLimits(['postgres', 
   'foreground-worker', 'background-worker', 'background-scheduler', 'web', 'schema'],
   process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN)), { mode: 0o600 });
 compose.push('-f', resourceLimits);
+// Only this owned current-image test stack opts into zero shared Defense cleanup.
+// Historical lifecycle overlays deliberately retain their original commands.
+const schemaPolicy = join(secretsDirectory, 'schema-policy.json');
+writeFileSync(schemaPolicy, JSON.stringify({ services: { schema: { command: ["python",
+  "/source/database/tests/bootstrap_postgres_test.py", "--admin-dsn", "postgresql://postgres@postgres:5432/tempo",
+  "--reader-password-file", "/run/secrets/reader_password", "--writer-password-file", "/run/secrets/writer_password",
+  "--defense-zero"] } } }), { mode: 0o600 });
+compose.push('-f', schemaPolicy);
 const priorityResourceLimits = join(secretsDirectory,'priority-resource-limits.json');
 writeFileSync(priorityResourceLimits,JSON.stringify(composeResourceLimits(Object.keys(resourceBudgets.priorityRehearsalServices),
   process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN,resourceBudgets.priorityRehearsalServices)),{mode:0o600});

@@ -100,8 +100,8 @@ def proof():
                     previous.execute(migration.read_text(), prepare=False)
             previous.execute('INSERT INTO settings(id) VALUES(1)')
             settings_before = previous.execute('SELECT * FROM settings').fetchone()
-        apply_migrations(owned_url)
-        apply_migrations(owned_url)
+        apply_migrations(owned_url, defense_zero=True)
+        apply_migrations(owned_url, defense_zero=True)
         with psycopg.connect(owned_url) as upgraded:
             assert upgraded.execute('SELECT * FROM settings').fetchone() == (*settings_before, 0)
             assert upgraded.execute('SELECT COUNT(*),MAX(version) FROM tempo_schema_migrations').fetchone() == (POSTGRES_SCHEMA_VERSION, POSTGRES_SCHEMA_VERSION)

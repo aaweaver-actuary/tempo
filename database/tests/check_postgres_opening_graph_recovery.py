@@ -71,7 +71,7 @@ def disposable_postgres():
         spec = importlib.util.spec_from_file_location('recovery_migrations', ROOT / 'database/tooling/apply_postgres_migrations.py')
         migrations = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(migrations)
-        migrations.apply_migrations(url)
+        migrations.apply_migrations(url, defense_zero=True)
         environment = {'TEMPO_DATABASE_READ_URL': url, 'TEMPO_DATABASE_WRITE_URL': url,
                        'TEMPO_TEST_INSTANCE': 'disposable',
                        'TEMPO_REDIS_URL': f'redis://127.0.0.1:{redis_port}/0'}
@@ -366,7 +366,7 @@ def _apply_scenario_migrations(url):
     spec = importlib.util.spec_from_file_location('recovery_scenario_migrations', ROOT / 'database/tooling/apply_postgres_migrations.py')
     migrations = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migrations)
-    migrations.apply_migrations(url)
+    migrations.apply_migrations(url, defense_zero=True)
 
 
 @contextmanager
@@ -420,7 +420,7 @@ if __name__ == '__main__':
             url = 'postgresql://postgres@postgres:5432/' + database_name
             spec = importlib.util.spec_from_file_location('recovery_migrations', ROOT / 'database/tooling/apply_postgres_migrations.py')
             migrations = importlib.util.module_from_spec(spec); spec.loader.exec_module(migrations)
-            migrations.apply_migrations(url)
+            migrations.apply_migrations(url, defense_zero=True)
             with patch.dict(os.environ, {'TEMPO_DATABASE_READ_URL': url, 'TEMPO_DATABASE_WRITE_URL': url}):
                 postgres_store.close_pools()
                 run_cases(url)

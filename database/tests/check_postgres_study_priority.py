@@ -392,7 +392,7 @@ def stop_owned_writers(processes, loader, stop_load):
 def run_proof(parent_url, redis_url, evidence, *, graph_rows=1_400_000, receipt_rows=415_000, postgres_container=None):
     from database.tooling.apply_postgres_migrations import apply_migrations
     with private_database(parent_url) as owned_url:
-        apply_migrations(owned_url)
+        apply_migrations(owned_url, defense_zero=True)
         reader = 'priority_reader_' + secrets.token_hex(8)
         reader_password = secrets.token_urlsafe(24)
         configuration = dict(os.environ)

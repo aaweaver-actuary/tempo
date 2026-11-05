@@ -720,7 +720,7 @@ def historical_transition_database():
                 # immutable 038 guards only after seeding real application data;
                 # its atomic 039 replay retains every later migration receipt.
                 from database.tooling.apply_postgres_migrations import apply_migrations
-                apply_migrations(historical_dsn)
+                apply_migrations(historical_dsn, defense_zero=True)
                 yield
             finally:
                 postgres_store.close_pools()

@@ -2900,7 +2900,7 @@ module_stub.load_cut62_witness=lambda path:(witness,'secret')
 module_stub.cut62_witness_id=lambda w,s:'c'*64
 module_stub.check_captured_cut62_v6=lambda db,w,s:state['events'].append(('verify',None)) if state['in_tx'] else (_ for _ in ()).throw(AssertionError())
 sys.modules['database.tooling.verify_postgres_cli_state']=module_stub
-sys.modules['psycopg']=types.SimpleNamespace(connect=lambda *a,**k:Database())
+sys.modules['psycopg']=types.SimpleNamespace(Error=type('PostgresError',(Exception,),{}),connect=lambda *a,**k:Database())
 spec=importlib.util.spec_from_file_location('migration_owner','database/tooling/apply_postgres_migrations.py')
 module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
 with tempfile.TemporaryDirectory() as tmp:
@@ -2923,6 +2923,15 @@ with tempfile.TemporaryDirectory() as tmp:
  state.update(version=62,events=[])
  module.apply_migrations('fixture')
  assert state['events']==[]
+ class ForeignKeyViolation(sys.modules['psycopg'].Error):
+  sqlstate='23503'
+ @module.safe_postgres_errors
+ def fail(): raise ForeignKeyViolation('Key (card_id)=(private-canary) still referenced')
+ try: fail()
+ except RuntimeError as error:
+  assert 'ForeignKeyViolation' in str(error) and '23503' in str(error)
+  assert 'private-canary' not in str(error) and error.__suppress_context__
+ else: raise AssertionError('database failure suppressed')
 `;
   const result = fsSpawnSync("python3", ["-c", proof], { cwd: process.cwd(), encoding: "utf8" });
   assert.equal(result.status, 0, result.stdout + result.stderr);
@@ -2948,7 +2957,7 @@ class Database:
         assert sql.startswith('migration '), sql
         state['version'] = int(sql.split()[1]); state['writes'].append(state['version'])
         return Result([])
-sys.modules['psycopg'] = types.SimpleNamespace(connect=lambda *args, **kwargs: Database())
+sys.modules['psycopg'] = types.SimpleNamespace(Error=type('PostgresError',(Exception,),{}),connect=lambda *args, **kwargs: Database())
 spec = importlib.util.spec_from_file_location('migration_owner', 'database/tooling/apply_postgres_migrations.py')
 module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
 with tempfile.TemporaryDirectory() as tmp:

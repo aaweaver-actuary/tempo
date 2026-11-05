@@ -150,7 +150,7 @@ def test_postgres_opening_practice_progression_is_atomic_restartable_and_quota_b
             admin.execute(sql.SQL('CREATE DATABASE {} TEMPLATE template0').format(sql.Identifier(fixture_database)))
         fixture_url = psycopg.conninfo.make_conninfo(**{**connection_info, 'dbname': fixture_database})
         from database.tooling.apply_postgres_migrations import apply_migrations
-        apply_migrations(fixture_url)
+        apply_migrations(fixture_url, defense_zero=True)
         os.environ['TEMPO_DATABASE_WRITE_URL'] = fixture_url
         os.environ['TEMPO_DATABASE_READ_URL'] = fixture_url
         from database.tests.check_postgres_graph_retention import owned_admission_scope
@@ -286,7 +286,7 @@ def test_postgres_queue_publication_with_historical_and_null_evidence(database_u
             admin.execute(sql.SQL('CREATE DATABASE {} TEMPLATE template0').format(sql.Identifier(name)))
             created = True
             admin.execute(sql.SQL('COMMENT ON DATABASE {} IS {}').format(sql.Identifier(name),sql.Literal(marker)))
-        apply_migrations(fixture_dsn)
+        apply_migrations(fixture_dsn, defense_zero=True)
         postgres_store.close_pools()
         os.environ['TEMPO_DATABASE_WRITE_URL'] = fixture_dsn
         os.environ['TEMPO_DATABASE_READ_URL'] = fixture_dsn

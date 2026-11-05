@@ -631,7 +631,7 @@ def owned_fixture_database():
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         from database.tooling.apply_postgres_migrations import apply_migrations
 
-        apply_migrations(owned_database_url)
+        apply_migrations(owned_database_url, defense_zero=True)
         with psycopg.connect(owned_database_url) as database:
             database.execute("INSERT INTO settings(id) VALUES(1)")
             database.execute("INSERT INTO tactic_rotation(id) VALUES(1)")

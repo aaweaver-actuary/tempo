@@ -321,8 +321,8 @@ def main() -> None:
             assert database.execute("SELECT * FROM opening_evidence_queue_contexts ORDER BY queue_entry_id,presentation_snapshot_id,repertoire_id").fetchall() == evidence_contexts_before
             assert database.execute("SELECT COUNT(*) FROM queue_attempt_origins").fetchone()[0] == 5
             preserved_evidence_contexts = database.execute("SELECT queue_entry_id,presentation_snapshot_id,repertoire_id,effective_trained_color FROM opening_evidence_queue_contexts ORDER BY queue_entry_id,repertoire_id").fetchall()
-        apply_migrations(rehearsal_dsn)
-        apply_migrations(rehearsal_dsn)
+        apply_migrations(rehearsal_dsn, defense_zero=True)
+        apply_migrations(rehearsal_dsn, defense_zero=True)
         with psycopg.connect(rehearsal_dsn) as database:
             versions = [row[0] for row in database.execute(
                 "SELECT version FROM tempo_schema_migrations ORDER BY version"

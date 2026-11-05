@@ -77,7 +77,7 @@ def main():
         else:raise RuntimeError('Disposable database never ready')
         spec=importlib.util.spec_from_file_location('migrations',ROOT/'database/tooling/apply_postgres_migrations.py')
         migrations=importlib.util.module_from_spec(spec);spec.loader.exec_module(migrations)
-        migrations.apply_migrations(url)
+        migrations.apply_migrations(url, defense_zero=True)
         provision(url,reader_password,writer_password)
         port=command(['docker','inspect',container,'--format','{{(index (index .NetworkSettings.Ports "5432/tcp") 0).HostPort}}'])
         (credential_directory/'pgpass').write_text(

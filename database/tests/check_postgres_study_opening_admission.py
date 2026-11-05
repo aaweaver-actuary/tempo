@@ -301,7 +301,7 @@ def restart_proof(admin_url, database_name, stage):
     if stage == 'prepare':
         with psycopg.connect(admin_url, autocommit=True) as admin:
             admin.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(database_name)))
-        apply_migrations(owned_url)
+        apply_migrations(owned_url, defense_zero=True)
     with patch.dict(os.environ, {'TEMPO_DATABASE_WRITE_URL': owned_url, 'TEMPO_DATABASE_READ_URL': owned_url,
                                 'OPENING_CAPACITY_FRONTIER_EXPANSION': '0'}), \
             patch('app.services.queue_refresh_wakeup.wake_queue_refresh'):
@@ -429,7 +429,7 @@ def run():
     with psycopg.connect(admin_url, autocommit=True) as admin:
         admin.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(template_name)))
     try:
-        apply_migrations(make_conninfo(admin_url, dbname=template_name))
+        apply_migrations(make_conninfo(admin_url, dbname=template_name), defense_zero=True)
         if arguments.measure:
             with owned_database(admin_url, template_name):
                 measure_foreground_with_bounded_preparation()
