@@ -2,7 +2,7 @@
 -- RESTRICT aborts the transaction if an unreviewed dependency remains.
 -- Stopped-writer preflight: the runner provides the verified approved selection
 -- as a parameterized transaction-local setting, never as SQL text or argv keys.
-SET LOCAL search_path=public,pg_catalog;
+SET LOCAL search_path=pg_catalog,public,pg_temp;
 SET LOCAL TIME ZONE 'UTC';
 SET LOCAL DateStyle = 'ISO, YMD';
 SET LOCAL extra_float_digits=3;
@@ -403,27 +403,27 @@ BEGIN
   IF affected<>selected_count THEN RAISE EXCEPTION 'Defense card count changed'; END IF;
  END IF;
 END $$;
-DROP TRIGGER next_opponent_input_change ON imported_games;
-DROP INDEX idx_next_opponent_account_time;
-DROP INDEX idx_next_opponent_speed_rating_time;
-DROP FUNCTION invalidate_next_opponent_inputs() RESTRICT;
-DROP FUNCTION next_opponent_game_time(text) RESTRICT;
-DROP TABLE next_opponent_accounts RESTRICT;
-DROP TABLE next_opponent_snapshots RESTRICT;
-DROP FUNCTION protect_next_opponent_snapshot() RESTRICT;
+DROP TRIGGER next_opponent_input_change ON public.imported_games;
+DROP INDEX public.idx_next_opponent_account_time;
+DROP INDEX public.idx_next_opponent_speed_rating_time;
+DROP FUNCTION public.invalidate_next_opponent_inputs() RESTRICT;
+DROP FUNCTION public.next_opponent_game_time(text) RESTRICT;
+DROP TABLE public.next_opponent_accounts RESTRICT;
+DROP TABLE public.next_opponent_snapshots RESTRICT;
+DROP FUNCTION public.protect_next_opponent_snapshot() RESTRICT;
 -- Preserve original Defense attempt identities, moves, grades and replay facts.
-DROP TABLE endgame_attempts RESTRICT;
-DROP TABLE daily_chess_snapshots RESTRICT;
-DROP TABLE daily_chess_insights RESTRICT;
-DROP TABLE daily_statistics_jobs RESTRICT;
-DROP TABLE game_insight_recommendations RESTRICT;
+DROP TABLE public.endgame_attempts RESTRICT;
+DROP TABLE public.daily_chess_snapshots RESTRICT;
+DROP TABLE public.daily_chess_insights RESTRICT;
+DROP TABLE public.daily_statistics_jobs RESTRICT;
+DROP TABLE public.game_insight_recommendations RESTRICT;
 -- The errors table owns game_analysis_position_errors_id_seq internally.
 -- Keep the shared bump_priority_source_epoch() and its retained triggers.
 -- The unreferenced game_analysis_age_origins() function is held for now until
 -- dynamic retained callers are ruled out by its owner.
-DROP TABLE game_analysis_publications RESTRICT;
-DROP TABLE game_analysis_position_reports RESTRICT;
-DROP TABLE game_analysis_position_errors RESTRICT;
-DROP TABLE game_analysis_jobs RESTRICT;
-DROP TABLE engine_scheduling_state RESTRICT;
-INSERT INTO tempo_schema_migrations(version) VALUES (62);
+DROP TABLE public.game_analysis_publications RESTRICT;
+DROP TABLE public.game_analysis_position_reports RESTRICT;
+DROP TABLE public.game_analysis_position_errors RESTRICT;
+DROP TABLE public.game_analysis_jobs RESTRICT;
+DROP TABLE public.engine_scheduling_state RESTRICT;
+INSERT INTO public.tempo_schema_migrations(version) VALUES (62);

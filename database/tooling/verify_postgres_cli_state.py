@@ -673,6 +673,7 @@ def _cut62_versions(database, last):
 
 
 def _cut62_session(database):
+    database.execute('SET LOCAL search_path=pg_catalog,public,pg_temp')
     database.execute("SET LOCAL TIME ZONE 'UTC'")
     database.execute("SET LOCAL DateStyle = 'ISO, YMD'")
     database.execute('SET LOCAL extra_float_digits = 3')
@@ -696,7 +697,7 @@ def capture_cut62(database, secret):
 
 def capture_cut62_v6(database, secret, selection, binding):
     """Capture original and exact approved projected state in one read snapshot."""
-    database.execute('SET LOCAL search_path=public,pg_catalog')
+    database.execute('SET LOCAL search_path=pg_catalog,public,pg_temp')
     database.execute('SET LOCAL join_collapse_limit=1')
     database.execute('SET LOCAL jit=off')
     database.execute("SET LOCAL statement_timeout='30s'")

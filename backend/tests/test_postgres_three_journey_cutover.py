@@ -420,6 +420,11 @@ def test_schema61_defense_exclusive_rehearsal_preserves_shared_history(tmp_path)
                 with pytest.raises(RuntimeError, match='helper ledger changed'):
                     guard.capture_cut62_v6(db, b'x'*32, selection, binding)
                 db.execute('ROLLBACK TO SAVEPOINT changed_transitive_helper')
+            db.execute('SAVEPOINT helper_search_path_drift')
+            db.execute("ALTER FUNCTION public.bump_priority_repertoire_source(text) SET search_path=pg_catalog")
+            with pytest.raises(RuntimeError, match='helper ledger changed'):
+                guard.capture_cut62_v6(db, b'x'*32, selection, binding)
+            db.execute('ROLLBACK TO SAVEPOINT helper_search_path_drift')
             db.execute('SAVEPOINT unexpected_rewrite_rule')
             db.execute("CREATE RULE synthetic_extra AS ON DELETE TO public.cards DO ALSO UPDATE public.frozen_opening_runs SET invalidated=1")
             with pytest.raises(RuntimeError, match='rewrite-rule ledger changed'):
@@ -435,6 +440,10 @@ def test_schema61_defense_exclusive_rehearsal_preserves_shared_history(tmp_path)
             with pytest.raises(RuntimeError, match='unsupported Defense cutover database session'):
                 guard.capture_cut62_v6(db, b'x'*32, selection, binding)
             db.execute('ROLLBACK TO SAVEPOINT replica_mode')
+            # Shadowing must not redirect migration DDL or a trigger's pending-run lookup.
+            db.execute('CREATE TEMP TABLE frozen_opening_pending(run_id text) ON COMMIT DROP')
+            db.execute('CREATE TEMP TABLE daily_chess_snapshots(local_day text) ON COMMIT DROP')
+            db.execute("INSERT INTO pg_temp.daily_chess_snapshots VALUES ('sentinel')")
             v6 = guard.capture_cut62_v6(db, b'x'*32, selection, binding)
             assert guard.check_captured_cut62_v6(db, v6, b'x'*32)['unchanged']
             from database.tooling.apply_postgres_migrations import MIGRATIONS, migration_source
@@ -497,6 +506,9 @@ def test_schema61_defense_exclusive_rehearsal_preserves_shared_history(tmp_path)
             from database.tooling.apply_postgres_migrations import MIGRATIONS, migration_source
             db.execute(migration_source(MIGRATIONS / '062_three_journey_retirement.sql'), prepare=False)
             assert guard.verify_cut62_v6(db, v6, b'x'*32)['version'] == 6
+            assert db.execute("SELECT to_regclass('public.daily_chess_snapshots')").fetchone()[0] is None
+            assert db.execute("SELECT local_day FROM pg_temp.daily_chess_snapshots").fetchone()[0] == 'sentinel'
+            assert db.execute("SELECT invalidated FROM public.frozen_opening_runs WHERE run_id='census-run'").fetchone()[0] == 1
             db.execute('ROLLBACK TO SAVEPOINT v6_prototype')
             db.row_factory = dict_row
             # An interrupted pre-cut witness must match the still-stopped source.
