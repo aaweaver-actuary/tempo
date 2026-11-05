@@ -13,6 +13,7 @@ sys.path.insert(0, str(_REPOSITORY / "backend"))
 import os
 import argparse
 import json
+import re
 from pathlib import Path
 
 import psycopg
@@ -97,6 +98,12 @@ def main():
     mode.add_argument("--abandon-inspection", action="store_true", help="Read retained origin/receipt bytes and complete Study history for abandonment proof")
     options = parser.parse_args()
     if options.seed_defense_v2:
+        from urllib.parse import urlparse
+        if not re.fullmatch(r'tempo-pg-regressions-[a-z0-9-]+-cli', os.environ.get('TEMPO_TEST_COMPOSE_PROJECT', '')):
+            raise RuntimeError('Defense fixture requires the owned CLI test project')
+        parsed = urlparse(dsn)
+        if parsed.hostname != 'postgres' or parsed.path != '/tempo' or parsed.username != 'postgres':
+            raise RuntimeError('Defense fixture requires the owned disposable database')
         from database.tooling import verify_postgres_cli_state as guard
         keys = [['cli-defense-move','cli-defense-candidate-move','reviewed'],
                 ['cli-defense-quiet','cli-defense-candidate-quiet','no_activity'],
@@ -114,6 +121,7 @@ def main():
                 database.execute("INSERT INTO threat_training_candidates(id,finding_id,game_id,analysis_version,incident_id,player_ply,evidence_json,source_fingerprint,detector_version,policy_json,created_at,updated_at,card_id) VALUES (%s,'cli-defense-finding','cli-defense-game',1,%s,%s,'{}','synthetic',1,'{}','2026-01-01','2026-01-01',%s)", ('cli-defense-candidate-'+card,'cli-defense-incident-'+card,number,'cli-defense-'+card))
                 database.execute("INSERT INTO daily_queue(id,queue_date,card_id,position,status) VALUES (%s,'2026-01-01',%s,%s,%s)", (920000+number,'cli-defense-'+card,number,'complete' if card=='move' else 'queued'))
             database.execute("INSERT INTO defense_recognition_submissions(attempt_id,candidate_id,queue_entry_id,exercise_revision,answer_json,recognition_correct,created_at) VALUES ('cli-defense-recognition-id','cli-defense-candidate-recognition',920003,7,'{}',1,'2026-01-01')")
+            database.execute("INSERT INTO defense_recognition_submissions(attempt_id,candidate_id,queue_entry_id,exercise_revision,answer_json,recognition_correct,created_at) VALUES ('cli-defense-before-move','cli-defense-candidate-move',920001,7,'{}',1,'2026-01-01')")
             database.execute("INSERT INTO defense_attempts(attempt_id,candidate_id,card_id,queue_entry_id,exercise_revision,move_uci,grade_json,reviewed_at) VALUES ('cli-defense-move-id','cli-defense-candidate-move','cli-defense-move',920001,7,'e2e4','{\"status\":\"correct\"}','2026-01-01')")
             database.execute("INSERT INTO reviews(id,card_id,rating,reviewed_at,previous_interval,next_interval,source_kind,source_ref) VALUES (920001,'cli-defense-move','good','2026-01-02',1,2,'study','defense:cli-defense-move-id')")
             result={'card_id':'cli-defense-move','next_due':'2026-01-03','interval_days':1,'state':'learning','requeue_today':False,'requeue_after_cards':None,'stability':1.0,'scheduling_mode':'standard','hard_correct_streak':1,'suggest_shorter_prefix':False,'idempotent':False}

@@ -18,7 +18,8 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
   const root = process.cwd();
   composeFiles = releaseComposeFiles({ root, composeFiles });
   const childProject = `${project}-cli`;
-  const directory = join(root, "test-results", "tempo-cli", childProject);
+  const directory = join(root, "test-results", "tempo-cli", childProject +
+    (environment.W08_CAPTURE_ONLY === '1' ? '-capture' : environment.W08_COPY_ONLY === '1' ? '-copy' : ''));
   mkdirSync(directory, { recursive: true });
   const webPort = await new Promise((resolvePort, reject) => {
     const server = createServer(); server.once("error", reject);
@@ -168,10 +169,22 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
       "database/tests/check_postgres_cli_lifecycle.py", "--history"])).stdout);
     const expected = await readHistory();
     if (schema59Only) {
+      const managedManifest = environment.TEMPO_LIFECYCLE_MANAGED_REHEARSAL === '1'
+        ? JSON.parse((await compose(['--profile','maintenance','run','--rm','--no-deps','-T',
+          '-e', `TEMPO_TEST_COMPOSE_PROJECT=${childProject}`, 'migration','database/tests/check_postgres_cli_lifecycle.py',
+          '--seed-defense-v2',targetKey(target)])).stdout) : null;
       const oldOverlay = join(directory, "schema59-images.json");
       atomicJson(oldOverlay, { services: Object.fromEntries(Object.entries(schema61Images).map(([name, image]) => [name, { image }])) });
       await compose(["-f", oldOverlay, "up", "-d", "--no-build", "--no-deps", "--wait",
         "foreground-worker", "background-worker", "background-scheduler", "api", "web", "postgres-backup"], { echo: true });
+      if (environment.TEMPO_LIFECYCLE_MANAGED_REHEARSAL === '1') {
+        const { runOwnedManagedCliRehearsal } = await import('../database/tests/managed_cli_rehearsal.mjs');
+        await runOwnedManagedCliRehearsal({ root, project:childProject, target, config, context, daemonId, images,
+          revision, environment:childEnvironment, stateRoot, stateDirectory, registration, directory, compose, docker,
+          readHistory, expected, readLatestMigration, manifest:managedManifest });
+        console.log('PASS owned managed CLI rehearsal');
+        return;
+      }
       const preparedImages = { revision, images, configFingerprint: configurationFingerprint(config) };
       let interrupted60 = false, interrupted61 = false, interruptedCapture = false, interrupted62 = false, captures = 0;
       const inject = async (command, args, options) => {

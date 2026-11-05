@@ -1115,6 +1115,12 @@ const actions = {
     const verifyLifecycle = () => verifyTempoCliLifecycle({ project, environment, revision: candidateRevision,
       composeFiles: [join(process.cwd(), "docker-compose.postgres.test.yml"), resourceLimits, buildLabels], measure: measureScenario });
     if (options.mode === "lifecycle") {
+      if (environment.TEMPO_LIFECYCLE_MANAGED_REHEARSAL === '1') {
+        await verifyTempoCliLifecycle({ project, environment: { ...environment, W08_COPY_ONLY:'1' }, revision: candidateRevision,
+          composeFiles: [join(process.cwd(), "docker-compose.postgres.test.yml"), resourceLimits, buildLabels], measure: measureScenario });
+        await verifyTempoCliLifecycle({ project, environment: { ...environment, W08_CAPTURE_ONLY:'1' }, revision: candidateRevision,
+          composeFiles: [join(process.cwd(), "docker-compose.postgres.test.yml"), resourceLimits, buildLabels], measure: measureScenario });
+      }
       await verifyLifecycle();
       return;
     }

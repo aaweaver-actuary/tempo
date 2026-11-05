@@ -12,7 +12,7 @@ import { TempoProblem, classifyRedisReply, phaseGuidance } from "./tempo-guidanc
 import { isTimingPublicationFailure } from "./test-scenario-timings.mjs";
 import { probeLifecycleRedis } from "../database/tooling/cli/probes.mjs";
 import { createBackupRestoreDatabase, createPostgresBackup, removeBackupRestoreDatabase, restorePostgresBackup } from "../database/tooling/cli/backup.mjs";
-import { assertManagedTargetLock, captureManagedTargetLock, inspectManagedCompletedTarget, inspectManagedFence, inspectManagedHistorySelectionBinding, persistManagedHistoryWitnessIdentity, privateDefenseHistorySelection, startManagedStoppedDetachedTarget,
+import { advanceManagedIsolationMarker, assertManagedTargetLock, captureManagedTargetLock, inspectManagedCompletedTarget, inspectManagedFence, inspectManagedHistorySelectionBinding, persistManagedHistoryWitnessIdentity, privateDefenseHistorySelection, readOwnedPrivateBytes, startManagedStoppedDetachedTarget, syncManagedIsolationEvidence,
   prepareManagedDetachedTarget, runManagedPinnedChild, restoreManagedCompletedTarget, requireManagedIsolationGate } from './tempo-managed-isolation.mjs';
 
 export const applicationServices = ["web", "api",
@@ -637,7 +637,13 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
 
   async function runManagedRecovery(managedLock) {
     requireManagedIsolationGate();
-    if (migrationGuard.isolation?.phase === 'reattached') {
+    let attachedCompletion = migrationGuard.isolation?.phase === 'reattached';
+    if (migrationGuard.isolation?.phase === 'verified') {
+      const topology = await inspectManagedFence({ target, configuration, expectedImage: images.postgres, guard: migrationGuard,
+        stateDirectory, lock: managedLock, docker, exclusiveAdministrator: true });
+      attachedCompletion = topology.attached;
+    }
+    if (attachedCompletion) {
       assertManagedTargetLock(stateDirectory, managedLock);
       const inspect = migrationGuard.state === 'verified' ? inspectManagedCompletedTarget : inspectManagedFence;
       const before = await inspect({ target, configuration, expectedImage: images.postgres, guard: migrationGuard,
@@ -669,6 +675,13 @@ print(json.dumps({**result,'database':row}))`;
       if (!after.attached || (migrationGuard.state !== 'verified' &&
           (!after.allowConnections || after.backendPids.length || after.preparedTransactions)))
         throw new Error('Original managed target changed during completion authentication.');
+      if (migrationGuard.isolation.phase === 'verified') {
+        const receiptPath = join(stateDirectory, migrationGuard.cut62_witness.slice(0,-5), 'verified-receipt.json');
+        const receipt = JSON.parse(readOwnedPrivateBytes(receiptPath));
+        syncManagedIsolationEvidence({ guardPath, guard:migrationGuard, receiptPath, receipt });
+        migrationGuard = advanceManagedIsolationMarker({ guardPath, guard:migrationGuard, observation: { ...after,
+          identity:after.original, schema:62, receipt, receiptValidated:true } });
+      }
       const completion = { filename: 'verified-completion.json', sha256: checked.completion_sha256 };
       if (migrationGuard.state === 'verified') {
         if (!isDeepStrictEqual(migrationGuard.isolation.completion, completion))
