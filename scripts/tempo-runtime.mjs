@@ -677,6 +677,9 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
         await maintenance("database/tooling/verify_postgres_cli_state.py", ["--cut62-capture", `/cut62/${witnessName}`], { cut62Mount: witnessName });
         const directoryFd = openSync(witnessDirectory, "r");
         try { fsyncSync(directoryFd); } finally { closeSync(directoryFd); }
+        // Persist the new directory entry as well as its contents before migration.
+        const stateDirectoryFd = openSync(stateDirectory, "r");
+        try { fsyncSync(stateDirectoryFd); } finally { closeSync(stateDirectoryFd); }
       }
       requirePrivateCut62Witness(witnessPath);
       if (status.applied_versions.at(-1) === 61)
