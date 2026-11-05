@@ -166,7 +166,7 @@ export async function runShippingManagedCliRehearsal({ root, project, target, re
   assert(deckResponse.ok);const [puzzle]=await deckResponse.json();assert(puzzle?.PuzzleId&&puzzle.FEN&&puzzle.Moves);
   const moves=puzzle.Moves.split(/\s+/),board=new Chess(puzzle.FEN);for(const move of moves)assert(board.move({from:move.slice(0,2),to:move.slice(2,4),promotion:move[4]}));
   await request('tactics/activation',{method:'PUT',headers:{'Content-Type':'application/json','Idempotency-Key':'cli-shipping-pack'},body:JSON.stringify({pack_ids:[packId],active:true})});
-  await post('tactics/attempt',{attempt_id:'cli-shipping-tactic',puzzle_id:`lichess-${puzzle.PuzzleId}`,deck_id:packId,
+  await post('tactics/attempt',{attempt_id:'cli-shipping-tactic',puzzle_id:puzzle.PuzzleId,deck_id:packId,
     correct:true,clean:true,source_fen:puzzle.FEN,moves,rating:1500},'cli-shipping-tactic');
   const tacticProgress=await request('tactics/progress');assert(tacticProgress[packId]?.cleanIds?.includes(`lichess-${puzzle.PuzzleId}`));
   const originalGuard=readFileSync(join(stateDirectory,'migration-guard.json'));
