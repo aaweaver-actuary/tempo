@@ -417,13 +417,7 @@ export async function startManagedStoppedDetachedTarget({ target, configuration,
   if (!isDeepStrictEqual(JSON.parse(readOwnedPrivateBytes(guardPath)), guard) ||
       await verifyOriginalBackup(guard.backup) !== backupSha)
     throw new Error('Original managed evidence changed before start.');
-  assertManagedTargetLock(stateDirectory, lock);
-  const started = (await docker(['start', identity.containerId])).stdout.trim();
-  if (started.length < 12 || !identity.containerId.startsWith(started))
-    throw new Error('Original managed container start identity differs.');
-  let current;
-  try { current = await inspect(); }
-  catch (inspectionError) {
+  const contain = async inspectionError => {
     // If Docker unexpectedly attached the original database, close admission
     // before containment. Never terminate an unknown backend or prepared work.
     let contained = false;
@@ -435,9 +429,21 @@ export async function startManagedStoppedDetachedTarget({ target, configuration,
         const admin = configuration.services.postgres.environment.POSTGRES_USER ?? 'postgres';
         if (!/^[a-z_][a-z0-9_]*$/.test(admin)) throw new Error('Managed administrator identity is invalid.');
         const psql = ['exec', '--user', 'postgres', identity.containerId, 'psql', '-X', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-U', admin, '-d', 'postgres', '-c'];
+        const factsSql = `SELECT json_build_object('system',(SELECT system_identifier::text FROM pg_control_system()),
+          'target',(SELECT oid::bigint FROM pg_database WHERE datname='tempo'),
+          'control',(SELECT oid::bigint FROM pg_database WHERE datname=current_database()),'name',current_database(),'role',current_user,
+          'clients',(SELECT count(*) FROM pg_stat_activity WHERE pid<>pg_backend_pid() AND
+            (backend_type IS NULL OR backend_type NOT IN ('background writer','checkpointer','walwriter','autovacuum launcher','logical replication launcher','archiver','startup','walreceiver'))),
+          'prepared',(SELECT count(*) FROM pg_prepared_xacts))`;
+        const facts = JSON.parse((await docker([...psql, factsSql])).stdout);
+        if (facts.system !== guard.isolation.system_identifier || facts.target !== guard.isolation.target_oid ||
+            facts.control !== guard.isolation.control_oid || facts.name !== guard.isolation.control_name || facts.role !== guard.isolation.admin_role)
+          throw new Error('Original cluster identity differs during containment.');
         await docker([...psql, 'ALTER DATABASE tempo ALLOW_CONNECTIONS false']);
-        const count = (await docker([...psql, "SELECT (SELECT count(*) FROM pg_stat_activity WHERE datname='tempo')+(SELECT count(*) FROM pg_prepared_xacts WHERE database='tempo')"])).stdout.trim();
-        if (count !== '0') throw new Error('Original target has admitted work; preserve it with admission closed.');
+        const after = JSON.parse((await docker([...psql, factsSql])).stdout);
+        if (after.system !== facts.system || after.target !== facts.target || after.control !== facts.control ||
+            after.name !== facts.name || after.role !== facts.role || after.clients !== 0 || after.prepared !== 0)
+          throw new Error('Original cluster has admitted or unknown work; preserve it with admission closed.');
         assertManagedTargetLock(stateDirectory, lock);
         await docker(['stop', '--time', '10', identity.containerId]);
         const rows = JSON.parse((await docker(['inspect', identity.containerId])).stdout);
@@ -453,19 +459,28 @@ export async function startManagedStoppedDetachedTarget({ target, configuration,
     }
     if (!contained) throw new Error('Original target containment is unresolved.');
     throw new Error('Original target start changed topology; database was contained.', { cause: inspectionError });
-  }
+  };
+  let current;
+  try {
+    assertManagedTargetLock(stateDirectory, lock);
+    const started = (await docker(['start', identity.containerId])).stdout.trim();
+    if (started.length < 12 || !identity.containerId.startsWith(started))
+      throw new Error('Original managed container start identity differs.');
+    current = await inspect();
+  } catch (error) { await contain(error); }
   if (!current.State?.Running) throw new Error('Original managed target did not start.');
   let observed;
   for (let attempt = 0; attempt < 60; attempt++) {
     try { observed = await inspectManagedFence({ target, configuration, expectedImage, guard, stateDirectory,
       lock, docker, exclusiveAdministrator }); break; }
     catch (error) {
-      if (error?.message !== 'Managed isolation control database is starting.' || attempt === 59) throw error;
+      if (error?.message !== 'Managed isolation control database is starting.') await contain(error);
+      if (attempt === 59) throw error;
       await new Promise(resolve => setTimeout(resolve, 500));
     }
   }
   if (observed.attached || observed.backendPids.length || observed.preparedTransactions || typeof observed.allowConnections !== 'boolean')
-    throw new Error('Original managed started target is not isolated and drained.');
+    await contain(new Error('Original managed started target is not isolated and drained.'));
   return observed;
 }
 
