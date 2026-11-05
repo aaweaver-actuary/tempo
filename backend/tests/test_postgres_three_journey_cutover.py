@@ -378,6 +378,23 @@ def test_schema61_defense_exclusive_rehearsal_preserves_shared_history(tmp_path)
             db.execute('ROLLBACK TO SAVEPOINT exclusive_rehearsal')
             assert retained_digest() == before
             db.row_factory = dict_row
+            # Prototype v6 uses the explicit synthetic selection and original
+            # reference digest. Manual deletion here is fixture-only.
+            selection = {'version': 1, 'target': 'synthetic', 'cohort': 'defense-no-activity', 'keys': selected_keys, 'expected': {'count': reference_count, 'reference_digest': reference_digest}}
+            binding = {'version': 1, 'target': 'synthetic', 'attempt_id': 'synthetic', 'backup_filename': 'synthetic', 'backup_sha256': 'a'*64, 'selection_sha256': 'b'*64}
+            db.row_factory = tuple_row
+            v6 = guard.capture_cut62_v6(db, b'x'*32, selection, binding)
+            assert guard.check_captured_cut62_v6(db, v6, b'x'*32)['unchanged']
+            db.execute('SAVEPOINT v6_prototype')
+            db.execute("UPDATE threat_training_candidates SET card_id=NULL WHERE id='exclusive-candidate' AND card_id='census-exclusive'")
+            db.execute("DELETE FROM daily_queue WHERE id=900004 AND card_id='census-exclusive'")
+            db.execute("DELETE FROM queue_attempt_origins WHERE queue_entry_id=900004 AND card_id='census-exclusive' AND revision=1")
+            db.execute("DELETE FROM cards WHERE id='census-exclusive' AND content_type='defense'")
+            from database.tooling.apply_postgres_migrations import MIGRATIONS, migration_source
+            db.execute(migration_source(MIGRATIONS / '062_three_journey_retirement.sql'), prepare=False)
+            assert guard.verify_cut62_v6(db, v6, b'x'*32)['version'] == 6
+            db.execute('ROLLBACK TO SAVEPOINT v6_prototype')
+            db.row_factory = dict_row
             # An interrupted pre-cut witness must match the still-stopped source.
             from psycopg.rows import tuple_row
             db.row_factory = tuple_row

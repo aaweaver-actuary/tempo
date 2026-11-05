@@ -305,6 +305,24 @@ def load_cut62_defense_selection(path):
     return selection, hashlib.sha256(raw).hexdigest()
 
 
+def load_cut62_attempt_binding(path, selection, selection_sha256):
+    import re
+    import stat
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+    with os.fdopen(descriptor, 'rb') as stream:
+        metadata = os.fstat(stream.fileno())
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_mode & 0o077:
+            raise RuntimeError('cut62 binding must be a private regular file')
+        binding = json.load(stream)
+    if not isinstance(binding, dict) or set(binding) != {'version','target','attempt_id','backup_filename','backup_sha256','selection_sha256'} or type(binding['version']) is not int or binding['version'] != 1:
+        raise RuntimeError('invalid cut62 attempt binding')
+    if binding['target'] != selection['target'] or binding['selection_sha256'] != selection_sha256:
+        raise RuntimeError('cut62 selection binding changed')
+    if any(not isinstance(binding[k], str) or not binding[k] for k in ('attempt_id','backup_filename')) or not isinstance(binding['backup_sha256'], str) or re.fullmatch('[0-9a-f]{64}', binding['backup_sha256']) is None:
+        raise RuntimeError('invalid cut62 attempt binding')
+    return binding
+
+
 # Draft only: static typed ownership predicates need catalog and owner review.
 CUT62_DRAFT_DEFENSE_SELECTOR = '''
 WITH typed_receipts AS MATERIALIZED (
@@ -430,7 +448,7 @@ CUT62_DEFENSE_PROJECTED_TABLES = frozenset(('cards', 'daily_queue', 'queue_attem
 
 # Draft projection primitive; the reviewed fixed selector and migration wiring
 # are still required before this can be used for a cutover witness.
-def _cut62_projected_defense_table(database, table, primary_key, secret, cohort_sql):
+def _cut62_projected_defense_table(database, table, primary_key, secret, cohort_sql, params=()):
     from psycopg import sql
     views = {
         'cards': "SELECT t.* FROM public.cards t WHERE NOT EXISTS (SELECT 1 FROM cohort c WHERE c.card_id=t.id)",
@@ -446,7 +464,7 @@ def _cut62_projected_defense_table(database, table, primary_key, secret, cohort_
         cohort=sql.SQL(cohort_sql), projection=sql.SQL(views[table]),
         keys=sql.SQL(',').join(sql.Identifier(key) for key in primary_key))
     with database.cursor(name='cut62_projected_' + table) as cursor:
-        cursor.execute(query)
+        cursor.execute(query, params)
         return _cut62_mac(secret, 'cut62:rows:' + table, (row[0] for row in cursor))
 
 
@@ -569,6 +587,39 @@ def capture_cut62(database, secret):
             'layout': layout, 'rows': rows, 'catalog': _cut62_catalog(database, secret), 'sequences': _cut62_sequences(database, secret, True)}
 
 
+
+
+def capture_cut62_v6(database, secret, selection, binding):
+    """Capture original and exact approved projected state in one read snapshot."""
+    database.execute('SET LOCAL join_collapse_limit=1')
+    database.execute('SET LOCAL jit=off')
+    database.execute("SET LOCAL statement_timeout='30s'")
+    count, digest = _cut62_defense_reference_digest(database, selection['keys'])
+    if count != selection['expected']['count'] or digest != selection['expected']['reference_digest']:
+        raise RuntimeError('approved Defense reference evidence changed')
+    original = capture_cut62(database, secret)
+    cohort_sql = CUT62_DRAFT_DEFENSE_SELECTOR + "\nAND EXISTS (SELECT 1 FROM jsonb_array_elements(%s::jsonb) k WHERE k->>0=c.id AND k->>1=t.id)"
+    params = (json.dumps(selection['keys'], separators=(',', ':')),)
+    projected = {name: _cut62_projected_defense_table(database, name, original['layout'][name][0], secret, cohort_sql, params) for name in CUT62_DEFENSE_PROJECTED_TABLES}
+    return {**original, 'version': 6, 'selection': selection, 'binding': binding, 'projected_rows': projected}
+
+
+def check_captured_cut62_v6(database, witness, secret):
+    if witness.get('version') != 6:
+        raise RuntimeError('unsupported cut62 witness')
+    if capture_cut62_v6(database, secret, witness['selection'], witness['binding']) != witness:
+        raise RuntimeError('cut62 source changed since original capture')
+    return {'version': 6, 'from': 61, 'to': 62, 'unchanged': True, 'witness_id': cut62_witness_id(witness, secret)}
+
+
+def verify_cut62_v6(database, witness, secret):
+    if witness.get('version') != 6 or set(witness.get('projected_rows', {})) != CUT62_DEFENSE_PROJECTED_TABLES:
+        raise RuntimeError('unsupported cut62 witness')
+    expected = dict(witness)
+    expected['version'] = CUT62_EVIDENCE_VERSION
+    expected['rows'] = {**witness['rows'], **witness['projected_rows']}
+    verify_cut62(database, expected, secret)
+    return {'version': 6, 'from': 61, 'to': 62, 'witness_id': cut62_witness_id(witness, secret)}
 
 def cut62_witness_id(witness, secret):
     canonical = json.dumps(witness, sort_keys=True, separators=(',', ':'))
