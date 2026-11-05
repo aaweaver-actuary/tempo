@@ -92,7 +92,8 @@ export function requirePrivateCut62Witness(path) {
 // Authorization to retry never establishes successful history verification.
 export function assessMigrationRecovery({ guard, operation, target, configuration, retry = false }) {
   if (guard) {
-    if (guard.managed_selection_started === true && !guard.defense_binding)
+    if ((guard.managed_selection_started === true || guard.managed_image_receipt) &&
+        (guard.managed_selection_started !== true || !guard.defense_binding))
       return { status: 'blocked', code: 'managed_selection_incomplete', message: 'Original managed selection binding is incomplete. Preserve its guard and backup; do not recapture.' };
     const database = { name: configuration.services.postgres.environment.POSTGRES_DB,
       volume: target.volumes[target.postgresVolumeKey].name };
@@ -292,8 +293,10 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   async function ensureImages() {
     await config();
     let desiredFingerprint = configurationFingerprint(configuration);
-    if (migrationGuard?.state === 'pending' && migrationGuard.defense_binding) {
+    if (migrationGuard?.state === 'pending' && (migrationGuard.defense_binding || migrationGuard.managed_image_receipt || migrationGuard.managed_selection_started)) {
       requireManagedIsolationGate();
+      if (!migrationGuard.defense_binding || migrationGuard.managed_selection_started !== true)
+        throw new Error('Original managed selection binding is incomplete; keep writers stopped.');
       const lock = captureManagedTargetLock(stateDirectory), reference = migrationGuard.managed_image_receipt;
       if (reference?.name !== `pending-images-${migrationGuard.attempt_id}.json` ||
           reference.attempt_id !== migrationGuard.attempt_id || !/^[0-9a-f]{64}$/.test(reference.sha256 ?? '') ||
