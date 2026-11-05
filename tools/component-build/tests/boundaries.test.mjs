@@ -194,15 +194,28 @@ test("M02 separate test discovery preserves every legacy unit and runner file", 
 });
 
 test("M02 Python rejects undeclared dependency metadata and accidental public exports", t => {
-  const directory = fixture(t, scheduling);
+  const directory = mkdtempSync(join(tmpdir(), "tempo-m02-python-contract-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const packageDirectory = join(directory, "src/tempo_scheduling");
+  mkdirSync(packageDirectory, { recursive: true });
   const metadataPath = join(directory, "pyproject.toml");
+  cpSync(resolve(repository, scheduling.root, "pyproject.toml"), metadataPath);
   const original = readFileSync(metadataPath, "utf8");
-  writeFileSync(metadataPath, original.replace('"fsrs==6.3.2"', '"fsrs==6.3.2", "psycopg==3.3.6"'));
-  assert.match(checkPython(directory).stderr, /Dependencies differ/);
+  const entry = join(packageDirectory, "__init__.py");
+  writeFileSync(entry, `__all__ = ${JSON.stringify(scheduling.publicExports)}\n`);
+  const baseline = checkPython(directory);
+  assert.equal(baseline.status, 0, baseline.stderr);
+  const modified = original.replace('"fsrs==6.3.2"', '"fsrs==6.3.2", "psycopg==3.3.6"');
+  assert.notEqual(modified, original);
+  writeFileSync(metadataPath, modified);
+  const dependencyFailure = checkPython(directory);
+  assert.notEqual(dependencyFailure.status, 0);
+  assert.match(dependencyFailure.stderr, /Dependencies differ/);
   writeFileSync(metadataPath, original);
-  const entry = join(directory, "src/tempo_scheduling/__init__.py");
-  writeFileSync(entry, readFileSync(entry, "utf8").replace('"unlock_ready"]', '"unlock_ready", "_scheduler"]'));
-  assert.match(checkPython(directory).stderr, /public exports differ/);
+  writeFileSync(entry, `__all__ = ${JSON.stringify([...scheduling.publicExports, "_scheduler"])}\n`);
+  const exportFailure = checkPython(directory);
+  assert.notEqual(exportFailure.status, 0);
+  assert.match(exportFailure.stderr, /public exports differ/);
 });
 
 // Each fixture runs both entry points without importing package product source.
