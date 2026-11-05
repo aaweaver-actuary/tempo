@@ -322,7 +322,11 @@ export async function inspectManagedFence({ target, configuration, expectedImage
   let control;
   try { control = JSON.parse((await docker(['exec', '--user', 'postgres', container.Id, 'psql', '-X', '-A', '-t',
     '-v', 'ON_ERROR_STOP=1', '-U', admin, '-d', 'postgres', '-c', sql])).stdout); }
-  catch { throw new Error('Managed isolation control database is unavailable.'); }
+  catch (error) {
+    if (/database system is starting up|connection refused|No such file or directory/i.test(error?.message ?? ''))
+      throw new Error('Managed isolation control database is starting.');
+    throw new Error('Managed isolation control database is unavailable.');
+  }
   assertManagedTargetLock(stateDirectory, lock);
   if (control.targetName !== 'tempo' || control.controlName !== 'postgres' || control.adminRole !== admin ||
       !Number.isSafeInteger(control.targetOid) || !Number.isSafeInteger(control.controlOid) ||
@@ -373,7 +377,8 @@ export async function startManagedStoppedDetachedTarget({ target, configuration,
   stateDirectory, lock, docker, exclusiveAdministrator, verifyOriginalBackup }) {
   requireManagedIsolationGate();
   if (exclusiveAdministrator !== true || guard?.state !== 'pending' ||
-      !['intent', 'detached', 'verified'].includes(guard.isolation?.phase) || typeof verifyOriginalBackup !== 'function')
+      !['intent', 'detached', 'verified'].includes(guard.isolation?.phase) || guard.isolation.original_allow_connections !== true ||
+      typeof verifyOriginalBackup !== 'function')
     throw new Error('Original stopped isolation state is invalid.');
   assertManagedTargetLock(stateDirectory, lock);
   validateTarget(configuration, target);
@@ -416,13 +421,48 @@ export async function startManagedStoppedDetachedTarget({ target, configuration,
   const started = (await docker(['start', identity.containerId])).stdout.trim();
   if (started.length < 12 || !identity.containerId.startsWith(started))
     throw new Error('Original managed container start identity differs.');
-  const current = await inspect();
+  let current;
+  try { current = await inspect(); }
+  catch (inspectionError) {
+    // If Docker unexpectedly attached the original database, close admission
+    // before containment. Never terminate an unknown backend or prepared work.
+    let contained = false;
+    for (let attempt = 0; attempt < 60; attempt++) {
+      try {
+        assertManagedTargetLock(stateDirectory, lock);
+        if ((await docker(['info', '--format', '{{.ID}}'])).stdout.trim() !== target.daemonId)
+          throw new Error('Original Docker daemon changed during containment.');
+        const admin = configuration.services.postgres.environment.POSTGRES_USER ?? 'postgres';
+        if (!/^[a-z_][a-z0-9_]*$/.test(admin)) throw new Error('Managed administrator identity is invalid.');
+        const psql = ['exec', '--user', 'postgres', identity.containerId, 'psql', '-X', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-U', admin, '-d', 'postgres', '-c'];
+        await docker([...psql, 'ALTER DATABASE tempo ALLOW_CONNECTIONS false']);
+        const count = (await docker([...psql, "SELECT (SELECT count(*) FROM pg_stat_activity WHERE datname='tempo')+(SELECT count(*) FROM pg_prepared_xacts WHERE database='tempo')"])).stdout.trim();
+        if (count !== '0') throw new Error('Original target has admitted work; preserve it with admission closed.');
+        assertManagedTargetLock(stateDirectory, lock);
+        await docker(['stop', '--time', '10', identity.containerId]);
+        const rows = JSON.parse((await docker(['inspect', identity.containerId])).stdout);
+        if (!Array.isArray(rows) || rows.length !== 1 || rows[0].Id !== identity.containerId || rows[0].State?.Running !== false)
+          throw new Error('Original target containment could not be confirmed.');
+        contained = true;
+        break;
+      } catch (error) {
+        if (!/database system is starting up|connection refused|No such file or directory/i.test(error?.message ?? '') || attempt === 59)
+          throw new Error('Original target start was unsafe; preserve its guard and investigate containment.', { cause: error });
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+    if (!contained) throw new Error('Original target containment is unresolved.');
+    throw new Error('Original target start changed topology; database was contained.', { cause: inspectionError });
+  }
   if (!current.State?.Running) throw new Error('Original managed target did not start.');
   let observed;
   for (let attempt = 0; attempt < 60; attempt++) {
     try { observed = await inspectManagedFence({ target, configuration, expectedImage, guard, stateDirectory,
       lock, docker, exclusiveAdministrator }); break; }
-    catch (error) { if (attempt === 59) throw error; await new Promise(resolve => setTimeout(resolve, 500)); }
+    catch (error) {
+      if (error?.message !== 'Managed isolation control database is starting.' || attempt === 59) throw error;
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
   }
   if (observed.attached || observed.backendPids.length || observed.preparedTransactions || typeof observed.allowConnections !== 'boolean')
     throw new Error('Original managed started target is not isolated and drained.');
