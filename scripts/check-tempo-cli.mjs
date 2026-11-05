@@ -168,6 +168,16 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
       "database/tests/check_postgres_cli_lifecycle.py", "--history"])).stdout);
     const expected = await readHistory();
     if (schema59Only) {
+      const syntheticReference = JSON.parse((await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration",
+        "database/tests/check_postgres_cli_lifecycle.py", "--defense-reference"])).stdout);
+      assert.equal(syntheticReference.count, 1);
+      mkdirSync(stateDirectory, { recursive: true, mode: 0o700 });
+      const selectionPath = join(stateDirectory, "synthetic-approved-selection.json");
+      atomicJson(selectionPath, { version: 1, target: targetKey(target), cohort: "defense-no-activity",
+        keys: [["cli-defense-card", "cli-defense-candidate"]], expected: syntheticReference });
+      const readDefenseFixture = async () => JSON.parse((await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration",
+        "database/tests/check_postgres_cli_lifecycle.py", "--defense-fixture"])).stdout);
+      assert.deepEqual(await readDefenseFixture(), { cards: 1, candidates: 1, queue: 1, origins: 1 });
       const oldOverlay = join(directory, "schema59-images.json");
       atomicJson(oldOverlay, { services: Object.fromEntries(Object.entries(schema61Images).map(([name, image]) => [name, { image }])) });
       await compose(["-f", oldOverlay, "up", "-d", "--no-build", "--no-deps", "--wait",
@@ -191,7 +201,7 @@ def source(path):
 m.migration_source = source
 m.apply_migrations(os.environ["TEMPO_POSTGRES_ADMIN_URL"], target_version=61)`;
           const scriptIndex = args.indexOf("database/tooling/apply_postgres_migrations.py");
-          await assert.rejects(run(command, [...args.slice(0, scriptIndex), "-c", script], options), /division by zero/i);
+          await assert.rejects(run(command, [...args.slice(0, scriptIndex), "-c", script], options), /DivisionByZero|22012/i);
           throw new Error("injected at schema60");
         }
         if (args.includes("--cut62-capture")) captures += 1;
@@ -200,7 +210,7 @@ m.apply_migrations(os.environ["TEMPO_POSTGRES_ADMIN_URL"], target_version=61)`;
         if (args.includes("--cut62-check-captured") && !interruptedCapture) { interruptedCapture = true; throw new Error("injected after cut62 capture"); }
         return result;
       };
-      const initial = makeRuntime(target, { run: inject, stateDirectory, revision, evidence, preparedImages });
+      const initial = makeRuntime(target, { run: inject, stateDirectory, revision, evidence, preparedImages, defenseSelection: selectionPath });
       await initial.inspectTarget();
       await assert.rejects(lifecycle("p0_interrupted_60", { recreate: true }, initial), /injected at schema60/);
       const originalGuard = JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8"));
@@ -251,7 +261,8 @@ m.apply_migrations(os.environ["TEMPO_POSTGRES_ADMIN_URL"], target_version=61)`;
       let alternateId;
       try {
         alternateId = JSON.parse((await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "--volume", `${witnessDirectory}:/cut62`,
-          "migration", "database/tooling/verify_postgres_cli_state.py", "--cut62-capture", "/cut62/alternate.json"])).stdout).witness_id;
+          "migration", "database/tooling/verify_postgres_cli_state.py", "--cut62-capture", "/cut62/alternate.json",
+          "--defense-selection", "/cut62/defense-selection.json", "--cut62-binding", "/cut62/binding.json"])).stdout).witness_id;
       } finally { await updateRetired("(automated_streak+3)%4"); }
       assert(alternateId && alternateId !== captured.cut62_identity.witness_id);
       const alternateBytes = readFileSync(alternate);
@@ -285,6 +296,7 @@ m.apply_migrations(os.environ["TEMPO_POSTGRES_ADMIN_URL"], target_version=61)`;
       assert(!commandLog.slice(retryStart).some(call => call.args.includes("--cut62-capture")));
       assert.deepEqual(readFileSync(witness), witnessBytes);
       assert.deepEqual(await readHistory(), expected, "schema59 original review, queue and receipt survive cutover");
+      assert.deepEqual(await readDefenseFixture(), { cards: 0, candidates: 0, queue: 0, origins: 0 });
       assert.equal(JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8")).state, "verified");
       assert.equal(Number((await readLatestMigration(compose)).stdout.trim()), 62);
       const request = async (path, options = {}) => {

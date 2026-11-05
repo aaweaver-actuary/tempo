@@ -3038,6 +3038,36 @@ test("schema 59 cutover resumes interrupted schema 60 using the original backup"
   assert.equal(calls.filter(args => args.some(arg => arg.includes("pg_dump"))).length, 1);
 });
 
+test("disposable pinned database gate rejects changed target, admission, role or competing work", () => {
+  const proof = String.raw`
+import importlib.util,os,sys,types
+sys.modules['psycopg']=types.SimpleNamespace(Error=type('PostgresError',(Exception,),{}))
+spec=importlib.util.spec_from_file_location('migration_owner','database/tooling/apply_postgres_migrations.py')
+m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+os.environ['TEMPO_TEST_INSTANCE']='disposable'
+g={'state':'pending','target':'target','database':{'name':'tempo'},'isolation':{'phase':'detached','target_name':'tempo','admin_role':'tempo','target_oid':123,'system_identifier':'987','original_allow_connections':True,'identity':{'target':'target','trustedDaemon':True,'project':'tempo-pg-regressions-owned'}}}
+row=['tempo','tempo','127.0.0.1',44,'987',123,False,0,0,'180006','origin','tempo-disposable-postgres-test']
+class DB:
+ def execute(self,sql,*args):
+  class R:
+   def fetchone(self):return tuple(row)
+  return R()
+assert m._assert_disposable_pinned_database(DB(),g)==44
+for index,value in [(0,'other'),(1,'other'),(2,'172.1.0.1'),(4,'wrong'),(5,124),(6,True),(7,1),(8,1),(9,'180005'),(10,'replica'),(11,None)]:
+ old=row[index];row[index]=value
+ try:m._assert_disposable_pinned_database(DB(),g)
+ except RuntimeError:pass
+ else:raise AssertionError('unsafe gate accepted')
+ row[index]=old
+os.environ['TEMPO_TEST_INSTANCE']='production'
+try:m._assert_disposable_pinned_database(DB(),g)
+except RuntimeError:pass
+else:raise AssertionError('production gate accepted')
+`;
+  const result = fsSpawnSync("python3", ["-c", proof], { cwd: process.cwd(), encoding: "utf8" });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
 test("schema 62 migrator requires explicit policy and sets validated selection inside its migration transaction", () => {
   const proof = String.raw`
 import contextlib, importlib.util, json, pathlib, sys, tempfile, types

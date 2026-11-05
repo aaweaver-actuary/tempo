@@ -91,10 +91,43 @@ def main():
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--seed59", action="store_true", help="Seed populated historical data and advance only through schema 59")
     mode.add_argument("--history", action="store_true", help="Read only the original fixture history, allowing unrelated worker receipts")
+    mode.add_argument("--defense-reference", action="store_true", help="Compute the synthetic approved Defense reference in a rolled-back schema-61 rehearsal")
+    mode.add_argument("--defense-fixture", action="store_true", help="Inspect only the synthetic Defense fixture counts")
     mode.add_argument("--normalization", action="store_true", help="Read the qualifying legacy migration-025 card and queue row")
     mode.add_argument("--seed-abandon-orphan", action="store_true", help="Seed one fixed synthetic orphan after the owned CLI target upgrades")
     mode.add_argument("--abandon-inspection", action="store_true", help="Read retained origin/receipt bytes and complete Study history for abandonment proof")
     options = parser.parse_args()
+    if options.defense_reference or options.defense_fixture:
+        if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
+            raise RuntimeError('Defense lifecycle fixture requires the disposable runner')
+        database = psycopg.connect(dsn)
+        try:
+            if options.defense_fixture:
+                result = {name: database.execute(statement).fetchone()[0] for name, statement in {
+                    'cards': "SELECT count(*) FROM cards WHERE id='cli-defense-card'",
+                    'candidates': "SELECT count(*) FROM threat_training_candidates WHERE id='cli-defense-candidate'",
+                    'queue': "SELECT count(*) FROM daily_queue WHERE id=910001",
+                    'origins': "SELECT count(*) FROM queue_attempt_origins WHERE queue_entry_id=910001",
+                }.items()}
+            else:
+                from database.tooling.verify_postgres_cli_state import _cut62_defense_reference_digest, _cut62_session
+                database.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')
+                if database.execute('SELECT max(version) FROM tempo_schema_migrations').fetchone()[0] != 59:
+                    raise RuntimeError('Synthetic Defense reference requires schema 59')
+                for migration in sorted(MIGRATIONS.glob('[0-9][0-9][0-9]_*.sql'))[59:61]:
+                    database.execute(migration_source(migration), prepare=False)
+                _cut62_session(database)
+                database.execute('SET LOCAL join_collapse_limit=1')
+                database.execute('SET LOCAL jit=off')
+                count, digest = _cut62_defense_reference_digest(database, [['cli-defense-card','cli-defense-candidate']])
+                if count != 1:
+                    raise RuntimeError('Synthetic Defense fixture is not exclusively eligible')
+                result = {'count': count, 'reference_digest': digest}
+            database.rollback()
+        finally:
+            database.close()
+        print(json.dumps(result))
+        return
     if options.seed_abandon_orphan or options.abandon_inspection:
         connection_options = {} if options.seed_abandon_orphan else {"options": "-c default_transaction_read_only=on"}
         with psycopg.connect(dsn, **connection_options) as database:
@@ -155,6 +188,19 @@ def main():
             for migration in sorted(MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql"))[16:59]:
                 with database.transaction():
                     database.execute(migration_source(migration), prepare=False)
+    if options.seed59:
+        # A disposable, synthetic exclusive Defense candidate with an unissued
+        # queue origin; accepted Study history above remains independently owned.
+        with psycopg.connect(dsn) as database:
+            database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,content_type) VALUES ('cli-defense-card','cli-preserved','prefix','synthetic','[]','2000-01-01','defense')")
+            database.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json) VALUES ('cli-defense-game','synthetic','synthetic','2000-01-01','rapid',0,'white','draw','synthetic','[]')")
+            database.execute("INSERT INTO game_findings(id,game_id,analysis_version,ply,kind,confidence,evidence_json,created_at,updated_at) VALUES ('cli-defense-finding','cli-defense-game',1,1,'synthetic',1,'{}','2000-01-01','2000-01-01')")
+            database.execute("INSERT INTO threat_training_candidates(id,finding_id,game_id,analysis_version,incident_id,player_ply,evidence_json,source_fingerprint,detector_version,policy_json,created_at,updated_at,card_id) VALUES ('cli-defense-candidate','cli-defense-finding','cli-defense-game',1,'incident',1,'{}','synthetic',1,'{}','2000-01-01','2000-01-01','cli-defense-card')")
+            database.execute("INSERT INTO daily_queue(id,queue_date,card_id,position,status,admission_source) VALUES (910001,'2000-01-01','cli-defense-card',2,'queued','defense:cli-defense-candidate')")
+            database.execute("UPDATE queue_attempt_origins SET legacy=1 WHERE queue_entry_id=910001")
+            from psycopg import sql
+            name = database.execute('SELECT current_database()').fetchone()[0]
+            database.execute(sql.SQL('COMMENT ON DATABASE {} IS {}').format(sql.Identifier(name), sql.Literal('tempo-disposable-postgres-test')))
     provision(dsn, Path("/run/secrets/reader_password").read_text().strip(),
               Path("/run/secrets/writer_password").read_text().strip())
     print(f"Seeded populated schema {59 if options.seed59 else 16} with preserved review, queue, and receipt history")
