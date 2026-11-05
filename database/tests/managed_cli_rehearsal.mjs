@@ -300,6 +300,31 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
     assert.deepEqual(readFileSync(join(stateDirectory,'migration-guard.json')),settlementBytes);
     assert.equal(await readLatestMigration(compose).then(result=>Number(result.stdout.trim())),62);
   });
+  // Prove the replacement is itself a valid owner-authenticated witness and
+  // completion pair, then present it against the unchanged original guard.
+  const completionPathAfter=join(witnessDir,'verified-completion.json'), settledReceiptBytes=readFileSync(receipt), settledCompletionBytes=readFileSync(completionPathAfter);
+  const settledAlternateReceipt={...JSON.parse(settledReceiptBytes),cut62_witness_id:alternate.witness_id};
+  const settledAlternatePayload={...JSON.parse(settledCompletionBytes).payload,cut62_witness_id:alternate.witness_id,receipt:settledAlternateReceipt};
+  const settledAlternateSignature=createHmac('sha256',Buffer.from(JSON.parse(alternateBytes).secret,'hex'))
+    .update('tempo-disposable-completion-v1\0').update(JSON.stringify(sorted(settledAlternatePayload))).digest('hex');
+  const settledAlternateCompletion=Buffer.from(JSON.stringify({payload:settledAlternatePayload,signature:settledAlternateSignature}));
+  const settledAlternateGuard=structuredClone(final);delete settledAlternateGuard.managed_image_settlement;
+  settledAlternateGuard.cut62_identity.witness_id=alternate.witness_id;
+  settledAlternateGuard.isolation.completion.sha256=createHash('sha256').update(settledAlternateCompletion).digest('hex');
+  await substitute(async()=>{
+    renameSync(receipt,receipt+'.original');renameSync(completionPathAfter,completionPathAfter+'.original');
+    try {
+      writeFileSync(receipt,JSON.stringify(settledAlternateReceipt),{mode:0o600});writeFileSync(completionPathAfter,settledAlternateCompletion,{mode:0o600});
+      const ownerScript=`import json,sys\nfrom database.tooling.managed_isolation import authenticate_managed_completion\ng=json.loads(sys.argv[1]); d='/cut62'; p='/pre62/'+g['pre62_witness']\nr=authenticate_managed_completion(g,selection_path=d+'/defense-selection.json',binding_path=d+'/binding.json',witness_path=d+'/'+g['cut62_witness'],receipt_path=d+'/verified-receipt.json',completion_path=d+'/verified-completion.json',pre62_path=p)\nprint(json.dumps(r))`;
+      const independentlyAuthenticated=JSON.parse((await compose(['--profile','maintenance','run','--rm','--no-deps','-T',
+        '--volume',`${witnessDir}:/cut62:ro`,'--volume',`${dirname(preWitness)}:/pre62:ro`,'migration','-c',ownerScript,JSON.stringify(settledAlternateGuard)])).stdout);
+      assert.equal(independentlyAuthenticated.witness_id,alternate.witness_id);
+      assertFailed(cli('','start','--no-ci','--no-open'));
+      assert.deepEqual(readFileSync(join(stateDirectory,'migration-guard.json')),settlementBytes);
+    } finally {
+      unlinkSync(receipt);unlinkSync(completionPathAfter);renameSync(receipt+'.original',receipt);renameSync(completionPathAfter+'.original',completionPathAfter);
+    }
+  });
   assert.equal(statSync(witness).ino,witnessInode); assert.deepEqual(readFileSync(witness),witnessBytes);
   const completion=join(witnessDir,'verified-completion.json'), completionBytes=readFileSync(completion), completionInode=statSync(completion).ino;
   const request=async(path,options={})=>{

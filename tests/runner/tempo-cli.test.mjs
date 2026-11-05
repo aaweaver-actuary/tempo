@@ -1244,15 +1244,15 @@ test('managed deployment settlement recovers publication and permits a later can
   const imageBytes = Buffer.from(JSON.stringify(receipt)), imageName = `pending-images-${attempt}.json`;
   writeFileSync(join(root, imageName), imageBytes, { mode: 0o600 });
   const guard = { version: 1, state: 'verified', verified_schema: 62, target: targetKey(target), attempt_id: attempt,
-    database, starting_schema: 61, intended_schema: 62, starting_versions: Array.from({length:61}, (_, i) => i + 1),
+    database, starting_schema: 59, intended_schema: 62, starting_versions: Array.from({length:59}, (_, i) => i + 1),
     study_invariants: {}, backup, defense_binding: binding, managed_selection_started: true,
     managed_image_receipt: { name: imageName, attempt_id: attempt, sha256: createHash('sha256').update(imageBytes).digest('hex') },
-    cut62_witness: witness, cut62_identity: { witness_id: 'original-id' },
+    cut62_witness: witness, cut62_identity: { witness_id: 'original-id' }, pre62_witness: `pre62-${attempt}.json`, pre62_witness_id: 'pre-id',
     isolation: { phase: 'reattached', identity: { target: targetKey(target) }, target_oid: 1,
       system_identifier: 'cluster', control_oid: 2 } };
   const resultReceipt = { attempt_id: attempt };
   const payload = { version: 1, target: guard.target, attempt_id: attempt, identity: guard.isolation.identity,
-    target_oid: 1, system_identifier: 'cluster', control_oid: 2, backup: binding, pre62_witness_id: null,
+    target_oid: 1, system_identifier: 'cluster', control_oid: 2, backup: binding, pre62_witness_id: 'pre-id',
     cut62_witness_id: 'original-id', receipt: resultReceipt };
   const sorted = value => Array.isArray(value) ? value.map(sorted) : value && typeof value === 'object'
     ? Object.fromEntries(Object.keys(value).sort().map(key => [key, sorted(value[key])])) : value;
@@ -1262,6 +1262,8 @@ test('managed deployment settlement recovers publication and permits a later can
   for (const [name, bytes] of [[witness, JSON.stringify({secret:secret.toString('hex')})], ['verified-receipt.json', JSON.stringify(resultReceipt)], ['verified-completion.json', completionBytes]])
     writeFileSync(join(folder, name), bytes, { mode: 0o600 });
   for (const name of ['defense-selection.json', 'binding.json']) writeFileSync(join(folder, name), '{}', { mode: 0o600 });
+  const preDir=join(root,guard.pre62_witness.slice(0,-5)); mkdirSync(preDir,{mode:0o700});
+  const prePath=join(preDir,guard.pre62_witness);writeFileSync(prePath,'original schema 59 witness',{mode:0o600});
   const deployed = { revision, schema: 62, evidence: {commit:revision}, verified_at:'original', images:receipt.images,
     composeFiles:receipt.compose_files, imageOverride:receipt.image_override, configFingerprint:receipt.config_fingerprint, backup };
   atomicJson(join(root, 'deployment.json'), deployed); atomicJson(join(root, 'migration-guard.json'), guard);
@@ -1279,6 +1281,9 @@ test('managed deployment settlement recovers publication and permits a later can
   await runtime.authenticateManagedSettlement();
   const settled = JSON.parse(readFileSync(join(root, 'migration-guard.json')));
   assert.equal(authenticateManagedSettlement(root, settled), true);
+  writeFileSync(prePath,'changed schema 59 witness');
+  assert.throws(() => authenticateManagedSettlement(root, settled), /settlement authentication failed/);
+  writeFileSync(prePath,'original schema 59 witness');
   await assert.rejects(runtime.ensureImages(), /new candidate build/); assert.equal(builds, 1);
   atomicJson(join(root, 'maintenance.lock'), {pid:process.pid, token:randomUUID()});
   await assert.rejects(runtime.ensureImages(), /lock/i); assert.equal(builds, 1);

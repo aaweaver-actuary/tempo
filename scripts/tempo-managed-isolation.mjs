@@ -239,6 +239,20 @@ export function authenticateManagedCompletionEvidence(stateDirectory, guard) {
   const sha = bytes => createHash('sha256').update(bytes).digest('hex');
   const evidenceSha256 = { witness: sha(witnessBytes), selection: sha(readOwnedPrivateBytes(join(directory, 'defense-selection.json'))),
     binding: sha(readOwnedPrivateBytes(join(directory, 'binding.json'))), receipt: sha(readOwnedPrivateBytes(receiptPath)) };
+  if (guard.starting_schema === 59) {
+    if (!/^pre62-[0-9a-f-]{36}\.json$/i.test(guard.pre62_witness ?? '')) throw new Error('Invalid original schema 59 witness identity.');
+    const path = join(stateDirectory, guard.pre62_witness.slice(0, -5), guard.pre62_witness);
+    const parent = lstatSync(dirname(path));
+    if (!parent.isDirectory() || parent.uid !== process.getuid() || (parent.mode & 0o777) !== 0o700)
+      throw new Error('Invalid original schema 59 witness directory.');
+    const descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+      const info = fstatSync(descriptor);
+      if (!info.isFile() || info.uid !== process.getuid() || (info.mode & 0o777) !== 0o600 || info.size > 64 * 1024 * 1024)
+        throw new Error('Invalid original schema 59 witness.');
+      evidenceSha256.pre62_witness = sha(readFileSync(descriptor));
+    } finally { closeSync(descriptor); }
+  }
   return { receipt, completion, receiptPath, completionPath, digest, evidenceSha256, secret: Buffer.from(envelope.secret, 'hex') };
 }
 
