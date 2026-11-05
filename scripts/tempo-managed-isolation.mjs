@@ -215,11 +215,11 @@ export function authenticateManagedCompletionEvidence(stateDirectory, guard) {
   const receipt = JSON.parse(readOwnedPrivateBytes(receiptPath)), completionBytes = readOwnedPrivateBytes(completionPath);
   const completion = JSON.parse(completionBytes), witnessPath = join(directory, guard.cut62_witness);
   const fd = openSync(witnessPath, constants.O_RDONLY | constants.O_NOFOLLOW);
-  let envelope;
+  let envelope, witnessBytes;
   try {
     const info = fstatSync(fd);
     if (!info.isFile() || info.uid !== process.getuid() || (info.mode & 0o777) !== 0o600 || info.size > 64 * 1024 * 1024) throw new Error('Invalid original witness.');
-    envelope = JSON.parse(readFileSync(fd));
+    witnessBytes = readFileSync(fd); envelope = JSON.parse(witnessBytes);
   } finally { closeSync(fd); }
   if (!/^[0-9a-f]{64}$/.test(envelope?.secret ?? '')) throw new Error('Original managed witness secret is invalid.');
   const payload = { version: 1, target: guard.target, attempt_id: guard.attempt_id, identity: guard.isolation.identity,
@@ -236,7 +236,10 @@ export function authenticateManagedCompletionEvidence(stateDirectory, guard) {
   if (!isDeepStrictEqual(completion.payload, payload) || Object.keys(completion).sort().join() !== 'payload,signature' ||
       supplied.length !== signature.length || !timingSafeEqual(supplied, signature))
     throw new Error('Original managed completion authentication failed.');
-  return { receipt, completion, receiptPath, completionPath, digest, secret: Buffer.from(envelope.secret, 'hex') };
+  const sha = bytes => createHash('sha256').update(bytes).digest('hex');
+  const evidenceSha256 = { witness: sha(witnessBytes), selection: sha(readOwnedPrivateBytes(join(directory, 'defense-selection.json'))),
+    binding: sha(readOwnedPrivateBytes(join(directory, 'binding.json'))), receipt: sha(readOwnedPrivateBytes(receiptPath)) };
+  return { receipt, completion, receiptPath, completionPath, digest, evidenceSha256, secret: Buffer.from(envelope.secret, 'hex') };
 }
 
 function settlementMac(secret, payload) {
@@ -251,8 +254,9 @@ export function authenticateManagedSettlement(stateDirectory, guard) {
   const payload = marker.payload;
   if (guard.state !== 'verified' || guard.verified_schema !== 62 || guard.isolation?.phase !== 'reattached' ||
       guard.isolation.completion?.sha256 !== evidence.digest || payload?.version !== 1 ||
-      Object.keys(payload).sort().join() !== 'attempt_id,completion_sha256,deployment_sha256,guard_sha256,target,version' ||
+      Object.keys(payload).sort().join() !== 'attempt_id,completion_sha256,deployment_sha256,evidence_sha256,guard_sha256,target,version' ||
       payload.target !== guard.target || payload.attempt_id !== guard.attempt_id || payload.completion_sha256 !== evidence.digest ||
+      !isDeepStrictEqual(payload.evidence_sha256, evidence.evidenceSha256) ||
       payload.guard_sha256 !== createHash('sha256').update(JSON.stringify(original)).digest('hex') ||
       !/^[0-9a-f]{64}$/.test(payload.deployment_sha256 ?? '') ||
       !/^[0-9a-f]{64}$/.test(marker.signature ?? '') ||
@@ -268,6 +272,7 @@ export function createManagedSettlement(stateDirectory, guard, deploymentBytes) 
       guard.isolation.completion?.sha256 !== evidence.digest) throw new Error('Managed completion is not ready to settle.');
   const payload = { version: 1, target: guard.target, attempt_id: guard.attempt_id, completion_sha256: evidence.digest,
     deployment_sha256: createHash('sha256').update(deploymentBytes).digest('hex'),
+    evidence_sha256: evidence.evidenceSha256,
     guard_sha256: createHash('sha256').update(JSON.stringify(guard)).digest('hex') };
   return { payload, signature: settlementMac(evidence.secret, payload) };
 }

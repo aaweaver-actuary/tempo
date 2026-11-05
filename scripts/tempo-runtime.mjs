@@ -1,7 +1,7 @@
 // Bounded deployment stages. No work is scheduled from application startup.
 import { createHash, randomUUID } from "node:crypto";
 import { managedComposeBuild } from './development-budget.mjs';
-import { closeSync, constants, existsSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { isDeepStrictEqual } from 'node:util';
@@ -12,7 +12,7 @@ import { TempoProblem, classifyRedisReply, phaseGuidance } from "./tempo-guidanc
 import { isTimingPublicationFailure } from "./test-scenario-timings.mjs";
 import { probeLifecycleRedis } from "../database/tooling/cli/probes.mjs";
 import { createBackupRestoreDatabase, createPostgresBackup, removeBackupRestoreDatabase, restorePostgresBackup } from "../database/tooling/cli/backup.mjs";
-import { advanceManagedIsolationMarker, assertManagedTargetLock, authenticateManagedSettlement, captureManagedTargetLock, createManagedSettlement, inspectManagedCompletedTarget, inspectManagedFence, inspectManagedHistorySelectionBinding, inspectManagedPreIsolationTarget, persistManagedHistoryWitnessIdentity, privateDefenseHistorySelection, readOwnedPrivateBytes, startManagedStoppedDetachedTarget, syncDirectory, syncManagedIsolationEvidence,
+import { advanceManagedIsolationMarker, assertManagedTargetLock, authenticateManagedCompletionEvidence, authenticateManagedSettlement, captureManagedTargetLock, createManagedSettlement, inspectManagedCompletedTarget, inspectManagedFence, inspectManagedHistorySelectionBinding, inspectManagedPreIsolationTarget, persistManagedHistoryWitnessIdentity, privateDefenseHistorySelection, readOwnedPrivateBytes, startManagedStoppedDetachedTarget, syncDirectory, syncManagedIsolationEvidence,
   prepareManagedDetachedTarget, runManagedPinnedChild, restoreManagedCompletedTarget, requireManagedIsolationGate } from './tempo-managed-isolation.mjs';
 
 export const applicationServices = ["web", "api",
@@ -125,6 +125,7 @@ export async function executeLifecycle(plan, actions) {
   let migrationVerificationRequired = await actions.checkMigrationRetry?.();
   let interruptedApplications = false;
   try {
+    await actions.authenticateManagedSettlement?.();
     const imagePreparation = await actions.ensureImages();
     await actions.persistManagedImageReceipt?.();
     await actions.authenticateManagedPreIsolation?.();
@@ -201,6 +202,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   let managedCompletionAuthenticated = false;
   let managedSettlementAuthenticated = false;
   let managedSettlementLock = null;
+  let managedSettlementPending = false;
   let managedPreIsolationPending = false;
   let managedPreIsolationAuthenticated = false;
   let managedImageReceipt = null;
@@ -293,6 +295,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   }
 
   async function ensureImages() {
+    if (managedSettlementPending) throw new Error('Managed settlement authentication is incomplete.');
     if (managedSettlementAuthenticated) assertManagedTargetLock(stateDirectory, managedSettlementLock);
     await config();
     let desiredFingerprint = configurationFingerprint(configuration);
@@ -563,6 +566,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   }
 
   async function ensureDatabase({ allowRecreation = false } = {}) {
+    if (managedSettlementPending) throw new Error('Managed settlement authentication is incomplete.');
     if (managedSettlementAuthenticated) assertManagedTargetLock(stateDirectory, managedSettlementLock);
     if (allowRecreation && migrationGuard?.defense_binding && !managedSettlementAuthenticated &&
         !managedCompletionAuthenticated && !managedPreIsolationAuthenticated)
@@ -674,7 +678,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     return checkSchema();
   }
 
-  function settleManagedDeployment() {
+  async function settleManagedDeployment() {
     const lock = captureManagedTargetLock(stateDirectory);
     const reference = migrationGuard.managed_image_receipt;
     if (reference?.name !== `pending-images-${migrationGuard.attempt_id}.json` ||
@@ -701,7 +705,33 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
       const path = join(directory, name), evidence = JSON.parse(readOwnedPrivateBytes(path));
       syncManagedIsolationEvidence({ guardPath, guard: migrationGuard, receiptPath: path, receipt: evidence });
     }
+    const beforeEvidence = authenticateManagedCompletionEvidence(stateDirectory, migrationGuard);
+    const migrationImage = receipt.images?.migration;
+    if (!/^sha256:[0-9a-f]{64}$/.test(migrationImage ?? '') || receipt.image_revisions?.migration !== receipt.revision)
+      throw new Error('Original managed maintenance image identity is invalid.');
+    const inspected = JSON.parse((await docker(['image', 'inspect', migrationImage])).stdout);
+    if (!Array.isArray(inspected) || inspected.length !== 1 || inspected[0].Id !== migrationImage ||
+        inspected[0].Config?.Labels?.['org.opencontainers.image.revision'] !== receipt.revision)
+      throw new Error('Original managed maintenance image differs.');
+    if (!isAbsolute(stateDirectory) || /[:,\n\r]/.test(stateDirectory)) throw new Error('Original managed state mount is unsafe.');
+    const source = `import json,sys
+from database.tooling.managed_isolation import authenticate_managed_completion
+with open('/state/migration-guard.json','rb') as stream: guard=json.load(stream)
+if guard != json.loads(sys.argv[1]): raise RuntimeError('Original guard differs')
+directory='/state/'+guard['cut62_witness'][:-5]
+pre='/state/'+guard['pre62_witness'][:-5]+'/'+guard['pre62_witness'] if guard['starting_schema']==59 else None
+result=authenticate_managed_completion(guard,selection_path=directory+'/defense-selection.json',binding_path=directory+'/binding.json',witness_path=directory+'/'+guard['cut62_witness'],receipt_path=directory+'/verified-receipt.json',completion_path=directory+'/verified-completion.json',pre62_path=pre)
+print(json.dumps(result))`;
+    const checked = JSON.parse((await docker(['run','--rm','--network','none','--read-only','--mount',
+      `type=bind,source=${stateDirectory},destination=/state,readonly`,'--entrypoint','python',migrationImage,
+      '-c',source,JSON.stringify(migrationGuard)])).stdout);
+    if (checked.witness_id !== migrationGuard.cut62_identity?.witness_id ||
+        checked.completion_sha256 !== migrationGuard.isolation?.completion?.sha256)
+      throw new Error('Original managed completion differs.');
     const marker = createManagedSettlement(stateDirectory, migrationGuard, bytes);
+    if (marker.payload.completion_sha256 !== beforeEvidence.digest ||
+        !isDeepStrictEqual(marker.payload.evidence_sha256, beforeEvidence.evidenceSha256))
+      throw new Error('Original managed evidence changed during settlement.');
     assertManagedTargetLock(stateDirectory, lock);
     migrationGuard = { ...migrationGuard, managed_image_settlement: marker };
     atomicJson(guardPath, migrationGuard);
@@ -710,11 +740,23 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     managedSettlementAuthenticated = true;
   }
 
+  async function authenticateSettlementBeforeImages() {
+    if (!managedSettlementPending) return;
+    const lock = captureManagedTargetLock(stateDirectory);
+    if (!migrationGuard.managed_image_settlement) await settleManagedDeployment();
+    if (!migrationGuard.managed_image_settlement) throw new Error('Original managed deployment is not settled.');
+    authenticateManagedSettlement(stateDirectory, migrationGuard);
+    syncManagedIsolationEvidence({ guardPath, guard: migrationGuard });
+    assertManagedTargetLock(stateDirectory, lock);
+    managedSettlementLock = lock; managedSettlementAuthenticated = true; managedSettlementPending = false;
+  }
+
   function checkMigrationRetry() {
     // Read under the maintenance lock, including the backup path whose runtime
     // was created during the earlier read-only inspection.
     managedSettlementAuthenticated = false;
     managedSettlementLock = null;
+    managedSettlementPending = false;
     managedCompletionAuthenticated = false;
     managedIsolationRetry = false;
     managedCompletionPending = false;
@@ -724,16 +766,16 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     const previousOperation = !migrationGuard && existsSync(journalPath) ? JSON.parse(readFileSync(journalPath, "utf8")) : null;
     const assessment = assessMigrationRecovery({ guard: migrationGuard, operation: previousOperation, target, configuration, retry });
     if (assessment.status === "blocked") throw new Error(assessment.message);
-    if (migrationGuard?.state === 'verified' && migrationGuard?.managed_image_receipt && !migrationGuard.managed_image_settlement)
-      settleManagedDeployment();
-    if (migrationGuard?.managed_image_settlement) {
-      managedSettlementLock = captureManagedTargetLock(stateDirectory);
-      authenticateManagedSettlement(stateDirectory, migrationGuard);
-      syncManagedIsolationEvidence({ guardPath, guard: migrationGuard });
-      assertManagedTargetLock(stateDirectory, managedSettlementLock);
-      managedSettlementAuthenticated = true;
+    if (migrationGuard?.state === 'verified' && migrationGuard?.managed_image_receipt) {
+      const reference = migrationGuard.managed_image_receipt;
+      if (reference.name !== `pending-images-${migrationGuard.attempt_id}.json`) throw new Error('Original managed image receipt is invalid.');
+      const bytes = readOwnedPrivateBytes(join(stateDirectory, reference.name));
+      if (createHash('sha256').update(bytes).digest('hex') !== reference.sha256) throw new Error('Original managed image receipt changed.');
+      const receipt = JSON.parse(bytes);
+      managedSettlementPending = Boolean(migrationGuard.managed_image_settlement ||
+        (previous?.revision === receipt.revision && previous?.schema === 62));
     }
-    if (!managedSettlementAuthenticated && (migrationGuard?.defense_binding || migrationGuard?.isolation)) {
+    if (!managedSettlementPending && (migrationGuard?.defense_binding || migrationGuard?.isolation)) {
       requireManagedIsolationGate();
       managedIsolationRetry = migrationGuard.state === 'pending' && Boolean(migrationGuard.isolation);
       managedCompletionPending = migrationGuard.state === 'verified';
@@ -963,6 +1005,7 @@ print(json.dumps({**result,'database':row}))`;
   }
 
   async function migrate() {
+    if (managedSettlementAuthenticated) assertManagedTargetLock(stateDirectory, managedSettlementLock);
     if (defenseSelection || (migrationGuard?.defense_binding && !managedSettlementAuthenticated)) requireManagedIsolationGate();
     const managedLock = defenseSelection || migrationGuard?.defense_binding ? captureManagedTargetLock(stateDirectory) : null;
     originalHistoryVerified = false;
@@ -977,9 +1020,13 @@ print(json.dumps({**result,'database':row}))`;
         if (existsSync(archive)) {
           if (!readOwnedPrivateBytes(archive).equals(bytes)) throw new Error('Original managed settlement archive differs.');
         } else {
-          const descriptor = openSync(archive, 'wx', 0o600);
-          try { writeFileSync(descriptor, bytes); fsyncSync(descriptor); } finally { closeSync(descriptor); }
-          syncDirectory(stateDirectory);
+          const temporary = `${archive}.${randomUUID()}.partial`;
+          try {
+            const descriptor = openSync(temporary, 'wx', 0o600);
+            try { writeFileSync(descriptor, bytes); fsyncSync(descriptor); } finally { closeSync(descriptor); }
+            linkSync(temporary, archive);
+            syncDirectory(stateDirectory);
+          } finally { try { unlinkSync(temporary); } catch (error) { if (error.code !== 'ENOENT') throw error; } }
         }
       }
       // H0 belongs to this database attempt, not to a process or revision.
@@ -1208,6 +1255,8 @@ print(json.dumps({'witness_id':witness_id}))`;
 
   function requireVerifiedMigration() {
     if (migrationGuard?.state === "pending") throw new Error("Original migration verification is unresolved; keep writers stopped.");
+    if ((migrationGuard?.defense_binding || migrationGuard?.isolation) && !managedCompletionAuthenticated && !managedSettlementAuthenticated)
+      throw new Error('Original managed completion has not been authenticated; keep writers stopped.');
   }
 
   async function startServices({ recreate = false } = {}) {
@@ -1261,7 +1310,7 @@ print(json.dumps({'witness_id':witness_id}))`;
       atomicJson(join(stateDirectory, "deployment.json"), record);
       if (migrationGuard?.state === 'verified' && migrationGuard.managed_image_receipt && !migrationGuard.managed_image_settlement) {
         if (!managedCompletionAuthenticated) throw new Error('Managed completion was not authenticated before deployment settlement.');
-        settleManagedDeployment();
+        await settleManagedDeployment();
         if (!managedSettlementAuthenticated) throw new Error('Managed deployment was not settled.');
       }
       operation.phase = "ready";
@@ -1319,7 +1368,7 @@ print(json.dumps({'witness_id':witness_id}))`;
   }
 
   return { config, inspectTarget, compose, docker, runningServices, inspectRunningRevision, ensureImages, persistManagedImageReceipt, recordedApplicationsMatch, ensureDatabase, resumeManagedIsolation, authenticateManagedPreIsolation,
-    checkSchema, preflightSchema, checkMigrationRetry, resolveMigrationGuard, stopApplications, backup, migrate, startServices, verifyReady, commitDeployment,
+    checkSchema, preflightSchema, checkMigrationRetry, authenticateManagedSettlement: authenticateSettlementBeforeImages, resolveMigrationGuard, stopApplications, backup, migrate, startServices, verifyReady, commitDeployment,
     recordFailure, stopAll, backupOnly, secretValues, get configuration() { return configuration; } };
 }
 

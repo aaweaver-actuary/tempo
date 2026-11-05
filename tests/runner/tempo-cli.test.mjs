@@ -1238,7 +1238,8 @@ test('managed deployment settlement recovers publication and permits a later can
   const database = { name: 'tempo', volume: target.volumes[target.postgresVolumeKey].name };
   const backup = { verified: true, filename: 'tempo-original.dump' }, binding = { backup_filename: backup.filename };
   const receipt = { version: 1, target: targetKey(target), attempt_id: attempt, revision, database,
-    images: { postgres: 'sha256:original' }, compose_files: ['/original/compose'], image_override: '/original/images',
+    images: { postgres: 'sha256:original', migration: `sha256:${'1'.repeat(64)}` }, image_revisions: { migration: revision },
+    compose_files: ['/original/compose'], image_override: '/original/images',
     config_fingerprint: 'original-config' };
   const imageBytes = Buffer.from(JSON.stringify(receipt)), imageName = `pending-images-${attempt}.json`;
   writeFileSync(join(root, imageName), imageBytes, { mode: 0o600 });
@@ -1260,15 +1261,22 @@ test('managed deployment settlement recovers publication and permits a later can
   guard.isolation.completion = { filename: 'verified-completion.json', sha256: createHash('sha256').update(completionBytes).digest('hex') };
   for (const [name, bytes] of [[witness, JSON.stringify({secret:secret.toString('hex')})], ['verified-receipt.json', JSON.stringify(resultReceipt)], ['verified-completion.json', completionBytes]])
     writeFileSync(join(folder, name), bytes, { mode: 0o600 });
+  for (const name of ['defense-selection.json', 'binding.json']) writeFileSync(join(folder, name), '{}', { mode: 0o600 });
   const deployed = { revision, schema: 62, evidence: {commit:revision}, verified_at:'original', images:receipt.images,
     composeFiles:receipt.compose_files, imageOverride:receipt.image_override, configFingerprint:receipt.config_fingerprint, backup };
   atomicJson(join(root, 'deployment.json'), deployed); atomicJson(join(root, 'migration-guard.json'), guard);
   atomicJson(join(root, 'maintenance.lock'), {pid:process.pid, token:randomUUID()});
   let builds = 0;
-  const run = async (_program, args) => { if (args.includes('config')) return {stdout:JSON.stringify(config)}; throw new Error('unexpected command'); };
+  const run = async (_program, args) => { if (args.includes('config')) return {stdout:JSON.stringify(config)};
+    if (args.includes('inspect')) return {stdout:JSON.stringify([{Id:receipt.images.migration,Config:{Labels:{'org.opencontainers.image.revision':revision}}}])};
+    if (args.includes('run')) return {stdout:JSON.stringify({witness_id:'original-id',completion_sha256:guard.isolation.completion.sha256})};
+    throw new Error('unexpected command'); };
   const runtime = createRuntime(target, { stateDirectory:root, revision:next, previous:deployed, run,
     buildImages:async () => { builds++; throw new Error('new candidate build'); } });
   await runtime.config(); assert.equal(runtime.checkMigrationRetry(), false);
+  await assert.rejects(runtime.startServices(), /not been authenticated/);
+  await assert.rejects(runtime.ensureImages(), /authentication is incomplete/);
+  await runtime.authenticateManagedSettlement();
   const settled = JSON.parse(readFileSync(join(root, 'migration-guard.json')));
   assert.equal(authenticateManagedSettlement(root, settled), true);
   await assert.rejects(runtime.ensureImages(), /new candidate build/); assert.equal(builds, 1);
@@ -1276,7 +1284,8 @@ test('managed deployment settlement recovers publication and permits a later can
   await assert.rejects(runtime.ensureImages(), /lock/i); assert.equal(builds, 1);
   const altered = structuredClone(settled); altered.managed_image_settlement.payload.deployment_sha256 = '0'.repeat(64);
   atomicJson(join(root, 'migration-guard.json'), altered);
-  assert.throws(() => runtime.checkMigrationRetry(), /settlement authentication failed/);
+  assert.equal(runtime.checkMigrationRetry(), false);
+  await assert.rejects(runtime.authenticateManagedSettlement(), /settlement authentication failed/);
 });
 
 test("pending managed image receipt reuses exact images without a build and rejects drift", t => {
