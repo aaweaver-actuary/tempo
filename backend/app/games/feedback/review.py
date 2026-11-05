@@ -42,6 +42,12 @@ class SyncConfiguration(Value):
         return self
 
 
+class JobStatus(Value):
+    job_id: str
+    status: Literal["queued", "running", "retryable", "failed", "quarantined", "complete"] = "queued"
+    error: str | None = None
+
+
 class ReviewStore(Protocol):
     def configuration(self, workspace: str, provider: Provider) -> SyncConfiguration | None: ...
     def configure(self, configuration: SyncConfiguration, expected_revision: int) -> SyncConfiguration: ...
@@ -49,6 +55,7 @@ class ReviewStore(Protocol):
     def source_detail(self, workspace: str, provider: Provider, game_id: str) -> SourceState | None: ...
     def deliveries(self, source_key: str) -> tuple[Delivery, ...]: ...
     def last_job(self, workspace: str, provider: Provider) -> JobState | None: ...
+    def latest_job_status(self, workspace: str, provider: Provider) -> JobStatus | None: ...
     def enqueue(self, configuration: SyncConfiguration, job: JobSpec, now: float) -> JobState: ...
     def enqueue_refresh(self, workspace: str, provider: Provider, operation_id: str,
                         build_job: Callable) -> tuple[JobState, bool]: ...
@@ -60,11 +67,11 @@ class ReviewStore(Protocol):
     def delivery(self, operation_id: str) -> Delivery | None: ...
 
 
-def sync_status(provider: Provider, job: JobState | None) -> ProviderSyncStatus:
+def sync_status(provider: Provider, job: JobState | JobStatus | None) -> ProviderSyncStatus:
     if job is None:
         return ProviderSyncStatus(provider=provider, status="idle", operation_id=None, error=None)
     failed = job.status in {"retryable", "failed", "quarantined"}
-    return ProviderSyncStatus(provider=provider, operation_id=job.spec.job_id,
+    return ProviderSyncStatus(provider=provider, operation_id=job.spec.job_id if isinstance(job, JobState) else job.job_id,
         status="failed" if failed else "complete" if job.status == "complete" else "pending",
         error=(job.error or job.status) if failed else None)
 
@@ -95,7 +102,7 @@ class GameReview:
 
     def recent_games(self) -> RecentGames:
         return RecentGames(games=self.store.recent(self.workspace, 50), sync=tuple(
-            sync_status(provider, self.store.last_job(self.workspace, provider))
+            sync_status(provider, self.store.latest_job_status(self.workspace, provider))
             for provider in ("lichess", "chesscom")))
 
     def game_detail(self, *, provider: Provider, game_id: str, repertoire_id: str | None) -> GameDetail:
