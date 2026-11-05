@@ -295,3 +295,56 @@ def test_cut62_existing_source_witness_check_fails_on_drift(monkeypatch):
     monkeypatch.setattr(guard, 'capture_cut62', lambda database, secret: {**witness, 'sentinel': 'changed'})
     with pytest.raises(RuntimeError, match='source changed'):
         guard.check_captured_cut62(None, witness, b'x' * 32)
+
+
+def test_pre62_original_witness_survives_only_expected_checkpoints(monkeypatch):
+    class Database:
+        version = 59
+        def execute(self, query):
+            class Result:
+                def fetchone(inner):
+                    return (self.version if 'max(version)' in query else 'owner',)
+            return Result()
+    database = Database()
+    source = guard.PRE62_SOURCE_TABLES
+    layout = {name: [['id'], [['id','text',True]]] for name in source}
+    state = {name: {'count':1,'digest':name} for name in source}
+    monkeypatch.setattr(guard, '_cut62_session', lambda db: None)
+    monkeypatch.setattr(guard, '_cut62_versions', lambda db, version: None)
+    monkeypatch.setattr(guard, '_pre62_added_objects', lambda db, version, owner: None)
+    monkeypatch.setattr(guard, '_cut62_layout', lambda db, names: {name: layout.get(name, [['id'], []]) for name in names})
+    monkeypatch.setattr(guard, '_pre62_table', lambda db, name, key, secret: state[name].copy())
+    monkeypatch.setattr(guard, '_pre62_sequences', lambda db, secret: {'count':10,'digest':'seq'})
+    monkeypatch.setattr(guard, '_pre62_catalog', lambda db, secret: {'count':1,'digest':'catalog'})
+    witness = guard.capture_pre62_59(database, b'x'*32)
+    assert 'defense_attempts' in witness['rows']
+    assert 'study_position_first_responses' in witness['rows']
+    for version in (59,60,61):
+        database.version=version
+        assert guard.verify_pre62_59(database,witness,b'x'*32)['observed_schema'] == version
+    state['defense_attempts']['digest']='modified'
+    with pytest.raises(RuntimeError, match='retained rows changed in defense_attempts'):
+        guard.verify_pre62_59(database,witness,b'x'*32)
+    state['defense_attempts']['digest']='defense_attempts'
+    monkeypatch.setattr(guard, '_pre62_sequences', lambda db, secret: {'count':10,'digest':'changed'})
+    with pytest.raises(RuntimeError, match='sequences changed'):
+        guard.verify_pre62_59(database,witness,b'x'*32)
+    database.version=62
+    with pytest.raises(RuntimeError, match='unsupported pre62 target'):
+        guard.verify_pre62_59(database,witness,b'x'*32)
+
+
+def test_pre62_file_never_overwrites_and_rejects_other_domain(tmp_path,monkeypatch):
+    witness={'domain':'pre62-source-59','version':1,'from':59,'through':61}
+    monkeypatch.setattr(guard,'capture_pre62_59',lambda database,secret: dict(witness))
+    path=tmp_path/'pre62.json'
+    guard.save_pre62_59(path,None)
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert guard.load_pre62_59(path)[0] == witness
+    with pytest.raises(FileExistsError):
+        guard.save_pre62_59(path,None)
+    payload=json.loads(path.read_text())
+    payload['witness']['domain']='cut62'
+    path.write_text(json.dumps(payload))
+    with pytest.raises(RuntimeError,match='authentication'):
+        guard.load_pre62_59(path)
