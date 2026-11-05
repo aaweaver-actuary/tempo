@@ -71,7 +71,7 @@ export async function runShippingManagedCliRehearsal({ root, project, target, re
   assert.equal(originalDefense.frozenActivation.run_id,null);assert.equal(originalDefense.frozenRanks,0);
   assert(Object.values(originalDefense.retired).every(Boolean));
   const selection=join(approved,'selection.json');writeFileSync(selection,JSON.stringify(manifest),{mode:0o600});
-  atomicJson(join(directory,'shipping-retained-before.json'),{categories:originalDefense.retainedCategories,rows:originalDefense.retainedRows});
+  atomicJson(join(directory,'shipping-retained-before.json'),{categories:originalDefense.retainedCategories,rows:originalDefense.retainedRows,comparisonEvidence:originalDefense.comparisonEvidence});
   const selectionHash=createHash('sha256').update(readFileSync(selection)).digest('hex');
   const secretValues=['admin_password','reader_password','writer_password','admin_pgpass','reader_pgpass','writer_pgpass']
     .map(name=>readFileSync(join(secretsPath,name),'utf8').trim());
@@ -98,7 +98,7 @@ export async function runShippingManagedCliRehearsal({ root, project, target, re
   assert.deepEqual(await readHistory(),expected);
   const checkDefense=async()=>{
     const current=await readDefenseFixture();
-    atomicJson(join(directory,'shipping-retained-after.json'),{categories:current.retainedCategories,rows:current.retainedRows});
+    atomicJson(join(directory,'shipping-retained-after.json'),{categories:current.retainedCategories,rows:current.retainedRows,comparisonEvidence:current.comparisonEvidence});
     assert.deepEqual(Object.fromEntries(['schema','cards','queues','origins','recognitions','attempts','reviews','linkedCandidates','epochs','frozen']
       .map(key=>[key,current[key]])),{schema:62,cards:0,queues:0,origins:0,recognitions:0,attempts:0,reviews:0,linkedCandidates:0,epochs:15,frozen:1});
     assert.equal(current.retainedDigest,originalDefense.retainedDigest);assert.equal(current.londonChoices,5);

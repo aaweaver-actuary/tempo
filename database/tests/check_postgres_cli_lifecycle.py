@@ -137,6 +137,7 @@ def main():
         print(json.dumps({'seeded':True,'schema':59}));return
     if options.inspect_defense_v2_15:
         with psycopg.connect(dsn, options='-c default_transaction_read_only=on') as database:
+            database.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
             def count(table, column, pattern):
                 from psycopg import sql
                 return database.execute(sql.SQL('SELECT count(*) FROM public.{} WHERE {} LIKE %s').format(sql.Identifier(table),sql.Identifier(column)),(pattern,)).fetchone()[0]
@@ -161,6 +162,14 @@ def main():
               'reviews':count('reviews','card_id','cli-defense-15-card-%'),
               'linkedCandidates':database.execute("SELECT count(*) FROM threat_training_candidates WHERE id LIKE 'cli-defense-15-candidate-%' AND card_id IS NOT NULL").fetchone()[0],
               'retainedDigest':retained,'retainedCategories':retained_categories,'retainedRows':retained_rows,
+              'comparisonEvidence':database.execute("""SELECT jsonb_build_object(
+                'scope', (SELECT generation FROM repertoire_game_scope WHERE id=1),
+                'games', (SELECT jsonb_agg(jsonb_build_object('id',g.id,'scope',g.repertoire_scope_generation,
+                  'published_version',j.published_repertoire_version,'job_status',j.status,
+                  'published_comparison',EXISTS(SELECT 1 FROM repertoire_comparisons_staged c
+                    WHERE c.game_id=g.id AND c.derivation_version=j.published_repertoire_version)) ORDER BY g.id)
+                  FROM imported_games g LEFT JOIN game_derivation_jobs j ON j.game_id=g.id
+                  WHERE g.id LIKE 'cli-defense-15-game-%'))""").fetchone()[0],
               'epochs':database.execute("SELECT count(*) FROM priority_repertoire_source_epochs WHERE repertoire_id LIKE 'cli-defense-15-rep-%'").fetchone()[0],
               'londonChoices':database.execute("SELECT count(DISTINCT moves_json) FROM repertoire_lines WHERE repertoire_id='cli-retained-london'").fetchone()[0],
               'frozen':database.execute("SELECT invalidated FROM frozen_opening_runs WHERE run_id='cli-retained-frozen'").fetchone()[0],
