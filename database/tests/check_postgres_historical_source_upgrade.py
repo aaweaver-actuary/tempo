@@ -13,7 +13,7 @@ _REPOSITORY = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPOSITORY))
 sys.path.insert(0, str(_REPOSITORY / "database"))
 from database.tooling.apply_postgres_migrations import MIGRATIONS, apply_migrations, migration_source
-from database.tooling.verify_postgres_cli_state import capture_cut62, verify_cut62, CUT62_RETIRED_TABLES
+from database.tooling.verify_postgres_cli_state import capture_cut62, verify_cut62, CUT62_RETIRED_TABLES, CUT62_PROTECTED_TABLES
 from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 
 ADMIN_DSN = os.getenv("TEMPO_PROFILE_REHEARSAL_ADMIN_DSN", "postgresql://postgres@postgres:5432/postgres")
@@ -52,6 +52,15 @@ def seed(database):
             "VALUES(%s,'lichess','historical',%s,'rapid',1,'white','1-0',%s,'[]',1450,1500)",
             (f"historical-{identifier}", timestamp, FEN),
         )
+
+
+def seed_original_defense_attempt(database):
+    database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES ('def-rep','Synthetic','synthetic','2026-01-01')")
+    database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,content_type) VALUES ('def-card','def-rep','prefix',%s,'[]','2026-01-01','defense')", (FEN,))
+    database.execute("INSERT INTO game_findings(id,game_id,analysis_version,ply,kind,confidence,evidence_json,created_at,updated_at) VALUES ('def-finding','historical-offset',1,1,'synthetic',1,'{}','2026-01-01','2026-01-01')")
+    database.execute("INSERT INTO threat_training_candidates(id,finding_id,game_id,analysis_version,incident_id,player_ply,evidence_json,source_fingerprint,detector_version,policy_json,created_at,updated_at,card_id) VALUES ('def-candidate','def-finding','historical-offset',1,'incident',1,'{}','synthetic',1,'{}','2026-01-01','2026-01-01','def-card')")
+    database.execute("INSERT INTO defense_attempts(attempt_id,candidate_id,card_id,queue_entry_id,exercise_revision,move_uci,grade_json,reviewed_at) VALUES ('def-attempt','def-candidate','def-card',700002,1,'e2e4','{\"status\":\"incorrect\",\"diagnostic\":\"original\"}','2026-01-01')")
+    return database.execute("SELECT * FROM defense_attempts ORDER BY attempt_id").fetchall()
 
 
 def check_boundary_44(database):
@@ -100,9 +109,12 @@ def check_upgrade(boundary):
             check_boundary_44(database)
             assert database.execute("SELECT * FROM imported_games ORDER BY id").fetchall() == sources
             apply_through(database, 61)
+            defense_attempts = seed_original_defense_attempt(database)
+            assert len(defense_attempts) == 1
             secret = secrets.token_bytes(32)
             witness = capture_cut62(database, secret)
-            assert witness['version'] == 2 and len(CUT62_RETIRED_TABLES) == 9
+            assert witness['version'] == 3 and len(CUT62_RETIRED_TABLES) == 8
+            assert 'defense_attempts' in CUT62_PROTECTED_TABLES and 'defense_attempts' in witness['rows']
         for _ in range(2):
             apply_migrations(dsn)
             with psycopg.connect(dsn) as database:
@@ -117,7 +129,8 @@ def check_upgrade(boundary):
                               'idx_cards_locked_openings', 'idx_cards_mature_parent'):
                     assert database.execute('SELECT to_regclass(%s)', (index,)).fetchone()[0] == index
                 result = verify_cut62(database, witness, secret)
-                assert result['version'] == 2 and set(result['retired']) == CUT62_RETIRED_TABLES
+                assert result['version'] == 3 and set(result['retired']) == CUT62_RETIRED_TABLES
+                assert database.execute("SELECT * FROM defense_attempts ORDER BY attempt_id").fetchall() == defense_attempts
                 for retired in (*CUT62_RETIRED_TABLES,
                                 'idx_next_opponent_account_time', 'idx_next_opponent_speed_rating_time'):
                     assert database.execute('SELECT to_regclass(%s)', (retired,)).fetchone()[0] is None
