@@ -2,7 +2,7 @@
 // reused from this test invocation; no live product target is adopted.
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -185,21 +185,33 @@ async function exerciseIsolatedDefense({ target, run, compose, docker, makeRunti
       assert.equal(checksum.stdout.trim(), backupDigest);
       if (fault === "after-completion") {
         const originalCompletion = readFileSync(completionPath), originalInode = lstatSync(completionPath).ino;
-        const held = `${completionPath}.held`;
-        renameSync(completionPath, held);
-        try {
-          const changed = JSON.parse(originalCompletion); changed.signature = "0".repeat(64);
-          writeFileSync(completionPath, JSON.stringify(changed), { mode: 0o600, flag: "wx" });
-          const denied = await supervise(null);
-          assert.notEqual(denied.code, 0);
-          assert.match(denied.stderr, /Original disposable completion differs/);
-          assert.deepEqual(JSON.parse(readFileSync(guardPath, "utf8")), observedGuard);
-          const stillDetached = JSON.parse((await docker(["inspect", identity.containerId])).stdout)[0];
-          assert.equal(Object.keys(stillDetached.NetworkSettings.Networks).length, 0);
-        } finally {
-          rmSync(completionPath, { force: true }); renameSync(held, completionPath);
+        for (const kind of ["tampered", "valid-substitution"]) {
+          const held = `${completionPath}.held`;
+          renameSync(completionPath, held);
+          try {
+            const changed = JSON.parse(originalCompletion);
+            if (kind === "tampered") changed.signature = "0".repeat(64);
+            else {
+              changed.payload.attempt_id = "00000000-0000-0000-0000-000000000000";
+              const secret = Buffer.from(JSON.parse(originalWitness).secret, "hex");
+              changed.signature = createHmac("sha256", secret).update("tempo-disposable-completion-v1\0")
+                .update(JSON.stringify(changed.payload)).digest("hex");
+              const validate = spawnSync(componentPython, ["-c", "import hashlib,hmac,json,sys; x=json.load(sys.stdin); c=json.dumps(x['completion']['payload'],sort_keys=True,separators=(',',':')).encode(); assert hmac.compare_digest(x['completion']['signature'],hmac.new(bytes.fromhex(x['secret']),b'tempo-disposable-completion-v1\\0'+c,hashlib.sha256).hexdigest())"],
+                { input: JSON.stringify({ secret: secret.toString("hex"), completion: changed }), encoding: "utf8" });
+              assert.equal(validate.status, 0, "Substituted completion must have a valid independent HMAC.");
+            }
+            writeFileSync(completionPath, JSON.stringify(changed), { mode: 0o600, flag: "wx" });
+            const denied = await supervise(null);
+            assert.notEqual(denied.code, 0);
+            assert.match(denied.stderr, /Original disposable completion differs/);
+            assert.deepEqual(JSON.parse(readFileSync(guardPath, "utf8")), observedGuard);
+            const stillDetached = JSON.parse((await docker(["inspect", identity.containerId])).stdout)[0];
+            assert.equal(Object.keys(stillDetached.NetworkSettings.Networks).length, 0);
+          } finally {
+            rmSync(completionPath, { force: true }); renameSync(held, completionPath);
+          }
+          assert.deepEqual(readFileSync(completionPath), originalCompletion); assert.equal(lstatSync(completionPath).ino, originalInode);
         }
-        assert.deepEqual(readFileSync(completionPath), originalCompletion); assert.equal(lstatSync(completionPath).ino, originalInode);
       }
     }
     const resumed = await supervise(null);
