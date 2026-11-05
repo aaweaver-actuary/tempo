@@ -406,3 +406,116 @@ def test_real_prepared_head_preemption_rolls_back_and_retries_original_after_bur
             assert retained[field] == failed[field], field
     finally:
         _stop(workers,release,publish)
+
+
+def _rollback_fault_setup(monkeypatch, failures):
+    """Inject a PostgreSQL serialization failure after the real handler writes."""
+    from app import command_gateway, queue_commands  # noqa: F401
+    original = command_gateway._handlers['queue.issue_head']
+    prepare = command_gateway._preparers['queue.issue_head']
+    observations = {'faults': 0, 'preparations': 0, 'tokens': []}
+    def observed_prepare(payload):
+        observations['preparations'] += 1
+        return prepare(payload)
+    def fault_after_handler(db, payload):
+        result = original(db, payload)
+        observations['tokens'].append(db.execute_native("SELECT attempt_token FROM operation_receipts WHERE command_name='queue.issue_head' AND state='executing'").fetchone()[0])
+        if observations['faults'] < failures:
+            observations['faults'] += 1
+            # The actual connection raises the vendor exception inside the same
+            # transaction as tentative issuance, before the receipt commits.
+            db.execute_native("DO $$ BEGIN RAISE EXCEPTION 'injected rollback' USING ERRCODE = '40001'; END $$")
+        return result
+    monkeypatch.setitem(command_gateway._handlers, 'queue.issue_head', fault_after_handler)
+    monkeypatch.setitem(command_gateway._preparers, 'queue.issue_head', observed_prepare)
+    return observations
+
+
+def _no_issued_effects(dsn, payload):
+    with psycopg.connect(dsn) as raw:
+        assert raw.execute('SELECT count(*) FROM study_position_issued_plans').fetchone()[0] == 0
+        assert raw.execute('SELECT count(*) FROM reviews').fetchone()[0] == 0
+        assert raw.execute('SELECT count(*) FROM study_position_grades').fetchone()[0] == 0
+        assert raw.execute('SELECT issued_as_head FROM queue_attempt_origins WHERE queue_entry_id=%s', (payload['entry_id'],)).fetchone()[0] == 0
+
+
+def _set_retry_due(dsn, operation, *, due):
+    with psycopg.connect(dsn) as raw:
+        raw.execute("UPDATE operation_receipts SET next_retry_at=NOW() + (%s * INTERVAL '1 minute') WHERE operation_id=%s", (-1 if due else 1, operation))
+
+
+def test_real_issue_head_recovers_rollback_safe_failure_without_duplicate_plan(monkeypatch):
+    import pytest
+    from app import tasks, command_gateway
+    from app.contracts.queue_issuance import issuance_operation_id
+    dsn = _dsn()
+    _configure(dsn)
+    try:
+        payload, _ = _seed(dsn)
+        observed = _rollback_fault_setup(monkeypatch, 1)
+        operation = command_gateway.select_queue_issuance_operation(payload)
+        assert operation == issuance_operation_id(payload, 0)
+        with pytest.raises(psycopg.errors.SerializationFailure) as failure:
+            tasks.execute_foreground_command.run(operation, 'queue.issue_head', payload)
+        first = _receipt(dsn, operation)
+        assert first['state'] == 'retrying'
+        assert first['attempt_count'] == 1 and first['next_retry_at'] is not None
+        assert first['request_hash'] == command_gateway.request_digest('queue.issue_head', payload)
+        assert command_gateway.select_queue_issuance_operation(payload) == operation
+        _no_issued_effects(dsn, payload)
+        _set_retry_due(dsn, operation, due=False)
+        assert tasks.execute_foreground_command.run(operation, 'queue.issue_head', payload) is None
+        assert command_gateway.claim_recoverable_operation(allowed_background_commands=()) is None
+        assert observed['preparations'] == 1
+        _set_retry_due(dsn, operation, due=True)
+        recovered = command_gateway.claim_recoverable_operation(allowed_background_commands=())
+        assert recovered['operation_id'] == operation and recovered['payload'] == payload
+        result = tasks.execute_foreground_command.run(operation, 'queue.issue_head', payload)
+        assert result['issued']
+        complete = _receipt(dsn, operation)
+        assert complete['state'] == 'complete' and complete['attempt_count'] == 2
+        plan = _assert_one_plan(dsn, payload)
+        assert tasks.execute_foreground_command.run(operation, 'queue.issue_head', payload) is None
+        assert observed['preparations'] == 2
+        assert _receipt(dsn, operation) == complete
+        assert _assert_one_plan(dsn, payload) == plan
+        command_gateway.record_operation_retry(operation, observed['tokens'][0], failure.value, retryable=True, background=False)
+        assert _receipt(dsn, operation) == complete
+        assert _assert_one_plan(dsn, payload) == plan
+    finally:
+        from tempo_legacy_database.adapters import postgres_store
+        postgres_store.close_pools()
+
+
+def test_real_issue_head_blocks_at_third_rollback_safe_failure(monkeypatch):
+    import pytest
+    from app import tasks, command_gateway
+    from app.contracts.queue_issuance import issuance_operation_id
+    dsn = _dsn()
+    _configure(dsn)
+    try:
+        payload, _ = _seed(dsn)
+        observed = _rollback_fault_setup(monkeypatch, 3)
+        operation = command_gateway.select_queue_issuance_operation(payload)
+        assert operation == issuance_operation_id(payload, 0)
+        for attempt in range(1, 4):
+            with pytest.raises(psycopg.errors.SerializationFailure):
+                tasks.execute_foreground_command.run(operation, 'queue.issue_head', payload)
+            receipt = _receipt(dsn, operation)
+            assert receipt['attempt_count'] == attempt
+            assert receipt['state'] == ('blocked' if attempt == 3 else 'retrying')
+            assert (receipt['next_retry_at'] is None) == (attempt == 3)
+            assert receipt['request_hash'] == command_gateway.request_digest('queue.issue_head', payload)
+            _no_issued_effects(dsn, payload)
+            if attempt < 3:
+                _set_retry_due(dsn, operation, due=True)
+                recovered = command_gateway.claim_recoverable_operation(allowed_background_commands=())
+                assert recovered['operation_id'] == operation and recovered['payload'] == payload
+        assert tasks.execute_foreground_command.run(operation, 'queue.issue_head', payload) is None
+        assert command_gateway.select_queue_issuance_operation(payload) == operation
+        assert command_gateway.claim_recoverable_operation(allowed_background_commands=()) is None
+        assert observed['preparations'] == 3
+        assert _receipt(dsn, operation) == receipt
+    finally:
+        from tempo_legacy_database.adapters import postgres_store
+        postgres_store.close_pools()

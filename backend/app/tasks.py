@@ -215,7 +215,7 @@ def _execute_foreground_command(self, operation_id, command_name, payload, expec
     scope = nullcontext() if command_name == prefix_transition_application.COMMAND else activity_gate.foreground()
     with scope, _preparation_capacity(command_name == 'queue.prepare_next') as preparation_admitted:
         with (activity_gate.foreground() if command_name == prefix_transition_application.COMMAND else nullcontext()):
-            should_execute, saved_payload, attempt_token, _attempt_number = record_operation_attempt(
+            should_execute, saved_payload, attempt_token, attempt_number = record_operation_attempt(
                 operation_id, command_name, payload, background=False,
                 expected_retry_cycle=expected_retry_cycle,
             )
@@ -239,10 +239,13 @@ def _execute_foreground_command(self, operation_id, command_name, payload, expec
             return None
         except Exception as error:
             record_operation_retry(operation_id, attempt_token, error,
-                                   retryable=(command_name == prefix_transition_application.COMMAND and
-                                              isinstance(error, (psycopg.OperationalError, psycopg.InterfaceError,
-                                                                 DeadlockDetected, LockNotAvailable,
-                                                                 SerializationFailure, TransactionTimeout))),
+                                   retryable=((command_name == prefix_transition_application.COMMAND and
+                                               isinstance(error, (psycopg.OperationalError, psycopg.InterfaceError,
+                                                                  DeadlockDetected, LockNotAvailable,
+                                                                  SerializationFailure, TransactionTimeout))) or
+                                              (command_name == "queue.issue_head" and attempt_number < 3 and
+                                               isinstance(error, (DeadlockDetected, SerializationFailure,
+                                                                  LockNotAvailable)))),
                                    background=False)
             raise
     _LOGGER.info(
