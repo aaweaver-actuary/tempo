@@ -12,7 +12,7 @@ import { TempoProblem, classifyRedisReply, phaseGuidance } from "./tempo-guidanc
 import { isTimingPublicationFailure } from "./test-scenario-timings.mjs";
 import { probeLifecycleRedis } from "../database/tooling/cli/probes.mjs";
 import { createBackupRestoreDatabase, createPostgresBackup, removeBackupRestoreDatabase, restorePostgresBackup } from "../database/tooling/cli/backup.mjs";
-import { assertManagedTargetLock, captureManagedTargetLock, persistManagedHistoryWitnessIdentity, privateDefenseHistorySelection,
+import { assertManagedTargetLock, captureManagedTargetLock, inspectManagedFence, persistManagedHistoryWitnessIdentity, privateDefenseHistorySelection,
   prepareManagedDetachedTarget, runManagedPinnedChild, restoreManagedCompletedTarget, requireManagedIsolationGate } from './tempo-managed-isolation.mjs';
 
 export const applicationServices = ["web", "api",
@@ -117,10 +117,11 @@ export function assessMigrationRecovery({ guard, operation, target, configuratio
 export async function executeLifecycle(plan, actions) {
   // Authorization/guard failures must not replace the previous operation's
   // evidence, especially an older failed attempt without a durable guard.
-  const migrationVerificationRequired = await actions.checkMigrationRetry?.();
+  let migrationVerificationRequired = await actions.checkMigrationRetry?.();
   let interruptedApplications = false;
   try {
     const imagePreparation = await actions.ensureImages();
+    if (await actions.resumeManagedIsolation?.()) migrationVerificationRequired = false;
     await actions.preflightSchema?.();
     const allowDependencyRecreation = Boolean(plan.recreate || imagePreparation?.dependenciesMayChange);
     if (!allowDependencyRecreation && actions.recordedApplicationsMatch) {
@@ -188,6 +189,8 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   const guardPath = join(stateDirectory, "migration-guard.json");
   let migrationGuard = existsSync(guardPath) ? JSON.parse(readFileSync(guardPath, "utf8")) : null;
   let originalHistoryVerified = false;
+  let managedIsolationRetry = false;
+  let managedCompletionPending = false;
   let verifiedPostgresImage;
   const operation = { id: randomUUID(), revision, started_at: new Date().toISOString(), phase: "checking", target: target.project };
   const docker = (args, options) => run("docker", ["--context", target.context, ...args], options);
@@ -490,10 +493,12 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   }
 
   async function maintenance(script, args = [], options = {}) {
-    const { cut62Mount = null, ...runOptions } = options;
+    const { cut62Mount = null, stateMount = false, ...runOptions } = options;
+    if (stateMount && (!isAbsolute(stateDirectory) || /[:,\n\r]/.test(stateDirectory))) throw new Error('Managed state mount is invalid.');
     const mountDirectory = cut62Mount ? cut62MountDirectory(stateDirectory, cut62Mount) : null;
     return compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T",
       ...(mountDirectory ? ["--volume", `${mountDirectory}:/cut62`] : []),
+      ...(stateMount ? ["--volume", `${stateDirectory}:/state:ro`] : []),
       "migration", script, ...args], runOptions);
   }
 
@@ -540,7 +545,11 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     const previousOperation = !migrationGuard && existsSync(journalPath) ? JSON.parse(readFileSync(journalPath, "utf8")) : null;
     const assessment = assessMigrationRecovery({ guard: migrationGuard, operation: previousOperation, target, configuration, retry });
     if (assessment.status === "blocked") throw new Error(assessment.message);
-    if (migrationGuard?.defense_binding || migrationGuard?.isolation) requireManagedIsolationGate();
+    if (migrationGuard?.defense_binding || migrationGuard?.isolation) {
+      requireManagedIsolationGate();
+      managedIsolationRetry = migrationGuard.state === 'pending';
+      managedCompletionPending = migrationGuard.state === 'verified';
+    }
     return assessment.status === "retry-authorized";
   }
 
@@ -613,6 +622,83 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     const digest = result.stdout.trim();
     if (!/^[0-9a-f]{64}$/.test(digest)) throw new Error('Original backup checksum is invalid; keep writers stopped.');
     return digest;
+  }
+
+  async function runManagedRecovery(managedLock) {
+    requireManagedIsolationGate();
+    if (migrationGuard.isolation?.phase === 'reattached') {
+      assertManagedTargetLock(stateDirectory, managedLock);
+      const before = await inspectManagedFence({ target, configuration, expectedImage: images.postgres, guard: migrationGuard,
+        stateDirectory, lock: managedLock, docker, exclusiveAdministrator: true });
+      if (!before.attached || !before.allowConnections || before.backendPids.length || before.preparedTransactions)
+        throw new Error('Original managed target is not ready for completion authentication.');
+      if (await verifiedBackupDigest(migrationGuard.backup) !== migrationGuard.defense_binding.backup_sha256)
+        throw new Error('Original managed backup changed; keep writers stopped.');
+      const source = `import json,os,sys,psycopg
+from database.tooling.managed_isolation import authenticate_managed_completion
+with open('/state/migration-guard.json','rb') as stream: guard=json.load(stream)
+if guard != json.loads(sys.argv[1]): raise RuntimeError('Original guard differs')
+directory='/state/'+guard['cut62_witness'][:-5]
+pre='/state/'+guard['pre62_witness'][:-5]+'/'+guard['pre62_witness'] if guard['starting_schema']==59 else None
+result=authenticate_managed_completion(guard,selection_path=directory+'/defense-selection.json',binding_path=directory+'/binding.json',witness_path=directory+'/'+guard['cut62_witness'],receipt_path=directory+'/verified-receipt.json',completion_path=directory+'/verified-completion.json',pre62_path=pre)
+with psycopg.connect(os.environ['TEMPO_POSTGRES_ADMIN_URL'],options='-c default_transaction_read_only=on') as db:
+ row=db.execute("SELECT current_database(),current_user,(SELECT system_identifier::text FROM pg_control_system()),(SELECT oid::bigint FROM pg_database WHERE datname=current_database()),(SELECT oid::bigint FROM pg_database WHERE datname='postgres'),(SELECT datallowconn FROM pg_database WHERE datname=current_database()),(SELECT COALESCE(max(version),0) FROM public.tempo_schema_migrations)").fetchone()
+print(json.dumps({**result,'database':row}))`;
+      const checked = JSON.parse((await maintenance('-c', [source, JSON.stringify(migrationGuard)], { stateMount: true })).stdout);
+      const isolation = migrationGuard.isolation;
+      if (checked.witness_id !== migrationGuard.cut62_identity?.witness_id ||
+          !/^[0-9a-f]{64}$/.test(checked.completion_sha256 ?? '') ||
+          !isDeepStrictEqual(checked.database, [isolation.target_name, isolation.admin_role, isolation.system_identifier,
+            isolation.target_oid, isolation.control_oid, true, 62]))
+        throw new Error('Original managed completion or target differs; keep writers stopped.');
+      const after = await inspectManagedFence({ target, configuration, expectedImage: images.postgres, guard: migrationGuard,
+        stateDirectory, lock: managedLock, docker, exclusiveAdministrator: true });
+      if (!after.attached || !after.allowConnections || after.backendPids.length || after.preparedTransactions)
+        throw new Error('Original managed target changed during completion authentication.');
+      const completion = { filename: 'verified-completion.json', sha256: checked.completion_sha256 };
+      if (migrationGuard.state === 'verified') {
+        if (!isDeepStrictEqual(migrationGuard.isolation.completion, completion))
+          throw new Error('Original managed completion changed; keep writers stopped.');
+      } else {
+        migrationGuard.isolation.completion = completion;
+        atomicJson(guardPath, migrationGuard);
+      }
+      originalHistoryVerified = true;
+      return;
+    }
+    if (!migrationGuard.isolation || migrationGuard.isolation.phase === 'intent')
+      migrationGuard = await prepareManagedDetachedTarget({ target, configuration, expectedImage: images.postgres,
+        stateDirectory, lock: managedLock, docker, exclusiveAdministrator: true, verifyOriginalBackup: verifiedBackupDigest });
+    if (!['detached', 'verified'].includes(migrationGuard.isolation?.phase))
+      throw new Error('Managed completion requires authenticated reattached recovery; keep writers stopped.');
+    const completed = await runManagedPinnedChild({ target, configuration, expectedImage: images.postgres,
+      maintenanceImage: images.migration, maintenanceRevision: revision, stateDirectory,
+      adminPassfile: configuration.secrets?.admin_pgpass?.file, lock: managedLock, docker,
+      exclusiveAdministrator: true, verifyOriginalBackup: verifiedBackupDigest });
+    migrationGuard = completed.guard;
+    migrationGuard = await restoreManagedCompletedTarget({ target, configuration, expectedImage: images.postgres,
+      stateDirectory, lock: managedLock, docker, exclusiveAdministrator: true, verifyOriginalBackup: verifiedBackupDigest,
+      authenticateCompletion: async current => {
+        if (!isDeepStrictEqual(current, completed.guard)) throw new Error('Original managed completion changed.');
+        return completed;
+      } });
+    migrationGuard.isolation.completion = { filename: 'verified-completion.json', sha256: completed.result.completion_sha256 };
+    atomicJson(guardPath, migrationGuard);
+    originalHistoryVerified = true;
+  }
+
+  async function resumeManagedIsolation() {
+    if (!managedIsolationRetry && !managedCompletionPending) return false;
+    const lock = captureManagedTargetLock(stateDirectory);
+    await runManagedRecovery(lock);
+    if (managedIsolationRetry) {
+      await checkSchema();
+      resolveMigrationGuard();
+    }
+    managedIsolationRetry = false;
+    const resumed = !managedCompletionPending;
+    managedCompletionPending = false;
+    return resumed;
   }
 
   async function migrate() {
@@ -784,23 +870,7 @@ print(json.dumps({'witness_id':witness_id}))`;
       if (!identity?.witness_id || identity.attempt_id !== migrationGuard.attempt_id || identity.backup_filename !== migrationGuard.backup.filename)
         throw new Error("Original schema 62 witness identity is missing; keep writers stopped.");
       if (migrationGuard.defense_binding) {
-        requireManagedIsolationGate();
-        migrationGuard = await prepareManagedDetachedTarget({ target, configuration, expectedImage: images.postgres,
-          stateDirectory, lock: managedLock, docker, exclusiveAdministrator: true, verifyOriginalBackup: verifiedBackupDigest });
-        const completed = await runManagedPinnedChild({ target, configuration, expectedImage: images.postgres,
-          maintenanceImage: images.migration, maintenanceRevision: revision, stateDirectory,
-          adminPassfile: configuration.secrets?.admin_pgpass?.file, lock: managedLock, docker,
-          exclusiveAdministrator: true, verifyOriginalBackup: verifiedBackupDigest });
-        migrationGuard = completed.guard;
-        migrationGuard = await restoreManagedCompletedTarget({ target, configuration, expectedImage: images.postgres,
-          stateDirectory, lock: managedLock, docker, exclusiveAdministrator: true, verifyOriginalBackup: verifiedBackupDigest,
-          authenticateCompletion: async current => {
-            if (!isDeepStrictEqual(current, completed.guard)) throw new Error('Original managed completion changed.');
-            return completed;
-          } });
-        migrationGuard.isolation.completion = { filename: 'verified-completion.json', sha256: completed.result.completion_sha256 };
-        atomicJson(guardPath, migrationGuard);
-        originalHistoryVerified = true;
+        await runManagedRecovery(managedLock);
         return;
       }
       if (status.applied_versions.at(-1) === 61) {
@@ -941,7 +1011,7 @@ print(json.dumps({'witness_id':witness_id}))`;
     operation.phase = "backup_verified"; atomicJson(journalPath, operation);
   }
 
-  return { config, inspectTarget, compose, docker, runningServices, inspectRunningRevision, ensureImages, recordedApplicationsMatch, ensureDatabase,
+  return { config, inspectTarget, compose, docker, runningServices, inspectRunningRevision, ensureImages, recordedApplicationsMatch, ensureDatabase, resumeManagedIsolation,
     checkSchema, preflightSchema, checkMigrationRetry, resolveMigrationGuard, stopApplications, backup, migrate, startServices, verifyReady, commitDeployment,
     recordFailure, stopAll, backupOnly, secretValues, get configuration() { return configuration; } };
 }

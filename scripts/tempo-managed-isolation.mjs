@@ -274,7 +274,8 @@ export async function inspectManagedFence({ target, configuration, expectedImage
     throw new Error('Managed isolation requires exclusive administrator control.');
   assertManagedTargetLock(stateDirectory, lock);
   validateTarget(configuration, target);
-  if (guard?.state !== 'pending' || guard.target !== targetKey(target) || guard.database?.name !== 'tempo' ||
+  if (!(guard?.state === 'pending' || (guard?.state === 'verified' && guard.verified_schema === 62 && guard.isolation?.phase === 'reattached')) ||
+      guard.target !== targetKey(target) || guard.database?.name !== 'tempo' ||
       guard.database?.volume !== target.volumes?.[target.postgresVolumeKey]?.name)
     throw new Error('Original managed isolation target differs.');
   const admin = configuration.services.postgres.environment.POSTGRES_USER ?? 'postgres';
@@ -456,10 +457,15 @@ export async function runManagedPinnedChild({ target, configuration, expectedIma
   requireManagedIsolationGate();
   const guardPath = join(stateDirectory, 'migration-guard.json');
   const guard = JSON.parse(readOwnedPrivateBytes(guardPath));
-  if (guard?.state !== 'pending' || guard.isolation?.phase !== 'detached' ||
+  if (guard?.state !== 'pending' || !['detached', 'verified'].includes(guard.isolation?.phase) ||
       !/^sha256:[0-9a-f]{64}$/.test(maintenanceImage ?? '') || !/^[0-9a-f]{40}$/.test(maintenanceRevision ?? '') ||
       [stateDirectory, adminPassfile].some(path => !isAbsolute(path ?? '') || /[,\n\r]/.test(path)))
     throw new Error('Managed pinned child configuration is invalid.');
+  if (guard.isolation.phase === 'verified') {
+    const directory = join(stateDirectory, guard.cut62_witness.slice(0, -5));
+    try { readOwnedPrivateBytes(join(directory, 'verified-receipt.json')); readOwnedPrivateBytes(join(directory, 'verified-completion.json')); }
+    catch { throw new Error('Original managed completion is missing; keep writers stopped.'); }
+  }
   const pass = lstatSync(adminPassfile);
   if (!pass.isFile() || pass.uid !== process.getuid() || (pass.mode & 0o077))
     throw new Error('Managed administrator passfile is not private.');
@@ -568,12 +574,12 @@ export async function runManagedPinnedChild({ target, configuration, expectedIma
       targetOid: observed.targetOid, systemIdentifier: observed.systemIdentifier, controlOid: observed.controlOid,
       controlName: observed.controlName, adminRole: observed.adminRole, targetName: observed.targetName,
       allowConnections: false, backendPids: [], preparedTransactions: 0, schema: 62, receipt, receiptValidated: true });
-    if (action !== 'record-verified') throw new Error('Managed receipt state is invalid.');
+    if (!['record-verified', 'restore-after-receipt'].includes(action)) throw new Error('Managed receipt state is invalid.');
     syncManagedIsolationEvidence({ guardPath, guard, receiptPath, receipt });
     syncManagedIsolationEvidence({ guardPath, guard, receiptPath: completionPath, receipt: completion });
     assertManagedTargetLock(stateDirectory, lock);
-    const verifiedGuard = advanceManagedIsolationMarker({ guardPath, guard, observation: { ...observed,
-      identity: observed.original, schema: 62, receipt, receiptValidated: true } });
+    const verifiedGuard = action === 'record-verified' ? advanceManagedIsolationMarker({ guardPath, guard, observation: { ...observed,
+      identity: observed.original, schema: 62, receipt, receiptValidated: true } }) : guard;
     syncManagedIsolationEvidence({ guardPath, guard: verifiedGuard, receiptPath: completionPath, receipt: completion });
     return { result, guard: verifiedGuard, receipt, completion, receiptPath, completionPath };
   } finally {
