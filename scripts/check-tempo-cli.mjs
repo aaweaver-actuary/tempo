@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSy
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { atomicJson, commandExecutor, portsFromConfig, productVolumes, redact, schemaVersionFromSource, targetKey, validateTarget } from "./tempo-deployment.mjs";
+import { acquireTargetLock, atomicJson, commandExecutor, portsFromConfig, productVolumes, redact, schemaVersionFromSource, targetKey, validateTarget } from "./tempo-deployment.mjs";
 import { applicationServices, configurationFingerprint, createRuntime, executeLifecycle, releaseComposeFiles } from "./tempo-runtime.mjs";
 import { postgresCommandTiming } from "./test-scenario-timings.mjs";
 import { studyDurabilityPgn } from "../database/tests/postgres-test-fixture.mjs";
@@ -55,7 +55,11 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     }
     return runtime;
   };
-  const lifecycle = (label, plan, runtime) => measured(label, "scenario", () => executeLifecycle(plan, runtime));
+  const lifecycle = (label, plan, runtime) => measured(label, "scenario", async () => {
+    const release = acquireTargetLock(stateDirectory);
+    try { return await executeLifecycle(plan, runtime); }
+    finally { release(); }
+  });
   const childProcess = (label, ...args) => {
     const action = () => {
       const result = spawnSync(...args);
