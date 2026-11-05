@@ -1,6 +1,6 @@
 // Read-only topology and recovery-state ownership for managed isolation.
 import { basename, dirname, isAbsolute, join } from 'node:path';
-import { closeSync, constants, fstatSync, fsyncSync, lstatSync, openSync, readFileSync } from 'node:fs';
+import { closeSync, constants, existsSync, fstatSync, fsyncSync, lstatSync, openSync, readFileSync, unlinkSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import { atomicJson, targetKey, validateContainers, validateTarget } from './tempo-deployment.mjs';
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
@@ -340,6 +340,26 @@ export async function inspectManagedFence({ target, configuration, expectedImage
   return { ...topology, ...control };
 }
 
+// A completed attempt authenticates its immutable binding without requiring
+// ordinary application sessions or accepted Study writes to disappear.
+export async function inspectManagedCompletedTarget({ target, configuration, expectedImage, guard, stateDirectory, lock, docker, exclusiveAdministrator }) {
+  if (exclusiveAdministrator !== true || guard?.isolation?.phase !== 'reattached' ||
+      !['pending', 'verified'].includes(guard.state)) throw new Error('Managed completion identity is invalid.');
+  assertManagedTargetLock(stateDirectory, lock);
+  validateTarget(configuration, target);
+  const identity = guard.isolation.identity;
+  const daemonId = (await docker(['info', '--format', '{{.ID}}'])).stdout.trim();
+  const containers = JSON.parse((await docker(['inspect', identity.containerId])).stdout);
+  const networks = JSON.parse((await docker(['network', 'inspect', identity.networkId])).stdout);
+  if (!Array.isArray(containers) || containers.length !== 1 || !Array.isArray(networks) || networks.length !== 1)
+    throw new Error('Original managed completion topology is unavailable.');
+  const topology = inspectRegisteredIsolation({ target, daemonId, container: containers[0], network: networks[0],
+    expectedImage, trustedDaemon: exclusiveAdministrator, intent: identity });
+  if (!topology.attached) throw new Error('Original managed completion topology differs.');
+  assertManagedTargetLock(stateDirectory, lock);
+  return topology;
+}
+
 // The caller obtains this observation after re-closing admission. It must
 // independently authenticate the helper's ready challenge and hold the lock.
 export function assertManagedPinnedBackend({ guard, observation, backend }) {
@@ -478,6 +498,45 @@ export async function runManagedPinnedChild({ target, configuration, expectedIma
   syncManagedIsolationEvidence({ guardPath, guard });
   let observed = await inspectManagedFence({ target, configuration, expectedImage, guard, stateDirectory,
     lock, docker, exclusiveAdministrator });
+  const journalDirectory = join(stateDirectory, guard.cut62_witness.slice(0, -5));
+  const helperJournal = join(journalDirectory, 'pinned-helper.json');
+  const inspectOwnedHelper = async journal => {
+    if (Object.keys(journal ?? {}).sort().join() !== 'attempt_id,database_container,helper_id,image,name,target,version' ||
+        journal?.version !== 1 || journal.attempt_id !== guard.attempt_id || journal.target !== guard.target ||
+        journal.database_container !== guard.isolation.identity.containerId || journal.image !== maintenanceImage ||
+        !/^tempo-managed-pinned-[0-9a-f]{32}$/.test(journal.name ?? '') ||
+        (journal.helper_id !== null && !/^[0-9a-f]{64}$/.test(journal.helper_id ?? '')))
+      throw new Error('Original managed helper journal is invalid.');
+    const inspected = await docker(['inspect', journal.name], { allowFailure: true });
+    if (inspected.code !== 0) {
+      if (inspected.code === 1 && /No such (?:object|container)/i.test(inspected.stderr ?? '')) return null;
+      throw new Error('Original managed helper cannot be inspected.');
+    }
+    const rows = JSON.parse(inspected.stdout), item = rows?.[0];
+    if (!Array.isArray(rows) || rows.length !== 1 || !/^[0-9a-f]{64}$/.test(item?.Id ?? '') ||
+        (journal.helper_id && journal.helper_id !== item.Id) || item.Image !== journal.image ||
+        item.Config?.Labels?.['tempo.managed.attempt'] !== guard.attempt_id ||
+        item.Config?.Labels?.['tempo.managed.target'] !== guard.target ||
+        item.HostConfig?.NetworkMode !== `container:${journal.database_container}`)
+      throw new Error('Original managed helper identity differs.');
+    return item;
+  };
+  if (existsSync(helperJournal)) {
+    const previous = JSON.parse(readOwnedPrivateBytes(helperJournal));
+    const helper = await inspectOwnedHelper(previous);
+    if (helper?.State?.Running) {
+      assertManagedTargetLock(stateDirectory, lock);
+      await docker(['stop', '--time', '10', helper.Id]);
+    }
+    const remaining = await inspectOwnedHelper(previous);
+    if (remaining?.State?.Running) throw new Error('Original managed helper remains active.');
+    observed = await inspectManagedFence({ target, configuration, expectedImage, guard, stateDirectory,
+      lock, docker, exclusiveAdministrator });
+    if (observed.attached || observed.backendPids.length || observed.preparedTransactions)
+      throw new Error('Original managed helper has not drained; keep writers stopped.');
+    assertManagedTargetLock(stateDirectory, lock);
+    unlinkSync(helperJournal); syncDirectory(journalDirectory);
+  }
   if (observed.attached || observed.backendPids.length || observed.preparedTransactions)
     throw new Error('Managed pinned target is not isolated and drained.');
   if (!observed.allowConnections) {
@@ -496,7 +555,13 @@ export async function runManagedPinnedChild({ target, configuration, expectedIma
     pre62_path: guard.starting_schema === 59 ? `/state/${guard.pre62_witness.slice(0, -5)}/${guard.pre62_witness}` : null,
     receipt_path: `${attemptDirectory}/verified-receipt.json` };
   const name = `tempo-managed-pinned-${randomBytes(16).toString('hex')}`;
+  let helperIdentity = { version: 1, name, helper_id: null, attempt_id: guard.attempt_id,
+    target: guard.target, database_container: observed.original.containerId, image: maintenanceImage };
+  assertManagedTargetLock(stateDirectory, lock);
+  if (existsSync(helperJournal)) throw new Error('Original managed helper journal already exists.');
+  atomicJson(helperJournal, helperIdentity);
   const args = ['--context', target.context, 'run', '--rm', '-i', '--name', name,
+    '--label', `tempo.managed.attempt=${guard.attempt_id}`, '--label', `tempo.managed.target=${guard.target}`,
     '--network', `container:${observed.original.containerId}`,
     '--mount', `type=bind,source=${stateDirectory},destination=/state`,
     '--mount', `type=bind,source=${adminPassfile},destination=/run/secrets/admin_pgpass,readonly`,
@@ -505,6 +570,9 @@ export async function runManagedPinnedChild({ target, configuration, expectedIma
     maintenanceImage, '-c', 'from database.tooling.managed_isolation import managed_pinned_child; managed_pinned_child()'];
   assertManagedTargetLock(stateDirectory, lock);
   const child = spawn('docker', args, { stdio: ['pipe', 'pipe', 'pipe'] });
+  const childClosed = new Promise((resolve, reject) => { child.once('error', reject); child.once('close', resolve); });
+  childClosed.catch(() => {});
+  child.stdin.on('error', () => {});
   const lines = createInterface({ input: child.stdout })[Symbol.asyncIterator]();
   const nextLine = async () => {
     let timer;
@@ -519,6 +587,11 @@ export async function runManagedPinnedChild({ target, configuration, expectedIma
   try {
     child.stdin.write(`${JSON.stringify(request)}\n`);
     const ready = await nextLine();
+    const helper = await inspectOwnedHelper(helperIdentity);
+    if (!helper?.State?.Running) throw new Error('Managed pinned helper is not running.');
+    helperIdentity = { ...helperIdentity, helper_id: helper.Id };
+    assertManagedTargetLock(stateDirectory, lock);
+    atomicJson(helperJournal, helperIdentity);
     observed = await inspectManagedFence({ target, configuration, expectedImage, guard, stateDirectory,
       lock, docker, exclusiveAdministrator });
     if (observed.attached || !observed.allowConnections || observed.backendPids.length !== 1 ||
@@ -538,12 +611,14 @@ export async function runManagedPinnedChild({ target, configuration, expectedIma
     const result = await nextLine();
     if (result.schema !== 62 || result.witness_id !== guard.cut62_identity.witness_id)
       throw new Error('Managed pinned result differs from the original witness.');
-    const exitCode = child.exitCode ?? await new Promise((resolve, reject) => { child.once('error', reject); child.once('close', resolve); });
+    const exitCode = await childClosed;
     if (exitCode !== 0) throw new Error('Managed pinned child failed; keep writers stopped.');
     observed = await inspectManagedFence({ target, configuration, expectedImage, guard, stateDirectory,
       lock, docker, exclusiveAdministrator });
     if (observed.attached || observed.allowConnections || observed.backendPids.length || observed.preparedTransactions)
       throw new Error('Managed pinned child did not leave the target isolated and drained.');
+    assertManagedTargetLock(stateDirectory, lock);
+    unlinkSync(helperJournal); syncDirectory(journalDirectory);
     const directory = join(stateDirectory, guard.cut62_witness.slice(0, -5));
     const receiptPath = join(directory, 'verified-receipt.json'), completionPath = join(directory, 'verified-completion.json');
     const receipt = JSON.parse(readOwnedPrivateBytes(receiptPath)), completionBytes = readOwnedPrivateBytes(completionPath);
@@ -584,7 +659,26 @@ export async function runManagedPinnedChild({ target, configuration, expectedIma
     return { result, guard: verifiedGuard, receipt, completion, receiptPath, completionPath };
   } finally {
     child.stdin.destroy();
-    if (child.exitCode === null) child.kill();
+    if (child.exitCode === null) {
+      const helper = await inspectOwnedHelper(helperIdentity);
+      if (helper?.State?.Running) await docker(['stop', '--time', '10', helper.Id]);
+      let timer;
+      try { await Promise.race([childClosed.catch(() => {}), new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Managed helper did not exit; preserve its journal.')), 15000);
+      })]); } finally { clearTimeout(timer); }
+    }
+    let final = await inspectManagedFence({ target, configuration, expectedImage, guard, stateDirectory,
+      lock, docker, exclusiveAdministrator });
+    if (final.attached) throw new Error('Managed helper target unexpectedly reattached; preserve its journal.');
+    if (final.allowConnections) {
+      assertManagedTargetLock(stateDirectory, lock);
+      await docker(['exec', '--user', 'postgres', final.original.containerId, 'psql', '-X', '-v', 'ON_ERROR_STOP=1',
+        '-U', final.adminRole, '-d', final.controlName, '-c', 'ALTER DATABASE tempo ALLOW_CONNECTIONS false']);
+      final = await inspectManagedFence({ target, configuration, expectedImage, guard, stateDirectory,
+        lock, docker, exclusiveAdministrator });
+    }
+    if (final.allowConnections || final.backendPids.length || final.preparedTransactions)
+      throw new Error('Managed helper target has not drained; preserve its journal.');
   }
 }
 

@@ -1172,6 +1172,17 @@ test("managed pinned child is blocked before any host action", async () => {
   assert.equal(actions, 0);
 });
 
+test("direct managed migration and preflight hold before side effects", async t => {
+  const { target } = fixture(t), stateDirectory = directory(t);
+  let calls = 0;
+  const runtime = createRuntime(target, { stateDirectory, revision: 'a'.repeat(40),
+    defenseSelection: '/private/selection.json', run: async () => { calls++; } });
+  await assert.rejects(runtime.preflightSchema(), /unavailable/);
+  await assert.rejects(runtime.migrate(), /unavailable/);
+  assert.equal(calls, 0);
+  assert.deepEqual(readdirSync(stateDirectory), []);
+});
+
 test("source update rejects exact main revisions when every eligible run fails or lacks required jobs", async () => {
   const fixture = sourceSelectionFixture({ runs: [{ id: 1 }, { id: 2 }], failedRuns: [1], incompleteRuns: [2] });
   await assert.rejects(selectCandidate({ root: "fixture" }, fixture.run, fixture.fetchJson), /quality/);
