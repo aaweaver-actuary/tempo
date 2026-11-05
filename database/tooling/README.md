@@ -8,6 +8,7 @@ Existing explicit maintenance commands, physically relocated from `scripts/`. No
 | [Fresh opening graph in Learning](opening_graph_fresh_learning/README.md) | Pure disposable-target plan and completed-receipt checks around public Content/bridge/Learning commands; does not capture, provision, import or infer installed acceptance. |
 | [Learning-owned bootstrap tooling](../tempo_learning_database/tooling/README.md#persistent-target-bootstrap) | Explicit disposable/persistent target preparation contracts; persistent quarantine is separate from serving admission and cutover. |
 | [apply_postgres_migrations.py](apply_postgres_migrations.py) | Legacy owner's ordered migration discovery and pinned installed remediation resource inclusion. |
+| [managed_isolation.py](managed_isolation.py) | Internal pinned-session and original-witness checks for the managed isolation owner; it provides no standalone activation command. |
 | [check-migration-inventory.mjs](check-migration-inventory.mjs) | Read-only source inventory/version correspondence check; run from the repository root. |
 | [generate_postgres_schema.py](generate_postgres_schema.py) | Existing reviewed SQLite snapshot-to-PostgreSQL DDL generation utility. |
 | [create_sqlite_cutover_snapshot.py](create_sqlite_cutover_snapshot.py) | Existing SQLite snapshot backup/verification utility. |
@@ -29,3 +30,11 @@ backup/restore commands. The caller retains target selection, ownership,
 lifecycle, deadlines, reporting and cleanup decisions. Commands/arguments and
 credential handling are unchanged; importing the fixed helpers runs no probe or
 backup. No command in this category was executed against a service in this task.
+
+The disposable proof at revision `4d389e9e0a29b1cc719d9176479303eb01d997c8`
+restore-compared the original schema-59 archive across 193 source tables. Its
+detached-network probe showed that a peer on the original network could not
+reach the PostgreSQL alias while target admission was open; resolving the Redis
+name checked DNS only. It did not establish former-IP reachability or Redis TCP
+behavior. This receipt does not qualify the newer managed owner or activate a
+production cutover.

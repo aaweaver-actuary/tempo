@@ -157,8 +157,9 @@ def run_disposable_pinned_isolation(database_url, *, guard_path, selection_path,
     from database.tooling.verify_postgres_cli_state import (
         authenticate_pre62_59, check_captured_cut62_v6, cut62_witness_id,
         load_cut62_attempt_binding, load_cut62_defense_selection, load_cut62_witness,
-        load_pre62_59, verify_cut62_v6, verify_pre62_59,
+        load_pre62_59, verify_pre62_59,
     )
+    from database.tooling.managed_isolation import verify_committed_in_fenced_transaction
     if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable' or not re.fullmatch('[0-9a-f]{32}', nonce or ''):
         raise RuntimeError('Disposable pinned handoff is unavailable')
     guard = _read_private_json(guard_path)
@@ -212,6 +213,8 @@ def run_disposable_pinned_isolation(database_url, *, guard_path, selection_path,
                  'selection_sha256': selection_sha, 'cut62_witness_id': witness_id,
                  'pre62_witness_id': guard.get('pre62_witness_id') if guard['starting_schema'] == 59 else None}
         _write_private_json_once(str(handoff / 'ready.json'), ready)
+        expected_backend = {'pid': ready['pid'], 'role': ready['backend_role'],
+                            'address': ready['backend_address'], 'start': ready['backend_start']}
         deadline = time.monotonic() + 60
         while not (handoff / 'closed.json').exists():
             if time.monotonic() >= deadline:
@@ -234,7 +237,9 @@ def run_disposable_pinned_isolation(database_url, *, guard_path, selection_path,
                 if check_captured_cut62_v6(database, witness, secret).get('witness_id') != witness_id:
                     raise RuntimeError('Original schema 61 history changed')
             elif version == 62:
-                if verify_cut62_v6(database, witness, secret).get('witness_id') != witness_id:
+                if verify_committed_in_fenced_transaction(database, guard, expected_backend,
+                        selection_path=selection_path, binding_path=binding_path, witness_path=witness_path,
+                        pre62_path=pre62_path) != witness_id:
                     raise RuntimeError('Original committed witness differs')
             else:
                 raise RuntimeError('Unsupported disposable isolation schema')
@@ -245,7 +250,8 @@ def run_disposable_pinned_isolation(database_url, *, guard_path, selection_path,
                     cut62_witness=witness_path, expected_selection_sha256=selection_sha,
                     expected_witness_id=witness_id, _pinned_connection=database,
                     _isolated_test_context={'capability': migration_owner._ISOLATED_TEST_CAPABILITY, 'guard': guard,
-                                            'pre62_path': pre62_path, 'assert_fenced': _assert_disposable_pinned_database})
+                                            'pre62_path': pre62_path, 'assert_fenced': _assert_disposable_pinned_database,
+                                            'expected_backend': expected_backend})
             finally:
                 migration_owner._ISOLATED_TEST_ENABLED = False
         # The harness uses this bound, private observation to distinguish a
@@ -262,7 +268,10 @@ def run_disposable_pinned_isolation(database_url, *, guard_path, selection_path,
             os._exit(77)
         with database.transaction():
             database.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
-            if _assert_disposable_pinned_database(database, guard) != ready['pid'] or verify_cut62_v6(database, witness, secret).get('witness_id') != witness_id:
+            if (_assert_disposable_pinned_database(database, guard) != ready['pid'] or
+                    verify_committed_in_fenced_transaction(database, guard, expected_backend,
+                        selection_path=selection_path, binding_path=binding_path, witness_path=witness_path,
+                        pre62_path=pre62_path) != witness_id):
                 raise RuntimeError('Disposable committed witness differs')
         if _read_private_json(guard_path) != guard:
             raise RuntimeError('Original disposable isolation guard changed')

@@ -10,8 +10,9 @@ import { join } from "node:path";
 import { schemaVersionFromSource, validateTarget, validateContainers, deploymentCanStart,
   acquireTargetLock, assessMainVerification, assessCandidate, qualityEvidence, atomicJson, selectCandidate, productVolumes, targetKey,
   CommandExecutionError, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, sourceFingerprint, sourceMatchesFingerprint } from "../../scripts/tempo-deployment.mjs";
-import { assessMigrationRecovery, cut62WitnessName, privateSelection, inspectDisposableIsolation, classifyDisposableIsolationRecovery, persistDisposableIsolationIntent, advanceDisposableIsolationMarker, syncDisposableIsolationEvidence, validateCut62Preflight, assertColdPreflightContainers, cut62MountDirectory, requirePrivateCut62Witness, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
+import { assessMigrationRecovery, cut62WitnessName, privateSelection, inspectDisposableIsolation, inspectRegisteredIsolation, classifyManagedIsolationRecovery, classifyDisposableIsolationRecovery, persistDisposableIsolationIntent, advanceDisposableIsolationMarker, syncDisposableIsolationEvidence, validateCut62Preflight, assertColdPreflightContainers, cut62MountDirectory, requirePrivateCut62Witness, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
 import { parseArguments, ensureDocker } from "../../scripts/tempo-cli.mjs";
+import { captureManagedTargetLock, assertManagedTargetLock } from "../../scripts/tempo-managed-isolation.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
 
@@ -2634,7 +2635,139 @@ test("disposable isolation inspection rejects changed identities, exposed ports 
   assert.throws(() => inspectDisposableIsolation(production), /unsafe/);
 });
 
+test("registered isolation inspection binds the original production topology without activating it", t => {
+  const { target } = fixture(t);
+  target.version = 1; target.daemonId = "daemon";
+  const network = { Id: "a".repeat(64), Name: "tempo_default", Driver: "bridge", Scope: "local",
+    Labels: { "com.docker.compose.project": target.project }, Containers: { ["b".repeat(64)]: { EndpointID: "d".repeat(64) } } };
+  const container = { Id: "b".repeat(64), Image: `sha256:${"c".repeat(64)}`, State: { Running: true },
+    Config: { Labels: { "com.docker.compose.project": target.project, "com.docker.compose.service": "postgres" } },
+    HostConfig: { NetworkMode: network.Name, PublishAllPorts: false, PortBindings: {} },
+    NetworkSettings: { Ports: {}, Networks: { [network.Name]: { NetworkID: network.Id, EndpointID: "d".repeat(64), Aliases: ["postgres"], IPAMConfig: null } } },
+    Mounts: [{ Type: "volume", Destination: "/var/lib/postgresql", Name: target.volumes[target.postgresVolumeKey].name, Source: "/owned/volume", RW: true }] };
+  const input = { target, daemonId: target.daemonId, container, network, expectedImage: container.Image, trustedDaemon: true };
+  const original = inspectRegisteredIsolation(input).original;
+  assert.equal(original.target, targetKey(target)); assert.equal(original.project, "tempo");
+  const detached = structuredClone(input); detached.container.NetworkSettings.Networks = {}; detached.network.Containers = {};
+  assert.equal(inspectRegisteredIsolation({ ...detached, intent: original }).attached, false);
+  for (const change of [
+    x => { x.trustedDaemon = false; }, x => { x.daemonId = "other"; },
+    x => { x.container.HostConfig.PortBindings = { "5432/tcp": [{ HostPort: "5432" }] }; },
+    x => { x.container.NetworkSettings.Networks.extra = {}; }, x => { x.container.Mounts[0].Name = "other"; },
+    x => { x.target.context = ""; }, x => { x.target.root = "relative"; }, x => { x.target.version = 2; },
+  ]) {
+    const altered = structuredClone(input); change(altered);
+    assert.throws(() => inspectRegisteredIsolation(altered), /unsafe/);
+  }
+});
+
+test("managed isolation retains the exact original target lock token", t => {
+  const root = directory(t); fs.chmodSync(root, 0o700);
+  const release = acquireTargetLock(root); t.after(release);
+  const path = join(root, "maintenance.lock"), originalBytes = readFileSync(path);
+  const original = captureManagedTargetLock(root);
+  assert.doesNotThrow(() => assertManagedTargetLock(root, original));
+  const changed = JSON.parse(originalBytes); changed.token = "00000000-0000-0000-0000-000000000000";
+  writeFileSync(path, JSON.stringify(changed), { mode: 0o600 });
+  assert.throws(() => assertManagedTargetLock(root, original), /lock changed/);
+  writeFileSync(path, originalBytes, { mode: 0o600 });
+});
+
+test("managed pinned session inspection rejects changed identity or admission without mutation", () => {
+  const proof = String.raw`
+import importlib.util,sys,types
+pq=types.ModuleType('psycopg.pq');pq.TransactionStatus=types.SimpleNamespace(INTRANS=2)
+psycopg=types.ModuleType('psycopg');psycopg.pq=pq;sys.modules['psycopg']=psycopg;sys.modules['psycopg.pq']=pq
+verify=types.ModuleType('database.tooling.verify_postgres_cli_state')
+for name in ('authenticate_pre62_59','check_captured_cut62_v6','cut62_witness_id','load_cut62_attempt_binding','load_cut62_defense_selection','load_cut62_witness','load_pre62_59','verify_cut62_v6','verify_pre62_59'):setattr(verify,name,lambda *a,**k:None)
+sys.modules['database.tooling.verify_postgres_cli_state']=verify
+spec=importlib.util.spec_from_file_location('owned_managed_isolation','database/tooling/managed_isolation.py')
+module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+guard={'state':'pending','target':'target','database':{'name':'tempo'},'isolation':{'phase':'detached',
+ 'identity':{'target':'target','trustedDaemon':True},'original_allow_connections':True,
+ 'target_name':'tempo','admin_role':'tempo','system_identifier':'987','target_oid':123,'control_oid':5,'control_name':'postgres'}}
+backend={'pid':44,'role':'tempo','address':'127.0.0.1','start':'123.456'}
+row=['tempo','tempo','127.0.0.1',44,'987',123,5,False,0,0,'180006','origin','repeatable read','off','123.456']
+class DB:
+ def __init__(self):self.info=types.SimpleNamespace(transaction_status=2);self.calls=[]
+ def execute(self,sql):
+  self.calls.append(sql);assert sql.lstrip().startswith('SELECT')
+  return types.SimpleNamespace(fetchone=lambda:tuple(row))
+db=DB();assert module.assert_fenced_pinned_session(db,guard,backend)==44
+for index,value in [(0,'other'),(1,'other'),(2,'172.18.0.2'),(3,45),(4,'other'),(5,124),(6,123),(7,True),(8,1),(9,1),(10,'180005'),(11,'replica'),(12,'read committed'),(13,'on'),(14,'changed')]:
+ old=row[index];row[index]=value
+ try:module.assert_fenced_pinned_session(db,guard,backend)
+ except RuntimeError:pass
+ else:raise AssertionError('unsafe pinned state accepted')
+ row[index]=old
+db.info.transaction_status=0;before=len(db.calls)
+try:module.assert_fenced_pinned_session(db,guard,backend)
+except RuntimeError:pass
+else:raise AssertionError('idle connection accepted')
+assert len(db.calls)==before
+`;
+  const result = fsSpawnSync("python3", ["-c", proof], { cwd: process.cwd(), encoding: "utf8" });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
+test("managed fenced source verification retains the original bound witness", () => {
+  const proof = String.raw`
+import importlib.util,sys,types
+pq=types.ModuleType('psycopg.pq');pq.TransactionStatus=types.SimpleNamespace(INTRANS=2)
+psycopg=types.ModuleType('psycopg');psycopg.pq=pq;sys.modules['psycopg']=psycopg;sys.modules['psycopg.pq']=pq
+verify=types.ModuleType('database.tooling.verify_postgres_cli_state');sys.modules['database.tooling.verify_postgres_cli_state']=verify
+attempt='12345678-1234-1234-1234-123456789abc'; selection={'keys':[['synthetic','candidate']]};binding={'target':'target','attempt_id':attempt,'backup_filename':'backup'}
+witness={'selection':selection,'binding':binding}; checked=[]
+verify.load_cut62_defense_selection=lambda p:(selection,'digest')
+verify.load_cut62_attempt_binding=lambda *a:binding
+verify.load_cut62_witness=lambda p:(witness,b'secret')
+verify.cut62_witness_id=lambda *a:'cut-id'
+verify.load_pre62_59=lambda p:('original',b'old')
+verify.authenticate_pre62_59=lambda *a:'pre-id'
+def verify_old(db,witness,secret,**kwargs):
+ checked.append(kwargs);return {'witness_id':'pre-id','observed_schema':61}
+verify.verify_pre62_59=verify_old
+verify.check_captured_cut62_v6=lambda *a:{'witness_id':'cut-id'}
+verify.verify_cut62_v6=lambda *a:{'witness_id':'cut-id'}
+spec=importlib.util.spec_from_file_location('owned_managed_isolation','database/tooling/managed_isolation.py')
+module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+guard={'state':'pending','target':'target','attempt_id':attempt,'starting_schema':59,'intended_schema':62,
+ 'database':{'name':'tempo'},'backup':{'verified':True,'filename':'backup'},'defense_binding':binding,
+ 'cut62_witness':'cut62-'+attempt+'.json','cut62_identity':{'witness_id':'cut-id','attempt_id':attempt,'backup_filename':'backup'},
+ 'pre62_witness':'pre62-'+attempt+'.json','pre62_witness_id':'pre-id',
+ 'cut62_intermediate_verified':{'schema':61,'attempt_id':attempt,'backup_filename':'backup','pre62_witness':'pre62-'+attempt+'.json','pre62_witness_id':'pre-id'},
+ 'isolation':{'phase':'detached','identity':{'target':'target','trustedDaemon':True},'original_allow_connections':True,
+ 'target_name':'tempo','admin_role':'tempo','system_identifier':'987','target_oid':123,'control_oid':5,'control_name':'postgres'}}
+backend={'pid':44,'role':'tempo','address':'127.0.0.1','start':'123.456'};mode='off'
+class DB:
+ info=types.SimpleNamespace(transaction_status=2)
+ def execute(self,sql):
+  assert sql.lstrip().startswith('SELECT')
+  return types.SimpleNamespace(fetchone=lambda:('tempo','tempo','127.0.0.1',44,'987',123,5,False,0,0,'180006','origin','repeatable read',mode,'123.456'))
+args=dict(selection_path='/cut62/defense-selection.json',binding_path='/cut62/binding.json',witness_path='/cut62/cut62-'+attempt+'.json',pre62_path='/pre62/pre62-'+attempt+'.json')
+assert module.verify_originals_in_fenced_transaction(DB(),guard,backend,**args)[3]=='cut-id'
+assert checked==[{'in_write_transaction':True}]
+try:module.verify_committed_in_fenced_transaction(DB(),guard,backend,**args)
+except RuntimeError:pass
+else:raise AssertionError('post-commit verification accepted read-write transaction')
+mode='on'
+assert module.verify_committed_in_fenced_transaction(DB(),guard,backend,**args)=='cut-id'
+assert checked==[{'in_write_transaction':True}]
+try:module.verify_originals_in_fenced_transaction(DB(),guard,backend,**args)
+except RuntimeError:pass
+else:raise AssertionError('source verification accepted read-only transaction')
+mode='off'
+guard['cut62_identity']['witness_id']='substitute'
+try:module.verify_originals_in_fenced_transaction(DB(),guard,backend,**args)
+except RuntimeError:pass
+else:raise AssertionError('substituted witness accepted')
+`;
+  const result = fsSpawnSync("python3", ["-c", proof], { cwd: process.cwd(), encoding: "utf8" });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
 test("disposable recovery classifies physical crash states and refuses an unbound receipt", t => {
+  assert.equal(classifyManagedIsolationRecovery, classifyDisposableIsolationRecovery, "Managed and disposable recovery share one classifier.");
   const identity = { target: "target", trustedDaemon: true, daemonId: "daemon", containerId: "container", networkId: "network", imageId: "image" };
   const attempt = "12345678-1234-1234-1234-123456789abc";
   const preWitness = `pre62-${attempt}.json`;
@@ -3413,10 +3546,13 @@ assert 'secret' not in safe('ValueError: private-key-secret-value')
   assert.equal(result.status, 0, result.stdout + result.stderr);
 });
 
-test("fenced migration calls the original 59 verifier in its existing write transaction", () => {
+test("fenced migration delegates original 59 verification to the managed owner", () => {
   const proof = String.raw`
 import ast,pathlib
-tree=ast.parse(pathlib.Path('database/tooling/apply_postgres_migrations.py').read_text())
+caller=ast.parse(pathlib.Path('database/tooling/apply_postgres_migrations.py').read_text())
+delegates=[n for n in ast.walk(caller) if isinstance(n,ast.Call) and isinstance(n.func,ast.Name) and n.func.id=='verify_originals_in_fenced_transaction']
+assert len(delegates)==1
+tree=ast.parse(pathlib.Path('database/tooling/managed_isolation.py').read_text())
 calls=[n for n in ast.walk(tree) if isinstance(n,ast.Call) and isinstance(n.func,ast.Name) and n.func.id=='verify_pre62_59']
 assert len(calls)==1
 assert any(k.arg=='in_write_transaction' and isinstance(k.value,ast.Constant) and k.value.value is True for k in calls[0].keywords)

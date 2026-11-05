@@ -160,18 +160,21 @@ def apply_migrations(database_url: str, *, target_version: int | None = None,
                                 raise RuntimeError("Nonempty Defense cleanup requires a verified writer and DDL fence")
                             guard = _isolated_test_context['guard']
                             _isolated_test_context['assert_fenced'](database, guard)
-                            if guard.get('starting_schema') == 59:
-                                from database.tooling.verify_postgres_cli_state import load_pre62_59, verify_pre62_59
-                                old, old_secret = load_pre62_59(_isolated_test_context['pre62_path'])
-                                checked = verify_pre62_59(database, old, old_secret, in_write_transaction=True)
-                                if checked.get('witness_id') != guard.get('pre62_witness_id') or checked.get('observed_schema') != 61:
-                                    raise RuntimeError('Original schema 59 witness differs inside the fence')
                         binding = load_cut62_attempt_binding(cut62_binding, selection, selection_digest)
                         witness, secret = load_cut62_witness(cut62_witness)
                         if (witness.get('version') != 6 or witness.get('selection') != selection or
                                 witness.get('binding') != binding or cut62_witness_id(witness, secret) != expected_witness_id):
                             raise RuntimeError("Original Defense witness or binding differs")
-                        check_captured_cut62_v6(database, witness, secret)
+                        if selection['keys']:
+                            from database.tooling.managed_isolation import verify_originals_in_fenced_transaction
+                            _, owner_witness, _, owner_id = verify_originals_in_fenced_transaction(
+                                database, guard, _isolated_test_context['expected_backend'],
+                                selection_path=defense_selection, binding_path=cut62_binding,
+                                witness_path=cut62_witness, pre62_path=_isolated_test_context['pre62_path'])
+                            if owner_witness != witness or owner_id != expected_witness_id:
+                                raise RuntimeError("Original Defense witness or binding differs")
+                        else:
+                            check_captured_cut62_v6(database, witness, secret)
                         selection = witness['selection']
                     database.execute("SELECT set_config('tempo.cut62_defense_manifest', %s, true)",
                                      (json.dumps(selection, separators=(',', ':')),))

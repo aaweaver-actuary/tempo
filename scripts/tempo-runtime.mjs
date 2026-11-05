@@ -1,13 +1,15 @@
 // Bounded deployment stages. No work is scheduled from application startup.
 import { createHash, randomUUID } from "node:crypto";
 import { managedComposeBuild } from './development-budget.mjs';
-import { closeSync, constants, existsSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, constants, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { isDeepStrictEqual } from 'node:util';
 import {modeOverrideFor, modeRecordArgs, modes, modeStatusArgs} from './managed-games-control.mjs';
 import { atomicJson, deploymentCanStart, redact, targetKey, validateContainers, validateTarget } from "./tempo-deployment.mjs";
 import { TempoProblem, classifyRedisReply, phaseGuidance } from "./tempo-guidance.mjs";
+import { cut62WitnessName, inspectDisposableIsolation, inspectRegisteredIsolation, classifyDisposableIsolationRecovery, syncDisposableIsolationEvidence, persistDisposableIsolationIntent, advanceDisposableIsolationMarker, readOwnedPrivateBytes, syncDirectory, requireManagedIsolationGate } from './tempo-managed-isolation.mjs';
+export { cut62WitnessName, inspectDisposableIsolation, inspectRegisteredIsolation, classifyManagedIsolationRecovery, classifyDisposableIsolationRecovery, syncDisposableIsolationEvidence, persistDisposableIsolationIntent, advanceDisposableIsolationMarker } from './tempo-managed-isolation.mjs';
 
 import { isTimingPublicationFailure } from "./test-scenario-timings.mjs";
 import { probeLifecycleRedis } from "../database/tooling/cli/probes.mjs";
@@ -35,16 +37,6 @@ export function configurationFingerprint(configured) {
     if (service.labels) delete service.labels["org.opencontainers.image.revision"];
   }
   return createHash("sha256").update(JSON.stringify(stable)).digest("hex");
-}
-
-// Only the exact migration with a version-scoped comparator may cross this cut.
-export function cut62WitnessName(guard) {
-  const crossing = guard.starting_schema < 62 && guard.intended_schema >= 62;
-  if (!crossing) return null;
-  if (![59, 61].includes(guard.starting_schema) || guard.intended_schema !== 62 ||
-      !/^[0-9a-f-]{36}$/i.test(guard.attempt_id ?? ''))
-    throw new Error('Unsupported schema 62 crossing; preserve the original backup and fix forward.');
-  return `cut62-${guard.attempt_id}.json`;
 }
 
 // Validate the installed ledger before any application shutdown. A schema-60
@@ -86,26 +78,8 @@ export function requirePrivateCut62Witness(path) {
   if (!info.isFile() || (info.mode & 0o077)) throw new Error('Schema 62 witness is not a private regular file; keep writers stopped.');
 }
 
-function privateBytes(path) {
-  if (!isAbsolute(path ?? "")) throw new Error("Approved Defense selection is required as an absolute private file.");
-  let parent;
-  try { parent = lstatSync(dirname(path)); } catch { throw new Error("Approved Defense selection is unavailable."); }
-  if (!parent.isDirectory() || parent.uid !== process.getuid() || (parent.mode & 0o777) !== 0o700)
-    throw new Error("Approved Defense selection parent must be owned and private.");
-  let fd;
-  try { fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW); } catch { throw new Error("Approved Defense selection is unavailable."); }
-  let bytes;
-  try {
-    const info = fstatSync(fd);
-    if (!info.isFile() || info.uid !== process.getuid() || (info.mode & 0o777) !== 0o600 || info.size > 1048576)
-      throw new Error("Approved Defense selection must be an owned private regular file.");
-    bytes = readFileSync(fd);
-  } finally { closeSync(fd); }
-  return bytes;
-}
-
 export function privateSelection(path, expectedTarget) {
-  const bytes = privateBytes(path);
+  const bytes = readOwnedPrivateBytes(path);
   let value;
   try { value = JSON.parse(bytes); } catch { throw new Error("Approved Defense selection is invalid."); }
   const keys = value?.keys;
@@ -124,215 +98,6 @@ function writeExclusivePrivate(path, bytes) {
   const fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
   try { writeFileSync(fd, bytes); fsyncSync(fd); } finally { closeSync(fd); }
 }
-function syncDirectory(path) {
-  const fd = openSync(path, "r");
-  try { fsyncSync(fd); } finally { closeSync(fd); }
-}
-
-// Read-only evidence for a future disposable-only network gate. This does not
-// authorize detachment or enable nonempty migration by itself.
-export function inspectDisposableIsolation({ target, daemonId, container, network, expectedImage, trustedDaemon, intent = null }) {
-  const fail = () => { throw new Error("Disposable database isolation identity is unsafe or changed."); };
-  const labels = container?.Config?.Labels ?? {}, host = container?.HostConfig ?? {}, settings = container?.NetworkSettings;
-  const object = value => value !== null && typeof value === "object" && !Array.isArray(value);
-  const id = value => typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
-  const emptyObject = value => value == null || (object(value) && Object.keys(value).length === 0);
-  const emptyArray = value => value == null || (Array.isArray(value) && value.length === 0);
-  const ports = settings?.Ports, attached = settings?.Networks;
-  const projectNetwork = network?.Labels?.["com.docker.compose.project"];
-  const mounts = Array.isArray(container?.Mounts) ? container.Mounts : [];
-  const destination = "/var/lib/postgresql";
-  const overlap = path => path === destination || destination.startsWith(path + "/") || path.startsWith(destination + "/") || path === "/";
-  const storage = mounts.filter(m => typeof m?.Destination === "string" && overlap(m.Destination));
-  if (trustedDaemon !== true || !target?.disposable || !/^tempo-pg-regressions-[a-zA-Z0-9-]+$/.test(target.project ?? "") ||
-      !target.daemonId || daemonId !== target.daemonId || labels["com.docker.compose.project"] !== target.project ||
-      labels["com.docker.compose.service"] !== "postgres" || container?.State?.Running !== true || !id(container.Id) ||
-      !/^sha256:[0-9a-f]{64}$/.test(expectedImage ?? "") || container.Image !== expectedImage ||
-      typeof host.PublishAllPorts !== "boolean" || host.PublishAllPorts || !Object.hasOwn(host, "PortBindings") ||
-      !(host.PortBindings === null || object(host.PortBindings)) || Object.keys(host.PortBindings ?? {}).length ||
-      !settings || !Object.hasOwn(settings, "Ports") || !(ports === null || object(ports)) ||
-      Object.values(ports ?? {}).some(value => value !== null && (!Array.isArray(value) || value.length !== 0)) ||
-      !object(attached) || !id(network?.Id) || typeof network.Name !== "string" || !network.Name ||
-      host.NetworkMode !== network.Name || network.Driver !== "bridge" || network.Scope !== "local" ||
-      projectNetwork !== target.project || !object(network.Containers) ||
-      !target.volumes?.[target.postgresVolumeKey]?.name ||
-      mounts.some(m => !object(m) || typeof m.Destination !== "string" || !m.Destination.startsWith("/") ||
-        m.Destination.includes("//") || (m.Destination !== "/" && m.Destination.endsWith("/")) ||
-        m.Destination.split("/").some(part => part === "." || part === "..")) || storage.length !== 1 ||
-      storage[0].Type !== "volume" || storage[0].Destination !== destination || storage[0].RW !== true ||
-      storage[0].Name !== target.volumes[target.postgresVolumeKey].name ||
-      typeof storage[0].Source !== "string" || !isAbsolute(storage[0].Source)) fail();
-  const entries = Object.entries(attached);
-  if (entries.length > 1) fail();
-  const identityKeys = ["aliases", "containerId", "daemonId", "imageId", "networkId", "networkName", "project", "target", "trustedDaemon", "volumeName", "volumeSource"].sort().join();
-  const canonicalIntent = value => object(value) && Object.keys(value).sort().join() === identityKeys &&
-    Array.isArray(value.aliases) && value.aliases.includes("postgres") && value.aliases.every(alias => typeof alias === "string" && alias) &&
-    new Set(value.aliases).size === value.aliases.length && isDeepStrictEqual(value.aliases, [...value.aliases].sort());
-  let original;
-  if (entries.length === 1) {
-    const [name, endpoint] = entries[0];
-    const aliases = endpoint?.Aliases, reciprocal = network.Containers[container.Id];
-    if (name !== network.Name || endpoint.NetworkID !== network.Id || !id(endpoint.EndpointID) ||
-        reciprocal?.EndpointID !== endpoint.EndpointID || !Array.isArray(aliases) || !aliases.includes("postgres") ||
-        aliases.some(alias => typeof alias !== "string" || !alias) || new Set(aliases).size !== aliases.length ||
-        !emptyObject(endpoint.IPAMConfig) || !emptyObject(endpoint.DriverOpts) ||
-        !emptyArray(endpoint.Links) || (endpoint.GwPriority ?? 0) !== 0) fail();
-    original = { target: targetKey(target), project: target.project, daemonId, trustedDaemon: true, containerId: container.Id,
-      imageId: expectedImage, networkName: name, networkId: network.Id, aliases: [...aliases].sort(),
-      volumeName: storage[0].Name, volumeSource: storage[0].Source };
-    if (intent && (!canonicalIntent(intent) || !isDeepStrictEqual(original, intent))) fail();
-  } else {
-    if (network.Containers[container.Id] || !canonicalIntent(intent) || intent.trustedDaemon !== true ||
-        intent.target !== targetKey(target) || intent.project !== target.project || intent.daemonId !== daemonId ||
-        intent.containerId !== container.Id || intent.imageId !== expectedImage || intent.networkId !== network.Id ||
-        intent.networkName !== network.Name || intent.volumeName !== storage[0].Name || intent.volumeSource !== storage[0].Source) fail();
-    original = intent;
-  }
-  return { attached: entries.length === 1, original };
-}
-
-// Classify physical state only after Docker identity has been checked. This
-// returns a next step; it does not mutate admission, network or database state.
-export function classifyDisposableIsolationRecovery({ guard, identity, attached, targetOid, allowConnections,
-  backendPids, preparedTransactions, systemIdentifier, controlOid, controlName, adminRole, targetName,
-  pinnedPid = null, schema = null, receipt = null, receiptValidated = false }) {
-  const fail = () => { throw new Error("Disposable isolation recovery state is unsafe or ambiguous."); };
-  const isolation = guard?.isolation;
-  const binding = guard?.defense_binding;
-  const cut = guard?.cut62_identity;
-  const digest = value => typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
-  let expectedCutName;
-  try { expectedCutName = cut62WitnessName(guard); } catch { fail(); }
-  if (guard?.version !== 1 || guard.state !== "pending" || guard.cut62_witness !== expectedCutName || !isolation || !["intent", "detached", "verified", "reattached"].includes(isolation.phase) ||
-      !isDeepStrictEqual(isolation.identity, identity) || identity?.trustedDaemon !== true || guard.target !== identity?.target ||
-      ![59, 61].includes(guard.starting_schema) || guard.intended_schema !== 62 ||
-      !Number.isSafeInteger(targetOid) || targetOid <= 0 || isolation.target_oid !== targetOid ||
-      typeof systemIdentifier !== "string" || !/^[0-9]+$/.test(systemIdentifier) || isolation.system_identifier !== systemIdentifier ||
-      !Number.isSafeInteger(controlOid) || controlOid <= 0 || controlOid === targetOid || isolation.control_oid !== controlOid ||
-      controlName !== "postgres" || isolation.control_name !== controlName ||
-      typeof adminRole !== "string" || !/^[a-z_][a-z0-9_]*$/.test(adminRole) || isolation.admin_role !== adminRole ||
-      typeof targetName !== "string" || !targetName || isolation.target_name !== targetName || guard.database?.name !== targetName ||
-      isolation.original_allow_connections !== true || typeof attached !== "boolean" || typeof allowConnections !== "boolean" ||
-      !Array.isArray(backendPids) || backendPids.some(pid => !Number.isSafeInteger(pid) || pid <= 0) ||
-      (pinnedPid === null ? backendPids.length !== 0 :
-        !Number.isSafeInteger(pinnedPid) || pinnedPid <= 0 || backendPids.length !== 1 || backendPids[0] !== pinnedPid) ||
-      !Number.isSafeInteger(preparedTransactions) || preparedTransactions !== 0 ||
-      (schema !== null && ![61, 62].includes(schema)) || !guard.backup?.verified ||
-      binding?.version !== 1 || binding.target !== guard.target || binding.attempt_id !== guard.attempt_id ||
-      binding.backup_filename !== guard.backup.filename || !digest(binding.backup_sha256) || !digest(binding.selection_sha256) ||
-      cut?.attempt_id !== guard.attempt_id || cut.backup_filename !== guard.backup.filename || !digest(cut.witness_id) ||
-      (guard.starting_schema === 59 && (guard.pre62_witness !== `pre62-${guard.attempt_id}.json` || !digest(guard.pre62_witness_id) ||
-        guard.cut62_intermediate_verified?.schema !== 61 ||
-        guard.cut62_intermediate_verified.attempt_id !== guard.attempt_id ||
-        guard.cut62_intermediate_verified.pre62_witness !== guard.pre62_witness ||
-        guard.cut62_intermediate_verified.pre62_witness_id !== guard.pre62_witness_id ||
-        guard.cut62_intermediate_verified.backup_filename !== guard.backup.filename))) fail();
-  const expectedReceipt = { version: 1, target: guard.target, attempt_id: guard.attempt_id, target_oid: targetOid,
-    target_name: targetName, system_identifier: systemIdentifier, control_oid: controlOid, control_name: controlName, admin_role: adminRole,
-    daemon_id: identity.daemonId, container_id: identity.containerId, network_id: identity.networkId, image_id: identity.imageId,
-    backup_filename: binding.backup_filename, backup_sha256: binding.backup_sha256, selection_sha256: binding.selection_sha256,
-    pre62_witness_id: guard.starting_schema === 59 ? guard.pre62_witness_id : null, cut62_witness_id: cut.witness_id, schema: 62 };
-  if (receipt && (receiptValidated !== true || !isDeepStrictEqual(receipt, expectedReceipt))) fail();
-  if (receipt) {
-    if ((schema !== null && schema !== 62) || (pinnedPid !== null && schema !== 62)) fail();
-    if (isolation.phase === "intent") fail();
-    if (isolation.phase === "detached") {
-      if (attached || allowConnections) fail();
-      return "record-verified";
-    }
-    if (isolation.phase === "verified") {
-      if (!attached && pinnedPid !== null) {
-        if (allowConnections) fail();
-        return "close-pinned-after-receipt";
-      }
-      if (!attached) return "restore-after-receipt";
-      if (!allowConnections || pinnedPid !== null) fail();
-      return "record-reattached";
-    }
-    if (isolation.phase === "reattached") {
-      if (!attached || !allowConnections || pinnedPid !== null) fail();
-      return "complete";
-    }
-    fail();
-  }
-  if (isolation.phase === "verified" || isolation.phase === "reattached") fail();
-  if (isolation.phase === "intent") {
-    if (pinnedPid !== null || schema !== null) fail();
-    if (attached) {
-      if (!allowConnections) fail();
-      return "detach";
-    }
-    return "record-detached";
-  }
-  if (attached) fail();
-  if (pinnedPid !== null) {
-    if (allowConnections || schema === null) fail();
-    return schema === 61 ? "verify-and-migrate" : "verify-committed";
-  }
-  if (schema !== null) fail();
-  return allowConnections ? "pin-and-reclose" : "reopen-isolated-and-pin";
-}
-
-// Persist only evidence-backed phase markers; Docker and database actions are
-// deliberately separate, so an interrupted action is reconciled by inspection.
-function requireCurrentIsolationGuard(guardPath, expectedGuard) {
-  if (!isAbsolute(guardPath) || basename(guardPath) !== "migration-guard.json")
-    throw new Error("Disposable isolation guard path is invalid.");
-  let actual;
-  try { actual = JSON.parse(privateBytes(guardPath)); } catch { throw new Error("Original migration guard is unavailable or invalid."); }
-  if (!isDeepStrictEqual(actual, expectedGuard)) throw new Error("Original migration guard changed; keep writers stopped.");
-}
-// Caller must continuously hold the registered target lock. A prior atomic
-// rename may have succeeded before its directory fsync failed; retries sync
-// the accepted private files and their parents before any physical action.
-export function syncDisposableIsolationEvidence({ guardPath, guard, receiptPath = null, receipt = null }) {
-  if ((receiptPath === null) !== (receipt === null)) throw new Error("Disposable isolation receipt evidence is incomplete.");
-  const entries = [[guardPath, guard], ...(receiptPath === null ? [] : [[receiptPath, receipt]])];
-  for (const [path, expected] of entries) {
-    if (!isAbsolute(path)) throw new Error("Disposable isolation evidence path is invalid.");
-    let fd;
-    try {
-      const parent = lstatSync(dirname(path));
-      if (!parent.isDirectory() || parent.uid !== process.getuid() || (parent.mode & 0o777) !== 0o700) throw new Error();
-      fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-      const info = fstatSync(fd);
-      if (!info.isFile() || info.uid !== process.getuid() || (info.mode & 0o777) !== 0o600 || info.size > 1048576) throw new Error();
-      if (!isDeepStrictEqual(JSON.parse(readFileSync(fd)), expected)) throw new Error();
-      fsyncSync(fd);
-    } catch { throw new Error("Disposable isolation evidence is unavailable, changed or not durable; keep writers stopped."); }
-    finally { if (fd !== undefined) closeSync(fd); }
-    try { syncDirectory(dirname(path)); } catch { throw new Error("Disposable isolation evidence directory is not durable; keep writers stopped."); }
-    let reread;
-    try { reread = JSON.parse(privateBytes(path)); } catch { throw new Error("Disposable isolation evidence is unavailable or changed; keep writers stopped."); }
-    if (!isDeepStrictEqual(reread, expected)) throw new Error("Disposable isolation evidence changed; keep writers stopped.");
-  }
-}
-
-export function persistDisposableIsolationIntent({ guardPath, guard, identity, targetOid, systemIdentifier,
-  controlOid, controlName, adminRole, targetName, attached, allowConnections, backendPids, preparedTransactions }) {
-  requireCurrentIsolationGuard(guardPath, guard);
-  if (guard.isolation) throw new Error("Original migration already has an isolation intent.");
-  const next = structuredClone(guard);
-  next.isolation = { phase: "intent", identity: structuredClone(identity), target_oid: targetOid, target_name: targetName,
-    system_identifier: systemIdentifier, control_oid: controlOid, control_name: controlName, admin_role: adminRole,
-    original_allow_connections: true };
-  if (classifyDisposableIsolationRecovery({ guard: next, identity, targetOid, systemIdentifier, controlOid, controlName,
-    adminRole, targetName, attached, allowConnections, backendPids, preparedTransactions }) !== "detach")
-    throw new Error("Disposable isolation cannot begin from this state.");
-  atomicJson(guardPath, next);
-  return next;
-}
-export function advanceDisposableIsolationMarker({ guardPath, guard, observation }) {
-  requireCurrentIsolationGuard(guardPath, guard);
-  const action = classifyDisposableIsolationRecovery({ ...observation, guard });
-  const phase = { "record-detached": "detached", "record-verified": "verified", "record-reattached": "reattached" }[action];
-  if (!phase) throw new Error("No durable isolation marker is valid for this state.");
-  const next = structuredClone(guard);
-  next.isolation.phase = phase;
-  atomicJson(guardPath, next);
-  return next;
-}
-
 // Read-only classification shared by diagnostics and lock-time preflight.
 // Authorization to retry never establishes successful history verification.
 export function assessMigrationRecovery({ guard, operation, target, configuration, retry = false }) {
@@ -791,7 +556,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     const receiptPath = join(directory, "verified-receipt.json"), completionPath = join(directory, "verified-completion.json");
     let receipt, completion, completionBytes;
     try {
-      receipt = JSON.parse(privateBytes(receiptPath)); completionBytes = privateBytes(completionPath);
+      receipt = JSON.parse(readOwnedPrivateBytes(receiptPath)); completionBytes = readOwnedPrivateBytes(completionPath);
       completion = JSON.parse(completionBytes);
     } catch { throw new Error("Original disposable completion evidence is invalid; keep writers stopped."); }
     if (isolation.completion?.filename !== "verified-completion.json" ||
@@ -874,7 +639,7 @@ except Exception: sys.exit('Disposable completion authentication failed')`;
           guard.cut62_intermediate_verified?.backup_filename !== guard.backup.filename)
         throw new Error("Original schema 59 completion differs; keep writers stopped.");
     }
-    if (!isDeepStrictEqual(JSON.parse(privateBytes(guardPath)), guard))
+    if (!isDeepStrictEqual(JSON.parse(readOwnedPrivateBytes(guardPath)), guard))
       throw new Error("Original disposable guard changed; keep writers stopped.");
     completedIsolationPending = false;
     completedIsolationAuthenticated = true;
@@ -901,10 +666,10 @@ except Exception: sys.exit('Disposable completion authentication failed')`;
         const stored = privateSelection(join(cut62MountDirectory(stateDirectory, originalName), "defense-selection.json"), targetKey(target));
         if (stored.digest !== migrationGuard.defense_binding?.selection_sha256)
           throw new Error("Original Defense selection binding differs; keep writers stopped.");
-        if (stored.count) throw new Error("Nonempty Defense cleanup is unavailable without a verified writer and DDL fence.");
+        if (stored.count) requireManagedIsolationGate();
       } else {
         approvedSelection = privateSelection(defenseSelection, targetKey(target));
-        if (approvedSelection.count) throw new Error("Nonempty Defense cleanup is unavailable without a verified writer and DDL fence.");
+        if (approvedSelection.count) requireManagedIsolationGate();
       }
     } else if (defenseSelection) throw new Error("Defense selection applies only to a schema 62 crossing.");
     return preflight;
@@ -918,11 +683,11 @@ except Exception: sys.exit('Disposable completion authentication failed')`;
     const assessment = assessMigrationRecovery({ guard: migrationGuard, operation: previousOperation, target, configuration, retry });
     if (assessment.status === "blocked") throw new Error(assessment.message);
     if (migrationGuard?.isolation) {
-      if (!target.disposable) throw new Error("Isolation recovery is restricted to the original disposable attempt; keep writers stopped.");
+      if (!target.disposable) requireManagedIsolationGate();
       const receiptPath = join(cut62MountDirectory(stateDirectory, cut62WitnessName(migrationGuard)), "verified-receipt.json");
       let receipt = null;
       if (existsSync(receiptPath)) {
-        try { receipt = JSON.parse(privateBytes(receiptPath)); }
+        try { receipt = JSON.parse(readOwnedPrivateBytes(receiptPath)); }
         catch { throw new Error("Original isolation receipt is unavailable or invalid; keep writers stopped."); }
       }
       // executeLifecycle invokes this while the original target lock is held.
@@ -935,7 +700,7 @@ except Exception: sys.exit('Disposable completion authentication failed')`;
           /^[0-9a-f]{64}$/.test(migrationGuard.isolation.completion?.sha256 ?? "")) {
         const completionPath = join(dirname(receiptPath), "verified-completion.json");
         let completion;
-        try { completion = JSON.parse(privateBytes(completionPath)); } catch { throw new Error("Original isolation completion is unavailable or invalid; keep writers stopped."); }
+        try { completion = JSON.parse(readOwnedPrivateBytes(completionPath)); } catch { throw new Error("Original isolation completion is unavailable or invalid; keep writers stopped."); }
         syncDisposableIsolationEvidence({ guardPath, guard: migrationGuard, receiptPath: completionPath, receipt: completion });
         completedIsolationPending = true;
         completedIsolationAuthenticated = false;
@@ -1080,8 +845,9 @@ except Exception: sys.exit('Disposable completion authentication failed')`;
       const selectionPath = join(witnessDirectory, "defense-selection.json");
       const bindingPath = join(witnessDirectory, "binding.json");
       const storedSelection = privateSelection(selectionPath, targetKey(target));
+      if (storedSelection.count) requireManagedIsolationGate();
       let binding;
-      try { binding = JSON.parse(privateBytes(bindingPath)); } catch { throw new Error("Original Defense binding is invalid; keep writers stopped."); }
+      try { binding = JSON.parse(readOwnedPrivateBytes(bindingPath)); } catch { throw new Error("Original Defense binding is invalid; keep writers stopped."); }
       const backupDigest = await verifiedBackupDigest(migrationGuard.backup);
       if (!isDeepStrictEqual(binding, migrationGuard.defense_binding) || binding.version !== 1 ||
           binding.target !== targetKey(target) || binding.attempt_id !== migrationGuard.attempt_id ||
