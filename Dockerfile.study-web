@@ -24,7 +24,6 @@ COPY packages/study-session/tsconfig.json ./packages/study-session/tsconfig.json
 COPY scripts/study-composition.ts scripts/offline-shell-assets.ts ./scripts/
 COPY public/ ./public/
 
-ARG TEMPO_WORKBENCH_URL=""
 RUN npm run build:study
 
 FROM nginx:1.28-alpine

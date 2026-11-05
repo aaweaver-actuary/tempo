@@ -10,6 +10,5 @@ The Cburnett piece artwork is by Colin M. L. Burnett and is distributed by Liche
 
 The representative puzzle and the planned tactics-deck importer use the [Lichess open puzzle database](https://database.lichess.org/#puzzles), which Lichess releases into the public domain.
 
-Local engine analysis uses [Stockfish 19 for the web](https://github.com/lichess-org/stockfish-web) (`@lichess-org/stockfish-web` 0.5.0) under AGPL-3.0-or-later, together with Stockfish's GPL-3.0 engine and its official small evaluation network `nn-61e7af4bb97d.nnue`.
 
 Human-like move estimates use the [Maia 3](https://github.com/CSSLab/maia3) simplified ONNX model and worker implementation from the [Maia platform frontend](https://github.com/CSSLab/maia-platform-frontend), under GPL-3.0. ONNX inference uses [ONNX Runtime Web](https://github.com/microsoft/onnxruntime) under the MIT license.
