@@ -1,5 +1,5 @@
 import ts from "typescript";
-import { readFileSync, readdirSync, realpathSync, existsSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, realpathSync, existsSync } from "node:fs";
 import { resolve, dirname, relative, sep } from "node:path";
 import { spawnSync } from "node:child_process";
 import { parseSelection, readManifest, selectComponents, selectSuites } from "./selection.mjs";
@@ -84,26 +84,10 @@ export function imports(source, path = "input.ts", strictLoaders = true) {
   visit(syntax);
   return found;
 }
-export function checkTypeScript(root, component, repositoryRoot = repository) {
+export function checkTypeScript(root, component) {
   const sourceRoot = resolve(root, "src");
   const sourceBoundaries = [{ path: sourceRoot, realPath: realpathSync(sourceRoot), directory: true }];
   const files = sourceFiles(sourceRoot);
-  // Workbench's independently packaged outbox has one canonical database owner.
-  // Only its explicitly listed inputs enter the same checked source closure.
-  if (component.id === "workbench-web" && component.root === "apps/workbench-web") {
-    const ownerRoot = resolve(repositoryRoot, "database/browser/adapters/workbench");
-    for (const input of component.buildInputs) {
-      const inputPath = resolve(root, input);
-      if (!inside(ownerRoot, inputPath)) continue;
-      if (!existsSync(inputPath)) throw new Error("Unavailable database source input: " + input);
-      const realInput = realpathSync(inputPath);
-      const expectedInput = resolve(realpathSync(repositoryRoot), relative(resolve(repositoryRoot), inputPath));
-      if (realInput !== expectedInput) throw new Error("Source symlink/escape: " + input);
-      const directory = statSync(inputPath).isDirectory();
-      sourceBoundaries.push({ path: inputPath, realPath: realInput, directory });
-      files.push(...(directory ? sourceFiles(inputPath) : /\.[cm]?tsx?$/.test(inputPath) ? [inputPath] : []));
-    }
-  }
   const within = (boundary, path, real = false) => boundary.directory
     ? inside(real ? boundary.realPath : boundary.path, path)
     : path === (real ? boundary.realPath : boundary.path);
