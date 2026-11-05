@@ -755,7 +755,7 @@ expected=json.loads(sys.argv[2])
 if binding != expected: raise RuntimeError('Original managed attempt binding differs')
 with psycopg.connect(os.environ['TEMPO_POSTGRES_ADMIN_URL']) as database:
  with database.transaction():
-  database.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')
+  database.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ WRITE')
   witness_id=save_cut62_history_v2('/cut62/'+sys.argv[1],database,selection,binding,digest,expected)
 print(json.dumps({'witness_id':witness_id}))`;
           capture = JSON.parse((await maintenance('-c', [script, witnessName, JSON.stringify(migrationGuard.defense_binding)], { cut62Mount: witnessName })).stdout);

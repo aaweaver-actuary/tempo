@@ -149,7 +149,7 @@ def execute_managed_history_cut(database, guard, expected_backend, *, selection_
     paths = dict(selection_path=selection_path, binding_path=binding_path,
                  witness_path=witness_path, pre62_path=pre62_path)
     with database.transaction():
-        database.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')
+        database.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ WRITE')
         assert_fenced_pinned_session(database, guard, expected_backend)
         schema = database.execute('SELECT COALESCE(MAX(version),0) FROM public.tempo_schema_migrations').fetchone()[0]
         if schema == 61:
@@ -163,7 +163,7 @@ def execute_managed_history_cut(database, guard, expected_backend, *, selection_
         else:
             raise RuntimeError('Managed history schema is unsupported')
     with database.transaction():
-        database.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')
+        database.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ WRITE')
         if verify_committed_in_fenced_transaction(database, guard, expected_backend, **paths) != witness_id:
             raise RuntimeError('Original managed committed history differs')
     return witness_id
