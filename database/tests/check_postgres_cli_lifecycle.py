@@ -109,7 +109,8 @@ def main():
               'findings',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM game_findings t WHERE id LIKE 'cli-defense-15-finding-%'),
               'candidates',(SELECT jsonb_agg(to_jsonb(t)-'card_id' ORDER BY id) FROM threat_training_candidates t WHERE id LIKE 'cli-defense-15-candidate-%'),
               'links',(SELECT jsonb_agg(to_jsonb(t) ORDER BY candidate_id,request_id,role) FROM threat_candidate_requests t WHERE candidate_id LIKE 'cli-defense-15-candidate-%'),
-              'requests',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM threat_analysis_requests t WHERE id LIKE 'cli-defense-15-request-%'))::text,'UTF8')),'hex')""").fetchone()[0]
+              'requests',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM threat_analysis_requests t WHERE id LIKE 'cli-defense-15-request-%'),
+              'london',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM repertoire_lines t WHERE repertoire_id='cli-retained-london'))::text,'UTF8')),'hex')""").fetchone()[0]
             tables=('next_opponent_accounts','next_opponent_snapshots','endgame_attempts','daily_chess_snapshots','daily_chess_insights',
               'daily_statistics_jobs','game_insight_recommendations','game_analysis_publications','game_analysis_position_reports',
               'game_analysis_position_errors','game_analysis_jobs','engine_scheduling_state')
@@ -121,6 +122,7 @@ def main():
               'reviews':count('reviews','card_id','cli-defense-15-card-%'),
               'linkedCandidates':database.execute("SELECT count(*) FROM threat_training_candidates WHERE id LIKE 'cli-defense-15-candidate-%' AND card_id IS NOT NULL").fetchone()[0],
               'retainedDigest':retained,'epochs':database.execute("SELECT count(*) FROM priority_repertoire_source_epochs WHERE repertoire_id LIKE 'cli-defense-15-rep-%'").fetchone()[0],
+              'londonChoices':database.execute("SELECT count(DISTINCT moves_json) FROM repertoire_lines WHERE repertoire_id='cli-retained-london'").fetchone()[0],
               'frozen':database.execute("SELECT invalidated FROM frozen_opening_runs WHERE run_id='cli-retained-frozen'").fetchone()[0],
               'retired':{name:database.execute('SELECT to_regclass(%s)',('public.'+name,)).fetchone()[0] is not None for name in tables}}
         print(json.dumps(data));return
@@ -173,6 +175,10 @@ def main():
             # Retired-only dependants exercise the exact table retirement;
             # their shared imported game/finding remain protected evidence.
             database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES ('cli-retained-rep','retained','synthetic','2026-01-01')")
+            database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES ('cli-retained-london','London retained','synthetic','2026-01-01')")
+            for number,reply in enumerate(('g8f6','e7e6','c7c5','b7b6','b8c6')):
+                database.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES (%s,'cli-retained-london',%s,'white',%s,%s,'2026-01-01')",
+                  (f'cli-retained-london-{number}',f'choice-{number}',start,json.dumps(['d2d4','d7d5','c1f4',reply])))
             database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,content_type) VALUES ('cli-retained-endgame','cli-retained-rep','prefix','fen','[]','2026-01-01','endgame')")
             database.execute("INSERT INTO endgame_templates(id,card_id,name,white_material,black_material,trained_color,goal_mix,created_at) VALUES ('cli-retired-template','cli-retained-endgame','synthetic','K','K','white','{}','2026-01-01')")
             database.execute("INSERT INTO endgame_attempts(id,template_id,start_fen,target,created_at) VALUES ('cli-retired-endgame-attempt','cli-retired-template','fen','draw','2026-01-01')")
