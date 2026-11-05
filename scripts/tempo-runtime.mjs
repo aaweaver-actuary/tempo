@@ -76,7 +76,7 @@ export function assertColdPreflightContainers(containers, project, { databaseSta
 export function cut62MountDirectory(stateDirectory, witnessName) {
   if (!isAbsolute(stateDirectory) || /[:,\n\r]/.test(stateDirectory))
     throw new Error('Cannot mount private migration state safely; preserve the original guard.');
-  if (!/^cut62-[0-9a-f-]{36}\.json$/i.test(witnessName ?? '')) throw new Error('Invalid schema 62 witness identity.');
+  if (!/^(?:cut62|pre62)-[0-9a-f-]{36}\.json$/i.test(witnessName ?? '')) throw new Error('Invalid schema 62 witness identity.');
   return join(stateDirectory, witnessName.replace(/\.json$/, ''));
 }
 
@@ -636,19 +636,60 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     if (witnessName) {
       if (migrationGuard.starting_schema === 59) {
         let current = status.applied_versions.at(-1);
+        const pre62Name = `pre62-${migrationGuard.attempt_id}.json`;
+        if (newGuard) {
+          migrationGuard.pre62_witness = pre62Name;
+          atomicJson(guardPath, migrationGuard);
+        } else if (migrationGuard.pre62_witness !== pre62Name) {
+          throw new Error("Original schema 59 witness identity is missing; keep writers stopped.");
+        }
+        const stateInfo = lstatSync(stateDirectory);
+        if (!stateInfo.isDirectory() || (stateInfo.mode & 0o077))
+          throw new Error("Schema 59 migration state must be a private directory; keep writers stopped.");
+        const pre62Directory = cut62MountDirectory(stateDirectory, pre62Name);
+        const pre62Path = join(pre62Directory, pre62Name);
+        if (newGuard) {
+          if (existsSync(pre62Directory)) throw new Error("Schema 59 witness directory already exists; refusing to recapture.");
+          mkdirSync(pre62Directory, { mode: 0o700 });
+          const captured59 = JSON.parse((await maintenance("database/tooling/verify_postgres_cli_state.py", ["--pre62-capture59", `/cut62/${pre62Name}`], { cut62Mount: pre62Name })).stdout);
+          if (typeof captured59.witness_id !== "string" || !captured59.witness_id) throw new Error("Schema 59 witness identity is invalid; keep writers stopped.");
+          for (const path of [pre62Directory, stateDirectory]) {
+            const fd = openSync(path, "r");
+            try { fsyncSync(fd); } finally { closeSync(fd); }
+          }
+          migrationGuard.pre62_witness_id = captured59.witness_id;
+          atomicJson(guardPath, migrationGuard);
+        }
+        requirePrivateCut62Witness(pre62Path);
+        if (typeof migrationGuard.pre62_witness_id !== "string" || !migrationGuard.pre62_witness_id)
+          throw new Error("Original schema 59 witness identity is missing; keep writers stopped.");
+        const check59 = async schema => {
+          const flag = schema === 62 ? "--pre62-authenticate59" : "--pre62-verify59";
+          const result = JSON.parse((await maintenance("database/tooling/verify_postgres_cli_state.py", [flag, `/cut62/${pre62Name}`], { cut62Mount: pre62Name })).stdout);
+          if (result.witness_id !== migrationGuard.pre62_witness_id || (schema !== 62 && result.observed_schema !== schema))
+            throw new Error("Original schema 59 witness verification differs; keep writers stopped.");
+        };
+        await check59(current);
         if (current < 61) {
           if (migrationGuard.cut62_intermediate_verified) throw new Error("Schema 61 checkpoint regressed; keep writers stopped.");
           await maintenance("database/tooling/apply_postgres_migrations.py", ["--target-version", "61"], { echo: true });
           const intermediate = await checkSchema();
           current = intermediate.applied_versions.at(-1);
           if (current !== 61) throw new Error("Intermediate migrations did not reach exact schema 61; keep writers stopped.");
+          await check59(61);
         }
         if (!migrationGuard.cut62_intermediate_verified) {
           if (current !== 61) throw new Error("Original schema 61 checkpoint evidence is missing; keep writers stopped.");
           await maintenance("database/tooling/verify_postgres_cli_state.py", ["--expected", JSON.stringify(migrationGuard.study_invariants)]);
-          migrationGuard.cut62_intermediate_verified = { schema: 61, verified_at: new Date().toISOString() };
+          migrationGuard.cut62_intermediate_verified = { schema: 61, pre62_witness: pre62Name,
+            pre62_witness_id: migrationGuard.pre62_witness_id, attempt_id: migrationGuard.attempt_id,
+            backup_filename: migrationGuard.backup.filename, verified_at: new Date().toISOString() };
           atomicJson(guardPath, migrationGuard);
-        } else if (migrationGuard.cut62_intermediate_verified.schema !== 61) {
+        } else if (migrationGuard.cut62_intermediate_verified.schema !== 61 ||
+          migrationGuard.cut62_intermediate_verified.pre62_witness !== pre62Name ||
+          migrationGuard.cut62_intermediate_verified.pre62_witness_id !== migrationGuard.pre62_witness_id ||
+          migrationGuard.cut62_intermediate_verified.backup_filename !== migrationGuard.backup.filename ||
+          migrationGuard.cut62_intermediate_verified.attempt_id !== migrationGuard.attempt_id) {
           throw new Error("Invalid schema 61 checkpoint evidence; keep writers stopped.");
         }
       }

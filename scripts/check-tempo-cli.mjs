@@ -173,8 +173,25 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
       await compose(["-f", oldOverlay, "up", "-d", "--no-build", "--no-deps", "--wait",
         "foreground-worker", "background-worker", "background-scheduler", "api", "web", "postgres-backup"], { echo: true });
       const preparedImages = { revision, images, configFingerprint: configurationFingerprint(config) };
-      let interrupted61 = false, interruptedCapture = false;
+      let interrupted60 = false, interrupted61 = false, interruptedCapture = false, captures = 0;
       const inject = async (command, args, options) => {
+        if (args.includes("--target-version") && !interrupted60) {
+          interrupted60 = true;
+          // Execute the real migrator with a fault at the start of 061. Migration
+          // 060 commits normally; the 061 transaction rolls back.
+          const script = `import os
+from database.tooling import apply_postgres_migrations as m
+original = m.migration_source
+def source(path):
+    sql = original(path)
+    return "SELECT 1/0;\\n" + sql if path.name.startswith("061_") else sql
+m.migration_source = source
+m.apply_migrations(os.environ["TEMPO_POSTGRES_ADMIN_URL"], target_version=61)`;
+          const scriptIndex = args.indexOf("database/tooling/apply_postgres_migrations.py");
+          await assert.rejects(run(command, [...args.slice(0, scriptIndex), "-c", script], options), /division by zero/i);
+          throw new Error("injected at schema60");
+        }
+        if (args.includes("--cut62-capture")) captures += 1;
         const result = await run(command, args, options);
         if (args.includes("--target-version") && !interrupted61) { interrupted61 = true; throw new Error("injected after schema61"); }
         if (args.includes("--cut62-capture") && !interruptedCapture) { interruptedCapture = true; throw new Error("injected after cut62 capture"); }
@@ -182,17 +199,42 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
       };
       const initial = makeRuntime(target, { run: inject, stateDirectory, revision, evidence, preparedImages });
       await initial.inspectTarget();
-      await assert.rejects(lifecycle("p0_interrupted_61", { recreate: true }, initial), /injected after schema61/);
+      await assert.rejects(lifecycle("p0_interrupted_60", { recreate: true }, initial), /injected at schema60/);
       const originalGuard = JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8"));
       assert.equal(originalGuard.starting_schema, 59); assert.equal(originalGuard.intended_schema, 62);
       assert.equal(originalGuard.backup.verified, true);
+      assert.equal(Number((await readLatestMigration(compose)).stdout.trim()), 60);
+      const preWitness = join(stateDirectory, originalGuard.pre62_witness.replace(/\.json$/, ""), originalGuard.pre62_witness);
+      const preBytes = readFileSync(preWitness);
+      renameSync(preWitness, preWitness + ".held");
+      try {
+        const missing59 = makeRuntime(target, { run, stateDirectory, revision, evidence, preparedImages, retry: true });
+        await missing59.inspectTarget();
+        await assert.rejects(lifecycle("p0_missing_59_witness", { recreate: true }, missing59), /witness is missing/);
+      } finally { renameSync(preWitness + ".held", preWitness); }
+      writeFileSync(preWitness, Buffer.from("tampered"), { mode: 0o600 });
+      try {
+        const tampered59 = makeRuntime(target, { run, stateDirectory, revision, evidence, preparedImages, retry: true });
+        await tampered59.inspectTarget();
+        await assert.rejects(lifecycle("p0_tampered_59_witness", { recreate: true }, tampered59));
+      } finally { writeFileSync(preWitness, preBytes, { mode: 0o600 }); }
+      assert.equal(Number((await readLatestMigration(compose)).stdout.trim()), 60);
+      const retry60 = makeRuntime(target, { run: inject, stateDirectory, revision, evidence, preparedImages, retry: true });
+      await retry60.inspectTarget();
+      await assert.rejects(lifecycle("p0_resume_60_interrupted_61", { recreate: true }, retry60), /injected after schema61/);
+      const after60 = JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8"));
+      assert.equal(after60.attempt_id, originalGuard.attempt_id);
+      assert.deepEqual(after60.backup, originalGuard.backup);
+      assert.deepEqual(readFileSync(preWitness), preBytes);
       assert.equal(Number((await readLatestMigration(compose)).stdout.trim()), 61);
+      assert.equal(captures, 0);
       const resumed = makeRuntime(target, { run: inject, stateDirectory, revision, evidence, preparedImages, retry: true });
       await resumed.inspectTarget();
       await assert.rejects(lifecycle("p0_interrupted_capture", { recreate: true }, resumed), /injected after cut62 capture/);
       const captured = JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8"));
       assert.equal(captured.attempt_id, originalGuard.attempt_id);
       assert.deepEqual(captured.backup, originalGuard.backup);
+      assert.equal(captures, 1);
       assert.equal(captured.cut62_intermediate_verified.schema, 61);
       const witness = join(stateDirectory, captured.cut62_witness.replace(/\.json$/, ""), captured.cut62_witness);
       const witnessBytes = readFileSync(witness);
