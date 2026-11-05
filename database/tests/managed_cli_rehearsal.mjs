@@ -23,9 +23,13 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
   const selectionPath = join(selectionDirectory, 'selection.json');
   assert.deepEqual(manifest.expected.groups, { no_activity: 1, recognition_only: 1, reviewed: 1 });
   writeFileSync(selectionPath, JSON.stringify(manifest), { mode: 0o600 });
-  const dbId = (await compose(['ps','-q','postgres'])).stdout.trim();
+  let dbId = (await compose(['ps','-q','postgres'])).stdout.trim();
   assert.match(dbId, /^[0-9a-f]{64}$/);
   const db = JSON.parse((await docker(['inspect',dbId])).stdout)[0];
+  const initialDbId=dbId;
+  const clusterFacts=async id=>JSON.parse((await docker(['exec','--user','postgres',id,'psql','-X','-A','-t','-U','postgres','-d','postgres','-c',
+    "SELECT json_build_object('system',(select system_identifier::text from pg_control_system()),'target',(select oid::bigint from pg_database where datname='tempo'),'control',(select oid::bigint from pg_database where datname='postgres'))"])).stdout);
+  const originalCluster=await clusterFacts(dbId);
   const endpoints = Object.values(db.NetworkSettings.Networks); assert.equal(endpoints.length,1);
   const sha = path => createHash('sha256').update(readFileSync(path)).digest('hex');
   for(const name of ['migration','api','web']) {
@@ -37,7 +41,8 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
   const policy = { context, daemon:daemonId, db_id:dbId, db_image:db.Image, image:images.migration, revision,
     project, target_key:targetKey(target), state_dir:stateDirectory, passfile:config.secrets.admin_pgpass.file,
     hook_path:join(harness,'sitecustomize.py'), hook_sha256:sha(join(harness,'sitecustomize.py')),
-    owner_sha256:sha(join(root,'database/tooling/managed_isolation.py')), network_id:endpoints[0].NetworkID };
+    owner_sha256:sha(join(root,'database/tooling/managed_isolation.py')), network_id:endpoints[0].NetworkID,
+    data_volume:target.volumes[target.postgresVolumeKey].name,cluster_facts:originalCluster };
   writeFileSync(policyPath,JSON.stringify(policy),{mode:0o600});
   const sourceText=readFileSync(join(root,'scripts/tempo-managed-isolation.mjs'),'utf8');
   const gate="export function requireManagedIsolationGate() {\n  throw new Error('Nonempty Defense cleanup is unavailable without a verified writer and DDL fence.');\n}";
@@ -66,6 +71,17 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
     assert.deepEqual(JSON.parse(readFileSync(path,'utf8')),{fault,project,db_id:dbId});
     assert.equal(statSync(path).mode & 0o777,0o600);
   };
+  const bindCurrentBeforeIsolation = async candidate => {
+    assert.match(candidate,/^[0-9a-f]{64}$/);
+    const current=JSON.parse((await docker(['inspect',candidate])).stdout)[0];
+    assert.equal(current.Image,db.Image);assert.equal(current.Config.Labels['com.docker.compose.project'],project);
+    assert(current.Mounts.some(item=>item.Name===policy.data_volume&&item.Destination==='/var/lib/postgresql'&&item.RW));
+    assert.deepEqual(await clusterFacts(candidate),originalCluster);
+    const attached=Object.values(current.NetworkSettings.Networks);assert.equal(attached.length,1);assert.equal(attached[0].NetworkID,policy.network_id);
+    dbId=candidate;policy.db_id=dbId;atomicJson(policyPath,policy);
+    atomicJson(join(directory,'managed-rehearsal-pre-isolation-rebind.json'),{initialDbId,dbId,clusterFacts:originalCluster,
+      volume:policy.data_volume,networkId:policy.network_id,policySha256:sha(policyPath)});
+  };
   const closed = spawnSync(process.execPath,['scripts/tempo-cli.mjs','start','--no-ci','--no-open','--defense-selection',selectionPath,'--config',registration],
     {cwd:root,env:{...commonEnv,NODE_OPTIONS:'',W08_FAULT:''},encoding:'utf8',timeout:30000});
   assert.notEqual(closed.status,0);assert.match(closed.stderr,/Nonempty Defense cleanup is unavailable/);
@@ -89,6 +105,7 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
     const failure=cli('selection-copy','start','--no-ci','--no-open','--defense-selection',selectionPath);
     assertFailed(failure);fired('selection-copy');assert.match(failure.stderr,/W08_INJECT_SELECTION_COPY/);
     const guard=readGuard();assert.equal(guard.starting_schema,59);assert.equal(guard.backup.verified,true);
+    assert.equal(guard.isolation,undefined);await bindCurrentBeforeIsolation((await compose(['ps','-q','postgres'])).stdout.trim());
     assert.equal(guard.managed_selection_started,true);assert.equal(guard.defense_binding,undefined);
     assert.equal(Number((await readLatestMigration(compose)).stdout.trim()),59);
     assertFailed(cli('','start','--retry','--no-ci','--no-open'));
@@ -97,7 +114,10 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
     record('selection-copy-failure');return { copyOnly:true };
   }
   if (environment.W08_CAPTURE_ONLY === '1') {
-    assertFailed(cli('capture-after-file','start','--no-ci','--no-open','--defense-selection',selectionPath));fired('capture-after-file');
+    assertFailed(cli('capture-after-file','start','--no-ci','--no-open','--defense-selection',selectionPath));
+    const captureMarker=JSON.parse(readFileSync(join(policyDir,'fault-capture-after-file.json'),'utf8'));
+    assert.equal(readGuard().isolation,undefined);
+    await bindCurrentBeforeIsolation(captureMarker.db_id);fired('capture-after-file');
     const guard=readGuard();assert.equal(guard.starting_schema,59);assert.equal(guard.backup.verified,true);
     assert.equal(guard.cut62_capture_started,true);assert.equal(guard.cut62_identity,undefined);
     const path=join(stateDirectory,guard.cut62_witness.slice(0,-5),guard.cut62_witness);
@@ -108,8 +128,13 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
     assert.equal(after.cut62_identity,undefined);assert.equal(Number((await readLatestMigration(compose)).stdout.trim()),61);
     record('capture-file-before-id');return { captureOnly:true };
   }
-  const first = cli('schema60','start','--no-ci','--no-open','--defense-selection',selectionPath); assertFailed(first);fired('schema60');
+  const first = cli('schema60','start','--no-ci','--no-open','--defense-selection',selectionPath); assertFailed(first);
+  const faultMarker=JSON.parse(readFileSync(join(policyDir,'fault-schema60.json'),'utf8'));
+  assert.equal(faultMarker.fault,'schema60');assert.equal(faultMarker.project,project);assert.match(faultMarker.db_id,/^[0-9a-f]{64}$/);
+  await bindCurrentBeforeIsolation(faultMarker.db_id);
+  fired('schema60');
   const original = readGuard(); assert.equal(original.starting_schema,59); assert.equal(original.backup.verified,true);
+  assert.equal(original.isolation,undefined);
   assert.equal(original.managed_selection_started,true);assert.match(original.defense_binding.backup_sha256,/^[0-9a-f]{64}$/);
   const preWitness=join(stateDirectory,original.pre62_witness.slice(0,-5),original.pre62_witness);
   const preBytes=readFileSync(preWitness), preInode=statSync(preWitness).ino;
