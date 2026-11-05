@@ -396,6 +396,15 @@ def capture_cut62(database, secret):
             'layout': layout, 'rows': rows, 'catalog': _cut62_catalog(database, secret), 'sequences': _cut62_sequences(database, secret, True)}
 
 
+
+def check_captured_cut62(database, witness, secret):
+    """Verify an existing original against unchanged schema 61; never rewrite it."""
+    if (witness.get('version'), witness.get('from'), witness.get('to')) != (CUT62_EVIDENCE_VERSION, 61, 62):
+        raise RuntimeError('unsupported cut62 witness')
+    if capture_cut62(database, secret) != witness:
+        raise RuntimeError('cut62 source changed since original capture')
+    return {'version': CUT62_EVIDENCE_VERSION, 'from': 61, 'to': 62, 'unchanged': True}
+
 def verify_cut62(database, witness, secret):
     """Compare against the original witness; never capture a replacement after mutation."""
     if not isinstance(secret, bytes) or len(secret) != 32:
@@ -477,15 +486,19 @@ def main():
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--cut62-capture', metavar='PRIVATE_WITNESS_PATH')
     group.add_argument('--cut62-verify', metavar='PRIVATE_WITNESS_PATH')
+    group.add_argument('--cut62-check-captured', metavar='PRIVATE_WITNESS_PATH')
     args = parser.parse_args()
-    if (args.cut62_capture or args.cut62_verify) and args.expected:
+    if (args.cut62_capture or args.cut62_verify or args.cut62_check_captured) and args.expected:
         parser.error('--expected cannot be combined with a cut62 operation')
-    if args.cut62_capture or args.cut62_verify:
+    if args.cut62_capture or args.cut62_verify or args.cut62_check_captured:
         with psycopg.connect(os.environ['TEMPO_POSTGRES_ADMIN_URL'],
                              options='-c default_transaction_read_only=on') as database:
             if args.cut62_capture:
                 save_cut62_witness(args.cut62_capture, database)
                 print(json.dumps({'version': CUT62_EVIDENCE_VERSION, 'from': 61, 'to': 62, 'captured': True}))
+            elif args.cut62_check_captured:
+                witness, secret = load_cut62_witness(args.cut62_check_captured)
+                print(json.dumps(check_captured_cut62(database, witness, secret)))
             else:
                 witness, secret = load_cut62_witness(args.cut62_verify)
                 print(json.dumps(verify_cut62(database, witness, secret)))
