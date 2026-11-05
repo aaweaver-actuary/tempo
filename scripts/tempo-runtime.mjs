@@ -129,6 +129,50 @@ function syncDirectory(path) {
   try { fsyncSync(fd); } finally { closeSync(fd); }
 }
 
+// Read-only evidence for a future disposable-only network gate. This does not
+// authorize detachment or enable nonempty migration by itself.
+export function inspectDisposableIsolation({ target, daemonId, container, network, expectedImage, trustedDaemon, intent = null }) {
+  const fail = () => { throw new Error("Disposable database isolation identity is unsafe or changed."); };
+  const labels = container?.Config?.Labels ?? {};
+  const host = container?.HostConfig ?? {};
+  const ports = container?.NetworkSettings?.Ports ?? {};
+  const attached = container?.NetworkSettings?.Networks ?? {};
+  const entries = Object.entries(attached);
+  const id = value => typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
+  const projectNetwork = network?.Labels?.["com.docker.compose.project"];
+  if (trustedDaemon !== true || !target?.disposable || !/^tempo-pg-regressions-[a-zA-Z0-9-]+$/.test(target.project ?? "") ||
+      !target.daemonId || daemonId !== target.daemonId || labels["com.docker.compose.project"] !== target.project ||
+      labels["com.docker.compose.service"] !== "postgres" || !container?.State?.Running || !id(container.Id) ||
+      !/^sha256:[0-9a-f]{64}$/.test(expectedImage ?? "") || container.Image !== expectedImage ||
+      typeof host.PublishAllPorts !== "boolean" || host.PublishAllPorts || !Object.hasOwn(host, "PortBindings") ||
+      !container.NetworkSettings || !Object.hasOwn(container.NetworkSettings, "Ports") || Object.keys(host.PortBindings ?? {}).length ||
+      Object.values(ports).some(value => Array.isArray(value) && value.length) ||
+      host.NetworkMode === "host" || String(host.NetworkMode ?? "").startsWith("container:") ||
+      !id(network?.Id) || network.Driver !== "bridge" || network.Scope !== "local" || projectNetwork !== target.project ||
+      !target.volumes?.[target.postgresVolumeKey]?.name ||
+      (container.Mounts ?? []).filter(m => m.Type === "volume" && m.Destination === "/var/lib/postgresql" &&
+        m.Name === target.volumes[target.postgresVolumeKey].name).length !== 1 || entries.length > 1) fail();
+  let original;
+  if (entries.length === 1) {
+    const [name, endpoint] = entries[0];
+    const aliases = endpoint?.Aliases;
+    if (name !== network.Name || endpoint.NetworkID !== network.Id || !Array.isArray(aliases) || !aliases.length ||
+        aliases.some(alias => typeof alias !== "string" || !alias) || new Set(aliases).size !== aliases.length ||
+        Object.keys(endpoint.IPAMConfig ?? {}).length || Object.keys(endpoint.DriverOpts ?? {}).length ||
+        (endpoint.Links?.length ?? 0) || (endpoint.GwPriority ?? 0) !== 0) fail();
+    original = { target: targetKey(target), project: target.project, daemonId, trustedDaemon: true, containerId: container.Id,
+      imageId: expectedImage, networkName: name, networkId: network.Id, aliases: [...aliases].sort() };
+    if (intent && !isDeepStrictEqual(original, intent)) fail();
+  } else {
+    if (!intent || intent.trustedDaemon !== true || intent.target !== targetKey(target) || intent.project !== target.project || intent.daemonId !== daemonId ||
+        intent.containerId !== container.Id || intent.imageId !== expectedImage || intent.networkId !== network.Id ||
+        intent.networkName !== network.Name || !Array.isArray(intent.aliases) || !intent.aliases.length ||
+        intent.aliases.some(alias => typeof alias !== "string" || !alias) || new Set(intent.aliases).size !== intent.aliases.length) fail();
+    original = intent;
+  }
+  return { attached: entries.length === 1, original };
+}
+
 // Read-only classification shared by diagnostics and lock-time preflight.
 // Authorization to retry never establishes successful history verification.
 export function assessMigrationRecovery({ guard, operation, target, configuration, retry = false }) {

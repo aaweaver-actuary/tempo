@@ -10,6 +10,7 @@ sys.path.insert(0, str(_REPOSITORY))
 sys.path.insert(0, str(_REPOSITORY / "database"))
 
 import argparse
+from contextlib import nullcontext
 import hashlib
 from functools import wraps
 import re
@@ -90,13 +91,19 @@ def safe_postgres_errors(function):
 def apply_migrations(database_url: str, *, target_version: int | None = None,
                      defense_zero: bool = False, defense_selection: str | None = None,
                      cut62_binding: str | None = None, cut62_witness: str | None = None,
-                     expected_selection_sha256: str | None = None, expected_witness_id: str | None = None) -> None:
+                     expected_selection_sha256: str | None = None, expected_witness_id: str | None = None,
+                     _pinned_connection=None) -> None:
     files = sorted(MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql"))
     if not files:
         raise RuntimeError("No PostgreSQL migrations found")
     # Resolve/check every registered resource before opening a database session.
     sources = {path: migration_source(path) for path in files}
-    with psycopg.connect(database_url) as database:
+    if _pinned_connection is not None and int(_pinned_connection.info.transaction_status) != 0:
+        raise RuntimeError("Pinned migration connection must be idle before migration")
+    # An owning launcher may retain this exact connection across admission
+    # isolation and post-commit verification. It remains responsible for close.
+    connection = nullcontext(_pinned_connection) if _pinned_connection is not None else psycopg.connect(database_url)
+    with connection as database:
         exists = database.execute(
             "SELECT to_regclass('public.tempo_schema_migrations') IS NOT NULL"
         ).fetchone()[0]

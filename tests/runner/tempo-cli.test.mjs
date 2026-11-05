@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { schemaVersionFromSource, validateTarget, validateContainers, deploymentCanStart,
   acquireTargetLock, assessMainVerification, assessCandidate, qualityEvidence, atomicJson, selectCandidate, productVolumes, targetKey,
   CommandExecutionError, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, sourceFingerprint, sourceMatchesFingerprint } from "../../scripts/tempo-deployment.mjs";
-import { assessMigrationRecovery, cut62WitnessName, privateSelection, validateCut62Preflight, assertColdPreflightContainers, cut62MountDirectory, requirePrivateCut62Witness, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
+import { assessMigrationRecovery, cut62WitnessName, privateSelection, inspectDisposableIsolation, validateCut62Preflight, assertColdPreflightContainers, cut62MountDirectory, requirePrivateCut62Witness, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
 import { parseArguments, ensureDocker } from "../../scripts/tempo-cli.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
@@ -2584,6 +2584,43 @@ test("schema 62 bind source is absolute and cannot alter volume syntax", () => {
     assert.throws(() => cut62MountDirectory(path, name), /mount/);
 });
 
+test("disposable isolation inspection rejects changed identities, exposed ports and ambiguous networks", () => {
+  const target = { disposable: true, project: "tempo-pg-regressions-example", daemonId: "daemon", postgresVolumeKey: "postgres-test-data",
+    volumes: { "postgres-test-data": { name: "tempo-pg-regressions-example_postgres-test-data" } } };
+  const network = { Id: "a".repeat(64), Name: "tempo-pg-regressions-example_default", Driver: "bridge", Scope: "local",
+    Labels: { "com.docker.compose.project": target.project } };
+  const container = { Id: "b".repeat(64), Image: `sha256:${"c".repeat(64)}`, State: { Running: true },
+    Config: { Labels: { "com.docker.compose.project": target.project, "com.docker.compose.service": "postgres" } },
+    HostConfig: { NetworkMode: network.Name, PublishAllPorts: false, PortBindings: {} },
+    NetworkSettings: { Ports: {}, Networks: { [network.Name]: { NetworkID: network.Id, Aliases: ["postgres", "db"], IPAMConfig: null } } },
+    Mounts: [{ Type: "volume", Destination: "/var/lib/postgresql", Name: target.volumes[target.postgresVolumeKey].name }] };
+  const input = { target, daemonId: target.daemonId, container, network, expectedImage: container.Image, trustedDaemon: true };
+  const original = inspectDisposableIsolation(input).original;
+  const detached = structuredClone(input); detached.container.NetworkSettings.Networks = {};
+  assert.throws(() => inspectDisposableIsolation(detached), /unsafe/);
+  assert.equal(inspectDisposableIsolation({ ...detached, intent: original }).attached, false);
+  assert.throws(() => inspectDisposableIsolation({ ...detached, intent: { ...original, networkName: "other" } }), /unsafe/);
+  for (const change of [
+    x => { x.trustedDaemon = false; },
+    x => { x.daemonId = "other"; },
+    x => { x.container.Id = "d".repeat(64); },
+    x => { x.container.HostConfig.PortBindings = { "5432/tcp": [{ HostPort: "5432" }] }; },
+    x => { x.container.HostConfig.PublishAllPorts = true; },
+    x => { delete x.container.HostConfig.PublishAllPorts; },
+    x => { delete x.container.NetworkSettings.Ports; },
+    x => { x.container.NetworkSettings.Networks.extra = {}; },
+    x => { x.container.NetworkSettings.Networks[network.Name].Aliases = ["other"]; },
+    x => { x.container.NetworkSettings.Networks[network.Name].IPAMConfig = { IPv4Address: "172.18.0.2" }; },
+    x => { x.network.Id = "e".repeat(64); },
+    x => { x.container.Mounts[0].Name = "other"; },
+  ]) {
+    const altered = structuredClone(input); change(altered);
+    assert.throws(() => inspectDisposableIsolation({ ...altered, intent: original }), /unsafe/);
+  }
+  const production = structuredClone(input); production.target.disposable = false;
+  assert.throws(() => inspectDisposableIsolation(production), /unsafe/);
+});
+
 test("Defense selection requires a private canonical target-bound file and retries reject replacements", t => {
   const dir = directory(t); fs.chmodSync(dir, 0o700);
   const file = join(dir, "approved.json");
@@ -2872,7 +2909,7 @@ class Result:
  def fetchall(self): return self.rows
 class Database:
  def __enter__(self): return self
- def __exit__(self,*args): pass
+ def __exit__(self,*args): state['closed']=True
  @contextlib.contextmanager
  def transaction(self):
   state['in_tx']=True
@@ -2936,15 +2973,25 @@ with tempfile.TemporaryDirectory() as tmp:
  except RuntimeError as e: assert 'projected digest mismatch' in str(e)
  else: raise AssertionError('post-verification failure accepted')
  assert state['version']==61 and [x[0] for x in state['events']]==['verify','setting','ddl','postverify']
- state.update(events=[],post_mismatch=False)
- module.apply_migrations('fixture', defense_selection='s',cut62_binding='b',cut62_witness='w',expected_selection_sha256='b'*64,expected_witness_id='c'*64)
- assert [x[0] for x in state['events']]==['verify','setting','ddl','postverify'] and state['events'][1][1]==selection
+ state.update(events=[],post_mismatch=False,closed=False)
+ pinned=Database(); pinned.info=types.SimpleNamespace(transaction_status=0)
+ ordinary_connect=module.psycopg.connect
+ module.psycopg.connect=lambda *a,**k: (_ for _ in ()).throw(AssertionError('opened a second connection'))
+ module.apply_migrations('fixture', defense_selection='s',cut62_binding='b',cut62_witness='w',expected_selection_sha256='b'*64,expected_witness_id='c'*64,_pinned_connection=pinned)
+ module.psycopg.connect=ordinary_connect
+ assert not state['closed'] and [x[0] for x in state['events']]==['verify','setting','ddl','postverify'] and state['events'][1][1]==selection
  state.update(version=61,events=[])
  module.apply_migrations('fixture',defense_zero=True)
  assert [x[0] for x in state['events']]==['setting','ddl'] and state['events'][0][1]['keys']==[]
- state.update(version=62,events=[])
- module.apply_migrations('fixture')
- assert state['events']==[]
+ state.update(version=62,events=[],closed=False)
+ pinned=Database(); pinned.info=types.SimpleNamespace(transaction_status=0)
+ module.psycopg.connect=lambda *a,**k: (_ for _ in ()).throw(AssertionError('opened a second connection'))
+ module.apply_migrations('fixture',_pinned_connection=pinned)
+ assert state['events']==[] and not state['closed']
+ pinned.info.transaction_status=2
+ try: module.apply_migrations('fixture',_pinned_connection=pinned)
+ except RuntimeError as e: assert 'must be idle' in str(e)
+ else: raise AssertionError('busy pinned connection accepted')
  class ForeignKeyViolation(sys.modules['psycopg'].Error):
   sqlstate='23503'
  @module.safe_postgres_errors
