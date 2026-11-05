@@ -3292,6 +3292,29 @@ assert commands[-1][-1]==peer and 'rm' in commands[-1]
   assert.equal(result.status, 0, result.stdout + result.stderr);
 });
 
+test("disposable control query returns numeric database oids without weakening identity checks", () => {
+  const proof = String.raw`
+import ast,json,pathlib,re,subprocess,types
+source=pathlib.Path('database/tests/cli_isolation_supervisor.py').read_text()
+node=next(n for n in ast.parse(source).body if isinstance(n,ast.FunctionDef) and n.name=='inspect_control_database')
+observed={'targetName':'tempo','controlName':'postgres','adminRole':'postgres','targetOid':1,'controlOid':2,
+ 'systemIdentifier':'123','allowConnections':True,'backendPids':[],'backendDetails':[],'preparedTransactions':0}
+def run(args,**kwargs):
+ assert args[-1].count('oid::bigint')==2
+ return types.SimpleNamespace(returncode=0,stdout=json.dumps(observed))
+scope={'json':json,'re':re,'subprocess':types.SimpleNamespace(run=run,PIPE=subprocess.PIPE)}
+exec(compile(ast.Module(body=[node],type_ignores=[]),'<supervisor>','exec'),scope)
+args=({'context':'owned'},{'containerId':'owned'},{'database':{'name':'tempo'}})
+scope['inspect_control_database'](*args)
+observed['targetOid']='1'
+try:scope['inspect_control_database'](*args)
+except RuntimeError as error:assert 'target oid type' in str(error)
+else:raise AssertionError('text oid accepted')
+`;
+  const result = fsSpawnSync("python3", ["-c", proof], { cwd: process.cwd(), encoding: "utf8" });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
 test("shipped migration CLI exposes no disposable isolation supervisor", () => {
   const proof = String.raw`
 import runpy,sys,types

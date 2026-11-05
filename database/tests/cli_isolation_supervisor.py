@@ -244,8 +244,8 @@ def inspect_control_database(target, identity, guard):
     if guard.get('database', {}).get('name') != 'tempo':
         raise RuntimeError('Disposable target database is not the expected fixture')
     query = """SELECT json_build_object(
-      'targetOid',(SELECT oid FROM pg_database WHERE datname='tempo'),
-      'targetName','tempo','controlOid',(SELECT oid FROM pg_database WHERE datname=current_database()),
+      'targetOid',(SELECT oid::bigint FROM pg_database WHERE datname='tempo'),
+      'targetName','tempo','controlOid',(SELECT oid::bigint FROM pg_database WHERE datname=current_database()),
       'controlName',current_database(),'adminRole',current_user,
       'systemIdentifier',(SELECT system_identifier::text FROM pg_control_system()),
       'allowConnections',(SELECT datallowconn FROM pg_database WHERE datname='tempo'),
@@ -264,14 +264,20 @@ def inspect_control_database(target, identity, guard):
         observed = json.loads(result.stdout)
     except (ValueError, TypeError) as error:
         raise RuntimeError('Disposable control database identity is invalid') from error
-    if (observed.get('targetName') != 'tempo' or observed.get('controlName') != 'postgres' or
-            observed.get('adminRole') != 'postgres' or not isinstance(observed.get('targetOid'), int) or
-            not isinstance(observed.get('controlOid'), int) or observed['targetOid'] == observed['controlOid'] or
-            not re.fullmatch(r'[0-9]+', str(observed.get('systemIdentifier') or '')) or
-            not isinstance(observed.get('allowConnections'), bool) or not isinstance(observed.get('backendPids'), list) or
-            not isinstance(observed.get('backendDetails'), list) or
-            observed.get('preparedTransactions') != 0):
-        raise RuntimeError('Disposable control database identity is unsafe')
+    checks = {'target name': observed.get('targetName') == 'tempo',
+              'control name': observed.get('controlName') == 'postgres',
+              'admin role': observed.get('adminRole') == 'postgres',
+              'target oid type': isinstance(observed.get('targetOid'), int),
+              'control oid type': isinstance(observed.get('controlOid'), int),
+              'distinct database oids': observed.get('targetOid') != observed.get('controlOid'),
+              'system identifier': bool(re.fullmatch(r'[0-9]+', str(observed.get('systemIdentifier') or ''))),
+              'admission type': isinstance(observed.get('allowConnections'), bool),
+              'backend pid type': isinstance(observed.get('backendPids'), list),
+              'backend details type': isinstance(observed.get('backendDetails'), list),
+              'no prepared transactions': observed.get('preparedTransactions') == 0}
+    failed = [name for name, passed in checks.items() if not passed]
+    if failed:
+        raise RuntimeError('Disposable control database identity unsafe ' + ', '.join(failed))
     return observed
 
 
