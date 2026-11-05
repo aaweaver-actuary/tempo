@@ -398,13 +398,18 @@ def capture_cut62(database, secret):
 
 
 
+def cut62_witness_id(witness, secret):
+    canonical = json.dumps(witness, sort_keys=True, separators=(',', ':'))
+    return _cut62_mac(secret, 'cut62:witness-id', [canonical])['digest']
+
+
 def check_captured_cut62(database, witness, secret):
     """Verify an existing original against unchanged schema 61; never rewrite it."""
     if (witness.get('version'), witness.get('from'), witness.get('to')) != (CUT62_EVIDENCE_VERSION, 61, 62):
         raise RuntimeError('unsupported cut62 witness')
     if capture_cut62(database, secret) != witness:
         raise RuntimeError('cut62 source changed since original capture')
-    return {'version': CUT62_EVIDENCE_VERSION, 'from': 61, 'to': 62, 'unchanged': True}
+    return {'version': CUT62_EVIDENCE_VERSION, 'from': 61, 'to': 62, 'unchanged': True, 'witness_id': cut62_witness_id(witness, secret)}
 
 def verify_cut62(database, witness, secret):
     """Compare against the original witness; never capture a replacement after mutation."""
@@ -437,7 +442,8 @@ def verify_cut62(database, witness, secret):
             raise RuntimeError('cut62 retained rows changed in ' + name)
     return {'version': CUT62_EVIDENCE_VERSION, 'from': 61, 'to': 62,
             'retired': {name: witness['rows'][name] for name in sorted(CUT62_RETIRED_TABLES)},
-            'retired_sequences': witness['sequences']['retired']}
+            'retired_sequences': witness['sequences']['retired'],
+            'witness_id': cut62_witness_id(witness, secret)}
 
 
 def save_cut62_witness(path, database):
@@ -457,6 +463,7 @@ def save_cut62_witness(path, database):
         # An incomplete file must never be treated as a valid original witness.
         os.unlink(path)
         raise
+    return cut62_witness_id(witness, secret)
 
 
 def load_cut62_witness(path):
@@ -481,22 +488,301 @@ def load_cut62_witness(path):
         raise RuntimeError('cut62 witness authentication failed')
     return payload['witness'], secret
 
+# Independent witness domain for the source schema before migrations 060/061.
+PRE62_EVIDENCE_VERSION = 1
+PRE62_NEW_TABLE = 'legacy_content_historical_origins'
+PRE62_SOURCE_TABLES = (CUT62_PROTECTED_TABLES | CUT62_RETIRED_TABLES | {CUT62_LEDGER}) - {PRE62_NEW_TABLE}
+PRE62_FUNCTIONS = {
+    'reject_position_first_response_mutation': ('study_position_first_response_immutable', 60),
+    'reject_content_historical_origin_mutation': ('legacy_content_historical_origin_immutable', 61),
+}
+PRE62_TRIGGERS = {
+    'study_position_first_response_immutable_row': ('study_position_first_responses', 'reject_position_first_response_mutation', 27, 60),
+    'study_position_first_response_immutable_truncate': ('study_position_first_responses', 'reject_position_first_response_mutation', 34, 60),
+    'content_historical_origin_immutable_row': ('legacy_content_historical_origins', 'reject_content_historical_origin_mutation', 27, 61),
+    'content_historical_origin_immutable_truncate': ('legacy_content_historical_origins', 'reject_content_historical_origin_mutation', 34, 61),
+}
+
+
+def _pre62_table(database, table, primary_key, secret):
+    from psycopg import sql
+    query = sql.SQL('SELECT row_to_json(t)::text FROM {}.{} t ORDER BY {}').format(
+        sql.Identifier('public'), sql.Identifier(table),
+        sql.SQL(',').join(sql.Identifier(key) for key in primary_key))
+    with database.cursor(name='pre62_' + table) as cursor:
+        cursor.execute(query)
+        return _cut62_mac(secret, 'pre62:rows:' + table, (row[0] for row in cursor))
+
+
+def _pre62_sequences(database, secret):
+    from psycopg import sql
+    definitions = database.execute("""SELECT c.relname, pg_get_userbyid(c.relowner), COALESCE(c.relacl::text,''),
+      s.seqstart,s.seqincrement,s.seqmax,s.seqmin,s.seqcache,s.seqcycle
+      FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace JOIN pg_sequence s ON s.seqrelid=c.oid
+      WHERE n.nspname='public' ORDER BY c.relname""").fetchall()
+    if {row[0] for row in definitions} != CUT62_PROTECTED_SEQUENCES | CUT62_RETIRED_SEQUENCES:
+        raise RuntimeError('pre62 sequence coverage changed')
+    values = []
+    for row in definitions:
+        state = database.execute(sql.SQL('SELECT last_value,is_called FROM {}.{}').format(
+            sql.Identifier('public'), sql.Identifier(row[0]))).fetchone()
+        values.append(json.dumps([*row, *state], separators=(',', ':')))
+    return _cut62_mac(secret, 'pre62:sequences', values)
+
+
+def _pre62_catalog(database, secret):
+    rows = database.execute("""
+      SELECT 'index', c.relname, pg_get_indexdef(c.oid) || ':' || i.indisvalid::text || ':' || i.indisready::text
+      FROM pg_class c JOIN pg_index i ON i.indexrelid=c.oid JOIN pg_class owner ON owner.oid=i.indrelid
+      JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND owner.relname<>%s
+      UNION ALL
+      SELECT 'constraint', owner.relname || '.' || con.conname, pg_get_constraintdef(con.oid)
+      FROM pg_constraint con JOIN pg_class owner ON owner.oid=con.conrelid JOIN pg_namespace n ON n.oid=owner.relnamespace
+      WHERE n.nspname='public' AND owner.relname<>%s
+      UNION ALL
+      SELECT 'trigger', owner.relname || '.' || t.tgname, pg_get_triggerdef(t.oid) || ':' || t.tgenabled::text
+      FROM pg_trigger t JOIN pg_class owner ON owner.oid=t.tgrelid JOIN pg_namespace n ON n.oid=owner.relnamespace
+      WHERE n.nspname='public' AND NOT t.tgisinternal AND owner.relname<>%s AND NOT (t.tgname=ANY(%s))
+      UNION ALL
+      SELECT 'function', p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')',
+             pg_get_functiondef(p.oid) || ':' || pg_get_userbyid(p.proowner) || ':' || COALESCE(p.proacl::text,'')
+      FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+      WHERE n.nspname='public' AND p.prokind='f' AND NOT (p.proname=ANY(%s))
+      UNION ALL
+      SELECT 'view', c.relname, pg_get_viewdef(c.oid,true) || COALESCE(c.relacl::text,'')
+      FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('v','m')
+      UNION ALL
+      SELECT 'grant', c.relname, pg_get_userbyid(c.relowner) || ':' || COALESCE(c.relacl::text,'') || ':' || c.relrowsecurity::text || ':' || c.relforcerowsecurity::text
+      FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+      WHERE n.nspname='public' AND c.relkind IN ('r','p') AND c.relname<>%s
+      UNION ALL
+      SELECT 'defaultacl', pg_get_userbyid(d.defaclrole) || ':' || d.defaclnamespace::text || ':' || d.defaclobjtype::text, d.defaclacl::text FROM pg_default_acl d
+      UNION ALL
+      SELECT 'default', c.relname || '.' || a.attname, pg_get_expr(d.adbin,d.adrelid)
+      FROM pg_attrdef d JOIN pg_class c ON c.oid=d.adrelid JOIN pg_namespace n ON n.oid=c.relnamespace
+      JOIN pg_attribute a ON a.attrelid=c.oid AND a.attnum=d.adnum
+      WHERE n.nspname='public' AND c.relname<>%s ORDER BY 1,2,3
+    """, (PRE62_NEW_TABLE, PRE62_NEW_TABLE, PRE62_NEW_TABLE, list(PRE62_TRIGGERS),
+           list(PRE62_FUNCTIONS), PRE62_NEW_TABLE, PRE62_NEW_TABLE))
+    return _cut62_mac(secret, 'pre62:catalog',
+        (json.dumps(row, separators=(',', ':'), ensure_ascii=False) for row in rows))
+
+
+
+def _pre62_default_table_acl(database):
+    # Effective new-table grants are the owner/global default plus the public
+    # schema's additive default grants. Compare normalized ACL entries.
+    return database.execute("""
+      SELECT grantor,grantee,privilege_type,is_grantable FROM aclexplode(COALESCE(
+        (SELECT defaclacl FROM pg_default_acl WHERE defaclrole=current_user::regrole
+         AND defaclnamespace=0 AND defaclobjtype='r'), acldefault('r',current_user::regrole)))
+      UNION
+      SELECT a.grantor,a.grantee,a.privilege_type,a.is_grantable
+      FROM pg_default_acl d CROSS JOIN LATERAL aclexplode(d.defaclacl) a
+      WHERE d.defaclrole=current_user::regrole AND d.defaclnamespace='public'::regnamespace AND d.defaclobjtype='r'
+      ORDER BY 1,2,3,4
+    """).fetchall()
+
+def _pre62_added_objects(database, version, owner, expected_acl):
+    functions = database.execute("""SELECT p.proname, pg_get_userbyid(p.proowner), p.prosrc,
+         p.proconfig, p.prosecdef, p.provolatile, pg_get_function_identity_arguments(p.oid), p.prorettype::regtype::text, l.lanname, p.proacl IS NULL
+       FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN pg_language l ON l.oid=p.prolang
+       WHERE n.nspname='public' AND p.proname=ANY(%s) ORDER BY 1""", (list(PRE62_FUNCTIONS),)).fetchall()
+    expected_funcs = {name for name, (_, introduced) in PRE62_FUNCTIONS.items() if version >= introduced}
+    if {row[0] for row in functions} != expected_funcs or len(functions) != len(expected_funcs):
+        raise RuntimeError('pre62 immutable function inventory changed')
+    for name, actual_owner, body, config, security, volatility, args, result, language, default_acl in functions:
+        message = PRE62_FUNCTIONS[name][0]
+        expected_body = "BEGIN RAISE EXCEPTION USING ERRCODE = '23514', MESSAGE = '" + message + "'; END;"
+        if (actual_owner != owner or ''.join(body.split()).rstrip(';') != ''.join(expected_body.split()).rstrip(';')
+                or config != ['search_path=pg_catalog'] or security or volatility != 'v'
+                or args != '' or result != 'trigger' or language != 'plpgsql' or not default_acl):
+            raise RuntimeError('pre62 immutable function definition changed')
+    triggers = database.execute("""SELECT t.tgname, c.relname, p.proname, t.tgtype::int, t.tgenabled,
+             n2.nspname,t.tgnargs,t.tgqual IS NULL,t.tgconstraint=0 FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid
+       JOIN pg_namespace n ON n.oid=c.relnamespace JOIN pg_proc p ON p.oid=t.tgfoid
+       JOIN pg_namespace n2 ON n2.oid=p.pronamespace
+       WHERE n.nspname='public' AND NOT t.tgisinternal AND t.tgname=ANY(%s) ORDER BY 1""", (list(PRE62_TRIGGERS),)).fetchall()
+    expected_triggers = {name for name, (_, _, _, introduced) in PRE62_TRIGGERS.items() if version >= introduced}
+    if {row[0] for row in triggers} != expected_triggers or len(triggers) != len(expected_triggers):
+        raise RuntimeError('pre62 immutable trigger inventory changed')
+    for name, table, function, kind, enabled, namespace, nargs, no_condition, no_constraint in triggers:
+        expected_table, expected_function, expected_kind, _ = PRE62_TRIGGERS[name]
+        if (table, function, kind, enabled, namespace, nargs, no_condition, no_constraint) != (expected_table, expected_function, expected_kind, 'O', 'public', 0, True, True):
+            raise RuntimeError('pre62 immutable trigger definition changed')
+    exists = database.execute('SELECT to_regclass(%s)', ('public.' + PRE62_NEW_TABLE,)).fetchone()[0] is not None
+    if exists != (version >= 61):
+        raise RuntimeError('pre62 historical origin table state changed')
+    if version >= 61:
+        relation = database.execute("SELECT c.relkind,pg_get_userbyid(c.relowner),c.relrowsecurity,c.relforcerowsecurity FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname=%s", (PRE62_NEW_TABLE,)).fetchone()
+        if relation != ('r',owner,False,False):
+            raise RuntimeError('pre62 historical origin owner or kind changed')
+        acl = database.execute("SELECT a.grantor,a.grantee,a.privilege_type,a.is_grantable FROM pg_class c CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) a WHERE c.oid=%s::regclass ORDER BY 1,2,3,4", ('public.' + PRE62_NEW_TABLE,)).fetchall()
+        if [list(row) for row in acl] != expected_acl:
+            raise RuntimeError('pre62 historical origin ACL changed')
+        layout = table_layout(database)[PRE62_NEW_TABLE]
+        expected_columns = (('legacy_target_id','text',True),('legacy_workspace_id','text',True),
+                            ('export_id','text',True),('receipt_id','text',True),
+                            ('payload','bytea',True),('receipt_digest','text',True))
+        if layout != (('legacy_target_id','legacy_workspace_id','export_id'), expected_columns):
+            raise RuntimeError('pre62 historical origin layout changed')
+        if database.execute('SELECT EXISTS(SELECT 1 FROM public.legacy_content_historical_origins)').fetchone()[0]:
+            raise RuntimeError('pre62 historical origin table is not empty')
+        indexes = database.execute("SELECT x.indexname,i.indisvalid,i.indisready FROM pg_indexes x JOIN pg_class c ON c.relname=x.indexname JOIN pg_namespace n ON n.oid=c.relnamespace AND n.nspname=x.schemaname JOIN pg_index i ON i.indexrelid=c.oid WHERE x.schemaname='public' AND x.tablename=%s ORDER BY 1", (PRE62_NEW_TABLE,)).fetchall()
+        if indexes != [('legacy_content_historical_origins_pkey',True,True),('legacy_content_historical_origins_receipt_id_key',True,True)]:
+            raise RuntimeError('pre62 historical origin index inventory changed')
+        constraints = database.execute("SELECT contype,pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid=%s::regclass AND contype<>'n' ORDER BY 1,2", ('public.' + PRE62_NEW_TABLE,)).fetchall()
+        if constraints != [('p','PRIMARY KEY (legacy_target_id, legacy_workspace_id, export_id)'),('u','UNIQUE (receipt_id)')]:
+            raise RuntimeError('pre62 historical origin constraint inventory changed')
+        defaults = database.execute("SELECT count(*) FROM pg_attrdef WHERE adrelid=%s::regclass", ('public.' + PRE62_NEW_TABLE,)).fetchone()[0]
+        if defaults:
+            raise RuntimeError('pre62 historical origin unexpected default')
+        unique = database.execute("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid=%s::regclass AND contype='u' ORDER BY 1", ('public.' + PRE62_NEW_TABLE,)).fetchall()
+        if unique != [('UNIQUE (receipt_id)',)]:
+            raise RuntimeError('pre62 historical origin unique constraint changed')
+        extra_triggers = database.execute("SELECT tgname FROM pg_trigger WHERE tgrelid=%s::regclass AND NOT tgisinternal AND NOT (tgname=ANY(%s))", ('public.' + PRE62_NEW_TABLE, list(PRE62_TRIGGERS))).fetchall()
+        if extra_triggers:
+            raise RuntimeError('pre62 unexpected historical origin trigger')
+
+
+def _pre62_session(database):
+    database.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+    _cut62_session(database)
+
+
+def capture_pre62_59(database, secret):
+    if not isinstance(secret, bytes) or len(secret) != 32:
+        raise ValueError('pre62 secret must be 32 bytes')
+    _pre62_session(database)
+    _cut62_versions(database, 59)
+    owner = database.execute('SELECT current_user').fetchone()[0]
+    expected_acl = [list(row) for row in _pre62_default_table_acl(database)]
+    _pre62_added_objects(database, 59, owner, expected_acl)
+    layout = _cut62_layout(database, PRE62_SOURCE_TABLES)
+    rows = {name: _pre62_table(database, name, layout[name][0], secret)
+            for name in sorted(PRE62_SOURCE_TABLES - {CUT62_LEDGER})}
+    return {'domain':'pre62-source-59','version':PRE62_EVIDENCE_VERSION,'from':59,'through':61,
+            'owner':owner,'new_table_acl':expected_acl,'layout':layout,'rows':rows,
+            'catalog':_pre62_catalog(database,secret),'sequences':_pre62_sequences(database,secret)}
+
+
+
+def authenticate_pre62_59(witness, secret):
+    """Identify a valid original file without asserting it was verified at 61."""
+    if not isinstance(secret, bytes) or len(secret) != 32:
+        raise ValueError('pre62 secret must be 32 bytes')
+    if (witness.get('domain'),witness.get('version'),witness.get('from'),witness.get('through')) != ('pre62-source-59',PRE62_EVIDENCE_VERSION,59,61):
+        raise RuntimeError('unsupported pre62 witness')
+    if set(witness.get('layout',{})) != PRE62_SOURCE_TABLES or set(witness.get('rows',{})) != PRE62_SOURCE_TABLES - {CUT62_LEDGER}:
+        raise RuntimeError('pre62 witness coverage changed')
+    for name in ('owner','new_table_acl','catalog','sequences'):
+        if name not in witness:
+            raise RuntimeError('pre62 witness incomplete')
+    canonical=json.dumps(witness,sort_keys=True,separators=(',',':'))
+    return _cut62_mac(secret,'pre62:witness-id',[canonical])['digest']
+
+def verify_pre62_59(database, witness, secret):
+    if not isinstance(secret, bytes) or len(secret) != 32:
+        raise ValueError('pre62 secret must be 32 bytes')
+    if (witness.get('domain'),witness.get('version'),witness.get('from'),witness.get('through')) != ('pre62-source-59',PRE62_EVIDENCE_VERSION,59,61):
+        raise RuntimeError('unsupported pre62 witness')
+    if set(witness.get('layout',{})) != PRE62_SOURCE_TABLES or set(witness.get('rows',{})) != PRE62_SOURCE_TABLES - {CUT62_LEDGER}:
+        raise RuntimeError('pre62 witness coverage changed')
+    witness_id = authenticate_pre62_59(witness,secret)
+    _pre62_session(database)
+    version = database.execute('SELECT COALESCE(max(version),0) FROM public.tempo_schema_migrations').fetchone()[0]
+    if version not in (59,60,61):
+        raise RuntimeError('unsupported pre62 target version')
+    _cut62_versions(database, version)
+    if database.execute('SELECT current_user').fetchone()[0] != witness['owner']:
+        raise RuntimeError('pre62 migration owner changed')
+    if [list(row) for row in _pre62_default_table_acl(database)] != witness.get('new_table_acl'):
+        raise RuntimeError('pre62 default table ACL changed')
+    _pre62_added_objects(database, version, witness['owner'], witness['new_table_acl'])
+    expected_tables = PRE62_SOURCE_TABLES | ({PRE62_NEW_TABLE} if version >= 61 else set())
+    layout = _cut62_layout(database, expected_tables)
+    if any(layout[name] != witness['layout'][name] for name in PRE62_SOURCE_TABLES):
+        raise RuntimeError('pre62 retained table layout changed')
+    if _pre62_catalog(database,secret) != witness['catalog']:
+        raise RuntimeError('pre62 retained catalog changed')
+    if _pre62_sequences(database,secret) != witness['sequences']:
+        raise RuntimeError('pre62 retained sequences changed')
+    for name in sorted(PRE62_SOURCE_TABLES - {CUT62_LEDGER}):
+        if _pre62_table(database,name,layout[name][0],secret) != witness['rows'][name]:
+            raise RuntimeError('pre62 retained rows changed in ' + name)
+    return {'domain':'pre62-source-59','version':PRE62_EVIDENCE_VERSION,'observed_schema':version,'unchanged':True,'witness_id':witness_id}
+
+
+def save_pre62_59(path, database):
+    import secrets
+    secret = secrets.token_bytes(32)
+    witness = capture_pre62_59(database, secret)
+    witness_id = authenticate_pre62_59(witness,secret)
+    signature = _cut62_mac(secret,'pre62:witness',[json.dumps(witness,sort_keys=True,separators=(',',':'))])['digest']
+    descriptor = os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+    try:
+        with os.fdopen(descriptor,'w') as stream:
+            json.dump({'secret':secret.hex(),'witness':witness,'signature':signature},stream,sort_keys=True,separators=(',',':'))
+            stream.flush()
+            os.fsync(stream.fileno())
+    except BaseException:
+        os.unlink(path)
+        raise
+    return witness_id
+
+
+def load_pre62_59(path):
+    import hmac
+    import stat
+    descriptor=os.open(path,os.O_RDONLY|getattr(os,'O_NOFOLLOW',0))
+    with os.fdopen(descriptor) as stream:
+        metadata=os.fstat(stream.fileno())
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_mode & 0o077:
+            raise RuntimeError('pre62 witness must be a private regular file')
+        payload=json.load(stream)
+    if set(payload) != {'secret','witness','signature'}:
+        raise RuntimeError('invalid pre62 witness envelope')
+    secret=bytes.fromhex(payload['secret'])
+    if len(secret)!=32:
+        raise RuntimeError('invalid pre62 witness secret')
+    expected=_cut62_mac(secret,'pre62:witness',[json.dumps(payload['witness'],sort_keys=True,separators=(',',':'))])['digest']
+    if not hmac.compare_digest(expected,payload['signature']):
+        raise RuntimeError('pre62 witness authentication failed')
+    return payload['witness'],secret
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--expected", help="Previously captured fingerprints, without row contents")
     group = parser.add_mutually_exclusive_group()
+    group.add_argument('--pre62-capture59', metavar='PRIVATE_WITNESS_PATH')
+    group.add_argument('--pre62-verify59', metavar='PRIVATE_WITNESS_PATH')
+    group.add_argument('--pre62-authenticate59', metavar='PRIVATE_WITNESS_PATH')
     group.add_argument('--cut62-capture', metavar='PRIVATE_WITNESS_PATH')
     group.add_argument('--cut62-verify', metavar='PRIVATE_WITNESS_PATH')
     group.add_argument('--cut62-check-captured', metavar='PRIVATE_WITNESS_PATH')
     args = parser.parse_args()
-    if (args.cut62_capture or args.cut62_verify or args.cut62_check_captured) and args.expected:
+    if (args.pre62_capture59 or args.pre62_verify59 or args.pre62_authenticate59 or args.cut62_capture or args.cut62_verify or args.cut62_check_captured) and args.expected:
         parser.error('--expected cannot be combined with a cut62 operation')
+    if args.pre62_authenticate59:
+        witness,secret=load_pre62_59(args.pre62_authenticate59)
+        print(json.dumps({'domain':'pre62-source-59','version':PRE62_EVIDENCE_VERSION,'authenticated':True,'witness_id':authenticate_pre62_59(witness,secret)}))
+        return
+    if args.pre62_capture59 or args.pre62_verify59:
+        with psycopg.connect(os.environ['TEMPO_POSTGRES_ADMIN_URL'],
+                             options='-c default_transaction_read_only=on') as database:
+            if args.pre62_capture59:
+                witness_id=save_pre62_59(args.pre62_capture59,database)
+                print(json.dumps({'domain':'pre62-source-59','version':PRE62_EVIDENCE_VERSION,'captured':True,'witness_id':witness_id}))
+            else:
+                witness,secret=load_pre62_59(args.pre62_verify59)
+                print(json.dumps(verify_pre62_59(database,witness,secret)))
+        return
     if args.cut62_capture or args.cut62_verify or args.cut62_check_captured:
         with psycopg.connect(os.environ['TEMPO_POSTGRES_ADMIN_URL'],
                              options='-c default_transaction_read_only=on') as database:
             if args.cut62_capture:
-                save_cut62_witness(args.cut62_capture, database)
-                print(json.dumps({'version': CUT62_EVIDENCE_VERSION, 'from': 61, 'to': 62, 'captured': True}))
+                witness_id = save_cut62_witness(args.cut62_capture, database)
+                print(json.dumps({'version': CUT62_EVIDENCE_VERSION, 'from': 61, 'to': 62, 'captured': True, 'witness_id': witness_id}))
             elif args.cut62_check_captured:
                 witness, secret = load_cut62_witness(args.cut62_check_captured)
                 print(json.dumps(check_captured_cut62(database, witness, secret)))
