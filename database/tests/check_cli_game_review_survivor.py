@@ -55,7 +55,10 @@ u=urlparse(dsn)
 assert (u.hostname,u.path,u.username)==('postgres','/tempo',role)
 db=psycopg.connect(dsn,connect_timeout=2)
 row=db.execute("SELECT current_database(),current_user,host(inet_server_addr()),shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database()").fetchone()
-assert row[0:2]==('tempo',role) and row[2] in p['postgres_addresses'] and row[3]=='tempo-disposable-postgres-test'
+if row[0]!='tempo': raise RuntimeError('Owned database name differs')
+if row[1]!=role: raise RuntimeError('Owned database role differs')
+if row[2] not in p['postgres_addresses']: raise RuntimeError('Owned database address differs')
+if row[3]!='tempo-disposable-postgres-test': raise RuntimeError('Owned database marker differs')
 version=db.execute('SELECT max(version) FROM tempo_schema_migrations').fetchone()[0]
 '''
 SEED = r'''
