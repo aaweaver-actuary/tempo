@@ -70,6 +70,7 @@ CUT62_PROTECTED_TABLES = frozenset((
     'daily_queue',
     'daily_queue_days',
     'daily_statistics_jobs',
+    'defense_attempts',
     'defense_recognition_submissions',
     'deleted_cards',
     'discovery_admission_intents',
@@ -237,13 +238,13 @@ CUT62_PROTECTED_TABLES = frozenset((
     'threat_candidate_requests',
     'threat_training_candidates',
 ))
-CUT62_RETIRED_TABLES = frozenset(('defense_attempts', 'endgame_attempts',
+CUT62_RETIRED_TABLES = frozenset(('endgame_attempts',
                                   'next_opponent_accounts', 'next_opponent_snapshots',
                                   'game_analysis_jobs', 'game_analysis_position_reports',
                                   'game_analysis_position_errors', 'game_analysis_publications',
                                   'engine_scheduling_state'))
 CUT62_LEDGER = 'tempo_schema_migrations'
-CUT62_EVIDENCE_VERSION = 2
+CUT62_EVIDENCE_VERSION = 3
 CUT62_PROTECTED_SEQUENCES = frozenset((
     'background_task_events_id_seq', 'card_revisions_id_seq', 'daily_queue_id_seq',
     'opening_evidence_presentations_id_seq',
