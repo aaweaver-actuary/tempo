@@ -2745,7 +2745,7 @@ test("locked disposable retry resyncs isolation guard and receipt before holding
 });
 
 test("completed disposable guard defers startup until completion is authenticated", async t => {
-  const { runtime, calls, fixture } = imageRuntimeFixture(t, "postgres:18.6-trixie", 18, false, () => undefined);
+  const { runtime, calls, fixture } = redisRuntimeFixture(t, [{ code: 0, stdout: "PONG\n", stderr: "" }]);
   await runtime.config(); fixture.target.disposable = true; fs.chmodSync(fixture.stateDirectory, 0o700);
   const attempt = "12345678-1234-1234-1234-123456789abc", name = `cut62-${attempt}.json`;
   const guard = { version: 1, target: targetKey(fixture.target), database: { name: "tempo", volume: fixture.target.volumes[fixture.target.postgresVolumeKey].name },
@@ -2762,6 +2762,17 @@ test("completed disposable guard defers startup until completion is authenticate
   await assert.rejects(runtime.startServices(), /verification is unresolved/);
   assert.deepEqual(readFileSync(guardPath), original);
   assert(!calls.some(args => args.includes("up")), "Deferral must not start applications.");
+  // This command fixture uses product-shaped volume mounts; its disposable
+  // flag was needed only to exercise guard deferral above.
+  fixture.target.disposable = false;
+  await runtime.ensureImages();
+  await runtime.ensureDatabase({ allowRecreation: true });
+  const databaseUp = calls.find(args => args.includes("up") && args.includes("postgres"));
+  assert(databaseUp?.includes("--no-recreate"), "Completed isolation must retain the bound database container.");
+  assert(!databaseUp.includes("--force-recreate"));
+  const redisUp = calls.find(args => args.includes("up") && args.includes("redis"));
+  assert(redisUp?.includes("--force-recreate"), "Unbound Redis keeps the requested recreation behavior.");
+  fixture.target.disposable = true;
   rmSync(completionPath);
   assert.throws(() => runtime.checkMigrationRetry(), /completion is unavailable or invalid/);
   assert.deepEqual(readFileSync(guardPath), original);

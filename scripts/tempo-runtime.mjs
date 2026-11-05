@@ -683,6 +683,9 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   }
 
   async function ensureDatabase({ allowRecreation = false } = {}) {
+    // A completed disposable cut is bound to its original database container.
+    // Recreate application workers as requested, but never replace that DB.
+    const preserveCompletedDatabase = Boolean(migrationGuard?.state === "verified" && migrationGuard.isolation);
     await verifySelectedPostgresImage();
     stage("checking_database");
     const volume = target.volumes[target.postgresVolumeKey];
@@ -695,8 +698,13 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
       "-ec", 'files=$(find /data -maxdepth 4 -type f -name PG_VERSION); test "$(printf "%s\\n" "$files" | grep -c .)" = 1; cat "$files"']);
     if (Number(cluster.stdout.trim()) !== expectedMajor)
       throw new Error("Existing PostgreSQL cluster does not match the registered major version; a separate major-upgrade procedure is required.");
-    await compose(["up", "-d", "--no-build", "--no-deps", ...(allowRecreation ? ["--force-recreate"] : ["--no-recreate"]),
-      "postgres", "redis"], { echo: true });
+    if (allowRecreation && preserveCompletedDatabase) {
+      await compose(["up", "-d", "--no-build", "--no-deps", "--no-recreate", "postgres"], { echo: true });
+      await compose(["up", "-d", "--no-build", "--no-deps", "--force-recreate", "redis"], { echo: true });
+    } else {
+      await compose(["up", "-d", "--no-build", "--no-deps", ...(allowRecreation ? ["--force-recreate"] : ["--no-recreate"]),
+        "postgres", "redis"], { echo: true });
+    }
     // Probe immediately: Compose can exhaust its health retries before our
     // deadline, or conceal an authentication error behind an unhealthy state.
     await waitForRedisReady();
