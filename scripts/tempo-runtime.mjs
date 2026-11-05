@@ -12,7 +12,7 @@ import { TempoProblem, classifyRedisReply, phaseGuidance } from "./tempo-guidanc
 import { isTimingPublicationFailure } from "./test-scenario-timings.mjs";
 import { probeLifecycleRedis } from "../database/tooling/cli/probes.mjs";
 import { createBackupRestoreDatabase, createPostgresBackup, removeBackupRestoreDatabase, restorePostgresBackup } from "../database/tooling/cli/backup.mjs";
-import { assertManagedTargetLock, captureManagedTargetLock, inspectManagedCompletedTarget, inspectManagedFence, persistManagedHistoryWitnessIdentity, privateDefenseHistorySelection, startManagedStoppedDetachedTarget,
+import { assertManagedTargetLock, captureManagedTargetLock, inspectManagedCompletedTarget, inspectManagedFence, inspectManagedHistorySelectionBinding, persistManagedHistoryWitnessIdentity, privateDefenseHistorySelection, startManagedStoppedDetachedTarget,
   prepareManagedDetachedTarget, runManagedPinnedChild, restoreManagedCompletedTarget, requireManagedIsolationGate } from './tempo-managed-isolation.mjs';
 
 export const applicationServices = ["web", "api",
@@ -92,6 +92,8 @@ export function requirePrivateCut62Witness(path) {
 // Authorization to retry never establishes successful history verification.
 export function assessMigrationRecovery({ guard, operation, target, configuration, retry = false }) {
   if (guard) {
+    if (guard.managed_selection_started === true && !guard.defense_binding)
+      return { status: 'blocked', code: 'managed_selection_incomplete', message: 'Original managed selection binding is incomplete. Preserve its guard and backup; do not recapture.' };
     const database = { name: configuration.services.postgres.environment.POSTGRES_DB,
       volume: target.volumes[target.postgresVolumeKey].name };
     if (guard.version !== 1 || guard.target !== targetKey(target)
@@ -554,9 +556,11 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     if (assessment.status === "blocked") throw new Error(assessment.message);
     if (migrationGuard?.defense_binding || migrationGuard?.isolation) {
       requireManagedIsolationGate();
-      managedIsolationRetry = migrationGuard.state === 'pending';
+      managedIsolationRetry = migrationGuard.state === 'pending' && Boolean(migrationGuard.isolation);
       managedCompletionPending = migrationGuard.state === 'verified';
     }
+    if (migrationGuard?.managed_selection_started && !migrationGuard.defense_binding)
+      throw new Error('Original managed selection binding is incomplete; keep writers stopped.');
     return assessment.status === "retry-authorized";
   }
 
@@ -758,10 +762,39 @@ print(json.dumps({**result,'database':row}))`;
       throw new Error('Schema 62 original witness is missing from the guard; keep writers stopped.');
     migrationGuard.last_attempted_revision = revision;
     migrationGuard.last_attempted_at = new Date().toISOString();
+    if (newGuard && defenseSelection) migrationGuard.managed_selection_started = true;
     atomicJson(guardPath, migrationGuard);
     operation.study_invariants = migrationGuard.study_invariants;
     operation.backup = migrationGuard.backup;
     atomicJson(journalPath, operation);
+    if (migrationGuard.managed_selection_started && !migrationGuard.defense_binding) {
+      if (!newGuard || !defenseSelection || !witnessName)
+        throw new Error('Original managed selection binding is incomplete; keep writers stopped.');
+      const selection = privateDefenseHistorySelection(defenseSelection, targetKey(target));
+      if (selection.digest !== defenseSelectionDigest)
+        throw new Error('Approved Defense selection changed after preflight; keep writers stopped.');
+      const directory = cut62MountDirectory(stateDirectory, witnessName);
+      if (existsSync(directory)) throw new Error('Original managed selection directory already exists; refusing replacement.');
+      const binding = { version: 1, target: targetKey(target), attempt_id: migrationGuard.attempt_id,
+        backup_filename: migrationGuard.backup.filename, backup_sha256: await verifiedBackupDigest(migrationGuard.backup),
+        selection_sha256: selection.digest };
+      assertManagedTargetLock(stateDirectory, managedLock);
+      mkdirSync(directory, { mode: 0o700 });
+      for (const [name, bytes] of [['defense-selection.json', selection.bytes], ['binding.json', Buffer.from(JSON.stringify(binding))]]) {
+        const fd = openSync(join(directory, name), 'wx', 0o600);
+        try { writeFileSync(fd, bytes); fsyncSync(fd); } finally { closeSync(fd); }
+      }
+      for (const path of [directory, stateDirectory]) {
+        const fd = openSync(path, 'r'); try { fsyncSync(fd); } finally { closeSync(fd); }
+      }
+      migrationGuard.defense_binding = binding;
+      atomicJson(guardPath, migrationGuard);
+    }
+    if (migrationGuard.defense_binding) {
+      const digest = await verifiedBackupDigest(migrationGuard.backup);
+      assertManagedTargetLock(stateDirectory, managedLock);
+      inspectManagedHistorySelectionBinding({ target, stateDirectory, guard: migrationGuard, verifiedBackupSha256: digest });
+    }
     if (witnessName) {
       if (migrationGuard.starting_schema === 59) {
         let current = status.applied_versions.at(-1);
@@ -831,28 +864,10 @@ print(json.dumps({**result,'database':row}))`;
         status.applied_versions.at(-1) === 61 && migrationGuard.cut62_intermediate_verified?.schema === 61 &&
         !migrationGuard.cut62_capture_started);
       if (firstCapture) {
-        if (existsSync(witnessDirectory)) throw new Error('Schema 62 witness directory already exists; refusing to recapture.');
+        if (existsSync(witnessDirectory) && !migrationGuard.defense_binding) throw new Error('Schema 62 witness directory already exists; refusing to recapture.');
         migrationGuard.cut62_capture_started = true;
         atomicJson(guardPath, migrationGuard);
-        mkdirSync(witnessDirectory, { mode: 0o700 });
-        if (defenseSelection) {
-          const selection = privateDefenseHistorySelection(defenseSelection, targetKey(target));
-          if (selection.digest !== defenseSelectionDigest)
-            throw new Error('Approved Defense selection changed after preflight; keep writers stopped.');
-          const binding = { version: 1, target: targetKey(target), attempt_id: migrationGuard.attempt_id,
-            backup_filename: migrationGuard.backup.filename, backup_sha256: await verifiedBackupDigest(migrationGuard.backup),
-            selection_sha256: selection.digest };
-          assertManagedTargetLock(stateDirectory, managedLock);
-          for (const [name, bytes] of [['defense-selection.json', selection.bytes], ['binding.json', Buffer.from(JSON.stringify(binding))]]) {
-            const fd = openSync(join(witnessDirectory, name), 'wx', 0o600);
-            try { writeFileSync(fd, bytes); fsyncSync(fd); } finally { closeSync(fd); }
-          }
-          for (const path of [witnessDirectory, stateDirectory]) {
-            const fd = openSync(path, 'r'); try { fsyncSync(fd); } finally { closeSync(fd); }
-          }
-          migrationGuard.defense_binding = binding;
-          atomicJson(guardPath, migrationGuard);
-        }
+        if (!existsSync(witnessDirectory)) mkdirSync(witnessDirectory, { mode: 0o700 });
       }
       let witnessDirectoryStat;
       try { witnessDirectoryStat = lstatSync(witnessDirectory); } catch {
@@ -863,7 +878,7 @@ print(json.dumps({**result,'database':row}))`;
       if (firstCapture) {
         if (existsSync(witnessPath)) throw new Error('Schema 62 witness already exists; refusing to recapture.');
         let capture;
-        if (defenseSelection) {
+        if (migrationGuard.defense_binding) {
           const script = `import json,os,sys,psycopg
 from database.tooling.verify_postgres_cli_state import load_cut62_history_selection,load_cut62_attempt_binding,save_cut62_history_v2
 selection,digest=load_cut62_history_selection('/cut62/defense-selection.json')
@@ -885,7 +900,7 @@ print(json.dumps({'witness_id':witness_id}))`;
         // Persist the new directory entry as well as its contents before migration.
         const stateDirectoryFd = openSync(stateDirectory, "r");
         try { fsyncSync(stateDirectoryFd); } finally { closeSync(stateDirectoryFd); }
-        if (defenseSelection) {
+        if (migrationGuard.defense_binding) {
           migrationGuard = persistManagedHistoryWitnessIdentity({ stateDirectory, lock: managedLock,
             guard: migrationGuard, witnessId: capture.witness_id, newCapture: true });
         } else {

@@ -369,6 +369,15 @@ test("managed retry resolves the isolated target before ordinary schema prefligh
   assert(!failed.calls.includes('preflight') && !failed.calls.includes('startServices'));
 });
 
+test("interrupted managed selection copy cannot fall back to legacy migration", t => {
+  const { target, config } = fixture(t);
+  const result = assessMigrationRecovery({ guard: { state: 'pending', managed_selection_started: true },
+    operation: null, target, configuration: config, retry: true });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.code, 'managed_selection_incomplete');
+  assert.match(result.message, /do not recapture/);
+});
+
 test("changed dependency preparation stops writers before dependency recreation even on the same revision", async () => {
   const { calls, handlers } = actions({ pending: [] });
   handlers.ensureImages = async () => { calls.push("ensureImages"); return { dependenciesMayChange: true }; };
