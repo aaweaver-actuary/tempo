@@ -77,7 +77,11 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
   assert.equal(selectorText.split('"refs/heads/main"').length,3);assert.equal(selectorText.split('"fetch", "origin", "main"').length,2);
   const transformedSelector=selectorText.replaceAll('"refs/heads/main"',JSON.stringify(candidateRef))
     .replace('"fetch", "origin", "main"',`"fetch", "origin", ${JSON.stringify(candidateRef)}`);
+  const migrationOverlay=target.composeFiles.find(file=>file===join(directory,'migration-build.json'));
+  assert(migrationOverlay);assert.deepEqual(JSON.parse(readFileSync(migrationOverlay,'utf8')),
+    {services:{migration:{build:{context:root,dockerfile:'Dockerfile.postgres-maintenance'}}}});
   const evidence={revision,candidateTree,project,daemonId,context,images,dbId,networkId:policy.network_id,candidateRef,
+    migrationOverlaySha256:sha(migrationOverlay),migrationDockerfileSha256:sha(join(root,'Dockerfile.postgres-maintenance')),
     ownerSourceSha256:sha(join(root,'scripts/tempo-managed-isolation.mjs')),
     ownerTransformedSha256:createHash('sha256').update(sourceText.replace(gate,'export function requireManagedIsolationGate() {}')).digest('hex'),
     selectorSourceSha256:sha(selectorPath),selectorTransformedSha256:createHash('sha256').update(transformedSelector).digest('hex'),

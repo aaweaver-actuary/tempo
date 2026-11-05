@@ -22,6 +22,14 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
   const directory = join(root, "test-results", "tempo-cli", childProject +
     (environment.W08_CAPTURE_ONLY === '1' ? '-capture' : environment.W08_COPY_ONLY === '1' ? '-copy' : ''));
   mkdirSync(directory, { recursive: true });
+  if (environment.TEMPO_LIFECYCLE_MANAGED_REHEARSAL === '1') {
+    // The disposable test stack supplies a locally built migration image as an
+    // image-only service. Declare its real build inputs to the normal launcher
+    // so it builds the candidate instead of pulling the task-owned local tag.
+    const migrationBuild = join(directory, 'migration-build.json');
+    atomicJson(migrationBuild, { services: { migration: { build: { context: root, dockerfile: 'Dockerfile.postgres-maintenance' } } } });
+    composeFiles = [...composeFiles, migrationBuild];
+  }
   const webPort = await new Promise((resolvePort, reject) => {
     const server = createServer(); server.once("error", reject);
     server.listen(0, "127.0.0.1", () => { const port = server.address().port; server.close(() => resolvePort(port)); });
@@ -93,6 +101,10 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     ...composeFiles.flatMap(file => ["-f", file])];
   const compose = (args, options) => docker([...composeArguments, ...args], options);
   const config = JSON.parse((await compose(["--profile", "maintenance", "--profile", "games-feedback", "config", "--format", "json"])).stdout);
+  if (environment.TEMPO_LIFECYCLE_MANAGED_REHEARSAL === '1') {
+    assert.equal(config.services.migration.build.context, root);
+    assert.equal(config.services.migration.build.dockerfile, 'Dockerfile.postgres-maintenance');
+  }
   const daemonId = (await docker(["info", "--format", "{{.ID}}"])).stdout.trim();
   const target = { version: 1, root, project: childProject, context, daemonId, composeFiles, envFile: null,
     disposable: true, volumes: Object.fromEntries(Object.entries(config.volumes).map(([key, volume]) =>
@@ -126,7 +138,10 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
       continue;
     }
     const tag = service.image ?? `${project}-${name}`;
-    images[name] = JSON.parse((await docker(["image", "inspect", tag])).stdout)[0].Id;
+    const inspected = JSON.parse((await docker(["image", "inspect", tag])).stdout)[0];
+    if (environment.TEMPO_LIFECYCLE_MANAGED_REHEARSAL === '1' && name === 'migration')
+      assert.equal(inspected.Config?.Labels?.['org.opencontainers.image.revision'], revision);
+    images[name] = inspected.Id;
   }
   // A distinct immutable schema-61 set is mandatory: a schema-62 maintenance
   // image cannot safely jump the populated historical fixture across this cut.
