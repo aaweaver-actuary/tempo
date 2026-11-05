@@ -434,6 +434,51 @@ def prepare_detached_target(*, target, expected_image, root, guard_path, selecti
     return advance_isolation_marker(target, guard_path, guard, identity, False, control)
 
 
+def verify_detached_peer(*, target, identity, expected_image, guard, handoff, root, lock_pid, lock_token):
+    """Show an owned project-network peer cannot reach the detached database."""
+    from database.tests.check_postgres_cli_lifecycle import _write_private_json_once
+    _check_lock(root, lock_pid, lock_token)
+    control = inspect_control_database(target, identity, guard)
+    if not control['allowConnections'] or control['backendPids'] or control['preparedTransactions']:
+        raise RuntimeError('Detached peer probe requires open isolated admission and no sessions')
+    name = 'tempo-isolation-peer-' + os.urandom(16).hex()
+    result = subprocess.run(['docker', '--context', target['context'], 'run', '--detach', '--name', name,
+                             '--network', identity['networkId'], '--label', 'tempo.disposable.owner=' + target['project'],
+                             '--entrypoint', 'sh', expected_image, '-c', 'sleep 120'],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)
+    peer_id = result.stdout.strip()
+    if result.returncode or not re.fullmatch(r'[0-9a-f]{64}', peer_id):
+        raise RuntimeError('Owned detached peer could not be started')
+    try:
+        inspected = subprocess.run(['docker', '--context', target['context'], 'inspect', peer_id],
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30, check=True)
+        peer = json.loads(inspected.stdout)[0]
+        networks = peer.get('NetworkSettings', {}).get('Networks') or {}
+        if (peer.get('Id') != peer_id or peer.get('Image') != expected_image or not peer.get('State', {}).get('Running') or
+                (peer.get('Config', {}).get('Labels') or {}).get('tempo.disposable.owner') != target['project'] or
+                len(networks) != 1 or next(iter(networks.values())).get('NetworkID') != identity['networkId']):
+            raise RuntimeError('Owned detached peer identity differs')
+        dns = subprocess.run(['docker', '--context', target['context'], 'exec', peer_id, 'getent', 'hosts', 'redis'],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=10)
+        attempt = subprocess.run(['docker', '--context', target['context'], 'exec', peer_id,
+                                  'pg_isready', '-h', 'postgres', '-p', '5432', '-t', '3'],
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=10)
+        if dns.returncode != 0 or attempt.returncode != 2:
+            raise RuntimeError('Detached project peer did not prove isolation')
+        control = inspect_control_database(target, identity, guard)
+        if not control['allowConnections'] or control['backendPids'] or control['preparedTransactions']:
+            raise RuntimeError('Detached peer probe changed target admission or sessions')
+        _check_lock(root, lock_pid, lock_token)
+        _write_private_json_once(str(Path(handoff) / 'peer.json'),
+            {'version': 1, 'attempt_id': guard['attempt_id'], 'network_id': identity['networkId'],
+             'peer_id': peer_id, 'image_id': expected_image, 'admission_open': True, 'blocked': True})
+    finally:
+        # This ID was just created by this supervisor and verified above; no
+        # project or shared resources are removed by the peer cleanup.
+        subprocess.run(['docker', '--context', target['context'], 'rm', '--force', peer_id],
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30, check=True)
+
+
 def run_fenced_helper(*, target, expected_image, maintenance_image, maintenance_revision, pgpass_path,
                       root, guard_path, selection_path, binding_path, witness_path, pre62_path,
                       lock_pid, lock_token, trusted_daemon, crash=None):
@@ -513,6 +558,8 @@ def run_fenced_helper(*, target, expected_image, maintenance_image, maintenance_
             raise RuntimeError('Disposable isolated admission did not reopen cleanly')
     if authenticate_attempt(**arguments) != guard or inspect_owned_topology(target, expected_image, guard, trusted_daemon=trusted_daemon)['attached']:
         raise RuntimeError('Disposable original evidence changed before pinning')
+    verify_detached_peer(target=target, identity=identity, expected_image=expected_image, guard=guard,
+                         handoff=handoff, root=root, lock_pid=lock_pid, lock_token=lock_token)
     _check_lock(root, lock_pid, lock_token)
     result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)
     helper_id = result.stdout.strip()

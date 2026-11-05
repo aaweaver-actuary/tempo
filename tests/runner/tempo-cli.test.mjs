@@ -3259,6 +3259,39 @@ with tempfile.TemporaryDirectory(dir='/private/tmp') as tmp:
   assert.equal(result.status, 0, result.stdout + result.stderr);
 });
 
+test("detached peer probe rejects a reachable database and cleans its own peer", () => {
+  const proof = String.raw`
+import ast,json,os,pathlib,re,subprocess,types
+source=pathlib.Path('database/tests/cli_isolation_supervisor.py').read_text()
+node=next(n for n in ast.parse(source).body if isinstance(n,ast.FunctionDef) and n.name=='verify_detached_peer')
+node.body=[n for n in node.body if not isinstance(n,ast.ImportFrom)]
+peer='a'*64;net='b'*64;image='sha256:'+'c'*64;commands=[];markers=[];reachable=False
+def run(args,**kwargs):
+ commands.append(args)
+ if 'run' in args:return types.SimpleNamespace(returncode=0,stdout=peer+'\n')
+ if 'inspect' in args:return types.SimpleNamespace(returncode=0,stdout=json.dumps([{'Id':peer,'Image':image,'State':{'Running':True},'Config':{'Labels':{'tempo.disposable.owner':'tempo-pg-regressions-test'}},'NetworkSettings':{'Networks':{'n':{'NetworkID':net}}}}]))
+ if 'getent' in args:return types.SimpleNamespace(returncode=0,stdout='dns')
+ if 'pg_isready' in args:return types.SimpleNamespace(returncode=0 if reachable else 2,stdout='')
+ if 'rm' in args:return types.SimpleNamespace(returncode=0,stdout='')
+ raise AssertionError(args)
+scope={'os':os,'re':re,'json':json,'Path':pathlib.Path,'subprocess':types.SimpleNamespace(run=run,PIPE=subprocess.PIPE),
+ '_check_lock':lambda *a:None,'inspect_control_database':lambda *a:{'allowConnections':True,'backendPids':[],'preparedTransactions':0},
+ '_write_private_json_once':lambda path,value:markers.append(value)}
+exec(compile(ast.Module(body=[node],type_ignores=[]),'<supervisor>','exec'),scope)
+args=dict(target={'context':'owned','project':'tempo-pg-regressions-test'},identity={'networkId':net},expected_image=image,
+ guard={'attempt_id':'attempt'},handoff='/tmp/handoff',root='/tmp/private',lock_pid=1,lock_token='token')
+scope['verify_detached_peer'](**args)
+assert markers[0]['blocked'] and markers[0]['admission_open'] and commands[-1][-1]==peer
+reachable=True
+try:scope['verify_detached_peer'](**args)
+except RuntimeError:pass
+else:raise AssertionError('reachable database accepted')
+assert commands[-1][-1]==peer and 'rm' in commands[-1]
+`;
+  const result = fsSpawnSync("python3", ["-c", proof], { cwd: process.cwd(), encoding: "utf8" });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
 test("shipped migration CLI exposes no disposable isolation supervisor", () => {
   const proof = String.raw`
 import runpy,sys,types

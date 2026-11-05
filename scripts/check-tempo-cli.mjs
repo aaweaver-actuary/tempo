@@ -109,6 +109,12 @@ async function exerciseIsolatedDefense({ target, run, compose, docker, makeRunti
       const heldGuard = JSON.parse(readFileSync(guardPath, "utf8"));
       assert.equal(heldGuard.state, "pending"); assert.equal(heldGuard.isolation.phase, "detached");
       assert.equal(heldGuard.attempt_id, attempt); assert.deepEqual(heldGuard.defense_binding, binding);
+      const lateHandoffs = readdirSync(stateDirectory).filter(name => name.startsWith("handoff-"));
+      assert.equal(lateHandoffs.length, 1);
+      const peer = JSON.parse(readFileSync(join(stateDirectory, lateHandoffs[0], "peer.json"), "utf8"));
+      assert.equal(peer.attempt_id, attempt); assert.equal(peer.network_id, heldGuard.isolation.identity.networkId);
+      assert.equal(peer.admission_open, true); assert.equal(peer.blocked, true);
+      assert.notEqual((await docker(["inspect", peer.peer_id], { allowFailure: true })).code, 0);
       assert.deepEqual(readFileSync(witnessPath), originalWitness); assert.deepEqual(readFileSync(prePath), originalPre);
       const detached = JSON.parse((await docker(["inspect", heldGuard.isolation.identity.containerId])).stdout)[0];
       assert.equal(Object.keys(detached.NetworkSettings.Networks).length, 0);
@@ -147,6 +153,12 @@ async function exerciseIsolatedDefense({ target, run, compose, docker, makeRunti
         const handoff = join(stateDirectory, handoffs[0]);
         const ready = JSON.parse(readFileSync(join(handoff, "ready.json"), "utf8"));
         const committed = JSON.parse(readFileSync(join(handoff, "committed.json"), "utf8"));
+        const peer = JSON.parse(readFileSync(join(handoff, "peer.json"), "utf8"));
+        assert.equal(peer.version, 1); assert.equal(peer.attempt_id, attempt);
+        assert.equal(peer.network_id, observedGuard.isolation.identity.networkId); assert.equal(peer.image_id, images.postgres);
+        assert.equal(peer.admission_open, true); assert.equal(peer.blocked, true);
+        assert.match(peer.peer_id, /^[0-9a-f]{64}$/);
+        assert.notEqual((await docker(["inspect", peer.peer_id], { allowFailure: true })).code, 0, "Owned peer must be removed.");
         assert.deepEqual(committed, { version: 1, nonce: ready.nonce, pid: ready.pid, attempt_id: attempt,
           cut62_witness_id: captured.witness_id, schema: 62 }, `Disposable ${fault} must reach schema 62 on the fenced connection.`);
       } else assert.equal(handoffs.length, 0);
