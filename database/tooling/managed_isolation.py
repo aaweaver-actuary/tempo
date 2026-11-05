@@ -13,6 +13,8 @@ import hashlib
 import hmac
 import json
 import stat
+import sys
+import psycopg
 from psycopg.pq import TransactionStatus
 
 from database.tooling.verify_postgres_cli_state import (
@@ -167,6 +169,83 @@ def execute_managed_history_cut(database, guard, expected_backend, *, selection_
         if verify_committed_in_fenced_transaction(database, guard, expected_backend, **paths) != witness_id:
             raise RuntimeError('Original managed committed history differs')
     return witness_id
+
+
+def managed_pinned_child():
+    """Serve one private supervisor handshake; not a standalone CLI."""
+    if not _MANAGED_NONEMPTY_ENABLED:
+        raise RuntimeError('Managed nonempty Defense cleanup is unavailable')
+    request = json.loads(sys.stdin.readline())
+    if set(request) != {'challenge', 'guard_path', 'selection_path', 'binding_path', 'witness_path', 'pre62_path', 'receipt_path'}:
+        raise RuntimeError('Managed pinned request is invalid')
+    guard_path = request['guard_path']
+    if (not os.path.isabs(guard_path) or os.path.basename(guard_path) != 'migration-guard.json' or
+            request['receipt_path'] != os.path.join(os.path.dirname(request['witness_path']), 'verified-receipt.json')):
+        raise RuntimeError('Managed pinned paths are invalid')
+    def read_guard():
+        fd = os.open(guard_path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+        with os.fdopen(fd, 'rb') as stream:
+            metadata = os.fstat(stream.fileno())
+            if not stat.S_ISREG(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) != 0o600:
+                raise RuntimeError('Managed guard is invalid')
+            return stream.read(1048577)
+    guard_bytes = read_guard()
+    if len(guard_bytes) > 1048576:
+        raise RuntimeError('Managed guard is invalid')
+    guard = json.loads(guard_bytes)
+    challenge = request['challenge']
+    isolation, identity, binding = guard['isolation'], guard['isolation']['identity'], guard['defense_binding']
+    if (challenge.get('target') != guard['target'] or challenge.get('attempt_id') != guard['attempt_id'] or
+            challenge.get('cut62_witness_id') != guard['cut62_identity']['witness_id'] or
+            challenge.get('backup_sha256') != binding['backup_sha256'] or
+            challenge.get('selection_sha256') != binding['selection_sha256']):
+        raise RuntimeError('Original managed challenge differs')
+    with psycopg.connect(os.environ['TEMPO_POSTGRES_ADMIN_URL'], autocommit=True) as database:
+        row = database.execute("""SELECT pg_backend_pid(),current_user,host(inet_client_addr()),
+          (SELECT extract(epoch FROM backend_start)::text FROM pg_stat_activity WHERE pid=pg_backend_pid())""").fetchone()
+        backend = {'pid': row[0], 'role': row[1], 'address': row[2], 'start': row[3]}
+        ready = {**challenge, 'pid': row[0], 'backend_role': row[1], 'backend_address': row[2], 'backend_start': row[3]}
+        print(json.dumps(ready, separators=(',', ':')), flush=True)
+        if json.loads(sys.stdin.readline()) != ready:
+            raise RuntimeError('Managed pinned acknowledgement differs')
+        if read_guard() != guard_bytes:
+            raise RuntimeError('Original managed guard changed')
+        witness_id = execute_managed_history_cut(database, guard, backend,
+            selection_path=request['selection_path'], binding_path=request['binding_path'],
+            witness_path=request['witness_path'], pre62_path=request['pre62_path'])
+        receipt = {'version': 1, 'target': guard['target'], 'attempt_id': guard['attempt_id'],
+            'target_oid': isolation['target_oid'], 'target_name': isolation['target_name'],
+            'system_identifier': isolation['system_identifier'], 'control_oid': isolation['control_oid'],
+            'control_name': isolation['control_name'], 'admin_role': isolation['admin_role'],
+            'daemon_id': identity['daemonId'], 'container_id': identity['containerId'],
+            'network_id': identity['networkId'], 'image_id': identity['imageId'],
+            'backup_filename': binding['backup_filename'], 'backup_sha256': binding['backup_sha256'],
+            'selection_sha256': binding['selection_sha256'],
+            'pre62_witness_id': guard.get('pre62_witness_id') if guard['starting_schema'] == 59 else None,
+            'cut62_witness_id': witness_id, 'schema': 62}
+        if os.path.lexists(request['receipt_path']):
+            resync_private_json(request['receipt_path'], receipt)
+        else:
+            write_private_json_once(request['receipt_path'], receipt)
+        _, _, secret, reloaded_id, _, _ = _load_original_evidence(guard,
+            selection_path=request['selection_path'], binding_path=request['binding_path'],
+            witness_path=request['witness_path'], pre62_path=request['pre62_path'])
+        if reloaded_id != witness_id or read_guard() != guard_bytes:
+            raise RuntimeError('Original managed completion evidence differs')
+        payload = {'version': 1, 'target': guard['target'], 'attempt_id': guard['attempt_id'], 'identity': identity,
+            'target_oid': isolation['target_oid'], 'system_identifier': isolation['system_identifier'],
+            'control_oid': isolation['control_oid'], 'backup': binding,
+            'pre62_witness_id': receipt['pre62_witness_id'], 'cut62_witness_id': witness_id, 'receipt': receipt}
+        canonical = json.dumps(payload, sort_keys=True, separators=(',', ':')).encode()
+        completion = {'payload': payload, 'signature': hmac.new(secret, b'tempo-disposable-completion-v1\0' + canonical, hashlib.sha256).hexdigest()}
+        completion_path = os.path.join(os.path.dirname(request['witness_path']), 'verified-completion.json')
+        if os.path.lexists(completion_path):
+            resync_private_json(completion_path, completion)
+        else:
+            write_private_json_once(completion_path, completion)
+        completion_bytes = json.dumps(completion, sort_keys=True, separators=(',', ':')).encode()
+        print(json.dumps({'witness_id': witness_id, 'schema': 62,
+                          'completion_sha256': hashlib.sha256(completion_bytes).hexdigest()}, separators=(',', ':')), flush=True)
 
 
 def authenticate_managed_completion(guard, *, selection_path, binding_path, witness_path,

@@ -3,7 +3,9 @@ import { basename, dirname, isAbsolute, join } from 'node:path';
 import { closeSync, constants, fstatSync, fsyncSync, lstatSync, openSync, readFileSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import { atomicJson, targetKey, validateContainers, validateTarget } from './tempo-deployment.mjs';
-import { createHash } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { spawn } from 'node:child_process';
+import { createInterface } from 'node:readline';
 
 // Source review and an owned managed qualification are required before the
 // nonempty path can be enabled. No CLI flag or environment value opens it.
@@ -446,6 +448,140 @@ export async function prepareManagedDetachedTarget({ target, configuration, expe
   return guard;
 }
 
+// The private pipe carries a fresh challenge, not independent authorization.
+// The lock, daemon topology and sole backend are inspected by the host before
+// it acknowledges the pinned child. The production gate remains closed.
+export async function runManagedPinnedChild({ target, configuration, expectedImage, maintenanceImage, maintenanceRevision,
+  stateDirectory, adminPassfile, lock, docker, exclusiveAdministrator, verifyOriginalBackup }) {
+  requireManagedIsolationGate();
+  const guardPath = join(stateDirectory, 'migration-guard.json');
+  const guard = JSON.parse(readOwnedPrivateBytes(guardPath));
+  if (guard?.state !== 'pending' || guard.isolation?.phase !== 'detached' ||
+      !/^sha256:[0-9a-f]{64}$/.test(maintenanceImage ?? '') || !/^[0-9a-f]{40}$/.test(maintenanceRevision ?? '') ||
+      [stateDirectory, adminPassfile].some(path => !isAbsolute(path ?? '') || /[,\n\r]/.test(path)))
+    throw new Error('Managed pinned child configuration is invalid.');
+  const pass = lstatSync(adminPassfile);
+  if (!pass.isFile() || pass.uid !== process.getuid() || (pass.mode & 0o077))
+    throw new Error('Managed administrator passfile is not private.');
+  const backupSha = await verifyOriginalBackup(guard.backup);
+  const image = JSON.parse((await docker(['image', 'inspect', maintenanceImage])).stdout);
+  if (!Array.isArray(image) || image.length !== 1 || image[0].Id !== maintenanceImage ||
+      image[0].Config?.Labels?.['org.opencontainers.image.revision'] !== maintenanceRevision)
+    throw new Error('Original managed maintenance image differs.');
+  inspectManagedHistorySelectionBinding({ target, stateDirectory, guard, verifiedBackupSha256: backupSha });
+  syncManagedIsolationEvidence({ guardPath, guard });
+  let observed = await inspectManagedFence({ target, configuration, expectedImage, guard, stateDirectory,
+    lock, docker, exclusiveAdministrator });
+  if (observed.attached || observed.backendPids.length || observed.preparedTransactions)
+    throw new Error('Managed pinned target is not isolated and drained.');
+  if (!observed.allowConnections) {
+    assertManagedTargetLock(stateDirectory, lock);
+    await docker(['exec', '--user', 'postgres', observed.original.containerId, 'psql', '-X', '-v', 'ON_ERROR_STOP=1',
+      '-U', observed.adminRole, '-d', observed.controlName, '-c', 'ALTER DATABASE tempo ALLOW_CONNECTIONS true']);
+    observed = await inspectManagedFence({ target, configuration, expectedImage, guard, stateDirectory,
+      lock, docker, exclusiveAdministrator });
+    if (observed.attached || !observed.allowConnections || observed.backendPids.length || observed.preparedTransactions)
+      throw new Error('Managed isolated admission could not be opened safely.');
+  }
+  const nonce = randomBytes(16).toString('hex'), challenge = managedPinnedChallenge(guard, nonce);
+  const attemptDirectory = `/state/${guard.cut62_witness.slice(0, -5)}`;
+  const request = { challenge, guard_path: '/state/migration-guard.json', selection_path: `${attemptDirectory}/defense-selection.json`,
+    binding_path: `${attemptDirectory}/binding.json`, witness_path: `${attemptDirectory}/${guard.cut62_witness}`,
+    pre62_path: guard.starting_schema === 59 ? `/state/${guard.pre62_witness.slice(0, -5)}/${guard.pre62_witness}` : null,
+    receipt_path: `${attemptDirectory}/verified-receipt.json` };
+  const name = `tempo-managed-pinned-${randomBytes(16).toString('hex')}`;
+  const args = ['--context', target.context, 'run', '--rm', '-i', '--name', name,
+    '--network', `container:${observed.original.containerId}`,
+    '--mount', `type=bind,source=${stateDirectory},destination=/state`,
+    '--mount', `type=bind,source=${adminPassfile},destination=/run/secrets/admin_pgpass,readonly`,
+    '--env', 'PGPASSFILE=/run/secrets/admin_pgpass', '--env',
+    `TEMPO_POSTGRES_ADMIN_URL=postgresql://${observed.adminRole}@postgres:5432/tempo?hostaddr=127.0.0.1`,
+    maintenanceImage, '-c', 'from database.tooling.managed_isolation import managed_pinned_child; managed_pinned_child()'];
+  assertManagedTargetLock(stateDirectory, lock);
+  const child = spawn('docker', args, { stdio: ['pipe', 'pipe', 'pipe'] });
+  const lines = createInterface({ input: child.stdout })[Symbol.asyncIterator]();
+  const nextLine = async () => {
+    let timer;
+    try {
+      const item = await Promise.race([lines.next(), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Managed pinned child timed out.')), 50000); })]);
+      if (item.done) throw new Error('Managed pinned child ended unexpectedly.');
+      return JSON.parse(item.value);
+    } finally { clearTimeout(timer); }
+  };
+  // Drain stderr without exposing database details or unbounded buffering.
+  child.stderr.resume();
+  try {
+    child.stdin.write(`${JSON.stringify(request)}\n`);
+    const ready = await nextLine();
+    observed = await inspectManagedFence({ target, configuration, expectedImage, guard, stateDirectory,
+      lock, docker, exclusiveAdministrator });
+    if (observed.attached || !observed.allowConnections || observed.backendPids.length !== 1 ||
+        observed.backendPids[0] !== ready.pid || observed.preparedTransactions)
+      throw new Error('Managed pinned child is not the sole target backend.');
+    assertManagedTargetLock(stateDirectory, lock);
+    await docker(['exec', '--user', 'postgres', observed.original.containerId, 'psql', '-X', '-v', 'ON_ERROR_STOP=1',
+      '-U', observed.adminRole, '-d', observed.controlName, '-c', 'ALTER DATABASE tempo ALLOW_CONNECTIONS false']);
+    observed = await inspectManagedFence({ target, configuration, expectedImage, guard, stateDirectory,
+      lock, docker, exclusiveAdministrator });
+    assertManagedPinnedChallenge({ guard, nonce, ready, observation: observed });
+    if (!isDeepStrictEqual(JSON.parse(readOwnedPrivateBytes(guardPath)), guard) ||
+        await verifyOriginalBackup(guard.backup) !== backupSha)
+      throw new Error('Original managed evidence changed before acknowledgement.');
+    assertManagedTargetLock(stateDirectory, lock);
+    child.stdin.end(`${JSON.stringify(ready)}\n`);
+    const result = await nextLine();
+    if (result.schema !== 62 || result.witness_id !== guard.cut62_identity.witness_id)
+      throw new Error('Managed pinned result differs from the original witness.');
+    const exitCode = child.exitCode ?? await new Promise((resolve, reject) => { child.once('error', reject); child.once('close', resolve); });
+    if (exitCode !== 0) throw new Error('Managed pinned child failed; keep writers stopped.');
+    observed = await inspectManagedFence({ target, configuration, expectedImage, guard, stateDirectory,
+      lock, docker, exclusiveAdministrator });
+    if (observed.attached || observed.allowConnections || observed.backendPids.length || observed.preparedTransactions)
+      throw new Error('Managed pinned child did not leave the target isolated and drained.');
+    const directory = join(stateDirectory, guard.cut62_witness.slice(0, -5));
+    const receiptPath = join(directory, 'verified-receipt.json'), completionPath = join(directory, 'verified-completion.json');
+    const receipt = JSON.parse(readOwnedPrivateBytes(receiptPath)), completionBytes = readOwnedPrivateBytes(completionPath);
+    const completion = JSON.parse(completionBytes), witnessPath = join(directory, guard.cut62_witness);
+    const fd = openSync(witnessPath, constants.O_RDONLY | constants.O_NOFOLLOW);
+    let envelope;
+    try {
+      const info = fstatSync(fd);
+      if (!info.isFile() || info.uid !== process.getuid() || (info.mode & 0o777) !== 0o600 || info.size > 64 * 1024 * 1024) throw new Error();
+      envelope = JSON.parse(readFileSync(fd));
+    } finally { closeSync(fd); }
+    if (!/^[0-9a-f]{64}$/.test(envelope?.secret ?? '')) throw new Error('Original managed witness secret is invalid.');
+    const payload = { version: 1, target: guard.target, attempt_id: guard.attempt_id, identity: guard.isolation.identity,
+      target_oid: guard.isolation.target_oid, system_identifier: guard.isolation.system_identifier,
+      control_oid: guard.isolation.control_oid, backup: guard.defense_binding,
+      pre62_witness_id: guard.starting_schema === 59 ? guard.pre62_witness_id : null,
+      cut62_witness_id: guard.cut62_identity.witness_id, receipt };
+    const sorted = value => Array.isArray(value) ? value.map(sorted) : value && typeof value === 'object'
+      ? Object.fromEntries(Object.keys(value).sort().map(key => [key, sorted(value[key])])) : value;
+    const canonical = JSON.stringify(sorted(payload)).replace(/[\u007f-\uffff]/g, character => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`);
+    const signature = createHmac('sha256', Buffer.from(envelope.secret, 'hex')).update('tempo-disposable-completion-v1\0').update(canonical).digest();
+    const supplied = /^[0-9a-f]{64}$/.test(completion.signature ?? '') ? Buffer.from(completion.signature, 'hex') : Buffer.alloc(0);
+    if (!isDeepStrictEqual(completion.payload, payload) || Object.keys(completion).sort().join() !== 'payload,signature' ||
+        supplied.length !== signature.length || !timingSafeEqual(supplied, signature) ||
+        createHash('sha256').update(completionBytes).digest('hex') !== result.completion_sha256)
+      throw new Error('Original managed completion authentication failed.');
+    const action = classifyManagedIsolationRecovery({ guard, identity: observed.original, attached: false,
+      targetOid: observed.targetOid, systemIdentifier: observed.systemIdentifier, controlOid: observed.controlOid,
+      controlName: observed.controlName, adminRole: observed.adminRole, targetName: observed.targetName,
+      allowConnections: false, backendPids: [], preparedTransactions: 0, schema: 62, receipt, receiptValidated: true });
+    if (action !== 'record-verified') throw new Error('Managed receipt state is invalid.');
+    syncManagedIsolationEvidence({ guardPath, guard, receiptPath, receipt });
+    syncManagedIsolationEvidence({ guardPath, guard, receiptPath: completionPath, receipt: completion });
+    assertManagedTargetLock(stateDirectory, lock);
+    const verifiedGuard = advanceManagedIsolationMarker({ guardPath, guard, observation: { ...observed,
+      identity: observed.original, schema: 62, receipt, receiptValidated: true } });
+    syncManagedIsolationEvidence({ guardPath, guard: verifiedGuard, receiptPath: completionPath, receipt: completion });
+    return { result, guard: verifiedGuard, receipt, completion, receiptPath, completionPath };
+  } finally {
+    child.stdin.destroy();
+    if (child.exitCode === null) child.kill();
+  }
+}
+
 // Restore only the original attachment after the independently authenticated
 // post-commit evidence is durable. The managed gate stays closed until the
 // complete pinned process and this transition have been reviewed together.
@@ -716,9 +852,16 @@ export function inspectManagedOriginalEvidence({ target, stateDirectory, guard, 
   const witnessName = cut62WitnessName(guard), witnessDirectory = join(stateDirectory, witnessName.slice(0, -5));
   if (guard.cut62_witness !== witnessName) throw new Error('Original managed witness identity differs; keep writers stopped.');
   const selectionPath = join(witnessDirectory, 'defense-selection.json'), bindingPath = join(witnessDirectory, 'binding.json');
-  const witnessPath = join(witnessDirectory, witnessName), selection = privateSelection(selectionPath, guard.target);
+  const witnessPath = join(witnessDirectory, witnessName), selection = privateDefenseHistorySelection(selectionPath, guard.target);
   let binding;
-  try { binding = JSON.parse(readOwnedPrivateBytes(bindingPath)); readOwnedPrivateBytes(witnessPath); }
+  try {
+    binding = JSON.parse(readOwnedPrivateBytes(bindingPath));
+    const fd = openSync(witnessPath, constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+      const info = fstatSync(fd);
+      if (!info.isFile() || info.uid !== process.getuid() || (info.mode & 0o777) !== 0o600 || info.size > 64 * 1024 * 1024) throw new Error();
+    } finally { closeSync(fd); }
+  }
   catch { throw new Error('Original managed witness files are unavailable; keep writers stopped.'); }
   if (!isDeepStrictEqual(binding, guard.defense_binding) || binding.version !== 1 || binding.target !== guard.target ||
       binding.attempt_id !== guard.attempt_id || binding.backup_filename !== guard.backup.filename ||

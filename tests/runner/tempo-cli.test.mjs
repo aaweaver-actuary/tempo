@@ -11,6 +11,7 @@ import { schemaVersionFromSource, validateTarget, validateContainers, deployment
   CommandExecutionError, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, sourceFingerprint, sourceMatchesFingerprint } from "../../scripts/tempo-deployment.mjs";
 import { assessMigrationRecovery, cut62WitnessName, validateCut62Preflight, assertColdPreflightContainers, cut62MountDirectory, requirePrivateCut62Witness, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
 import { parseArguments, ensureDocker } from "../../scripts/tempo-cli.mjs";
+import { runManagedPinnedChild } from "../../scripts/tempo-managed-isolation.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
 
@@ -1146,6 +1147,13 @@ test("managed Defense selection accepts one absolute first-attempt path", () => 
     ['doctor', '--defense-selection', '/private/s'], ['migrate', '--defense-selection', '/private/s', '--defense-selection', '/private/t'],
     ['migrate', '--defense-selection', '/private/a:b'],
   ]) assert.throws(() => parseArguments(args), /selection|Invalid options/i);
+});
+
+test("managed pinned child is blocked before any host action", async () => {
+  let actions = 0;
+  await assert.rejects(runManagedPinnedChild({ docker: async () => { actions++; },
+    verifyOriginalBackup: async () => { actions++; } }), /unavailable/);
+  assert.equal(actions, 0);
 });
 
 test("source update rejects exact main revisions when every eligible run fails or lacks required jobs", async () => {

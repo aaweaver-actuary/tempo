@@ -12,7 +12,8 @@ import { TempoProblem, classifyRedisReply, phaseGuidance } from "./tempo-guidanc
 import { isTimingPublicationFailure } from "./test-scenario-timings.mjs";
 import { probeLifecycleRedis } from "../database/tooling/cli/probes.mjs";
 import { createBackupRestoreDatabase, createPostgresBackup, removeBackupRestoreDatabase, restorePostgresBackup } from "../database/tooling/cli/backup.mjs";
-import { assertManagedTargetLock, captureManagedTargetLock, persistManagedHistoryWitnessIdentity, privateDefenseHistorySelection } from './tempo-managed-isolation.mjs';
+import { assertManagedTargetLock, captureManagedTargetLock, persistManagedHistoryWitnessIdentity, privateDefenseHistorySelection,
+  prepareManagedDetachedTarget, runManagedPinnedChild, restoreManagedCompletedTarget, requireManagedIsolationGate } from './tempo-managed-isolation.mjs';
 
 export const applicationServices = ["web", "api",
   "foreground-worker", "background-worker", "background-scheduler"];
@@ -539,6 +540,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     const previousOperation = !migrationGuard && existsSync(journalPath) ? JSON.parse(readFileSync(journalPath, "utf8")) : null;
     const assessment = assessMigrationRecovery({ guard: migrationGuard, operation: previousOperation, target, configuration, retry });
     if (assessment.status === "blocked") throw new Error(assessment.message);
+    if (migrationGuard?.defense_binding || migrationGuard?.isolation) requireManagedIsolationGate();
     return assessment.status === "retry-authorized";
   }
 
@@ -614,7 +616,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   }
 
   async function migrate() {
-    const managedLock = defenseSelection ? captureManagedTargetLock(stateDirectory) : null;
+    const managedLock = defenseSelection || migrationGuard?.defense_binding ? captureManagedTargetLock(stateDirectory) : null;
     originalHistoryVerified = false;
     stage("applying_migrations");
     const newGuard = migrationGuard?.state !== "pending";
@@ -781,8 +783,26 @@ print(json.dumps({'witness_id':witness_id}))`;
       const identity = migrationGuard.cut62_identity;
       if (!identity?.witness_id || identity.attempt_id !== migrationGuard.attempt_id || identity.backup_filename !== migrationGuard.backup.filename)
         throw new Error("Original schema 62 witness identity is missing; keep writers stopped.");
-      if (migrationGuard.defense_binding)
-        throw new Error('Managed Defense history requires the verified pinned supervisor; keep writers stopped.');
+      if (migrationGuard.defense_binding) {
+        requireManagedIsolationGate();
+        migrationGuard = await prepareManagedDetachedTarget({ target, configuration, expectedImage: images.postgres,
+          stateDirectory, lock: managedLock, docker, exclusiveAdministrator: true, verifyOriginalBackup: verifiedBackupDigest });
+        const completed = await runManagedPinnedChild({ target, configuration, expectedImage: images.postgres,
+          maintenanceImage: images.migration, maintenanceRevision: revision, stateDirectory,
+          adminPassfile: configuration.secrets?.admin_pgpass?.file, lock: managedLock, docker,
+          exclusiveAdministrator: true, verifyOriginalBackup: verifiedBackupDigest });
+        migrationGuard = completed.guard;
+        migrationGuard = await restoreManagedCompletedTarget({ target, configuration, expectedImage: images.postgres,
+          stateDirectory, lock: managedLock, docker, exclusiveAdministrator: true, verifyOriginalBackup: verifiedBackupDigest,
+          authenticateCompletion: async current => {
+            if (!isDeepStrictEqual(current, completed.guard)) throw new Error('Original managed completion changed.');
+            return completed;
+          } });
+        migrationGuard.isolation.completion = { filename: 'verified-completion.json', sha256: completed.result.completion_sha256 };
+        atomicJson(guardPath, migrationGuard);
+        originalHistoryVerified = true;
+        return;
+      }
       if (status.applied_versions.at(-1) === 61) {
         const checked = JSON.parse((await maintenance("database/tooling/verify_postgres_cli_state.py",
           ["--cut62-check-captured", `/cut62/${witnessName}`], { cut62Mount: witnessName })).stdout);
