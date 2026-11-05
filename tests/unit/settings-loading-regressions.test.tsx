@@ -2,7 +2,12 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest";
 import SettingsView from "../../app/views/settings_view";
 import { readWorkspaceResponse } from "../../app/lib/workspace-data";
+import { createEncryptedBackup, restoreEncryptedBackup } from "../../database/browser/encrypted-backup";
 
+vi.mock("../../database/browser/encrypted-backup", () => ({
+  createEncryptedBackup: vi.fn(async () => new Blob(["encrypted"])),
+  restoreEncryptedBackup: vi.fn(async () => ({ merged: 1 })),
+}));
 vi.mock("../../app/utils/local", () => ({ usesLocalApi: () => true }));
 vi.mock("../../app/lib/workspace-data", async importOriginal => ({
   ...await importOriginal<typeof import("../../app/lib/workspace-data")>(),
@@ -82,4 +87,27 @@ it("Games settings removes obsolete controls and browser mirroring while global 
   expect(reads.mock.calls.filter(([key]) => legacyKeys.includes(key))).toEqual([]);
   expect(writes.mock.calls.filter(([key]) => legacyKeys.includes(key))).toEqual([]);
   for (const key of legacyKeys) expect(localStorage.getItem(key)).toBe("Retained browser value");
+});
+
+it("data settings retain encrypted export and import without a Docker transfer request", async () => {
+  vi.mocked(readWorkspaceResponse).mockResolvedValue(Response.json({ initial_depth: 6 }));
+  const fetcher = vi.fn(async (_input: RequestInfo | URL) => Response.json({}));
+  vi.stubGlobal("fetch", fetcher);
+  vi.spyOn(window, "prompt").mockReturnValue("test-passphrase");
+  vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: vi.fn(() => "blob:test"), revokeObjectURL: vi.fn() }));
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  const originalJournal = '{"attempt":"original"}';
+  localStorage.setItem("tempo-pending-training-reviews-v1", originalJournal);
+  const { container } = render(<SettingsView theme="brown" pieceSet="cburnett" sound={false}
+    onTheme={vi.fn()} onPieces={vi.fn()} onSound={vi.fn()} />);
+  fireEvent.click(screen.getByRole("tab", { name: "Data & backup" }));
+  expect(screen.queryByRole("button", { name: "Transfer Docker data" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Export encrypted backup" }));
+  await waitFor(() => expect(createEncryptedBackup).toHaveBeenCalledWith("test-passphrase"));
+  const file = new File(["encrypted"], "backup.tempo");
+  fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [file] } });
+  await waitFor(() => expect(restoreEncryptedBackup).toHaveBeenCalledWith(file, "test-passphrase"));
+  expect(localStorage.getItem("tempo-pending-training-reviews-v1")).toBe(originalJournal);
+  expect(fetcher.mock.calls.some(([input]) => String(input).includes("/api/migration/snapshot"))).toBe(false);
+  vi.restoreAllMocks();
 });

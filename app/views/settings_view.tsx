@@ -17,11 +17,10 @@ import {
   createEncryptedBackup,
   restoreEncryptedBackup,
 } from "../../database/browser/encrypted-backup";
-import { migrateSqliteToBrowser } from "../../database/browser/sqlite-migration";
 import { reportDebugError } from "../lib/debug-reporting";
 import { saveLocalSettings } from "../lib/settings-save";
 import { PendingOperationError } from "../lib/operation-status";
-import { publishNotification, resolveNotification, updateNotification } from "../lib/notifications";
+import { publishNotification } from "../lib/notifications";
 
 import { Notice } from "../components/task-tabs";
 import { CurrentGameSyncSettings } from "../product-composition/GameSyncSettings";
@@ -103,19 +102,10 @@ export default function SettingsView({
     explorer_ratings: "1600,1800,2000,2200,2500",
     arrow_metric: "stockfish",
   });
-  const statusNotificationId = useRef<string | undefined>(undefined);
   function setStatus(message: string) {
     const severity = /could not|damaged|incorrect|unavailable/i.test(message) ? "error"
-      : /open Docker|retry/i.test(message) ? "warning" : "success";
-    if (message.startsWith("Copying and verifying")) {
-      statusNotificationId.current = publishNotification({ severity: "info", source: "settings",
-        key: "settings-data-transfer", message, active: true });
-    } else if (statusNotificationId.current) {
-      if (severity === "warning" || severity === "error")
-        updateNotification(statusNotificationId.current, { severity, message, active: false });
-      else resolveNotification(statusNotificationId.current, { severity, message });
-      statusNotificationId.current = undefined;
-    } else publishNotification({ severity, source: "settings", message });
+      : /retry/i.test(message) ? "warning" : "success";
+    publishNotification({ severity, source: "settings", message });
   }
   const [savedDailyLimit, setSavedDailyLimit] = useState(10);
   const [dirty, setDirty] = useState(false);
@@ -216,30 +206,6 @@ export default function SettingsView({
     } else {
       setStatus("Saved in this browser.");
       setDirty(false);
-    }
-  }
-
-  async function transferLocalData() {
-    setStatus("Copying and verifying the local database…");
-    try {
-      const result = await migrateSqliteToBrowser(true);
-      if (result.status === "unavailable")
-        setStatus("Open Docker Tempo to transfer its local database.");
-      else
-        setStatus(
-          `Verified browser copy (${Object.values(result.counts ?? {}).reduce((sum, count) => sum + count, 0)} records).`,
-        );
-    } catch (error) {
-      reportDebugError(error, {
-        kind: "ui",
-        source: "settings-view",
-        operation: "transfer local data",
-      });
-      setStatus(
-        error instanceof Error
-          ? error.message
-          : "The local database could not be transferred.",
-      );
     }
   }
 
@@ -497,15 +463,9 @@ export default function SettingsView({
         <section id="settings-section-data" className="settings-card" role="tabpanel" aria-labelledby="settings-tab-data" hidden={activeSection !== "data"}>
           <h2>Data &amp; backup</h2>
           <p className="settings-card-copy">
-            Keep an encrypted portable copy of browser data. Docker’s SQLite
-            file remains unchanged during transfer.
+            Keep an encrypted portable copy of browser data.
           </p>
           <div className="settings-actions">
-            {usesLocalApi() && (
-              <Button onClick={() => void transferLocalData()}>
-                Transfer Docker data
-              </Button>
-            )}
             <Button onClick={() => void exportBackup()}>
               Export encrypted backup
             </Button>
