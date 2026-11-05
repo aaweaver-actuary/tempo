@@ -2679,6 +2679,14 @@ for (const failure of ["intermediate_verification", "capture", "witness_check", 
         if (args.includes("--target-version")) { order.push("to61"); schema = 61; return ""; }
         order.push("to62"); schema = 62; return "";
       }
+      if (args.includes("--pre62-capture59")) {
+        order.push("capture59");
+        const directory = args[args.indexOf("--volume") + 1].slice(0, -":/cut62".length);
+        writeFileSync(join(directory, args.at(-1).split("/").at(-1)), "original59", { mode: 0o600 });
+        return JSON.stringify({ witness_id: "original-id" });
+      }
+      if (args.includes("--pre62-verify59")) { order.push("check59"); return JSON.stringify({ witness_id: "original-id", observed_schema: schema }); }
+      if (args.includes("--pre62-authenticate59")) return JSON.stringify({ witness_id: "original-id" });
       if (args.includes("--expected")) {
         order.push("verify59");
         if (failure === "intermediate_verification" && !failed) { failed = true; throw new Error("injected intermediate failure"); }
@@ -2719,6 +2727,9 @@ for (const failure of ["intermediate_verification", "capture", "witness_check", 
     assert.deepEqual(retried.backup, original.backup);
     assert.equal(retried.study_invariants.reviews.digest, "schema59-original");
     assert.equal(captures, 1); assert.equal(schema, 62);
+    assert(order.indexOf("capture59") < order.indexOf("check59"));
+    assert(order.indexOf("check59") < order.indexOf("to61"));
+    assert(order.slice(order.indexOf("to61") + 1, order.indexOf("capture")).includes("check59"));
     assert(order.indexOf("to61") < order.indexOf("verify59"));
     assert(order.indexOf("verify59") < order.indexOf("capture"));
     assert(order.indexOf("check61") < order.indexOf("to62"));
@@ -2726,7 +2737,7 @@ for (const failure of ["intermediate_verification", "capture", "witness_check", 
 }
 
 test("schema 59 cutover resumes interrupted schema 60 using the original backup", async t => {
-  let schema = 59, interrupted = false, captures = 0;
+  let schema = 59, interrupted = false, captures = 0, preCaptures = 0, tampered = false;
   const { runtime, calls, fixture } = imageRuntimeFixture(t, "postgres:18.6-trixie", 18, false, args => {
     if (args.includes("database/tooling/apply_postgres_migrations.py")) {
       if (args.includes("--check")) return JSON.stringify({ initialized: true, roles_ready: true, credentials_ready: true,
@@ -2737,6 +2748,16 @@ test("schema 59 cutover resumes interrupted schema 60 using the original backup"
         assert.equal(schema, 60); schema = 61; return "";
       }
       schema = 62; return "";
+    }
+    if (args.includes("--pre62-capture59")) {
+      preCaptures += 1;
+      const directory = args[args.indexOf("--volume") + 1].slice(0, -":/cut62".length);
+      writeFileSync(join(directory, args.at(-1).split("/").at(-1)), "original59", { mode: 0o600 });
+      return JSON.stringify({ witness_id: "original-id" });
+    }
+    if (args.includes("--pre62-verify59")) {
+      if (tampered) throw new Error("witness authentication failed");
+      return JSON.stringify({ witness_id: "original-id", observed_schema: schema });
     }
     if (args.includes("--cut62-capture")) {
       captures += 1;
@@ -2752,9 +2773,18 @@ test("schema 59 cutover resumes interrupted schema 60 using the original backup"
   const guardPath = join(fixture.stateDirectory, "migration-guard.json");
   const original = JSON.parse(readFileSync(guardPath, "utf8"));
   assert.equal(schema, 60); assert.equal(original.starting_schema, 59);
+  const prePath = join(cut62MountDirectory(fixture.stateDirectory, original.pre62_witness), original.pre62_witness);
+  rmSync(prePath);
+  await runtime.checkSchema(); await assert.rejects(runtime.migrate(), /witness is missing/);
+  assert.equal(schema, 60); assert.equal(preCaptures, 1);
+  writeFileSync(prePath, "original59", { mode: 0o600 });
+  tampered = true;
+  await assert.rejects(runtime.migrate(), /witness authentication failed/);
+  assert.equal(schema, 60); assert.equal(preCaptures, 1);
+  tampered = false;
   await runtime.checkSchema(); await runtime.migrate();
   const final = JSON.parse(readFileSync(guardPath, "utf8"));
-  assert.equal(schema, 62); assert.equal(captures, 1);
+  assert.equal(schema, 62); assert.equal(captures, 1); assert.equal(preCaptures, 1);
   assert.equal(final.attempt_id, original.attempt_id); assert.deepEqual(final.backup, original.backup);
   assert.equal(calls.filter(args => args.some(arg => arg.includes("pg_dump"))).length, 1);
 });

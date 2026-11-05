@@ -204,12 +204,28 @@ m.apply_migrations(os.environ["TEMPO_POSTGRES_ADMIN_URL"], target_version=61)`;
       assert.equal(originalGuard.starting_schema, 59); assert.equal(originalGuard.intended_schema, 62);
       assert.equal(originalGuard.backup.verified, true);
       assert.equal(Number((await readLatestMigration(compose)).stdout.trim()), 60);
+      const preWitness = join(stateDirectory, originalGuard.pre62_witness.replace(/\.json$/, ""), originalGuard.pre62_witness);
+      const preBytes = readFileSync(preWitness);
+      renameSync(preWitness, preWitness + ".held");
+      try {
+        const missing59 = makeRuntime(target, { run, stateDirectory, revision, evidence, preparedImages, retry: true });
+        await missing59.inspectTarget();
+        await assert.rejects(lifecycle("p0_missing_59_witness", { recreate: true }, missing59), /witness is missing/);
+      } finally { renameSync(preWitness + ".held", preWitness); }
+      writeFileSync(preWitness, Buffer.from("tampered"), { mode: 0o600 });
+      try {
+        const tampered59 = makeRuntime(target, { run, stateDirectory, revision, evidence, preparedImages, retry: true });
+        await tampered59.inspectTarget();
+        await assert.rejects(lifecycle("p0_tampered_59_witness", { recreate: true }, tampered59));
+      } finally { writeFileSync(preWitness, preBytes, { mode: 0o600 }); }
+      assert.equal(Number((await readLatestMigration(compose)).stdout.trim()), 60);
       const retry60 = makeRuntime(target, { run: inject, stateDirectory, revision, evidence, preparedImages, retry: true });
       await retry60.inspectTarget();
       await assert.rejects(lifecycle("p0_resume_60_interrupted_61", { recreate: true }, retry60), /injected after schema61/);
       const after60 = JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8"));
       assert.equal(after60.attempt_id, originalGuard.attempt_id);
       assert.deepEqual(after60.backup, originalGuard.backup);
+      assert.deepEqual(readFileSync(preWitness), preBytes);
       assert.equal(Number((await readLatestMigration(compose)).stdout.trim()), 61);
       assert.equal(captures, 0);
       const resumed = makeRuntime(target, { run: inject, stateDirectory, revision, evidence, preparedImages, retry: true });
