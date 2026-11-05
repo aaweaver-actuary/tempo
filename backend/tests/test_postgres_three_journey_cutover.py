@@ -28,7 +28,7 @@ def test_cut62_guard_retains_full_fixed_ledger_and_rejects_tamper(monkeypatch):
     monkeypatch.setattr(guard, '_cut62_layout', lambda database, names: {name: layout[name] for name in names})
     monkeypatch.setattr(guard, '_cut62_table', lambda database, name, key, secret: state[name].copy())
     witness = guard.capture_cut62(FakeDatabase(), b'x' * 32)
-    assert len(guard.CUT62_PROTECTED_TABLES) == 182
+    assert len(guard.CUT62_PROTECTED_TABLES) == 181
     assert guard.verify_cut62(FakeDatabase(), witness, b'x' * 32)['to'] == 62
     name = next(iter(guard.CUT62_PROTECTED_TABLES))
     state[name]['digest'] = 'tampered'
@@ -129,6 +129,7 @@ def test_cut62_native_schema61_to62(tmp_path):
         db.execute("INSERT INTO endgame_attempts(id,template_id,start_fen,target,created_at) VALUES ('end-attempt','template','synthetic','draw','2026-01-01')")
         db.execute("INSERT INTO tactic_pack_activation(pack_id,active) VALUES ('synthetic-pack',1)")
         db.execute("INSERT INTO tactic_progress(puzzle_id,deck_id,card_id) VALUES ('synthetic-puzzle','synthetic-pack','tactic')")
+        db.execute("INSERT INTO daily_chess_snapshots(local_day,snapshot_version,metrics_json,status,updated_at) VALUES ('2025-12-31',1,'{\"historical\":true}','complete','2026-01-01')")
         db.execute("INSERT INTO daily_chess_insights(id,local_day,kind,evidence_json,created_at,updated_at) VALUES ('insight','2026-01-01','synthetic','{}','2026-01-01','2026-01-01')")
         db.execute("INSERT INTO daily_statistics_jobs(local_day,updated_at) VALUES ('2026-01-01','2026-01-01')")
         db.execute("INSERT INTO game_insight_recommendations(motif,miss_count,total_loss_cp,supporting_games_json,recommended_pack_id,updated_at) VALUES ('fork',1,100,'[\"fixture-game\"]','synthetic-pack','2026-01-01')")
@@ -155,7 +156,7 @@ def test_cut62_native_schema61_to62(tmp_path):
         captured_id = guard.save_cut62_witness(path, db)
     witness, secret = guard.load_cut62_witness(path)
     assert witness['rows']['defense_attempts']['count'] == 1
-    assert witness['version'] == 4
+    assert witness['version'] == 5
     assert all(witness['rows'][name]['count'] == 1 for name in guard.CUT62_RETIRED_TABLES)
     assert witness['sequences']['retired']['count'] == 1
     with psycopg.connect(dsn) as db:
@@ -185,7 +186,7 @@ def test_cut62_native_schema61_to62(tmp_path):
         guard.verify_cut62(db, witness, secret)
         assert db.execute("SELECT to_regclass('public.game_analysis_position_errors_id_seq')").fetchone()[0] is None
         old = copy.deepcopy(witness)
-        old['version'] = 3
+        old['version'] = 4
         with pytest.raises(RuntimeError, match='unsupported'):
             guard.verify_cut62(db, old, secret)
     apply_migrations(dsn)

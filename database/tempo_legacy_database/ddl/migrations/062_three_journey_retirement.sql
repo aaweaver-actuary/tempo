@@ -1,4 +1,4 @@
--- Review candidate: eleven exclusively retired stores; all shared state remains.
+-- Review candidate: twelve exclusively retired stores; all shared state remains.
 -- RESTRICT aborts the transaction if an unreviewed dependency remains.
 DROP TRIGGER next_opponent_input_change ON imported_games;
 DROP INDEX idx_next_opponent_account_time;
@@ -10,6 +10,7 @@ DROP TABLE next_opponent_snapshots RESTRICT;
 DROP FUNCTION protect_next_opponent_snapshot() RESTRICT;
 -- Preserve original Defense attempt identities, moves, grades and replay facts.
 DROP TABLE endgame_attempts RESTRICT;
+DROP TABLE daily_chess_snapshots RESTRICT;
 DROP TABLE daily_chess_insights RESTRICT;
 DROP TABLE daily_statistics_jobs RESTRICT;
 DROP TABLE game_insight_recommendations RESTRICT;

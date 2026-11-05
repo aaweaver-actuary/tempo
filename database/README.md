@@ -80,15 +80,18 @@ shared-row deletion.
 The `pre62-source-59` witness is a separate, private stopped-writer check for
 original schema-59 rows, sequences and catalog through versions 60 and 61. It
 allows only the reviewed immutable-evidence objects and an empty new historical
-origin table. It does not replace a full verified backup, the separate version-4
+origin table. It does not replace a full verified backup, the separate version-5
 cutover witness, or any approval to change an installed database. A captured
 witness must persist unchanged across retries and must never be replaced after
 migration begins.
 
-The 062 review candidate includes `daily_chess_insights`,
+The 062 review candidate includes `daily_chess_snapshots`, `daily_chess_insights`,
 `daily_statistics_jobs`, and `game_insight_recommendations` as exclusive
-retired stores. The version-4 cutover witness captures their exact original
-rows before migration and requires their absence afterward; version-3 evidence
+retired stores. The version-5 cutover witness captures their exact original
+rows before migration and requires their absence afterward; version-4 evidence
 is not accepted for this expanded cut. Retained tactic progress, pack identities,
 Games sources and authored/Study obligations remain protected. Browser snapshot
 mappings remain compatibility metadata and need their own owner review.
+
+Historical browser `syncMetadata` records and their generic backup/restore remain
+unchanged, including records from prior daily snapshot imports.
