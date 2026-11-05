@@ -45,7 +45,7 @@ def stale_delivery_witness(phase, project):
     fg, bg, task_id = prefix + '-foreground', prefix + '-background', prefix + '-task'
     pack_id, puzzle_id = 'anastasiaMate-easy-01', '1QPdO'
     retired_tables = ('next_opponent_accounts', 'next_opponent_snapshots', 'endgame_attempts',
-                      'daily_chess_insights', 'daily_statistics_jobs', 'game_insight_recommendations',
+                      'daily_chess_insights', 'daily_chess_snapshots', 'daily_statistics_jobs', 'game_insight_recommendations',
                       'game_analysis_publications', 'game_analysis_position_reports', 'game_analysis_position_errors',
                       'game_analysis_jobs', 'engine_scheduling_state')
 
