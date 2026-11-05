@@ -282,7 +282,7 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
     throw new Error("Tempo registration is incomplete; inspect the config file before proceeding.");
   if (options.defenseSelection) {
     const { privateDefenseHistorySelection, requireManagedIsolationGate } = await import('./tempo-managed-isolation.mjs');
-    privateDefenseHistorySelection(options.defenseSelection, targetKey(target));
+    options.defenseSelectionDigest = privateDefenseHistorySelection(options.defenseSelection, targetKey(target)).digest;
     requireManagedIsolationGate();
   }
   const { assessMigrationRecovery, createRuntime, executeLifecycle } = await import("./tempo-runtime.mjs");
@@ -429,7 +429,8 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
         }
         const selectedRevision = candidate?.revision ?? previous.revision;
         runtime = createRuntime(target, { run, stateDirectory, previous, revision: selectedRevision,
-          evidence: candidate?.evidence, fallback: !candidate, retry: options.flags.has("--retry"), log });
+          evidence: candidate?.evidence, fallback: !candidate, retry: options.flags.has("--retry"),
+          defenseSelection: options.defenseSelection ?? null, defenseSelectionDigest: options.defenseSelectionDigest ?? null, log });
         await runtime.inspectTarget(); secrets.push(...runtime.secretValues);
         const recreate = options.command === "restart" || Boolean(candidate && previous?.revision !== selectedRevision);
         // SIGINT is scoped to waiting. Once maintenance starts, retain the CLI's

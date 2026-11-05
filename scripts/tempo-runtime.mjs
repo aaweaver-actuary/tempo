@@ -12,6 +12,7 @@ import { TempoProblem, classifyRedisReply, phaseGuidance } from "./tempo-guidanc
 import { isTimingPublicationFailure } from "./test-scenario-timings.mjs";
 import { probeLifecycleRedis } from "../database/tooling/cli/probes.mjs";
 import { createBackupRestoreDatabase, createPostgresBackup, removeBackupRestoreDatabase, restorePostgresBackup } from "../database/tooling/cli/backup.mjs";
+import { assertManagedTargetLock, captureManagedTargetLock, persistManagedHistoryWitnessIdentity, privateDefenseHistorySelection } from './tempo-managed-isolation.mjs';
 
 export const applicationServices = ["web", "api",
   "foreground-worker", "background-worker", "background-scheduler"];
@@ -170,7 +171,7 @@ export function releaseComposeFiles(target, { fallback = false, previous = null 
 }
 
 export function createRuntime(target, { run, stateDirectory, revision, evidence, previous = null,
-  fallback = false, preparedImages = null, retry = false, log = console.log, fetcher = fetch, readinessMilliseconds = 180_000,
+  fallback = false, preparedImages = null, retry = false, defenseSelection = null, defenseSelectionDigest = null, log = console.log, fetcher = fetch, readinessMilliseconds = 180_000,
   redisReadinessOptions = {}, readinessOptions = {}, buildImages = managedComposeBuild }) {
   let composeFiles = releaseComposeFiles(target, { fallback, previous });
   let imageOverride = fallback ? previous.imageOverride : null;
@@ -602,7 +603,18 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     return backupRecord;
   }
 
+  async function verifiedBackupDigest(backup) {
+    if (!backup?.verified || !/^tempo-[0-9A-Za-z-]+\.dump$/.test(backup.filename ?? ''))
+      throw new Error('Original verified backup identity is invalid; keep writers stopped.');
+    const result = await compose(['--profile', 'maintenance', 'run', '--rm', '--no-deps', '-T', '--entrypoint', 'sh',
+      'postgres-backup', '-ec', 'cd /backups; sha256sum -c "$1.sha256" >/dev/null; sha256sum "$1" | cut -d " " -f1', 'sh', backup.filename]);
+    const digest = result.stdout.trim();
+    if (!/^[0-9a-f]{64}$/.test(digest)) throw new Error('Original backup checksum is invalid; keep writers stopped.');
+    return digest;
+  }
+
   async function migrate() {
+    const managedLock = defenseSelection ? captureManagedTargetLock(stateDirectory) : null;
     originalHistoryVerified = false;
     stage("applying_migrations");
     const newGuard = migrationGuard?.state !== "pending";
@@ -706,6 +718,24 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
         migrationGuard.cut62_capture_started = true;
         atomicJson(guardPath, migrationGuard);
         mkdirSync(witnessDirectory, { mode: 0o700 });
+        if (defenseSelection) {
+          const selection = privateDefenseHistorySelection(defenseSelection, targetKey(target));
+          if (selection.digest !== defenseSelectionDigest)
+            throw new Error('Approved Defense selection changed after preflight; keep writers stopped.');
+          const binding = { version: 1, target: targetKey(target), attempt_id: migrationGuard.attempt_id,
+            backup_filename: migrationGuard.backup.filename, backup_sha256: await verifiedBackupDigest(migrationGuard.backup),
+            selection_sha256: selection.digest };
+          assertManagedTargetLock(stateDirectory, managedLock);
+          for (const [name, bytes] of [['defense-selection.json', selection.bytes], ['binding.json', Buffer.from(JSON.stringify(binding))]]) {
+            const fd = openSync(join(witnessDirectory, name), 'wx', 0o600);
+            try { writeFileSync(fd, bytes); fsyncSync(fd); } finally { closeSync(fd); }
+          }
+          for (const path of [witnessDirectory, stateDirectory]) {
+            const fd = openSync(path, 'r'); try { fsyncSync(fd); } finally { closeSync(fd); }
+          }
+          migrationGuard.defense_binding = binding;
+          atomicJson(guardPath, migrationGuard);
+        }
       }
       let witnessDirectoryStat;
       try { witnessDirectoryStat = lstatSync(witnessDirectory); } catch {
@@ -715,21 +745,44 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
         throw new Error('Schema 62 witness directory must be private; keep writers stopped.');
       if (firstCapture) {
         if (existsSync(witnessPath)) throw new Error('Schema 62 witness already exists; refusing to recapture.');
-        const capture = JSON.parse((await maintenance("database/tooling/verify_postgres_cli_state.py", ["--cut62-capture", `/cut62/${witnessName}`], { cut62Mount: witnessName })).stdout);
+        let capture;
+        if (defenseSelection) {
+          const script = `import json,os,sys,psycopg
+from database.tooling.verify_postgres_cli_state import load_cut62_history_selection,load_cut62_attempt_binding,save_cut62_history_v2
+selection,digest=load_cut62_history_selection('/cut62/defense-selection.json')
+binding=load_cut62_attempt_binding('/cut62/binding.json',selection,digest)
+expected=json.loads(sys.argv[2])
+if binding != expected: raise RuntimeError('Original managed attempt binding differs')
+with psycopg.connect(os.environ['TEMPO_POSTGRES_ADMIN_URL']) as database:
+ with database.transaction():
+  database.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')
+  witness_id=save_cut62_history_v2('/cut62/'+sys.argv[1],database,selection,binding,digest,expected)
+print(json.dumps({'witness_id':witness_id}))`;
+          capture = JSON.parse((await maintenance('-c', [script, witnessName, JSON.stringify(migrationGuard.defense_binding)], { cut62Mount: witnessName })).stdout);
+        } else {
+          capture = JSON.parse((await maintenance("database/tooling/verify_postgres_cli_state.py", ["--cut62-capture", `/cut62/${witnessName}`], { cut62Mount: witnessName })).stdout);
+        }
         if (typeof capture.witness_id !== "string" || !capture.witness_id) throw new Error("Schema 62 witness identity is invalid; keep writers stopped.");
         const directoryFd = openSync(witnessDirectory, "r");
         try { fsyncSync(directoryFd); } finally { closeSync(directoryFd); }
         // Persist the new directory entry as well as its contents before migration.
         const stateDirectoryFd = openSync(stateDirectory, "r");
         try { fsyncSync(stateDirectoryFd); } finally { closeSync(stateDirectoryFd); }
-        migrationGuard.cut62_identity = { witness_id: capture.witness_id, attempt_id: migrationGuard.attempt_id,
-          backup_filename: migrationGuard.backup.filename };
-        atomicJson(guardPath, migrationGuard);
+        if (defenseSelection) {
+          migrationGuard = persistManagedHistoryWitnessIdentity({ stateDirectory, lock: managedLock,
+            guard: migrationGuard, witnessId: capture.witness_id, newCapture: true });
+        } else {
+          migrationGuard.cut62_identity = { witness_id: capture.witness_id, attempt_id: migrationGuard.attempt_id,
+            backup_filename: migrationGuard.backup.filename };
+          atomicJson(guardPath, migrationGuard);
+        }
       }
       requirePrivateCut62Witness(witnessPath);
       const identity = migrationGuard.cut62_identity;
       if (!identity?.witness_id || identity.attempt_id !== migrationGuard.attempt_id || identity.backup_filename !== migrationGuard.backup.filename)
         throw new Error("Original schema 62 witness identity is missing; keep writers stopped.");
+      if (migrationGuard.defense_binding)
+        throw new Error('Managed Defense history requires the verified pinned supervisor; keep writers stopped.');
       if (status.applied_versions.at(-1) === 61) {
         const checked = JSON.parse((await maintenance("database/tooling/verify_postgres_cli_state.py",
           ["--cut62-check-captured", `/cut62/${witnessName}`], { cut62Mount: witnessName })).stdout);
