@@ -512,7 +512,6 @@ SELECT c.id AS card_id, t.id AS candidate_id, c.repertoire_id
 FROM public.cards c JOIN public.threat_training_candidates t ON t.card_id=c.id
 WHERE c.content_type='defense'
 AND c.repertoire_id IS NOT NULL
-AND EXISTS (SELECT 1 FROM public.priority_repertoire_source_epochs e WHERE e.repertoire_id=c.repertoire_id)
 AND NOT EXISTS (SELECT 1 FROM public.threat_training_candidates other WHERE other.card_id=c.id AND other.id<>t.id)
 AND EXISTS (SELECT 1 FROM public.daily_queue q WHERE q.card_id=c.id)
 AND EXISTS (SELECT 1 FROM public.queue_attempt_origins o WHERE o.card_id=c.id AND o.content_type='defense')
@@ -815,8 +814,7 @@ def _cut62_draft_history_selector():
         CASE WHEN EXISTS (SELECT 1 FROM public.defense_attempts a WHERE a.candidate_id=t.id) THEN 'reviewed' ELSE 'recognition_only' END cohort_group
       FROM public.cards c JOIN public.threat_training_candidates t ON t.card_id=c.id
       WHERE c.content_type='defense' AND c.repertoire_id IS NOT NULL
-        AND EXISTS (SELECT 1 FROM public.priority_repertoire_source_epochs e WHERE e.repertoire_id=c.repertoire_id)
-        AND (SELECT count(*) FROM public.threat_training_candidates t2 WHERE t2.card_id=c.id)=1
+                AND (SELECT count(*) FROM public.threat_training_candidates t2 WHERE t2.card_id=c.id)=1
         AND EXISTS (SELECT 1 FROM public.defense_recognition_submissions r WHERE r.candidate_id=t.id)
         AND NOT EXISTS (SELECT 1 FROM public.defense_attempts a WHERE a.candidate_id=t.id AND a.card_id<>c.id)
         AND NOT EXISTS (SELECT 1 FROM public.defense_attempts a
@@ -912,7 +910,7 @@ def _cut62_projected_history_table(database, table, primary_key, secret, cohort_
         'defense_recognition_submissions': "SELECT t.* FROM public.defense_recognition_submissions t WHERE NOT EXISTS (SELECT 1 FROM cohort c WHERE c.candidate_id=t.candidate_id)",
         'defense_attempts': "SELECT t.* FROM public.defense_attempts t WHERE NOT EXISTS (SELECT 1 FROM cohort c WHERE c.card_id=t.card_id AND c.candidate_id=t.candidate_id)",
         'reviews': "SELECT t.* FROM public.reviews t WHERE NOT EXISTS (SELECT 1 FROM cohort c JOIN public.defense_attempts a ON a.card_id=c.card_id AND a.candidate_id=c.candidate_id WHERE t.card_id=c.card_id AND t.source_kind='study' AND t.source_ref='defense:'||a.attempt_id)",
-        'priority_repertoire_source_epochs': "SELECT (json_populate_record(t, json_build_object('version',t.version+(SELECT count(*) FROM cohort c WHERE c.repertoire_id=t.repertoire_id)+(SELECT count(*) FROM cohort c JOIN public.defense_attempts a ON a.card_id=c.card_id AND a.candidate_id=c.candidate_id JOIN public.reviews r ON r.card_id=c.card_id AND r.source_kind='study' AND r.source_ref='defense:'||a.attempt_id WHERE c.repertoire_id=t.repertoire_id)))).* FROM public.priority_repertoire_source_epochs t",
+        'priority_repertoire_source_epochs': "SELECT (json_populate_record(t, json_build_object('version',t.version+(SELECT count(*) FROM cohort c WHERE c.repertoire_id=t.repertoire_id)+(SELECT count(*) FROM cohort c JOIN public.defense_attempts a ON a.card_id=c.card_id AND a.candidate_id=c.candidate_id JOIN public.reviews r ON r.card_id=c.card_id AND r.source_kind='study' AND r.source_ref='defense:'||a.attempt_id WHERE c.repertoire_id=t.repertoire_id)))).* FROM public.priority_repertoire_source_epochs t UNION ALL SELECT r.id AS repertoire_id, ((SELECT count(*) FROM cohort c WHERE c.repertoire_id=r.id)+(SELECT count(*) FROM cohort c JOIN public.defense_attempts a ON a.card_id=c.card_id AND a.candidate_id=c.candidate_id JOIN public.reviews v ON v.card_id=c.card_id AND v.source_kind='study' AND v.source_ref='defense:'||a.attempt_id WHERE c.repertoire_id=r.id))::bigint AS version FROM public.repertoires r WHERE EXISTS (SELECT 1 FROM cohort c WHERE c.repertoire_id=r.id) AND NOT EXISTS (SELECT 1 FROM public.priority_repertoire_source_epochs e WHERE e.repertoire_id=r.id)",
         'frozen_opening_runs': "SELECT (json_populate_record(t, CASE WHEN EXISTS (SELECT 1 FROM cohort) AND EXISTS (SELECT 1 FROM public.frozen_opening_pending p WHERE p.run_id=t.run_id) AND t.invalidated=0 THEN '{\"invalidated\":1}'::json ELSE '{}'::json END)).* FROM public.frozen_opening_runs t",
     }
     if table not in views:

@@ -569,8 +569,9 @@ def test_schema61_defense_recognition_review_history_rehearsal(monkeypatch):
         assert db.execute('SELECT max(version) FROM tempo_schema_migrations').fetchone()[0] == 61
         try:
             db.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES ('history-rep','synthetic','synthetic','2026-01-01')")
+            db.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES ('history-missing','synthetic','synthetic','2026-01-01')")
             for card, kind in [('ordinary','opening'),('themed','tactic'),('recognition','defense'),('move','defense'),('control','defense'),('mixed','defense'),('quiet','defense')]:
-                db.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,content_type) VALUES (%s,'history-rep','prefix','fen','[]','2026-01-01',%s)", (card,kind))
+                db.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,content_type) VALUES (%s,%s,'prefix','fen','[]','2026-01-01',%s)", (card,'history-missing' if card=='quiet' else 'history-rep',kind))
             db.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json) VALUES ('history-game','synthetic','synthetic','2026-01-01','rapid',0,'white','draw','fen','[]')")
             db.execute("INSERT INTO game_findings(id,game_id,analysis_version,ply,kind,confidence,evidence_json,created_at,updated_at) VALUES ('history-finding','history-game',1,1,'synthetic',1,'{}','2026-01-01','2026-01-01')")
             for number, card in enumerate(('recognition','move','control','mixed','quiet'), 1):
@@ -602,6 +603,7 @@ def test_schema61_defense_recognition_review_history_rehearsal(monkeypatch):
             db.execute("INSERT INTO frozen_opening_runs(run_id,plan_checksum,plan_json,created_at,reader_version) VALUES ('history-run','history-hash','{}','2026-01-01','1')")
             db.execute("INSERT INTO frozen_opening_ranks(run_id,card_id,ordinal,fingerprint,memberships_json,definition_json) VALUES ('history-run','ordinary',1,'synthetic','[]','{}')")
             db.execute("INSERT INTO frozen_opening_pending(run_id) VALUES ('history-run')")
+            db.execute("DELETE FROM priority_repertoire_source_epochs WHERE repertoire_id='history-missing'")
             # Each positive is tied to its own original typed origin; a mixed
             # candidate with an independently retained tactic capture is held.
             assert db.execute("SELECT count(*) FROM defense_recognition_submissions r JOIN threat_training_candidates t ON t.id=r.candidate_id JOIN daily_queue q ON q.id=r.queue_entry_id AND q.card_id=t.card_id JOIN queue_attempt_origins o ON o.queue_entry_id=q.id AND o.card_id=q.card_id AND o.content_type='defense' WHERE r.attempt_id IN ('recognition-id','recognition-before-move','control-shared-id')").fetchone()[0] == 3
@@ -798,7 +800,9 @@ def test_schema61_defense_recognition_review_history_rehearsal(monkeypatch):
             }.items(): expected[name] = [row for row in expected[name] if not pred(row)]
             for row in expected['threat_training_candidates']:
                 if row['card_id'] in chosen: row['card_id'] = None
-            next(row for row in expected['priority_repertoire_source_epochs'] if row['repertoire_id']=='history-rep')['version'] += 6
+            next(row for row in expected['priority_repertoire_source_epochs'] if row['repertoire_id']=='history-rep')['version'] += 5
+            expected['priority_repertoire_source_epochs'].append({'repertoire_id':'history-missing','version':1})
+            expected['priority_repertoire_source_epochs'].sort(key=lambda row: json.dumps(row,separators=(',',':'))) 
             next(row for row in expected['frozen_opening_runs'] if row['run_id']=='history-run')['invalidated'] = 1
             # Production-format HMAC projection is checked separately from
             # the fixture's own expected-row oracle, for its explicit cohort.
