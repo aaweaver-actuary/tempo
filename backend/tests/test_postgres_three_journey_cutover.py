@@ -253,6 +253,8 @@ def test_schema61_defense_exclusive_rehearsal_preserves_shared_history(tmp_path)
         raise ValueError('refusing non-W07 disposable database')
     with psycopg.connect(dsn, row_factory=dict_row) as db:
         assert db.execute('SELECT max(version) AS v FROM tempo_schema_migrations').fetchone()['v'] == 61
+        db.execute('SET LOCAL join_collapse_limit=1')
+        db.execute('SET LOCAL jit=off')
         try:
             db.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES ('census-rep','synthetic','synthetic','2026-01-01')")
             for card, kind in [('census-opening','opening'),('census-tactic','tactic'),('census-defense','defense'),('census-exclusive','defense'),('census-issued','defense'),('census-shared','defense'),('census-unknown','future-type')]:
@@ -269,6 +271,7 @@ def test_schema61_defense_exclusive_rehearsal_preserves_shared_history(tmp_path)
             db.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES ('accepted-line','census-rep','accepted','white','synthetic','[\"e2e4\"]','2026-01-01')")
             db.execute("INSERT INTO daily_queue(id,queue_date,card_id,position,status,admission_source) VALUES (900001,'2026-01-01','census-opening',1,'issued',NULL),(900002,'2026-01-01','census-defense',2,'queued','defense:candidate'),(900003,'2026-01-01','census-issued',3,'issued','defense:issued')")
             db.execute("UPDATE queue_attempt_origins SET issued_as_head=1 WHERE queue_entry_id IN (900001,900003)")
+            db.execute("UPDATE queue_attempt_origins SET issuance_sequence=1,issued_at='2026-01-02T00:00:00Z' WHERE queue_entry_id=900001")
             db.execute("INSERT INTO queue_attempt_abandonments(queue_entry_id,card_id,revision,operation_id,request_sha256,origin_sha256,actor,reason,abandoned_at) VALUES (900003,'census-issued',1,'abandoned',repeat('a',64),repeat('b',64),'synthetic','synthetic',now())")
             db.execute("INSERT INTO reviews(id,card_id,rating,reviewed_at,previous_interval,next_interval,source_ref) VALUES (900002,'census-defense','again','2026-01-01',1,0,'defense:attempt')")
             db.execute("INSERT INTO review_schedule_snapshots(review_id,state_json) VALUES (900002,'{}')")
@@ -282,7 +285,7 @@ def test_schema61_defense_exclusive_rehearsal_preserves_shared_history(tmp_path)
             db.execute("INSERT INTO study_position_states(repertoire_id,variant,position,expected_uci,policy_version,owner_epoch,source_digest,fsrs_internal_card_id,fsrs_json,due_at,donor_card_id,donor_card_revision,donor_fingerprint,donor_selection_policy) VALUES ('census-rep','standard','position','e2e4','1','epoch','synthetic',4503599627370496,'{}',now(),'census-opening',1,'synthetic','synthetic')")
             db.execute("INSERT INTO study_position_issued_plans(attempt_id,queue_entry_id,card_id,card_revision,repertoire_id,variant,owner_epoch,source_digest,issue_study_day,plan_digest,plan_json,issued_at) VALUES ('position-plan',900001,'census-opening',1,'census-rep','standard','epoch','synthetic','2026-01-01','synthetic','{}',now())")
             db.execute("INSERT INTO study_position_first_responses(event_id,attempt_id,decision_index,repertoire_id,variant,position,owner_epoch,payload_digest,payload_json,observed_at,accepted_at) VALUES ('first-response','position-plan',0,'census-rep','standard','position','epoch','synthetic','{}',now(),now())")
-            db.execute("INSERT INTO study_game_feedback(effect_key,identity_json,source_revision,decision_id,received_at,status,updated_at,card_id,applied_at) VALUES ('game-effect','{}','1','decision',now(),'applied',now(),'census-opening',now())")
+            db.execute("INSERT INTO study_game_feedback(effect_key,identity_json,source_revision,decision_id,received_at,status,updated_at,card_id,applied_at,payload_json,payload_hash) VALUES ('game-effect','{}','1','decision',now(),'applied',now(),'census-opening',now(),'{\"qualification\":{\"determined_at\":\"2026-01-01T00:00:00Z\"}}','synthetic')")
             db.execute("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,response_json) VALUES ('mixed-envelope','unknown','synthetic','complete','{\"cards\":[\"census-defense\",\"census-opening\"]}')")
             cards = db.execute("SELECT id,content_type FROM cards WHERE id LIKE 'census-%' ORDER BY id").fetchall()
             assert {row['id'] for row in cards if row['content_type']=='defense'} == {'census-defense','census-exclusive','census-issued','census-shared'}
@@ -309,7 +312,11 @@ def test_schema61_defense_exclusive_rehearsal_preserves_shared_history(tmp_path)
                         (row[0] for row in db.execute(sql.SQL("SELECT row_to_json(t)::text FROM public.{} t ORDER BY row_to_json(t)::text").format(sql.Identifier(name)))))
                         for name in sorted(protected_tables)}
             before = retained_digest()
-            cohort_sql = "SELECT id AS card_id, 'exclusive-candidate'::text AS candidate_id, repertoire_id FROM public.cards WHERE id='census-exclusive'"
+            def committed_since_game_determination():
+                return db.execute("SELECT count(*) FROM queue_attempt_origins o JOIN study_game_feedback f ON f.effect_key='game-effect' WHERE o.issued_as_head=1 AND o.issued_at>(f.payload_json::jsonb->'qualification'->>'determined_at')::timestamptz AND o.issuance_sequence IS NOT NULL").fetchone()[0]
+            assert committed_since_game_determination() == 1
+            cohort_sql = guard.CUT62_DRAFT_DEFENSE_SELECTOR
+            assert db.execute(cohort_sql).fetchall() == [('census-exclusive', 'exclusive-candidate', 'census-rep')]
             layout = guard._cut62_layout(db, guard.CUT62_PROTECTED_TABLES | guard.CUT62_RETIRED_TABLES | {guard.CUT62_LEDGER})
             changed_tables = guard.CUT62_PROTECTED_TABLES - protected_tables
             projected = {name: guard._cut62_projected_defense_table(db, name, layout[name][0], b'x'*32, cohort_sql) for name in changed_tables}
@@ -339,6 +346,7 @@ def test_schema61_defense_exclusive_rehearsal_preserves_shared_history(tmp_path)
             assert db.execute("SELECT invalidated FROM frozen_opening_runs WHERE run_id='census-run'").fetchone()[0] == 1
             assert db.execute("SELECT card_id FROM threat_training_candidates WHERE id='exclusive-candidate'").fetchone()[0] is None
             assert retained_digest() == before
+            assert committed_since_game_determination() == 1
             assert changed_rows() == expected
             assert {name: guard._cut62_table(db, name, layout[name][0], b'x'*32) for name in changed_tables} == projected
             db.execute('ROLLBACK TO SAVEPOINT exclusive_rehearsal')
