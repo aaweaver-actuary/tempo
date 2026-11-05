@@ -1708,7 +1708,7 @@ def test_postgres_branch_removal_dispatches_foreground_command_with_idempotency(
     assert dispatched == [("repertoire.branch.remove", request, "remove-white-e4")]
 
 
-def test_postgres_branch_removal_queues_coverage_with_changed_lines(monkeypatch, unscoped_canonical_prefix):
+def test_postgres_branch_removal_keeps_repairs_without_coverage(monkeypatch, unscoped_canonical_prefix):
     from app import branch_commands
 
     class QueryResult:
@@ -1748,9 +1748,9 @@ def test_postgres_branch_removal_queues_coverage_with_changed_lines(monkeypatch,
                         lambda db, repertoire_id: scheduled.append(("integrity", db, repertoire_id)))
     monkeypatch.setattr(branch_commands, "request_graph_rebuild_in_transaction",
                         lambda db, repertoire_id, day: scheduled.append(("graph", db, repertoire_id)))
-    monkeypatch.setattr(branch_commands, "request_coverage_seed_in_transaction",
-                        lambda db, repertoire_id, *, automatic, supersede_active: scheduled.append(
-                            ("coverage", db, repertoire_id, automatic, supersede_active)))
+    from app.services import coverage_seed_request
+    monkeypatch.setattr(coverage_seed_request, "request_coverage_seed_in_transaction",
+                        lambda *_args, **_kwargs: pytest.fail("retired coverage enqueued"))
     monkeypatch.setattr(branch_commands, "integrity_summary",
                         lambda db, repertoire_id: {"status": "unchecked"})
     result = branch_commands.remove_repertoire_branch(database, {
@@ -1760,9 +1760,8 @@ def test_postgres_branch_removal_queues_coverage_with_changed_lines(monkeypatch,
     assert database.deleted == ["match"]
     assert result == {"deleted_line_count": 1, "deleted_card_count": 0,
                       "retained_line_count": 2, "integrity": {"status": "unchecked"}}
-    assert [event[0] for event in scheduled] == ["integrity", "graph", "coverage"]
-    assert all(event[1] is database for event in scheduled)
-    assert scheduled[-1][2:] == ("white", True, True)
+    assert [event[0] for event in scheduled] == ["integrity", "graph"]
+    assert all(event[1] is database and event[2] == "white" for event in scheduled)
 
 
 def test_postgres_prefix_split_decisions_dispatch_foreground_commands_with_idempotency(monkeypatch):
@@ -2087,7 +2086,7 @@ def test_postgres_branch_edit_dispatches_foreground_command_with_idempotency(mon
     assert dispatched[0][2] == "branch-1"
 
 
-def test_postgres_branch_edit_checkpoints_graph_and_coverage_with_line(monkeypatch, unscoped_canonical_prefix):
+def test_postgres_branch_edit_checkpoints_graph_without_coverage(monkeypatch, unscoped_canonical_prefix):
     from app import branch_commands
 
     events = []
@@ -2107,8 +2106,9 @@ def test_postgres_branch_edit_checkpoints_graph_and_coverage_with_line(monkeypat
 
     monkeypatch.setattr(branch_commands, "request_graph_rebuild_in_transaction",
                         lambda *_args: events.append("graph"))
-    monkeypatch.setattr(branch_commands, "request_coverage_seed_in_transaction",
-                        lambda *_args, **_kwargs: events.append("coverage"))
+    from app.services import coverage_seed_request
+    monkeypatch.setattr(coverage_seed_request, "request_coverage_seed_in_transaction",
+                        lambda *_args, **_kwargs: pytest.fail("retired coverage enqueued"))
     monkeypatch.setattr(branch_commands, "integrity_summary",
                         lambda *_args: {"status": "unchecked"})
     result = branch_commands.add_repertoire_branch(Database(), {
@@ -2117,7 +2117,7 @@ def test_postgres_branch_edit_checkpoints_graph_and_coverage_with_line(monkeypat
     })
     assert result["duplicate"] is False
     assert result["moves"] == ["e2e4", "e7e5"]
-    assert events == ["line", "graph", "coverage"]
+    assert events == ["line", "graph"]
 
 
 def test_removed_endgame_template_generation_rejects_before_dispatch(monkeypatch):

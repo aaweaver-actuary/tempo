@@ -14,7 +14,7 @@ def unavailable_priority(*_args, **_kwargs):
     raise AssertionError("Retired optional adaptive-priority callback was invoked")
 
 
-def test_prefix_save_preserves_source_and_coverage_without_optional_priority(monkeypatch):
+def test_prefix_save_preserves_source_without_coverage_or_optional_priority(monkeypatch):
     from app.services import canonical_prefix
     database = object()
     effects = []
@@ -34,7 +34,7 @@ def test_prefix_save_preserves_source_and_coverage_without_optional_priority(mon
     monkeypatch.setattr(storage, "advance_priority_source_epoch",
                         lambda *args: effects.append(("source-epoch", args)))
     monkeypatch.setattr(coverage_seed_request, "request_coverage_seed_in_transaction",
-                        lambda *args, **kwargs: effects.append(("coverage", args, kwargs)))
+                        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("retired coverage enqueued")))
     monkeypatch.setattr(storage, "delete_priority_publication",
                         lambda *args: effects.append(("invalidate-publication", args)))
     monkeypatch.setattr(storage, "delete_introduction_priorities",
@@ -50,7 +50,6 @@ def test_prefix_save_preserves_source_and_coverage_without_optional_priority(mon
         ("prefix", (database, json.dumps(["e2e4"]), 3, "preview", "rep")),
         ("graph-refresh", (database, "repertoire_game_refresh", "all", {"after_game_id": ""}), {"priority": 90}),
         ("source-epoch", (database, "rep")),
-        ("coverage", (database, "rep"), {"automatic": True, "supersede_active": True}),
         ("invalidate-publication", (database, "rep")),
         ("invalidate-scores", (database, "rep")),
     ]
