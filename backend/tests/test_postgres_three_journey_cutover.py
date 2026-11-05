@@ -313,6 +313,8 @@ def test_schema61_defense_exclusive_rehearsal_preserves_shared_history(tmp_path)
             layout = guard._cut62_layout(db, guard.CUT62_PROTECTED_TABLES | guard.CUT62_RETIRED_TABLES | {guard.CUT62_LEDGER})
             changed_tables = guard.CUT62_PROTECTED_TABLES - protected_tables
             projected = {name: guard._cut62_projected_defense_table(db, name, layout[name][0], b'x'*32, cohort_sql) for name in changed_tables}
+            empty_sql = "SELECT id AS card_id, NULL::text AS candidate_id, repertoire_id FROM public.cards WHERE false"
+            assert {name: guard._cut62_projected_defense_table(db, name, layout[name][0], b'x'*32, empty_sql) for name in changed_tables} == {name: guard._cut62_table(db, name, layout[name][0], b'x'*32) for name in changed_tables}
             def changed_rows():
                 return {name: [json.loads(row[0]) for row in db.execute(sql.SQL("SELECT row_to_json(t)::text FROM public.{} t ORDER BY row_to_json(t)::text").format(sql.Identifier(name)))] for name in sorted(guard.CUT62_PROTECTED_TABLES - protected_tables)}
             import copy
