@@ -282,6 +282,32 @@ function requireCurrentIsolationGuard(guardPath, expectedGuard) {
   try { actual = JSON.parse(privateBytes(guardPath)); } catch { throw new Error("Original migration guard is unavailable or invalid."); }
   if (!isDeepStrictEqual(actual, expectedGuard)) throw new Error("Original migration guard changed; keep writers stopped.");
 }
+// Caller must continuously hold the registered target lock. A prior atomic
+// rename may have succeeded before its directory fsync failed; retries sync
+// the accepted private files and their parents before any physical action.
+export function syncDisposableIsolationEvidence({ guardPath, guard, receiptPath = null, receipt = null }) {
+  if ((receiptPath === null) !== (receipt === null)) throw new Error("Disposable isolation receipt evidence is incomplete.");
+  const entries = [[guardPath, guard], ...(receiptPath === null ? [] : [[receiptPath, receipt]])];
+  for (const [path, expected] of entries) {
+    if (!isAbsolute(path)) throw new Error("Disposable isolation evidence path is invalid.");
+    let fd;
+    try {
+      const parent = lstatSync(dirname(path));
+      if (!parent.isDirectory() || parent.uid !== process.getuid() || (parent.mode & 0o777) !== 0o700) throw new Error();
+      fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+      const info = fstatSync(fd);
+      if (!info.isFile() || info.uid !== process.getuid() || (info.mode & 0o777) !== 0o600 || info.size > 1048576) throw new Error();
+      if (!isDeepStrictEqual(JSON.parse(readFileSync(fd)), expected)) throw new Error();
+      fsyncSync(fd);
+    } catch { throw new Error("Disposable isolation evidence is unavailable, changed or not durable; keep writers stopped."); }
+    finally { if (fd !== undefined) closeSync(fd); }
+    try { syncDirectory(dirname(path)); } catch { throw new Error("Disposable isolation evidence directory is not durable; keep writers stopped."); }
+    let reread;
+    try { reread = JSON.parse(privateBytes(path)); } catch { throw new Error("Disposable isolation evidence is unavailable or changed; keep writers stopped."); }
+    if (!isDeepStrictEqual(reread, expected)) throw new Error("Disposable isolation evidence changed; keep writers stopped.");
+  }
+}
+
 export function persistDisposableIsolationIntent({ guardPath, guard, identity, targetOid, systemIdentifier,
   controlOid, controlName, adminRole, targetName, attached, allowConnections, backendPids, preparedTransactions }) {
   requireCurrentIsolationGuard(guardPath, guard);

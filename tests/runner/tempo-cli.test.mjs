@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { schemaVersionFromSource, validateTarget, validateContainers, deploymentCanStart,
   acquireTargetLock, assessMainVerification, assessCandidate, qualityEvidence, atomicJson, selectCandidate, productVolumes, targetKey,
   CommandExecutionError, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, sourceFingerprint, sourceMatchesFingerprint } from "../../scripts/tempo-deployment.mjs";
-import { assessMigrationRecovery, cut62WitnessName, privateSelection, inspectDisposableIsolation, classifyDisposableIsolationRecovery, persistDisposableIsolationIntent, advanceDisposableIsolationMarker, validateCut62Preflight, assertColdPreflightContainers, cut62MountDirectory, requirePrivateCut62Witness, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
+import { assessMigrationRecovery, cut62WitnessName, privateSelection, inspectDisposableIsolation, classifyDisposableIsolationRecovery, persistDisposableIsolationIntent, advanceDisposableIsolationMarker, syncDisposableIsolationEvidence, validateCut62Preflight, assertColdPreflightContainers, cut62MountDirectory, requirePrivateCut62Witness, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
 import { parseArguments, ensureDocker } from "../../scripts/tempo-cli.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
@@ -2683,6 +2683,17 @@ test("disposable recovery classifies physical crash states and refuses an unboun
     observation: { ...input, receipt, receiptValidated: true } });
   assert.equal(JSON.parse(readFileSync(guardPath, "utf8")).isolation.phase, "reattached");
   assert.deepEqual(writtenReattached.backup, beforeIntent.backup);
+  const receiptPath = join(guardDirectory, "receipt.json");
+  atomicJson(receiptPath, receipt);
+  const synced = [], descriptors = new Map(), originalOpen = fs.openSync, originalFsync = fs.fsyncSync;
+  t.mock.method(fs, "openSync", (...args) => { const fd = originalOpen(...args); descriptors.set(fd, args[0]); return fd; });
+  t.mock.method(fs, "fsyncSync", fd => { synced.push(descriptors.get(fd)); return originalFsync(fd); });
+  syncBuiltinESMExports();
+  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+  syncDisposableIsolationEvidence({ guardPath, guard: writtenReattached, receiptPath, receipt });
+  assert.deepEqual(synced, [guardPath, guardDirectory, receiptPath, guardDirectory]);
+  writeFileSync(receiptPath, JSON.stringify({ ...receipt, attempt_id: "replacement" }), { mode: 0o600 });
+  assert.throws(() => syncDisposableIsolationEvidence({ guardPath, guard: writtenReattached, receiptPath, receipt }), /changed or not durable/);
   assert.throws(() => classifyDisposableIsolationRecovery({ ...input, receipt, receiptValidated: true }), /unsafe/);
   assert.throws(() => classifyDisposableIsolationRecovery({ ...isolated, guard: reattachedGuard, receipt, receiptValidated: true }), /unsafe/);
   assert.throws(() => classifyDisposableIsolationRecovery({ ...isolated, allowConnections: false, receipt }), /unsafe/);
@@ -2696,6 +2707,25 @@ test("disposable recovery classifies physical crash states and refuses an unboun
     const altered = structuredClone(input); change(altered);
     assert.throws(() => classifyDisposableIsolationRecovery(altered), /unsafe/);
   }
+});
+
+test("isolation retry resyncs a guard visible after rename-before-directory-fsync failure", t => {
+  const dir = directory(t), guardPath = join(dir, "migration-guard.json");
+  const old = { state: "pending", isolation: { phase: "previous" } }, next = { state: "pending", isolation: { phase: "intent" } };
+  atomicJson(guardPath, old);
+  const originalFsync = fs.fsyncSync;
+  let injected = false;
+  t.mock.method(fs, "fsyncSync", fd => {
+    if (!injected && fs.fstatSync(fd).isDirectory()) { injected = true; throw new Error("injected directory fsync failure"); }
+    return originalFsync(fd);
+  });
+  syncBuiltinESMExports();
+  assert.throws(() => atomicJson(guardPath, next), /durability failed/);
+  assert.deepEqual(JSON.parse(readFileSync(guardPath, "utf8")), next);
+  t.mock.restoreAll(); syncBuiltinESMExports();
+  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+  assert.doesNotThrow(() => syncDisposableIsolationEvidence({ guardPath, guard: next }));
+  assert.deepEqual(JSON.parse(readFileSync(guardPath, "utf8")), next);
 });
 
 test("Defense selection requires a private canonical target-bound file and retries reject replacements", t => {
