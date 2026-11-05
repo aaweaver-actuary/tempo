@@ -275,8 +275,44 @@ def _cut62_table(database, table, primary_key, secret):
 
 
 
+def load_cut62_defense_selection(path):
+    """Read the private, owner-approved selection without disclosing its keys."""
+    import hashlib
+    import re
+    import stat
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+    with os.fdopen(descriptor, 'rb') as stream:
+        metadata = os.fstat(stream.fileno())
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_mode & 0o077:
+            raise RuntimeError('Defense selection must be a private regular file')
+        raw = stream.read()
+    selection = json.loads(raw)
+    if not isinstance(selection, dict) or set(selection) != {'version','target','cohort','keys','expected'} or type(selection['version']) is not int or selection['version'] != 1 or selection['cohort'] != 'defense-no-activity':
+        raise RuntimeError('unsupported Defense selection')
+    if not isinstance(selection['target'], str) or not selection['target'] or not isinstance(selection['keys'], list) or len(selection['keys']) > 11:
+        raise RuntimeError('invalid Defense selection')
+    previous = None
+    for pair in selection['keys']:
+        if not isinstance(pair, list) or len(pair) != 2 or any(not isinstance(v, str) or not v for v in pair):
+            raise RuntimeError('invalid Defense selection key')
+        key = tuple(pair)
+        if previous is not None and key <= previous:
+            raise RuntimeError('Defense selection keys are not unique and sorted')
+        previous = key
+    expected = selection['expected']
+    if not isinstance(expected, dict) or set(expected) != {'count','reference_digest'} or type(expected['count']) is not int or expected['count'] != len(selection['keys']) or not isinstance(expected['reference_digest'], str) or re.fullmatch('[0-9a-f]{64}', expected['reference_digest']) is None:
+        raise RuntimeError('invalid Defense selection reference evidence')
+    return selection, hashlib.sha256(raw).hexdigest()
+
+
 # Draft only: static typed ownership predicates need catalog and owner review.
 CUT62_DRAFT_DEFENSE_SELECTOR = '''
+WITH typed_receipts AS MATERIALIZED (
+ SELECT CASE WHEN pg_input_is_valid(payload_json,'jsonb') THEN payload_json::jsonb END AS payload,
+        CASE WHEN pg_input_is_valid(response_json,'jsonb') THEN response_json::jsonb END AS response
+ FROM public.operation_receipts WHERE command_name IN
+ ('cards.review','cards.review.reconcile','queue.attempt_failed','queue.bury','queue.issue_head','opening_evidence.checkpoint')
+)
 SELECT c.id AS card_id, t.id AS candidate_id, c.repertoire_id
 FROM public.cards c JOIN public.threat_training_candidates t ON t.card_id=c.id
 WHERE c.content_type='defense'
@@ -287,6 +323,12 @@ AND EXISTS (SELECT 1 FROM public.daily_queue q WHERE q.card_id=c.id)
 AND EXISTS (SELECT 1 FROM public.queue_attempt_origins o WHERE o.card_id=c.id AND o.content_type='defense')
 AND NOT EXISTS (SELECT 1 FROM public.defense_attempts a WHERE a.card_id=c.id OR a.candidate_id=t.id)
 AND NOT EXISTS (SELECT 1 FROM public.defense_recognition_submissions r WHERE r.candidate_id=t.id)
+AND NOT EXISTS (SELECT 1 FROM public.daily_queue q WHERE q.card_id=c.id AND (q.status NOT IN ('queued','blocked') OR q.review_result_json IS NOT NULL))
+AND NOT EXISTS (SELECT 1 FROM public.queue_attempt_origins o WHERE o.card_id=c.id AND o.review_result_json IS NOT NULL)
+AND NOT EXISTS (SELECT 1 FROM typed_receipts r WHERE
+ r.payload->>'card_id'=c.id OR r.payload#>>'{review,prepared_next,card_id}'=c.id OR r.response->>'card_id'=c.id OR
+ EXISTS (SELECT 1 FROM public.daily_queue q WHERE q.card_id=c.id AND q.id::text IN
+ (r.payload->>'entry_id',r.payload->>'queue_entry_id',r.payload#>>'{review,queue_entry_id}',r.payload#>>'{review,prepared_next,queue_entry_id}',r.response->>'entry_id',r.response->>'queue_entry_id')))
 AND NOT EXISTS (SELECT 1 FROM public.queue_attempt_origins o WHERE o.card_id=c.id AND o.issuance_sequence IS NOT NULL)
 AND NOT EXISTS (SELECT 1 FROM public.daily_queue q WHERE q.card_id=c.id AND ((q.admission_source IS NOT NULL AND q.admission_source<>'defense:' || t.id) OR NOT EXISTS (SELECT 1 FROM public.queue_attempt_origins o WHERE o.queue_entry_id=q.id AND o.card_id=c.id AND o.revision=c.revision AND o.queue_date=q.queue_date AND o.cycle=q.cycle AND o.content_type='defense' AND o.start_fen=c.start_fen AND o.moves_json=c.moves_json)))
 AND NOT EXISTS (SELECT 1 FROM public.queue_attempt_origins o WHERE o.card_id=c.id AND (o.revision<>c.revision OR o.content_type<>'defense' OR o.start_fen<>c.start_fen OR o.moves_json<>c.moves_json OR NOT EXISTS (SELECT 1 FROM public.daily_queue q WHERE q.id=o.queue_entry_id AND q.card_id=c.id AND q.queue_date=o.queue_date AND q.cycle=o.cycle)))
@@ -357,6 +399,34 @@ AND NOT EXISTS (SELECT 1 FROM public.daily_queue q JOIN public.study_attempts r 
 AND NOT EXISTS (SELECT 1 FROM public.daily_queue q JOIN public.study_conflict_queue_holds r ON r.queue_entry_id=q.id WHERE q.card_id=c.id)
 AND NOT EXISTS (SELECT 1 FROM public.daily_queue q JOIN public.study_position_issued_plans r ON r.queue_entry_id=q.id WHERE q.card_id=c.id)
 '''
+
+def _cut62_defense_reference_digest(database, keys):
+    """Return only the count and digest of exact original approved references."""
+    from psycopg import sql
+    query = sql.SQL("""
+        WITH approved AS MATERIALIZED (
+          SELECT value->>0 AS card_id, value->>1 AS candidate_id
+          FROM jsonb_array_elements(%s::jsonb) value
+        ), eligible AS MATERIALIZED ({selector}), chosen AS MATERIALIZED (
+          SELECT e.* FROM eligible e JOIN approved a USING(card_id,candidate_id)
+        ), evidence AS (
+          SELECT jsonb_build_object(
+            'cards', COALESCE((SELECT jsonb_agg(to_jsonb(c) ORDER BY c.id) FROM public.cards c JOIN chosen s ON s.card_id=c.id),'[]'::jsonb),
+            'candidates', COALESCE((SELECT jsonb_agg(to_jsonb(t) ORDER BY t.id) FROM public.threat_training_candidates t JOIN chosen s ON s.candidate_id=t.id),'[]'::jsonb),
+            'queues', COALESCE((SELECT jsonb_agg(to_jsonb(q) ORDER BY q.id) FROM public.daily_queue q JOIN chosen s ON s.card_id=q.card_id),'[]'::jsonb),
+            'origins', COALESCE((SELECT jsonb_agg(to_jsonb(o) ORDER BY o.queue_entry_id,o.card_id,o.revision) FROM public.queue_attempt_origins o JOIN chosen s ON s.card_id=o.card_id),'[]'::jsonb),
+            'request_links', COALESCE((SELECT jsonb_agg(to_jsonb(r) ORDER BY r.candidate_id,r.request_id,r.role) FROM public.threat_candidate_requests r JOIN chosen s ON s.candidate_id=r.candidate_id),'[]'::jsonb),
+            'requests', COALESCE((SELECT jsonb_agg(to_jsonb(r) ORDER BY r.id) FROM public.threat_analysis_requests r WHERE EXISTS (SELECT 1 FROM public.threat_candidate_requests l JOIN chosen s ON s.candidate_id=l.candidate_id WHERE l.request_id=r.id)),'[]'::jsonb),
+            'games', COALESCE((SELECT jsonb_agg(to_jsonb(g) ORDER BY g.id) FROM public.imported_games g WHERE EXISTS (SELECT 1 FROM public.threat_training_candidates t JOIN chosen s ON s.candidate_id=t.id WHERE t.game_id=g.id)),'[]'::jsonb),
+            'findings', COALESCE((SELECT jsonb_agg(to_jsonb(f) ORDER BY f.id) FROM public.game_findings f WHERE EXISTS (SELECT 1 FROM public.threat_training_candidates t JOIN chosen s ON s.candidate_id=t.id WHERE t.finding_id=f.id)),'[]'::jsonb),
+            'epochs', COALESCE((SELECT jsonb_agg(to_jsonb(e) ORDER BY e.repertoire_id) FROM public.priority_repertoire_source_epochs e WHERE EXISTS (SELECT 1 FROM chosen s WHERE s.repertoire_id=e.repertoire_id)),'[]'::jsonb)
+          ) AS value
+        ) SELECT (SELECT count(*) FROM chosen), encode(sha256(convert_to(value::text,'UTF8')),'hex') FROM evidence
+    """).format(selector=sql.SQL(CUT62_DRAFT_DEFENSE_SELECTOR))
+    return database.execute(query, (json.dumps(keys, separators=(',', ':')),)).fetchone()
+
+
+CUT62_DEFENSE_PROJECTED_TABLES = frozenset(('cards', 'daily_queue', 'queue_attempt_origins', 'threat_training_candidates', 'priority_repertoire_source_epochs', 'frozen_opening_runs'))
 
 # Draft projection primitive; the reviewed fixed selector and migration wiring
 # are still required before this can be used for a cutover witness.

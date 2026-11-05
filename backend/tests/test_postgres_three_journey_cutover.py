@@ -27,6 +27,7 @@ def test_cut62_guard_retains_full_fixed_ledger_and_rejects_tamper(monkeypatch):
     monkeypatch.setattr(guard, '_cut62_sequences', lambda database, secret, source: {'protected': {'count': 9, 'digest': 'sequences'}, 'retired': {'count': int(source), 'digest': 'retired'}})
     monkeypatch.setattr(guard, '_cut62_layout', lambda database, names: {name: layout[name] for name in names})
     monkeypatch.setattr(guard, '_cut62_table', lambda database, name, key, secret: state[name].copy())
+    monkeypatch.setattr(guard, '_cut62_projected_defense_table', lambda database, name, key, secret, selector: state[name].copy())
     witness = guard.capture_cut62(FakeDatabase(), b'x' * 32)
     assert len(guard.CUT62_PROTECTED_TABLES) == 181
     assert guard.verify_cut62(FakeDatabase(), witness, b'x' * 32)['to'] == 62
@@ -89,6 +90,7 @@ def test_cut62_sequence_drift_is_rejected(monkeypatch):
     monkeypatch.setattr(guard, '_cut62_profile_objects', lambda database, should_exist: None)
     monkeypatch.setattr(guard, '_cut62_layout', lambda database, names: {name: layout[name] for name in names})
     monkeypatch.setattr(guard, '_cut62_table', lambda database, name, key, secret: {'count': 1, 'digest': name})
+    monkeypatch.setattr(guard, '_cut62_projected_defense_table', lambda database, name, key, secret, selector: {'count': 1, 'digest': name})
     monkeypatch.setattr(guard, '_cut62_catalog', lambda database, secret: {'count': 1, 'digest': 'catalog'})
     monkeypatch.setattr(guard, '_cut62_sequences', lambda database, secret, source: {'protected': {'count': 9, 'digest': 'before'}, 'retired': {'count': int(source), 'digest': 'retired'}})
     witness = guard.capture_cut62(FakeDatabase(), b'x' * 32)
@@ -274,6 +276,8 @@ def test_schema61_defense_exclusive_rehearsal_preserves_shared_history(tmp_path)
             db.execute("UPDATE queue_attempt_origins SET issuance_sequence=1,issued_at='2026-01-02T00:00:00Z' WHERE queue_entry_id=900001")
             db.execute("INSERT INTO queue_attempt_abandonments(queue_entry_id,card_id,revision,operation_id,request_sha256,origin_sha256,actor,reason,abandoned_at) VALUES (900003,'census-issued',1,'abandoned',repeat('a',64),repeat('b',64),'synthetic','synthetic',now())")
             db.execute("INSERT INTO reviews(id,card_id,rating,reviewed_at,previous_interval,next_interval,source_ref) VALUES (900002,'census-defense','again','2026-01-01',1,0,'defense:attempt')")
+            db.execute("INSERT INTO reviews(id,card_id,rating,reviewed_at,previous_interval,next_interval,source_kind,source_ref) VALUES (900001,'census-opening','good','2026-01-02',1,2,'study','opening:review')")
+            db.execute("INSERT INTO review_attempt_receipts(attempt_id,card_id,queue_entry_id,outcome,guided,review_id,scheduling_status,result_json) VALUES ('opening-receipt','census-opening',900001,'complete',0,900001,'complete','{}')")
             db.execute("INSERT INTO review_schedule_snapshots(review_id,state_json) VALUES (900002,'{}')")
             db.execute("INSERT INTO review_attempt_receipts(attempt_id,card_id,queue_entry_id,outcome,guided,review_id,scheduling_status,result_json) VALUES ('census-receipt','census-defense',900002,'complete',0,900002,'complete','{}')")
             db.execute("INSERT INTO tactic_captures(id,card_id,source_kind,captured_at,request_json,result_json) VALUES ('defense-theme','census-tactic','puzzle_rush','2026-01-01','{\"theme\":\"defense\"}','{}'),('mixed-capture','census-shared','game','2026-01-01','{}','{}')")
@@ -315,8 +319,29 @@ def test_schema61_defense_exclusive_rehearsal_preserves_shared_history(tmp_path)
             def committed_since_game_determination():
                 return db.execute("SELECT count(*) FROM queue_attempt_origins o JOIN study_game_feedback f ON f.effect_key='game-effect' WHERE o.issued_as_head=1 AND o.issued_at>(f.payload_json::jsonb->'qualification'->>'determined_at')::timestamptz AND o.issuance_sequence IS NOT NULL").fetchone()[0]
             assert committed_since_game_determination() == 1
+            from tempo_legacy_database.adapters.study.issuance import committed_issuance_count
+            class IssuanceAdapter:
+                def execute(self, statement, params=()):
+                    return db.execute(statement.replace('?', '%s'), params)
+            assert committed_issuance_count(IssuanceAdapter(), '2026-01-01T00:00:00Z') == 1
             cohort_sql = guard.CUT62_DRAFT_DEFENSE_SELECTOR
             assert db.execute(cohort_sql).fetchall() == [('census-exclusive', 'exclusive-candidate', 'census-rep')]
+            selected_keys = [['census-exclusive', 'exclusive-candidate']]
+            reference_count, reference_digest = guard._cut62_defense_reference_digest(db, selected_keys)
+            assert reference_count == 1 and len(reference_digest) == 64
+            db.execute('SAVEPOINT reference_drift')
+            db.execute("UPDATE threat_analysis_requests SET state='complete' WHERE id='shared-request'")
+            assert guard._cut62_defense_reference_digest(db, selected_keys) != (reference_count, reference_digest)
+            db.execute('ROLLBACK TO SAVEPOINT reference_drift')
+            assert guard._cut62_defense_reference_digest(db, [['census-shared','mixed-candidate']])[0] == 0
+            db.execute('SAVEPOINT retained_receipt_hold')
+            db.execute("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,payload_json) VALUES ('retained-issue','queue.issue_head','x','pending','{\"entry_id\":900004,\"card_id\":\"census-exclusive\",\"expected_revision\":1}')")
+            assert db.execute(cohort_sql).fetchall() == []
+            db.execute('ROLLBACK TO SAVEPOINT retained_receipt_hold')
+            db.execute('SAVEPOINT opaque_result_hold')
+            db.execute("UPDATE daily_queue SET review_result_json='{}' WHERE id=900004")
+            assert db.execute(cohort_sql).fetchall() == []
+            db.execute('ROLLBACK TO SAVEPOINT opaque_result_hold')
             layout = guard._cut62_layout(db, guard.CUT62_PROTECTED_TABLES | guard.CUT62_RETIRED_TABLES | {guard.CUT62_LEDGER})
             changed_tables = guard.CUT62_PROTECTED_TABLES - protected_tables
             projected = {name: guard._cut62_projected_defense_table(db, name, layout[name][0], b'x'*32, cohort_sql) for name in changed_tables}
@@ -347,6 +372,7 @@ def test_schema61_defense_exclusive_rehearsal_preserves_shared_history(tmp_path)
             assert db.execute("SELECT card_id FROM threat_training_candidates WHERE id='exclusive-candidate'").fetchone()[0] is None
             assert retained_digest() == before
             assert committed_since_game_determination() == 1
+            assert committed_issuance_count(IssuanceAdapter(), '2026-01-01T00:00:00Z') == 1
             assert changed_rows() == expected
             assert {name: guard._cut62_table(db, name, layout[name][0], b'x'*32) for name in changed_tables} == projected
             db.execute('ROLLBACK TO SAVEPOINT exclusive_rehearsal')
@@ -538,3 +564,23 @@ def test_cut62_witness_id_binds_retired_evidence_and_secret():
     assert identifier == guard.cut62_witness_id(dict(original), b'x' * 32)
     assert identifier != guard.cut62_witness_id(changed, b'x' * 32)
     assert identifier != guard.cut62_witness_id(original, b'y' * 32)
+
+
+def test_defense_selection_is_private_sorted_and_bound_to_exact_bytes(tmp_path):
+    import hashlib
+    path = tmp_path / 'selection.json'
+    selection = {'version': 1, 'target': 'synthetic-target', 'cohort': 'defense-no-activity', 'keys': [['c', 't']], 'expected': {'count': 1, 'reference_digest': 'a'*64}}
+    payload = json.dumps(selection).encode()
+    path.write_bytes(payload)
+    path.chmod(0o600)
+    loaded, digest = guard.load_cut62_defense_selection(path)
+    assert loaded == selection
+    assert digest == hashlib.sha256(payload).hexdigest()
+    selection['keys'].append(['c', 't'])
+    selection['expected']['count'] = 2
+    path.write_text(json.dumps(selection))
+    with pytest.raises(RuntimeError, match='unique and sorted'):
+        guard.load_cut62_defense_selection(path)
+    path.chmod(0o644)
+    with pytest.raises(RuntimeError, match='private regular file'):
+        guard.load_cut62_defense_selection(path)
