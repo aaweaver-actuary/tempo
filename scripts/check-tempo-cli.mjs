@@ -173,8 +173,11 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
       await compose(["-f", oldOverlay, "up", "-d", "--no-build", "--no-deps", "--wait",
         "foreground-worker", "background-worker", "background-scheduler", "api", "web", "postgres-backup"], { echo: true });
       const preparedImages = { revision, images, configFingerprint: configurationFingerprint(config) };
-      let interrupted60 = false, interrupted61 = false, interruptedCapture = false, captures = 0;
+      let interrupted60 = false, interrupted61 = false, interruptedCapture = false, interrupted62 = false, captures = 0;
       const inject = async (command, args, options) => {
+        if (args.includes("--cut62-verify") && !interrupted62) {
+          interrupted62 = true; throw new Error("injected after schema62");
+        }
         if (args.includes("--target-version") && !interrupted60) {
           interrupted60 = true;
           // Execute the real migrator with a fault at the start of 061. Migration
@@ -238,6 +241,27 @@ m.apply_migrations(os.environ["TEMPO_POSTGRES_ADMIN_URL"], target_version=61)`;
       assert.equal(captured.cut62_intermediate_verified.schema, 61);
       const witness = join(stateDirectory, captured.cut62_witness.replace(/\.json$/, ""), captured.cut62_witness);
       const witnessBytes = readFileSync(witness);
+      // Capture a second valid witness with the same retained state and a
+      // different retired engine row; restore that row before any retry.
+      const witnessDirectory = join(stateDirectory, captured.cut62_witness.replace(/\.json$/, ""));
+      const alternate = join(witnessDirectory, "alternate.json");
+      const updateRetired = async expression => compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration", "-c",
+        `import os, psycopg\nwith psycopg.connect(os.environ['TEMPO_POSTGRES_ADMIN_URL']) as db:\n db.execute("UPDATE engine_scheduling_state SET automated_streak=${expression} WHERE id=1")`]);
+      await updateRetired("(automated_streak+1)%4");
+      let alternateId;
+      try {
+        alternateId = JSON.parse((await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "--volume", `${witnessDirectory}:/cut62`,
+          "migration", "database/tooling/verify_postgres_cli_state.py", "--cut62-capture", "/cut62/alternate.json"])).stdout).witness_id;
+      } finally { await updateRetired("(automated_streak+3)%4"); }
+      assert(alternateId && alternateId !== captured.cut62_identity.witness_id);
+      const alternateBytes = readFileSync(alternate);
+      writeFileSync(witness, alternateBytes, { mode: 0o600 });
+      try {
+        const swapped61 = makeRuntime(target, { run, stateDirectory, revision, evidence, preparedImages, retry: true });
+        await swapped61.inspectTarget();
+        await assert.rejects(lifecycle("p0_alternate_witness_61", { recreate: true }, swapped61));
+        assert.equal(Number((await readLatestMigration(compose)).stdout.trim()), 61);
+      } finally { writeFileSync(witness, witnessBytes, { mode: 0o600 }); }
       renameSync(witness, witness + ".held");
       try {
         const missing = makeRuntime(target, { run, stateDirectory, revision, evidence, preparedImages, retry: true });
@@ -245,6 +269,17 @@ m.apply_migrations(os.environ["TEMPO_POSTGRES_ADMIN_URL"], target_version=61)`;
         await assert.rejects(lifecycle("p0_missing_witness", { recreate: true }, missing), /witness is missing/);
       } finally { renameSync(witness + ".held", witness); }
       const retryStart = commandLog.length;
+      const interrupt62 = makeRuntime(target, { run: inject, stateDirectory, revision, evidence, preparedImages, retry: true });
+      await interrupt62.inspectTarget();
+      await assert.rejects(lifecycle("p0_interrupted_62", { recreate: true }, interrupt62), /injected after schema62/);
+      assert.equal(Number((await readLatestMigration(compose)).stdout.trim()), 62);
+      writeFileSync(witness, alternateBytes, { mode: 0o600 });
+      try {
+        const swapped62 = makeRuntime(target, { run, stateDirectory, revision, evidence, preparedImages, retry: true });
+        await swapped62.inspectTarget();
+        await assert.rejects(lifecycle("p0_alternate_witness_62", { recreate: true }, swapped62), /witness identity differs/);
+        assert.equal(JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8")).state, "pending");
+      } finally { writeFileSync(witness, witnessBytes, { mode: 0o600 }); }
       const final = makeRuntime(target, { run, stateDirectory, revision, evidence, preparedImages, retry: true });
       await final.inspectTarget(); await lifecycle("p0_resume_original", { recreate: true }, final);
       assert(!commandLog.slice(retryStart).some(call => call.args.includes("--cut62-capture")));
