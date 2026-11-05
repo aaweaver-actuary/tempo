@@ -54,3 +54,43 @@ def test_native_missing_intent_and_forged_envelope_are_distinct(owned_database):
         assert _recovery_identity(database, task, lock=True)[0] == 'invalid'
         row = database.execute_native('SELECT state,lease_token FROM background_tasks WHERE id=%s', (task_id,)).fetchone()
         assert tuple(row) == ('leased', lease)
+
+
+def test_native_owner_retry_disabled_and_missing_intent_preserve_parked_task(owned_database, monkeypatch):
+    """Neither an unqualified claimant nor a missing accepted intent can wake work."""
+    from fastapi import HTTPException
+    from app import activity_commands
+
+    token = uuid.uuid4().hex
+    task_id, intent_id = 'parked-task-' + token, 'parked-intent-' + token
+    now = datetime.now(timezone.utc).isoformat()
+    parked = '9999-12-31T23:59:59+00:00'
+    with postgres_store.connection(read_only=False) as database:
+        database.execute_native(
+            "INSERT INTO background_tasks(id,kind,deduplication_key,generation,priority,state,phase,"
+            "payload_version,payload_json,attempt_count,max_attempts,next_attempt_at,created_at,updated_at) "
+            "VALUES(%s,'discovery_admission',%s,7,80,'queued','queued',1,%s,2,5,%s,%s,%s)",
+            (task_id, intent_id, json.dumps({'intent_id': intent_id}), parked, now, now))
+    payload = {'task_id': task_id, 'generation': 7, 'intent_id': intent_id,
+               'hold_reason': 'graph_prerequisite_missing'}
+    with postgres_store.connection(read_only=False) as database:
+        with pytest.raises(HTTPException) as disabled:
+            activity_commands._retry_retained_discovery(database, payload)
+        assert disabled.value.status_code == 409
+        assert disabled.value.detail == {'code': 'discovery_recovery_disabled'}
+    # Simulate qualification only in this disposable test; the real gate remains false.
+    monkeypatch.setattr(activity_commands, '_DISCOVERY_RECOVERY_QUALIFIED', True)
+    for attempted in (payload, {**payload, 'generation': 8}, {**payload, 'intent_id': 'other'}):
+        with postgres_store.connection(read_only=False) as database:
+            with pytest.raises(HTTPException) as rejected:
+                activity_commands._retry_retained_discovery(database, attempted)
+            assert rejected.value.status_code == 409
+    postgres_store.close_pools()  # Recovery checks must survive reconnect.
+    with postgres_store.connection(read_only=True) as database:
+        row = database.execute_native(
+            'SELECT id,generation,state,next_attempt_at,lease_token,attempt_count FROM background_tasks WHERE id=%s',
+            (task_id,)).fetchone()
+        assert tuple(row) == (task_id, 7, 'queued', parked, None, 2)
+        assert database.execute_native(
+            "SELECT count(*) FROM background_task_events WHERE task_id=%s AND event='manual_retry'",
+            (task_id,)).fetchone()[0] == 0
