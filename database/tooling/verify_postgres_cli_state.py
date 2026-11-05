@@ -963,11 +963,13 @@ def _cut62_capture_history_v2(database, selection, binding, secret, selection_sh
             raise RuntimeError('Defense history shared catalog changed')
     source = capture_cut62(database,secret)
     layout = source['layout']
-    cohort = """WITH ordinary AS ({ordinary}), historical AS ({historical}),
-        eligible AS (SELECT card_id,candidate_id,repertoire_id,'no_activity'::text cohort_group FROM ordinary
-                     UNION ALL SELECT card_id,candidate_id,repertoire_id,cohort_group FROM historical),
-        approved AS (SELECT value->>0 card_id,value->>1 candidate_id,value->>2 cohort_group FROM jsonb_array_elements(%s::jsonb) value)
-        SELECT e.card_id,e.candidate_id,e.repertoire_id FROM eligible e JOIN approved a USING(card_id,candidate_id,cohort_group)""".format(ordinary=CUT62_DRAFT_DEFENSE_SELECTOR,historical=_cut62_draft_history_selector())
+    # The selector/count/group/reference digest was just checked in this
+    # fenced repeatable-read transaction. Project from those exact bounded
+    # approved identities instead of re-planning the full union per table.
+    cohort = """SELECT c.id card_id,t.id candidate_id,c.repertoire_id
+        FROM jsonb_array_elements(%s::jsonb) approved
+        JOIN public.cards c ON c.id=approved->>0
+        JOIN public.threat_training_candidates t ON t.id=approved->>1 AND t.card_id=c.id"""
     params=(json.dumps(selection['keys'],separators=(',',':')),)
     projected={name:_cut62_projected_history_table(database,name,layout[name][0],secret,cohort,params) for name in sorted(CUT62_HISTORY_PROJECTED_TABLES)}
     witness={'domain':'cut62-history-draft-v1','selection':selection,'binding':binding,

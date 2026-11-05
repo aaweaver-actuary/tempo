@@ -865,6 +865,16 @@ def test_schema61_defense_recognition_review_history_rehearsal(monkeypatch):
             db.execute('ROLLBACK TO SAVEPOINT history_replica_guard')
             original = guard._cut62_capture_history_v2(db,selection,binding,b'h'*32,'b'*64,binding)
             assert original['projected'] == history_projected
+            # Re-evaluate the earlier selector-based projection as a bounded
+            # fixture oracle; production capture uses validated exact keys.
+            prior_cohort = """WITH ordinary AS ({ordinary}), historical AS ({historical}),
+                eligible AS (SELECT card_id,candidate_id,repertoire_id,'no_activity'::text cohort_group FROM ordinary
+                             UNION ALL SELECT card_id,candidate_id,repertoire_id,cohort_group FROM historical),
+                approved AS (SELECT value->>0 card_id,value->>1 candidate_id,value->>2 cohort_group FROM jsonb_array_elements(%s::jsonb) value)
+                SELECT e.card_id,e.candidate_id,e.repertoire_id FROM eligible e JOIN approved a USING(card_id,candidate_id,cohort_group)""".format(ordinary=guard.CUT62_DRAFT_DEFENSE_SELECTOR,historical=guard._cut62_draft_history_selector())
+            for name in sorted(guard.CUT62_HISTORY_PROJECTED_TABLES):
+                assert guard._cut62_projected_history_table(db,name,layout[name][0],b'h'*32,prior_cohort,
+                    (json.dumps(history_keys,separators=(',',':')),)) == original['projected'][name]
             db.execute('SAVEPOINT history_gate_drift')
             db.execute('ALTER TABLE public.reviews DISABLE TRIGGER priority_source_reviews')
             with pytest.raises(RuntimeError,match='history catalog changed'):
