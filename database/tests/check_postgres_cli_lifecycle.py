@@ -35,7 +35,7 @@ def _assert_disposable_pinned_database(database, guard):
     if (os.getenv('TEMPO_TEST_INSTANCE') != 'disposable' or guard.get('state') != 'pending' or
             identity.get('target') != guard.get('target') or identity.get('trustedDaemon') is not True or
             not str(identity.get('project', '')).startswith('tempo-pg-regressions-') or
-            isolation.get('phase') != 'detached' or isolation.get('original_allow_connections') is not True):
+            isolation.get('phase') not in ('detached', 'verified') or isolation.get('original_allow_connections') is not True):
         raise RuntimeError('Disposable isolation authority is unavailable')
     row = database.execute("""SELECT current_database(), current_user, host(inet_client_addr()), pg_backend_pid(),
       (SELECT system_identifier::text FROM pg_control_system()),
@@ -165,7 +165,7 @@ def run_disposable_pinned_isolation(database_url, *, guard_path, selection_path,
     isolation = guard.get('isolation') or {}
     binding = guard.get('defense_binding') or {}
     if (guard.get('version') != 1 or guard.get('state') != 'pending' or guard.get('starting_schema') not in (59,61) or
-            guard.get('intended_schema') != 62 or isolation.get('phase') != 'detached' or
+            guard.get('intended_schema') != 62 or isolation.get('phase') not in ('detached', 'verified') or
             binding.get('attempt_id') != guard.get('attempt_id') or binding.get('target') != guard.get('target') or
             binding.get('backup_filename') != (guard.get('backup') or {}).get('filename') or not (guard.get('backup') or {}).get('verified') or
             os.path.basename(witness_path) != guard.get('cut62_witness')):
@@ -194,7 +194,16 @@ def run_disposable_pinned_isolation(database_url, *, guard_path, selection_path,
     if not handoff.is_dir() or stat.S_IMODE(os.lstat(handoff).st_mode) != 0o700:
         raise RuntimeError('Disposable pinned handoff directory is invalid')
     with psycopg.connect(database_url) as database:
+        backend = database.execute("""SELECT current_user,host(inet_client_addr()),
+            (SELECT system_identifier::text FROM pg_control_system()),
+            (SELECT oid FROM pg_database WHERE datname=current_database()),
+            (SELECT extract(epoch FROM backend_start)::text FROM pg_stat_activity WHERE pid=pg_backend_pid())""").fetchone()
+        database.rollback()
+        if (backend[0] != isolation.get('admin_role') or backend[1] not in ('127.0.0.1','::1') or
+                backend[2] != isolation.get('system_identifier') or backend[3] != isolation.get('target_oid')):
+            raise RuntimeError('Disposable pinned backend identity differs')
         ready = {'version': 1, 'nonce': nonce, 'pid': database.info.backend_pid,
+                 'backend_role': backend[0], 'backend_address': backend[1], 'backend_start': backend[4],
                  'target': guard['target'], 'attempt_id': guard['attempt_id'],
                  'daemon_id': isolation['identity']['daemonId'], 'container_id': isolation['identity']['containerId'],
                  'network_id': isolation['identity']['networkId'], 'image_id': isolation['identity']['imageId'],
@@ -216,6 +225,8 @@ def run_disposable_pinned_isolation(database_url, *, guard_path, selection_path,
                 raise RuntimeError('Disposable pinned backend changed')
             version = database.execute('SELECT COALESCE(max(version),0) FROM public.tempo_schema_migrations').fetchone()[0]
             if version == 61:
+                if isolation.get('phase') != 'detached':
+                    raise RuntimeError('Verified disposable phase cannot apply a migration')
                 if pre_witness is not None:
                     observed = verify_pre62_59(database, pre_witness, pre_secret)
                     if observed.get('witness_id') != guard.get('pre62_witness_id') or observed.get('observed_schema') != 61:
@@ -262,6 +273,8 @@ def run_disposable_pinned_isolation(database_url, *, guard_path, selection_path,
             _reuse_verified_receipt(receipt_path, receipt)
         else:
             _write_private_json_once(receipt_path, receipt)
+        if os.getenv('TEMPO_TEST_ISOLATION_CRASH_AFTER_RECEIPT') == '1':
+            os._exit(78)
 
 
 
@@ -335,7 +348,27 @@ def main():
     mode.add_argument("--normalization", action="store_true", help="Read the qualifying legacy migration-025 card and queue row")
     mode.add_argument("--seed-abandon-orphan", action="store_true", help="Seed one fixed synthetic orphan after the owned CLI target upgrades")
     mode.add_argument("--abandon-inspection", action="store_true", help="Read retained origin/receipt bytes and complete Study history for abandonment proof")
+    mode.add_argument("--isolation-pinned", action="store_true", help="Run the disposable pinned test adapter")
+    parser.add_argument("--isolation-defense", action="store_true", help="Use the fixed synthetic Defense cohort for the isolated test")
+    parser.add_argument("--isolation-guard")
+    parser.add_argument("--isolation-selection")
+    parser.add_argument("--isolation-binding")
+    parser.add_argument("--isolation-witness")
+    parser.add_argument("--isolation-pre62")
+    parser.add_argument("--isolation-handoff")
+    parser.add_argument("--isolation-nonce")
     options = parser.parse_args()
+    if options.isolation_defense and not (options.seed59 or options.defense_reference):
+        raise RuntimeError('Synthetic Defense cohort requires seed59 or defense-reference')
+    if options.isolation_pinned:
+        if not all((options.isolation_guard, options.isolation_selection, options.isolation_binding,
+                    options.isolation_witness, options.isolation_handoff, options.isolation_nonce)):
+            raise RuntimeError('Disposable pinned test arguments are incomplete')
+        run_disposable_pinned_isolation(dsn, guard_path=options.isolation_guard,
+            selection_path=options.isolation_selection, binding_path=options.isolation_binding,
+            witness_path=options.isolation_witness, pre62_path=options.isolation_pre62,
+            handoff_directory=options.isolation_handoff, nonce=options.isolation_nonce)
+        return
     if options.defense_reference:
         if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
             raise RuntimeError('Defense lifecycle fixture requires the disposable runner')
@@ -352,9 +385,10 @@ def main():
             _cut62_session(database)
             database.execute('SET LOCAL join_collapse_limit=1')
             database.execute('SET LOCAL jit=off')
-            count, digest = _cut62_defense_reference_digest(database, [])
-            if count != 0:
-                raise RuntimeError('Explicit zero Defense fixture was not empty')
+            keys = [['cli-isolation-card', 'cli-isolation-candidate']] if options.isolation_defense else []
+            count, digest = _cut62_defense_reference_digest(database, keys)
+            if count != len(keys):
+                raise RuntimeError('Synthetic Defense fixture selection changed')
             result = {'count': count, 'reference_digest': digest}
             database.rollback()
         finally:
@@ -421,6 +455,20 @@ def main():
             for migration in sorted(MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql"))[16:59]:
                 with database.transaction():
                     database.execute(migration_source(migration), prepare=False)
+        if options.isolation_defense:
+            with psycopg.connect(dsn) as database:
+                database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES ('cli-isolation','CLI isolation','regression','2000-01-01')")
+                database.execute("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,content_type)
+                    VALUES ('cli-isolation-card','cli-isolation','prefix','fen','[]','2000-01-01','defense')""")
+                database.execute("""INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json)
+                    VALUES ('cli-isolation-game','synthetic','synthetic','2000-01-01','rapid',0,'white','draw','fen','[]')""")
+                database.execute("""INSERT INTO game_findings(id,game_id,analysis_version,ply,kind,confidence,evidence_json,created_at,updated_at)
+                    VALUES ('cli-isolation-finding','cli-isolation-game',1,1,'synthetic',1,'{}','2000-01-01','2000-01-01')""")
+                database.execute("""INSERT INTO threat_training_candidates(id,finding_id,game_id,analysis_version,incident_id,player_ply,evidence_json,source_fingerprint,detector_version,policy_json,created_at,updated_at,card_id)
+                    VALUES ('cli-isolation-candidate','cli-isolation-finding','cli-isolation-game',1,'synthetic',1,'{}','synthetic',1,'{}','2000-01-01','2000-01-01','cli-isolation-card')""")
+                from psycopg import sql
+                name = database.execute('SELECT current_database()').fetchone()[0]
+                database.execute(sql.SQL("COMMENT ON DATABASE {} IS 'tempo-disposable-postgres-test'").format(sql.Identifier(name)))
     provision(dsn, Path("/run/secrets/reader_password").read_text().strip(),
               Path("/run/secrets/writer_password").read_text().strip())
     print(f"Seeded populated schema {59 if options.seed59 else 16} with preserved review, queue, and receipt history")
