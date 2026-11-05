@@ -15,6 +15,17 @@ import { parseArguments, ensureDocker } from "../../scripts/tempo-cli.mjs";
 import { authenticateManagedSettlement, inspectRegisteredIsolation, runManagedPinnedChild } from "../../scripts/tempo-managed-isolation.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
+import { validateOwnedPostgresTelemetry } from '../../database/tests/managed_cli_rehearsal.mjs';
+
+test('owned PostgreSQL telemetry requires the full exact container identity', () => {
+  const id='a'.repeat(64), project='tempo-pg-regressions-owned-cli', image='sha256:owned';
+  const item={Id:id,Image:image,Config:{Labels:{'com.docker.compose.project':project,'com.docker.compose.service':'postgres'}}};
+  assert.equal(validateOwnedPostgresTelemetry([id],[item],project,image),item);
+  assert.throws(()=>validateOwnedPostgresTelemetry([id.slice(0,12)],[item],project,image),/ambiguous/);
+  assert.throws(()=>validateOwnedPostgresTelemetry(['b'.repeat(64)],[item],project,image),/identity differs/);
+  assert.throws(()=>validateOwnedPostgresTelemetry([id],[{...item,Image:'sha256:other'}],project,image),/identity differs/);
+  assert.throws(()=>validateOwnedPostgresTelemetry([id,id],[item],project,image),/ambiguous/);
+});
 
 test("actual CLI diagnostics explain current blocker before historical Redis failure", t => {
   const fixture = diagnosticFixture(t, { diagnostics: { runs: [{ ...diagnosticMainRun, status: "queued" }] } });

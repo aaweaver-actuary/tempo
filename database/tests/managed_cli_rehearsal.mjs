@@ -6,10 +6,18 @@ import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readF
 import { basename, dirname, join } from 'node:path';
 import { atomicJson, redact, targetKey } from '../../scripts/tempo-deployment.mjs';
 import { studyDurabilityPgn } from './postgres-test-fixture.mjs';
-import { Chess } from 'chess.js';
+
+export function validateOwnedPostgresTelemetry(ids, items, project, expectedImage) {
+  if (ids.length!==1 || !/^[0-9a-f]{64}$/.test(ids[0]) || items.length!==1) throw new Error('Owned PostgreSQL telemetry identity is ambiguous');
+  const item=items[0];
+  if(item.Id!==ids[0]||item.Image!==expectedImage||item.Config?.Labels?.['com.docker.compose.project']!==project||
+      item.Config?.Labels?.['com.docker.compose.service']!=='postgres')throw new Error('Owned PostgreSQL telemetry identity differs');
+  return item;
+}
 
 export async function runOwnedManagedCliRehearsal({ root, project, target, config, context, daemonId, images,
   revision, environment, stateRoot, stateDirectory, registration, directory, compose, docker, readHistory, expected, readLatestMigration, manifest }) {
+  const { Chess } = await import('chess.js');
   const harness = environment.W08_MANAGED_HARNESS;
   if (!harness || !environment.W08_REAL_DOCKER?.startsWith('/')) throw new Error('Owned managed harness paths are missing');
   if (!environment.W08_OWNED_CLONE || !environment.W08_OWNED_BARE || realpathSync(root)!==realpathSync(environment.W08_OWNED_CLONE) ||
@@ -117,15 +125,13 @@ export async function runOwnedManagedCliRehearsal({ root, project, target, confi
     atomicJson(join(directory,`managed-cli-${sequence}.json`),{
       fault,status:result.status,signal:result.signal,stdout:redact(result.stdout??'',secrets),stderr:redact(result.stderr??'',secrets)});
     const dockerCall=(...args)=>spawnSync(environment.W08_REAL_DOCKER,['--context',context,...args],{encoding:'utf8',timeout:15000});
-    const listed=dockerCall('ps','-aq','--filter',`label=com.docker.compose.project=${project}`,'--filter','label=com.docker.compose.service=postgres');
+    const listed=dockerCall('ps','-aq','--no-trunc','--filter',`label=com.docker.compose.project=${project}`,'--filter','label=com.docker.compose.service=postgres');
     if(listed.status!==0)throw new Error('Owned PostgreSQL telemetry inventory failed');
     const ids=listed.stdout.trim().split(/\s+/).filter(Boolean);if(ids.length>1)throw new Error('Owned PostgreSQL telemetry identity is ambiguous');
     const telemetry={sequence,fault,cumulative_since_container_start:true,available:false};
     if(ids.length){
       const inspected=dockerCall('inspect',ids[0]);if(inspected.status!==0)throw new Error('Owned PostgreSQL telemetry inspection failed');
-      const items=JSON.parse(inspected.stdout),item=items[0];
-      if(items.length!==1||item.Id!==ids[0]||item.Image!==db.Image||item.Config?.Labels?.['com.docker.compose.project']!==project||
-          item.Config?.Labels?.['com.docker.compose.service']!=='postgres')throw new Error('Owned PostgreSQL telemetry identity differs');
+      const item=validateOwnedPostgresTelemetry(ids,JSON.parse(inspected.stdout),project,db.Image);
       Object.assign(telemetry,{containerId:item.Id,image:item.Image,running:item.State.Running,oomKilled:item.State.OOMKilled,memoryLimit:item.HostConfig.Memory});
       if(item.State.Running){
         const sample=dockerCall('exec',item.Id,'sh','-c','cat /sys/fs/cgroup/memory.current; cat /sys/fs/cgroup/memory.peak; cat /sys/fs/cgroup/memory.events');
