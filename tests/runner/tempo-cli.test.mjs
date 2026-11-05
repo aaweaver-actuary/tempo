@@ -2580,14 +2580,21 @@ test("schema 62 bind source is absolute and cannot alter volume syntax", () => {
 
 test("schema 62 runtime preserves original witness across failed verification and retry", async t => {
   let schema = 61, shouldFail = true, captures = 0;
+  const events = [], paths = new Map();
+  const originalOpen = fs.openSync, originalFsync = fs.fsyncSync;
+  t.mock.method(fs, "openSync", (...args) => { const fd = originalOpen(...args); paths.set(fd, args[0]); return fd; });
+  t.mock.method(fs, "fsyncSync", fd => { events.push(["sync", paths.get(fd)]); return originalFsync(fd); });
+  syncBuiltinESMExports();
+  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
   const { runtime, calls, fixture } = imageRuntimeFixture(t, "postgres:18.6-trixie", 18, false, args => {
     if (args.includes("database/tooling/apply_postgres_migrations.py")) {
-      if (!args.includes("--check")) { schema = 62; return ""; }
+      if (!args.includes("--check")) { events.push(["migrate"]); schema = 62; return ""; }
       return JSON.stringify({ initialized: true, roles_ready: true, credentials_ready: true, expected_version: 62,
         applied_versions: Array.from({ length: schema }, (_, index) => index + 1), pending_versions: schema === 61 ? [62] : [] });
     }
     if (args.includes("--cut62-capture")) {
       captures += 1;
+      events.push(["capture"]);
       const directory = args[args.indexOf("--volume") + 1].slice(0, -":/cut62".length);
       writeFileSync(join(directory, args.at(-1).split("/").at(-1)), "original", { mode: 0o600 });
       return "{}";
@@ -2605,6 +2612,11 @@ test("schema 62 runtime preserves original witness across failed verification an
   assert.equal(guard.state, "pending");
   const witness = join(cut62MountDirectory(fixture.stateDirectory, guard.cut62_witness), guard.cut62_witness);
   assert.equal(readFileSync(witness, "utf8"), "original");
+  const captureIndex = events.findIndex(event => event[0] === "capture");
+  const directorySync = events.findIndex((event, index) => index > captureIndex && event[0] === "sync" && event[1] === cut62MountDirectory(fixture.stateDirectory, guard.cut62_witness));
+  const parentSync = events.findIndex((event, index) => index > directorySync && event[0] === "sync" && event[1] === fixture.stateDirectory);
+  const migrateIndex = events.findIndex(event => event[0] === "migrate");
+  assert(captureIndex >= 0 && directorySync > captureIndex && parentSync > directorySync && migrateIndex > parentSync);
   rmSync(witness);
   await assert.rejects(runtime.migrate(), /witness is missing/);
   assert.equal(captures, 1);
