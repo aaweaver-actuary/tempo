@@ -13,16 +13,197 @@ sys.path.insert(0, str(_REPOSITORY / "backend"))
 import os
 import argparse
 import json
+import re
+import stat
+import time
 from pathlib import Path
 
 import psycopg
 
+from database.tooling import apply_postgres_migrations as migration_owner
 from database.tooling.apply_postgres_migrations import MIGRATIONS, migration_source
 from database.tooling.provision_postgres_roles import provision
 from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 
 
 ABANDON_CARD = "cli-synthetic-abandon-orphan"
+
+
+def _assert_disposable_pinned_database(database, guard):
+    isolation = guard.get('isolation') or {}
+    identity = isolation.get('identity') or {}
+    if (os.getenv('TEMPO_TEST_INSTANCE') != 'disposable' or guard.get('state') != 'pending' or
+            identity.get('target') != guard.get('target') or identity.get('trustedDaemon') is not True or
+            not str(identity.get('project', '')).startswith('tempo-pg-regressions-') or
+            isolation.get('phase') != 'detached' or isolation.get('original_allow_connections') is not True):
+        raise RuntimeError('Disposable isolation authority is unavailable')
+    row = database.execute("""SELECT current_database(), current_user, host(inet_client_addr()), pg_backend_pid(),
+      (SELECT system_identifier::text FROM pg_control_system()),
+      (SELECT oid FROM pg_database WHERE datname=current_database()),
+      (SELECT datallowconn FROM pg_database WHERE datname=current_database()),
+      (SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid()),
+      (SELECT count(*) FROM pg_prepared_xacts WHERE database=current_database()),
+      current_setting('server_version_num'), current_setting('session_replication_role'),
+      (SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database())""").fetchone()
+    if (row[0] != isolation.get('target_name') or row[0] != (guard.get('database') or {}).get('name') or
+            row[1] != isolation.get('admin_role') or row[2] not in ('127.0.0.1','::1') or row[3] <= 0 or
+            row[4] != isolation.get('system_identifier') or row[5] != isolation.get('target_oid') or
+            row[6] is not False or row[7] != 0 or row[8] != 0 or row[9] != '180006' or row[10] != 'origin' or
+            row[11] != 'tempo-disposable-postgres-test'):
+        raise RuntimeError('Disposable pinned database identity or admission changed')
+    return row[3]
+
+
+def _read_private_json(path):
+    parent = os.lstat(os.path.dirname(path))
+    if not stat.S_ISDIR(parent.st_mode) or stat.S_IMODE(parent.st_mode) != 0o700:
+        raise RuntimeError('Private isolation state directory is invalid')
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+    with os.fdopen(descriptor, 'rb') as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o600 or info.st_size > 1048576:
+            raise RuntimeError('Private isolation state file is invalid')
+        return json.load(stream)
+
+
+def _write_private_json_once(path, value):
+    # Publish only complete file contents; an existing receipt is never replaced.
+    parent = os.path.dirname(path)
+    temporary = os.path.join(parent, '.' + os.path.basename(path) + '.' + os.urandom(16).hex() + '.tmp')
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0), 0o600)
+    try:
+        with os.fdopen(descriptor, 'w') as stream:
+            json.dump(value, stream, sort_keys=True, separators=(',', ':'))
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.link(temporary, path, follow_symlinks=False)
+        os.unlink(temporary)
+        directory = os.open(parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+
+
+@migration_owner.safe_postgres_errors
+def run_disposable_pinned_isolation(database_url, *, guard_path, selection_path, binding_path, witness_path,
+                                    pre62_path, handoff_directory, nonce):
+    """Test-only pinned connection; caller owns the Docker isolation and lock.
+
+    Production managed execution does not call this entry point. The caller
+    must detach and inspect the exact registered Docker topology, close
+    admission, and authenticate the ready PID before acknowledging the handoff.
+    """
+    if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
+        raise RuntimeError('Disposable isolation supervisor is not enabled')
+    from database.tooling.verify_postgres_cli_state import (
+        authenticate_pre62_59, check_captured_cut62_v6, cut62_witness_id,
+        load_cut62_attempt_binding, load_cut62_defense_selection, load_cut62_witness,
+        load_pre62_59, verify_cut62_v6, verify_pre62_59,
+    )
+    if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable' or not re.fullmatch('[0-9a-f]{32}', nonce or ''):
+        raise RuntimeError('Disposable pinned handoff is unavailable')
+    guard = _read_private_json(guard_path)
+    isolation = guard.get('isolation') or {}
+    binding = guard.get('defense_binding') or {}
+    if (guard.get('version') != 1 or guard.get('state') != 'pending' or guard.get('starting_schema') not in (59,61) or
+            guard.get('intended_schema') != 62 or isolation.get('phase') != 'detached' or
+            binding.get('attempt_id') != guard.get('attempt_id') or binding.get('target') != guard.get('target') or
+            binding.get('backup_filename') != (guard.get('backup') or {}).get('filename') or not (guard.get('backup') or {}).get('verified') or
+            os.path.basename(witness_path) != guard.get('cut62_witness')):
+        raise RuntimeError('Original disposable isolation guard is invalid')
+    selection, selection_sha = load_cut62_defense_selection(selection_path)
+    loaded_binding = load_cut62_attempt_binding(binding_path, selection, selection_sha)
+    witness, secret = load_cut62_witness(witness_path)
+    witness_id = cut62_witness_id(witness, secret)
+    if (loaded_binding != binding or witness.get('binding') != binding or witness.get('selection') != selection or
+            witness_id != (guard.get('cut62_identity') or {}).get('witness_id') or
+            (guard.get('cut62_identity') or {}).get('attempt_id') != guard.get('attempt_id') or
+            (guard.get('cut62_identity') or {}).get('backup_filename') != binding.get('backup_filename')):
+        raise RuntimeError('Original disposable witness or binding differs')
+    pre_witness = pre_secret = None
+    if guard.get('starting_schema') == 59:
+        checkpoint = guard.get('cut62_intermediate_verified') or {}
+        if (checkpoint.get('schema') != 61 or checkpoint.get('attempt_id') != guard.get('attempt_id') or
+                checkpoint.get('pre62_witness_id') != guard.get('pre62_witness_id') or
+                checkpoint.get('backup_filename') != binding.get('backup_filename') or not pre62_path or
+                os.path.basename(pre62_path) != guard.get('pre62_witness') or checkpoint.get('pre62_witness') != guard.get('pre62_witness')):
+            raise RuntimeError('Original schema 59 checkpoint is invalid')
+        pre_witness, pre_secret = load_pre62_59(pre62_path)
+        if authenticate_pre62_59(pre_witness, pre_secret) != guard.get('pre62_witness_id'):
+            raise RuntimeError('Original schema 59 witness differs')
+    handoff = Path(handoff_directory)
+    if not handoff.is_dir() or stat.S_IMODE(os.lstat(handoff).st_mode) != 0o700:
+        raise RuntimeError('Disposable pinned handoff directory is invalid')
+    with psycopg.connect(database_url) as database:
+        ready = {'version': 1, 'nonce': nonce, 'pid': database.info.backend_pid,
+                 'target': guard['target'], 'attempt_id': guard['attempt_id'],
+                 'daemon_id': isolation['identity']['daemonId'], 'container_id': isolation['identity']['containerId'],
+                 'network_id': isolation['identity']['networkId'], 'image_id': isolation['identity']['imageId'],
+                 'system_identifier': isolation['system_identifier'], 'target_oid': isolation['target_oid'],
+                 'control_oid': isolation['control_oid'], 'backup_sha256': binding['backup_sha256'],
+                 'selection_sha256': selection_sha, 'cut62_witness_id': witness_id,
+                 'pre62_witness_id': guard.get('pre62_witness_id') if guard['starting_schema'] == 59 else None}
+        _write_private_json_once(str(handoff / 'ready.json'), ready)
+        deadline = time.monotonic() + 60
+        while not (handoff / 'closed.json').exists():
+            if time.monotonic() >= deadline:
+                raise RuntimeError('Disposable pinned handoff timed out')
+            time.sleep(.1)
+        if _read_private_json(str(handoff / 'closed.json')) != ready or _read_private_json(guard_path) != guard:
+            raise RuntimeError('Disposable pinned handoff changed')
+        with database.transaction():
+            database.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+            if _assert_disposable_pinned_database(database, guard) != ready['pid']:
+                raise RuntimeError('Disposable pinned backend changed')
+            version = database.execute('SELECT COALESCE(max(version),0) FROM public.tempo_schema_migrations').fetchone()[0]
+            if version == 61:
+                if pre_witness is not None:
+                    observed = verify_pre62_59(database, pre_witness, pre_secret)
+                    if observed.get('witness_id') != guard.get('pre62_witness_id') or observed.get('observed_schema') != 61:
+                        raise RuntimeError('Original schema 59 history changed')
+                if check_captured_cut62_v6(database, witness, secret).get('witness_id') != witness_id:
+                    raise RuntimeError('Original schema 61 history changed')
+            elif version == 62:
+                if verify_cut62_v6(database, witness, secret).get('witness_id') != witness_id:
+                    raise RuntimeError('Original committed witness differs')
+            else:
+                raise RuntimeError('Unsupported disposable isolation schema')
+        if version == 61:
+            migration_owner._ISOLATED_TEST_ENABLED = True
+            try:
+                migration_owner.apply_migrations(database_url, defense_selection=selection_path, cut62_binding=binding_path,
+                    cut62_witness=witness_path, expected_selection_sha256=selection_sha,
+                    expected_witness_id=witness_id, _pinned_connection=database,
+                    _isolated_test_context={'capability': migration_owner._ISOLATED_TEST_CAPABILITY, 'guard': guard,
+                                            'pre62_path': pre62_path, 'assert_fenced': _assert_disposable_pinned_database})
+            finally:
+                migration_owner._ISOLATED_TEST_ENABLED = False
+            if os.getenv('TEMPO_TEST_ISOLATION_CRASH_AFTER_COMMIT') == '1':
+                os._exit(77)
+        with database.transaction():
+            database.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+            if _assert_disposable_pinned_database(database, guard) != ready['pid'] or verify_cut62_v6(database, witness, secret).get('witness_id') != witness_id:
+                raise RuntimeError('Disposable committed witness differs')
+        if _read_private_json(guard_path) != guard:
+            raise RuntimeError('Original disposable isolation guard changed')
+        identity = isolation['identity']
+        receipt = {'version': 1, 'target': guard['target'], 'attempt_id': guard['attempt_id'],
+                   'target_oid': isolation['target_oid'], 'target_name': isolation['target_name'],
+                   'system_identifier': isolation['system_identifier'], 'control_oid': isolation['control_oid'],
+                   'control_name': isolation['control_name'], 'admin_role': isolation['admin_role'],
+                   'daemon_id': identity['daemonId'], 'container_id': identity['containerId'],
+                   'network_id': identity['networkId'], 'image_id': identity['imageId'],
+                   'backup_filename': binding['backup_filename'], 'backup_sha256': binding['backup_sha256'],
+                   'selection_sha256': selection_sha, 'pre62_witness_id': guard.get('pre62_witness_id') if guard['starting_schema'] == 59 else None,
+                   'cut62_witness_id': witness_id, 'schema': 62}
+        _write_private_json_once(os.path.join(os.path.dirname(witness_path), 'verified-receipt.json'), receipt)
+
 
 
 def abandon_fixture(database, *, seed=False):
@@ -92,37 +273,30 @@ def main():
     mode.add_argument("--seed59", action="store_true", help="Seed populated historical data and advance only through schema 59")
     mode.add_argument("--history", action="store_true", help="Read only the original fixture history, allowing unrelated worker receipts")
     mode.add_argument("--defense-reference", action="store_true", help="Compute the synthetic approved Defense reference in a rolled-back schema-61 rehearsal")
-    mode.add_argument("--defense-fixture", action="store_true", help="Inspect only the synthetic Defense fixture counts")
     mode.add_argument("--normalization", action="store_true", help="Read the qualifying legacy migration-025 card and queue row")
     mode.add_argument("--seed-abandon-orphan", action="store_true", help="Seed one fixed synthetic orphan after the owned CLI target upgrades")
     mode.add_argument("--abandon-inspection", action="store_true", help="Read retained origin/receipt bytes and complete Study history for abandonment proof")
     options = parser.parse_args()
-    if options.defense_reference or options.defense_fixture:
+    if options.defense_reference:
         if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
             raise RuntimeError('Defense lifecycle fixture requires the disposable runner')
         database = psycopg.connect(dsn)
         try:
-            if options.defense_fixture:
-                result = {name: database.execute(statement).fetchone()[0] for name, statement in {
-                    'cards': "SELECT count(*) FROM cards WHERE id='cli-defense-card'",
-                    'candidates': "SELECT count(*) FROM threat_training_candidates WHERE id='cli-defense-candidate'",
-                    'queue': "SELECT count(*) FROM daily_queue WHERE id=910001",
-                    'origins': "SELECT count(*) FROM queue_attempt_origins WHERE queue_entry_id=910001",
-                }.items()}
-            else:
-                from database.tooling.verify_postgres_cli_state import _cut62_defense_reference_digest, _cut62_session
-                database.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')
-                if database.execute('SELECT max(version) FROM tempo_schema_migrations').fetchone()[0] != 59:
-                    raise RuntimeError('Synthetic Defense reference requires schema 59')
+            from database.tooling.verify_postgres_cli_state import _cut62_defense_reference_digest, _cut62_session
+            database.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')
+            current = database.execute('SELECT max(version) FROM tempo_schema_migrations').fetchone()[0]
+            if current not in (59, 61):
+                raise RuntimeError('Synthetic Defense reference requires schema 59 or 61')
+            if current == 59:
                 for migration in sorted(MIGRATIONS.glob('[0-9][0-9][0-9]_*.sql'))[59:61]:
                     database.execute(migration_source(migration), prepare=False)
-                _cut62_session(database)
-                database.execute('SET LOCAL join_collapse_limit=1')
-                database.execute('SET LOCAL jit=off')
-                count, digest = _cut62_defense_reference_digest(database, [['cli-defense-card','cli-defense-candidate']])
-                if count != 1:
-                    raise RuntimeError('Synthetic Defense fixture is not exclusively eligible')
-                result = {'count': count, 'reference_digest': digest}
+            _cut62_session(database)
+            database.execute('SET LOCAL join_collapse_limit=1')
+            database.execute('SET LOCAL jit=off')
+            count, digest = _cut62_defense_reference_digest(database, [])
+            if count != 0:
+                raise RuntimeError('Explicit zero Defense fixture was not empty')
+            result = {'count': count, 'reference_digest': digest}
             database.rollback()
         finally:
             database.close()
@@ -188,19 +362,6 @@ def main():
             for migration in sorted(MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql"))[16:59]:
                 with database.transaction():
                     database.execute(migration_source(migration), prepare=False)
-    if options.seed59:
-        # A disposable, synthetic exclusive Defense candidate with an unissued
-        # queue origin; accepted Study history above remains independently owned.
-        with psycopg.connect(dsn) as database:
-            database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,content_type) VALUES ('cli-defense-card','cli-preserved','prefix','synthetic','[]','2000-01-01','defense')")
-            database.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json) VALUES ('cli-defense-game','synthetic','synthetic','2000-01-01','rapid',0,'white','draw','synthetic','[]')")
-            database.execute("INSERT INTO game_findings(id,game_id,analysis_version,ply,kind,confidence,evidence_json,created_at,updated_at) VALUES ('cli-defense-finding','cli-defense-game',1,1,'synthetic',1,'{}','2000-01-01','2000-01-01')")
-            database.execute("INSERT INTO threat_training_candidates(id,finding_id,game_id,analysis_version,incident_id,player_ply,evidence_json,source_fingerprint,detector_version,policy_json,created_at,updated_at,card_id) VALUES ('cli-defense-candidate','cli-defense-finding','cli-defense-game',1,'incident',1,'{}','synthetic',1,'{}','2000-01-01','2000-01-01','cli-defense-card')")
-            database.execute("INSERT INTO daily_queue(id,queue_date,card_id,position,status,admission_source) VALUES (910001,'2000-01-01','cli-defense-card',2,'queued','defense:cli-defense-candidate')")
-            database.execute("UPDATE queue_attempt_origins SET legacy=1 WHERE queue_entry_id=910001")
-            from psycopg import sql
-            name = database.execute('SELECT current_database()').fetchone()[0]
-            database.execute(sql.SQL('COMMENT ON DATABASE {} IS {}').format(sql.Identifier(name), sql.Literal('tempo-disposable-postgres-test')))
     provision(dsn, Path("/run/secrets/reader_password").read_text().strip(),
               Path("/run/secrets/writer_password").read_text().strip())
     print(f"Seeded populated schema {59 if options.seed59 else 16} with preserved review, queue, and receipt history")

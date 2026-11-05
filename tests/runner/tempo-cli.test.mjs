@@ -3040,10 +3040,11 @@ test("schema 59 cutover resumes interrupted schema 60 using the original backup"
 
 test("disposable pinned database gate rejects changed target, admission, role or competing work", () => {
   const proof = String.raw`
-import importlib.util,os,sys,types
-sys.modules['psycopg']=types.SimpleNamespace(Error=type('PostgresError',(Exception,),{}))
-spec=importlib.util.spec_from_file_location('migration_owner','database/tooling/apply_postgres_migrations.py')
-m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+import ast,os,pathlib
+source=pathlib.Path('database/tests/check_postgres_cli_lifecycle.py').read_text()
+node=next(item for item in ast.parse(source).body if isinstance(item,ast.FunctionDef) and item.name=='_assert_disposable_pinned_database')
+scope={'os':os};exec(compile(ast.Module(body=[node],type_ignores=[]),'<fixture>','exec'),scope)
+check=scope['_assert_disposable_pinned_database']
 os.environ['TEMPO_TEST_INSTANCE']='disposable'
 g={'state':'pending','target':'target','database':{'name':'tempo'},'isolation':{'phase':'detached','target_name':'tempo','admin_role':'tempo','target_oid':123,'system_identifier':'987','original_allow_connections':True,'identity':{'target':'target','trustedDaemon':True,'project':'tempo-pg-regressions-owned'}}}
 row=['tempo','tempo','127.0.0.1',44,'987',123,False,0,0,'180006','origin','tempo-disposable-postgres-test']
@@ -3052,20 +3053,76 @@ class DB:
   class R:
    def fetchone(self):return tuple(row)
   return R()
-assert m._assert_disposable_pinned_database(DB(),g)==44
+assert check(DB(),g)==44
 for index,value in [(0,'other'),(1,'other'),(2,'172.1.0.1'),(4,'wrong'),(5,124),(6,True),(7,1),(8,1),(9,'180005'),(10,'replica'),(11,None)]:
  old=row[index];row[index]=value
- try:m._assert_disposable_pinned_database(DB(),g)
+ try:check(DB(),g)
  except RuntimeError:pass
  else:raise AssertionError('unsafe gate accepted')
  row[index]=old
 os.environ['TEMPO_TEST_INSTANCE']='production'
-try:m._assert_disposable_pinned_database(DB(),g)
+try:check(DB(),g)
 except RuntimeError:pass
 else:raise AssertionError('production gate accepted')
 `;
   const result = fsSpawnSync("python3", ["-c", proof], { cwd: process.cwd(), encoding: "utf8" });
   assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
+test("disposable fixture publishes only complete receipts without replacing an original", () => {
+  const proof = String.raw`
+import ast,json,os,pathlib,tempfile
+from unittest.mock import patch
+source=pathlib.Path('database/tests/check_postgres_cli_lifecycle.py').read_text()
+node=next(item for item in ast.parse(source).body if isinstance(item,ast.FunctionDef) and item.name=='_write_private_json_once')
+scope={'os':os,'json':json};exec(compile(ast.Module(body=[node],type_ignores=[]),'<fixture>','exec'),scope)
+write=scope['_write_private_json_once']
+with tempfile.TemporaryDirectory() as tmp:
+ path=os.path.join(tmp,'receipt.json')
+ original_dump=json.dump
+ def partial(value,stream,**kwargs):
+  stream.write('{"partial":'); raise OSError('injected partial write')
+ with patch.object(json,'dump',partial):
+  try:write(path,{'schema':62})
+  except OSError:pass
+  else:raise AssertionError('partial write accepted')
+ assert not os.path.exists(path) and not os.listdir(tmp)
+ orphan=os.path.join(tmp,'.receipt.json.orphan.tmp')
+ with open(orphan,'w') as stream:stream.write('{"partial":')
+ original_fsync=os.fsync;calls=[]
+ def fail_directory(fd):
+  calls.append(fd)
+  if len(calls)==2:raise OSError('injected directory fsync')
+  return original_fsync(fd)
+ with patch.object(os,'fsync',fail_directory):
+  try:write(path,{'schema':62})
+  except OSError:pass
+  else:raise AssertionError('directory fsync failure accepted')
+ assert json.load(open(path))=={'schema':62} and sorted(os.listdir(tmp))==['.receipt.json.orphan.tmp','receipt.json']
+ try:write(path,{'schema':61})
+ except FileExistsError:pass
+ else:raise AssertionError('original receipt replaced')
+ assert json.load(open(path))=={'schema':62}
+`;
+  const result = fsSpawnSync("python3", ["-c", proof], { cwd: process.cwd(), encoding: "utf8" });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
+test("shipped migration CLI exposes no disposable isolation supervisor", () => {
+  const proof = String.raw`
+import runpy,sys,types
+sys.modules['psycopg']=types.SimpleNamespace(Error=type('PostgresError',(Exception,),{}))
+sys.argv=['apply_postgres_migrations.py','--help']
+runpy.run_path('database/tooling/apply_postgres_migrations.py',run_name='__main__')
+`;
+  const result = fsSpawnSync("python3", ["-c", proof], { cwd: process.cwd(), encoding: "utf8" });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /--defense-selection/);
+  assert.doesNotMatch(result.stdout, /--isolated-disposable|--isolation-handoff|--isolation-nonce/);
+  for (const file of ["Dockerfile.postgres-maintenance", "backend/Dockerfile"]) {
+    const source = readFileSync(file, "utf8");
+    assert.doesNotMatch(source, /^COPY\s+(?:\.\s|database\/tests(?:\/|\s))/m);
+  }
 });
 
 test("schema 62 migrator requires explicit policy and sets validated selection inside its migration transaction", () => {
@@ -3138,6 +3195,13 @@ with tempfile.TemporaryDirectory() as tmp:
  try: module.apply_migrations('fixture', defense_selection='s',cut62_binding='b',cut62_witness='w',expected_selection_sha256='b'*64,expected_witness_id='c'*64)
  except RuntimeError as e: assert 'writer and DDL fence' in str(e)
  else: raise AssertionError('unfenced nonempty selection accepted')
+ assert state['version']==61 and state['events']==[]
+ import os
+ os.environ['TEMPO_TEST_INSTANCE']='disposable'
+ forged=Database(); forged.info=types.SimpleNamespace(transaction_status=0)
+ try: module.apply_migrations('fixture', defense_selection='s',cut62_binding='b',cut62_witness='w',expected_selection_sha256='b'*64,expected_witness_id='c'*64,_pinned_connection=forged,_isolated_test_context={'capability':module._ISOLATED_TEST_CAPABILITY})
+ except RuntimeError as e: assert 'writer and DDL fence' in str(e)
+ else: raise AssertionError('environment-only production bypass accepted')
  assert state['version']==61 and state['events']==[]
  selection['keys']=[]
  state['post_mismatch']=True

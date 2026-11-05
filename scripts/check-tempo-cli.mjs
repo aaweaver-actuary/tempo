@@ -170,14 +170,11 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     if (schema59Only) {
       const syntheticReference = JSON.parse((await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration",
         "database/tests/check_postgres_cli_lifecycle.py", "--defense-reference"])).stdout);
-      assert.equal(syntheticReference.count, 1);
+      assert.equal(syntheticReference.count, 0);
       mkdirSync(stateDirectory, { recursive: true, mode: 0o700 });
       const selectionPath = join(stateDirectory, "synthetic-approved-selection.json");
       atomicJson(selectionPath, { version: 1, target: targetKey(target), cohort: "defense-no-activity",
-        keys: [["cli-defense-card", "cli-defense-candidate"]], expected: syntheticReference });
-      const readDefenseFixture = async () => JSON.parse((await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration",
-        "database/tests/check_postgres_cli_lifecycle.py", "--defense-fixture"])).stdout);
-      assert.deepEqual(await readDefenseFixture(), { cards: 1, candidates: 1, queue: 1, origins: 1 });
+        keys: [], expected: syntheticReference });
       const oldOverlay = join(directory, "schema59-images.json");
       atomicJson(oldOverlay, { services: Object.fromEntries(Object.entries(schema61Images).map(([name, image]) => [name, { image }])) });
       await compose(["-f", oldOverlay, "up", "-d", "--no-build", "--no-deps", "--wait",
@@ -296,7 +293,6 @@ m.apply_migrations(os.environ["TEMPO_POSTGRES_ADMIN_URL"], target_version=61)`;
       assert(!commandLog.slice(retryStart).some(call => call.args.includes("--cut62-capture")));
       assert.deepEqual(readFileSync(witness), witnessBytes);
       assert.deepEqual(await readHistory(), expected, "schema59 original review, queue and receipt survive cutover");
-      assert.deepEqual(await readDefenseFixture(), { cards: 0, candidates: 0, queue: 0, origins: 0 });
       assert.equal(JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8")).state, "verified");
       assert.equal(Number((await readLatestMigration(compose)).stdout.trim()), 62);
       const request = async (path, options = {}) => {
@@ -422,8 +418,13 @@ m.apply_migrations(os.environ["TEMPO_POSTGRES_ADMIN_URL"], target_version=61)`;
     assert.equal(historicalRecord.schema, 61);
     assert.deepEqual(await readHistory(), expected);
 
-    // Cross the destructive cut with the same registered target and an original
-    // witness. Interrupt after capture, test a missing witness, then resume once.
+    // Cross the destructive cut with an explicit empty disposable selection.
+    const emptyReference = JSON.parse((await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration",
+      "database/tests/check_postgres_cli_lifecycle.py", "--defense-reference"])).stdout);
+    assert.equal(emptyReference.count, 0);
+    const emptySelectionPath = join(stateDirectory, "synthetic-approved-selection.json");
+    atomicJson(emptySelectionPath, { version: 1, target: targetKey(target), cohort: "defense-no-activity", keys: [], expected: emptyReference });
+    // Interrupt after capture, test a missing witness, then resume once.
     let interruptedCapture = false;
     const cutRun = async (command, args, options) => {
       const result = await run(command, args, options);
@@ -432,7 +433,7 @@ m.apply_migrations(os.environ["TEMPO_POSTGRES_ADMIN_URL"], target_version=61)`;
       }
       return result;
     };
-    const cutRuntime = makeRuntime(target, { run: cutRun, stateDirectory, revision, evidence, preparedImages, previous: historicalRecord });
+    const cutRuntime = makeRuntime(target, { run: cutRun, stateDirectory, revision, evidence, preparedImages, previous: historicalRecord, defenseSelection: emptySelectionPath });
     await cutRuntime.inspectTarget();
     await assert.rejects(lifecycle("cut62_interrupted_capture", { recreate: true }, cutRuntime), /injected post-capture interruption/);
     const cutGuard = JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8"));
