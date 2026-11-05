@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest';
 import { createStudyClient, type StudyClientStorage } from '../../app/lib/study-connection';
-import { readOperationResponse, retryBlockedOperation } from '../../app/lib/operation-status';
+import { confirmOperationResponse, PendingOperationError, readOperationResponse, retryBlockedOperation } from '../../app/lib/operation-status';
 
 function storage(): StudyClientStorage {
   let registry: string | null = null;
@@ -103,4 +103,17 @@ it('confirmation_captures_original_client_before_async_202_body_and_refuses_reco
     expect(urls.filter(url => url.includes('/api/operations/'))).toEqual([]);
     expect(notice).not.toHaveBeenCalled();
   } finally { unsubscribe(); }
+});
+
+it("reports a blocked browser operation without losing its original identity", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({
+    state: "blocked", last_error: { message: "transaction budget exhausted" },
+  })));
+  await expect(confirmOperationResponse(Response.json(
+    { operation_id: "original-id", state: "queued" }, { status: 202 },
+  ))).rejects.toMatchObject({
+    operationId: "original-id", blocked: true,
+    message: expect.stringContaining("transaction budget exhausted"),
+  } satisfies Partial<PendingOperationError>);
+  vi.unstubAllGlobals();
 });
