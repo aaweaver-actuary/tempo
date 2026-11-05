@@ -44,6 +44,7 @@ def stale_delivery_witness(phase, project):
     prefix = 'retired-witness-' + project
     fg, bg, task_id = prefix + '-foreground', prefix + '-background', prefix + '-task'
     retired_tables = ('next_opponent_accounts', 'next_opponent_snapshots', 'endgame_attempts',
+                      'daily_chess_insights', 'daily_statistics_jobs', 'game_insight_recommendations',
                       'game_analysis_publications', 'game_analysis_position_reports', 'game_analysis_position_errors',
                       'game_analysis_jobs', 'engine_scheduling_state')
 
@@ -53,10 +54,14 @@ def stale_delivery_witness(phase, project):
             absent = db.execute('SELECT count(*) AS n FROM operation_receipts WHERE operation_id=%s', (bg,)).fetchone()['n']
             task = db.execute('SELECT row_to_json(t)::text AS row FROM background_tasks t WHERE id=%s', (task_id,)).fetchone()
             attempts = db.execute('SELECT row_to_json(a)::text AS row FROM defense_attempts a ORDER BY attempt_id').fetchall()
+            activation = db.execute('SELECT row_to_json(a)::text AS row FROM tactic_pack_activation a WHERE pack_id=%s', (prefix,)).fetchone()
+            progress = db.execute('SELECT row_to_json(p)::text AS row FROM tactic_progress p WHERE puzzle_id=%s', (prefix,)).fetchone()
             missing = {name: db.execute('SELECT to_regclass(%s) IS NULL AS missing', ('public.' + name,)).fetchone()['missing'] for name in retired_tables}
-        assert receipt and task and absent == 0 and all(missing.values()) and len(attempts) == 1, (receipt, task, absent, missing, attempts)
+        assert receipt and task and activation and progress and absent == 0 and all(missing.values()) and len(attempts) == 1, (receipt, task, activation, progress, absent, missing, attempts)
         assert json.loads(attempts[0]['row']) == {'attempt_id': prefix, 'candidate_id': prefix, 'card_id': prefix, 'queue_entry_id': None, 'exercise_revision': 7, 'move_uci': 'e2e4', 'grade_json': '{\"status\":\"incorrect\"}', 'reviewed_at': '2026-01-01'}
-        return {'receipt': receipt['row'], 'task': task['row'], 'defense_attempts': attempts, 'retired_tables_absent': missing}
+        assert json.loads(activation['row']) == {'pack_id': prefix, 'active': 1}
+        assert json.loads(progress['row']) == {'puzzle_id': prefix, 'deck_id': prefix, 'card_id': prefix, 'clean_pass_at': '2026-01-01', 'admitted_at': '2026-01-02', 'admission_mode': 'light'}
+        return {'receipt': receipt['row'], 'task': task['row'], 'defense_attempts': attempts, 'tactic_activation': activation['row'], 'tactic_progress': progress['row'], 'retired_tables_absent': missing}
 
     if phase == 'before':
         now = datetime.now(timezone.utc).isoformat()
@@ -66,6 +71,8 @@ def stale_delivery_witness(phase, project):
             db.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json) VALUES (%s,'synthetic','synthetic','2026-01-01','rapid',0,'white','draw','synthetic','[]')", (prefix,))
             db.execute("INSERT INTO game_findings(id,game_id,analysis_version,ply,kind,confidence,evidence_json,created_at,updated_at) VALUES (%s,%s,1,1,'synthetic',1,'{}','2026-01-01','2026-01-01')", (prefix, prefix))
             db.execute("INSERT INTO threat_training_candidates(id,finding_id,game_id,analysis_version,incident_id,player_ply,evidence_json,source_fingerprint,detector_version,policy_json,created_at,updated_at,card_id) VALUES (%s,%s,%s,1,'incident',1,'{}','synthetic',1,'{}','2026-01-01','2026-01-01',%s)", (prefix, prefix, prefix, prefix))
+            db.execute("INSERT INTO tactic_pack_activation(pack_id,active) VALUES (%s,1)", (prefix,))
+            db.execute("INSERT INTO tactic_progress(puzzle_id,deck_id,card_id,clean_pass_at,admitted_at,admission_mode) VALUES (%s,%s,%s,'2026-01-01','2026-01-02','light')", (prefix, prefix, prefix))
             db.execute("INSERT INTO defense_attempts(attempt_id,candidate_id,card_id,queue_entry_id,exercise_revision,move_uci,grade_json,reviewed_at) VALUES (%s,%s,%s,NULL,7,'e2e4',%s,'2026-01-01')", (prefix, prefix, prefix, '{"status":"incorrect"}'))
             db.execute("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state) VALUES(%s,'endgames.attempt.create','synthetic-original','pending')", (fg,))
             db.execute("""INSERT INTO background_tasks(id,kind,deduplication_key,generation,priority,state,phase,payload_json,
