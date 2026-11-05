@@ -4,6 +4,7 @@ Only the image entrypoint initializes it. Trusted preparation reads it outside a
 writer; a missing identity disables new Games handoff, never ordinary Study.
 Importing this module performs no file/process/connection work.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -35,7 +36,9 @@ def _current_boot_process():
         return None
 
 
-def read_runtime_identity(path=RUNTIME_IDENTITY_PATH, *, hostname=None, boot_process=None):
+def read_runtime_identity(
+    path=RUNTIME_IDENTITY_PATH, *, hostname=None, boot_process=None
+):
     try:
         with Path(path).open() as source:
             text = source.read(2049)
@@ -44,32 +47,51 @@ def read_runtime_identity(path=RUNTIME_IDENTITY_PATH, *, hostname=None, boot_pro
         value = json.loads(text)
         actual_hostname = hostname or socket.gethostname()
         actual_boot = boot_process or _current_boot_process()
-        if (not isinstance(value, dict) or set(value) != {"schema_version", "hostname", "boot_nonce", "boot_process"}
-                or value["schema_version"] != 1 or value["hostname"] != actual_hostname
-                or actual_boot is None or value["boot_process"] != actual_boot
-                or not re.fullmatch(r"[0-9a-f]{12}", value["hostname"])
-                or not isinstance(value["boot_nonce"], str) or not re.fullmatch(r"[0-9a-f]{32}", value["boot_nonce"])):
+        if (
+            not isinstance(value, dict)
+            or set(value)
+            != {"schema_version", "hostname", "boot_nonce", "boot_process"}
+            or value["schema_version"] != 1
+            or value["hostname"] != actual_hostname
+            or actual_boot is None
+            or value["boot_process"] != actual_boot
+            or not re.fullmatch(r"[0-9a-f]{12}", value["hostname"])
+            or not isinstance(value["boot_nonce"], str)
+            or not re.fullmatch(r"[0-9a-f]{32}", value["boot_nonce"])
+        ):
             return None
-        return {name: value[name] for name in ("schema_version", "hostname", "boot_nonce")}
+        return {
+            name: value[name] for name in ("schema_version", "hostname", "boot_nonce")
+        }
     except (OSError, ValueError, TypeError):
         return None
 
 
-def current_managed_runtime_identity(path=RUNTIME_IDENTITY_PATH, *, hostname=None, boot_process=None):
+def current_managed_runtime_identity(
+    path=RUNTIME_IDENTITY_PATH, *, hostname=None, boot_process=None
+):
     value = read_runtime_identity(path, hostname=hostname, boot_process=boot_process)
     return value["hostname"] + ":" + value["boot_nonce"] if value else None
 
 
-def initialize_runtime_identity(path=RUNTIME_IDENTITY_PATH, *, hostname=None, boot_process=None):
+def initialize_runtime_identity(
+    path=RUNTIME_IDENTITY_PATH, *, hostname=None, boot_process=None
+):
     target = Path(path)
     current_boot = boot_process or _current_boot_process()
     if current_boot is None:
         raise ValueError("managed_runtime_boot_identity_unavailable")
-    value = {"schema_version": 1, "hostname": hostname or socket.gethostname(),
-             "boot_nonce": secrets.token_hex(16), "boot_process": current_boot}
+    value = {
+        "schema_version": 1,
+        "hostname": hostname or socket.gethostname(),
+        "boot_nonce": secrets.token_hex(16),
+        "boot_process": current_boot,
+    }
     temporary = None
     try:
-        with tempfile.NamedTemporaryFile(mode="w", dir=target.parent, prefix=".tempo-runtime-", delete=False) as output:
+        with tempfile.NamedTemporaryFile(
+            mode="w", dir=target.parent, prefix=".tempo-runtime-", delete=False
+        ) as output:
             temporary = Path(output.name)
             os.chmod(temporary, 0o600)
             output.write(json.dumps(value))

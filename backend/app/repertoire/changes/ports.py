@@ -2,12 +2,17 @@
 
 These are internal report/storage values, not replacement shared proposal DTOs.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import ContextManager, Protocol
 
-from app.contracts.product_v02.analysis import DisplayedCardChange, Proposal, RepertoireChangeReceipt
+from app.contracts.product_v02.analysis import (
+    DisplayedCardChange,
+    Proposal,
+    RepertoireChangeReceipt,
+)
 from app.contracts.product_v02.repertoire import RepertoireSnapshot
 from app.repertoire.position_index import Diagnostic, PositionKey
 
@@ -41,7 +46,12 @@ class ConflictReport:
 
     @property
     def clean(self) -> bool:
-        return self.available and self.source_complete and not self.conflicts and not self.diagnostics
+        return (
+            self.available
+            and self.source_complete
+            and not self.conflicts
+            and not self.diagnostics
+        )
 
 
 @dataclass(frozen=True)
@@ -53,7 +63,6 @@ class EligibilityDecision:
 
 class ChangeError(ValueError):
     """Stable owner error code, translated to transport status at the edge."""
-
 
 
 @dataclass(frozen=True)

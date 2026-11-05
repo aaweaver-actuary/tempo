@@ -5,6 +5,7 @@ starts a bounded labelled disposable server from an already installed image.
 The fixture refuses other database names, creates/drops only its own schema,
 and never applies production migrations or changes a retained Study table.
 """
+
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import asdict, replace
@@ -23,10 +24,25 @@ from psycopg import sql
 import pytest
 
 from app.contracts.product_v02.presentation import Presentation
-from app.study.recombination.models import CleanStreak, ComponentRef, JoinMember, ParentConnection, RouteContext, RouteUse
+from app.study.recombination.models import (
+    CleanStreak,
+    ComponentRef,
+    JoinMember,
+    ParentConnection,
+    RouteContext,
+    RouteUse,
+)
 from app.study.recombination.ports import CurrentRoute, Obligation
-from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
-from tempo_legacy_database.adapters.study.recombination import PostgresRecombinationStore, SCHEMA, _event, _json
+from tempo_legacy_database.adapters.postgres_store import (
+    PostgresConnection,
+    tempo_row_factory,
+)
+from tempo_legacy_database.adapters.study.recombination import (
+    PostgresRecombinationStore,
+    SCHEMA,
+    _event,
+    _json,
+)
 from test_product_recombination_application import StudyFixture, earn, fixture
 from test_product_recombination_policy import FrozenRoute, REVIEW_TIME, review
 from test_product_game_lapse_postgres import owned_postgres
@@ -34,59 +50,103 @@ from test_product_game_lapse_postgres import owned_postgres
 
 def decode_current(payload):
     def route(value):
-        return FrozenRoute(**(value | {"moves":tuple(value["moves"])}))
+        return FrozenRoute(**(value | {"moves": tuple(value["moves"])}))
+
     def ref(value):
-        return ComponentRef(**(value | {"route_use":RouteUse(**value["route_use"])}))
+        return ComponentRef(**(value | {"route_use": RouteUse(**value["route_use"])}))
+
     def state(value):
-        return CleanStreak(**(value | {"last_event_at":datetime.fromisoformat(value["last_event_at"])
-            if value["last_event_at"] else None}))
+        return CleanStreak(
+            **(
+                value
+                | {
+                    "last_event_at": datetime.fromisoformat(value["last_event_at"])
+                    if value["last_event_at"]
+                    else None
+                }
+            )
+        )
+
     context = dict(payload["context"])
-    context.update(route=route(context["route"]), authored_routes=tuple(route(r) for r in context["authored_routes"]),
-        parent_connections=tuple(ParentConnection(ref(c["parent"]), ref(c["child"])) for c in context["parent_connections"]))
+    context.update(
+        route=route(context["route"]),
+        authored_routes=tuple(route(r) for r in context["authored_routes"]),
+        parent_connections=tuple(
+            ParentConnection(ref(c["parent"]), ref(c["child"]))
+            for c in context["parent_connections"]
+        ),
+    )
     members = []
     for value in payload["members"]:
-        values = value | dict(presentation=Presentation.model_validate_json(json.dumps(value["presentation"])),
-            streak=state(value["streak"]), route_uses=tuple(RouteUse(**u) for u in value["route_uses"]), moves=tuple(value["moves"]))
+        values = value | dict(
+            presentation=Presentation.model_validate_json(
+                json.dumps(value["presentation"])
+            ),
+            streak=state(value["streak"]),
+            route_uses=tuple(RouteUse(**u) for u in value["route_uses"]),
+            moves=tuple(value["moves"]),
+        )
         members.append(JoinMember(**values))
-    return CurrentRoute(RouteContext(**context), tuple(members),
+    return CurrentRoute(
+        RouteContext(**context),
+        tuple(members),
         tuple((i, datetime.fromisoformat(d)) for i, d in payload["due"]),
-        tuple(Obligation(**(o | {"available_by":datetime.fromisoformat(o["available_by"])})) for o in payload["obligations"]))
+        tuple(
+            Obligation(
+                **(o | {"available_by": datetime.fromisoformat(o["available_by"])})
+            )
+            for o in payload["obligations"]
+        ),
+    )
 
 
 class PgStudyFixture(StudyFixture):
     """Native fake boundary; actual retained owner wiring is intentionally absent."""
+
     def __init__(self, database):
         super().__init__()
         self.database = database
         self.saved = SavedEvents(database)
 
     def try_current(self, route_id):
-        row = self.database.execute_native("SELECT payload FROM fixture_current WHERE route_id=%s FOR UPDATE SKIP LOCKED",
-                                            (route_id,)).fetchone()
+        row = self.database.execute_native(
+            "SELECT payload FROM fixture_current WHERE route_id=%s FOR UPDATE SKIP LOCKED",
+            (route_id,),
+        ).fetchone()
         if not row:
             return None
         self.current = decode_current(row[0])
         return self.current
 
     def write_current(self):
-        self.database.execute_native("UPDATE fixture_current SET payload=%s::jsonb WHERE route_id=%s",
-            (_json(asdict(self.current)), self.current.context.route.route_id))
+        self.database.execute_native(
+            "UPDATE fixture_current SET payload=%s::jsonb WHERE route_id=%s",
+            (_json(asdict(self.current)), self.current.context.route.route_id),
+        )
 
     def saved_review(self, event):
         return self.saved.get(event.event_id) == event
 
     def identity_available(self, identifier):
-        return identifier not in {"A","B","C"} and not self.database.execute_native(
-            "SELECT 1 FROM fixture_initialization WHERE presentation_id=%s", (identifier,)).fetchone()
+        return (
+            identifier not in {"A", "B", "C"}
+            and not self.database.execute_native(
+                "SELECT 1 FROM fixture_initialization WHERE presentation_id=%s",
+                (identifier,),
+            ).fetchone()
+        )
 
     def apply(self, change):
         super().apply(change)
         for result in change.results:
             # This is a fixture of the required existing-scheduler call, NOT a
             # parallel product scheduler. No historical reviews/FSRS values.
-            self.database.execute_native("""INSERT INTO fixture_initialization
+            self.database.execute_native(
+                """INSERT INTO fixture_initialization
                 (presentation_id,due_at,introduced,fsrs_state,review_count,quota_charge)
-                VALUES(%s,%s,true,NULL,0,0)""", (result.presentation.presentation_id, result.due_at))
+                VALUES(%s,%s,true,NULL,0,0)""",
+                (result.presentation.presentation_id, result.due_at),
+            )
         self.write_current()
 
 
@@ -97,11 +157,15 @@ class SavedEvents:
     def __setitem__(self, key, event):
         prior = self.get(key)
         assert prior is None or prior == event
-        self.database.execute_native("INSERT INTO fixture_saved_events(event_id,event_json) VALUES(%s,%s::jsonb) ON CONFLICT DO NOTHING",
-            (key, _json(asdict(event))))
+        self.database.execute_native(
+            "INSERT INTO fixture_saved_events(event_id,event_json) VALUES(%s,%s::jsonb) ON CONFLICT DO NOTHING",
+            (key, _json(asdict(event))),
+        )
 
     def get(self, key):
-        row = self.database.execute_native("SELECT event_json FROM fixture_saved_events WHERE event_id=%s", (key,)).fetchone()
+        row = self.database.execute_native(
+            "SELECT event_json FROM fixture_saved_events WHERE event_id=%s", (key,)
+        ).fetchone()
         return _event(row[0]) if row else None
 
 
@@ -109,39 +173,57 @@ class SavedEvents:
 def transaction():
     dsn = os.environ.get("TEMPO_RECOMBINATION_TEST_DSN")
     if not dsn:
-        pytest.fail("task-owned TEMPO_RECOMBINATION_TEST_DSN is required; no native pass claimed")
+        pytest.fail(
+            "task-owned TEMPO_RECOMBINATION_TEST_DSN is required; no native pass claimed"
+        )
     assert psycopg.conninfo.conninfo_to_dict(dsn)["dbname"].startswith("tempo_task503_")
     namespace = "recombination_" + uuid4().hex
 
     @contextmanager
     def connect():
         with psycopg.connect(dsn, row_factory=tempo_row_factory) as raw:
-            raw.execute(sql.SQL("SET LOCAL search_path TO {}").format(sql.Identifier(namespace)))
+            raw.execute(
+                sql.SQL("SET LOCAL search_path TO {}").format(sql.Identifier(namespace))
+            )
             raw.execute("SET LOCAL lock_timeout='2s'")
             raw.execute("SET LOCAL statement_timeout='4s'")
             yield PostgresConnection(raw)
 
     with psycopg.connect(dsn) as raw:
         raw.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(namespace)))
-        raw.execute(sql.SQL("SET LOCAL search_path TO {}").format(sql.Identifier(namespace)))
+        raw.execute(
+            sql.SQL("SET LOCAL search_path TO {}").format(sql.Identifier(namespace))
+        )
         raw.execute(SCHEMA, prepare=False)
-        raw.execute("""CREATE TABLE fixture_current(route_id text PRIMARY KEY, payload jsonb NOT NULL);
+        raw.execute(
+            """CREATE TABLE fixture_current(route_id text PRIMARY KEY, payload jsonb NOT NULL);
             CREATE TABLE fixture_saved_events(event_id text PRIMARY KEY,event_json jsonb NOT NULL);
             CREATE TABLE fixture_initialization(presentation_id text PRIMARY KEY,due_at timestamptz NOT NULL,
                 introduced boolean NOT NULL,fsrs_state jsonb,review_count integer NOT NULL,quota_charge integer NOT NULL);
             CREATE TABLE fixture_obligations(logical_id text PRIMARY KEY,decision_id text NOT NULL,available_by timestamptz NOT NULL)""",
-            prepare=False)
+            prepare=False,
+        )
     with connect() as database:
         current = StudyFixture().current
-        owed = Obligation("original-effect-identity", "decision:A:0", REVIEW_TIME - timedelta(hours=1))
+        owed = Obligation(
+            "original-effect-identity", "decision:A:0", REVIEW_TIME - timedelta(hours=1)
+        )
         current = replace(current, obligations=(owed,))
-        database.execute_native("INSERT INTO fixture_current VALUES(%s,%s::jsonb)", ("main-line", _json(asdict(current))))
-        database.execute_native("INSERT INTO fixture_obligations VALUES(%s,%s,%s)", (owed.logical_id, owed.decision_id, owed.available_by))
+        database.execute_native(
+            "INSERT INTO fixture_current VALUES(%s,%s::jsonb)",
+            ("main-line", _json(asdict(current))),
+        )
+        database.execute_native(
+            "INSERT INTO fixture_obligations VALUES(%s,%s,%s)",
+            (owed.logical_id, owed.decision_id, owed.available_by),
+        )
     try:
         yield connect
     finally:
         with psycopg.connect(dsn) as raw:
-            raw.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(namespace)))
+            raw.execute(
+                sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(namespace))
+            )
 
 
 def service(database, store_type=PostgresRecombinationStore):
@@ -149,7 +231,9 @@ def service(database, store_type=PostgresRecombinationStore):
     app, store, _ = fixture(store_type(database), study)
     # Initial fixture display read takes no lock. Application calls try_current
     # itself after its nonblocking route lock; no test holds a row across barrier.
-    row = database.execute_native("SELECT payload FROM fixture_current WHERE route_id='main-line'").fetchone()
+    row = database.execute_native(
+        "SELECT payload FROM fixture_current WHERE route_id='main-line'"
+    ).fetchone()
     study.current = decode_current(row[0])
     return app, store, study
 
@@ -157,67 +241,115 @@ def service(database, store_type=PostgresRecombinationStore):
 def prepared(transaction):
     with transaction() as database:
         app, _, study = service(database)
-        for identifier in ("A","B","C"):
+        for identifier in ("A", "B", "C"):
             earn(app, study, identifier)
         return app.propose("main-line").plan
 
 
 def test_native_rollback_after_initialization_retains_complete_old_state(transaction):
     plan = prepared(transaction)
+
     class FailAfterSave(PostgresRecombinationStore):
         def save_change(self, *args):
             super().save_change(*args)
             raise RuntimeError("injected_before_commit")
+
     with pytest.raises(RuntimeError, match="injected_before_commit"):
         with transaction() as database:
             service(database, FailAfterSave)[0].apply_join(plan)
     with transaction() as database:
         app, store, study = service(database)
         assert len(study.current.members) == 3
-        for table in ("study_recombination_changes", "study_recombination_presentations", "study_recombination_current", "fixture_initialization"):
-            assert database.execute_native(sql.SQL("SELECT count(*) FROM {}").format(sql.Identifier(table))).fetchone()[0] == 0
+        for table in (
+            "study_recombination_changes",
+            "study_recombination_presentations",
+            "study_recombination_current",
+            "fixture_initialization",
+        ):
+            assert (
+                database.execute_native(
+                    sql.SQL("SELECT count(*) FROM {}").format(sql.Identifier(table))
+                ).fetchone()[0]
+                == 0
+            )
         assert app.apply_join(plan).status == "applied"
     with transaction() as database:
         app, store, study = service(database)
-        assert len(study.current.members) == 2 and store.receipt(plan.plan_id)[1].status == "applied"
+        assert (
+            len(study.current.members) == 2
+            and store.receipt(plan.plan_id)[1].status == "applied"
+        )
 
 
-def test_native_concurrent_acceptance_creates_one_composite_and_one_receipt(transaction):
+def test_native_concurrent_acceptance_creates_one_composite_and_one_receipt(
+    transaction,
+):
     plan, barrier = prepared(transaction), Barrier(2)
+
     def accept():
         with transaction() as database:
             app, _, _ = service(database)
             barrier.wait(timeout=5)
             return app.apply_join(plan)
+
     with ThreadPoolExecutor(max_workers=2) as workers:
         results = list(workers.map(lambda _: accept(), range(2)))
     assert any(r.status == "applied" for r in results)
-    assert all(r.status in {"applied","active_attempt"} for r in results)
+    assert all(r.status in {"applied", "active_attempt"} for r in results)
     with transaction() as database:
         app, _, _ = service(database)
         receipt = app.apply_join(plan)
         assert receipt.status == "applied"
-        for table in ("study_recombination_changes","study_recombination_presentations","fixture_initialization"):
-            assert database.execute_native(sql.SQL("SELECT count(*) FROM {}").format(sql.Identifier(table))).fetchone()[0] == 1
+        for table in (
+            "study_recombination_changes",
+            "study_recombination_presentations",
+            "fixture_initialization",
+        ):
+            assert (
+                database.execute_native(
+                    sql.SQL("SELECT count(*) FROM {}").format(sql.Identifier(table))
+                ).fetchone()[0]
+                == 1
+            )
 
 
-def test_native_recreated_owner_reads_streak_lineage_deadline_without_manufactured_history(transaction):
+def test_native_recreated_owner_reads_streak_lineage_deadline_without_manufactured_history(
+    transaction,
+):
     plan = prepared(transaction)
     with transaction() as database:
         service(database)[0].apply_join(plan)
     with transaction() as database:
         app, store, study = service(database)
-        combined = next(m for m in study.current.members if m.presentation.presentation_id == plan.result.presentation_id)
+        combined = next(
+            m
+            for m in study.current.members
+            if m.presentation.presentation_id == plan.result.presentation_id
+        )
         assert store.streak(combined.streak).count == 0
-        assert {"A","B"}.issubset(combined.presentation.lineage)
-        original = database.execute_native("SELECT logical_id,decision_id,available_by FROM fixture_obligations").fetchone()
-        initialized = database.execute_native("SELECT due_at,introduced,fsrs_state,review_count,quota_charge FROM fixture_initialization").fetchone()
-        assert original[0] == "original-effect-identity" and initialized[0] == original[2]
-        assert tuple(initialized)[1:] == (True,None,0,0)
-        assert store.current_presentation("main-line", original[1]) == combined.presentation.presentation_id
+        assert {"A", "B"}.issubset(combined.presentation.lineage)
+        original = database.execute_native(
+            "SELECT logical_id,decision_id,available_by FROM fixture_obligations"
+        ).fetchone()
+        initialized = database.execute_native(
+            "SELECT due_at,introduced,fsrs_state,review_count,quota_charge FROM fixture_initialization"
+        ).fetchone()
+        assert (
+            original[0] == "original-effect-identity" and initialized[0] == original[2]
+        )
+        assert tuple(initialized)[1:] == (True, None, 0, 0)
+        assert (
+            store.current_presentation("main-line", original[1])
+            == combined.presentation.presentation_id
+        )
         assert store.current_presentation("other-route", original[1]) is None
-        assert database.execute_native("SELECT count(*) FROM study_recombination_completions WHERE presentation_id=%s",
-                                       (combined.presentation.presentation_id,)).fetchone()[0] == 0
+        assert (
+            database.execute_native(
+                "SELECT count(*) FROM study_recombination_completions WHERE presentation_id=%s",
+                (combined.presentation.presentation_id,),
+            ).fetchone()[0]
+            == 0
+        )
         assert app.propose("main-line").plan is None
 
 
@@ -225,16 +357,30 @@ def test_native_pending_old_review_is_never_relabelled(transaction):
     plan = prepared(transaction)
     with transaction() as database:
         app, _, study = service(database)
-        study.current = replace(study.current, members=tuple(replace(m, pending_attempt=True)
-            if m.presentation.presentation_id == "A" else m for m in study.current.members))
+        study.current = replace(
+            study.current,
+            members=tuple(
+                replace(m, pending_attempt=True)
+                if m.presentation.presentation_id == "A"
+                else m
+                for m in study.current.members
+            ),
+        )
         study.write_current()
         assert app.apply_join(plan).status == "active_attempt"
     with transaction() as database:
         app, _, study = service(database)
         original = review(4)
         study.saved[original.event_id] = original
-        study.current = replace(study.current, members=tuple(replace(m, pending_attempt=False)
-            if m.presentation.presentation_id == "A" else m for m in study.current.members))
+        study.current = replace(
+            study.current,
+            members=tuple(
+                replace(m, pending_attempt=False)
+                if m.presentation.presentation_id == "A"
+                else m
+                for m in study.current.members
+            ),
+        )
         study.write_current()
         app.record_review("main-line", original)
         assert app.apply_join(plan).status == "applied"
@@ -244,11 +390,17 @@ def test_native_pending_old_review_is_never_relabelled(transaction):
         app.record_review("main-line", original)
         assert store.event(original.event_id) == original
         assert original.presentation_id == "A"
-        combined = next(m for m in study.current.members if m.presentation.presentation_id == plan.result.presentation_id)
+        combined = next(
+            m
+            for m in study.current.members
+            if m.presentation.presentation_id == plan.result.presentation_id
+        )
         assert store.streak(combined.streak).count == 0
 
 
-def test_native_repeated_split_rejoin_retains_distinct_generations_and_receipts(transaction):
+def test_native_repeated_split_rejoin_retains_distinct_generations_and_receipts(
+    transaction,
+):
     plan = prepared(transaction)
     with transaction() as database:
         service(database)[0].apply_join(plan)
@@ -256,38 +408,87 @@ def test_native_repeated_split_rejoin_retains_distinct_generations_and_receipts(
     for generation in range(2):
         with transaction() as database:
             app, _, study = service(database)
-            combined = next(m for m in study.current.members if m.presentation.presentation_id == original)
-            earn(app, study, original, start=10+generation*20, outcome="again", epoch=combined.streak.evidence_epoch)
+            combined = next(
+                m
+                for m in study.current.members
+                if m.presentation.presentation_id == original
+            )
+            earn(
+                app,
+                study,
+                original,
+                start=10 + generation * 20,
+                outcome="again",
+                epoch=combined.streak.evidence_epoch,
+            )
             command = f"split:{generation}"
-            receipt = app.accept_split("main-line", original, 1, command, confirmed=True)
+            receipt = app.accept_split(
+                "main-line", original, 1, command, confirmed=True
+            )
             assert receipt.status == "applied"
-            assert app.accept_split("main-line", original, 1, command, confirmed=True) == receipt
+            assert (
+                app.accept_split("main-line", original, 1, command, confirmed=True)
+                == receipt
+            )
         with transaction() as database:
             app, _, study = service(database)
             assert app.propose("main-line").plan is None
-            fragments = tuple(m for m in study.current.members if original in m.presentation.lineage)
+            fragments = tuple(
+                m for m in study.current.members if original in m.presentation.lineage
+            )
             for fragment in fragments:
-                earn(app, study, fragment.presentation.presentation_id, start=20+generation*20, epoch=fragment.streak.evidence_epoch)
+                earn(
+                    app,
+                    study,
+                    fragment.presentation.presentation_id,
+                    start=20 + generation * 20,
+                    epoch=fragment.streak.evidence_epoch,
+                )
             rejoin = app.propose("main-line").plan
             assert rejoin.result.presentation_id != original
             assert app.apply_join(rejoin).status == "applied"
             original = rejoin.result.presentation_id
     with transaction() as database:
         app, store, study = service(database)
-        assert database.execute_native("SELECT count(*) FROM study_recombination_changes").fetchone()[0] == 5
-        assert database.execute_native("SELECT count(*) FROM study_recombination_presentations").fetchone()[0] == 7
-        assert database.execute_native("SELECT count(*) FROM study_recombination_completions").fetchone()[0] == 27
-        assert database.execute_native("SELECT count(*) FROM fixture_obligations").fetchone()[0] == 1
-        assert app.apply_join(plan).status == "applied"  # original receipt, no resurrection
+        assert (
+            database.execute_native(
+                "SELECT count(*) FROM study_recombination_changes"
+            ).fetchone()[0]
+            == 5
+        )
+        assert (
+            database.execute_native(
+                "SELECT count(*) FROM study_recombination_presentations"
+            ).fetchone()[0]
+            == 7
+        )
+        assert (
+            database.execute_native(
+                "SELECT count(*) FROM study_recombination_completions"
+            ).fetchone()[0]
+            == 27
+        )
+        assert (
+            database.execute_native(
+                "SELECT count(*) FROM fixture_obligations"
+            ).fetchone()[0]
+            == 1
+        )
+        assert (
+            app.apply_join(plan).status == "applied"
+        )  # original receipt, no resurrection
 
 
-def test_native_shared_evidence_identity_serializes_different_routes_without_waiting(transaction):
+def test_native_shared_evidence_identity_serializes_different_routes_without_waiting(
+    transaction,
+):
     def record_other_route():
         with transaction() as database:
             app, _, study = service(database)
             event = review(1)
             study.saved[event.event_id] = event
             return app.record_review("other-shared-route", event)
+
     with transaction() as database:
         app, _, study = service(database)
         event = review(0)
@@ -300,8 +501,13 @@ def test_native_shared_evidence_identity_serializes_different_routes_without_wai
     assert record_other_route().count == 2
     with transaction() as database:
         _, store, _ = service(database)
-        assert store.streak(CleanStreak("A",1,"initial")).count == 2
-        assert database.execute_native("SELECT count(*) FROM study_recombination_completions").fetchone()[0] == 2
+        assert store.streak(CleanStreak("A", 1, "initial")).count == 2
+        assert (
+            database.execute_native(
+                "SELECT count(*) FROM study_recombination_completions"
+            ).fetchone()[0]
+            == 2
+        )
 
 
 @pytest.fixture
@@ -313,63 +519,83 @@ def current_owner_transaction(monkeypatch):
     Runtime readiness registration/browser installation is separately qualified.
     """
     from tempo_legacy_database.adapters import postgres_store
-    monkeypatch.setattr(postgres_store,"configured",lambda:True)
+
+    monkeypatch.setattr(postgres_store, "configured", lambda: True)
     dsn = os.environ.get("TEMPO_RECOMBINATION_TEST_DSN")
     if not dsn:
         pytest.fail("explicit task-owned native DSN required")
     options = psycopg.conninfo.conninfo_to_dict(dsn)
     assert options["dbname"].startswith("tempo_task503_")
     name = "tempo_task503_owner_" + uuid4().hex
-    with psycopg.connect(dsn,autocommit=True) as raw:
+    with psycopg.connect(dsn, autocommit=True) as raw:
         raw.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
-    owner_dsn = psycopg.conninfo.make_conninfo(dsn,dbname=name)
+    owner_dsn = psycopg.conninfo.make_conninfo(dsn, dbname=name)
     root = Path(__file__).resolve().parents[2]
-    spec = importlib.util.spec_from_file_location("recombination_migration_owner",root/"database/tooling/apply_postgres_migrations.py")
+    spec = importlib.util.spec_from_file_location(
+        "recombination_migration_owner",
+        root / "database/tooling/apply_postgres_migrations.py",
+    )
     migration_owner = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration_owner)
     try:
         with psycopg.connect(owner_dsn) as raw:
-            migrations = sorted(migration_owner.MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql"))
-            migration_owner.validate_migration_history(migrations,[],expected_version=migration_owner.POSTGRES_SCHEMA_VERSION)
+            migrations = sorted(
+                migration_owner.MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql")
+            )
+            migration_owner.validate_migration_history(
+                migrations, [], expected_version=migration_owner.POSTGRES_SCHEMA_VERSION
+            )
             for path in migrations:
                 registration = migration_owner.MODULE_MIGRATIONS.get(path.name)
                 if registration:
-                    source = (root/"database"/registration[2]).read_bytes()
-                    assert hashlib.sha256(source).hexdigest()==registration[3]
-                    raw.execute(source.decode(),prepare=False)
-                raw.execute(path.read_text(),prepare=False)
-                assert raw.execute("SELECT max(version) FROM tempo_schema_migrations").fetchone()[0]==int(path.name[:3])
-            raw.execute("INSERT INTO settings(id,timezone,new_cards_per_day,study_new_per_day,tactics_new_per_day) VALUES(1,'local',0,0,0)")
+                    source = (root / "database" / registration[2]).read_bytes()
+                    assert hashlib.sha256(source).hexdigest() == registration[3]
+                    raw.execute(source.decode(), prepare=False)
+                raw.execute(path.read_text(), prepare=False)
+                assert raw.execute(
+                    "SELECT max(version) FROM tempo_schema_migrations"
+                ).fetchone()[0] == int(path.name[:3])
+            raw.execute(
+                "INSERT INTO settings(id,timezone,new_cards_per_day,study_new_per_day,tactics_new_per_day) VALUES(1,'local',0,0,0)"
+            )
+
         @contextmanager
         def connect():
-            with psycopg.connect(owner_dsn,row_factory=tempo_row_factory) as raw:
+            with psycopg.connect(owner_dsn, row_factory=tempo_row_factory) as raw:
                 raw.execute("SET LOCAL lock_timeout='2s'")
                 raw.execute("SET LOCAL statement_timeout='5s'")
                 yield PostgresConnection(raw)
+
         with connect() as database:
             seed_current_owner(database)
         yield connect
     finally:
-        with psycopg.connect(dsn,autocommit=True) as raw:
-            raw.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name)))
+        with psycopg.connect(dsn, autocommit=True) as raw:
+            raw.execute(
+                sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name))
+            )
 
 
 def seed_current_owner(database):
     from fixtures.product_recombination import seed_current_owner as seed
+
     return seed(database)
 
 
 @pytest.fixture
-def feedback_lineage_owner(owned_postgres,monkeypatch):
+def feedback_lineage_owner(owned_postgres, monkeypatch):
     """Reuse the existing owned server and actual current-owner schema fixture."""
     with owned_postgres() as database:
-        options=psycopg.conninfo.conninfo_to_dict(database.raw.info.dsn)
-        options['password']=database.raw.pgconn.password.decode()
-    name='tempo_task503_lineage_'+uuid4().hex
-    with psycopg.connect(**options,autocommit=True) as raw:
-        raw.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(name)))
-    monkeypatch.setenv('TEMPO_RECOMBINATION_TEST_DSN',psycopg.conninfo.make_conninfo(**(options|dict(dbname=name))))
-    current=current_owner_transaction.__wrapped__(monkeypatch)
+        options = psycopg.conninfo.conninfo_to_dict(database.raw.info.dsn)
+        options["password"] = database.raw.pgconn.password.decode()
+    name = "tempo_task503_lineage_" + uuid4().hex
+    with psycopg.connect(**options, autocommit=True) as raw:
+        raw.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
+    monkeypatch.setenv(
+        "TEMPO_RECOMBINATION_TEST_DSN",
+        psycopg.conninfo.make_conninfo(**(options | dict(dbname=name))),
+    )
+    current = current_owner_transaction.__wrapped__(monkeypatch)
     try:
         yield next(current)
     finally:
@@ -377,677 +603,1403 @@ def feedback_lineage_owner(owned_postgres,monkeypatch):
             next(current)
         except StopIteration:
             pass
-        with psycopg.connect(**options,autocommit=True) as raw:
-            raw.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(name)))
+        with psycopg.connect(**options, autocommit=True) as raw:
+            raw.execute(
+                sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name))
+            )
 
 
-def feedback_lineage_fixture(transaction,monkeypatch,*,split=False,graph_spacing=False,legacy_superseded=True):
+def feedback_lineage_fixture(
+    transaction,
+    monkeypatch,
+    *,
+    split=False,
+    graph_spacing=False,
+    legacy_superseded=True,
+):
     """Earn the generated presentation through the existing real join/split path."""
     from app.contracts.product_v02.repertoire import DecisionPresentation
     from tempo_evidence_math import opening_position_key
     from tempo_game_evidence_contracts.legacy import decision_identity
     from tempo_legacy_database.adapters.study.recombination import accept_current_split
+
     if graph_spacing:
         with transaction() as database:
-            database.execute_native("UPDATE opening_graph_steps SET moves_json=%s WHERE card_id='A'",
-                (json.dumps(['e2e4'],indent=1),))
-    for identifier in ('A','C','B'):
+            database.execute_native(
+                "UPDATE opening_graph_steps SET moves_json=%s WHERE card_id='A'",
+                (json.dumps(["e2e4"], indent=1),),
+            )
+    for identifier in ("A", "C", "B"):
         for _ in range(3):
             with transaction() as database:
-                result,_=ordinary_current_review(database,identifier,monkeypatch)
-    combined=result['recombination']['resulting_presentation_id']
+                result, _ = ordinary_current_review(database, identifier, monkeypatch)
+    combined = result["recombination"]["resulting_presentation_id"]
     if split:
         with transaction() as database:
             # Existing owner command requires genuine recent failures.
             for _ in range(3):
-                ordinary_current_review(database,combined,monkeypatch,outcome='again')
-            result=accept_current_split(database,combined,1)
-            assert result['applied']
+                ordinary_current_review(
+                    database, combined, monkeypatch, outcome="again"
+                )
+            result = accept_current_split(database, combined, 1)
+            assert result["applied"]
     with transaction() as database:
-        options=psycopg.conninfo.conninfo_to_dict(database.raw.info.dsn)
-        options['password']=database.raw.pgconn.password.decode()
+        options = psycopg.conninfo.conninfo_to_dict(database.raw.info.dsn)
+        options["password"] = database.raw.pgconn.password.decode()
         if legacy_superseded:
-            database.execute_native("UPDATE cards SET superseded_by=%s WHERE id='A'",(combined,))
-    original=DecisionPresentation(decision_id=decision_identity('A',0,[]),repertoire_id='r11-repertoire',
-        position_key=opening_position_key(chess.STARTING_FEN),selected_response_uci='e2e4',
-        presentation_id='A',presentation_revision=1,repertoire_revision=1,
-        introduction='introduced',introduced_at=None,available=False,route_id='r11-route',route_ply=0)
-    active=[0]
+            database.execute_native(
+                "UPDATE cards SET superseded_by=%s WHERE id='A'", (combined,)
+            )
+    original = DecisionPresentation(
+        decision_id=decision_identity("A", 0, []),
+        repertoire_id="r11-repertoire",
+        position_key=opening_position_key(chess.STARTING_FEN),
+        selected_response_uci="e2e4",
+        presentation_id="A",
+        presentation_revision=1,
+        repertoire_revision=1,
+        introduction="introduced",
+        introduced_at=None,
+        available=False,
+        route_id="r11-route",
+        route_ply=0,
+    )
+    active = [0]
+
     @contextmanager
     def read_connection():
-        with psycopg.connect(**options,row_factory=tempo_row_factory) as raw:
-            raw.execute('SET TRANSACTION READ ONLY')
+        with psycopg.connect(**options, row_factory=tempo_row_factory) as raw:
+            raw.execute("SET TRANSACTION READ ONLY")
             raw.execute("SET LOCAL transaction_timeout='250ms'")
             raw.execute("SET LOCAL statement_timeout='250ms'")
             raw.execute("SET LOCAL lock_timeout='100ms'")
-            active[0]+=1
+            active[0] += 1
             try:
                 yield PostgresConnection(raw)
             finally:
-                active[0]-=1
-    return original,read_connection,active
+                active[0] -= 1
+
+    return original, read_connection, active
 
 
-@pytest.mark.parametrize('split,graph_spacing',[(False,False),(True,False),(False,True)])
-def test_feedback_current_target_uses_actual_join_split_and_closed_preparation(feedback_lineage_owner,monkeypatch,split,graph_spacing):
+@pytest.mark.parametrize(
+    "split,graph_spacing", [(False, False), (True, False), (False, True)]
+)
+def test_feedback_current_target_uses_actual_join_split_and_closed_preparation(
+    feedback_lineage_owner, monkeypatch, split, graph_spacing
+):
     import tempo_legacy_database.adapters.study.recombination as owner
-    transaction=feedback_lineage_owner
-    original,read_connection,active=feedback_lineage_fixture(transaction,monkeypatch,split=split,graph_spacing=graph_spacing)
-    board=owner.chess.Board
-    def closed_board(*args,**kwargs):
-        assert active[0]==0,'chess preparation retained a connection'
-        return board(*args,**kwargs)
-    monkeypatch.setattr(owner.chess,'Board',closed_board)
-    prepared=owner.prepare_game_feedback_target(original,read_connection=read_connection)
-    assert prepared.current.presentation_id!='A' and prepared.current.decision_id==original.decision_id
-    assert prepared.current.available and prepared.current.introduction=='introduced'
-    assert prepared.original==original
-    def forbidden(*args,**kwargs):
-        raise AssertionError('writer replayed executable preparation')
-    monkeypatch.setattr(owner.chess,'Board',forbidden)
-    monkeypatch.setattr(owner.CurrentStudyRecombination,'try_current',forbidden)
+
+    transaction = feedback_lineage_owner
+    original, read_connection, active = feedback_lineage_fixture(
+        transaction, monkeypatch, split=split, graph_spacing=graph_spacing
+    )
+    board = owner.chess.Board
+
+    def closed_board(*args, **kwargs):
+        assert active[0] == 0, "chess preparation retained a connection"
+        return board(*args, **kwargs)
+
+    monkeypatch.setattr(owner.chess, "Board", closed_board)
+    prepared = owner.prepare_game_feedback_target(
+        original, read_connection=read_connection
+    )
+    assert (
+        prepared.current.presentation_id != "A"
+        and prepared.current.decision_id == original.decision_id
+    )
+    assert prepared.current.available and prepared.current.introduction == "introduced"
+    assert prepared.original == original
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("writer replayed executable preparation")
+
+    monkeypatch.setattr(owner.chess, "Board", forbidden)
+    monkeypatch.setattr(owner.CurrentStudyRecombination, "try_current", forbidden)
     with transaction() as database:
         database.execute_native("SET LOCAL transaction_timeout='250ms'")
         database.execute_native("SET LOCAL statement_timeout='250ms'")
         database.execute_native("SET LOCAL lock_timeout='100ms'")
         # Scheduling state belongs to application time, not authored identity.
-        database.execute_native('UPDATE cards SET repetitions=repetitions+1 WHERE id=%s',
-            (prepared.current.presentation_id,))
-        target=owner.fence_game_feedback_target(database,prepared)
-        assert target==prepared.current
+        database.execute_native(
+            "UPDATE cards SET repetitions=repetitions+1 WHERE id=%s",
+            (prepared.current.presentation_id,),
+        )
+        target = owner.fence_game_feedback_target(database, prepared)
+        assert target == prepared.current
 
 
-@pytest.mark.parametrize('change',['source','mapping','definition','blocked','receipt','membership','integrity'])
-def test_feedback_current_target_rejects_changed_authority(feedback_lineage_owner,monkeypatch,change):
+@pytest.mark.parametrize(
+    "change",
+    [
+        "source",
+        "mapping",
+        "definition",
+        "blocked",
+        "receipt",
+        "membership",
+        "integrity",
+    ],
+)
+def test_feedback_current_target_rejects_changed_authority(
+    feedback_lineage_owner, monkeypatch, change
+):
     import tempo_legacy_database.adapters.study.recombination as owner
-    transaction=feedback_lineage_owner
-    original,read_connection,_=feedback_lineage_fixture(transaction,monkeypatch)
-    prepared=owner.prepare_game_feedback_target(original,read_connection=read_connection)
+
+    transaction = feedback_lineage_owner
+    original, read_connection, _ = feedback_lineage_fixture(transaction, monkeypatch)
+    prepared = owner.prepare_game_feedback_target(
+        original, read_connection=read_connection
+    )
     with transaction() as database:
-        if change=='source':
-            database.execute_native("UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE id=%s",(original.repertoire_id,))
-        elif change=='mapping':
-            database.execute_native('DELETE FROM study_recombination_current WHERE route_id=%s AND decision_id=%s',
-                (original.route_id,original.decision_id))
-        elif change=='definition':
-            database.execute_native('UPDATE cards SET revision=revision+1 WHERE id=%s',(prepared.current.presentation_id,))
-        elif change=='blocked':
-            database.execute_native('UPDATE cards SET pending_validation=1 WHERE id=%s',(prepared.current.presentation_id,))
-        elif change=='membership':
-            database.execute_native('DELETE FROM repertoire_cards WHERE card_id=%s',(prepared.current.presentation_id,))
-        elif change=='integrity':
-            database.execute_native("UPDATE repertoire_integrity_state SET status='unchecked' WHERE repertoire_id=%s",(original.repertoire_id,))
+        if change == "source":
+            database.execute_native(
+                "UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE id=%s",
+                (original.repertoire_id,),
+            )
+        elif change == "mapping":
+            database.execute_native(
+                "DELETE FROM study_recombination_current WHERE route_id=%s AND decision_id=%s",
+                (original.route_id, original.decision_id),
+            )
+        elif change == "definition":
+            database.execute_native(
+                "UPDATE cards SET revision=revision+1 WHERE id=%s",
+                (prepared.current.presentation_id,),
+            )
+        elif change == "blocked":
+            database.execute_native(
+                "UPDATE cards SET pending_validation=1 WHERE id=%s",
+                (prepared.current.presentation_id,),
+            )
+        elif change == "membership":
+            database.execute_native(
+                "DELETE FROM repertoire_cards WHERE card_id=%s",
+                (prepared.current.presentation_id,),
+            )
+        elif change == "integrity":
+            database.execute_native(
+                "UPDATE repertoire_integrity_state SET status='unchecked' WHERE repertoire_id=%s",
+                (original.repertoire_id,),
+            )
         else:
-            database.execute_native("UPDATE study_recombination_changes SET receipt_json=jsonb_set(receipt_json,'{status}','\"held\"') WHERE command_id=(SELECT command_id FROM study_recombination_presentations WHERE presentation_id=%s)",
-                (prepared.current.presentation_id,))
+            database.execute_native(
+                "UPDATE study_recombination_changes SET receipt_json=jsonb_set(receipt_json,'{status}','\"held\"') WHERE command_id=(SELECT command_id FROM study_recombination_presentations WHERE presentation_id=%s)",
+                (prepared.current.presentation_id,),
+            )
     with transaction() as database:
         with pytest.raises(ValueError):
-            owner.fence_game_feedback_target(database,prepared)
+            owner.fence_game_feedback_target(database, prepared)
 
 
 def test_feedback_current_target_keeps_null_deadline_obligation(feedback_lineage_owner):
-    from tempo_legacy_database.adapters.study.recombination import CurrentStudyRecombination
-    transaction=feedback_lineage_owner
+    from tempo_legacy_database.adapters.study.recombination import (
+        CurrentStudyRecombination,
+    )
+
+    transaction = feedback_lineage_owner
     with transaction() as database:
-        logical,_=seed_rollover_obligation(database,'A','r11-repertoire')
-        determined=REVIEW_TIME-timedelta(days=7)
-        database.execute_native("""UPDATE study_game_feedback SET available_by=NULL,
+        logical, _ = seed_rollover_obligation(database, "A", "r11-repertoire")
+        determined = REVIEW_TIME - timedelta(days=7)
+        database.execute_native(
+            """UPDATE study_game_feedback SET available_by=NULL,
             payload_json=jsonb_build_object('owner',jsonb_build_object('progress',jsonb_build_object('determined_at',%s::text)))::text
-            WHERE effect_key=%s""",(determined.isoformat(),logical))
-        current=CurrentStudyRecombination(database).try_current('r11-route')
+            WHERE effect_key=%s""",
+            (determined.isoformat(), logical),
+        )
+        current = CurrentStudyRecombination(database).try_current("r11-route")
         assert current is not None
-        owed=next(item for item in current.obligations if item.logical_id==logical)
-        assert owed.available_by==determined
+        owed = next(item for item in current.obligations if item.logical_id == logical)
+        assert owed.available_by == determined
 
 
-def test_feedback_current_target_never_guesses_original_occurrence_or_waits_for_route(feedback_lineage_owner,monkeypatch):
+def test_feedback_current_target_never_guesses_original_occurrence_or_waits_for_route(
+    feedback_lineage_owner, monkeypatch
+):
     import tempo_legacy_database.adapters.study.recombination as owner
-    transaction=feedback_lineage_owner
-    original,read_connection,_=feedback_lineage_fixture(transaction,monkeypatch)
-    for changes in (dict(route_ply=2),dict(selected_response_uci='d2d4'),dict(presentation_revision=2),dict(presentation_id='B')):
+
+    transaction = feedback_lineage_owner
+    original, read_connection, _ = feedback_lineage_fixture(transaction, monkeypatch)
+    for changes in (
+        dict(route_ply=2),
+        dict(selected_response_uci="d2d4"),
+        dict(presentation_revision=2),
+        dict(presentation_id="B"),
+    ):
         with pytest.raises(ValueError):
-            owner.prepare_game_feedback_target(original.model_copy(update=changes),read_connection=read_connection)
-    prepared=owner.prepare_game_feedback_target(original,read_connection=read_connection)
+            owner.prepare_game_feedback_target(
+                original.model_copy(update=changes), read_connection=read_connection
+            )
+    prepared = owner.prepare_game_feedback_target(
+        original, read_connection=read_connection
+    )
     with transaction() as busy:
         assert owner.PostgresRecombinationStore(busy).try_lock_route(original.route_id)
         with transaction() as database:
             database.execute_native("SET LOCAL transaction_timeout='250ms'")
             database.execute_native("SET LOCAL statement_timeout='250ms'")
             database.execute_native("SET LOCAL lock_timeout='100ms'")
-            with pytest.raises(ValueError,match='feedback_target_route_busy'):
-                owner.fence_game_feedback_target(database,prepared)
+            with pytest.raises(ValueError, match="feedback_target_route_busy"):
+                owner.fence_game_feedback_target(database, prepared)
     with transaction() as database:
-        database.execute_native("UPDATE study_recombination_changes SET receipt_json=jsonb_set(receipt_json,'{status}','\"ineligible\"') WHERE command_id=(SELECT command_id FROM study_recombination_presentations WHERE presentation_id=%s)",
-            (prepared.current.presentation_id,))
-    with pytest.raises(ValueError,match='feedback_target_applied_receipt_unproved'):
-        owner.prepare_game_feedback_target(original,read_connection=read_connection)
+        database.execute_native(
+            "UPDATE study_recombination_changes SET receipt_json=jsonb_set(receipt_json,'{status}','\"ineligible\"') WHERE command_id=(SELECT command_id FROM study_recombination_presentations WHERE presentation_id=%s)",
+            (prepared.current.presentation_id,),
+        )
+    with pytest.raises(ValueError, match="feedback_target_applied_receipt_unproved"):
+        owner.prepare_game_feedback_target(original, read_connection=read_connection)
 
 
-def test_feedback_current_target_lineage_does_not_bypass_original_control(feedback_lineage_owner,monkeypatch):
+def test_feedback_current_target_lineage_does_not_bypass_original_control(
+    feedback_lineage_owner, monkeypatch
+):
     import tempo_legacy_database.adapters.study.recombination as owner
-    transaction=feedback_lineage_owner
-    original,read_connection,_=feedback_lineage_fixture(transaction,monkeypatch)
+
+    transaction = feedback_lineage_owner
+    original, read_connection, _ = feedback_lineage_fixture(transaction, monkeypatch)
     with transaction() as database:
         database.execute_native("UPDATE cards SET pending_validation=1 WHERE id='A'")
     with pytest.raises(ValueError):
-        owner.prepare_game_feedback_target(original,read_connection=read_connection)
+        owner.prepare_game_feedback_target(original, read_connection=read_connection)
 
 
-@pytest.mark.parametrize('capture_path',['retained','fresh','fresh_original_available'])
-@pytest.mark.parametrize('split',[False,True])
+@pytest.mark.parametrize(
+    "capture_path", ["retained", "fresh", "fresh_original_available"]
+)
+@pytest.mark.parametrize("split", [False, True])
 def test_qualified_feedback_reaches_current_join_or_split_target_and_real_settlement(
-    feedback_lineage_owner,monkeypatch,split,capture_path,
+    feedback_lineage_owner,
+    monkeypatch,
+    split,
+    capture_path,
 ):
     """Actual publication/source -> prepared owner lineage -> one current Again."""
     from app.legacy_game_observation import capture_game
     from app.product_composition.retained_game import retained_canonical_game
     from app.contracts.product_v02.learning import GameEncounter
-    from app.product_composition.feedback_maintenance import prepare_feedback_effect,apply_prepared_feedback_effect
+    from app.product_composition.feedback_maintenance import (
+        prepare_feedback_effect,
+        apply_prepared_feedback_effect,
+    )
     from app.services.postgres_integrity import current_integrity_certificate
-    from tempo_legacy_database.adapters.games.authority.headers import repertoire_metadata
-    from tempo_legacy_database.adapters.study.game_feedback_authority import current_owner_encounter_intake
-    from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
+    from tempo_legacy_database.adapters.games.authority.headers import (
+        repertoire_metadata,
+    )
+    from tempo_legacy_database.adapters.study.game_feedback_authority import (
+        current_owner_encounter_intake,
+    )
+    from tempo_legacy_database.adapters.study.game_feedback import (
+        PostgresGameFeedbackStore,
+    )
     from product_encounter_fixtures import qualified_feedback_source
     import tempo_legacy_database.adapters.study.recombination as owner
+
     transaction = feedback_lineage_owner
-    original,read_connection,_ = feedback_lineage_fixture(transaction,monkeypatch,split=split,
-        legacy_superseded=capture_path != 'fresh_original_available')
+    original, read_connection, _ = feedback_lineage_fixture(
+        transaction,
+        monkeypatch,
+        split=split,
+        legacy_superseded=capture_path != "fresh_original_available",
+    )
     observed = datetime.now(timezone.utc)
-    game_id = 'lichess:current-feedback-'+uuid4().hex
+    game_id = "lichess:current-feedback-" + uuid4().hex
     with transaction() as database:
-        database.execute_native("""INSERT INTO imported_games(id,provider,provider_game_id,username,
+        database.execute_native(
+            """INSERT INTO imported_games(id,provider,provider_game_id,username,
             played_at,speed,rated,color,result,start_fen,moves_json,content_hash)
             VALUES(%s,'lichess',%s,'synthetic',%s,'rapid',0,'white','1/2-1/2',%s,'["d2d4"]',%s)""",
-            (game_id,game_id.removeprefix('lichess:'),(observed-timedelta(days=1)).isoformat(),chess.STARTING_FEN,'a'*64))
-    def rows(statement,parameters=()):
+            (
+                game_id,
+                game_id.removeprefix("lichess:"),
+                (observed - timedelta(days=1)).isoformat(),
+                chess.STARTING_FEN,
+                "a" * 64,
+            ),
+        )
+
+    def rows(statement, parameters=()):
         with read_connection() as database:
-            return [dict(row) for row in database.execute_native(statement,parameters).fetchall()]
+            return [
+                dict(row)
+                for row in database.execute_native(statement, parameters).fetchall()
+            ]
+
     def metadata(repertoire_id):
-        header = repertoire_metadata(rows,repertoire_id)[0]
+        header = repertoire_metadata(rows, repertoire_id)[0]
         with read_connection() as database:
-            certificate = current_integrity_certificate(database,repertoire_id,header['graph_generation'])
-        return dict(header,integrity_current=certificate is not None,integrity_certificate=certificate)
-    captured = capture_game(original.repertoire_id,game_id,(0,),reader=rows,metadata=metadata,now=observed)
+            certificate = current_integrity_certificate(
+                database, repertoire_id, header["graph_generation"]
+            )
+        return dict(
+            header,
+            integrity_current=certificate is not None,
+            integrity_certificate=certificate,
+        )
+
+    captured = capture_game(
+        original.repertoire_id,
+        game_id,
+        (0,),
+        reader=rows,
+        metadata=metadata,
+        now=observed,
+    )
     game = retained_canonical_game(captured)
-    command = GameEncounter(key=dict(workspace_id=game.workspace_id,provider='lichess',game_id=game_id,
-        decision_id=original.decision_id,occurrence_ply=1),source=dict(provider='lichess',game_id=game_id,
-        source_revision=game.source_revision,source_digest=game.source_digest),decision=original,
-        expected_uci='e2e4',played_uci='d2d4',observation='missed',detected_at=observed.isoformat(),
-        occurred_at=game.played_at,payload_digest='e'*64)
-    with qualified_feedback_source(transaction,capture=captured,command=command,clock=lambda:observed,
-            capture_provider_source=capture_path.startswith('fresh')) as source:
-        if capture_path.startswith('fresh'):
+    command = GameEncounter(
+        key=dict(
+            workspace_id=game.workspace_id,
+            provider="lichess",
+            game_id=game_id,
+            decision_id=original.decision_id,
+            occurrence_ply=1,
+        ),
+        source=dict(
+            provider="lichess",
+            game_id=game_id,
+            source_revision=game.source_revision,
+            source_digest=game.source_digest,
+        ),
+        decision=original,
+        expected_uci="e2e4",
+        played_uci="d2d4",
+        observation="missed",
+        detected_at=observed.isoformat(),
+        occurred_at=game.played_at,
+        payload_digest="e" * 64,
+    )
+    with qualified_feedback_source(
+        transaction,
+        capture=captured,
+        command=command,
+        clock=lambda: observed,
+        capture_provider_source=capture_path.startswith("fresh"),
+    ) as source:
+        if capture_path.startswith("fresh"):
             command = source.command
-            if capture_path == 'fresh_original_available':
+            if capture_path == "fresh_original_available":
                 # Actual joins retain this authored physical spelling in the
                 # publication. Immutable capture stays A; qualification resolves B.
                 assert command.decision.presentation_id == original.presentation_id
             else:
                 assert command.decision.presentation_id != original.presentation_id
             assert command.key.decision_id == original.decision_id
-            assert source.source.first_departure.status == 'own_actionable'
+            assert source.source.first_departure.status == "own_actionable"
             assert source.source.first_departure.decision == command.decision
             from app.games.feedback.coordinator import delivery_for
-            retained_delivery = source.store.delivery(delivery_for(source.source.source_key,command).operation_id)
+
+            retained_delivery = source.store.delivery(
+                delivery_for(source.source.source_key, command).operation_id
+            )
             original_bytes = retained_delivery.command.model_dump_json()
-        from tempo_legacy_database.adapters.study.game_feedback_authority import CurrentDecisionUnavailable
-        with pytest.raises(CurrentDecisionUnavailable,match='first_departure_canonical_source_unproved'):
-            source.prepare(command.model_copy(update={'occurred_at':(observed-timedelta(days=2)).isoformat()}))
+        from tempo_legacy_database.adapters.study.game_feedback_authority import (
+            CurrentDecisionUnavailable,
+        )
+
+        with pytest.raises(
+            CurrentDecisionUnavailable,
+            match="first_departure_canonical_source_unproved",
+        ):
+            source.prepare(
+                command.model_copy(
+                    update={"occurred_at": (observed - timedelta(days=2)).isoformat()}
+                )
+            )
         prepared = source.prepared
         target = prepared.qualification.selection.decision
-        assert target.presentation_id != original.presentation_id and target.decision_id == original.decision_id
+        assert (
+            target.presentation_id != original.presentation_id
+            and target.decision_id == original.decision_id
+        )
         with transaction() as database:
-            receipt = current_owner_encounter_intake(database,retained_owner_capture=captured,
-                snapshot=prepared.target_snapshot,clock=lambda:observed,
-                prepared_decisions=prepared.prepared_decisions,qualification=prepared.qualification).accept_qualified(
-                    command,qualification=prepared.qualification)
-            assert receipt.disposition == 'introduced_again' and receipt.progress.target.card_id == target.presentation_id
+            receipt = current_owner_encounter_intake(
+                database,
+                retained_owner_capture=captured,
+                snapshot=prepared.target_snapshot,
+                clock=lambda: observed,
+                prepared_decisions=prepared.prepared_decisions,
+                qualification=prepared.qualification,
+            ).accept_qualified(command, qualification=prepared.qualification)
+            assert (
+                receipt.disposition == "introduced_again"
+                and receipt.progress.target.card_id == target.presentation_id
+            )
             effect = PostgresGameFeedbackStore(database).get(command.key)
-        unit = prepare_feedback_effect(effect,read=transaction,capture=lambda *args:captured,
-            clock=lambda:observed,qualification_prepare=lambda command:prepared)
-        def forbidden(*args,**kwargs):
-            raise AssertionError('qualified feedback replayed current executable in the writer')
+        unit = prepare_feedback_effect(
+            effect,
+            read=transaction,
+            capture=lambda *args: captured,
+            clock=lambda: observed,
+            qualification_prepare=lambda command: prepared,
+        )
+
+        def forbidden(*args, **kwargs):
+            raise AssertionError(
+                "qualified feedback replayed current executable in the writer"
+            )
+
         # The native owner proof already reconstructed the current presentation
         # outside readers. Feedback application must consume its bounded fence.
         with monkeypatch.context() as short_writer:
-            short_writer.setattr(owner.CurrentStudyRecombination,'try_current',forbidden)
-            short_writer.setattr(prepared.prepared_decisions,'_validate_executable',forbidden)
+            short_writer.setattr(
+                owner.CurrentStudyRecombination, "try_current", forbidden
+            )
+            short_writer.setattr(
+                prepared.prepared_decisions, "_validate_executable", forbidden
+            )
             with transaction() as database:
                 database.execute_native("SET LOCAL transaction_timeout='250ms'")
                 database.execute_native("SET LOCAL lock_timeout='100ms'")
-                available = apply_prepared_feedback_effect(database,unit,clock=lambda:observed,operation_admitted=True)
-                assert available.admission_status == 'available'
-                actual = database.execute_native('SELECT card_id,source_kind,source_ref FROM reviews WHERE id=%s',
-                    (available.progress.scheduling_review_id,)).fetchone()
-                assert tuple(actual) == (target.presentation_id,'game_lapse',available.owner_receipt_id)
-        if capture_path.startswith('fresh'):
+                available = apply_prepared_feedback_effect(
+                    database, unit, clock=lambda: observed, operation_admitted=True
+                )
+                assert available.admission_status == "available"
+                actual = database.execute_native(
+                    "SELECT card_id,source_kind,source_ref FROM reviews WHERE id=%s",
+                    (available.progress.scheduling_review_id,),
+                ).fetchone()
+                assert tuple(actual) == (
+                    target.presentation_id,
+                    "game_lapse",
+                    available.owner_receipt_id,
+                )
+        if capture_path.startswith("fresh"):
             from app.games.feedback.qualification import acknowledge_qualified_delivery
-            source.store.save_delivery(acknowledge_qualified_delivery(retained_delivery,available),serviced=True)
+
+            source.store.save_delivery(
+                acknowledge_qualified_delivery(retained_delivery, available),
+                serviced=True,
+            )
             source.recompare()
             source.reprepare()
             actual = source.store.delivery(retained_delivery.operation_id)
-            assert actual.command.model_dump_json() == original_bytes and actual.state == 'acknowledged'
+            assert (
+                actual.command.model_dump_json() == original_bytes
+                and actual.state == "acknowledged"
+            )
             assert source.source.effects == (command,) and not source.source.quarantined
             with transaction() as database:
-                assert database.execute_native('SELECT count(*) FROM product_feedback_deliveries WHERE source_key=%s',
-                    (source.source.source_key,)).fetchone()[0] == 1
-                assert database.execute_native("SELECT count(*) FROM reviews WHERE source_ref=%s AND source_kind='game_lapse'",
-                    (available.owner_receipt_id,)).fetchone()[0] == 1
+                assert (
+                    database.execute_native(
+                        "SELECT count(*) FROM product_feedback_deliveries WHERE source_key=%s",
+                        (source.source.source_key,),
+                    ).fetchone()[0]
+                    == 1
+                )
+                assert (
+                    database.execute_native(
+                        "SELECT count(*) FROM reviews WHERE source_ref=%s AND source_kind='game_lapse'",
+                        (available.owner_receipt_id,),
+                    ).fetchone()[0]
+                    == 1
+                )
         if not split:
             # Genuine later failed Study attempts split this reset target. The
             # original accepted consequence remains on B, while current C gets
             # a new issue fence and retains B's actual first-service evidence.
             with transaction() as database:
                 for _ in range(3):
-                    ordinary_current_review(database,target.presentation_id,monkeypatch,outcome='again')
-                assert owner.accept_current_split(database,target.presentation_id,1)['applied']
+                    ordinary_current_review(
+                        database, target.presentation_id, monkeypatch, outcome="again"
+                    )
+                assert owner.accept_current_split(database, target.presentation_id, 1)[
+                    "applied"
+                ]
                 effect = PostgresGameFeedbackStore(database).get(command.key)
-                prior_progress = PostgresGameFeedbackStore(database).observed_progress(effect)
+                prior_progress = PostgresGameFeedbackStore(database).observed_progress(
+                    effect
+                )
                 assert prior_progress.first_issued is not None
-                from tempo_legacy_database.adapters.study.game_feedback import next_feedback_preparation
-                assert next_feedback_preparation(database,datetime.now().date().isoformat()).key == command.key
+                from tempo_legacy_database.adapters.study.game_feedback import (
+                    next_feedback_preparation,
+                )
+
+                assert (
+                    next_feedback_preparation(
+                        database, datetime.now().date().isoformat()
+                    ).key
+                    == command.key
+                )
             remapped_at = datetime.now(timezone.utc)
             current = source.prepare(command)
             current_target = current.qualification.selection.decision
             assert current_target.presentation_id != target.presentation_id
-            unit = prepare_feedback_effect(effect,read=transaction,capture=lambda *args:captured,
-                clock=lambda:remapped_at,qualification_prepare=lambda command:current)
+            unit = prepare_feedback_effect(
+                effect,
+                read=transaction,
+                capture=lambda *args: captured,
+                clock=lambda: remapped_at,
+                qualification_prepare=lambda command: current,
+            )
             with transaction() as database:
-                remapped = apply_prepared_feedback_effect(database,unit,clock=lambda:remapped_at,operation_admitted=True)
-                assert remapped.progress.target.card_id == current_target.presentation_id
-                assert remapped.progress.scheduling_review_id == available.progress.scheduling_review_id
-                assert remapped.progress.schedule_applied_at == available.progress.schedule_applied_at
+                remapped = apply_prepared_feedback_effect(
+                    database, unit, clock=lambda: remapped_at, operation_admitted=True
+                )
+                assert (
+                    remapped.progress.target.card_id == current_target.presentation_id
+                )
+                assert (
+                    remapped.progress.scheduling_review_id
+                    == available.progress.scheduling_review_id
+                )
+                assert (
+                    remapped.progress.schedule_applied_at
+                    == available.progress.schedule_applied_at
+                )
                 assert remapped.progress.first_issued == prior_progress.first_issued
-                assert remapped.progress.prior_remediation_fences == (available.progress.remediation_fence,)
-                assert remapped.progress.remediation_fence.after_issuance_sequence >= prior_progress.first_issued.issuance_sequence
+                assert remapped.progress.prior_remediation_fences == (
+                    available.progress.remediation_fence,
+                )
+                assert (
+                    remapped.progress.remediation_fence.after_issuance_sequence
+                    >= prior_progress.first_issued.issuance_sequence
+                )
             target = current_target
         from tempo_legacy_database.adapters.study import game_feedback as feedback_owner
+
         settle = feedback_owner.settle_saved_review
         settlement_called = []
-        def bounded_settlement(database,*args):
+
+        def bounded_settlement(database, *args):
             with monkeypatch.context() as hook:
-                hook.setattr(owner.CurrentStudyRecombination,'try_current',forbidden)
-                hook.setattr(owner.chess,'Board',forbidden)
+                hook.setattr(owner.CurrentStudyRecombination, "try_current", forbidden)
+                hook.setattr(owner.chess, "Board", forbidden)
                 database.execute_native("SET LOCAL transaction_timeout='250ms'")
                 database.execute_native("SET LOCAL statement_timeout='250ms'")
                 database.execute_native("SET LOCAL lock_timeout='100ms'")
-                settle(database,*args)
+                settle(database, *args)
                 settlement_called.append(True)
             # Ordinary Study's pre-existing optional after-save recombination
             # is a separate path, outside this hook-local contract proof.
+
         with monkeypatch.context() as hook:
-            hook.setattr(feedback_owner,'settle_saved_review',bounded_settlement)
+            hook.setattr(feedback_owner, "settle_saved_review", bounded_settlement)
             with transaction() as database:
-                result,_ = ordinary_current_review(database,target.presentation_id,monkeypatch)
+                result, _ = ordinary_current_review(
+                    database, target.presentation_id, monkeypatch
+                )
         assert settlement_called
         with transaction() as database:
             settled = PostgresGameFeedbackStore(database).get(command.key)
-            assert settled.status == 'settled' and settled.progress.settlement.review_id == result['review_id']
+            assert (
+                settled.status == "settled"
+                and settled.progress.settlement.review_id == result["review_id"]
+            )
             assert settled.progress.settlement.attempt.card_id == target.presentation_id
-            assert settled.encounter == command and settled.card_id == command.decision.presentation_id
-            assert database.execute_native("SELECT COUNT(*) FROM reviews WHERE source_ref=%s AND source_kind='game_lapse'",
-                (receipt.owner_receipt_id,)).fetchone()[0] == 1
+            assert (
+                settled.encounter == command
+                and settled.card_id == command.decision.presentation_id
+            )
+            assert (
+                database.execute_native(
+                    "SELECT COUNT(*) FROM reviews WHERE source_ref=%s AND source_kind='game_lapse'",
+                    (receipt.owner_receipt_id,),
+                ).fetchone()[0]
+                == 1
+            )
 
 
-@pytest.mark.parametrize('split',[False,True])
+@pytest.mark.parametrize("split", [False, True])
 def test_prejoin_captured_original_is_repeated_after_real_lineage_without_rekey_or_second_reset(
-    feedback_lineage_owner,monkeypatch,split,
+    feedback_lineage_owner,
+    monkeypatch,
+    split,
 ):
     """An actual earlier source capture stays byte-identical across owner lineage."""
     from app.contracts.product_v02.learning import GameEncounter
     from app.legacy_game_observation import capture_game
     from app.product_composition.retained_game import retained_canonical_game
-    from app.product_composition.feedback_maintenance import prepare_feedback_effect,apply_prepared_feedback_effect
+    from app.product_composition.feedback_maintenance import (
+        prepare_feedback_effect,
+        apply_prepared_feedback_effect,
+    )
     from app.repertoire import project_published_repertoire
     from app.services.postgres_integrity import current_integrity_certificate
-    from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import read_repertoire
-    from tempo_legacy_database.adapters.games.authority.headers import repertoire_metadata
-    from tempo_legacy_database.adapters.study.game_feedback_authority import current_owner_encounter_intake
-    from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
+    from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import (
+        read_repertoire,
+    )
+    from tempo_legacy_database.adapters.games.authority.headers import (
+        repertoire_metadata,
+    )
+    from tempo_legacy_database.adapters.study.game_feedback_authority import (
+        current_owner_encounter_intake,
+    )
+    from tempo_legacy_database.adapters.study.game_feedback import (
+        PostgresGameFeedbackStore,
+    )
     from app.games.feedback.coordinator import delivery_for
     from app.games.feedback.qualification import acknowledge_qualified_delivery
     from product_encounter_fixtures import qualified_feedback_source
+
     transaction = feedback_lineage_owner
     observed = datetime.now(timezone.utc)
     with transaction() as database:
-        facts = read_repertoire(database,'r11-repertoire')
+        facts = read_repertoire(database, "r11-repertoire")
     snapshot = project_published_repertoire(facts)
-    original = next(item for item in snapshot.decision_presentations if item.presentation_id == 'A')
-    game_id = 'lichess:prejoin-feedback-'+uuid4().hex
+    original = next(
+        item for item in snapshot.decision_presentations if item.presentation_id == "A"
+    )
+    game_id = "lichess:prejoin-feedback-" + uuid4().hex
     with transaction() as database:
-        database.execute_native("""INSERT INTO imported_games(id,provider,provider_game_id,username,
+        database.execute_native(
+            """INSERT INTO imported_games(id,provider,provider_game_id,username,
             played_at,speed,rated,color,result,start_fen,moves_json,content_hash)
             VALUES(%s,'lichess',%s,'synthetic',%s,'rapid',0,'white','1/2-1/2',%s,'["d2d4"]',%s)""",
-            (game_id,game_id.removeprefix('lichess:'),(observed-timedelta(days=1)).isoformat(),chess.STARTING_FEN,'a'*64))
-    def rows(statement,parameters=()):
+            (
+                game_id,
+                game_id.removeprefix("lichess:"),
+                (observed - timedelta(days=1)).isoformat(),
+                chess.STARTING_FEN,
+                "a" * 64,
+            ),
+        )
+
+    def rows(statement, parameters=()):
         with transaction() as database:
-            return [dict(row) for row in database.execute_native(statement,parameters).fetchall()]
+            return [
+                dict(row)
+                for row in database.execute_native(statement, parameters).fetchall()
+            ]
+
     def metadata(repertoire_id):
-        header = repertoire_metadata(rows,repertoire_id)[0]
+        header = repertoire_metadata(rows, repertoire_id)[0]
         with transaction() as database:
-            certificate = current_integrity_certificate(database,repertoire_id,header['graph_generation'])
-        return dict(header,integrity_current=certificate is not None,integrity_certificate=certificate)
-    captured = capture_game(original.repertoire_id,game_id,(0,),reader=rows,metadata=metadata,now=observed)
+            certificate = current_integrity_certificate(
+                database, repertoire_id, header["graph_generation"]
+            )
+        return dict(
+            header,
+            integrity_current=certificate is not None,
+            integrity_certificate=certificate,
+        )
+
+    captured = capture_game(
+        original.repertoire_id,
+        game_id,
+        (0,),
+        reader=rows,
+        metadata=metadata,
+        now=observed,
+    )
     game = retained_canonical_game(captured)
-    template = GameEncounter(key=dict(workspace_id=game.workspace_id,provider='lichess',game_id=game_id,
-        decision_id=original.decision_id,occurrence_ply=1),source=dict(provider='lichess',game_id=game_id,
-        source_revision=game.source_revision,source_digest=game.source_digest),decision=original,
-        expected_uci='e2e4',played_uci='d2d4',observation='missed',detected_at=observed.isoformat(),
-        occurred_at=game.played_at,payload_digest='e'*64)
-    with qualified_feedback_source(transaction,capture=captured,command=template,clock=lambda:observed,
-            stream='reconciliation',capture_provider_source=True) as source:
+    template = GameEncounter(
+        key=dict(
+            workspace_id=game.workspace_id,
+            provider="lichess",
+            game_id=game_id,
+            decision_id=original.decision_id,
+            occurrence_ply=1,
+        ),
+        source=dict(
+            provider="lichess",
+            game_id=game_id,
+            source_revision=game.source_revision,
+            source_digest=game.source_digest,
+        ),
+        decision=original,
+        expected_uci="e2e4",
+        played_uci="d2d4",
+        observation="missed",
+        detected_at=observed.isoformat(),
+        occurred_at=game.played_at,
+        payload_digest="e" * 64,
+    )
+    with qualified_feedback_source(
+        transaction,
+        capture=captured,
+        command=template,
+        clock=lambda: observed,
+        stream="reconciliation",
+        capture_provider_source=True,
+    ) as source:
         command = source.command
-        assert command.decision.presentation_id == 'A'
-        delivery = source.store.delivery(delivery_for(source.source.source_key,command).operation_id)
+        assert command.decision.presentation_id == "A"
+        delivery = source.store.delivery(
+            delivery_for(source.source.source_key, command).operation_id
+        )
         frozen = delivery.command.model_dump_json()
         determined = source.source.determined_at
-        feedback_lineage_fixture(transaction,monkeypatch,split=split)
+        feedback_lineage_fixture(transaction, monkeypatch, split=split)
         observed = datetime.now(timezone.utc)
         source.recompare()
         source.reprepare()
         current = source.prepared
         target = current.qualification.selection.decision
-        assert target.presentation_id != 'A' and target.decision_id == command.key.decision_id
-        assert source.source.determined_at == current.qualification.determined_at == determined
+        assert (
+            target.presentation_id != "A"
+            and target.decision_id == command.key.decision_id
+        )
+        assert (
+            source.source.determined_at
+            == current.qualification.determined_at
+            == determined
+        )
         assert source.source.effects == (command,)
         with transaction() as database:
-            receiver = current_owner_encounter_intake(database,retained_owner_capture=captured,
-                snapshot=current.target_snapshot,prepared_decisions=current.prepared_decisions,
-                qualification=current.qualification,clock=lambda:observed)
-            accepted = receiver.accept_qualified(command,qualification=current.qualification)
+            receiver = current_owner_encounter_intake(
+                database,
+                retained_owner_capture=captured,
+                snapshot=current.target_snapshot,
+                prepared_decisions=current.prepared_decisions,
+                qualification=current.qualification,
+                clock=lambda: observed,
+            )
+            accepted = receiver.accept_qualified(
+                command, qualification=current.qualification
+            )
             effect = PostgresGameFeedbackStore(database).get(command.key)
-        unit = prepare_feedback_effect(effect,read=transaction,capture=lambda *args:captured,
-            clock=lambda:observed,qualification_prepare=lambda original:current)
+        unit = prepare_feedback_effect(
+            effect,
+            read=transaction,
+            capture=lambda *args: captured,
+            clock=lambda: observed,
+            qualification_prepare=lambda original: current,
+        )
         with transaction() as database:
-            available = apply_prepared_feedback_effect(database,unit,clock=lambda:observed,operation_admitted=True)
-            assert available.admission_status == 'available'
-        source.store.save_delivery(acknowledge_qualified_delivery(delivery,available),serviced=True)
+            available = apply_prepared_feedback_effect(
+                database, unit, clock=lambda: observed, operation_admitted=True
+            )
+            assert available.admission_status == "available"
+        source.store.save_delivery(
+            acknowledge_qualified_delivery(delivery, available), serviced=True
+        )
         source.recompare()
         source.reprepare()
         with transaction() as database:
-            repeated = current_owner_encounter_intake(database,retained_owner_capture=captured,
-                snapshot=source.prepared.target_snapshot,prepared_decisions=source.prepared.prepared_decisions,
-                qualification=source.prepared.qualification,clock=lambda:observed).accept_qualified(
-                    command,qualification=source.prepared.qualification)
-            assert repeated.progress.scheduling_review_id == available.progress.scheduling_review_id
-            assert database.execute_native('SELECT count(*) FROM product_feedback_deliveries WHERE source_key=%s',
-                (source.source.source_key,)).fetchone()[0] == 1
-            assert database.execute_native("SELECT count(*) FROM reviews WHERE source_kind='game_lapse' AND source_ref=%s",
-                (accepted.owner_receipt_id,)).fetchone()[0] == 1
-            result,_ = ordinary_current_review(database,target.presentation_id,monkeypatch)
-        assert source.store.delivery(delivery.operation_id).command.model_dump_json() == frozen
+            repeated = current_owner_encounter_intake(
+                database,
+                retained_owner_capture=captured,
+                snapshot=source.prepared.target_snapshot,
+                prepared_decisions=source.prepared.prepared_decisions,
+                qualification=source.prepared.qualification,
+                clock=lambda: observed,
+            ).accept_qualified(command, qualification=source.prepared.qualification)
+            assert (
+                repeated.progress.scheduling_review_id
+                == available.progress.scheduling_review_id
+            )
+            assert (
+                database.execute_native(
+                    "SELECT count(*) FROM product_feedback_deliveries WHERE source_key=%s",
+                    (source.source.source_key,),
+                ).fetchone()[0]
+                == 1
+            )
+            assert (
+                database.execute_native(
+                    "SELECT count(*) FROM reviews WHERE source_kind='game_lapse' AND source_ref=%s",
+                    (accepted.owner_receipt_id,),
+                ).fetchone()[0]
+                == 1
+            )
+            result, _ = ordinary_current_review(
+                database, target.presentation_id, monkeypatch
+            )
+        assert (
+            source.store.delivery(delivery.operation_id).command.model_dump_json()
+            == frozen
+        )
         with transaction() as database:
             settled = PostgresGameFeedbackStore(database).get(command.key)
-            assert settled.status == 'settled' and settled.progress.settlement.review_id == result['review_id']
-            assert settled.encounter == command and settled.progress.determined_at == determined
+            assert (
+                settled.status == "settled"
+                and settled.progress.settlement.review_id == result["review_id"]
+            )
+            assert (
+                settled.encounter == command
+                and settled.progress.determined_at == determined
+            )
 
 
 def test_prepared_original_refuses_new_lineage_then_fresh_current_target_settles(
-    feedback_lineage_owner,monkeypatch,
+    feedback_lineage_owner,
+    monkeypatch,
 ):
     """A prepared absence of lineage is rechecked after a genuine later join."""
     from app.contracts.product_v02.learning import GameEncounter
     from app.legacy_game_observation import capture_game
     from app.product_composition.retained_game import retained_canonical_game
-    from app.product_composition.feedback_maintenance import prepare_feedback_effect,apply_prepared_feedback_effect
+    from app.product_composition.feedback_maintenance import (
+        prepare_feedback_effect,
+        apply_prepared_feedback_effect,
+    )
     from app.repertoire import project_published_repertoire
     from app.services.postgres_integrity import current_integrity_certificate
-    from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import read_repertoire
-    from tempo_legacy_database.adapters.games.authority.headers import repertoire_metadata
-    from tempo_legacy_database.adapters.study.game_feedback_authority import current_owner_encounter_intake
-    from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
+    from tempo_legacy_database.adapters.authored_repertoires.product_snapshot import (
+        read_repertoire,
+    )
+    from tempo_legacy_database.adapters.games.authority.headers import (
+        repertoire_metadata,
+    )
+    from tempo_legacy_database.adapters.study.game_feedback_authority import (
+        current_owner_encounter_intake,
+    )
+    from tempo_legacy_database.adapters.study.game_feedback import (
+        PostgresGameFeedbackStore,
+    )
     from app.games.feedback.coordinator import delivery_for
     from product_encounter_fixtures import qualified_feedback_source
     import tempo_legacy_database.adapters.study.recombination as lineage
+
     transaction = feedback_lineage_owner
-    for identifier,count in (('A',3),('C',3),('B',2)):
+    for identifier, count in (("A", 3), ("C", 3), ("B", 2)):
         for _ in range(count):
             with transaction() as database:
-                result,_ = ordinary_current_review(database,identifier,monkeypatch)
-                assert result.get('recombination',{}).get('status')!='applied'
+                result, _ = ordinary_current_review(database, identifier, monkeypatch)
+                assert result.get("recombination", {}).get("status") != "applied"
     observed = datetime.now(timezone.utc)
     with transaction() as database:
-        facts = read_repertoire(database,'r11-repertoire')
+        facts = read_repertoire(database, "r11-repertoire")
     snapshot = project_published_repertoire(facts)
-    original = next(item for item in snapshot.decision_presentations if item.presentation_id=='A')
-    game_id = 'lichess:stale-preparation-'+uuid4().hex
+    original = next(
+        item for item in snapshot.decision_presentations if item.presentation_id == "A"
+    )
+    game_id = "lichess:stale-preparation-" + uuid4().hex
     with transaction() as database:
-        database.execute_native("""INSERT INTO imported_games(id,provider,provider_game_id,username,
+        database.execute_native(
+            """INSERT INTO imported_games(id,provider,provider_game_id,username,
             played_at,speed,rated,color,result,start_fen,moves_json,content_hash)
             VALUES(%s,'lichess',%s,'synthetic',%s,'rapid',0,'white','1/2-1/2',%s,'["d2d4"]',%s)""",
-            (game_id,game_id.removeprefix('lichess:'),(observed-timedelta(days=1)).isoformat(),chess.STARTING_FEN,'a'*64))
-    def rows(statement,parameters=()):
+            (
+                game_id,
+                game_id.removeprefix("lichess:"),
+                (observed - timedelta(days=1)).isoformat(),
+                chess.STARTING_FEN,
+                "a" * 64,
+            ),
+        )
+
+    def rows(statement, parameters=()):
         with transaction() as database:
-            return [dict(row) for row in database.execute_native(statement,parameters).fetchall()]
+            return [
+                dict(row)
+                for row in database.execute_native(statement, parameters).fetchall()
+            ]
+
     def metadata(repertoire_id):
-        header = repertoire_metadata(rows,repertoire_id)[0]
+        header = repertoire_metadata(rows, repertoire_id)[0]
         with transaction() as database:
-            certificate = current_integrity_certificate(database,repertoire_id,header['graph_generation'])
-        return dict(header,integrity_current=certificate is not None,integrity_certificate=certificate)
-    captured = capture_game(original.repertoire_id,game_id,(0,),reader=rows,metadata=metadata,now=observed)
+            certificate = current_integrity_certificate(
+                database, repertoire_id, header["graph_generation"]
+            )
+        return dict(
+            header,
+            integrity_current=certificate is not None,
+            integrity_certificate=certificate,
+        )
+
+    captured = capture_game(
+        original.repertoire_id,
+        game_id,
+        (0,),
+        reader=rows,
+        metadata=metadata,
+        now=observed,
+    )
     game = retained_canonical_game(captured)
-    template = GameEncounter(key=dict(workspace_id=game.workspace_id,provider='lichess',game_id=game_id,
-        decision_id=original.decision_id,occurrence_ply=1),source=dict(provider='lichess',game_id=game_id,
-        source_revision=game.source_revision,source_digest=game.source_digest),decision=original,
-        expected_uci='e2e4',played_uci='d2d4',observation='missed',detected_at=observed.isoformat(),
-        occurred_at=game.played_at,payload_digest='e'*64)
-    with qualified_feedback_source(transaction,capture=captured,command=template,clock=lambda:observed,
-            stream='reconciliation',capture_provider_source=True) as source:
-        command,stale = source.command,source.prepared
-        assert stale.prepared_targets==()
-        frozen = source.store.delivery(delivery_for(source.source.source_key,command).operation_id).command.model_dump_json()
-        def forbidden(*args,**kwargs):
-            raise AssertionError('feedback absence fence replayed repertoire/chess')
+    template = GameEncounter(
+        key=dict(
+            workspace_id=game.workspace_id,
+            provider="lichess",
+            game_id=game_id,
+            decision_id=original.decision_id,
+            occurrence_ply=1,
+        ),
+        source=dict(
+            provider="lichess",
+            game_id=game_id,
+            source_revision=game.source_revision,
+            source_digest=game.source_digest,
+        ),
+        decision=original,
+        expected_uci="e2e4",
+        played_uci="d2d4",
+        observation="missed",
+        detected_at=observed.isoformat(),
+        occurred_at=game.played_at,
+        payload_digest="e" * 64,
+    )
+    with qualified_feedback_source(
+        transaction,
+        capture=captured,
+        command=template,
+        clock=lambda: observed,
+        stream="reconciliation",
+        capture_provider_source=True,
+    ) as source:
+        command, stale = source.command, source.prepared
+        assert stale.prepared_targets == ()
+        frozen = source.store.delivery(
+            delivery_for(source.source.source_key, command).operation_id
+        ).command.model_dump_json()
+
+        def forbidden(*args, **kwargs):
+            raise AssertionError("feedback absence fence replayed repertoire/chess")
+
         # The absence probe owns the same route lock as genuine join/split.
         # A competing owner cannot insert a new map before this writer commits;
         # a competing feedback writer also declines immediately, without waits.
         with monkeypatch.context() as short_writer:
-            short_writer.setattr(lineage.CurrentStudyRecombination,'try_current',forbidden)
-            short_writer.setattr(lineage.chess,'Board',forbidden)
+            short_writer.setattr(
+                lineage.CurrentStudyRecombination, "try_current", forbidden
+            )
+            short_writer.setattr(lineage.chess, "Board", forbidden)
             with transaction() as database:
                 database.execute_native("SET LOCAL transaction_timeout='250ms'")
                 database.execute_native("SET LOCAL statement_timeout='250ms'")
                 database.execute_native("SET LOCAL lock_timeout='100ms'")
-                lineage.fence_feedback_lineage_absence(database,stale.qualification.selection.decision)
+                lineage.fence_feedback_lineage_absence(
+                    database, stale.qualification.selection.decision
+                )
                 with transaction() as competitor:
                     competitor.execute_native("SET LOCAL transaction_timeout='250ms'")
                     competitor.execute_native("SET LOCAL statement_timeout='250ms'")
                     competitor.execute_native("SET LOCAL lock_timeout='100ms'")
-                    assert not lineage.PostgresRecombinationStore(competitor).try_lock_route(original.route_id)
-                    with pytest.raises(ValueError,match='feedback_target_route_busy'):
-                        lineage.fence_feedback_lineage_absence(competitor,stale.qualification.selection.decision)
+                    assert not lineage.PostgresRecombinationStore(
+                        competitor
+                    ).try_lock_route(original.route_id)
+                    with pytest.raises(ValueError, match="feedback_target_route_busy"):
+                        lineage.fence_feedback_lineage_absence(
+                            competitor, stale.qualification.selection.decision
+                        )
         with transaction() as database:
-            old_card = tuple(database.execute_native('SELECT id,revision,archived,pending_validation,superseded_by '
-                'FROM cards WHERE id=%s',('A',)).fetchone())
-            old_source = tuple(database.execute_native('SELECT scope_source_revision FROM repertoires WHERE id=%s',
-                (original.repertoire_id,)).fetchone())
-            joined,_ = ordinary_current_review(database,'B',monkeypatch)
-            assert joined['recombination']['status']=='applied'
-            current_id = joined['recombination']['resulting_presentation_id']
-            assert tuple(database.execute_native('SELECT id,revision,archived,pending_validation,superseded_by '
-                'FROM cards WHERE id=%s',('A',)).fetchone())==old_card
-            assert tuple(database.execute_native('SELECT scope_source_revision FROM repertoires WHERE id=%s',
-                (original.repertoire_id,)).fetchone())==old_source
+            old_card = tuple(
+                database.execute_native(
+                    "SELECT id,revision,archived,pending_validation,superseded_by "
+                    "FROM cards WHERE id=%s",
+                    ("A",),
+                ).fetchone()
+            )
+            old_source = tuple(
+                database.execute_native(
+                    "SELECT scope_source_revision FROM repertoires WHERE id=%s",
+                    (original.repertoire_id,),
+                ).fetchone()
+            )
+            joined, _ = ordinary_current_review(database, "B", monkeypatch)
+            assert joined["recombination"]["status"] == "applied"
+            current_id = joined["recombination"]["resulting_presentation_id"]
+            assert (
+                tuple(
+                    database.execute_native(
+                        "SELECT id,revision,archived,pending_validation,superseded_by "
+                        "FROM cards WHERE id=%s",
+                        ("A",),
+                    ).fetchone()
+                )
+                == old_card
+            )
+            assert (
+                tuple(
+                    database.execute_native(
+                        "SELECT scope_source_revision FROM repertoires WHERE id=%s",
+                        (original.repertoire_id,),
+                    ).fetchone()
+                )
+                == old_source
+            )
         observed = datetime.now(timezone.utc)
-        def intake(database,prepared):
-            return current_owner_encounter_intake(database,retained_owner_capture=captured,
-                snapshot=prepared.target_snapshot,prepared_decisions=prepared.prepared_decisions,
-                qualification=prepared.qualification,clock=lambda:observed)
+
+        def intake(database, prepared):
+            return current_owner_encounter_intake(
+                database,
+                retained_owner_capture=captured,
+                snapshot=prepared.target_snapshot,
+                prepared_decisions=prepared.prepared_decisions,
+                qualification=prepared.qualification,
+                clock=lambda: observed,
+            )
+
         with monkeypatch.context() as short_writer:
-            short_writer.setattr(lineage.CurrentStudyRecombination,'try_current',forbidden)
-            short_writer.setattr(lineage.chess,'Board',forbidden)
+            short_writer.setattr(
+                lineage.CurrentStudyRecombination, "try_current", forbidden
+            )
+            short_writer.setattr(lineage.chess, "Board", forbidden)
             with transaction() as database:
                 database.execute_native("SET LOCAL transaction_timeout='250ms'")
                 database.execute_native("SET LOCAL statement_timeout='250ms'")
                 database.execute_native("SET LOCAL lock_timeout='100ms'")
-                held = intake(database,stale).accept_qualified(command,qualification=stale.qualification)
-                assert held.reason=='feedback_target_lineage_changed' and held.admission_status=='pending'
+                held = intake(database, stale).accept_qualified(
+                    command, qualification=stale.qualification
+                )
+                assert (
+                    held.reason == "feedback_target_lineage_changed"
+                    and held.admission_status == "pending"
+                )
                 effect = PostgresGameFeedbackStore(database).get(command.key)
                 assert effect.review_id is None
-        stale_unit = prepare_feedback_effect(effect,read=transaction,capture=lambda *args:captured,
-            clock=lambda:observed,qualification_prepare=lambda command:stale)
+        stale_unit = prepare_feedback_effect(
+            effect,
+            read=transaction,
+            capture=lambda *args: captured,
+            clock=lambda: observed,
+            qualification_prepare=lambda command: stale,
+        )
         assert stale_unit.reason is None
         with monkeypatch.context() as short_writer:
-            short_writer.setattr(lineage.CurrentStudyRecombination,'try_current',forbidden)
-            short_writer.setattr(lineage.chess,'Board',forbidden)
+            short_writer.setattr(
+                lineage.CurrentStudyRecombination, "try_current", forbidden
+            )
+            short_writer.setattr(lineage.chess, "Board", forbidden)
             with transaction() as database:
                 database.execute_native("SET LOCAL transaction_timeout='250ms'")
                 database.execute_native("SET LOCAL statement_timeout='250ms'")
                 database.execute_native("SET LOCAL lock_timeout='100ms'")
-                held = apply_prepared_feedback_effect(database,stale_unit,clock=lambda:observed,operation_admitted=True)
-                assert held.reason=='feedback_target_lineage_changed' and held.admission_status=='pending'
-                assert database.execute_native("SELECT count(*) FROM reviews WHERE card_id='A' AND source_kind='game_lapse'").fetchone()[0]==0
+                held = apply_prepared_feedback_effect(
+                    database,
+                    stale_unit,
+                    clock=lambda: observed,
+                    operation_admitted=True,
+                )
+                assert (
+                    held.reason == "feedback_target_lineage_changed"
+                    and held.admission_status == "pending"
+                )
+                assert (
+                    database.execute_native(
+                        "SELECT count(*) FROM reviews WHERE card_id='A' AND source_kind='game_lapse'"
+                    ).fetchone()[0]
+                    == 0
+                )
         source.reprepare()
         fresh = source.prepared
-        assert fresh.qualification.selection.decision.presentation_id==current_id
+        assert fresh.qualification.selection.decision.presentation_id == current_id
         with transaction() as database:
             database.execute_native("SET LOCAL transaction_timeout='250ms'")
             database.execute_native("SET LOCAL statement_timeout='250ms'")
             database.execute_native("SET LOCAL lock_timeout='100ms'")
-            accepted = intake(database,fresh).accept_qualified(command,qualification=fresh.qualification)
+            accepted = intake(database, fresh).accept_qualified(
+                command, qualification=fresh.qualification
+            )
             effect = PostgresGameFeedbackStore(database).get(command.key)
-            assert accepted.progress.target.card_id==current_id
-        unit = prepare_feedback_effect(effect,read=transaction,capture=lambda *args:captured,
-            clock=lambda:observed,qualification_prepare=lambda command:fresh)
+            assert accepted.progress.target.card_id == current_id
+        unit = prepare_feedback_effect(
+            effect,
+            read=transaction,
+            capture=lambda *args: captured,
+            clock=lambda: observed,
+            qualification_prepare=lambda command: fresh,
+        )
         with transaction() as database:
             database.execute_native("SET LOCAL transaction_timeout='250ms'")
             database.execute_native("SET LOCAL statement_timeout='250ms'")
             database.execute_native("SET LOCAL lock_timeout='100ms'")
-            available = apply_prepared_feedback_effect(database,unit,clock=lambda:observed,operation_admitted=True)
-            assert available.admission_status=='available'
-            review = database.execute_native('SELECT card_id FROM reviews WHERE id=%s',
-                (available.progress.scheduling_review_id,)).fetchone()
-            assert review[0]==current_id
-            assert database.execute_native("SELECT count(*) FROM reviews WHERE source_kind='game_lapse' AND source_ref=%s",
-                (available.owner_receipt_id,)).fetchone()[0]==1
+            available = apply_prepared_feedback_effect(
+                database, unit, clock=lambda: observed, operation_admitted=True
+            )
+            assert available.admission_status == "available"
+            review = database.execute_native(
+                "SELECT card_id FROM reviews WHERE id=%s",
+                (available.progress.scheduling_review_id,),
+            ).fetchone()
+            assert review[0] == current_id
+            assert (
+                database.execute_native(
+                    "SELECT count(*) FROM reviews WHERE source_kind='game_lapse' AND source_ref=%s",
+                    (available.owner_receipt_id,),
+                ).fetchone()[0]
+                == 1
+            )
         with transaction() as database:
-            completed,_ = ordinary_current_review(database,current_id,monkeypatch)
+            completed, _ = ordinary_current_review(database, current_id, monkeypatch)
         with transaction() as database:
             settled = PostgresGameFeedbackStore(database).get(command.key)
-            assert settled.status=='settled' and settled.progress.settlement.review_id==completed['review_id']
-            assert settled.encounter==command and settled.progress.target.card_id==current_id
-            assert settled.progress.determined_at==fresh.qualification.determined_at==stale.qualification.determined_at
-        assert source.store.delivery(delivery_for(source.source.source_key,command).operation_id).command.model_dump_json()==frozen
+            assert (
+                settled.status == "settled"
+                and settled.progress.settlement.review_id == completed["review_id"]
+            )
+            assert (
+                settled.encounter == command
+                and settled.progress.target.card_id == current_id
+            )
+            assert (
+                settled.progress.determined_at
+                == fresh.qualification.determined_at
+                == stale.qualification.determined_at
+            )
+        assert (
+            source.store.delivery(
+                delivery_for(source.source.source_key, command).operation_id
+            ).command.model_dump_json()
+            == frozen
+        )
 
 
-def ordinary_current_review(database, card_id, monkeypatch, *, outcome="correct", attempt_id=None, hint_after_response=False, recorded=False, prepared_next=None, prepared_recombination=None):
+def ordinary_current_review(
+    database,
+    card_id,
+    monkeypatch,
+    *,
+    outcome="correct",
+    attempt_id=None,
+    hint_after_response=False,
+    recorded=False,
+    prepared_next=None,
+    prepared_recombination=None,
+):
     """Actual issuance, immutable manifest, evidence, scheduler and save wrapper."""
     from app.queue_commands import issue_queue_head
     from app.services.review_service import ensure_card_queued_after
     from app.services.opening_decision_evidence import decision_manifest
     from app.services import learning_review_adapter
-    from tempo_legacy_database.adapters.opening_evidence.storage import queue_context_rows
-    now, attempt = datetime.now().astimezone(), attempt_id or "r11-"+uuid4().hex
+    from tempo_legacy_database.adapters.opening_evidence.storage import (
+        queue_context_rows,
+    )
+
+    now, attempt = datetime.now().astimezone(), attempt_id or "r11-" + uuid4().hex
     day = now.date().isoformat()
-    ensure_card_queued_after(database,card_id,0,attempt_state="clean",queue_date=day,preserve_order=False)
-    entry = database.execute_native("SELECT id FROM daily_queue WHERE card_id=%s AND queue_date=%s AND status='queued' ORDER BY cycle DESC LIMIT 1",(card_id,day)).fetchone()[0]
-    assert issue_queue_head(database,dict(entry_id=entry,card_id=card_id,expected_revision=1,queue_date=day))["issued"]
-    snapshot = dict(queue_context_rows(database,([entry],))[0])
-    manifest = decision_manifest(snapshot,snapshot["repertoire_id"])
+    ensure_card_queued_after(
+        database,
+        card_id,
+        0,
+        attempt_state="clean",
+        queue_date=day,
+        preserve_order=False,
+    )
+    entry = database.execute_native(
+        "SELECT id FROM daily_queue WHERE card_id=%s AND queue_date=%s AND status='queued' ORDER BY cycle DESC LIMIT 1",
+        (card_id, day),
+    ).fetchone()[0]
+    assert issue_queue_head(
+        database,
+        dict(entry_id=entry, card_id=card_id, expected_revision=1, queue_date=day),
+    )["issued"]
+    snapshot = dict(queue_context_rows(database, ([entry],))[0])
+    manifest = decision_manifest(snapshot, snapshot["repertoire_id"])
     events = []
-    for index,decision in enumerate(manifest["decisions"]):
-        events.append(dict(sequence=index+1,decision_index=index,decision_id=decision["decision_id"],
-            expected_uci=decision["expected_uci"],kind="first_response",observed_at=now.isoformat(),
-            response_uci=decision["expected_uci"],assistance=None,disposition="expected"))
+    for index, decision in enumerate(manifest["decisions"]):
+        events.append(
+            dict(
+                sequence=index + 1,
+                decision_index=index,
+                decision_id=decision["decision_id"],
+                expected_uci=decision["expected_uci"],
+                kind="first_response",
+                observed_at=now.isoformat(),
+                response_uci=decision["expected_uci"],
+                assistance=None,
+                disposition="expected",
+            )
+        )
     if hint_after_response:
         decision = manifest["decisions"][-1]
-        events.append(dict(sequence=len(events)+1,decision_index=decision["decision_index"],decision_id=decision["decision_id"],
-            expected_uci=decision["expected_uci"],kind="assistance",observed_at=now.isoformat(),response_uci=None,assistance="hint",disposition=None))
-    checkpoint = dict(attempt_id=attempt,manifest=manifest,origin_queue_entry_id=entry,queue_entry_id=entry,
-        started_at=now.isoformat(),study_timezone="UTC",events=events,
-        terminal=dict(state="complete",final_sequence=len(events),ended_at=now.isoformat()))
+        events.append(
+            dict(
+                sequence=len(events) + 1,
+                decision_index=decision["decision_index"],
+                decision_id=decision["decision_id"],
+                expected_uci=decision["expected_uci"],
+                kind="assistance",
+                observed_at=now.isoformat(),
+                response_uci=None,
+                assistance="hint",
+                disposition=None,
+            )
+        )
+    checkpoint = dict(
+        attempt_id=attempt,
+        manifest=manifest,
+        origin_queue_entry_id=entry,
+        queue_entry_id=entry,
+        started_at=now.isoformat(),
+        study_timezone="UTC",
+        events=events,
+        terminal=dict(
+            state="complete", final_sequence=len(events), ended_at=now.isoformat()
+        ),
+    )
     # Only inject the task DB's actual policy read; no authority, grade, scheduler
     # result, review receipt, completion proof or queue operation is faked.
     from contextlib import nullcontext
-    monkeypatch.setattr(learning_review_adapter,"read_connection",lambda:nullcontext(database))
-    payload = dict(card_id=card_id,prepared_manifest=manifest,review=dict(outcome=outcome,guided=False,
-        queue_entry_id=entry,expected_revision=1,attempt_id=attempt,opening_evidence_completion=checkpoint))
+
+    monkeypatch.setattr(
+        learning_review_adapter, "read_connection", lambda: nullcontext(database)
+    )
+    payload = dict(
+        card_id=card_id,
+        prepared_manifest=manifest,
+        review=dict(
+            outcome=outcome,
+            guided=False,
+            queue_entry_id=entry,
+            expected_revision=1,
+            attempt_id=attempt,
+            opening_evidence_completion=checkpoint,
+        ),
+    )
     if recorded:
-        payload['review']['recorded_at']=now.isoformat()
+        payload["review"]["recorded_at"] = now.isoformat()
     if prepared_next:
-        payload['review']['prepared_next']=prepared_next
+        payload["review"]["prepared_next"] = prepared_next
     if prepared_recombination is not None:
-        payload['prepared_recombination']=prepared_recombination
-    return learning_review_adapter.submit_legacy_review(database,payload),payload
+        payload["prepared_recombination"] = prepared_recombination
+    return learning_review_adapter.submit_legacy_review(database, payload), payload
 
 
-def test_current_owner_normal_reviews_join_after_save_and_require_fresh_combined_evidence(current_owner_transaction,monkeypatch):
-    from tempo_legacy_database.adapters.study.recombination import CurrentStudyRecombination
+def test_current_owner_normal_reviews_join_after_save_and_require_fresh_combined_evidence(
+    current_owner_transaction, monkeypatch
+):
+    from tempo_legacy_database.adapters.study.recombination import (
+        CurrentStudyRecombination,
+    )
+
     transaction = current_owner_transaction
-    for identifier in ("A","C","B"):
+    for identifier in ("A", "C", "B"):
         for _ in range(3):
             with transaction() as database:
-                result,_ = ordinary_current_review(database,identifier,monkeypatch)
-    assert result["recombination"]["status"]=="applied"
+                result, _ = ordinary_current_review(database, identifier, monkeypatch)
+    assert result["recombination"]["status"] == "applied"
     combined = result["recombination"]["resulting_presentation_id"]
     with transaction() as database:
-        row = database.execute_native("SELECT fsrs_card_json,repetitions,introduced_at,archived FROM cards WHERE id=%s",(combined,)).fetchone()
-        assert row[0] is None and row[1]==0 and row[2]==datetime.now().astimezone().date().isoformat() and row[3]==0
-        assert database.execute_native("SELECT count(*) FROM reviews WHERE card_id=%s",(combined,)).fetchone()[0]==0
-        assert database.execute_native("SELECT count(*) FROM cards WHERE id IN ('A','B','C') AND archived=0 AND superseded_by IS NULL").fetchone()[0]==3
+        row = database.execute_native(
+            "SELECT fsrs_card_json,repetitions,introduced_at,archived FROM cards WHERE id=%s",
+            (combined,),
+        ).fetchone()
+        assert (
+            row[0] is None
+            and row[1] == 0
+            and row[2] == datetime.now().astimezone().date().isoformat()
+            and row[3] == 0
+        )
+        assert (
+            database.execute_native(
+                "SELECT count(*) FROM reviews WHERE card_id=%s", (combined,)
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            database.execute_native(
+                "SELECT count(*) FROM cards WHERE id IN ('A','B','C') AND archived=0 AND superseded_by IS NULL"
+            ).fetchone()[0]
+            == 3
+        )
         boundary = CurrentStudyRecombination(database)
         current = boundary.try_current("r11-route")
-        assert current is not None,boundary.reason
-        app,_,_ = fixture(PostgresRecombinationStore(database),boundary)
+        assert current is not None, boundary.reason
+        app, _, _ = fixture(PostgresRecombinationStore(database), boundary)
         assert app.propose("r11-route").plan is None
     for _ in range(3):
         with transaction() as database:
-            result,_ = ordinary_current_review(database,combined,monkeypatch)
-    assert result["recombination"]["status"]=="applied"
-    assert result["recombination"]["resulting_presentation_id"]!=combined
+            result, _ = ordinary_current_review(database, combined, monkeypatch)
+    assert result["recombination"]["status"] == "applied"
+    assert result["recombination"]["resulting_presentation_id"] != combined
     with transaction() as database:
-        assert database.execute_native("SELECT count(*) FROM study_recombination_changes").fetchone()[0]==2
-        assert database.execute_native("SELECT count(*) FROM reviews WHERE card_id=%s",(combined,)).fetchone()[0]==3
-        assert database.execute_native("SELECT count(*) FROM reviews WHERE source_ref='unknown-historical-assistance'").fetchone()[0]==1
+        assert (
+            database.execute_native(
+                "SELECT count(*) FROM study_recombination_changes"
+            ).fetchone()[0]
+            == 2
+        )
+        assert (
+            database.execute_native(
+                "SELECT count(*) FROM reviews WHERE card_id=%s", (combined,)
+            ).fetchone()[0]
+            == 3
+        )
+        assert (
+            database.execute_native(
+                "SELECT count(*) FROM reviews WHERE source_ref='unknown-historical-assistance'"
+            ).fetchone()[0]
+            == 1
+        )
 
 
-def qualify_before_final_review(transaction,monkeypatch):
-    for identifier,count in (("A",3),("C",3),("B",2)):
+def qualify_before_final_review(transaction, monkeypatch):
+    for identifier, count in (("A", 3), ("C", 3), ("B", 2)):
         for _ in range(count):
             with transaction() as database:
-                ordinary_current_review(database,identifier,monkeypatch)
+                ordinary_current_review(database, identifier, monkeypatch)
 
 
 def seed_rollover_route(database, index):
     """Independent, published source, before any generated presentation exists."""
     from tempo_evidence_math import opening_position_key
+
     now = datetime.now().astimezone()
-    stamp, past = now.isoformat(), (now-timedelta(days=10)).isoformat()
+    stamp, past = now.isoformat(), (now - timedelta(days=10)).isoformat()
     repertoire, route = f"rollover-{index:02}-repertoire", f"rollover-{index:02}-route"
     identifiers = tuple(f"rollover-{index:02}-{letter}" for letter in "ABC")
-    moves = ("e2e4","e7e5","g1f3","b8c6","f1b5")
-    database.execute_native("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,'Rollover','fixture',%s)", (repertoire,stamp))
-    database.execute_native("""INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
-        VALUES(%s,%s,'Route','white',%s,%s,%s)""", (route,repertoire,chess.STARTING_FEN,json.dumps(moves),stamp))
-    database.execute_native("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES(%s,1,'ready',%s)", (repertoire,stamp))
+    moves = ("e2e4", "e7e5", "g1f3", "b8c6", "f1b5")
+    database.execute_native(
+        "INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,'Rollover','fixture',%s)",
+        (repertoire, stamp),
+    )
+    database.execute_native(
+        """INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
+        VALUES(%s,%s,'Route','white',%s,%s,%s)""",
+        (route, repertoire, chess.STARTING_FEN, json.dumps(moves), stamp),
+    )
+    database.execute_native(
+        "INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES(%s,1,'ready',%s)",
+        (repertoire, stamp),
+    )
     board = chess.Board()
     for ply, move in enumerate(moves):
-        if ply%2==0:
-            identifier, start = identifiers[ply//2], board.fen(en_passant="fen")
+        if ply % 2 == 0:
+            identifier, start = identifiers[ply // 2], board.fen(en_passant="fen")
             key = opening_position_key(start)
-            database.execute_native("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
+            database.execute_native(
+                """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
                 introduced_at,first_correct_at,trained_color,canonical_route_source)
                 VALUES(%s,%s,'response',%s,%s,'learning',%s,%s,%s,'white',0)""",
-                (identifier,repertoire,start,json.dumps([move]),now.date().isoformat(),past[:10],past))
-            database.execute_native("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,0)", (repertoire,identifier))
-            database.execute_native("""INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,
+                (
+                    identifier,
+                    repertoire,
+                    start,
+                    json.dumps([move]),
+                    now.date().isoformat(),
+                    past[:10],
+                    past,
+                ),
+            )
+            database.execute_native(
+                "INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,0)",
+                (repertoire, identifier),
+            )
+            database.execute_native(
+                """INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,
                 decision_fen_key,starting_fen,moves_json,trained_color,segment_kind,first_decision_index,last_decision_index,decision_fen_keys_json)
                 VALUES(%s,1,%s,%s,%s,%s,%s,%s,'white','response',%s,%s,%s)""",
-                (repertoire,route,ply//2,identifier,key,start,json.dumps([move]),ply//2,ply//2,json.dumps([key])))
+                (
+                    repertoire,
+                    route,
+                    ply // 2,
+                    identifier,
+                    key,
+                    start,
+                    json.dumps([move]),
+                    ply // 2,
+                    ply // 2,
+                    json.dumps([key]),
+                ),
+            )
             # Retained unknown-assistance history prevents reclaiming an old
             # introduction. It earns no clean streak, receipt or completion.
-            database.execute_native("""INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,
+            database.execute_native(
+                """INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,
                 guided,source_kind,source_ref) VALUES(%s,'correct',%s,0,1,0,'study',%s)""",
-                (identifier,past,'unknown-historical-assistance:'+identifier))
+                (identifier, past, "unknown-historical-assistance:" + identifier),
+            )
         board.push_uci(move)
-    for kind in ("opening_graph_rebuild","integrity_scan"):
+    for kind in ("opening_graph_rebuild", "integrity_scan"):
         identity = f"{repertoire}-{kind}"
-        database.execute_native("""INSERT INTO background_tasks(id,kind,deduplication_key,generation,state,payload_json,next_attempt_at,created_at,updated_at)
-            VALUES(%s,%s,%s,1,'complete',%s,%s,%s,%s)""", (identity,kind,repertoire,
-            json.dumps(dict(repertoire_id=repertoire,graph_generation=1)),stamp,stamp,stamp))
-    database.execute_native("""INSERT INTO repertoire_integrity_state(repertoire_id,status,checked_at,scan_status,
+        database.execute_native(
+            """INSERT INTO background_tasks(id,kind,deduplication_key,generation,state,payload_json,next_attempt_at,created_at,updated_at)
+            VALUES(%s,%s,%s,1,'complete',%s,%s,%s,%s)""",
+            (
+                identity,
+                kind,
+                repertoire,
+                json.dumps(dict(repertoire_id=repertoire, graph_generation=1)),
+                stamp,
+                stamp,
+                stamp,
+            ),
+        )
+    database.execute_native(
+        """INSERT INTO repertoire_integrity_state(repertoire_id,status,checked_at,scan_status,
         scan_generation,scan_completed_sources,scan_total_sources) VALUES(%s,'clean',%s,'idle',%s,1,1)""",
-        (repertoire,stamp,f"{repertoire}-integrity_scan:1"))
+        (repertoire, stamp, f"{repertoire}-integrity_scan:1"),
+    )
     return route, identifiers
 
 
@@ -1057,24 +2009,53 @@ def seed_rollover_obligation(database, card, repertoire):
     from app.contracts.product_v02.learning import GameLapse
     from test_product_game_lapse import fixture as lapse_fixture
     from tempo_game_evidence_contracts.legacy import decision_identity
+
     now = datetime.now().astimezone()
-    lapse = lapse_fixture('lapse',GameLapse)
-    decision = decision_identity(card,0,[])
-    lapse = lapse.model_copy(update={'key':lapse.key.model_copy(update={'decision_id':decision}),
-        'finding':lapse.finding.model_copy(update={'decision_id':decision,'presentation_id':card,'repertoire_id':repertoire})})
-    logical, deadline = effect_id(lapse.key), now+timedelta(days=2)
-    review_id = database.execute_native("""INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,
+    lapse = lapse_fixture("lapse", GameLapse)
+    decision = decision_identity(card, 0, [])
+    lapse = lapse.model_copy(
+        update={
+            "key": lapse.key.model_copy(update={"decision_id": decision}),
+            "finding": lapse.finding.model_copy(
+                update={
+                    "decision_id": decision,
+                    "presentation_id": card,
+                    "repertoire_id": repertoire,
+                }
+            ),
+        }
+    )
+    logical, deadline = effect_id(lapse.key), now + timedelta(days=2)
+    review_id = database.execute_native(
+        """INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,
         source_kind,source_ref) VALUES(%s,'again',%s,10,0,'game_lapse',%s) RETURNING id""",
-        (card,(now-timedelta(days=2)).isoformat(),logical)).fetchone()[0]
-    database.execute_native("""INSERT INTO study_game_feedback(effect_key,identity_json,source_revision,payload_json,payload_hash,
+        (card, (now - timedelta(days=2)).isoformat(), logical),
+    ).fetchone()[0]
+    database.execute_native(
+        """INSERT INTO study_game_feedback(effect_key,identity_json,source_revision,payload_json,payload_hash,
         card_id,card_revision,decision_id,received_at,detected_at,available_by,status,applied_at,review_id,updated_at)
         VALUES(%s,%s,'1',%s,%s,%s,1,%s,%s,%s,%s,'applied',%s,%s,%s)""",
-        (logical,lapse.key.model_dump_json(),lapse.model_dump_json(),'a'*64,card,decision,
-         now-timedelta(days=2),now-timedelta(days=2),deadline,now-timedelta(days=2),review_id,now))
+        (
+            logical,
+            lapse.key.model_dump_json(),
+            lapse.model_dump_json(),
+            "a" * 64,
+            card,
+            decision,
+            now - timedelta(days=2),
+            now - timedelta(days=2),
+            deadline,
+            now - timedelta(days=2),
+            review_id,
+            now,
+        ),
+    )
     return logical, deadline
 
 
-def test_current_owner_rollover_suppresses_retired_components_beyond_first_projection_batch(current_owner_transaction,monkeypatch):
+def test_current_owner_rollover_suppresses_retired_components_beyond_first_projection_batch(
+    current_owner_transaction, monkeypatch
+):
     from datetime import date, time
     from zoneinfo import ZoneInfo
     from app import queue_commands
@@ -1083,415 +2064,961 @@ def test_current_owner_rollover_suppresses_retired_components_beyond_first_proje
     from app.services.review_service import ensure_card_queued_after
     from fixtures.product_recombination import seed_legacy_introduction_history
     from tempo_legacy_database.adapters.commands import queue as queue_storage
-    from tempo_legacy_database.adapters.study.recombination import CurrentStudyRecombination, current_presentation_available
+    from tempo_legacy_database.adapters.study.recombination import (
+        CurrentStudyRecombination,
+        current_presentation_available,
+    )
+
     transaction = current_owner_transaction
     with transaction() as database:
         seed_legacy_introduction_history(database)
-        routes = [("r11-route",("A","B","C"))]
-        routes += [seed_rollover_route(database,index) for index in range(1,17)]
-        assert database.execute_native("SELECT count(*) FROM study_recombination_changes").fetchone()[0]==0
+        routes = [("r11-route", ("A", "B", "C"))]
+        routes += [seed_rollover_route(database, index) for index in range(1, 17)]
+        assert (
+            database.execute_native(
+                "SELECT count(*) FROM study_recombination_changes"
+            ).fetchone()[0]
+            == 0
+        )
     combined, obligations = {}, {}
     for route, identifiers in routes:
-        for identifier in (identifiers[0],identifiers[2],identifiers[1]):
+        for identifier in (identifiers[0], identifiers[2], identifiers[1]):
             for review_index in range(3):
                 with transaction() as database:
-                    if route in (routes[0][0],routes[-1][0]) and identifier==identifiers[1] and review_index==2:
-                        repertoire = database.execute_native('SELECT repertoire_id FROM cards WHERE id=%s', (identifiers[0],)).fetchone()[0]
-                        logical, deadline = seed_rollover_obligation(database,identifiers[0],repertoire)
-                        obligations[logical] = (identifiers[0],deadline)
-                    result,_ = ordinary_current_review(database,identifier,monkeypatch)
-        assert result['recombination']['status']=='applied', (route,result)
-        combined[route] = result['recombination']['resulting_presentation_id']
+                    if (
+                        route in (routes[0][0], routes[-1][0])
+                        and identifier == identifiers[1]
+                        and review_index == 2
+                    ):
+                        repertoire = database.execute_native(
+                            "SELECT repertoire_id FROM cards WHERE id=%s",
+                            (identifiers[0],),
+                        ).fetchone()[0]
+                        logical, deadline = seed_rollover_obligation(
+                            database, identifiers[0], repertoire
+                        )
+                        obligations[logical] = (identifiers[0], deadline)
+                    result, _ = ordinary_current_review(
+                        database, identifier, monkeypatch
+                    )
+        assert result["recombination"]["status"] == "applied", (route, result)
+        combined[route] = result["recombination"]["resulting_presentation_id"]
     with transaction() as database:
-        ordered = [r[0] for r in database.execute_native("SELECT DISTINCT route_id FROM study_recombination_current ORDER BY route_id").fetchall()]
-        assert ordered==[route for route,_ in routes] and len(ordered)==17
-        originals = [identifier for _,identifiers in routes for identifier in identifiers]
-        assert database.execute_native("SELECT count(*) FROM cards WHERE id=ANY(%s) AND archived=0 AND superseded_by IS NULL", (originals,)).fetchone()[0]==51
-        assert database.execute_native("SELECT count(*) FROM review_attempt_receipts WHERE card_id=ANY(%s)", (originals,)).fetchone()[0]==153
-        assert database.execute_native("SELECT count(*) FROM reviews WHERE card_id=ANY(%s)", (list(combined.values()),)).fetchone()[0]==0
+        ordered = [
+            r[0]
+            for r in database.execute_native(
+                "SELECT DISTINCT route_id FROM study_recombination_current ORDER BY route_id"
+            ).fetchall()
+        ]
+        assert ordered == [route for route, _ in routes] and len(ordered) == 17
+        originals = [
+            identifier for _, identifiers in routes for identifier in identifiers
+        ]
+        assert (
+            database.execute_native(
+                "SELECT count(*) FROM cards WHERE id=ANY(%s) AND archived=0 AND superseded_by IS NULL",
+                (originals,),
+            ).fetchone()[0]
+            == 51
+        )
+        assert (
+            database.execute_native(
+                "SELECT count(*) FROM review_attempt_receipts WHERE card_id=ANY(%s)",
+                (originals,),
+            ).fetchone()[0]
+            == 153
+        )
+        assert (
+            database.execute_native(
+                "SELECT count(*) FROM reviews WHERE card_id=ANY(%s)",
+                (list(combined.values()),),
+            ).fetchone()[0]
+            == 0
+        )
         # Roll forward beyond the actual scheduler dates; never change a source
         # schedule to make this regression pass or pre-block its future rows.
-        rollover = date.fromisoformat(database.execute_native("SELECT max(due_date) FROM cards").fetchone()[0][:10])+timedelta(days=1)
+        rollover = date.fromisoformat(
+            database.execute_native("SELECT max(due_date) FROM cards").fetchone()[0][
+                :10
+            ]
+        ) + timedelta(days=1)
         day = rollover.isoformat()
-        assert rollover>date.today()
-        assert not database.execute_native("SELECT 1 FROM daily_queue WHERE queue_date=%s", (day,)).fetchone()
+        assert rollover > date.today()
+        assert not database.execute_native(
+            "SELECT 1 FROM daily_queue WHERE queue_date=%s", (day,)
+        ).fetchone()
         # A later independent membership of an otherwise retired original must
         # remain usable. It does not authorize rejoining shared source cards.
         independent = routes[8][1][0]
-        database.execute_native("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('rollover-independent','Independent','fixture',%s)", (datetime.now().astimezone().isoformat(),))
-        database.execute_native("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES('rollover-independent',%s,0)", (independent,))
+        database.execute_native(
+            "INSERT INTO repertoires(id,name,source_name,created_at) VALUES('rollover-independent','Independent','fixture',%s)",
+            (datetime.now().astimezone().isoformat(),),
+        )
+        database.execute_native(
+            "INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES('rollover-independent',%s,0)",
+            (independent,),
+        )
         # An unrelated actual issued head and partial evidence stay on their
         # original day, identity and target while a different day's seed runs.
-        protected = 'rollover-protected'
+        protected = "rollover-protected"
         today = date.today().isoformat()
-        past = (datetime.now().astimezone()-timedelta(days=10)).isoformat()
-        database.execute_native("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,'Protected unrelated','fixture',%s)", (protected,past))
-        database.execute_native("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
+        past = (datetime.now().astimezone() - timedelta(days=10)).isoformat()
+        database.execute_native(
+            "INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,'Protected unrelated','fixture',%s)",
+            (protected, past),
+        )
+        database.execute_native(
+            """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
             introduced_at,first_correct_at,trained_color,canonical_route_source)
             VALUES(%s,%s,'response',%s,'["d2d4"]','learning',%s,%s,%s,'white',0)""",
-            (protected,protected,chess.STARTING_FEN,today,past[:10],past))
-        database.execute_native("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,0)", (protected,protected))
-        database.execute_native("""INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,
-            guided,source_kind,source_ref) VALUES(%s,'correct',%s,0,1,0,'study','unknown-protected-history')""", (protected,past))
-        ensure_card_queued_after(database,protected,0,queue_date=today,preserve_order=False)
-        entry = database.execute_native("SELECT id FROM daily_queue WHERE card_id=%s AND queue_date=%s AND status='queued'", (protected,today)).fetchone()[0]
-        assert queue_commands.issue_queue_head(database,dict(entry_id=entry,card_id=protected,expected_revision=1,queue_date=today))['issued']
-        attempt = persist_split_checkpoint(database,protected,entry,'response',repertoire_id=protected)
+            (protected, protected, chess.STARTING_FEN, today, past[:10], past),
+        )
+        database.execute_native(
+            "INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(%s,%s,0)",
+            (protected, protected),
+        )
+        database.execute_native(
+            """INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,
+            guided,source_kind,source_ref) VALUES(%s,'correct',%s,0,1,0,'study','unknown-protected-history')""",
+            (protected, past),
+        )
+        ensure_card_queued_after(
+            database, protected, 0, queue_date=today, preserve_order=False
+        )
+        entry = database.execute_native(
+            "SELECT id FROM daily_queue WHERE card_id=%s AND queue_date=%s AND status='queued'",
+            (protected, today),
+        ).fetchone()[0]
+        assert queue_commands.issue_queue_head(
+            database,
+            dict(
+                entry_id=entry, card_id=protected, expected_revision=1, queue_date=today
+            ),
+        )["issued"]
+        attempt = persist_split_checkpoint(
+            database, protected, entry, "response", repertoire_id=protected
+        )
+
         def retained():
-            return {table:[tuple(row) for row in database.execute_native(statement).fetchall()] for table,statement in {
-                'cards':"SELECT * FROM cards ORDER BY id",
-                'reviews':"SELECT * FROM reviews ORDER BY id",
-                'receipts':"SELECT * FROM review_attempt_receipts ORDER BY attempt_id",
-                'obligations':"SELECT * FROM study_game_feedback ORDER BY effect_key",
-                'changes':"SELECT * FROM study_recombination_changes ORDER BY command_id",
-            }.items()}
+            return {
+                table: [
+                    tuple(row) for row in database.execute_native(statement).fetchall()
+                ]
+                for table, statement in {
+                    "cards": "SELECT * FROM cards ORDER BY id",
+                    "reviews": "SELECT * FROM reviews ORDER BY id",
+                    "receipts": "SELECT * FROM review_attempt_receipts ORDER BY attempt_id",
+                    "obligations": "SELECT * FROM study_game_feedback ORDER BY effect_key",
+                    "changes": "SELECT * FROM study_recombination_changes ORDER BY command_id",
+                }.items()
+            }
+
         before = retained()
-        assert len(before['obligations'])==2
-        assert sum(n for _,n in QueueAdmissionAdapter(database).introduction_count_page(today,None).counts)==0
-        protected_origin = tuple(database.execute_native("SELECT * FROM queue_attempt_origins WHERE queue_entry_id=%s", (entry,)).fetchone())
-        protected_attempt = tuple(database.execute_native("SELECT * FROM opening_evidence_attempts WHERE attempt_id=%s", (attempt,)).fetchone())
+        assert len(before["obligations"]) == 2
+        assert (
+            sum(
+                n
+                for _, n in QueueAdmissionAdapter(database)
+                .introduction_count_page(today, None)
+                .counts
+            )
+            == 0
+        )
+        protected_origin = tuple(
+            database.execute_native(
+                "SELECT * FROM queue_attempt_origins WHERE queue_entry_id=%s", (entry,)
+            ).fetchone()
+        )
+        protected_attempt = tuple(
+            database.execute_native(
+                "SELECT * FROM opening_evidence_attempts WHERE attempt_id=%s",
+                (attempt,),
+            ).fetchone()
+        )
     for _ in range(2):
         with transaction() as database:
-            seed_queue(database,day)
-            queued = {r[0] for r in database.execute_native("SELECT card_id FROM daily_queue WHERE queue_date=%s AND status='queued'", (day,)).fetchall()}
-            for route, identifiers in (routes[0],routes[-1]):
+            seed_queue(database, day)
+            queued = {
+                r[0]
+                for r in database.execute_native(
+                    "SELECT card_id FROM daily_queue WHERE queue_date=%s AND status='queued'",
+                    (day,),
+                ).fetchall()
+            }
+            for route, identifiers in (routes[0], routes[-1]):
                 assert combined[route] in queued
-                assert not set(identifiers[:2]) & queued, (route,sorted(set(identifiers[:2]) & queued))
+                assert not set(identifiers[:2]) & queued, (
+                    route,
+                    sorted(set(identifiers[:2]) & queued),
+                )
                 current = CurrentStudyRecombination(database).try_current(route)
                 assert current is not None
-                assert any(m.presentation.presentation_id==combined[route] and m.available for m in current.members)
-                assert current_presentation_available(database,combined[route])
-                entry_id = database.execute_native("SELECT id FROM daily_queue WHERE queue_date=%s AND card_id=%s AND status='queued'", (day,combined[route])).fetchone()[0]
-                assert queue_storage.prepare_available_attempt(database,True,entry_id,MISS_REASON)(day)['id']==entry_id
+                assert any(
+                    m.presentation.presentation_id == combined[route] and m.available
+                    for m in current.members
+                )
+                assert current_presentation_available(database, combined[route])
+                entry_id = database.execute_native(
+                    "SELECT id FROM daily_queue WHERE queue_date=%s AND card_id=%s AND status='queued'",
+                    (day, combined[route]),
+                ).fetchone()[0]
+                assert (
+                    queue_storage.prepare_available_attempt(
+                        database, True, entry_id, MISS_REASON
+                    )(day)["id"]
+                    == entry_id
+                )
             assert independent in queued
-            assert retained()==before
-            assert {r[0]:(r[1],r[2]) for r in database.execute_native('SELECT effect_key,card_id,available_by FROM study_game_feedback').fetchall()}==obligations
-            assert tuple(database.execute_native("SELECT * FROM queue_attempt_origins WHERE queue_entry_id=%s", (entry,)).fetchone())==protected_origin
-            assert tuple(database.execute_native("SELECT * FROM opening_evidence_attempts WHERE attempt_id=%s", (attempt,)).fetchone())==protected_attempt
-            assert database.execute_native("SELECT status FROM daily_queue WHERE id=%s", (entry,)).fetchone()[0]=='queued'
-            assert sum(n for _,n in QueueAdmissionAdapter(database).introduction_count_page(day,None).counts)==0
+            assert retained() == before
+            assert {
+                r[0]: (r[1], r[2])
+                for r in database.execute_native(
+                    "SELECT effect_key,card_id,available_by FROM study_game_feedback"
+                ).fetchall()
+            } == obligations
+            assert (
+                tuple(
+                    database.execute_native(
+                        "SELECT * FROM queue_attempt_origins WHERE queue_entry_id=%s",
+                        (entry,),
+                    ).fetchone()
+                )
+                == protected_origin
+            )
+            assert (
+                tuple(
+                    database.execute_native(
+                        "SELECT * FROM opening_evidence_attempts WHERE attempt_id=%s",
+                        (attempt,),
+                    ).fetchone()
+                )
+                == protected_attempt
+            )
+            assert (
+                database.execute_native(
+                    "SELECT status FROM daily_queue WHERE id=%s", (entry,)
+                ).fetchone()[0]
+                == "queued"
+            )
+            assert (
+                sum(
+                    n
+                    for _, n in QueueAdmissionAdapter(database)
+                    .introduction_count_page(day, None)
+                    .counts
+                )
+                == 0
+            )
     with transaction() as database:
         study_timezone = queue_storage.study_timezone(database)
     assert study_timezone is not None
-    rollover_timezone = (datetime.now().astimezone().tzinfo if study_timezone == 'local'
-                         else ZoneInfo(study_timezone))
-    rollover_utc = datetime.combine(rollover, time(hour=12), tzinfo=rollover_timezone).astimezone(timezone.utc)
+    rollover_timezone = (
+        datetime.now().astimezone().tzinfo
+        if study_timezone == "local"
+        else ZoneInfo(study_timezone)
+    )
+    rollover_utc = datetime.combine(
+        rollover, time(hour=12), tzinfo=rollover_timezone
+    ).astimezone(timezone.utc)
 
     class RolloverUTCDateTime(datetime):
         @classmethod
         def now(cls, tz=None):
-            return rollover_utc.astimezone(tz) if tz is not None else rollover_utc.replace(tzinfo=None)
+            return (
+                rollover_utc.astimezone(tz)
+                if tz is not None
+                else rollover_utc.replace(tzinfo=None)
+            )
 
-    monkeypatch.setattr(queue_commands,'datetime',RolloverUTCDateTime)
+    monkeypatch.setattr(queue_commands, "datetime", RolloverUTCDateTime)
     with transaction() as database:
         assert queue_commands.current_study_day(database, now=rollover_utc) == day
-    expected = {combined[routes[0][0]],combined[routes[-1][0]]}
+    expected = {combined[routes[0][0]], combined[routes[-1][0]]}
     issued = set()
     with transaction() as database:
         # Exercise normal head issuance on the rolled-over day, then explicit
         # bury commands to advance without inventing reviews or completions.
-        for _ in range(2*len(routes)+2):
-            head = queue_storage.prepare_queue_head(database,MISS_REASON)(day)
+        for _ in range(2 * len(routes) + 2):
+            head = queue_storage.prepare_queue_head(database, MISS_REASON)(day)
             assert head is not None
-            identifier = database.execute_native('SELECT card_id FROM daily_queue WHERE id=%s', (head['id'],)).fetchone()[0]
-            issue_result = queue_commands.issue_queue_head(database,dict(entry_id=head['id'],card_id=identifier,expected_revision=1,queue_date=day))
-            assert issue_result['issued'], {'entry_id':head['id'],'card_id':identifier,'result':issue_result}
+            identifier = database.execute_native(
+                "SELECT card_id FROM daily_queue WHERE id=%s", (head["id"],)
+            ).fetchone()[0]
+            issue_result = queue_commands.issue_queue_head(
+                database,
+                dict(
+                    entry_id=head["id"],
+                    card_id=identifier,
+                    expected_revision=1,
+                    queue_date=day,
+                ),
+            )
+            assert issue_result["issued"], {
+                "entry_id": head["id"],
+                "card_id": identifier,
+                "result": issue_result,
+            }
             if identifier in expected:
                 issued.add(identifier)
-            queue_commands.bury_queue_entry(database,dict(entry_id=head['id'],card_id=identifier,expected_revision=1))
-            if issued==expected:
+            queue_commands.bury_queue_entry(
+                database,
+                dict(entry_id=head["id"], card_id=identifier, expected_revision=1),
+            )
+            if issued == expected:
                 break
-        assert issued==expected
-        assert retained()==before
-        assert tuple(database.execute_native("SELECT * FROM queue_attempt_origins WHERE queue_entry_id=%s", (entry,)).fetchone())==protected_origin
-        assert tuple(database.execute_native("SELECT * FROM opening_evidence_attempts WHERE attempt_id=%s", (attempt,)).fetchone())==protected_attempt
+        assert issued == expected
+        assert retained() == before
+        assert (
+            tuple(
+                database.execute_native(
+                    "SELECT * FROM queue_attempt_origins WHERE queue_entry_id=%s",
+                    (entry,),
+                ).fetchone()
+            )
+            == protected_origin
+        )
+        assert (
+            tuple(
+                database.execute_native(
+                    "SELECT * FROM opening_evidence_attempts WHERE attempt_id=%s",
+                    (attempt,),
+                ).fetchone()
+            )
+            == protected_attempt
+        )
 
 
 def seal_c_source(database, *, conflicted=False):
     """Current fixture publication/scan, after its complete source is built."""
     total = database.execute_native("""SELECT
         (SELECT count(*) FROM repertoire_lines WHERE repertoire_id='r11-repertoire')+
-        (SELECT count(*) FROM cards WHERE repertoire_id='r11-repertoire' AND archived=0)""").fetchone()[0]
-    database.execute_native("""UPDATE repertoire_integrity_state SET status=%s,scan_completed_sources=%s,
+        (SELECT count(*) FROM cards WHERE repertoire_id='r11-repertoire' AND archived=0)""").fetchone()[
+        0
+    ]
+    database.execute_native(
+        """UPDATE repertoire_integrity_state SET status=%s,scan_completed_sources=%s,
         scan_total_sources=%s,checked_at=%s WHERE repertoire_id='r11-repertoire'""",
-        ('needs_repair' if conflicted else 'clean',total,total,datetime.now().astimezone().isoformat()))
+        (
+            "needs_repair" if conflicted else "clean",
+            total,
+            total,
+            datetime.now().astimezone().isoformat(),
+        ),
+    )
 
 
 def seed_c_inventory(database, inventory):
     from fixtures.product_recombination import seed_legacy_introduction_history
     from tempo_evidence_math import opening_position_key
+
     seed_legacy_introduction_history(database)
     board = chess.Board()
-    board.push_uci('e2e4')
-    board.push_uci('c7c5')
-    start, stamp = board.fen(en_passant='fen'), datetime.now().astimezone().isoformat()
-    if inventory=='routes':
+    board.push_uci("e2e4")
+    board.push_uci("c7c5")
+    start, stamp = board.fen(en_passant="fen"), datetime.now().astimezone().isoformat()
+    if inventory == "routes":
         for index in range(70):
-            database.execute_native("""INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
-                VALUES(%s,'r11-repertoire','Unrelated','white',%s,'["g1f3"]',%s)""", (f'unrelated-{index:03}',start,stamp))
+            database.execute_native(
+                """INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
+                VALUES(%s,'r11-repertoire','Unrelated','white',%s,'["g1f3"]',%s)""",
+                (f"unrelated-{index:03}", start, stamp),
+            )
     else:
-        moves = ('g1f3','g8f6','f3g1','f6g8')*150
-        database.execute_native("""INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
-            VALUES('unrelated-graph','r11-repertoire','Unrelated graph','white',%s,%s,%s)""", (start,json.dumps(moves),stamp))
+        moves = ("g1f3", "g8f6", "f3g1", "f6g8") * 150
+        database.execute_native(
+            """INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
+            VALUES('unrelated-graph','r11-repertoire','Unrelated graph','white',%s,%s,%s)""",
+            (start, json.dumps(moves), stamp),
+        )
         for ply, uci in enumerate(moves):
-            if ply%2==0:
-                identifier, fen = f'unrelated-card-{ply:03}', board.fen(en_passant='fen')
+            if ply % 2 == 0:
+                identifier, fen = (
+                    f"unrelated-card-{ply:03}",
+                    board.fen(en_passant="fen"),
+                )
                 key = opening_position_key(fen)
-                database.execute_native("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
+                database.execute_native(
+                    """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
                     trained_color,canonical_route_source) VALUES(%s,'r11-repertoire','response',%s,%s,'new',%s,'white',0)""",
-                    (identifier,fen,json.dumps([uci]),stamp[:10]))
-                database.execute_native("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES('r11-repertoire',%s,0)", (identifier,))
-                database.execute_native("""INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,
+                    (identifier, fen, json.dumps([uci]), stamp[:10]),
+                )
+                database.execute_native(
+                    "INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES('r11-repertoire',%s,0)",
+                    (identifier,),
+                )
+                database.execute_native(
+                    """INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,
                     decision_fen_key,starting_fen,moves_json,trained_color,segment_kind,first_decision_index,last_decision_index,decision_fen_keys_json)
                     VALUES('r11-repertoire',1,'unrelated-graph',%s,%s,%s,%s,%s,'white','response',%s,%s,%s)""",
-                    (ply//2,identifier,key,fen,json.dumps([uci]),ply//2,ply//2,json.dumps([key])))
+                    (
+                        ply // 2,
+                        identifier,
+                        key,
+                        fen,
+                        json.dumps([uci]),
+                        ply // 2,
+                        ply // 2,
+                        json.dumps([key]),
+                    ),
+                )
             board.push_uci(uci)
     seal_c_source(database)
 
 
 def prepare_c_review(transaction, identifier):
-    from tempo_legacy_database.adapters.study.recombination import prepare_recombination_review
+    from tempo_legacy_database.adapters.study.recombination import (
+        prepare_recombination_review,
+    )
+
     @contextmanager
     def read():
         with transaction() as database:
-            database.execute_native('SET TRANSACTION READ ONLY')
+            database.execute_native("SET TRANSACTION READ ONLY")
             yield database
-    return prepare_recombination_review({'card_id':identifier,'review':{}},read_connection=read)['prepared_recombination']
+
+    return prepare_recombination_review(
+        {"card_id": identifier, "review": {}}, read_connection=read
+    )["prepared_recombination"]
 
 
 def c_review(transaction, identifier, monkeypatch, **options):
-    prepared = prepare_c_review(transaction,identifier)
+    prepared = prepare_c_review(transaction, identifier)
     with transaction() as database:
-        result,_ = ordinary_current_review(database,identifier,monkeypatch,prepared_recombination=prepared,**options)
+        result, _ = ordinary_current_review(
+            database,
+            identifier,
+            monkeypatch,
+            prepared_recombination=prepared,
+            **options,
+        )
     return result
 
 
 def qualify_c_pair(transaction, monkeypatch):
-    for identifier, count in (('A',3),('B',2)):
+    for identifier, count in (("A", 3), ("B", 2)):
         for _ in range(count):
-            c_review(transaction,identifier,monkeypatch)
+            c_review(transaction, identifier, monkeypatch)
 
 
 def protect_c_state(database):
     from app.queue_commands import issue_queue_head
     from app.services.review_service import ensure_card_queued_after
-    seed_rollover_route(database,99)
-    identifier, repertoire = 'rollover-99-A','rollover-99-repertoire'
+
+    seed_rollover_route(database, 99)
+    identifier, repertoire = "rollover-99-A", "rollover-99-repertoire"
     day = datetime.now().astimezone().date().isoformat()
-    ensure_card_queued_after(database,identifier,0,queue_date=day,preserve_order=False)
-    entry = database.execute_native("SELECT id FROM daily_queue WHERE card_id=%s AND queue_date=%s AND status='queued'", (identifier,day)).fetchone()[0]
-    assert issue_queue_head(database,dict(entry_id=entry,card_id=identifier,expected_revision=1,queue_date=day))['issued']
-    attempt = persist_split_checkpoint(database,identifier,entry,'response',repertoire_id=repertoire)
-    seed_rollover_obligation(database,'A','r11-repertoire')
-    return dict(entry=entry,attempt=attempt,candidate=dict(queue_entry_id=entry,card_id=identifier,revision=1,cycle=0,local_date=day),
-        origin=tuple(database.execute_native('SELECT * FROM queue_attempt_origins WHERE queue_entry_id=%s', (entry,)).fetchone()),
-        evidence=tuple(database.execute_native('SELECT * FROM opening_evidence_attempts WHERE attempt_id=%s', (attempt,)).fetchone()),
-        reviews=[tuple(row) for row in database.execute_native('SELECT * FROM reviews ORDER BY id').fetchall()],
-        receipts=[tuple(row) for row in database.execute_native('SELECT * FROM review_attempt_receipts ORDER BY attempt_id').fetchall()],
-        obligation=tuple(database.execute_native('SELECT * FROM study_game_feedback').fetchone()))
+    ensure_card_queued_after(
+        database, identifier, 0, queue_date=day, preserve_order=False
+    )
+    entry = database.execute_native(
+        "SELECT id FROM daily_queue WHERE card_id=%s AND queue_date=%s AND status='queued'",
+        (identifier, day),
+    ).fetchone()[0]
+    assert issue_queue_head(
+        database,
+        dict(entry_id=entry, card_id=identifier, expected_revision=1, queue_date=day),
+    )["issued"]
+    attempt = persist_split_checkpoint(
+        database, identifier, entry, "response", repertoire_id=repertoire
+    )
+    seed_rollover_obligation(database, "A", "r11-repertoire")
+    return dict(
+        entry=entry,
+        attempt=attempt,
+        candidate=dict(
+            queue_entry_id=entry,
+            card_id=identifier,
+            revision=1,
+            cycle=0,
+            local_date=day,
+        ),
+        origin=tuple(
+            database.execute_native(
+                "SELECT * FROM queue_attempt_origins WHERE queue_entry_id=%s", (entry,)
+            ).fetchone()
+        ),
+        evidence=tuple(
+            database.execute_native(
+                "SELECT * FROM opening_evidence_attempts WHERE attempt_id=%s",
+                (attempt,),
+            ).fetchone()
+        ),
+        reviews=[
+            tuple(row)
+            for row in database.execute_native(
+                "SELECT * FROM reviews ORDER BY id"
+            ).fetchall()
+        ],
+        receipts=[
+            tuple(row)
+            for row in database.execute_native(
+                "SELECT * FROM review_attempt_receipts ORDER BY attempt_id"
+            ).fetchall()
+        ],
+        obligation=tuple(
+            database.execute_native("SELECT * FROM study_game_feedback").fetchone()
+        ),
+    )
 
 
 def assert_c_held(database, result, before):
-    assert result['persisted'] and result['recombination']['status']=='held'
-    assert database.execute_native('SELECT count(*) FROM study_recombination_changes').fetchone()[0]==0
-    assert database.execute_native('SELECT count(*) FROM study_recombination_presentations').fetchone()[0]==0
-    after = [tuple(row) for row in database.execute_native('SELECT * FROM reviews ORDER BY id').fetchall()]
-    assert len(after)==len(before['reviews'])+1 and after[:-1]==before['reviews']
-    receipts = [tuple(row) for row in database.execute_native('SELECT * FROM review_attempt_receipts ORDER BY attempt_id').fetchall()]
-    assert len(receipts)==len(before['receipts'])+1 and set(before['receipts'])<=set(receipts)
-    assert tuple(database.execute_native('SELECT * FROM queue_attempt_origins WHERE queue_entry_id=%s', (before['entry'],)).fetchone())==before['origin']
-    assert tuple(database.execute_native('SELECT * FROM opening_evidence_attempts WHERE attempt_id=%s', (before['attempt'],)).fetchone())==before['evidence']
-    assert tuple(database.execute_native('SELECT * FROM study_game_feedback').fetchone())==before['obligation']
+    assert result["persisted"] and result["recombination"]["status"] == "held"
+    assert (
+        database.execute_native(
+            "SELECT count(*) FROM study_recombination_changes"
+        ).fetchone()[0]
+        == 0
+    )
+    assert (
+        database.execute_native(
+            "SELECT count(*) FROM study_recombination_presentations"
+        ).fetchone()[0]
+        == 0
+    )
+    after = [
+        tuple(row)
+        for row in database.execute_native(
+            "SELECT * FROM reviews ORDER BY id"
+        ).fetchall()
+    ]
+    assert len(after) == len(before["reviews"]) + 1 and after[:-1] == before["reviews"]
+    receipts = [
+        tuple(row)
+        for row in database.execute_native(
+            "SELECT * FROM review_attempt_receipts ORDER BY attempt_id"
+        ).fetchall()
+    ]
+    assert len(receipts) == len(before["receipts"]) + 1 and set(
+        before["receipts"]
+    ) <= set(receipts)
+    assert (
+        tuple(
+            database.execute_native(
+                "SELECT * FROM queue_attempt_origins WHERE queue_entry_id=%s",
+                (before["entry"],),
+            ).fetchone()
+        )
+        == before["origin"]
+    )
+    assert (
+        tuple(
+            database.execute_native(
+                "SELECT * FROM opening_evidence_attempts WHERE attempt_id=%s",
+                (before["attempt"],),
+            ).fetchone()
+        )
+        == before["evidence"]
+    )
+    assert (
+        tuple(database.execute_native("SELECT * FROM study_game_feedback").fetchone())
+        == before["obligation"]
+    )
 
 
-@pytest.mark.parametrize('inventory',['routes','graphs'])
-def test_current_owner_small_join_survives_large_unrelated_repertoire_inventory(current_owner_transaction,monkeypatch,inventory):
-    from tempo_legacy_database.adapters.study.recombination import CurrentStudyRecombination,current_presentation_available
+@pytest.mark.parametrize("inventory", ["routes", "graphs"])
+def test_current_owner_small_join_survives_large_unrelated_repertoire_inventory(
+    current_owner_transaction, monkeypatch, inventory
+):
+    from tempo_legacy_database.adapters.study.recombination import (
+        CurrentStudyRecombination,
+        current_presentation_available,
+    )
+
     transaction = current_owner_transaction
     with transaction() as database:
-        seed_c_inventory(database,inventory)
-        lines, graphs = tuple(database.execute_native("""SELECT
+        seed_c_inventory(database, inventory)
+        lines, graphs = tuple(
+            database.execute_native("""SELECT
             (SELECT count(*) FROM repertoire_lines WHERE repertoire_id='r11-repertoire'),
-            (SELECT count(*) FROM opening_graph_steps WHERE repertoire_id='r11-repertoire')""").fetchone())
-        assert (lines>64 and graphs<=256) if inventory=='routes' else (lines<=64 and graphs>256)
-    qualify_c_pair(transaction,monkeypatch)
-    result = c_review(transaction,'B',monkeypatch)
-    assert result['recombination']['status']=='applied',result
-    combined = result['recombination']['resulting_presentation_id']
+            (SELECT count(*) FROM opening_graph_steps WHERE repertoire_id='r11-repertoire')""").fetchone()
+        )
+        assert (
+            (lines > 64 and graphs <= 256)
+            if inventory == "routes"
+            else (lines <= 64 and graphs > 256)
+        )
+    qualify_c_pair(transaction, monkeypatch)
+    result = c_review(transaction, "B", monkeypatch)
+    assert result["recombination"]["status"] == "applied", result
+    combined = result["recombination"]["resulting_presentation_id"]
     with transaction() as database:
-        capture = database.execute_native("SELECT change_json->'source_capture' FROM study_recombination_changes").fetchone()[0]
-        assert capture['exhausted'] is True and capture['expected']==capture['visited']==lines
-        assert len(capture['lines'])==1 and len(capture['graphs'])==3
-        assert current_presentation_available(database,combined)
-        current = CurrentStudyRecombination(database).try_current('r11-route')
-        assert current is not None and any(m.presentation.presentation_id==combined and m.available for m in current.members)
-        assert database.execute_native('SELECT count(*) FROM reviews WHERE card_id=%s', (combined,)).fetchone()[0]==0
-    result = c_review(transaction,combined,monkeypatch)
-    assert result['persisted'] and result['recombination']['clean_streak']==1
+        capture = database.execute_native(
+            "SELECT change_json->'source_capture' FROM study_recombination_changes"
+        ).fetchone()[0]
+        assert (
+            capture["exhausted"] is True
+            and capture["expected"] == capture["visited"] == lines
+        )
+        assert len(capture["lines"]) == 1 and len(capture["graphs"]) == 3
+        assert current_presentation_available(database, combined)
+        current = CurrentStudyRecombination(database).try_current("r11-route")
+        assert current is not None and any(
+            m.presentation.presentation_id == combined and m.available
+            for m in current.members
+        )
+        assert (
+            database.execute_native(
+                "SELECT count(*) FROM reviews WHERE card_id=%s", (combined,)
+            ).fetchone()[0]
+            == 0
+        )
+    result = c_review(transaction, combined, monkeypatch)
+    assert result["persisted"] and result["recombination"]["clean_streak"] == 1
     with transaction() as database:
-        assert database.execute_native('SELECT count(*) FROM reviews WHERE card_id=%s', (combined,)).fetchone()[0]==1
-        assert database.execute_native('SELECT count(*) FROM study_recombination_changes').fetchone()[0]==1
+        assert (
+            database.execute_native(
+                "SELECT count(*) FROM reviews WHERE card_id=%s", (combined,)
+            ).fetchone()[0]
+            == 1
+        )
+        assert (
+            database.execute_native(
+                "SELECT count(*) FROM study_recombination_changes"
+            ).fetchone()[0]
+            == 1
+        )
 
 
-@pytest.mark.parametrize('published_alternative',[True,False])
-def test_current_owner_late_source_conflict_blocks_join_without_truncation(current_owner_transaction,monkeypatch,published_alternative):
+@pytest.mark.parametrize("published_alternative", [True, False])
+def test_current_owner_late_source_conflict_blocks_join_without_truncation(
+    current_owner_transaction, monkeypatch, published_alternative
+):
     from tempo_evidence_math import opening_position_key
+
     transaction = current_owner_transaction
     with transaction() as database:
-        seed_c_inventory(database,'routes')
-    qualify_c_pair(transaction,monkeypatch)
+        seed_c_inventory(database, "routes")
+    qualify_c_pair(transaction, monkeypatch)
     with transaction() as database:
-        stamp, key = datetime.now().astimezone().isoformat(), opening_position_key(chess.STARTING_FEN)
-        database.execute_native("""INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
-            VALUES('zz-late-conflict','r11-repertoire','New competing response','white',%s,'["d2d4"]',%s)""", (chess.STARTING_FEN,stamp))
+        stamp, key = (
+            datetime.now().astimezone().isoformat(),
+            opening_position_key(chess.STARTING_FEN),
+        )
+        database.execute_native(
+            """INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
+            VALUES('zz-late-conflict','r11-repertoire','New competing response','white',%s,'["d2d4"]',%s)""",
+            (chess.STARTING_FEN, stamp),
+        )
         if published_alternative:
-            database.execute_native("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
-                trained_color,canonical_route_source) VALUES('c-competing','r11-repertoire','response',%s,'["d2d4"]','new',%s,'white',0)""", (chess.STARTING_FEN,stamp[:10]))
-            database.execute_native("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES('r11-repertoire','c-competing',0)")
-            database.execute_native("""INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,
+            database.execute_native(
+                """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
+                trained_color,canonical_route_source) VALUES('c-competing','r11-repertoire','response',%s,'["d2d4"]','new',%s,'white',0)""",
+                (chess.STARTING_FEN, stamp[:10]),
+            )
+            database.execute_native(
+                "INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES('r11-repertoire','c-competing',0)"
+            )
+            database.execute_native(
+                """INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,
                 decision_fen_key,starting_fen,moves_json,trained_color,segment_kind,first_decision_index,last_decision_index,decision_fen_keys_json)
                 VALUES('r11-repertoire',1,'zz-late-conflict',0,'c-competing',%s,%s,'["d2d4"]','white','response',0,0,%s)""",
-                (key,chess.STARTING_FEN,json.dumps([key])))
-        database.execute_native("""INSERT INTO repertoire_integrity_issues(id,repertoire_id,kind,fen_key,fen,trained_color,signature,moves_json,sources_json,created_at,updated_at)
+                (key, chess.STARTING_FEN, json.dumps([key])),
+            )
+        database.execute_native(
+            """INSERT INTO repertoire_integrity_issues(id,repertoire_id,kind,fen_key,fen,trained_color,signature,moves_json,sources_json,created_at,updated_at)
             VALUES('c-conflict','r11-repertoire','multiple_responses',%s,%s,'white',%s,'["e2e4","d2d4"]','[]',%s,%s)""",
-            (key,chess.STARTING_FEN,'c'*64,stamp,stamp))
-        database.execute_native("""INSERT INTO repertoire_integrity_card_blocks(repertoire_id,card_id,issue_id,scan_generation,published_at)
-            VALUES('r11-repertoire','A','c-conflict','r11-scan:1',%s)""", (stamp,))
+            (key, chess.STARTING_FEN, "c" * 64, stamp, stamp),
+        )
+        database.execute_native(
+            """INSERT INTO repertoire_integrity_card_blocks(repertoire_id,card_id,issue_id,scan_generation,published_at)
+            VALUES('r11-repertoire','A','c-conflict','r11-scan:1',%s)""",
+            (stamp,),
+        )
         database.execute_native("UPDATE cards SET pending_validation=1 WHERE id='A'")
-        seal_c_source(database,conflicted=True)
+        seal_c_source(database, conflicted=True)
         before = protect_c_state(database)
-    prepared = prepare_c_review(transaction,'B')
+    prepared = prepare_c_review(transaction, "B")
     capture = json.loads(prepared.source_json)
-    assert capture['visited']>64 and capture['exhausted'] is True
-    assert [row['id'] for row in capture['lines']]==['r11-route','zz-late-conflict']
+    assert capture["visited"] > 64 and capture["exhausted"] is True
+    assert [row["id"] for row in capture["lines"]] == ["r11-route", "zz-late-conflict"]
     with transaction() as database:
-        result,_ = ordinary_current_review(database,'B',monkeypatch,prepared_recombination=prepared,
-            recorded=True,prepared_next=before['candidate'])
-        assert 'conflicting_own_response' in result['recombination']['reason']
-        assert_c_held(database,result,before)
+        result, _ = ordinary_current_review(
+            database,
+            "B",
+            monkeypatch,
+            prepared_recombination=prepared,
+            recorded=True,
+            prepared_next=before["candidate"],
+        )
+        assert "conflicting_own_response" in result["recombination"]["reason"]
+        assert_c_held(database, result, before)
 
 
-@pytest.mark.parametrize('failure',['interrupted','truncated','oversized','source_changed','skipped_lock','missing'])
-def test_current_owner_incomplete_relevant_discovery_defers_without_changes(current_owner_transaction,monkeypatch,failure):
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "interrupted",
+        "truncated",
+        "oversized",
+        "source_changed",
+        "skipped_lock",
+        "missing",
+    ],
+)
+def test_current_owner_incomplete_relevant_discovery_defers_without_changes(
+    current_owner_transaction, monkeypatch, failure
+):
     from tempo_legacy_database.adapters.study import recombination
     from contextlib import nullcontext
+
     transaction = current_owner_transaction
     with transaction() as database:
-        seed_c_inventory(database,'routes')
-    qualify_c_pair(transaction,monkeypatch)
+        seed_c_inventory(database, "routes")
+    qualify_c_pair(transaction, monkeypatch)
     with transaction() as database:
         before = protect_c_state(database)
-        if failure=='oversized':
-            database.execute_native("UPDATE repertoire_lines SET moves_json=%s WHERE id='unrelated-020'", ('["g1f3"]'+' '*65536,))
-        if failure=='missing':
+        if failure == "oversized":
+            database.execute_native(
+                "UPDATE repertoire_lines SET moves_json=%s WHERE id='unrelated-020'",
+                ('["g1f3"]' + " " * 65536,),
+            )
+        if failure == "missing":
             database.execute_native("DELETE FROM repertoire_lines WHERE id='r11-route'")
         seal_c_source(database)
     page = recombination._source_route_page
     with monkeypatch.context() as patch:
-        if failure in {'interrupted','truncated'}:
-            patch.setattr(recombination,'_source_route_page',lambda db,rep,after: page(db,rep,after) if not after else None if failure=='interrupted' else [])
-        prepared = prepare_c_review(transaction,'B')
-    expected = {'interrupted':'source_discovery_interrupted','truncated':'source_discovery_incomplete',
-        'oversized':'source_row_oversized','missing':'route_missing'}
+        if failure in {"interrupted", "truncated"}:
+            patch.setattr(
+                recombination,
+                "_source_route_page",
+                lambda db, rep, after: (
+                    page(db, rep, after)
+                    if not after
+                    else None
+                    if failure == "interrupted"
+                    else []
+                ),
+            )
+        prepared = prepare_c_review(transaction, "B")
+    expected = {
+        "interrupted": "source_discovery_interrupted",
+        "truncated": "source_discovery_incomplete",
+        "oversized": "source_row_oversized",
+        "missing": "route_missing",
+    }
     if failure in expected:
-        assert prepared.reason==expected[failure]
-    if failure=='source_changed':
+        assert prepared.reason == expected[failure]
+    if failure == "source_changed":
         with transaction() as database:
-            database.execute_native("UPDATE repertoire_lines SET moves_json='[\"b1c3\"]' WHERE id='unrelated-020'")
+            database.execute_native(
+                "UPDATE repertoire_lines SET moves_json='[\"b1c3\"]' WHERE id='unrelated-020'"
+            )
             seal_c_source(database)
-    with (transaction() if failure=='skipped_lock' else nullcontext()) as locked:
+    with transaction() if failure == "skipped_lock" else nullcontext() as locked:
         if locked:
-            locked.execute_native("SELECT id FROM repertoire_lines WHERE id='r11-route' FOR UPDATE")
+            locked.execute_native(
+                "SELECT id FROM repertoire_lines WHERE id='r11-route' FOR UPDATE"
+            )
         with transaction() as database:
-            result,_ = ordinary_current_review(database,'B',monkeypatch,prepared_recombination=prepared,
-                recorded=True,prepared_next=before['candidate'])
-            if failure=='source_changed':
-                assert result['recombination']['reason']=='source_discovery_changed_or_incomplete'
-            if failure=='skipped_lock':
-                assert result['recombination']['reason']=='relevant_source_busy'
-            assert_c_held(database,result,before)
+            result, _ = ordinary_current_review(
+                database,
+                "B",
+                monkeypatch,
+                prepared_recombination=prepared,
+                recorded=True,
+                prepared_next=before["candidate"],
+            )
+            if failure == "source_changed":
+                assert (
+                    result["recombination"]["reason"]
+                    == "source_discovery_changed_or_incomplete"
+                )
+            if failure == "skipped_lock":
+                assert result["recombination"]["reason"] == "relevant_source_busy"
+            assert_c_held(database, result, before)
 
 
-def test_current_owner_recorded_review_with_unrelated_prepared_head_can_join(current_owner_transaction,monkeypatch):
+def test_current_owner_recorded_review_with_unrelated_prepared_head_can_join(
+    current_owner_transaction, monkeypatch
+):
     from app.queue_commands import issue_queue_head
     from app.services.queue_application import seed_queue
     from app.services.review_service import ensure_card_queued_after
     from fixtures.product_recombination import seed_legacy_introduction_history
-    transaction=current_owner_transaction
-    identifier='product-recombination-native-protected'
-    now=datetime.now().astimezone()
-    day=now.date().isoformat()
+
+    transaction = current_owner_transaction
+    identifier = "product-recombination-native-protected"
+    now = datetime.now().astimezone()
+    day = now.date().isoformat()
     with transaction() as database:
         seed_legacy_introduction_history(database)
-        assert database.execute_native('SELECT count(*) FROM study_recombination_completions').fetchone()[0]==0
-        database.execute_native("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('r11-protected','Other','fixture',%s)",(now.isoformat(),))
-        database.execute_native("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
+        assert (
+            database.execute_native(
+                "SELECT count(*) FROM study_recombination_completions"
+            ).fetchone()[0]
+            == 0
+        )
+        database.execute_native(
+            "INSERT INTO repertoires(id,name,source_name,created_at) VALUES('r11-protected','Other','fixture',%s)",
+            (now.isoformat(),),
+        )
+        database.execute_native(
+            """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
             introduced_at,trained_color,canonical_route_source) VALUES(%s,'r11-protected','response',%s,
-            '["d2d4"]','learning',%s,%s,'white',0)""",(identifier,chess.STARTING_FEN,day,(now-timedelta(days=10)).date().isoformat()))
-        database.execute_native("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES('r11-protected',%s,0)",(identifier,))
-        ensure_card_queued_after(database,identifier,0,queue_date=day,preserve_order=False)
-        entry=database.execute_native('SELECT id FROM daily_queue WHERE card_id=%s',(identifier,)).fetchone()[0]
-        assert issue_queue_head(database,dict(entry_id=entry,card_id=identifier,expected_revision=1,queue_date=day))['issued']
-    candidate=dict(queue_entry_id=entry,card_id=identifier,revision=1,cycle=0,local_date=day)
-    for card in ('A','C','B'):
+            '["d2d4"]','learning',%s,%s,'white',0)""",
+            (
+                identifier,
+                chess.STARTING_FEN,
+                day,
+                (now - timedelta(days=10)).date().isoformat(),
+            ),
+        )
+        database.execute_native(
+            "INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES('r11-protected',%s,0)",
+            (identifier,),
+        )
+        ensure_card_queued_after(
+            database, identifier, 0, queue_date=day, preserve_order=False
+        )
+        entry = database.execute_native(
+            "SELECT id FROM daily_queue WHERE card_id=%s", (identifier,)
+        ).fetchone()[0]
+        assert issue_queue_head(
+            database,
+            dict(
+                entry_id=entry, card_id=identifier, expected_revision=1, queue_date=day
+            ),
+        )["issued"]
+    candidate = dict(
+        queue_entry_id=entry, card_id=identifier, revision=1, cycle=0, local_date=day
+    )
+    for card in ("A", "C", "B"):
         for _ in range(3):
             with transaction() as database:
-                seed_queue(database,day)
-                result,_=ordinary_current_review(database,card,monkeypatch,recorded=True,prepared_next=candidate)
-    assert result['recombination']['status']=='applied',result['recombination']
+                seed_queue(database, day)
+                result, _ = ordinary_current_review(
+                    database, card, monkeypatch, recorded=True, prepared_next=candidate
+                )
+    assert result["recombination"]["status"] == "applied", result["recombination"]
 
 
-def test_current_owner_join_failure_rolls_back_only_regrouping_and_keeps_saved_attempt(current_owner_transaction,monkeypatch):
+def test_current_owner_join_failure_rolls_back_only_regrouping_and_keeps_saved_attempt(
+    current_owner_transaction, monkeypatch
+):
     transaction = current_owner_transaction
-    qualify_before_final_review(transaction,monkeypatch)
+    qualify_before_final_review(transaction, monkeypatch)
     original = PostgresRecombinationStore.save_change
-    def fail_after_all_writes(self,*args):
-        original(self,*args)
+
+    def fail_after_all_writes(self, *args):
+        original(self, *args)
         raise RuntimeError("injected_after_real_owner_initialization")
+
     with monkeypatch.context() as patch:
-        patch.setattr(PostgresRecombinationStore,"save_change",fail_after_all_writes)
+        patch.setattr(PostgresRecombinationStore, "save_change", fail_after_all_writes)
         with transaction() as database:
-            result,payload = ordinary_current_review(database,"B",monkeypatch)
-            assert result["persisted"] and result["recombination"]["reason"]=="join_rolled_back:RuntimeError"
+            result, payload = ordinary_current_review(database, "B", monkeypatch)
+            assert (
+                result["persisted"]
+                and result["recombination"]["reason"] == "join_rolled_back:RuntimeError"
+            )
     with transaction() as database:
-        assert database.execute_native("SELECT count(*) FROM cards WHERE source_ref LIKE %s",('recombination:%',)).fetchone()[0]==0
-        assert database.execute_native("SELECT count(*) FROM study_recombination_changes").fetchone()[0]==0
-        assert database.execute_native("SELECT card_id FROM review_attempt_receipts WHERE attempt_id=%s",(payload["review"]["attempt_id"],)).fetchone()[0]=="B"
+        assert (
+            database.execute_native(
+                "SELECT count(*) FROM cards WHERE source_ref LIKE %s",
+                ("recombination:%",),
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            database.execute_native(
+                "SELECT count(*) FROM study_recombination_changes"
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            database.execute_native(
+                "SELECT card_id FROM review_attempt_receipts WHERE attempt_id=%s",
+                (payload["review"]["attempt_id"],),
+            ).fetchone()[0]
+            == "B"
+        )
         from app.services.learning_review_adapter import submit_legacy_review
         from contextlib import nullcontext
-        monkeypatch.setattr("app.services.learning_review_adapter.read_connection",lambda:nullcontext(database))
-        replay = submit_legacy_review(database,payload)
-        assert replay["review_id"]==result["review_id"] and replay["recombination"]["status"]=="applied"
-        assert database.execute_native("SELECT count(*) FROM reviews WHERE card_id='B'").fetchone()[0]==3
+
+        monkeypatch.setattr(
+            "app.services.learning_review_adapter.read_connection",
+            lambda: nullcontext(database),
+        )
+        replay = submit_legacy_review(database, payload)
+        assert (
+            replay["review_id"] == result["review_id"]
+            and replay["recombination"]["status"] == "applied"
+        )
+        assert (
+            database.execute_native(
+                "SELECT count(*) FROM reviews WHERE card_id='B'"
+            ).fetchone()[0]
+            == 3
+        )
 
 
-def test_current_owner_active_member_defers_without_changing_original_attempt(current_owner_transaction,monkeypatch):
+def test_current_owner_active_member_defers_without_changing_original_attempt(
+    current_owner_transaction, monkeypatch
+):
     from app.queue_commands import issue_queue_head
     from app.services.review_service import ensure_card_queued_after
+
     transaction = current_owner_transaction
-    qualify_before_final_review(transaction,monkeypatch)
+    qualify_before_final_review(transaction, monkeypatch)
     day = datetime.now().astimezone().date().isoformat()
     with transaction() as database:
         # Make C a genuinely shared member. Its other membership must remain
         # valid; the retained queue cannot safely join that occurrence. This
         # leaves only the planned A+B pair, whose A is actually issued below.
-        database.execute_native("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('r11-shared','Other use','fixture',%s)",(datetime.now().astimezone().isoformat(),))
-        database.execute_native("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES('r11-shared','C',0)")
-        ensure_card_queued_after(database,"A",0,queue_date=day,preserve_order=False)
-        entry = database.execute_native("SELECT id FROM daily_queue WHERE card_id='A' AND status='queued' ORDER BY cycle DESC LIMIT 1").fetchone()[0]
-        assert issue_queue_head(database,dict(entry_id=entry,card_id="A",expected_revision=1,queue_date=day))["issued"]
-        before = tuple(database.execute_native("SELECT card_id,revision,start_fen,moves_json,issued_as_head,review_result_json FROM queue_attempt_origins WHERE queue_entry_id=%s",(entry,)).fetchone())
+        database.execute_native(
+            "INSERT INTO repertoires(id,name,source_name,created_at) VALUES('r11-shared','Other use','fixture',%s)",
+            (datetime.now().astimezone().isoformat(),),
+        )
+        database.execute_native(
+            "INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES('r11-shared','C',0)"
+        )
+        ensure_card_queued_after(database, "A", 0, queue_date=day, preserve_order=False)
+        entry = database.execute_native(
+            "SELECT id FROM daily_queue WHERE card_id='A' AND status='queued' ORDER BY cycle DESC LIMIT 1"
+        ).fetchone()[0]
+        assert issue_queue_head(
+            database,
+            dict(entry_id=entry, card_id="A", expected_revision=1, queue_date=day),
+        )["issued"]
+        before = tuple(
+            database.execute_native(
+                "SELECT card_id,revision,start_fen,moves_json,issued_as_head,review_result_json FROM queue_attempt_origins WHERE queue_entry_id=%s",
+                (entry,),
+            ).fetchone()
+        )
     with transaction() as database:
-        result,_ = ordinary_current_review(database,"B",monkeypatch)
-        assert result["recombination"]["status"]=="held"
+        result, _ = ordinary_current_review(database, "B", monkeypatch)
+        assert result["recombination"]["status"] == "held"
     with transaction() as database:
-        assert database.execute_native("SELECT count(*) FROM study_recombination_changes").fetchone()[0]==0
-        assert tuple(database.execute_native("SELECT card_id,revision,start_fen,moves_json,issued_as_head,review_result_json FROM queue_attempt_origins WHERE queue_entry_id=%s",(entry,)).fetchone())==before
-        assert database.execute_native("SELECT status FROM daily_queue WHERE id=%s",(entry,)).fetchone()[0]=="queued"
-        assert database.execute_native("SELECT 1 FROM repertoire_cards WHERE repertoire_id='r11-shared' AND card_id='C'").fetchone()
+        assert (
+            database.execute_native(
+                "SELECT count(*) FROM study_recombination_changes"
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            tuple(
+                database.execute_native(
+                    "SELECT card_id,revision,start_fen,moves_json,issued_as_head,review_result_json FROM queue_attempt_origins WHERE queue_entry_id=%s",
+                    (entry,),
+                ).fetchone()
+            )
+            == before
+        )
+        assert (
+            database.execute_native(
+                "SELECT status FROM daily_queue WHERE id=%s", (entry,)
+            ).fetchone()[0]
+            == "queued"
+        )
+        assert database.execute_native(
+            "SELECT 1 FROM repertoire_cards WHERE repertoire_id='r11-shared' AND card_id='C'"
+        ).fetchone()
 
 
-def test_current_owner_obligation_target_split_and_offday_readback_preserve_original_history(current_owner_transaction,monkeypatch):
+def test_current_owner_obligation_target_split_and_offday_readback_preserve_original_history(
+    current_owner_transaction, monkeypatch
+):
     """Seed an existing owed receipt at the join boundary, then use real owners.
 
     Its previously applied lapse is an explicit synthetic source fixture; lapse
@@ -1502,353 +3029,787 @@ def test_current_owner_obligation_target_split_and_offday_readback_preserve_orig
     from test_product_game_lapse import fixture as lapse_fixture
     from tempo_game_evidence_contracts.legacy import decision_identity
     from tempo_legacy_database.adapters.study.game_feedback import (
-        PostgresGameFeedbackStore, resume_available_feedback, feedback_queue_priorities,
+        PostgresGameFeedbackStore,
+        resume_available_feedback,
+        feedback_queue_priorities,
     )
     from app.services.queue_application import seed_queue
+
     transaction = current_owner_transaction
-    qualify_before_final_review(transaction,monkeypatch)
+    qualify_before_final_review(transaction, monkeypatch)
     now = datetime.now().astimezone()
-    lapse = lapse_fixture("lapse",GameLapse)
-    decision = decision_identity("A",0,[])
-    lapse = lapse.model_copy(update={"key":lapse.key.model_copy(update={"decision_id":decision}),
-        "finding":lapse.finding.model_copy(update={"decision_id":decision,"presentation_id":"A","repertoire_id":"r11-repertoire"})})
-    logical, deadline = effect_id(lapse.key),now-timedelta(hours=1)
+    lapse = lapse_fixture("lapse", GameLapse)
+    decision = decision_identity("A", 0, [])
+    lapse = lapse.model_copy(
+        update={
+            "key": lapse.key.model_copy(update={"decision_id": decision}),
+            "finding": lapse.finding.model_copy(
+                update={
+                    "decision_id": decision,
+                    "presentation_id": "A",
+                    "repertoire_id": "r11-repertoire",
+                }
+            ),
+        }
+    )
+    logical, deadline = effect_id(lapse.key), now - timedelta(hours=1)
     with transaction() as database:
-        review_id = database.execute_native("""INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,
+        review_id = database.execute_native(
+            """INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,
             source_kind,source_ref) VALUES('A','again',%s,10,0,'game_lapse',%s) RETURNING id""",
-            ((now-timedelta(days=2)).isoformat(),logical)).fetchone()[0]
-        database.execute_native("""INSERT INTO study_game_feedback(effect_key,identity_json,source_revision,payload_json,payload_hash,
+            ((now - timedelta(days=2)).isoformat(), logical),
+        ).fetchone()[0]
+        database.execute_native(
+            """INSERT INTO study_game_feedback(effect_key,identity_json,source_revision,payload_json,payload_hash,
             card_id,card_revision,decision_id,received_at,detected_at,available_by,status,applied_at,review_id,updated_at)
-            VALUES(%s,%s,'1',%s,%s,'A',1,%s,%s,%s,%s,'applied',%s,%s,%s)""", (logical,lapse.key.model_dump_json(),
-            lapse.model_dump_json(),"a"*64,decision,now-timedelta(days=2),now-timedelta(days=2),deadline,now-timedelta(days=2),review_id,now))
-        result,_ = ordinary_current_review(database,"B",monkeypatch)
-        assert result["recombination"]["status"]=="applied"
+            VALUES(%s,%s,'1',%s,%s,'A',1,%s,%s,%s,%s,'applied',%s,%s,%s)""",
+            (
+                logical,
+                lapse.key.model_dump_json(),
+                lapse.model_dump_json(),
+                "a" * 64,
+                decision,
+                now - timedelta(days=2),
+                now - timedelta(days=2),
+                deadline,
+                now - timedelta(days=2),
+                review_id,
+                now,
+            ),
+        )
+        result, _ = ordinary_current_review(database, "B", monkeypatch)
+        assert result["recombination"]["status"] == "applied"
         combined = result["recombination"]["resulting_presentation_id"]
         original = PostgresGameFeedbackStore(database).get(lapse.key)
-        assert original.card_id=="A" and original.available_by==deadline and original.status=="applied"
+        assert (
+            original.card_id == "A"
+            and original.available_by == deadline
+            and original.status == "applied"
+        )
     with transaction() as database:
         day = now.date().isoformat()
-        seed_queue(database,day)
-        resume_available_feedback(database,day)
-        assert database.execute_native("SELECT 1 FROM daily_queue WHERE card_id=%s AND status='queued'",(combined,)).fetchone()
-        assert not database.execute_native("SELECT 1 FROM daily_queue WHERE card_id IN ('A','B') AND status='queued'").fetchone()
-        assert PostgresGameFeedbackStore(database).get(lapse.key).available_by==deadline
-        assert database.execute_native("SELECT gameplay_priority_reason FROM daily_queue WHERE card_id=%s AND status='queued'", (combined,)).fetchone()[0] == 'product_game_lapse'
+        seed_queue(database, day)
+        resume_available_feedback(database, day)
+        assert database.execute_native(
+            "SELECT 1 FROM daily_queue WHERE card_id=%s AND status='queued'",
+            (combined,),
+        ).fetchone()
+        assert not database.execute_native(
+            "SELECT 1 FROM daily_queue WHERE card_id IN ('A','B') AND status='queued'"
+        ).fetchone()
+        assert (
+            PostgresGameFeedbackStore(database).get(lapse.key).available_by == deadline
+        )
+        assert (
+            database.execute_native(
+                "SELECT gameplay_priority_reason FROM daily_queue WHERE card_id=%s AND status='queued'",
+                (combined,),
+            ).fetchone()[0]
+            == "product_game_lapse"
+        )
     # The real preparation reader closes its initial connection. Prove current
     # target labels survive that callback boundary with PostgreSQL, not mocks.
     from app.services.queue_presentation import presentation_rows
+
     calls = []
+
     def bounded_read(statement, parameters=()):
         calls.append(statement)
         with transaction() as database:
             rows = database.execute(statement, parameters).fetchall()
             calls[-1] = (statement, tuple(tuple(row) for row in rows))
             return rows
-    visible = presentation_rows(None, now.date().isoformat(), read=bounded_read, limit=16)
-    target = next(row for row in visible if row['card_id'] == combined)
-    assert target['admission_kind'] == 'review'
-    assert target['gameplay_priority_reason'] == 'product_game_lapse', calls
-    assert sum('FROM study_game_feedback' in statement for statement, _ in calls) == 2  # owed + ready
-    expected_priority = dict(urgent_determined_at=lapse.detected_at,
-        urgent_stream='reconciliation', urgent_effect_id=logical)
+
+    visible = presentation_rows(
+        None, now.date().isoformat(), read=bounded_read, limit=16
+    )
+    target = next(row for row in visible if row["card_id"] == combined)
+    assert target["admission_kind"] == "review"
+    assert target["gameplay_priority_reason"] == "product_game_lapse", calls
+    assert (
+        sum("FROM study_game_feedback" in statement for statement, _ in calls) == 2
+    )  # owed + ready
+    expected_priority = dict(
+        urgent_determined_at=lapse.detected_at,
+        urgent_stream="reconciliation",
+        urgent_effect_id=logical,
+    )
     with transaction() as database:
-        native_target = next(row for row in presentation_rows(database, day, limit=16) if row['card_id']==combined)
-        assert {field:target[field] for field in expected_priority} == expected_priority
-        assert {field:native_target[field] for field in expected_priority} == expected_priority
-        assert feedback_queue_priorities(database, ('A',)) == {'A':expected_priority}  # default unchanged
+        native_target = next(
+            row
+            for row in presentation_rows(database, day, limit=16)
+            if row["card_id"] == combined
+        )
+        assert {
+            field: target[field] for field in expected_priority
+        } == expected_priority
+        assert {
+            field: native_target[field] for field in expected_priority
+        } == expected_priority
+        assert feedback_queue_priorities(database, ("A",)) == {
+            "A": expected_priority
+        }  # default unchanged
 
     # Exercise the actual native query and generic translated callback against
     # the same rollback-only relational facts; no new receipt or grade is made.
-    control = GameEffectControl(key=lapse.key, source_revision=1, action='hold', reason='reanalysis')
+    control = GameEffectControl(
+        key=lapse.key, source_revision=1, action="hold", reason="reanalysis"
+    )
     probes = [
-        ('bare', None, (), True),
-        ('envelope', 'UPDATE study_game_feedback SET payload_json=%s WHERE effect_key=%s',
-            (json.dumps(dict(kind='lapse',command=lapse.model_dump(mode='json'),owner={})),logical), True),
-        ('wrong_source', "UPDATE reviews SET source_kind='study' WHERE id=%s", (review_id,), False),
-        ('wrong_ref', "UPDATE reviews SET source_ref='priority-probe' WHERE id=%s", (review_id,), False),
-        ('invalidated', 'UPDATE reviews SET invalidated_at=%s WHERE id=%s', (now.isoformat(),review_id), False),
-        ('controlled', 'UPDATE study_game_feedback SET hold_json=%s WHERE effect_key=%s',
-            (control.model_dump_json(),logical), False),
-        ('pending_effect', "UPDATE study_game_feedback SET status='pending' WHERE effect_key=%s", (logical,), False),
-        ('revision', 'UPDATE cards SET revision=revision+1 WHERE id=%s', (combined,), False),
-        ('archived', 'UPDATE cards SET archived=1 WHERE id=%s', (combined,), False),
-        ('pending_card', 'UPDATE cards SET pending_validation=1 WHERE id=%s', (combined,), False),
-        ('superseded', "UPDATE cards SET superseded_by='C' WHERE id=%s", (combined,), False),
-        ('foreign', "UPDATE study_recombination_presentations SET result_json=jsonb_set(result_json,"
-            "'{presentation,repertoire_id}','\"foreign\"'::jsonb) WHERE presentation_id=%s", (combined,), False),
-        ('shared_alias', None, (), True),
-        ('ambiguous', None, (), False),
-        ('ambiguous_retired', None, (), False),
+        ("bare", None, (), True),
+        (
+            "envelope",
+            "UPDATE study_game_feedback SET payload_json=%s WHERE effect_key=%s",
+            (
+                json.dumps(
+                    dict(kind="lapse", command=lapse.model_dump(mode="json"), owner={})
+                ),
+                logical,
+            ),
+            True,
+        ),
+        (
+            "wrong_source",
+            "UPDATE reviews SET source_kind='study' WHERE id=%s",
+            (review_id,),
+            False,
+        ),
+        (
+            "wrong_ref",
+            "UPDATE reviews SET source_ref='priority-probe' WHERE id=%s",
+            (review_id,),
+            False,
+        ),
+        (
+            "invalidated",
+            "UPDATE reviews SET invalidated_at=%s WHERE id=%s",
+            (now.isoformat(), review_id),
+            False,
+        ),
+        (
+            "controlled",
+            "UPDATE study_game_feedback SET hold_json=%s WHERE effect_key=%s",
+            (control.model_dump_json(), logical),
+            False,
+        ),
+        (
+            "pending_effect",
+            "UPDATE study_game_feedback SET status='pending' WHERE effect_key=%s",
+            (logical,),
+            False,
+        ),
+        (
+            "revision",
+            "UPDATE cards SET revision=revision+1 WHERE id=%s",
+            (combined,),
+            False,
+        ),
+        ("archived", "UPDATE cards SET archived=1 WHERE id=%s", (combined,), False),
+        (
+            "pending_card",
+            "UPDATE cards SET pending_validation=1 WHERE id=%s",
+            (combined,),
+            False,
+        ),
+        (
+            "superseded",
+            "UPDATE cards SET superseded_by='C' WHERE id=%s",
+            (combined,),
+            False,
+        ),
+        (
+            "foreign",
+            "UPDATE study_recombination_presentations SET result_json=jsonb_set(result_json,"
+            "'{presentation,repertoire_id}','\"foreign\"'::jsonb) WHERE presentation_id=%s",
+            (combined,),
+            False,
+        ),
+        ("shared_alias", None, (), True),
+        ("ambiguous", None, (), False),
+        ("ambiguous_retired", None, (), False),
     ]
     for label, statement, parameters, ready in probes:
         with transaction() as database, database.raw.transaction(force_rollback=True):
             database.execute_native("SET LOCAL transaction_timeout='250ms'")
             database.execute_native("SET LOCAL lock_timeout='100ms'")
             if statement:
-                database.execute_native(statement,parameters)
-            if label=='shared_alias':
-                database.execute_native('INSERT INTO study_recombination_current(route_id,decision_id,presentation_id) '
-                    'VALUES(%s,%s,%s)', ('priority-probe',decision,combined))
-            if label in {'ambiguous','ambiguous_retired'}:
-                database.execute_native("""INSERT INTO study_recombination_presentations(presentation_id,command_id,result_json)
+                database.execute_native(statement, parameters)
+            if label == "shared_alias":
+                database.execute_native(
+                    "INSERT INTO study_recombination_current(route_id,decision_id,presentation_id) "
+                    "VALUES(%s,%s,%s)",
+                    ("priority-probe", decision, combined),
+                )
+            if label in {"ambiguous", "ambiguous_retired"}:
+                database.execute_native(
+                    """INSERT INTO study_recombination_presentations(presentation_id,command_id,result_json)
                     SELECT 'C',command_id,jsonb_set(result_json,'{presentation,presentation_id}','\"C\"'::jsonb)
-                    FROM study_recombination_presentations WHERE presentation_id=%s""", (combined,))
-                database.execute_native('INSERT INTO study_recombination_current(route_id,decision_id,presentation_id) '
-                    'VALUES(%s,%s,%s)', ('priority-probe',decision,'C'))
-                database.execute_native("UPDATE cards SET archived=%s,pending_validation=0,superseded_by=NULL WHERE id='C'",
-                    (1 if label=='ambiguous_retired' else 0,))
-            requested = (combined,) if label=='foreign' else ('A',combined)
-            expected = {combined:expected_priority} if ready else {}
-            assert feedback_queue_priorities(database,requested,include_regrouped=True)==expected, label
+                    FROM study_recombination_presentations WHERE presentation_id=%s""",
+                    (combined,),
+                )
+                database.execute_native(
+                    "INSERT INTO study_recombination_current(route_id,decision_id,presentation_id) "
+                    "VALUES(%s,%s,%s)",
+                    ("priority-probe", decision, "C"),
+                )
+                database.execute_native(
+                    "UPDATE cards SET archived=%s,pending_validation=0,superseded_by=NULL WHERE id='C'",
+                    (1 if label == "ambiguous_retired" else 0,),
+                )
+            requested = (combined,) if label == "foreign" else ("A", combined)
+            expected = {combined: expected_priority} if ready else {}
+            assert (
+                feedback_queue_priorities(database, requested, include_regrouped=True)
+                == expected
+            ), label
             callback_calls = []
+
             def borrowed_callback(statement, parameters=()):
                 callback_calls.append(statement)
-                return database.execute(statement,parameters).fetchall()
-            assert feedback_queue_priorities(None,requested,read=borrowed_callback,
-                include_regrouped=True)==expected, label
-            assert len(callback_calls)==1
+                return database.execute(statement, parameters).fetchall()
+
+            assert (
+                feedback_queue_priorities(
+                    None, requested, read=borrowed_callback, include_regrouped=True
+                )
+                == expected
+            ), label
+            assert len(callback_calls) == 1
     with transaction() as database:
-        assert PostgresGameFeedbackStore(database).get(lapse.key)==original
+        assert PostgresGameFeedbackStore(database).get(lapse.key) == original
     with transaction() as database:
-        reviewed,_ = ordinary_current_review(database,combined,monkeypatch)
-        assert reviewed['persisted']
-        completion = database.execute_native('SELECT card_id,rating,guided,source_kind,invalidated_at '
-            'FROM reviews WHERE id=%s',(reviewed['review_id'],)).fetchone()
-        assert completion['card_id']==combined and completion['rating']=='correct' and not completion['guided']
-        assert completion['source_kind'] in {'study','study_exercise'} and completion['invalidated_at'] is None
+        reviewed, _ = ordinary_current_review(database, combined, monkeypatch)
+        assert reviewed["persisted"]
+        completion = database.execute_native(
+            "SELECT card_id,rating,guided,source_kind,invalidated_at "
+            "FROM reviews WHERE id=%s",
+            (reviewed["review_id"],),
+        ).fetchone()
+        assert (
+            completion["card_id"] == combined
+            and completion["rating"] == "correct"
+            and not completion["guided"]
+        )
+        assert (
+            completion["source_kind"] in {"study", "study_exercise"}
+            and completion["invalidated_at"] is None
+        )
         from tempo_legacy_database.adapters.study.issuance import completion_issuance
-        assert completion_issuance(database,reviewed['review_id'],combined,1) is not None
+
+        assert (
+            completion_issuance(database, reviewed["review_id"], combined, 1)
+            is not None
+        )
         retained = PostgresGameFeedbackStore(database).get(lapse.key)
         # This genuinely old reset has no application/issuance fence. Even a
         # real later completion cannot invent that missing settlement authority.
         # Qualified current-target settlement has its separate owner-backed case.
         assert retained.progress is None and retained.remediation_fence is None
-        assert retained.status=='applied' and retained.settlement_review_id is None
-        assert retained.review_id==review_id and retained.available_by==deadline
-        assert retained.lapse.model_dump_json()==lapse.model_dump_json()
+        assert retained.status == "applied" and retained.settlement_review_id is None
+        assert retained.review_id == review_id and retained.available_by == deadline
+        assert retained.lapse.model_dump_json() == lapse.model_dump_json()
     for _ in range(3):
         with transaction() as database:
-            ordinary_current_review(database,combined,monkeypatch,outcome="again")
+            ordinary_current_review(database, combined, monkeypatch, outcome="again")
     with transaction() as database:
         from app.prefix_split_commands import accept_prefix_split
-        before = tuple(tuple(r) for r in database.execute_native("SELECT id,card_id,source_kind,source_ref FROM reviews ORDER BY id").fetchall())
-        split = accept_prefix_split(database,dict(card_id=combined,request=dict(expected_revision=1)))
+
+        before = tuple(
+            tuple(r)
+            for r in database.execute_native(
+                "SELECT id,card_id,source_kind,source_ref FROM reviews ORDER BY id"
+            ).fetchall()
+        )
+        split = accept_prefix_split(
+            database, dict(card_id=combined, request=dict(expected_revision=1))
+        )
         assert split["applied"]
-        assert accept_prefix_split(database,dict(card_id=combined,request=dict(expected_revision=1)))["idempotent"]
-        assert tuple(tuple(r) for r in database.execute_native("SELECT id,card_id,source_kind,source_ref FROM reviews ORDER BY id").fetchall())==before
-        assert database.execute_native("SELECT count(*) FROM reviews WHERE source_kind='game_lapse'").fetchone()[0]==1
-        for fragment in (split["parent"]["card_id"],split["continuation"]["card_id"]):
-            row = database.execute_native("SELECT fsrs_card_json,repetitions,introduced_at,archived FROM cards WHERE id=%s",(fragment,)).fetchone()
-            assert row[0] is None and row[1]==0 and row[2] is not None and row[3]==0
-        assert tuple(database.execute_native("SELECT generation,state FROM background_tasks WHERE id='r11-graph'").fetchone())==(1,"complete")
+        assert accept_prefix_split(
+            database, dict(card_id=combined, request=dict(expected_revision=1))
+        )["idempotent"]
+        assert (
+            tuple(
+                tuple(r)
+                for r in database.execute_native(
+                    "SELECT id,card_id,source_kind,source_ref FROM reviews ORDER BY id"
+                ).fetchall()
+            )
+            == before
+        )
+        assert (
+            database.execute_native(
+                "SELECT count(*) FROM reviews WHERE source_kind='game_lapse'"
+            ).fetchone()[0]
+            == 1
+        )
+        for fragment in (split["parent"]["card_id"], split["continuation"]["card_id"]):
+            row = database.execute_native(
+                "SELECT fsrs_card_json,repetitions,introduced_at,archived FROM cards WHERE id=%s",
+                (fragment,),
+            ).fetchone()
+            assert row[0] is None and row[1] == 0 and row[2] is not None and row[3] == 0
+        assert tuple(
+            database.execute_native(
+                "SELECT generation,state FROM background_tasks WHERE id='r11-graph'"
+            ).fetchone()
+        ) == (1, "complete")
 
 
-def test_current_owner_any_saved_assistance_resets_and_invalidated_success_cannot_qualify(current_owner_transaction,monkeypatch):
+def test_current_owner_any_saved_assistance_resets_and_invalidated_success_cannot_qualify(
+    current_owner_transaction, monkeypatch
+):
     transaction = current_owner_transaction
     for _ in range(2):
         with transaction() as database:
-            ordinary_current_review(database,"A",monkeypatch)
+            ordinary_current_review(database, "A", monkeypatch)
     with transaction() as database:
-        result,_ = ordinary_current_review(database,"A",monkeypatch,hint_after_response=True)
-        assert result["recombination"]["clean_streak"]==0
-        state = PostgresRecombinationStore(database).streak(CleanStreak("A",1,"physical:A:1"))
-        assert state.count==0
+        result, _ = ordinary_current_review(
+            database, "A", monkeypatch, hint_after_response=True
+        )
+        assert result["recombination"]["clean_streak"] == 0
+        state = PostgresRecombinationStore(database).streak(
+            CleanStreak("A", 1, "physical:A:1")
+        )
+        assert state.count == 0
     for _ in range(3):
         with transaction() as database:
-            ordinary_current_review(database,"A",monkeypatch)
+            ordinary_current_review(database, "A", monkeypatch)
     with transaction() as database:
-        database.execute_native("UPDATE reviews SET invalidated_at=%s WHERE id=(SELECT max(id) FROM reviews WHERE card_id='A')",
-            (datetime.now().astimezone().isoformat(),))
-        assert PostgresRecombinationStore(database,validate_reviews=True).streak(CleanStreak("A",1,"physical:A:1")).count==0
-        result,_ = ordinary_current_review(database,"A",monkeypatch)
-        assert result["recombination"]["clean_streak"]==1
+        database.execute_native(
+            "UPDATE reviews SET invalidated_at=%s WHERE id=(SELECT max(id) FROM reviews WHERE card_id='A')",
+            (datetime.now().astimezone().isoformat(),),
+        )
+        assert (
+            PostgresRecombinationStore(database, validate_reviews=True)
+            .streak(CleanStreak("A", 1, "physical:A:1"))
+            .count
+            == 0
+        )
+        result, _ = ordinary_current_review(database, "A", monkeypatch)
+        assert result["recombination"]["clean_streak"] == 1
 
 
-def test_current_owner_existing_review_continues_when_a_join_neighbour_is_busy(current_owner_transaction,monkeypatch):
-    transaction=current_owner_transaction
-    qualify_before_final_review(transaction,monkeypatch)
+def test_current_owner_existing_review_continues_when_a_join_neighbour_is_busy(
+    current_owner_transaction, monkeypatch
+):
+    transaction = current_owner_transaction
+    qualify_before_final_review(transaction, monkeypatch)
     with transaction() as database:
-        result,_=ordinary_current_review(database,'B',monkeypatch)
-        combined=result['recombination']['resulting_presentation_id']
+        result, _ = ordinary_current_review(database, "B", monkeypatch)
+        combined = result["recombination"]["resulting_presentation_id"]
+
     def review_combined():
         with transaction() as database:
-            return ordinary_current_review(database,combined,monkeypatch)[0]
+            return ordinary_current_review(database, combined, monkeypatch)[0]
+
     with transaction() as busy:
-        busy.execute_native("SELECT pg_advisory_xact_lock(hashtextextended('tempo:card-edit:C',0))")
+        busy.execute_native(
+            "SELECT pg_advisory_xact_lock(hashtextextended('tempo:card-edit:C',0))"
+        )
         busy.execute_native("SELECT id FROM cards WHERE id='C' FOR UPDATE")
         with ThreadPoolExecutor(max_workers=1) as worker:
-            result=worker.submit(review_combined).result(timeout=10)
-        assert result['persisted'] and result['recombination']['status']=='held'
-        assert result['recombination']['clean_streak']==1
+            result = worker.submit(review_combined).result(timeout=10)
+        assert result["persisted"] and result["recombination"]["status"] == "held"
+        assert result["recombination"]["clean_streak"] == 1
     with transaction() as database:
-        assert database.execute_native("SELECT count(*) FROM reviews WHERE card_id=%s",(combined,)).fetchone()[0]==1
+        assert (
+            database.execute_native(
+                "SELECT count(*) FROM reviews WHERE card_id=%s", (combined,)
+            ).fetchone()[0]
+            == 1
+        )
 
 
-def test_current_owner_regrouping_admission_read_proves_owned_identity_only(current_owner_transaction,monkeypatch):
+def test_current_owner_regrouping_admission_read_proves_owned_identity_only(
+    current_owner_transaction, monkeypatch
+):
     from tempo_legacy_database.adapters.study.recombination import regrouped_card_sql
-    transaction=current_owner_transaction
-    qualify_before_final_review(transaction,monkeypatch)
+
+    transaction = current_owner_transaction
+    qualify_before_final_review(transaction, monkeypatch)
     with transaction() as database:
-        result,_=ordinary_current_review(database,'B',monkeypatch)
-        combined=result['recombination']['resulting_presentation_id']
-        database.execute_native("UPDATE cards SET source_ref='recombination:untrusted-prefix' WHERE id='A'")
-        predicate=regrouped_card_sql(database,'c.id')
-        assert [row[0] for row in database.execute_native('SELECT c.id FROM cards c WHERE '+predicate).fetchall()]==[combined]
-        assert regrouped_card_sql(object(),'card.id')=='FALSE'
-        with pytest.raises(ValueError,match='unsupported_regrouping_card_reference'):
-            regrouped_card_sql(database,'untrusted SQL')
+        result, _ = ordinary_current_review(database, "B", monkeypatch)
+        combined = result["recombination"]["resulting_presentation_id"]
+        database.execute_native(
+            "UPDATE cards SET source_ref='recombination:untrusted-prefix' WHERE id='A'"
+        )
+        predicate = regrouped_card_sql(database, "c.id")
+        assert [
+            row[0]
+            for row in database.execute_native(
+                "SELECT c.id FROM cards c WHERE " + predicate
+            ).fetchall()
+        ] == [combined]
+        assert regrouped_card_sql(object(), "card.id") == "FALSE"
+        with pytest.raises(ValueError, match="unsupported_regrouping_card_reference"):
+            regrouped_card_sql(database, "untrusted SQL")
 
 
-def test_current_owner_regrouping_costs_zero_actual_introduction_slots(current_owner_transaction,monkeypatch):
+def test_current_owner_regrouping_costs_zero_actual_introduction_slots(
+    current_owner_transaction, monkeypatch
+):
     """Actual legacy admission acceptance; requires its coordinated R11 hook."""
     from app.services.queue_admission_adapter import QueueAdmissionAdapter
-    transaction=current_owner_transaction
-    qualify_before_final_review(transaction,monkeypatch)
-    day=datetime.now().astimezone().date().isoformat()
+
+    transaction = current_owner_transaction
+    qualify_before_final_review(transaction, monkeypatch)
+    day = datetime.now().astimezone().date().isoformat()
     with transaction() as database:
         # An explicit existing earlier due requires verification today. No
         # introduction, completion or combined review is seeded by this fact.
-        database.execute_native("UPDATE cards SET due_date=%s WHERE id='A'",(day,))
-        result,_=ordinary_current_review(database,'B',monkeypatch)
-        combined=result['recombination']['resulting_presentation_id']
-        owner=QueueAdmissionAdapter(database)
-        counts=owner.introduction_count_page(day,None)
-        unseen={row['card_id'] for row in owner.unseen_openings(day)}
-        assert sum(count for _,count in counts.counts)==0 and combined not in unseen, (
-            'An already-introduced regrouping must not consume allowance or be reset by unseen reconciliation',
-            counts,combined in unseen)
-        from tempo_legacy_database.adapters.queue_refresh.application.admission import (
-            product_current_queue_facts, product_encounter_budget_facts,
+        database.execute_native("UPDATE cards SET due_date=%s WHERE id='A'", (day,))
+        result, _ = ordinary_current_review(database, "B", monkeypatch)
+        combined = result["recombination"]["resulting_presentation_id"]
+        owner = QueueAdmissionAdapter(database)
+        counts = owner.introduction_count_page(day, None)
+        unseen = {row["card_id"] for row in owner.unseen_openings(day)}
+        assert (
+            sum(count for _, count in counts.counts) == 0 and combined not in unseen
+        ), (
+            "An already-introduced regrouping must not consume allowance or be reset by unseen reconciliation",
+            counts,
+            combined in unseen,
         )
-        assert combined not in {row[0] for row in product_current_queue_facts(database, day)[1]}
-        _, budget = product_encounter_budget_facts(database, day, 'r11-repertoire', combined)
+        from tempo_legacy_database.adapters.queue_refresh.application.admission import (
+            product_current_queue_facts,
+            product_encounter_budget_facts,
+        )
+
+        assert combined not in {
+            row[0] for row in product_current_queue_facts(database, day)[1]
+        }
+        _, budget = product_encounter_budget_facts(
+            database, day, "r11-repertoire", combined
+        )
         assert budget[0] == 0 and budget[1] == 0
-        from app.services.queue_application import seed_queue,presentation_rows
-        assert next(row for row in presentation_rows(database,day) if row['card_id']==combined)['admission_kind']=='review'
+        from app.services.queue_application import seed_queue, presentation_rows
+
+        assert (
+            next(
+                row
+                for row in presentation_rows(database, day)
+                if row["card_id"] == combined
+            )["admission_kind"]
+            == "review"
+        )
         for _ in range(2):
-            seed_queue(database,day)
-            assert sum(count for _,count in owner.introduction_count_page(day,None).counts)==0
-        assert database.execute_native('SELECT introduced_at FROM cards WHERE id=%s',(combined,)).fetchone()[0]==day
+            seed_queue(database, day)
+            assert (
+                sum(
+                    count
+                    for _, count in owner.introduction_count_page(day, None).counts
+                )
+                == 0
+            )
+        assert (
+            database.execute_native(
+                "SELECT introduced_at FROM cards WHERE id=%s", (combined,)
+            ).fetchone()[0]
+            == day
+        )
 
 
-def issued_split_fixture(transaction,monkeypatch):
+def issued_split_fixture(transaction, monkeypatch):
     from app.queue_commands import issue_queue_head
     from app.services.review_service import ensure_card_queued_after
-    qualify_before_final_review(transaction,monkeypatch)
+
+    qualify_before_final_review(transaction, monkeypatch)
     with transaction() as database:
-        result,_=ordinary_current_review(database,'B',monkeypatch)
-        combined=result['recombination']['resulting_presentation_id']
+        result, _ = ordinary_current_review(database, "B", monkeypatch)
+        combined = result["recombination"]["resulting_presentation_id"]
     for _ in range(3):
         with transaction() as database:
-            ordinary_current_review(database,combined,monkeypatch,outcome='again')
-    day=datetime.now().astimezone().date().isoformat()
+            ordinary_current_review(database, combined, monkeypatch, outcome="again")
+    day = datetime.now().astimezone().date().isoformat()
     with transaction() as database:
-        ensure_card_queued_after(database,'C',0,queue_date=day,preserve_order=False)
-        other=database.execute_native("SELECT id FROM daily_queue WHERE card_id='C' AND status='queued'").fetchone()[0]
-        assert issue_queue_head(database,dict(entry_id=other,card_id='C',expected_revision=1,queue_date=day))['issued']
-        ensure_card_queued_after(database,combined,0,queue_date=day,preserve_order=False)
-        entry=database.execute_native("SELECT id FROM daily_queue WHERE card_id=%s AND status='queued'",(combined,)).fetchone()[0]
-        assert issue_queue_head(database,dict(entry_id=entry,card_id=combined,expected_revision=1,queue_date=day))['issued']
-    return combined,entry,other,day
+        ensure_card_queued_after(database, "C", 0, queue_date=day, preserve_order=False)
+        other = database.execute_native(
+            "SELECT id FROM daily_queue WHERE card_id='C' AND status='queued'"
+        ).fetchone()[0]
+        assert issue_queue_head(
+            database,
+            dict(entry_id=other, card_id="C", expected_revision=1, queue_date=day),
+        )["issued"]
+        ensure_card_queued_after(
+            database, combined, 0, queue_date=day, preserve_order=False
+        )
+        entry = database.execute_native(
+            "SELECT id FROM daily_queue WHERE card_id=%s AND status='queued'",
+            (combined,),
+        ).fetchone()[0]
+        assert issue_queue_head(
+            database,
+            dict(entry_id=entry, card_id=combined, expected_revision=1, queue_date=day),
+        )["issued"]
+    return combined, entry, other, day
 
 
-def persist_split_checkpoint(database,combined,entry,kind=None,*,repertoire_id='r11-repertoire'):
+def persist_split_checkpoint(
+    database, combined, entry, kind=None, *, repertoire_id="r11-repertoire"
+):
     from app.services.opening_decision_evidence import decision_manifest
     from app.services.postgres_opening_evidence import persist_checkpoint
-    from tempo_legacy_database.adapters.opening_evidence.storage import queue_context_rows
-    manifest=decision_manifest(dict(queue_context_rows(database,([entry],))[0]),repertoire_id)
-    now=datetime.now().astimezone().isoformat()
-    decision=manifest['decisions'][0]
-    events=[] if kind is None else [dict(sequence=1,decision_index=0,decision_id=decision['decision_id'],
-        expected_uci=decision['expected_uci'],kind='first_response' if kind=='response' else 'assistance',
-        observed_at=now,response_uci=decision['expected_uci'] if kind=='response' else None,
-        assistance=None if kind=='response' else 'hint',disposition='expected' if kind=='response' else None)]
-    attempt='split-head-'+uuid4().hex
-    result=persist_checkpoint(database,dict(prepared_manifest=manifest,checkpoint=dict(attempt_id=attempt,
-        manifest=manifest,origin_queue_entry_id=entry,queue_entry_id=entry,started_at=now,
-        study_timezone='UTC',events=events)))
-    assert result['persisted']
+    from tempo_legacy_database.adapters.opening_evidence.storage import (
+        queue_context_rows,
+    )
+
+    manifest = decision_manifest(
+        dict(queue_context_rows(database, ([entry],))[0]), repertoire_id
+    )
+    now = datetime.now().astimezone().isoformat()
+    decision = manifest["decisions"][0]
+    events = (
+        []
+        if kind is None
+        else [
+            dict(
+                sequence=1,
+                decision_index=0,
+                decision_id=decision["decision_id"],
+                expected_uci=decision["expected_uci"],
+                kind="first_response" if kind == "response" else "assistance",
+                observed_at=now,
+                response_uci=decision["expected_uci"] if kind == "response" else None,
+                assistance=None if kind == "response" else "hint",
+                disposition="expected" if kind == "response" else None,
+            )
+        ]
+    )
+    attempt = "split-head-" + uuid4().hex
+    result = persist_checkpoint(
+        database,
+        dict(
+            prepared_manifest=manifest,
+            checkpoint=dict(
+                attempt_id=attempt,
+                manifest=manifest,
+                origin_queue_entry_id=entry,
+                queue_entry_id=entry,
+                started_at=now,
+                study_timezone="UTC",
+                events=events,
+            ),
+        ),
+    )
+    assert result["persisted"]
     return attempt
 
 
-def test_current_owner_confirmed_issued_split_keeps_origins_history_and_zero_slots(current_owner_transaction,monkeypatch):
+def test_current_owner_confirmed_issued_split_keeps_origins_history_and_zero_slots(
+    current_owner_transaction, monkeypatch
+):
     from app.prefix_split_commands import accept_prefix_split
     from app.services.queue_admission_adapter import QueueAdmissionAdapter
-    from app.services.queue_application import seed_queue,presentation_rows
-    transaction=current_owner_transaction
-    combined,entry,other,day=issued_split_fixture(transaction,monkeypatch)
+    from app.services.queue_application import seed_queue, presentation_rows
+
+    transaction = current_owner_transaction
+    combined, entry, other, day = issued_split_fixture(transaction, monkeypatch)
     with transaction() as database:
-        empty=persist_split_checkpoint(database,combined,entry)
-        origin=tuple(database.execute_native('SELECT card_id,revision,start_fen,moves_json,issued_as_head,review_result_json FROM queue_attempt_origins WHERE queue_entry_id=%s',(entry,)).fetchone())
-        protected=tuple(database.execute_native('SELECT queue.status,queue.position,origin.* FROM daily_queue queue JOIN queue_attempt_origins origin ON origin.queue_entry_id=queue.id WHERE queue.id=%s',(other,)).fetchone())
-        history=tuple(tuple(row) for row in database.execute_native('SELECT id,card_id,rating,source_kind,source_ref FROM reviews ORDER BY id').fetchall())
-        payload=dict(card_id=combined,request=dict(expected_revision=1,queue_entry_id=entry))
-        result=accept_prefix_split(database,payload)
-        assert result['applied'] and accept_prefix_split(database,payload)['idempotent']
-        assert database.execute_native('SELECT status FROM daily_queue WHERE id=%s',(entry,)).fetchone()[0]=='buried'
-        assert tuple(database.execute_native('SELECT card_id,revision,start_fen,moves_json,issued_as_head,review_result_json FROM queue_attempt_origins WHERE queue_entry_id=%s',(entry,)).fetchone())==origin
-        assert tuple(database.execute_native('SELECT queue.status,queue.position,origin.* FROM daily_queue queue JOIN queue_attempt_origins origin ON origin.queue_entry_id=queue.id WHERE queue.id=%s',(other,)).fetchone())==protected
-        assert tuple(tuple(row) for row in database.execute_native('SELECT id,card_id,rating,source_kind,source_ref FROM reviews ORDER BY id').fetchall())==history
-        assert tuple(database.execute_native('SELECT state,contiguous_sequence,review_id FROM opening_evidence_attempts WHERE attempt_id=%s',(empty,)).fetchone())==('active',0,None)
-        fragments=(result['parent']['card_id'],result['continuation']['card_id'])
-    tomorrow=(datetime.now().astimezone().date()+timedelta(days=1)).isoformat()
+        empty = persist_split_checkpoint(database, combined, entry)
+        origin = tuple(
+            database.execute_native(
+                "SELECT card_id,revision,start_fen,moves_json,issued_as_head,review_result_json FROM queue_attempt_origins WHERE queue_entry_id=%s",
+                (entry,),
+            ).fetchone()
+        )
+        protected = tuple(
+            database.execute_native(
+                "SELECT queue.status,queue.position,origin.* FROM daily_queue queue JOIN queue_attempt_origins origin ON origin.queue_entry_id=queue.id WHERE queue.id=%s",
+                (other,),
+            ).fetchone()
+        )
+        history = tuple(
+            tuple(row)
+            for row in database.execute_native(
+                "SELECT id,card_id,rating,source_kind,source_ref FROM reviews ORDER BY id"
+            ).fetchall()
+        )
+        payload = dict(
+            card_id=combined, request=dict(expected_revision=1, queue_entry_id=entry)
+        )
+        result = accept_prefix_split(database, payload)
+        assert (
+            result["applied"] and accept_prefix_split(database, payload)["idempotent"]
+        )
+        assert (
+            database.execute_native(
+                "SELECT status FROM daily_queue WHERE id=%s", (entry,)
+            ).fetchone()[0]
+            == "buried"
+        )
+        assert (
+            tuple(
+                database.execute_native(
+                    "SELECT card_id,revision,start_fen,moves_json,issued_as_head,review_result_json FROM queue_attempt_origins WHERE queue_entry_id=%s",
+                    (entry,),
+                ).fetchone()
+            )
+            == origin
+        )
+        assert (
+            tuple(
+                database.execute_native(
+                    "SELECT queue.status,queue.position,origin.* FROM daily_queue queue JOIN queue_attempt_origins origin ON origin.queue_entry_id=queue.id WHERE queue.id=%s",
+                    (other,),
+                ).fetchone()
+            )
+            == protected
+        )
+        assert (
+            tuple(
+                tuple(row)
+                for row in database.execute_native(
+                    "SELECT id,card_id,rating,source_kind,source_ref FROM reviews ORDER BY id"
+                ).fetchall()
+            )
+            == history
+        )
+        assert tuple(
+            database.execute_native(
+                "SELECT state,contiguous_sequence,review_id FROM opening_evidence_attempts WHERE attempt_id=%s",
+                (empty,),
+            ).fetchone()
+        ) == ("active", 0, None)
+        fragments = (result["parent"]["card_id"], result["continuation"]["card_id"])
+    tomorrow = (datetime.now().astimezone().date() + timedelta(days=1)).isoformat()
     with transaction() as database:
         # Emulate a lost projection, keeping the immutable original origins.
-        database.execute_native('DELETE FROM daily_queue WHERE card_id=ANY(%s)',(list(fragments),))
+        database.execute_native(
+            "DELETE FROM daily_queue WHERE card_id=ANY(%s)", (list(fragments),)
+        )
         for _ in range(2):
-            seed_queue(database,tomorrow)
+            seed_queue(database, tomorrow)
         for identifier in fragments:
-            assert tuple(database.execute_native('SELECT introduced_at,fsrs_card_json,repetitions FROM cards WHERE id=%s',(identifier,)).fetchone())==(day,None,0)
-            assert next(row for row in presentation_rows(database,tomorrow) if row['card_id']==identifier)['admission_kind']=='review'
-        owner=QueueAdmissionAdapter(database)
-        assert sum(count for _,count in owner.introduction_count_page(day,None).counts)==0
-        assert sum(count for _,count in owner.introduction_count_page(day,None,reviewed_only=True).counts)==0
-        assert sum(count for _,count in owner.introduction_count_page(tomorrow,None).counts)==0
+            assert tuple(
+                database.execute_native(
+                    "SELECT introduced_at,fsrs_card_json,repetitions FROM cards WHERE id=%s",
+                    (identifier,),
+                ).fetchone()
+            ) == (day, None, 0)
+            assert (
+                next(
+                    row
+                    for row in presentation_rows(database, tomorrow)
+                    if row["card_id"] == identifier
+                )["admission_kind"]
+                == "review"
+            )
+        owner = QueueAdmissionAdapter(database)
+        assert (
+            sum(count for _, count in owner.introduction_count_page(day, None).counts)
+            == 0
+        )
+        assert (
+            sum(
+                count
+                for _, count in owner.introduction_count_page(
+                    day, None, reviewed_only=True
+                ).counts
+            )
+            == 0
+        )
+        assert (
+            sum(
+                count
+                for _, count in owner.introduction_count_page(tomorrow, None).counts
+            )
+            == 0
+        )
 
 
-@pytest.mark.parametrize('kind',['response','assistance'])
-def test_current_owner_confirmed_split_rejects_pending_or_changed_attempt_without_retirement(current_owner_transaction,monkeypatch,kind):
+@pytest.mark.parametrize("kind", ["response", "assistance"])
+def test_current_owner_confirmed_split_rejects_pending_or_changed_attempt_without_retirement(
+    current_owner_transaction, monkeypatch, kind
+):
     from app.prefix_split_commands import accept_prefix_split
     from fastapi import HTTPException
-    transaction=current_owner_transaction
-    combined,entry,other,_=issued_split_fixture(transaction,monkeypatch)
+
+    transaction = current_owner_transaction
+    combined, entry, other, _ = issued_split_fixture(transaction, monkeypatch)
     with transaction() as database:
-        for request in (dict(expected_revision=1),dict(expected_revision=1,queue_entry_id=other)):
+        for request in (
+            dict(expected_revision=1),
+            dict(expected_revision=1, queue_entry_id=other),
+        ):
             with pytest.raises(HTTPException) as error:
-                accept_prefix_split(database,dict(card_id=combined,request=request))
-            assert error.value.status_code==422
-            assert database.execute_native('SELECT status FROM daily_queue WHERE id=%s',(entry,)).fetchone()[0]=='queued'
-        attempt=persist_split_checkpoint(database,combined,entry,kind)
-        before=tuple(database.execute_native('SELECT state,contiguous_sequence,review_id FROM opening_evidence_attempts WHERE attempt_id=%s',(attempt,)).fetchone())
+                accept_prefix_split(database, dict(card_id=combined, request=request))
+            assert error.value.status_code == 422
+            assert (
+                database.execute_native(
+                    "SELECT status FROM daily_queue WHERE id=%s", (entry,)
+                ).fetchone()[0]
+                == "queued"
+            )
+        attempt = persist_split_checkpoint(database, combined, entry, kind)
+        before = tuple(
+            database.execute_native(
+                "SELECT state,contiguous_sequence,review_id FROM opening_evidence_attempts WHERE attempt_id=%s",
+                (attempt,),
+            ).fetchone()
+        )
         with pytest.raises(HTTPException) as error:
-            accept_prefix_split(database,dict(card_id=combined,request=dict(expected_revision=1,queue_entry_id=entry)))
-        assert error.value.status_code==422 and 'pending_attempt' in str(error.value.detail)
-        assert database.execute_native('SELECT status FROM daily_queue WHERE id=%s',(entry,)).fetchone()[0]=='queued'
-        assert tuple(database.execute_native('SELECT state,contiguous_sequence,review_id FROM opening_evidence_attempts WHERE attempt_id=%s',(attempt,)).fetchone())==before
-        assert database.execute_native('SELECT count(*) FROM study_recombination_changes').fetchone()[0]==1
+            accept_prefix_split(
+                database,
+                dict(
+                    card_id=combined,
+                    request=dict(expected_revision=1, queue_entry_id=entry),
+                ),
+            )
+        assert error.value.status_code == 422 and "pending_attempt" in str(
+            error.value.detail
+        )
+        assert (
+            database.execute_native(
+                "SELECT status FROM daily_queue WHERE id=%s", (entry,)
+            ).fetchone()[0]
+            == "queued"
+        )
+        assert (
+            tuple(
+                database.execute_native(
+                    "SELECT state,contiguous_sequence,review_id FROM opening_evidence_attempts WHERE attempt_id=%s",
+                    (attempt,),
+                ).fetchone()
+            )
+            == before
+        )
+        assert (
+            database.execute_native(
+                "SELECT count(*) FROM study_recombination_changes"
+            ).fetchone()[0]
+            == 1
+        )
 
 
 def test_regrouped_lookup_supports_bounded_reader_without_connection():
-    from tempo_legacy_database.adapters.study.recombination import regrouped_presentation_ids
+    from tempo_legacy_database.adapters.study.recombination import (
+        regrouped_presentation_ids,
+    )
+
     calls = []
-    identifiers = [f'presentation-{index:03}' for index in range(260)]
+    identifiers = [f"presentation-{index:03}" for index in range(260)]
 
     def read(statement, parameters):
         calls.append((statement, parameters))
-        if 'to_regclass' in statement:
+        if "to_regclass" in statement:
             return [(True,)]
         assert len(parameters) <= 128
-        assert statement.count('?') == len(parameters)
-        return [(identifier,) for identifier in parameters if identifier.endswith('0')]
+        assert statement.count("?") == len(parameters)
+        return [(identifier,) for identifier in parameters if identifier.endswith("0")]
 
     result = regrouped_presentation_ids(None, identifiers + identifiers[:10], read=read)
-    assert result == frozenset(identifier for identifier in identifiers if identifier.endswith('0'))
+    assert result == frozenset(
+        identifier for identifier in identifiers if identifier.endswith("0")
+    )
     assert len(calls) == 4
     assert [len(parameters) for _, parameters in calls[1:]] == [128, 128, 4]
 
 
 def test_regrouped_lookup_empty_or_missing_optional_schema_needs_no_connection():
-    from tempo_legacy_database.adapters.study.recombination import regrouped_presentation_ids
+    from tempo_legacy_database.adapters.study.recombination import (
+        regrouped_presentation_ids,
+    )
+
     calls = []
 
     def read(statement, parameters):
@@ -1857,8 +3818,10 @@ def test_regrouped_lookup_empty_or_missing_optional_schema_needs_no_connection()
 
     assert regrouped_presentation_ids(None, (), read=read) == frozenset()
     assert calls == []
-    assert regrouped_presentation_ids(None, ('known-physical',), read=read) == frozenset()
-    assert len(calls) == 1 and 'to_regclass' in calls[0][0]
+    assert (
+        regrouped_presentation_ids(None, ("known-physical",), read=read) == frozenset()
+    )
+    assert len(calls) == 1 and "to_regclass" in calls[0][0]
 
 
 # The separate #487 scoped-conflict extension remains on qualified R11 branch

@@ -30,14 +30,23 @@ def test_postgres_opening_candidates_read_small_pages_before_planning(monkeypatc
             return []
         if statement.startswith("SELECT id FROM cards"):
             assert native
-            assert parameters[1] == postgres_queue_refresh._OPENING_CANDIDATE_READ_BATCH_SIZE
+            assert (
+                parameters[1]
+                == postgres_queue_refresh._OPENING_CANDIDATE_READ_BATCH_SIZE
+            )
             return next(identifiers)
         if statement.startswith("WITH active_miss"):
             assert native
             assert "eligible_cards AS MATERIALIZED" in statement
             selected_pages.append(parameters[1])
-            return [{"id": card_id, "repertoire_id": "rep",
-                     "gameplay_priority_reason": None} for card_id in parameters[1]]
+            return [
+                {
+                    "id": card_id,
+                    "repertoire_id": "rep",
+                    "gameplay_priority_reason": None,
+                }
+                for card_id in parameters[1]
+            ]
         if statement.startswith("SELECT COALESCE(q.admission_repertoire_id"):
             return []
         if statement.startswith("SELECT r.id,COALESCE"):
@@ -47,9 +56,12 @@ def test_postgres_opening_candidates_read_small_pages_before_planning(monkeypatc
     monkeypatch.setattr(postgres_queue_refresh.read_storage, "_bounded_read", read_page)
     # Keep the actual frozen annotation/page path, with the minimum owned
     # background schema that says no frozen run is active.
-    monkeypatch.setattr(postgres_queue_refresh, "background_read_connection", background_reader)
     monkeypatch.setattr(
-        postgres_queue_refresh, "plan_prioritized_opening_admissions",
+        postgres_queue_refresh, "background_read_connection", background_reader
+    )
+    monkeypatch.setattr(
+        postgres_queue_refresh,
+        "plan_prioritized_opening_admissions",
         lambda candidates, _counts, _day, _limit, *, miss_reason: [
             ("rep", candidate) for candidate in candidates
         ],

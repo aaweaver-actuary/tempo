@@ -1,4 +1,5 @@
 """Tactics contracts."""
+
 from typing import Literal
 from uuid import UUID
 from urllib.parse import urlsplit

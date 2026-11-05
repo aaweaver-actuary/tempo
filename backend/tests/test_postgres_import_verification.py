@@ -34,20 +34,27 @@ def test_postgres_cutover_digest_ignores_new_target_columns():
             assert name == "verify_imported_games"
             return Cursor()
 
-    assert destination_fingerprint(
-        Database(), "imported_games", ["id", "analysis_version"], ["id"], {"id"}
-    )[0] == 1
+    assert (
+        destination_fingerprint(
+            Database(), "imported_games", ["id", "analysis_version"], ["id"], {"id"}
+        )[0]
+        == 1
+    )
     assert statements == [
         'SELECT "id", "analysis_version" FROM "imported_games" '
         'ORDER BY "id" COLLATE "C"'
     ]
 
 
-
 def test_postgres_fingerprint_preserves_complete_ordered_digest_across_batches():
     rows = [
-        (f"key-{index:04d}", None if index % 7 == 0 else index, index / 8.0,
-         bytes([index % 256, (index // 256) % 256]), f"雪-é-{index}")
+        (
+            f"key-{index:04d}",
+            None if index % 7 == 0 else index,
+            index / 8.0,
+            bytes([index % 256, (index // 256) % 256]),
+            f"雪-é-{index}",
+        )
         for index in range(2501)
     ]
     consumed = []
@@ -68,7 +75,7 @@ def test_postgres_fingerprint_preserves_complete_ordered_digest_across_batches()
 
         def __iter__(self):
             for offset in range(0, len(rows), self.itersize):
-                for row in rows[offset:offset + self.itersize]:
+                for row in rows[offset : offset + self.itersize]:
                     consumed.append(row)
                     yield row
 
@@ -82,8 +89,11 @@ def test_postgres_fingerprint_preserves_complete_ordered_digest_across_batches()
             return Cursor()
 
     count, digest = destination_fingerprint(
-        Database(), "batch_rows", ["id", "nullable", "floating", "binary", "text"],
-        ["id"], {"id"},
+        Database(),
+        "batch_rows",
+        ["id", "nullable", "floating", "binary", "text"],
+        ["id"],
+        {"id"},
     )
     # Captured from the unchanged helper at 991e5f3279dc96c6ebbca0a9c278b8b69a324431.
     assert count == 2501
@@ -94,34 +104,46 @@ def test_postgres_fingerprint_preserves_complete_ordered_digest_across_batches()
     assert configured_at_execute == [1000]
 
 
-@pytest.mark.parametrize("table_name,trigger_name", [
-    ("repertoire_lines", "canonical_line_source"),
-    ("repertoire_cards", "canonical_link_source"),
-    ("cards", "canonical_card_insert_source"),
-])
-def test_canonical_prefix_snapshot_copy_preserves_source_revision_and_restores_trigger(tmp_path, table_name, trigger_name):
+@pytest.mark.parametrize(
+    "table_name,trigger_name",
+    [
+        ("repertoire_lines", "canonical_line_source"),
+        ("repertoire_cards", "canonical_link_source"),
+        ("cards", "canonical_card_insert_source"),
+    ],
+)
+def test_canonical_prefix_snapshot_copy_preserves_source_revision_and_restores_trigger(
+    tmp_path, table_name, trigger_name
+):
     from contextlib import nullcontext
     import sqlite3
     from database.tooling.migrate_sqlite_to_postgres import copy_table
+
     source = sqlite3.connect(tmp_path / "source.db")
     source.execute(f'CREATE TABLE "{table_name}"(id TEXT PRIMARY KEY)')
-    source.execute(f'INSERT INTO "{table_name}" VALUES(\'line\')')
+    source.execute(f"INSERT INTO \"{table_name}\" VALUES('line')")
     statements = []
     rows = []
+
     class Copy:
         def write_row(self, row):
             rows.append(row)
+
     class Cursor:
         def execute(self, statement, parameters=()):
             statements.append(str(statement))
+
         def copy(self, statement):
             statements.append(str(statement))
             return nullcontext(Copy())
+
     class Destination:
         def transaction(self):
             return nullcontext()
+
         def cursor(self):
             return nullcontext(Cursor())
+
     count, _ = copy_table(source, Destination(), table_name, ["id"], ["id"])
     source.close()
     assert count == 1 and rows == [("line",)]

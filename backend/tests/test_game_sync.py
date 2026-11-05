@@ -16,7 +16,9 @@ import app.main as main_module
 import app.services.game_sync_coordinator as game_sync_coordinator
 
 
-def test_local_game_derivation_finishes_after_features_without_optional_refresh(tmp_path, monkeypatch):
+def test_local_game_derivation_finishes_after_features_without_optional_refresh(
+    tmp_path, monkeypatch
+):
     """Run the real local stages through their existing terminal write."""
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "derivation-retirement.sqlite")
     database.initialize()
@@ -27,9 +29,18 @@ def test_local_game_derivation_finishes_after_features_without_optional_refresh(
             """INSERT INTO imported_games(
                 id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json
             ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
-            (game_id, "lichess", "fixture", now, "rapid", 1, "white", "1-0",
-             "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-             json.dumps(["e2e4", "e7e5"])),
+            (
+                game_id,
+                "lichess",
+                "fixture",
+                now,
+                "rapid",
+                1,
+                "white",
+                "1-0",
+                "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                json.dumps(["e2e4", "e7e5"]),
+            ),
         )
     game_sync_coordinator.enqueue_game_derivation(game_id)
     assert not hasattr(game_sync_coordinator, "_enqueue_game_repertoire_refreshes")
@@ -37,19 +48,34 @@ def test_local_game_derivation_finishes_after_features_without_optional_refresh(
     game_sync_coordinator._execute_derivation(game_id)
 
     with database.read_connection() as store:
-        job = store.execute("SELECT * FROM game_derivation_jobs WHERE game_id=?", (game_id,)).fetchone()
+        job = store.execute(
+            "SELECT * FROM game_derivation_jobs WHERE game_id=?", (game_id,)
+        ).fetchone()
         assert job["status"] == "complete", job["last_error"]
         assert job["completed_phases"] == 6
         assert job["phase"] is None and job["last_error"] is None
-        assert store.execute("SELECT COUNT(*) FROM game_position_occurrences WHERE game_id=?", (game_id,)).fetchone()[0] == 3
-        feature = store.execute("SELECT * FROM game_feature_rows WHERE game_id=?", (game_id,)).fetchone()
+        assert (
+            store.execute(
+                "SELECT COUNT(*) FROM game_position_occurrences WHERE game_id=?",
+                (game_id,),
+            ).fetchone()[0]
+            == 3
+        )
+        feature = store.execute(
+            "SELECT * FROM game_feature_rows WHERE game_id=?", (game_id,)
+        ).fetchone()
         assert feature is not None and feature["outcome_score"] == 1
         progress = store.execute(
             "SELECT phase,completed_units,total_units FROM background_activity WHERE source='derivation' AND work_id=?",
             (game_id,),
         ).fetchone()
         assert tuple(progress) == ("Finished", 6, 6)
-        assert store.execute("SELECT COUNT(*) FROM background_tasks WHERE kind='repertoire_opportunity'").fetchone()[0] == 0
+        assert (
+            store.execute(
+                "SELECT COUNT(*) FROM background_tasks WHERE kind='repertoire_opportunity'"
+            ).fetchone()[0]
+            == 0
+        )
 
 
 def test_game_sync_public_projection_preserves_coordinator_import_contract():
@@ -57,22 +83,42 @@ def test_game_sync_public_projection_preserves_coordinator_import_contract():
 
     assert game_sync_coordinator.serialize_job is serialize_job
     assert serialize_job(None) is None
-    saved_job = {"id": "job", "status": "complete", "created_at": "created",
-                 "started_at": "started", "completed_at": "completed",
-                 "updated_at": "updated", "error": None,
-                 "result_json": json.dumps({"imported": 3})}
+    saved_job = {
+        "id": "job",
+        "status": "complete",
+        "created_at": "created",
+        "started_at": "started",
+        "completed_at": "completed",
+        "updated_at": "updated",
+        "error": None,
+        "result_json": json.dumps({"imported": 3}),
+    }
     unchanged_saved_job = saved_job.copy()
     assert serialize_job(saved_job)["result"] == {"imported": 3}
     assert saved_job == unchanged_saved_job
 
 
 @pytest.mark.parametrize("state", ["queued", "running", "paused", "retrying", "failed"])
-def test_incomplete_game_sync_never_exposes_internal_counters_as_completed_result(state):
-    row = {"id": "job", "status": state, "created_at": "2026-09-29T10:00:00Z",
-           "started_at": None, "completed_at": None, "updated_at": "2026-09-29T10:00:00Z",
-           "error": "provider failed" if state == "failed" else None,
-           "result_json": json.dumps({"imported": 1, "providers": {
-               "lichess": {"inserted": 1, "updated": 0, "duplicates": 0}}})}
+def test_incomplete_game_sync_never_exposes_internal_counters_as_completed_result(
+    state,
+):
+    row = {
+        "id": "job",
+        "status": state,
+        "created_at": "2026-09-29T10:00:00Z",
+        "started_at": None,
+        "completed_at": None,
+        "updated_at": "2026-09-29T10:00:00Z",
+        "error": "provider failed" if state == "failed" else None,
+        "result_json": json.dumps(
+            {
+                "imported": 1,
+                "providers": {
+                    "lichess": {"inserted": 1, "updated": 0, "duplicates": 0}
+                },
+            }
+        ),
+    }
     public_job = game_sync_coordinator.serialize_job(row)
     assert public_job["result"] is None
     assert public_job["error"] == row["error"]
@@ -81,15 +127,32 @@ def test_incomplete_game_sync_never_exposes_internal_counters_as_completed_resul
 
 
 def test_completed_game_sync_rejects_partial_result_in_public_model():
-    row = {"id": "job", "status": "complete", "created_at": "2026-09-29T10:00:00Z",
-           "started_at": None, "completed_at": "2026-09-29T10:01:00Z",
-           "updated_at": "2026-09-29T10:01:00Z", "error": None,
-           "result_json": json.dumps({"imported": 1, "providers": {
-               "lichess": {"inserted": 1, "updated": 0, "duplicates": 0}}})}
+    row = {
+        "id": "job",
+        "status": "complete",
+        "created_at": "2026-09-29T10:00:00Z",
+        "started_at": None,
+        "completed_at": "2026-09-29T10:01:00Z",
+        "updated_at": "2026-09-29T10:01:00Z",
+        "error": None,
+        "result_json": json.dumps(
+            {
+                "imported": 1,
+                "providers": {
+                    "lichess": {"inserted": 1, "updated": 0, "duplicates": 0}
+                },
+            }
+        ),
+    }
     with pytest.raises(ValueError):
         GameSyncJob.model_validate(game_sync_coordinator.serialize_job(row))
+
+
 from app.games.providers.lichess import fetch_lichess_games_window
-from app.games.providers.chesscom import fetch_chesscom_archive_urls, fetch_chesscom_archive_month
+from app.games.providers.chesscom import (
+    fetch_chesscom_archive_urls,
+    fetch_chesscom_archive_month,
+)
 
 
 def test_lichess_sync_window_bounds_provider_request_before_persistence():
@@ -97,12 +160,22 @@ def test_lichess_sync_window_bounds_provider_request_before_persistence():
 
     def handler(request: httpx.Request):
         requested_urls.append(request.url)
-        return httpx.Response(200, text="", headers={"content-type": "application/x-chess-pgn"})
+        return httpx.Response(
+            200, text="", headers={"content-type": "application/x-chess-pgn"}
+        )
 
     async def fetch_window():
-        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as provider:
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(handler)
+        ) as provider:
             return await fetch_lichess_games_window(
-                "TempoPlayer", 1000, 2000, ["rapid"], True, provider, max_games=100,
+                "TempoPlayer",
+                1000,
+                2000,
+                ["rapid"],
+                True,
+                provider,
+                max_games=100,
             )
 
     records, counts = asyncio.run(fetch_window())
@@ -116,11 +189,19 @@ def test_lichess_sync_window_bounds_provider_request_before_persistence():
 
 def test_lichess_sync_window_rejects_unbounded_page_size():
     async def fetch_window():
-        async with httpx.AsyncClient(transport=httpx.MockTransport(
-            lambda request: pytest.fail("Invalid window reached the provider")
-        )) as provider:
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda request: pytest.fail("Invalid window reached the provider")
+            )
+        ) as provider:
             await fetch_lichess_games_window(
-                "TempoPlayer", 1000, 2000, ["rapid"], True, provider, max_games=1001,
+                "TempoPlayer",
+                1000,
+                2000,
+                ["rapid"],
+                True,
+                provider,
+                max_games=1001,
             )
 
     with pytest.raises(ValueError, match="page size"):
@@ -133,22 +214,35 @@ def test_chesscom_sync_fetches_one_archive_per_restartable_window():
     def handler(request: httpx.Request):
         requested_paths.append(request.url.path)
         if request.url.path.endswith("/archives"):
-            return httpx.Response(200, json={"archives": [
-                "https://api.chess.com/pub/player/tempoplayer/games/2026/08",
-                "https://api.chess.com/pub/player/tempoplayer/games/2026/09",
-            ]})
+            return httpx.Response(
+                200,
+                json={
+                    "archives": [
+                        "https://api.chess.com/pub/player/tempoplayer/games/2026/08",
+                        "https://api.chess.com/pub/player/tempoplayer/games/2026/09",
+                    ]
+                },
+            )
         return httpx.Response(200, json={"games": [chesscom_game("one-month")]})
 
     async def fetch_month():
-        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as provider:
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(handler)
+        ) as provider:
             archive_urls, invalid_urls = await fetch_chesscom_archive_urls(
-                "TempoPlayer", datetime(2026, 9, 1, tzinfo=timezone.utc), provider,
+                "TempoPlayer",
+                datetime(2026, 9, 1, tzinfo=timezone.utc),
+                provider,
             )
             assert invalid_urls == 0
             assert len(archive_urls) == 1
             return await fetch_chesscom_archive_month(
-                "TempoPlayer", archive_urls[0],
-                datetime(2026, 9, 1, tzinfo=timezone.utc), ["rapid"], True, provider,
+                "TempoPlayer",
+                archive_urls[0],
+                datetime(2026, 9, 1, tzinfo=timezone.utc),
+                ["rapid"],
+                True,
+                provider,
             )
 
     records, counts = asyncio.run(fetch_month())
@@ -162,16 +256,37 @@ def test_chesscom_sync_fetches_one_archive_per_restartable_window():
 
 def test_chesscom_split_month_counts_only_games_inside_its_time_window():
     def handler(request: httpx.Request):
-        return httpx.Response(200, json={"games": [
-            chesscom_game("early", end_time=int(datetime(2026, 9, 5, tzinfo=timezone.utc).timestamp())),
-            chesscom_game("late", end_time=int(datetime(2026, 9, 20, tzinfo=timezone.utc).timestamp())),
-        ]})
+        return httpx.Response(
+            200,
+            json={
+                "games": [
+                    chesscom_game(
+                        "early",
+                        end_time=int(
+                            datetime(2026, 9, 5, tzinfo=timezone.utc).timestamp()
+                        ),
+                    ),
+                    chesscom_game(
+                        "late",
+                        end_time=int(
+                            datetime(2026, 9, 20, tzinfo=timezone.utc).timestamp()
+                        ),
+                    ),
+                ]
+            },
+        )
 
     async def fetch_half():
-        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as provider:
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(handler)
+        ) as provider:
             return await fetch_chesscom_archive_month(
-                "TempoPlayer", "https://api.chess.com/pub/player/tempoplayer/games/2026/09",
-                datetime(2026, 9, 1, tzinfo=timezone.utc), ["rapid"], True, provider,
+                "TempoPlayer",
+                "https://api.chess.com/pub/player/tempoplayer/games/2026/09",
+                datetime(2026, 9, 1, tzinfo=timezone.utc),
+                ["rapid"],
+                True,
+                provider,
                 until=datetime(2026, 9, 10, tzinfo=timezone.utc),
             )
 
@@ -213,7 +328,9 @@ def install_transport(monkeypatch, handler):
     original_client = httpx.AsyncClient
     monkeypatch.setattr(
         "app.services.game_sync.httpx.AsyncClient",
-        lambda **kwargs: original_client(transport=httpx.MockTransport(handler), **kwargs),
+        lambda **kwargs: original_client(
+            transport=httpx.MockTransport(handler), **kwargs
+        ),
     )
 
 
@@ -243,7 +360,11 @@ def test_chesscom_mixed_case_username_and_shared_site_header_import_every_distin
         if request.url.path.endswith("/archives"):
             return httpx.Response(
                 200,
-                json={"archives": ["https://api.chess.com/pub/player/tempoplayer/games/2026/09"]},
+                json={
+                    "archives": [
+                        "https://api.chess.com/pub/player/tempoplayer/games/2026/09"
+                    ]
+                },
             )
         return httpx.Response(
             200, json={"games": [chesscom_game("first"), chesscom_game("second")]}
@@ -268,7 +389,11 @@ def test_one_provider_failure_does_not_discard_other_provider_success(
         if request.url.path.endswith("/archives"):
             return httpx.Response(
                 200,
-                json={"archives": ["https://api.chess.com/pub/player/tempoplayer/games/2026/09"]},
+                json={
+                    "archives": [
+                        "https://api.chess.com/pub/player/tempoplayer/games/2026/09"
+                    ]
+                },
             )
         return httpx.Response(200, json={"games": [chesscom_game("survivor")]})
 
@@ -283,7 +408,9 @@ def test_one_provider_failure_does_not_discard_other_provider_success(
         assert client.get("/api/games/summary").json()["total"] == 1
 
 
-def test_incremental_overlap_catches_late_games_without_duplicates(tmp_path, monkeypatch):
+def test_incremental_overlap_catches_late_games_without_duplicates(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     calls = 0
     since_values = []
@@ -295,7 +422,9 @@ def test_incremental_overlap_catches_late_games_without_duplicates(tmp_path, mon
         exported = pgn("https://lichess.org/original", "TempoPlayer")
         if calls > 1:
             exported += "\n" + pgn("https://lichess.org/late", "TempoPlayer")
-        return httpx.Response(200, text=exported, headers={"content-type": "application/x-chess-pgn"})
+        return httpx.Response(
+            200, text=exported, headers={"content-type": "application/x-chess-pgn"}
+        )
 
     install_transport(monkeypatch, handler)
     with TestClient(app) as client:
@@ -306,9 +435,16 @@ def test_incremental_overlap_catches_late_games_without_duplicates(tmp_path, mon
         assert second["providers"]["lichess"]["duplicates"] == 1
         assert client.get("/api/games/summary").json()["total"] == 2
         with database.read_connection() as db:
-            assert db.execute("SELECT COUNT(*) FROM game_analysis_jobs").fetchone()[0] == 0
-            assert db.execute("SELECT COUNT(*) FROM game_derivation_jobs").fetchone()[0] == 0
-    assert since_values[1] <= int(datetime(2026, 9, 18, 12, tzinfo=timezone.utc).timestamp() * 1000)
+            assert (
+                db.execute("SELECT COUNT(*) FROM game_analysis_jobs").fetchone()[0] == 0
+            )
+            assert (
+                db.execute("SELECT COUNT(*) FROM game_derivation_jobs").fetchone()[0]
+                == 0
+            )
+    assert since_values[1] <= int(
+        datetime(2026, 9, 18, 12, tzinfo=timezone.utc).timestamp() * 1000
+    )
 
 
 def test_sync_reports_filtered_rejected_and_duplicate_counts(tmp_path, monkeypatch):
@@ -318,7 +454,11 @@ def test_sync_reports_filtered_rejected_and_duplicate_counts(tmp_path, monkeypat
         if request.url.path.endswith("/archives"):
             return httpx.Response(
                 200,
-                json={"archives": ["https://api.chess.com/pub/player/tempoplayer/games/2026/09"]},
+                json={
+                    "archives": [
+                        "https://api.chess.com/pub/player/tempoplayer/games/2026/09"
+                    ]
+                },
             )
         return httpx.Response(
             200,
@@ -390,10 +530,13 @@ def test_sync_finalization_retries_transient_database_lock_without_refetching_pr
 
     async def successful_providers(_request):
         provider_calls.append(1)
-        return {"imported": 0, "providers": {
-            "lichess": {"provider": "lichess", "status": "idle", "error": None},
-            "chess.com": {"provider": "chess.com", "status": "idle", "error": None},
-        }}
+        return {
+            "imported": 0,
+            "providers": {
+                "lichess": {"provider": "lichess", "status": "idle", "error": None},
+                "chess.com": {"provider": "chess.com", "status": "idle", "error": None},
+            },
+        }
 
     monkeypatch.setattr(game_sync_coordinator, "sync_providers", successful_providers)
     original_finish = game_sync_coordinator._finish_job
@@ -407,12 +550,20 @@ def test_sync_finalization_retries_transient_database_lock_without_refetching_pr
 
     monkeypatch.setattr(game_sync_coordinator, "_finish_job", transiently_locked_finish)
     database.initialize()
-    job_id = game_sync_coordinator.enqueue_sync(GameSyncRequest(lichess_username="TempoPlayer"))
+    job_id = game_sync_coordinator.enqueue_sync(
+        GameSyncRequest(lichess_username="TempoPlayer")
+    )
     with database.read_connection() as db:
-        job = dict(db.execute("SELECT * FROM game_sync_jobs WHERE id=?", (job_id,)).fetchone())
+        job = dict(
+            db.execute("SELECT * FROM game_sync_jobs WHERE id=?", (job_id,)).fetchone()
+        )
     game_sync_coordinator._execute_job(job)
     with database.read_connection() as db:
-        completed = dict(db.execute("SELECT status,result_json FROM game_sync_jobs WHERE id=?", (job_id,)).fetchone())
+        completed = dict(
+            db.execute(
+                "SELECT status,result_json FROM game_sync_jobs WHERE id=?", (job_id,)
+            ).fetchone()
+        )
     assert completed["status"] == "complete"
     provider_results = json.loads(completed["result_json"])["providers"]
     assert provider_results["lichess"]["error"] is None
@@ -458,7 +609,9 @@ def test_background_game_sync_routes_use_background_database_sections(
         # real admission/deferral contract is covered separately; stop the
         # startup coordinator before asserting an admitted response.
         client.portal.call(main_module.coordinator.stop)
-        assert client.get("/api/settings", headers=background_headers).status_code == 200
+        assert (
+            client.get("/api/settings", headers=background_headers).status_code == 200
+        )
         assert (
             client.get("/api/games/sync/status", headers=background_headers).status_code
             == 200
@@ -563,9 +716,12 @@ def test_correct_card_review_advances_while_game_sync_is_active(tmp_path, monkey
                 "INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,'review-card',0)",
                 (today,),
             ).lastrowid
-        assert client.post(
-            "/api/games/sync", json={"lichess_username": "Slow"}
-        ).status_code == 202
+        assert (
+            client.post(
+                "/api/games/sync", json={"lichess_username": "Slow"}
+            ).status_code
+            == 202
+        )
         started = time.monotonic()
         review = client.post(
             "/api/cards/review-card/review",
@@ -574,12 +730,18 @@ def test_correct_card_review_advances_while_game_sync_is_active(tmp_path, monkey
         assert review.status_code == 200
         assert time.monotonic() - started < 0.2
         with database.connection() as db:
-            assert db.execute(
-                "SELECT COUNT(*) FROM reviews WHERE card_id='review-card'"
-            ).fetchone()[0] == 1
-            assert db.execute(
-                "SELECT status FROM daily_queue WHERE id=?", (queue_entry_id,)
-            ).fetchone()[0] == "complete"
+            assert (
+                db.execute(
+                    "SELECT COUNT(*) FROM reviews WHERE card_id='review-card'"
+                ).fetchone()[0]
+                == 1
+            )
+            assert (
+                db.execute(
+                    "SELECT status FROM daily_queue WHERE id=?", (queue_entry_id,)
+                ).fetchone()[0]
+                == "complete"
+            )
 
 
 def test_game_summaries_never_expose_persistence_only_sync_fields(
@@ -620,7 +782,9 @@ def test_game_summaries_never_expose_persistence_only_sync_fields(
         assert detail["timeline"] == []
 
 
-def test_games_summary_pagination_omits_heavy_fields_and_caps_rows(tmp_path, monkeypatch):
+def test_games_summary_pagination_omits_heavy_fields_and_caps_rows(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
         now = datetime.now(timezone.utc).isoformat()
@@ -629,16 +793,29 @@ def test_games_summary_pagination_omits_heavy_fields_and_caps_rows(tmp_path, mon
                 """INSERT INTO imported_games(
                        id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json
                    ) VALUES(?,'lichess','TempoPlayer',?,'rapid',1,'white','1-0',?,'[\"e2e4\"]')""",
-                [(f"page-{index:02d}", now, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1") for index in range(75)],
+                [
+                    (
+                        f"page-{index:02d}",
+                        now,
+                        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                    )
+                    for index in range(75)
+                ],
             )
         first = client.get("/api/games/summary", params={"limit": 50}).json()
         assert first["total"] == 75
         assert len(first["games"]) == 50
         assert first["next_cursor"]
-        assert all("moves" not in game and "timeline" not in game for game in first["games"])
-        second = client.get("/api/games/summary", params={"limit": 50, "cursor": first["next_cursor"]}).json()
+        assert all(
+            "moves" not in game and "timeline" not in game for game in first["games"]
+        )
+        second = client.get(
+            "/api/games/summary", params={"limit": 50, "cursor": first["next_cursor"]}
+        ).json()
         assert len(second["games"]) == 25
-        assert not {game["id"] for game in first["games"]} & {game["id"] for game in second["games"]}
+        assert not {game["id"] for game in first["games"]} & {
+            game["id"] for game in second["games"]
+        }
 
 
 def test_correct_review_succeeds_while_one_thousand_derivation_jobs_are_queued(
@@ -701,9 +878,12 @@ def test_correct_review_succeeds_while_one_thousand_derivation_jobs_are_queued(
         assert response.json()["persisted"] is True
         assert time.monotonic() - started < 1
         with database.connection() as db:
-            assert db.execute(
-                "SELECT COUNT(*) FROM reviews WHERE card_id='foreground-review'"
-            ).fetchone()[0] == 1
+            assert (
+                db.execute(
+                    "SELECT COUNT(*) FROM reviews WHERE card_id='foreground-review'"
+                ).fetchone()[0]
+                == 1
+            )
 
 
 def test_sync_jobs_are_not_starved_behind_derivation_work(tmp_path, monkeypatch):

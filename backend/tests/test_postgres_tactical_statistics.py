@@ -5,7 +5,9 @@ from contextlib import contextmanager
 from app.services import tactical_opportunities
 
 
-def test_postgres_tactical_summary_keeps_pin_breakdown_without_loading_all_motifs(monkeypatch):
+def test_postgres_tactical_summary_keeps_pin_breakdown_without_loading_all_motifs(
+    monkeypatch,
+):
     statements = []
 
     class Cursor:
@@ -19,21 +21,52 @@ def test_postgres_tactical_summary_keeps_pin_breakdown_without_loading_all_motif
         def execute_native(self, statement, parameters):
             statements.append((statement, parameters))
             if "GROUP BY ROLLUP" in statement:
-                return Cursor([
-                    {"motif": None, "opportunities": 2, "exploited": 1, "missed": 1,
-                     "missed_cost": 180, "supporting_games": 2,
-                     "mean_confidence": .8, "minimum_confidence": .7},
-                    {"motif": "pin", "opportunities": 1, "exploited": 0, "missed": 1,
-                     "missed_cost": 180, "supporting_games": 1,
-                     "mean_confidence": .9, "minimum_confidence": .9},
-                    {"motif": "fork", "opportunities": 1, "exploited": 1, "missed": 0,
-                     "missed_cost": None, "supporting_games": 1,
-                     "mean_confidence": .7, "minimum_confidence": .7},
-                ])
-            return Cursor([{"game_id": "game-one", "outcome": "missed", "confidence": .9,
-                            "evaluation_loss_cp": 180,
-                            "evidence_json": '{"motif_evidence":[{"motif":"pin",'
-                            '"existed_before":false,"concrete_outcome":{"pin_type":"absolute"}}]}'}])
+                return Cursor(
+                    [
+                        {
+                            "motif": None,
+                            "opportunities": 2,
+                            "exploited": 1,
+                            "missed": 1,
+                            "missed_cost": 180,
+                            "supporting_games": 2,
+                            "mean_confidence": 0.8,
+                            "minimum_confidence": 0.7,
+                        },
+                        {
+                            "motif": "pin",
+                            "opportunities": 1,
+                            "exploited": 0,
+                            "missed": 1,
+                            "missed_cost": 180,
+                            "supporting_games": 1,
+                            "mean_confidence": 0.9,
+                            "minimum_confidence": 0.9,
+                        },
+                        {
+                            "motif": "fork",
+                            "opportunities": 1,
+                            "exploited": 1,
+                            "missed": 0,
+                            "missed_cost": None,
+                            "supporting_games": 1,
+                            "mean_confidence": 0.7,
+                            "minimum_confidence": 0.7,
+                        },
+                    ]
+                )
+            return Cursor(
+                [
+                    {
+                        "game_id": "game-one",
+                        "outcome": "missed",
+                        "confidence": 0.9,
+                        "evaluation_loss_cp": 180,
+                        "evidence_json": '{"motif_evidence":[{"motif":"pin",'
+                        '"existed_before":false,"concrete_outcome":{"pin_type":"absolute"}}]}',
+                    }
+                ]
+            )
 
     @contextmanager
     def database_connection():

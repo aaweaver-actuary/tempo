@@ -21,9 +21,13 @@ def test_repertoire_lines_read_stays_available_during_write_compatibility_conten
                 id,repertoire_id,name,trained_color,start_fen,moves_json,created_at
             ) VALUES(?,?,?,?,?,?,?)""",
             (
-                "test-line", "test-opening", "Test line", "white",
+                "test-line",
+                "test-opening",
+                "Test line",
+                "white",
                 "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-                '["e2e4"]', "2026-09-25T00:00:00Z",
+                '["e2e4"]',
+                "2026-09-25T00:00:00Z",
             ),
         )
 

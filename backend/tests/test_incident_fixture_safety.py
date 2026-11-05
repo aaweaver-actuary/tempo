@@ -9,8 +9,13 @@ import pytest
 
 @pytest.fixture
 def incident_fixture_script():
-    script_path = Path(__file__).resolve().parents[2] / "database/tests/check_postgres_graph_retention.py"
-    specification = spec_from_file_location("incident_fixture_safety_script", script_path)
+    script_path = (
+        Path(__file__).resolve().parents[2]
+        / "database/tests/check_postgres_graph_retention.py"
+    )
+    specification = spec_from_file_location(
+        "incident_fixture_safety_script", script_path
+    )
     module = module_from_spec(specification)
     specification.loader.exec_module(module)
     return module
@@ -38,10 +43,16 @@ class ReadOnlyMetadataConnection:
 
 def verify_guard_refusal(monkeypatch, tmp_path, script, *, marker, schema, error_match):
     monkeypatch.setenv("TEMPO_TEST_INSTANCE", "disposable")
-    connection = ReadOnlyMetadataConnection({
-        "database_name": "tempo", "database_user": "postgres", "postgres_version": "18.6",
-        "postgres_version_number": 180006, "disposable_marker": marker, "schema_version": schema,
-    })
+    connection = ReadOnlyMetadataConnection(
+        {
+            "database_name": "tempo",
+            "database_user": "postgres",
+            "postgres_version": "18.6",
+            "postgres_version_number": 180006,
+            "disposable_marker": marker,
+            "schema_version": schema,
+        }
+    )
     connect = Mock(return_value=connection)
     seed = Mock()
     cleanup = Mock()
@@ -64,17 +75,37 @@ def verify_guard_refusal(monkeypatch, tmp_path, script, *, marker, schema, error
 
 
 def test_incident_fixture_refuses_unmarked_database_without_writes_or_cleanup(
-    monkeypatch, tmp_path, incident_fixture_script,
+    monkeypatch,
+    tmp_path,
+    incident_fixture_script,
 ):
-    schema = max(int(path.name.split("_", 1)[0]) for path in
-                 (Path(__file__).resolve().parents[2] / "database/tempo_legacy_database/ddl/migrations").glob("[0-9]*.sql"))
-    verify_guard_refusal(monkeypatch, tmp_path, incident_fixture_script, marker=None, schema=schema,
-                         error_match="lacks the disposable bootstrap marker")
+    schema = max(
+        int(path.name.split("_", 1)[0])
+        for path in (
+            Path(__file__).resolve().parents[2]
+            / "database/tempo_legacy_database/ddl/migrations"
+        ).glob("[0-9]*.sql")
+    )
+    verify_guard_refusal(
+        monkeypatch,
+        tmp_path,
+        incident_fixture_script,
+        marker=None,
+        schema=schema,
+        error_match="lacks the disposable bootstrap marker",
+    )
 
 
 def test_incident_fixture_refuses_schema_mismatch_without_writes_or_cleanup(
-    monkeypatch, tmp_path, incident_fixture_script,
+    monkeypatch,
+    tmp_path,
+    incident_fixture_script,
 ):
-    verify_guard_refusal(monkeypatch, tmp_path, incident_fixture_script,
-                         marker=incident_fixture_script.DISPOSABLE_DATABASE_MARKER, schema=20,
-                         error_match="current disposable schema required")
+    verify_guard_refusal(
+        monkeypatch,
+        tmp_path,
+        incident_fixture_script,
+        marker=incident_fixture_script.DISPOSABLE_DATABASE_MARKER,
+        schema=20,
+        error_match="current disposable schema required",
+    )

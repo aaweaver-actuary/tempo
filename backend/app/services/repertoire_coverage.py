@@ -14,10 +14,19 @@ import httpx
 
 from tempo_legacy_database.connections import connection
 from tempo_legacy_database.adapters.coverage import repertoire as storage, session
-from tempo_legacy_database.adapters.coverage.session import postgres_store, _EXPLORER_SESSION_KEY
+from tempo_legacy_database.adapters.coverage.session import (
+    postgres_store,
+    _EXPLORER_SESSION_KEY,
+)
 from .redis_admission_gate import client as redis_client
 from .repertoire_comparison import canonical_fen
-from .canonical_scope_freshness import coverage_run_is_current, coverage_scope_predicate, scope_identity, latest_coverage_attempt_predicate, latest_coverage_run_id
+from .canonical_scope_freshness import (
+    coverage_run_is_current,
+    coverage_scope_predicate,
+    scope_identity,
+    latest_coverage_attempt_predicate,
+    latest_coverage_run_id,
+)
 from .canonical_prefix import read_prefix, scope_line
 from .activity_gate import activity_gate
 
@@ -30,7 +39,9 @@ _explorer_environment_token_rejected = False
 class ExplorerAuthenticationError(RuntimeError):
     def __init__(self, status: int | None = None):
         self.status = status
-        super().__init__(f"Lichess Explorer authentication required{f' (HTTP {status})' if status else ''}")
+        super().__init__(
+            f"Lichess Explorer authentication required{f' (HTTP {status})' if status else ''}"
+        )
 
 
 class ExplorerRequestError(RuntimeError):
@@ -50,7 +61,10 @@ def set_explorer_session_token(token: str | None) -> None:
 
 def get_explorer_session_token() -> str | None:
     with _explorer_session_lock:
-        if os.getenv("TEMPO_LICHESS_EXPLORER_TOKEN") and not _explorer_environment_token_rejected:
+        if (
+            os.getenv("TEMPO_LICHESS_EXPLORER_TOKEN")
+            and not _explorer_environment_token_rejected
+        ):
             return os.environ["TEMPO_LICHESS_EXPLORER_TOKEN"]
         if session.configured():
             stored = session.read_explorer_token(redis_client())
@@ -58,7 +72,11 @@ def get_explorer_session_token() -> str | None:
         return _explorer_session_token
 
 
-from .coverage_probabilities import CoverageCandidate, blend_probabilities, required_reply_moves
+from .coverage_probabilities import (
+    CoverageCandidate,
+    blend_probabilities,
+    required_reply_moves,
+)
 
 
 def fen_key(fen: str) -> str:
@@ -77,7 +95,9 @@ def discover_opponent_positions(
         moves = json.loads(line["moves_json"])
         route: list[str] = []
         for ply in range(min(len(moves), maximum_plies) + 1):
-            if board.turn != trained_color and ply >= int(line.get("scope_start_ply", 0)):
+            if board.turn != trained_color and ply >= int(
+                line.get("scope_start_ply", 0)
+            ):
                 key = fen_key(board.fen())
                 position = positions.setdefault(
                     key,
@@ -118,8 +138,10 @@ def discover_opponent_positions(
 
 EXPLORER_CACHE_MAX_AGE = timedelta(days=7)
 from .coverage_cohort import (
-    SUPPORTED_RATING_BUCKETS, SUPPORTED_MAIA_ELOS,
-    _nearest_rating_bucket, recent_player_cohort,
+    SUPPORTED_RATING_BUCKETS,
+    SUPPORTED_MAIA_ELOS,
+    _nearest_rating_bucket,
+    recent_player_cohort,
 )
 
 
@@ -149,7 +171,7 @@ def enqueue_coverage_refresh(
     nodes = discover_opponent_positions(
         lines, int(settings["coverage_horizon_fullmoves"])
     )
-    scope_pending = any(line.get('scope_pending') for line in lines)
+    scope_pending = any(line.get("scope_pending") for line in lines)
     run_id = str(uuid.uuid4())
     now = _now()
     settings_payload = {
@@ -170,7 +192,9 @@ def enqueue_coverage_refresh(
     with connection(background=background) as database:
         storage.begin_write(database)
         if scope_identity(database, repertoire_id) != identity:
-            raise RuntimeError("Repertoire changed while preparing coverage; refresh again")
+            raise RuntimeError(
+                "Repertoire changed while preparing coverage; refresh again"
+            )
         active = storage.active_run(database, (repertoire_id,))
         if active and coverage_run_is_current(database, active, repertoire_id):
             return active["id"]
@@ -179,13 +203,22 @@ def enqueue_coverage_refresh(
             (
                 run_id,
                 repertoire_id,
-                "failed" if scope_pending else "queued" if nodes else "failed" if prefix["moves"] else "complete",
+                "failed"
+                if scope_pending
+                else "queued"
+                if nodes
+                else "failed"
+                if prefix["moves"]
+                else "complete",
                 json.dumps(settings_payload),
                 len(nodes),
                 now,
                 now,
-                "Saved continuation routes need verification. Check the canonical prefix again before refreshing coverage." if scope_pending else
-                "No opponent positions after the canonical prefix within the coverage horizon. Add a continuation or adjust the horizon." if not nodes and prefix["moves"] else None,
+                "Saved continuation routes need verification. Check the canonical prefix again before refreshing coverage."
+                if scope_pending
+                else "No opponent positions after the canonical prefix within the coverage horizon. Add a continuation or adjust the horizon."
+                if not nodes and prefix["moves"]
+                else None,
             ),
         )
         for node in nodes:
@@ -212,11 +245,14 @@ def enqueue_coverage_refresh(
 
 def claim_coverage_node() -> dict | None:
     from .background_activity import claimable, control_order
+
     if not get_explorer_session_token():
         if os.getenv("TEMPO_BACKGROUND_WORKER") == "1":
-            reason = ("Lichess Explorer token was rejected; replace TEMPO_LICHESS_EXPLORER_TOKEN and restart the analysis worker."
-                      if _explorer_environment_token_rejected else
-                      "Set TEMPO_LICHESS_EXPLORER_TOKEN for unattended Explorer coverage and restart the analysis worker.")
+            reason = (
+                "Lichess Explorer token was rejected; replace TEMPO_LICHESS_EXPLORER_TOKEN and restart the analysis worker."
+                if _explorer_environment_token_rejected
+                else "Set TEMPO_LICHESS_EXPLORER_TOKEN for unattended Explorer coverage and restart the analysis worker."
+            )
             with connection(background=True) as database:
                 storage.fail_unattended_runs(database, reason, _now)
         return None
@@ -324,9 +360,7 @@ def _recalculate_node(database, node_id: str, settings: dict) -> None:
             row["explorer_probability"],
             row["maia_probability"],
             explorer_games=int(row["explorer_probability"] is not None)
-            * int(
-                storage.node_explorer_games(database, (node_id,))
-            ),
+            * int(storage.node_explorer_games(database, (node_id,))),
         )
         blended_by_move[row["move_uci"]] = blended
         if blended is not None:
@@ -370,6 +404,7 @@ def _recalculate_node(database, node_id: str, settings: dict) -> None:
 
 def execute_coverage_node(node: dict) -> None:
     from .background_activity import emit_progress
+
     try:
         settings = json.loads(node["settings_json"])
         rating_bucket = int(
@@ -385,7 +420,11 @@ def execute_coverage_node(node: dict) -> None:
         )
         ratings = str(rating_bucket)
         with connection(background=True) as database:
-            if not coverage_run_is_current(database, node, node["repertoire_id"]) or node["run_id"] != latest_coverage_run_id(database, node["repertoire_id"]):
+            if not coverage_run_is_current(
+                database, node, node["repertoire_id"]
+            ) or node["run_id"] != latest_coverage_run_id(
+                database, node["repertoire_id"]
+            ):
                 return
             payload, cache_key = _cached_explorer_payload(
                 database, node["fen"], speeds, ratings
@@ -409,7 +448,11 @@ def execute_coverage_node(node: dict) -> None:
         activity_gate.wait_for_foreground()
         with connection(background=True) as database:
             storage.begin_write(database)
-            if not coverage_run_is_current(database, node, node["repertoire_id"]) or node["run_id"] != latest_coverage_run_id(database, node["repertoire_id"]):
+            if not coverage_run_is_current(
+                database, node, node["repertoire_id"]
+            ) or node["run_id"] != latest_coverage_run_id(
+                database, node["repertoire_id"]
+            ):
                 return
             storage.upsert_explorer_cache(
                 database,
@@ -450,10 +493,18 @@ def execute_coverage_node(node: dict) -> None:
                     node["run_id"],
                 ),
             )
-            progress_counts = storage.explorer_progress_counts(database, (node["run_id"],))
-        emit_progress("coverage", node["run_id"], node["run_id"], "Checking positions",
-                        (progress_counts["explorer_done"] or 0) + (progress_counts["maia_done"] or 0),
-                        progress_counts["total"] * 2)
+            progress_counts = storage.explorer_progress_counts(
+                database, (node["run_id"],)
+            )
+        emit_progress(
+            "coverage",
+            node["run_id"],
+            node["run_id"],
+            "Checking positions",
+            (progress_counts["explorer_done"] or 0)
+            + (progress_counts["maia_done"] or 0),
+            progress_counts["total"] * 2,
+        )
     except ExplorerAuthenticationError as error:
         global _explorer_environment_token_rejected
         if os.getenv("TEMPO_LICHESS_EXPLORER_TOKEN"):
@@ -461,14 +512,22 @@ def execute_coverage_node(node: dict) -> None:
         set_explorer_session_token(None)
         with connection(background=True) as database:
             storage.begin_write(database)
-            if not coverage_run_is_current(database, node, node["repertoire_id"]) or node["run_id"] != latest_coverage_run_id(database, node["repertoire_id"]):
+            if not coverage_run_is_current(
+                database, node, node["repertoire_id"]
+            ) or node["run_id"] != latest_coverage_run_id(
+                database, node["repertoire_id"]
+            ):
                 return
             storage.requeue_explorer_node(database, (str(error), _now(), node["id"]))
             storage.requeue_run(database, (str(error), _now(), node["run_id"]))
     except Exception as error:
         with connection(background=True) as database:
             storage.begin_write(database)
-            if not coverage_run_is_current(database, node, node["repertoire_id"]) or node["run_id"] != latest_coverage_run_id(database, node["repertoire_id"]):
+            if not coverage_run_is_current(
+                database, node, node["repertoire_id"]
+            ) or node["run_id"] != latest_coverage_run_id(
+                database, node["repertoire_id"]
+            ):
                 return
             storage.fail_explorer_node(database, (str(error), _now(), node["id"]))
             storage.fail_run(database, (str(error), _now(), node["run_id"]))
@@ -484,9 +543,11 @@ def coverage_summary(repertoire_id: str) -> dict:
                 "status": "failed" if run is not None else "not-started",
                 "last_error": (
                     "Repertoire sources changed. Recheck Canonical prefix… and refresh coverage."
-                    if prefix["moves"] else
-                    "Repertoire scope changed. Refresh coverage to analyze the current repertoire."
-                ) if run is not None else None,
+                    if prefix["moves"]
+                    else "Repertoire scope changed. Refresh coverage to analyze the current repertoire."
+                )
+                if run is not None
+                else None,
                 "required_branches": 0,
                 "covered_branches": 0,
                 "probability_coverage": None,
@@ -543,6 +604,7 @@ def coverage_gaps(repertoire_id: str) -> list[dict]:
 
 def claim_maia_coverage_node() -> dict | None:
     from .background_activity import claimable, control_order
+
     now = datetime.now(timezone.utc)
     lease_id = str(uuid.uuid4())
     with connection(background=activity_gate.in_background) as database:
@@ -572,11 +634,18 @@ def claim_maia_coverage_node() -> dict | None:
 
 def submit_maia_coverage(node_id: str, lease_id: str, moves: list[dict]) -> None:
     from .background_activity import emit_progress
+
     repertoire_id: str | None = None
     with connection(background=activity_gate.in_background) as database:
         storage.begin_write(database)
         node = storage.maia_node(database, (node_id,))
-        if not node or node["maia_status"] != "leased" or node["lease_id"] != lease_id or not coverage_run_is_current(database, node, node["repertoire_id"]) or node["run_id"] != latest_coverage_run_id(database, node["repertoire_id"]):
+        if (
+            not node
+            or node["maia_status"] != "leased"
+            or node["lease_id"] != lease_id
+            or not coverage_run_is_current(database, node, node["repertoire_id"])
+            or node["run_id"] != latest_coverage_run_id(database, node["repertoire_id"])
+        ):
             raise RuntimeError("Coverage MAIA lease is no longer active")
         repertoire_id = node["repertoire_id"]
         covered_replies = set(json.loads(node["covered_replies_json"]))
@@ -594,6 +663,11 @@ def submit_maia_coverage(node_id: str, lease_id: str, moves: list[dict]) -> None
         _recalculate_node(database, node_id, json.loads(node["settings_json"]))
         storage.complete_maia_node(database, (_now(), node_id))
         progress_counts = storage.maia_progress_counts(database, (node["run_id"],))
-    emit_progress("coverage", node["run_id"], node["run_id"], "Checking positions",
-                    (progress_counts["explorer_done"] or 0) + (progress_counts["maia_done"] or 0),
-                    progress_counts["total"] * 2)
+    emit_progress(
+        "coverage",
+        node["run_id"],
+        node["run_id"],
+        "Checking positions",
+        (progress_counts["explorer_done"] or 0) + (progress_counts["maia_done"] or 0),
+        progress_counts["total"] * 2,
+    )

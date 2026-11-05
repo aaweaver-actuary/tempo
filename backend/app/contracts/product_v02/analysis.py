@@ -1,11 +1,16 @@
 """Supplied analysis values. Providers/evaluators propose; owners decide effects."""
+
 import hashlib
 import json
 from typing import Annotated, Literal, Protocol
 
 from pydantic import ConfigDict, Field, field_validator, model_validator
 from tempo_analysis_jobs_contracts.stockfish import CentipawnScore, MateScore
-from tempo_evidence_math import CountEvidence, MoveProbabilityDistribution, PositionMoveUniverse
+from tempo_evidence_math import (
+    CountEvidence,
+    MoveProbabilityDistribution,
+    PositionMoveUniverse,
+)
 
 from . import Digest, Identifier, Revision, UciMove, UtcTimestamp, Value
 
@@ -28,8 +33,12 @@ class PopulationSelection(Value):
 
     @model_validator(mode="after")
     def explicit_population(self):
-        if self.rating_min > self.rating_max or len(set(self.time_controls)) != len(self.time_controls):
-            raise ValueError("population requires ordered rating bounds and unique time controls")
+        if self.rating_min > self.rating_max or len(set(self.time_controls)) != len(
+            self.time_controls
+        ):
+            raise ValueError(
+                "population requires ordered rating bounds and unique time controls"
+            )
         return self
 
 
@@ -49,14 +58,28 @@ class ProbabilityEvidence(Value):
 
     @model_validator(mode="after")
     def bind_evidence_context(self):
-        if (self.basis == "population") != (self.population is not None) or (self.basis == "personal") != (self.personal_account is not None):
-            raise ValueError("population selection and personal account are distinct evidence contexts")
+        if (self.basis == "population") != (self.population is not None) or (
+            self.basis == "personal"
+        ) != (self.personal_account is not None):
+            raise ValueError(
+                "population selection and personal account are distinct evidence contexts"
+            )
         if self.distribution is None:
             if self.unavailable_reason is None:
-                raise ValueError("unavailable probabilities require a reason, not invented zeros")
-        elif self.distribution.position != self.position or self.unavailable_reason is not None or self.observed_at is None:
-            raise ValueError("available probabilities require same exact position and observed date")
-        if self.counts is not None and not {move.move_uci for move in self.counts.moves}.issubset(self.position.legal_moves):
+                raise ValueError(
+                    "unavailable probabilities require a reason, not invented zeros"
+                )
+        elif (
+            self.distribution.position != self.position
+            or self.unavailable_reason is not None
+            or self.observed_at is None
+        ):
+            raise ValueError(
+                "available probabilities require same exact position and observed date"
+            )
+        if self.counts is not None and not {
+            move.move_uci for move in self.counts.moves
+        }.issubset(self.position.legal_moves):
             raise ValueError("count evidence contains an illegal move")
         return self
 
@@ -76,14 +99,23 @@ class EngineContext(Value):
 
     @model_validator(mode="after")
     def bounded_evaluation(self):
-        if self.max_depth is None and self.max_nodes is None and self.max_time_ms is None:
+        if (
+            self.max_depth is None
+            and self.max_nodes is None
+            and self.max_time_ms is None
+        ):
             raise ValueError("engine work requires an explicit finite bound")
         return self
 
 
 class CandidateEvaluation(Value):
     move_uci: UciMove
-    score: Annotated[ImmutableCentipawnScore | ImmutableMateScore, Field(discriminator="kind")] | None
+    score: (
+        Annotated[
+            ImmutableCentipawnScore | ImmutableMateScore, Field(discriminator="kind")
+        ]
+        | None
+    )
     score_perspective: Literal["learner"] = "learner"
     depth: int | None = Field(ge=1, le=128)
     nodes: Count | None
@@ -92,12 +124,18 @@ class CandidateEvaluation(Value):
     @field_validator("score", mode="before")
     @classmethod
     def detach_existing_score(cls, value):
-        return value.model_dump(mode="json") if isinstance(value, (CentipawnScore, MateScore)) else value
+        return (
+            value.model_dump(mode="json")
+            if isinstance(value, (CentipawnScore, MateScore))
+            else value
+        )
 
     @model_validator(mode="after")
     def explicit_missing_score(self):
         if (self.score is None) != (self.unavailable_reason is not None):
-            raise ValueError("inconclusive evaluation requires a reason and no invented score")
+            raise ValueError(
+                "inconclusive evaluation requires a reason and no invented score"
+            )
         return self
 
 
@@ -114,8 +152,14 @@ class EngineEvidence(Value):
     def explicit_candidate_coverage(self):
         requested = set(self.requested_candidates)
         evaluated = [item.move_uci for item in self.candidates]
-        if len(requested) != len(self.requested_candidates) or len(set(evaluated)) != len(evaluated) or set(evaluated) != requested:
-            raise ValueError("every explicit requested candidate needs evidence or an unavailable reason")
+        if (
+            len(requested) != len(self.requested_candidates)
+            or len(set(evaluated)) != len(evaluated)
+            or set(evaluated) != requested
+        ):
+            raise ValueError(
+                "every explicit requested candidate needs evidence or an unavailable reason"
+            )
         if (self.best is None) != (self.unavailable_reason is not None):
             raise ValueError("missing best evidence must remain explicitly unavailable")
         return self
@@ -139,7 +183,9 @@ class DisplayedCardChange(Value):
 
     @model_validator(mode="after")
     def existing_changes_need_identity(self):
-        if self.action in {"update", "reuse"} and (self.presentation_id is None or self.expected_revision is None):
+        if self.action in {"update", "reuse"} and (
+            self.presentation_id is None or self.expected_revision is None
+        ):
             raise ValueError("existing card change requires actual identity/revision")
         return self
 
@@ -164,9 +210,15 @@ class Proposal(Value):
     @model_validator(mode="after")
     def explicit_policy_and_support(self):
         if self.max_loss_cp != 30 and self.threshold_adjustment_reason is None:
-            raise ValueError("a contextual threshold change must be displayed explicitly")
-        if len(set(self.supporting_position_keys)) != len(self.supporting_position_keys):
-            raise ValueError("repeated route copies are not independent supporting positions")
+            raise ValueError(
+                "a contextual threshold change must be displayed explicitly"
+            )
+        if len(set(self.supporting_position_keys)) != len(
+            self.supporting_position_keys
+        ):
+            raise ValueError(
+                "repeated route copies are not independent supporting positions"
+            )
         return self
 
     def content_digest(self) -> str:
@@ -176,7 +228,13 @@ class Proposal(Value):
         is an integrity binding, not authorization or one-own-response validation.
         """
         payload = self.model_dump(mode="json", exclude={"display_digest"})
-        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+        encoded = json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        )
         return hashlib.sha256(encoded.encode()).hexdigest()
 
 
@@ -191,14 +249,20 @@ class ProposalDecision(Value):
     @model_validator(mode="after")
     def edit_requires_repreview(self):
         if (self.action == "edit") != (self.edited_proposal is not None):
-            raise ValueError("edit supplies a replacement proposal for revalidation/repreview")
+            raise ValueError(
+                "edit supplies a replacement proposal for revalidation/repreview"
+            )
         return self
 
     def matches_preview(self, proposal: Proposal) -> bool:
-        return (self.proposal_id == proposal.proposal_id
-                and self.expected_proposal_revision == proposal.proposal_revision
-                and self.expected_source_revision == proposal.source_revision
-                and self.display_digest == proposal.display_digest == proposal.content_digest())
+        return (
+            self.proposal_id == proposal.proposal_id
+            and self.expected_proposal_revision == proposal.proposal_revision
+            and self.expected_source_revision == proposal.source_revision
+            and self.display_digest
+            == proposal.display_digest
+            == proposal.content_digest()
+        )
 
 
 class RepertoireChangeReceipt(Value):
@@ -216,6 +280,7 @@ class RepertoireChangePort(Protocol):
     Approval binds all displayed edits and card additions by display_digest.
     edit never publishes; it yields a freshly validated preview for acceptance.
     """
+
     def preview(self, proposal: Proposal) -> RepertoireChangeReceipt: ...
     def decide(self, decision: ProposalDecision) -> RepertoireChangeReceipt: ...
 
@@ -248,8 +313,12 @@ class RankingOutput(Value):
 
 
 class ProbabilityPort(Protocol):
-    def evidence(self, position: PositionMoveUniverse, population: PopulationSelection) -> ProbabilityEvidence: ...
+    def evidence(
+        self, position: PositionMoveUniverse, population: PopulationSelection
+    ) -> ProbabilityEvidence: ...
 
 
 class EngineEvaluationPort(Protocol):
-    def evaluate(self, context: EngineContext, candidates: tuple[str, ...]) -> EngineEvidence: ...
+    def evaluate(
+        self, context: EngineContext, candidates: tuple[str, ...]
+    ) -> EngineEvidence: ...

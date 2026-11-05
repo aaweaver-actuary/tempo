@@ -10,7 +10,9 @@ import signal
 import httpx
 
 from .product_composition.database_infrastructure import bind_database_infrastructure
-from .product_composition.compatibility_coordinator import compose_compatibility_coordinator
+from .product_composition.compatibility_coordinator import (
+    compose_compatibility_coordinator,
+)
 
 bind_database_infrastructure()
 coordinator = compose_compatibility_coordinator()
@@ -22,7 +24,10 @@ async def wait_for_api() -> None:
     async with httpx.AsyncClient(timeout=2) as client:
         while True:
             try:
-                response = await client.get(f"{api_url}/api/health", headers={"X-Tempo-Work-Class": "background"})
+                response = await client.get(
+                    f"{api_url}/api/health",
+                    headers={"X-Tempo-Work-Class": "background"},
+                )
                 if response.is_success:
                     return
             except httpx.RequestError:

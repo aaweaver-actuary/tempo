@@ -16,14 +16,18 @@ import redis
 
 from tempo_legacy_database.adapters.redis_control import policy as storage
 from tempo_legacy_database.adapters.redis_control.policy import (
-    POLICY_KEY, GENERATION_KEY, _PUBLISH, _READ, control_client,
+    POLICY_KEY,
+    GENERATION_KEY,
+    _PUBLISH,
+    _READ,
+    control_client,
 )
 
 from . import redis_admission_gate
 
 POLICY_SECONDS = 15
 REFRESH_SECONDS = 5
-_logger = logging.getLogger('tempo.study_priority')
+_logger = logging.getLogger("tempo.study_priority")
 _local_lock = threading.Lock()
 _local_generation = 0
 _local_policy = None
@@ -38,27 +42,46 @@ def refresh_policy(*, invalidate: bool = True) -> bool:
     policy_key, generation_key = POLICY_KEY, GENERATION_KEY
     from tempo_legacy_database.connections import background_read_connection
     from .activity_gate import activity_gate
+
     try:
         shared = redis_admission_gate.configured()
         if shared:
-            generation = int(storage.advance_generation(control_client(), generation_key) if invalidate else
-                storage.existing_or_initial_generation(control_client(), generation_key))
+            generation = int(
+                storage.advance_generation(control_client(), generation_key)
+                if invalidate
+                else storage.existing_or_initial_generation(
+                    control_client(), generation_key
+                )
+            )
         else:
             with _local_lock:
-                if invalidate or not _local_generation: _local_generation += 1
+                if invalidate or not _local_generation:
+                    _local_generation += 1
                 generation = _local_generation
-        with activity_gate.background_job('study_policy', 'refresh', yielding=True), activity_gate.background_control():
+        with (
+            activity_gate.background_job("study_policy", "refresh", yielding=True),
+            activity_gate.background_control(),
+        ):
             with background_read_connection(pool_timeout_seconds=0.1) as database:
                 row = storage.study_mode_setting(database)
         if row is None:
             return False
-        policy = {'generation': generation, 'study_only_mode': bool(row[0]),
-                  'expires_at_ms': int((time.time() + POLICY_SECONDS) * 1000)}
+        policy = {
+            "generation": generation,
+            "study_only_mode": bool(row[0]),
+            "expires_at_ms": int((time.time() + POLICY_SECONDS) * 1000),
+        }
         if shared:
-            return bool(storage.publish_policy(
-                control_client(), policy_key, generation_key,
-                generation, json.dumps(policy), POLICY_SECONDS,
-            ))
+            return bool(
+                storage.publish_policy(
+                    control_client(),
+                    policy_key,
+                    generation_key,
+                    generation,
+                    json.dumps(policy),
+                    POLICY_SECONDS,
+                )
+            )
         with _local_lock:
             if generation == _local_generation:
                 _local_policy = policy
@@ -66,32 +89,49 @@ def refresh_policy(*, invalidate: bool = True) -> bool:
         return False
     except Exception as error:
         # A control outage is expected degradation, not a successful settings read.
-        _logger.warning('Study priority policy refresh deferred: %s', type(error).__name__)
+        _logger.warning(
+            "Study priority policy refresh deferred: %s", type(error).__name__
+        )
         return False
 
 
 def control_snapshot() -> dict:
-    unavailable = {'active': True, 'available': False, 'study_only_mode': None,
-                   'policy_generation': None}
+    unavailable = {
+        "active": True,
+        "available": False,
+        "study_only_mode": None,
+        "policy_generation": None,
+    }
     try:
         if redis_admission_gate.configured():
             active, encoded, current_generation = storage.policy_snapshot(
-                control_client(), redis_admission_gate._FOREGROUND_KEY, POLICY_KEY, GENERATION_KEY,
+                control_client(),
+                redis_admission_gate._FOREGROUND_KEY,
+                POLICY_KEY,
+                GENERATION_KEY,
                 int(time.time() * 1000),
             )
             policy = json.loads(encoded) if encoded else None
             generation = int(current_generation) if current_generation else None
         else:
             from .activity_gate import activity_gate
+
             active = activity_gate.foreground_waiting
             with _local_lock:
                 policy, generation = _local_policy, _local_generation
-        if (not policy or policy['generation'] != generation or
-                policy['expires_at_ms'] <= time.time() * 1000 or
-                type(policy['study_only_mode']) is not bool):
+        if (
+            not policy
+            or policy["generation"] != generation
+            or policy["expires_at_ms"] <= time.time() * 1000
+            or type(policy["study_only_mode"]) is not bool
+        ):
             return unavailable
-        return {'active': bool(active), 'available': True,
-                'study_only_mode': policy['study_only_mode'], 'policy_generation': generation}
+        return {
+            "active": bool(active),
+            "available": True,
+            "study_only_mode": policy["study_only_mode"],
+            "policy_generation": generation,
+        }
     except (redis.RedisError, ValueError, TypeError, KeyError):
         return unavailable
 
@@ -100,11 +140,13 @@ def control_snapshot() -> dict:
 def policy_publisher():
     """One API-owned refresher; no database work on a control HTTP request."""
     stopped = threading.Event()
+
     def publish():
         while not stopped.wait(REFRESH_SECONDS):
             refresh_policy(invalidate=False)
+
     refresh_policy()
-    thread = threading.Thread(target=publish, name='tempo-study-policy', daemon=True)
+    thread = threading.Thread(target=publish, name="tempo-study-policy", daemon=True)
     thread.start()
     try:
         yield

@@ -1,4 +1,5 @@
 """Product settings contract."""
+
 from typing import Literal
 from pydantic import BaseModel, Field
 

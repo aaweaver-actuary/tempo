@@ -1,7 +1,9 @@
 """Durable admission proof; daily_queue is a replaceable projection, not a receipt."""
 
 from tempo_legacy_database.adapters.lifecycle import queue_attempt_origins as storage
-from tempo_legacy_database.adapters.lifecycle.queue_attempt_origins import retain_recovered_completion
+from tempo_legacy_database.adapters.lifecycle.queue_attempt_origins import (
+    retain_recovered_completion,
+)
 from tempo_legacy_database.ddl.queue_attempt_origins import initialize_sqlite_origins
 
 
@@ -9,38 +11,102 @@ def recover_queue_entry(database, card_id: str, request) -> dict:
     from app.contracts.review_conflicts import ReviewConflict
 
     if not request.attempt_id or not request.queue_entry_id:
-        raise ReviewConflict("queue_attempt_unprovable", "The original queue attempt cannot be verified. The completed result needs review.")
+        raise ReviewConflict(
+            "queue_attempt_unprovable",
+            "The original queue attempt cannot be verified. The completed result needs review.",
+        )
     contexts = storage.attempt_contexts(database, request.queue_entry_id, card_id)
     if request.expected_revision is not None:
-        contexts = [context for context in contexts if context["revision"] == request.expected_revision]
+        contexts = [
+            context
+            for context in contexts
+            if context["revision"] == request.expected_revision
+        ]
     if len(contexts) != 1:
-        raise ReviewConflict("queue_attempt_unprovable", "The original queue attempt cannot be verified. The completed result needs review.")
+        raise ReviewConflict(
+            "queue_attempt_unprovable",
+            "The original queue attempt cannot be verified. The completed result needs review.",
+        )
     origin = dict(contexts[0])
     current = storage.current_card_identity(database, card_id)
-    if not current or any(current[column] != origin[column] for column in ("revision", "start_fen", "moves_json", "trained_color", "content_type")) or (origin["legacy"] and request.expected_revision is None and origin["revision"] != 1):
-        raise ReviewConflict("card_revision_changed", "The card changed after this attempt. The completed result needs review.")
+    if (
+        not current
+        or any(
+            current[column] != origin[column]
+            for column in (
+                "revision",
+                "start_fen",
+                "moves_json",
+                "trained_color",
+                "content_type",
+            )
+        )
+        or (
+            origin["legacy"]
+            and request.expected_revision is None
+            and origin["revision"] != 1
+        )
+    ):
+        raise ReviewConflict(
+            "card_revision_changed",
+            "The card changed after this attempt. The completed result needs review.",
+        )
     from .services.study_attempt_guard import guard_current_attempt
-    guard_current_attempt(database,request.queue_entry_id,card_id,origin['revision'])
-    if origin["last_status"] in {"buried", "complete"} and not origin["review_result_json"]:
-        raise ReviewConflict("queue_attempt_retired", "This queue attempt was retired without a saved review. The completed result needs review.")
-    return {**origin, "id": origin["queue_entry_id"],
-            "status": "complete" if origin["review_result_json"] else "queued", "_recovered": True}
+
+    guard_current_attempt(database, request.queue_entry_id, card_id, origin["revision"])
+    if (
+        origin["last_status"] in {"buried", "complete"}
+        and not origin["review_result_json"]
+    ):
+        raise ReviewConflict(
+            "queue_attempt_retired",
+            "This queue attempt was retired without a saved review. The completed result needs review.",
+        )
+    return {
+        **origin,
+        "id": origin["queue_entry_id"],
+        "status": "complete" if origin["review_result_json"] else "queued",
+        "_recovered": True,
+    }
 
 
-def validate_failure_marker(database, entry_id: int, card_id=None, expected_revision=None) -> None:
+def validate_failure_marker(
+    database, entry_id: int, card_id=None, expected_revision=None
+) -> None:
     """A queue-only legacy marker cannot choose between replacement contexts."""
     from app.contracts.review_conflicts import ReviewConflict
 
     contexts = storage.entry_contexts(database, entry_id)
     current = storage.current_queue_card_identity(database, entry_id)
     if card_id is not None:
-        contexts = [origin for origin in contexts if origin["card_id"] == card_id
-                    and (expected_revision is None or origin["revision"] == expected_revision)]
-    if not current or len(contexts) != 1 or current["id"] != contexts[0]["card_id"] or any(
-        current[column] != contexts[0][column]
-        for column in ("revision", "start_fen", "moves_json", "trained_color", "content_type")
+        contexts = [
+            origin
+            for origin in contexts
+            if origin["card_id"] == card_id
+            and (expected_revision is None or origin["revision"] == expected_revision)
+        ]
+    if (
+        not current
+        or len(contexts) != 1
+        or current["id"] != contexts[0]["card_id"]
+        or any(
+            current[column] != contexts[0][column]
+            for column in (
+                "revision",
+                "start_fen",
+                "moves_json",
+                "trained_color",
+                "content_type",
+            )
+        )
     ):
-        raise ReviewConflict("queue_attempt_unprovable", "The guided attempt no longer matches this queue entry. Its completed review needs reconciliation.")
+        raise ReviewConflict(
+            "queue_attempt_unprovable",
+            "The guided attempt no longer matches this queue entry. Its completed review needs reconciliation.",
+        )
 
     from .services.study_attempt_guard import guard_current_attempt
-    guard_current_attempt(database,entry_id,contexts[0]['card_id'],contexts[0]['revision'])
+
+    guard_current_attempt(
+        database, entry_id, contexts[0]["card_id"], contexts[0]["revision"]
+    )

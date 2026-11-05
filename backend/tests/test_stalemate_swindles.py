@@ -32,9 +32,20 @@ ROOT = Path(__file__).resolve().parents[2]
 def synthetic_pgn(fen=TRAP_FEN, moves=("h4d4", "d5d4"), **headers):
     game = chess.pgn.Game()
     game.setup(chess.Board(fen))
-    game.headers.update({"Event": "Rated Blitz game", "Site": "https://lichess.org/synthet1",
-        "White": "Private white account", "Black": "Private black account", "UTCDate": "2026.09.12",
-        "Result": "1/2-1/2", "WhiteElo": "1500", "BlackElo": "1600", "TimeControl": "300+3", "Termination": "Normal"})
+    game.headers.update(
+        {
+            "Event": "Rated Blitz game",
+            "Site": "https://lichess.org/synthet1",
+            "White": "Private white account",
+            "Black": "Private black account",
+            "UTCDate": "2026.09.12",
+            "Result": "1/2-1/2",
+            "WhiteElo": "1500",
+            "BlackElo": "1600",
+            "TimeControl": "300+3",
+            "Termination": "Normal",
+        }
+    )
     game.headers.update(headers)
     current_node = game
     for move in moves:
@@ -44,12 +55,25 @@ def synthetic_pgn(fen=TRAP_FEN, moves=("h4d4", "d5d4"), **headers):
 
 def mined(raw_pgn=None, **options):
     counts = swindles.new_counts()
-    candidates = list(swindles.mine_candidates(io.StringIO(raw_pgn or synthetic_pgn()), "2026-09", options.pop("filters", swindles.MiningFilters()), counts, **options))
+    candidates = list(
+        swindles.mine_candidates(
+            io.StringIO(raw_pgn or synthetic_pgn()),
+            "2026-09",
+            options.pop("filters", swindles.MiningFilters()),
+            counts,
+            **options,
+        )
+    )
     return candidates, counts
 
 
-@pytest.mark.parametrize("fen,moves,color", [(TRAP_FEN, ("h4d4", "d5d4"), "white"), (BLACK_FEN, ("h5d5", "d4d5"), "black")])
-def test_stalemate_swindle_starts_on_defenders_trap_move_not_opponents_stalemating_blunder(fen, moves, color):
+@pytest.mark.parametrize(
+    "fen,moves,color",
+    [(TRAP_FEN, ("h4d4", "d5d4"), "white"), (BLACK_FEN, ("h5d5", "d4d5"), "black")],
+)
+def test_stalemate_swindle_starts_on_defenders_trap_move_not_opponents_stalemating_blunder(
+    fen, moves, color
+):
     candidates, _ = mined(synthetic_pgn(fen, moves))
     assert len(candidates) == 1
     candidate = candidates[0]
@@ -68,15 +92,32 @@ def test_stalemate_swindle_rejects_non_stalemate_draws(moves):
     assert mined(synthetic_pgn(moves=moves))[0] == []
 
 
-@pytest.mark.parametrize("headers", [{"WhiteTitle": "BOT"}, {"BlackTitle": "BOT"}, {"Event": "Rated Bullet game"}, {"WhiteElo": "999"}, {"BlackElo": "?"}, {"Termination": "Time forfeit"}, {"Variant": "Chess960"}])
-def test_stalemate_swindle_default_filters_bots_bullet_low_ratings_and_small_material_deficits(headers):
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"WhiteTitle": "BOT"},
+        {"BlackTitle": "BOT"},
+        {"Event": "Rated Bullet game"},
+        {"WhiteElo": "999"},
+        {"BlackElo": "?"},
+        {"Termination": "Time forfeit"},
+        {"Variant": "Chess960"},
+    ],
+)
+def test_stalemate_swindle_default_filters_bots_bullet_low_ratings_and_small_material_deficits(
+    headers,
+):
     assert mined(synthetic_pgn(**headers))[0] == []
     assert mined(filters=swindles.MiningFilters(min_material_deficit=6))[0] == []
 
 
 def test_stalemate_swindle_configurable_filters_allow_bots_bullet_and_rating_changes():
-    candidates, _ = mined(synthetic_pgn(WhiteTitle="BOT", Event="Rated Bullet game", WhiteElo="900"),
-        filters=swindles.MiningFilters(min_rating=900, speeds=("bullet",), include_bots=True))
+    candidates, _ = mined(
+        synthetic_pgn(WhiteTitle="BOT", Event="Rated Bullet game", WhiteElo="900"),
+        filters=swindles.MiningFilters(
+            min_rating=900, speeds=("bullet",), include_bots=True
+        ),
+    )
     assert candidates[0]["is_bot"] and candidates[0]["speed"] == "bullet"
 
 
@@ -89,37 +130,65 @@ def test_stalemate_swindle_classifies_immediate_forced_stalemate_separately_from
     trap = mined()[0][0]
     forced = mined(synthetic_pgn(FORCED_FEN))[0][0]
     assert trap["swindle_kind"] == "historical_trap"
-    assert trap["opponent_reply_count"] == 5 and trap["stalemating_replies_uci"] == ["d5d4"]
+    assert trap["opponent_reply_count"] == 5 and trap["stalemating_replies_uci"] == [
+        "d5d4"
+    ]
     assert forced["swindle_kind"] == "immediate_forced_stalemate"
     assert forced["opponent_reply_count"] == 3
     assert forced["stalemating_replies_uci"] == ["c5d4", "d5d4", "e5d4"]
-    assert "all 3 legal opponent replies" in swindles.exercise_specification(forced).further_analysis
+    assert (
+        "all 3 legal opponent replies"
+        in swindles.exercise_specification(forced).further_analysis
+    )
     assert "forces" not in swindles.exercise_specification(trap).prompt
 
 
 def test_stalemate_swindle_deduplication_is_deterministic_and_not_input_order_dependent():
-    candidates = [mined(synthetic_pgn(Site=f"https://lichess.org/synthet{index}", WhiteElo=rating))[0][0] for index, rating in [(1, "1000"), (2, "2000"), (3, "2000")]]
+    candidates = [
+        mined(
+            synthetic_pgn(Site=f"https://lichess.org/synthet{index}", WhiteElo=rating)
+        )[0][0]
+        for index, rating in [(1, "1000"), (2, "2000"), (3, "2000")]
+    ]
     forward = swindles.select_candidates(candidates)
     assert forward == swindles.select_candidates(reversed(candidates))
-    assert forward[0][0]["game_id"] == "synthet2" and forward[1]["unique_candidates"] == 1
+    assert (
+        forward[0][0]["game_id"] == "synthet2" and forward[1]["unique_candidates"] == 1
+    )
 
 
 def test_stalemate_swindle_selection_balances_motifs_and_preserves_cap_during_shortfall():
-    candidates = [mined(synthetic_pgn(fen, moves))[0][0] for fen, moves in [(TRAP_FEN, ("h4d4", "d5d4")), (BLACK_FEN, ("h5d5", "d4d5")), (FORCED_FEN, ("h4d4", "d5d4"))]]
+    candidates = [
+        mined(synthetic_pgn(fen, moves))[0][0]
+        for fen, moves in [
+            (TRAP_FEN, ("h4d4", "d5d4")),
+            (BLACK_FEN, ("h5d5", "d4d5")),
+            (FORCED_FEN, ("h4d4", "d5d4")),
+        ]
+    ]
     selected, counts = swindles.select_candidates(candidates, max_per_motif=1)
     assert len(selected) == 2
-    assert max(Counter(candidate["motif_signature"] for candidate in selected).values()) == 1
+    assert (
+        max(Counter(candidate["motif_signature"] for candidate in selected).values())
+        == 1
+    )
     assert counts["shortfall_insufficient_candidates"] == 297
     assert counts["shortfall_motif_cap"] == 1
 
 
 def test_stalemate_swindle_identity_ignores_fen_clocks_and_features_describe_material():
-    assert swindles.candidate_key(TRAP_FEN, "h4d4") == swindles.candidate_key(TRAP_FEN.replace("0 1", "17 50"), "h4d4")
-    for fen, material_class in [("8/8/8/8/8/1q6/2k5/K7 w - - 0 1", "lone_king"),
+    assert swindles.candidate_key(TRAP_FEN, "h4d4") == swindles.candidate_key(
+        TRAP_FEN.replace("0 1", "17 50"), "h4d4"
+    )
+    for fen, material_class in [
+        ("8/8/8/8/8/1q6/2k5/K7 w - - 0 1", "lone_king"),
         ("8/8/8/8/8/1q6/2k5/KP6 w - - 0 1", "pawns_only"),
         ("8/8/8/8/8/1q6/2k5/KN6 w - - 0 1", "trapped_piece"),
-        ("8/8/8/8/8/1q6/2k5/KNP5 w - - 0 1", "mixed_residue")]:
-        features = swindles.pattern_features(chess.Board(fen), chess.WHITE, "historical_trap")
+        ("8/8/8/8/8/1q6/2k5/KNP5 w - - 0 1", "mixed_residue"),
+    ]:
+        features = swindles.pattern_features(
+            chess.Board(fen), chess.WHITE, "historical_trap"
+        )
         assert features["final_material_class"] == material_class
         assert features["king_zone"] == "corner"
 
@@ -128,8 +197,15 @@ def test_stalemate_study_bundle_is_byte_stable_for_identical_candidates():
     candidates = mined()[0] + mined(synthetic_pgn(FORCED_FEN))[0]
     selected = swindles.select_candidates(candidates)[0]
     bundle_bytes = swindles.json_bytes(swindles.build_bundle(selected, "synthetic-v1"))
-    assert bundle_bytes == swindles.json_bytes(swindles.build_bundle(swindles.select_candidates(reversed(candidates))[0], "synthetic-v1"))
-    assert b"Private white account" not in bundle_bytes and b"Private black account" not in bundle_bytes
+    assert bundle_bytes == swindles.json_bytes(
+        swindles.build_bundle(
+            swindles.select_candidates(reversed(candidates))[0], "synthetic-v1"
+        )
+    )
+    assert (
+        b"Private white account" not in bundle_bytes
+        and b"Private black account" not in bundle_bytes
+    )
 
 
 def test_stalemate_study_bundle_imports_through_existing_study_contract():
@@ -141,16 +217,42 @@ def test_stalemate_study_bundle_imports_through_existing_study_contract():
         for statement in STUDY_TABLES[:7]:
             database.execute(statement)
         result = import_bundle(database, bundle)
-        assert database.execute("SELECT title FROM studies WHERE id=?", (result["study_id"],)).fetchone()[0] == "Stalemate Swindles"
-        positions = list(database.execute("SELECT * FROM study_positions ORDER BY length(node_path)"))
-        assert [json.loads(position["history_json"]) for position in positions] == [[], ["h4d4"], ["h4d4", "d5d4"]]
+        assert (
+            database.execute(
+                "SELECT title FROM studies WHERE id=?", (result["study_id"],)
+            ).fetchone()[0]
+            == "Stalemate Swindles"
+        )
+        positions = list(
+            database.execute("SELECT * FROM study_positions ORDER BY length(node_path)")
+        )
+        assert [json.loads(position["history_json"]) for position in positions] == [
+            [],
+            ["h4d4"],
+            ["h4d4", "d5d4"],
+        ]
         assert chess.Board(positions[-1]["fen"]).is_stalemate()
         exercise = database.execute("SELECT * FROM study_exercises").fetchone()
-        assert exercise["status"] == "draft" and exercise["current_revision"] == 1 and exercise["point_value"] is None
-        specification = json.loads(database.execute("SELECT specification_json FROM study_exercise_revisions").fetchone()[0])
-        assert (specification["type"], specification["mode"], specification["grading_policy"]) == ("move_line", "single", "open_judgment")
+        assert (
+            exercise["status"] == "draft"
+            and exercise["current_revision"] == 1
+            and exercise["point_value"] is None
+        )
+        specification = json.loads(
+            database.execute(
+                "SELECT specification_json FROM study_exercise_revisions"
+            ).fetchone()[0]
+        )
+        assert (
+            specification["type"],
+            specification["mode"],
+            specification["grading_policy"],
+        ) == ("move_line", "single", "open_judgment")
         assert specification["accepted_lines"] == [["h4d4"]]
-        assert all(isinstance(value, str) for value in json.loads(exercise["source_json"]).values())
+        assert all(
+            isinstance(value, str)
+            for value in json.loads(exercise["source_json"]).values()
+        )
         assert not database.execute("PRAGMA foreign_key_check").fetchall()
     assert set(bundle["tables"]) == set(swindles.TABLES)
 
@@ -158,15 +260,31 @@ def test_stalemate_study_bundle_imports_through_existing_study_contract():
 def test_stalemate_swindle_uses_existing_open_judgment_grading():
     candidate = mined()[0][0]
     specification = swindles.exercise_specification(candidate)
-    for move, expected in [("h4d4", "correct"), ("h4h5", "unrecognized"), ("a1a8", "invalid_submission")]:
-        assert evaluate_answer(specification, MoveAnswer(type="move_line", moves=[move]), candidate["puzzle_fen"])["outcome"] == expected
+    for move, expected in [
+        ("h4d4", "correct"),
+        ("h4h5", "unrecognized"),
+        ("a1a8", "invalid_submission"),
+    ]:
+        assert (
+            evaluate_answer(
+                specification,
+                MoveAnswer(type="move_line", moves=[move]),
+                candidate["puzzle_fen"],
+            )["outcome"]
+            == expected
+        )
 
 
 def test_stalemate_miner_prefilters_non_draws_before_chess_parsing(monkeypatch):
     def unexpected_parse(*_args, **_kwargs):
         raise AssertionError("Rejected headers must not reach the chess parser")
+
     monkeypatch.setattr(chess.pgn, "read_game", unexpected_parse)
-    for headers in [{"Result": "1-0"}, {"WhiteElo": "?"}, {"Event": "Rated Bullet game"}]:
+    for headers in [
+        {"Result": "1-0"},
+        {"WhiteElo": "?"},
+        {"Event": "Rated Bullet game"},
+    ]:
         assert mined(synthetic_pgn(**headers))[0] == []
 
 
@@ -182,18 +300,33 @@ def test_stalemate_miner_malformed_records_continue_or_fail_strictly_and_resynch
 
 
 def test_stalemate_miner_preserves_multiline_comments_crlf_and_final_record_without_blank_line():
-    raw_pgn = synthetic_pgn().replace("1. Rd4+", '1. Rd4+ {\n[Event "comment, not a new game"]\n}\n').strip().replace("\n", "\r\n")
+    raw_pgn = (
+        synthetic_pgn()
+        .replace("1. Rd4+", '1. Rd4+ {\n[Event "comment, not a new game"]\n}\n')
+        .strip()
+        .replace("\n", "\r\n")
+    )
     candidates, counts = mined(raw_pgn)
     assert len(candidates) == 1 and counts["games_scanned"] == 1
 
 
-@pytest.mark.parametrize("proof_name", [
-    "test_postgres_stalemate_bundle_import_reimport_preserves_draft_content",
-    "test_postgres_checked_in_stalemate_corpora_import_reimport_preserves_draft_content",
-])
-@pytest.mark.parametrize("previous_configuration", [None, "postgresql://previous-proof.invalid/unused"])
-def test_stalemate_postgres_proofs_configure_and_restore_database_environment(monkeypatch, proof_name, previous_configuration):
-    specification = importlib.util.spec_from_file_location("stalemate_postgres_proof", ROOT / "database/tests/check_postgres_stalemate_swindles.py")
+@pytest.mark.parametrize(
+    "proof_name",
+    [
+        "test_postgres_stalemate_bundle_import_reimport_preserves_draft_content",
+        "test_postgres_checked_in_stalemate_corpora_import_reimport_preserves_draft_content",
+    ],
+)
+@pytest.mark.parametrize(
+    "previous_configuration", [None, "postgresql://previous-proof.invalid/unused"]
+)
+def test_stalemate_postgres_proofs_configure_and_restore_database_environment(
+    monkeypatch, proof_name, previous_configuration
+):
+    specification = importlib.util.spec_from_file_location(
+        "stalemate_postgres_proof",
+        ROOT / "database/tests/check_postgres_stalemate_swindles.py",
+    )
     proof_module = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(proof_module)
     monkeypatch.setenv("TEMPO_TEST_INSTANCE", "disposable")
@@ -204,36 +337,59 @@ def test_stalemate_postgres_proofs_configure_and_restore_database_environment(mo
         else:
             monkeypatch.setenv(variable, previous_configuration)
     pool_closures = []
-    monkeypatch.setattr(proof_module.postgres_store, "close_pools", lambda: pool_closures.append(True))
+    monkeypatch.setattr(
+        proof_module.postgres_store, "close_pools", lambda: pool_closures.append(True)
+    )
 
     @contextmanager
     def failed_database_operation():
         assert pool_closures, "Pools must reset before the proof opens a connection"
-        assert all(os.getenv(variable) == "postgresql://postgres@postgres:5432/tempo" for variable in database_variables)
+        assert all(
+            os.getenv(variable) == "postgresql://postgres@postgres:5432/tempo"
+            for variable in database_variables
+        )
         raise RuntimeError("database proof sentinel")
         yield  # pragma: no cover - context manager deliberately fails on entry
 
-    monkeypatch.setattr(proof_module.postgres_store, "connection", failed_database_operation)
+    monkeypatch.setattr(
+        proof_module.postgres_store, "connection", failed_database_operation
+    )
     with pytest.raises(RuntimeError, match="database proof sentinel"):
         getattr(proof_module, proof_name)()
-    assert all(os.getenv(variable) == previous_configuration for variable in database_variables)
+    assert all(
+        os.getenv(variable) == previous_configuration for variable in database_variables
+    )
     assert len(pool_closures) >= 2, "Pools must also close after failed proof work"
 
 
-def test_stalemate_postgres_configuration_closes_pools_after_success_and_rejects_live_instances(monkeypatch):
-    specification = importlib.util.spec_from_file_location("stalemate_postgres_context", ROOT / "database/tests/check_postgres_stalemate_swindles.py")
+def test_stalemate_postgres_configuration_closes_pools_after_success_and_rejects_live_instances(
+    monkeypatch,
+):
+    specification = importlib.util.spec_from_file_location(
+        "stalemate_postgres_context",
+        ROOT / "database/tests/check_postgres_stalemate_swindles.py",
+    )
     proof_module = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(proof_module)
     pool_closures = []
-    monkeypatch.setattr(proof_module.postgres_store, "close_pools", lambda: pool_closures.append(True))
+    monkeypatch.setattr(
+        proof_module.postgres_store, "close_pools", lambda: pool_closures.append(True)
+    )
     monkeypatch.delenv("TEMPO_DATABASE_WRITE_URL", raising=False)
     monkeypatch.delenv("TEMPO_DATABASE_READ_URL", raising=False)
     monkeypatch.setenv("TEMPO_TEST_INSTANCE", "disposable")
     with proof_module.disposable_postgres_configuration():
         assert len(pool_closures) == 1
-        assert os.environ["TEMPO_DATABASE_WRITE_URL"] == os.environ["TEMPO_DATABASE_READ_URL"] == "postgresql://postgres@postgres:5432/tempo"
+        assert (
+            os.environ["TEMPO_DATABASE_WRITE_URL"]
+            == os.environ["TEMPO_DATABASE_READ_URL"]
+            == "postgresql://postgres@postgres:5432/tempo"
+        )
     assert len(pool_closures) == 2
-    assert "TEMPO_DATABASE_WRITE_URL" not in os.environ and "TEMPO_DATABASE_READ_URL" not in os.environ
+    assert (
+        "TEMPO_DATABASE_WRITE_URL" not in os.environ
+        and "TEMPO_DATABASE_READ_URL" not in os.environ
+    )
     monkeypatch.delenv("TEMPO_TEST_INSTANCE")
     with pytest.raises(RuntimeError, match="disposable PostgreSQL runner"):
         with proof_module.disposable_postgres_configuration():
@@ -250,48 +406,99 @@ def test_stalemate_build_rejects_chess_metadata_drift():
 
 def test_checked_in_stalemate_corpora_have_unique_legal_single_moves_and_verified_terminal_sources():
     # No raw-source scan in CI; validate every real artifact present in the checkout.
-    for bundle_path in sorted((ROOT / "public/data/studies").glob("stalemate-swindles-*.tempo-study.json")):
+    for bundle_path in sorted(
+        (ROOT / "public/data/studies").glob("stalemate-swindles-*.tempo-study.json")
+    ):
         bundle = json.loads(bundle_path.read_text())
-        manifest = json.loads(bundle_path.with_name(bundle_path.name.replace(".tempo-study.json", ".manifest.json")).read_text())
+        manifest = json.loads(
+            bundle_path.with_name(
+                bundle_path.name.replace(".tempo-study.json", ".manifest.json")
+            ).read_text()
+        )
         tables = validate_bundle(bundle)
         assert manifest["complete_verified_source"]
         assert manifest["source"]["sha256"] == manifest["source"]["expected_sha256"]
-        assert manifest["bundle_sha256"] == hashlib.sha256(bundle_path.read_bytes()).hexdigest()
+        assert (
+            manifest["bundle_sha256"]
+            == hashlib.sha256(bundle_path.read_bytes()).hexdigest()
+        )
         assert len(tables["study_exercises"]) == manifest["counts"]["selected_puzzles"]
-        assert len(tables["study_exercises"]) == 300 or manifest["counts"]["shortfall_insufficient_candidates"] + manifest["counts"]["shortfall_motif_cap"] == 300 - len(tables["study_exercises"])
+        assert len(tables["study_exercises"]) == 300 or manifest["counts"][
+            "shortfall_insufficient_candidates"
+        ] + manifest["counts"]["shortfall_motif_cap"] == 300 - len(
+            tables["study_exercises"]
+        )
         positions = {row["id"]: row for row in tables["study_positions"]}
-        revisions = {row["exercise_id"]: json.loads(row["specification_json"]) for row in tables["study_exercise_revisions"]}
+        revisions = {
+            row["exercise_id"]: json.loads(row["specification_json"])
+            for row in tables["study_exercise_revisions"]
+        }
         identities = set()
         candidate_keys = set()
-        motif_counts = Counter(exercise["sibling_group"] for exercise in tables["study_exercises"])
+        motif_counts = Counter(
+            exercise["sibling_group"] for exercise in tables["study_exercises"]
+        )
         assert max(motif_counts.values()) <= manifest["selection"]["max_per_motif"]
         for exercise in tables["study_exercises"]:
             metadata = json.loads(exercise["source_json"])
             specification = revisions[exercise["id"]]
             assert metadata["kind"] == "stalemate_swindle_v1"
             assert all(isinstance(value, str) for value in metadata.values())
-            assert exercise["status"] == "draft" and exercise["current_revision"] == 1 and exercise["point_value"] is None
-            assert specification["type"] == "move_line" and specification["mode"] == "single" and specification["grading_policy"] == "open_judgment"
-            assert len(specification["accepted_lines"]) == len(specification["accepted_lines"][0]) == 1
+            assert (
+                exercise["status"] == "draft"
+                and exercise["current_revision"] == 1
+                and exercise["point_value"] is None
+            )
+            assert (
+                specification["type"] == "move_line"
+                and specification["mode"] == "single"
+                and specification["grading_policy"] == "open_judgment"
+            )
+            assert (
+                len(specification["accepted_lines"])
+                == len(specification["accepted_lines"][0])
+                == 1
+            )
             root = positions[exercise["position_id"]]
-            identity = (" ".join(root["fen"].split()[:4]), specification["accepted_lines"][0][0])
-            assert identity not in identities and metadata["candidate_key"] not in candidate_keys
+            identity = (
+                " ".join(root["fen"].split()[:4]),
+                specification["accepted_lines"][0][0],
+            )
+            assert (
+                identity not in identities
+                and metadata["candidate_key"] not in candidate_keys
+            )
             identities.add(identity)
             candidate_keys.add(metadata["candidate_key"])
-            assert metadata["candidate_key"] == swindles.candidate_key(root["fen"], identity[1])
-            source_nodes = sorted((row for row in positions.values() if row["source_id"] == root["source_id"]), key=lambda row: len(row["node_path"]))
+            assert metadata["candidate_key"] == swindles.candidate_key(
+                root["fen"], identity[1]
+            )
+            source_nodes = sorted(
+                (
+                    row
+                    for row in positions.values()
+                    if row["source_id"] == root["source_id"]
+                ),
+                key=lambda row: len(row["node_path"]),
+            )
             assert len(source_nodes) == 3 and source_nodes[1]["move_uci"] == identity[1]
             assert source_nodes[2]["move_uci"] == metadata["opponent_reply_uci"]
             assert chess.Board(source_nodes[2]["fen"]).is_stalemate()
             after_swindle = chess.Board(root["fen"])
-            assert ("white" if after_swindle.turn else "black") == metadata["defender_color"]
+            assert ("white" if after_swindle.turn else "black") == metadata[
+                "defender_color"
+            ]
             assert after_swindle.legal_moves.count() >= 2
             after_swindle.push_uci(identity[1])
             assert after_swindle.fen() == source_nodes[1]["fen"]
             historical_reply = chess.Move.from_uci(metadata["opponent_reply_uci"])
             assert historical_reply in after_swindle.legal_moves
             after_swindle.push(historical_reply)
-            assert after_swindle.fen() == source_nodes[2]["fen"] == metadata["terminal_fen"]
+            assert (
+                after_swindle.fen()
+                == source_nodes[2]["fen"]
+                == metadata["terminal_fen"]
+            )
             assert after_swindle.is_stalemate()
             after_swindle.pop()
             legal_replies = list(after_swindle.legal_moves)
@@ -302,4 +509,6 @@ def test_checked_in_stalemate_corpora_have_unique_legal_single_moves_and_verifie
                 after_swindle.pop()
             assert len(legal_replies) == int(metadata["opponent_reply_count"])
             assert terminal_reply_count == int(metadata["stalemating_reply_count"])
-            assert (terminal_reply_count == len(legal_replies)) == (metadata["swindle_kind"] == "immediate_forced_stalemate")
+            assert (terminal_reply_count == len(legal_replies)) == (
+                metadata["swindle_kind"] == "immediate_forced_stalemate"
+            )

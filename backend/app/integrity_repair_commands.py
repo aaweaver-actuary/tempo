@@ -13,13 +13,20 @@ from .services.repertoire_game_refresh import refresh_game_publications_after_mu
 from .command_gateway import register_command
 from app.repertoire.changes.application import validate_repair_source_rows
 from app.repertoire.changes.ports import ChangeError
-from tempo_legacy_database.adapters.authored_repertoires import product_changes as change_storage
-from tempo_legacy_database.adapters.authored_repertoires import integrity_commands as storage
+from tempo_legacy_database.adapters.authored_repertoires import (
+    product_changes as change_storage,
+)
+from tempo_legacy_database.adapters.authored_repertoires import (
+    integrity_commands as storage,
+)
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from .services.postgres_integrity import invalidate_integrity_in_transaction
 from .services.postgres_opening_graph import request_graph_rebuild_in_transaction
 from .services.repertoire_integrity import _archive_unsupported_card
-from app.repertoire.changes.retained_mutations import replace_repertoire_line, rewrite_card
+from app.repertoire.changes.retained_mutations import (
+    replace_repertoire_line,
+    rewrite_card,
+)
 
 
 class PreparedIntegrityRepair(BaseModel):
@@ -33,18 +40,19 @@ class PreparedIntegrityRepair(BaseModel):
     unsupported_card_ids: list[str]
 
 
-
-
 @refresh_game_publications_after_mutation
 def resolve_integrity_issue(
-    database: PostgresConnection, raw_payload: dict[str, Any],
+    database: PostgresConnection,
+    raw_payload: dict[str, Any],
 ) -> dict[str, Any]:
     prepared = PreparedIntegrityRepair.model_validate(raw_payload)
     repertoire_id = prepared.repertoire_id
     # Graph slices lock their task row before touching cards. Acquire that row
     # first so a repair cannot deadlock a graph slice while replacing a card.
     graph_task = request_graph_rebuild_in_transaction(
-        database, repertoire_id, date.today().isoformat(),
+        database,
+        repertoire_id,
+        date.today().isoformat(),
     )
     if storage.locked_repertoire(database, repertoire_id) is None:
         raise HTTPException(404, "Repertoire not found")
@@ -58,51 +66,107 @@ def resolve_integrity_issue(
     if set(prepared.changed_cards) != set(prepared.expected_card_moves):
         raise HTTPException(422, "Repair card expectations do not match the changes")
     from .services.canonical_prefix import ensure_line_in_scope, certify_admitted_route
+
     line_changes = []
     card_changes = []
     for source_id, moves in prepared.changed_lines.items():
         source_line = storage.locked_source_line(database, source_id, repertoire_id)
-        if source_line is None or source_line["moves_json"] != prepared.expected_line_moves[source_id]:
-            raise HTTPException(409, "A repertoire line changed during repair; refresh and try again")
-        line_changes.append((source_line, moves, ensure_line_in_scope(database, repertoire_id, source_line["start_fen"], moves, remember=False)))
+        if (
+            source_line is None
+            or source_line["moves_json"] != prepared.expected_line_moves[source_id]
+        ):
+            raise HTTPException(
+                409, "A repertoire line changed during repair; refresh and try again"
+            )
+        line_changes.append(
+            (
+                source_line,
+                moves,
+                ensure_line_in_scope(
+                    database,
+                    repertoire_id,
+                    source_line["start_fen"],
+                    moves,
+                    remember=False,
+                ),
+            )
+        )
     for source_id, moves in prepared.changed_cards.items():
         source_card = storage.locked_source_card(database, source_id)
-        if source_card is None or source_card["moves_json"] != prepared.expected_card_moves[source_id]:
-            raise HTTPException(409, "A repertoire card changed during repair; refresh and try again")
+        if (
+            source_card is None
+            or source_card["moves_json"] != prepared.expected_card_moves[source_id]
+        ):
+            raise HTTPException(
+                409, "A repertoire card changed during repair; refresh and try again"
+            )
         linked = storage.repertoire_card_link(database, repertoire_id, source_id)
         if source_card["repertoire_id"] != repertoire_id and linked is None:
             raise HTTPException(409, "A repertoire card was detached during repair")
-        card_changes.append((source_card, moves, ensure_line_in_scope(database, repertoire_id, source_card["start_fen"], moves, remember=False)))
+        card_changes.append(
+            (
+                source_card,
+                moves,
+                ensure_line_in_scope(
+                    database,
+                    repertoire_id,
+                    source_card["start_fen"],
+                    moves,
+                    remember=False,
+                ),
+            )
+        )
     try:
         sources = change_storage.lock_sources(database, repertoire_id)
-        replacements = {f"line:{key}": value for key, value in prepared.changed_lines.items()}
-        replacements.update({f"card:{key}": value for key, value in prepared.changed_cards.items()})
+        replacements = {
+            f"line:{key}": value for key, value in prepared.changed_lines.items()
+        }
+        replacements.update(
+            {f"card:{key}": value for key, value in prepared.changed_cards.items()}
+        )
         removed = {f"card:{key}" for key in prepared.unsupported_card_ids}
-        proposed = tuple(dict(row, moves_json=json.dumps(replacements[row["source_id"]]))
-                         if row["source_id"] in replacements else row
-                         for row in sources if row["source_id"] not in removed)
+        proposed = tuple(
+            dict(row, moves_json=json.dumps(replacements[row["source_id"]]))
+            if row["source_id"] in replacements
+            else row
+            for row in sources
+            if row["source_id"] not in removed
+        )
         validate_repair_source_rows(repertoire_id, sources, proposed)
     except ChangeError as error:
         raise HTTPException(409, str(error)) from error
     admitted_routes = []
     for source_line, moves, validated_route in line_changes:
-        if replace_repertoire_line(database, source_line, moves, validated_route=validated_route, certify=False):
+        if replace_repertoire_line(
+            database, source_line, moves, validated_route=validated_route, certify=False
+        ):
             admitted_routes.append(validated_route)
     for source_card, moves, validated_route in card_changes:
-        if rewrite_card(database, repertoire_id, source_card, moves, validated_route=validated_route, certify=False):
+        if rewrite_card(
+            database,
+            repertoire_id,
+            source_card,
+            moves,
+            validated_route=validated_route,
+            certify=False,
+        ):
             admitted_routes.append(validated_route)
     for card_identifier in prepared.unsupported_card_ids:
         _archive_unsupported_card(database, repertoire_id, card_identifier)
     try:
-        validate_repair_source_rows(repertoire_id, sources, change_storage.lock_sources(database, repertoire_id))
+        validate_repair_source_rows(
+            repertoire_id, sources, change_storage.lock_sources(database, repertoire_id)
+        )
     except ChangeError as error:
         raise HTTPException(409, str(error)) from error
     for validated_route in admitted_routes:
         certify_admitted_route(database, repertoire_id, validated_route)
     invalidate_integrity_in_transaction(database, repertoire_id)
     return {
-        "task_id": graph_task["id"], "repertoire_id": repertoire_id,
-        "issue_id": prepared.issue_id, "state": graph_task["state"],
+        "task_id": graph_task["id"],
+        "repertoire_id": repertoire_id,
+        "issue_id": prepared.issue_id,
+        "state": graph_task["state"],
     }
 
 

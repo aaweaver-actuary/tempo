@@ -1,4 +1,5 @@
 """Public facts and narrow capabilities for frozen Study preference."""
+
 from __future__ import annotations
 from typing import AbstractSet, Callable, Mapping, NamedTuple, Sequence
 

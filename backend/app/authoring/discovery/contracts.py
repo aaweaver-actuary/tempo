@@ -72,11 +72,15 @@ class DiscoveryAcceptanceStore(Protocol):
         """Read committed matching intent without taking a write lock."""
         ...
 
-    def lock_matching_intent(self, choice: DiscoveryChoice) -> MatchingDiscoveryIntent | None:
+    def lock_matching_intent(
+        self, choice: DiscoveryChoice
+    ) -> MatchingDiscoveryIntent | None:
         """Serialize existing-choice replay for the caller transaction's lifetime."""
         ...
 
-    def lock_opportunity_scope(self, opportunity_id: str) -> LockedDiscoveryOpportunity | None:
+    def lock_opportunity_scope(
+        self, opportunity_id: str
+    ) -> LockedDiscoveryOpportunity | None:
         """Lock repertoire metadata, game scope, then opportunity in that order.
 
         Return coherent observed/current scope facts held stable for the caller's

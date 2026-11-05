@@ -11,8 +11,10 @@ import chess
 from tempo_legacy_database.connections import background_read_connection, connection
 from tempo_legacy_database.adapters.games.derivation import positions as storage, jobs
 from .durable_tasks import (
-    advance_task_slice_in_transaction, complete_task_slice_in_transaction,
-    enqueue_compact_postgres_task_in_transaction, lock_current_slice,
+    advance_task_slice_in_transaction,
+    complete_task_slice_in_transaction,
+    enqueue_compact_postgres_task_in_transaction,
+    lock_current_slice,
 )
 
 
@@ -26,7 +28,10 @@ class PreparedGamePosition:
 
 
 def prepare_game_position(
-    game_id: str, start_fen: str, moves_uci: tuple[str, ...], ply: int,
+    game_id: str,
+    start_fen: str,
+    moves_uci: tuple[str, ...],
+    ply: int,
 ) -> PreparedGamePosition:
     """Replay outside the database and preserve SQLite's first-illegal-move boundary."""
 
@@ -47,8 +52,11 @@ def prepare_game_position(
         except ValueError:
             next_move = None
     return PreparedGamePosition(
-        game_id=game_id, ply=ply, fen_key=" ".join(board.fen().split()[:4]),
-        move_uci=next_move, final_position=next_move is None,
+        game_id=game_id,
+        ply=ply,
+        fen_key=" ".join(board.fen().split()[:4]),
+        move_uci=next_move,
+        final_position=next_move is None,
     )
 
 
@@ -67,30 +75,55 @@ def execute_game_position_index_slice(task: dict[str, Any]) -> bool:
                 complete_task_slice_in_transaction(database, task)
         return False
     prepared = prepare_game_position(
-        game_id, game["start_fen"], tuple(json.loads(game["moves_json"])), ply,
+        game_id,
+        game["start_fen"],
+        tuple(json.loads(game["moves_json"])),
+        ply,
     )
     with connection(background=True) as database:
         if not lock_current_slice(database, task):
             return False
         job = jobs.lock_job(database, game_id)
-        if (job is None or int(job["derivation_version"]) != derivation_version
-                or int(job["completed_phases"]) > 0
-                or job["status"] not in {"queued", "running"}):
+        if (
+            job is None
+            or int(job["derivation_version"]) != derivation_version
+            or int(job["completed_phases"]) > 0
+            or job["status"] not in {"queued", "running"}
+        ):
             return complete_task_slice_in_transaction(database, task)
-        storage.stage_position(database, game_id, derivation_version, ply, prepared.fen_key, prepared.move_uci)
+        storage.stage_position(
+            database,
+            game_id,
+            derivation_version,
+            ply,
+            prepared.fen_key,
+            prepared.move_uci,
+        )
         if prepared.final_position:
-            staged_count = storage.staged_position_count(database, game_id, derivation_version)
+            staged_count = storage.staged_position_count(
+                database, game_id, derivation_version
+            )
             if staged_count != ply + 1:
-                raise RuntimeError("Game position index is incomplete; publication was withheld")
+                raise RuntimeError(
+                    "Game position index is incomplete; publication was withheld"
+                )
             storage.publish_position_generation(database, game_id, derivation_version)
             enqueue_compact_postgres_task_in_transaction(
-                database, "game_derivation_compare", game_id,
-                {"game_id": game_id, "derivation_version": derivation_version,
-                 "phase": "matches", "cursor": 0},
+                database,
+                "game_derivation_compare",
+                game_id,
+                {
+                    "game_id": game_id,
+                    "derivation_version": derivation_version,
+                    "phase": "matches",
+                    "cursor": 0,
+                },
                 priority=127,
             )
             return complete_task_slice_in_transaction(database, task)
         return advance_task_slice_in_transaction(
-            database, task, next_phase="indexing_positions",
+            database,
+            task,
+            next_phase="indexing_positions",
             next_payload={**payload, "cursor": ply + 1},
         )

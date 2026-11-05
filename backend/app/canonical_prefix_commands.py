@@ -1,4 +1,5 @@
 """Register the existing canonical prefix operations for command composition."""
+
 from .command_gateway import register_command
 from .services.canonical_prefix import preview_command, save_prefix
 

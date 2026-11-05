@@ -44,25 +44,45 @@ def retry_wakes(tmp_path, monkeypatch, request):
 
     monkeypatch.setattr(durable_tasks, "submit_background_write", write)
     monkeypatch.setattr(durable_tasks, "submit_foreground_write", write)
-    monkeypatch.setattr(tasks.celery_app, "connection_for_write", lambda **options: nullcontext(object()))
+    monkeypatch.setattr(
+        tasks.celery_app,
+        "connection_for_write",
+        lambda **options: nullcontext(object()),
+    )
 
     def state():
         # An independent observer does not participate in worker admission.
         with sqlite3.connect(database.DB_PATH) as connection:
             connection.row_factory = sqlite3.Row
-            task = connection.execute("SELECT * FROM background_tasks WHERE kind='daily_queue'").fetchone()
-            projection = connection.execute("SELECT * FROM queue_projections").fetchone()
-            return dict(task) if task else None, dict(projection) if projection else None
+            task = connection.execute(
+                "SELECT * FROM background_tasks WHERE kind='daily_queue'"
+            ).fetchone()
+            projection = connection.execute(
+                "SELECT * FROM queue_projections"
+            ).fetchone()
+            return dict(task) if task else None, dict(
+                projection
+            ) if projection else None
 
     def publish(name, **options):
         assert not connection_open
-        assert name == "app.tasks.progress_study_queue" and options["queue"] == "foreground"
-        assert not options.get("args") and not options.get("kwargs") and "task_id" not in options
+        assert (
+            name == "app.tasks.progress_study_queue"
+            and options["queue"] == "foreground"
+        )
+        assert (
+            not options.get("args")
+            and not options.get("kwargs")
+            and "task_id" not in options
+        )
         delivery_at = options.get("eta", observed_clock[0])
         assert delivery_at.tzinfo is not None
         if "eta" in options:
             saved_task, _projection = state()
-            assert saved_task["state"] in {"queued", "retrying"} and saved_task["lease_token"] is None
+            assert (
+                saved_task["state"] in {"queued", "retrying"}
+                and saved_task["lease_token"] is None
+            )
             assert options["retry"] is False and options["ignore_result"] is True
         publications.append((delivery_at, dict(options)))
         heapq.heappush(deliveries, (delivery_at, len(publications)))
@@ -71,11 +91,19 @@ def retry_wakes(tmp_path, monkeypatch, request):
 
     def command(*args, **kwargs):
         with database.connection() as connection:
-            task = durable_tasks.enqueue_task_in_transaction(connection, "daily_queue", "current",
-                {"queue_date": "2026-10-09"}, priority=10)
-            connection.execute("INSERT INTO queue_projections(queue_date,state,generation,refresh_pending) "
+            task = durable_tasks.enqueue_task_in_transaction(
+                connection,
+                "daily_queue",
+                "current",
+                {"queue_date": "2026-10-09"},
+                priority=10,
+            )
+            connection.execute(
+                "INSERT INTO queue_projections(queue_date,state,generation,refresh_pending) "
                 "VALUES('2026-10-09','refreshing',?,1) ON CONFLICT(queue_date) DO UPDATE SET "
-                "state='refreshing',generation=excluded.generation,refresh_pending=1", (task["generation"],))
+                "state='refreshing',generation=excluded.generation,refresh_pending=1",
+                (task["generation"],),
+            )
         return {"saved": True}
 
     monkeypatch.setattr(command_gateway, "_execute_command", command)
@@ -86,8 +114,9 @@ def retry_wakes(tmp_path, monkeypatch, request):
             raise TransactionTimeout("Controlled first queue slice deadline")
         with database.connection(background=True) as connection:
             assert durable_tasks.complete_task_slice_in_transaction(connection, claimed)
-            durable_tasks.update_queue_refresh_status_in_transaction(connection, "daily_queue",
-                claimed["payload"], state="ready")
+            durable_tasks.update_queue_refresh_status_in_transaction(
+                connection, "daily_queue", claimed["payload"], state="ready"
+            )
         return False
 
     monkeypatch.setattr(tasks, "execute_postgres_queue_refresh_slice", slice_once)
@@ -103,8 +132,15 @@ def retry_wakes(tmp_path, monkeypatch, request):
             # New published wakes always belong to the essential owner. A
             # selected first delivery models one old marked poll still in the
             # broker; its replacement wake uses the new essential route.
-            legacy_first = getattr(request, 'param', 'essential') == 'legacy-initial' and not poll_results
-            delivered = tasks.poll_background_tasks if legacy_first else tasks.progress_study_queue
+            legacy_first = (
+                getattr(request, "param", "essential") == "legacy-initial"
+                and not poll_results
+            )
+            delivered = (
+                tasks.poll_background_tasks
+                if legacy_first
+                else tasks.progress_study_queue
+            )
             delivered.push_request(headers=delivery_options.get("headers"))
             try:
                 poll_results.append((delivery_at, delivered.run()))
@@ -114,60 +150,90 @@ def retry_wakes(tmp_path, monkeypatch, request):
                 return
         raise AssertionError("Unexpected unbounded capacity wake loop")
 
-    return SimpleNamespace(clock=observed_clock, deliveries=deliveries, publications=publications,
-        executions=executions, polls=poll_results, state=state, deliver_due=deliver_due)
+    return SimpleNamespace(
+        clock=observed_clock,
+        deliveries=deliveries,
+        publications=publications,
+        executions=executions,
+        polls=poll_results,
+        state=state,
+        deliver_due=deliver_due,
+    )
 
 
-@pytest.mark.parametrize('retry_wakes', ['legacy-initial'], indirect=True)
-def test_issue135_legacy_denial_hands_same_queue_to_essential_owner_during_foreground(retry_wakes, monkeypatch):
+@pytest.mark.parametrize("retry_wakes", ["legacy-initial"], indirect=True)
+def test_issue135_legacy_denial_hands_same_queue_to_essential_owner_during_foreground(
+    retry_wakes, monkeypatch
+):
     driver = retry_wakes
     claims = []
     original_claim = tasks.claim_task
+
     def claim(*args, **options):
-        claims.append((args,options))
-        return original_claim(*args,**options)
+        claims.append((args, options))
+        return original_claim(*args, **options)
+
     def complete_queue(claimed):
-        driver.executions.append((claimed['generation'],driver.clock[0]))
+        driver.executions.append((claimed["generation"], driver.clock[0]))
         with database.connection(background=True) as connection:
-            assert durable_tasks.complete_task_slice_in_transaction(connection,claimed)
-            durable_tasks.update_queue_refresh_status_in_transaction(connection,'daily_queue',claimed['payload'],state='ready')
+            assert durable_tasks.complete_task_slice_in_transaction(connection, claimed)
+            durable_tasks.update_queue_refresh_status_in_transaction(
+                connection, "daily_queue", claimed["payload"], state="ready"
+            )
         return False
-    monkeypatch.setattr(tasks,'claim_task',claim)
-    monkeypatch.setattr(tasks,'execute_postgres_queue_refresh_slice',complete_queue)
+
+    monkeypatch.setattr(tasks, "claim_task", claim)
+    monkeypatch.setattr(tasks, "execute_postgres_queue_refresh_slice", complete_queue)
     with tasks.activity_gate.foreground():
-        command_gateway.execute_command('foreground-commit','settings.update',{})
+        command_gateway.execute_command("foreground-commit", "settings.update", {})
         before = driver.state()
         driver.deliver_due()
-        assert driver.state()==before and claims==[] and driver.executions==[]
-        assert before[0]['attempt_count']==0 and before[0]['lease_token'] is None
-        assert len(driver.deliveries)==1
-        assert driver.deliveries[0][0]==driver.clock[0]+timedelta(seconds=1)
-        driver.clock[0]=driver.deliveries[0][0]
+        assert driver.state() == before and claims == [] and driver.executions == []
+        assert before[0]["attempt_count"] == 0 and before[0]["lease_token"] is None
+        assert len(driver.deliveries) == 1
+        assert driver.deliveries[0][0] == driver.clock[0] + timedelta(seconds=1)
+        driver.clock[0] = driver.deliveries[0][0]
         driver.deliver_due()
-    saved,projection=driver.state()
-    assert len(claims)==1 and claims[0][0]==('daily_queue',)
-    assert driver.executions==[(before[0]['generation'],driver.clock[0])]
-    assert saved['generation']==before[0]['generation'] and saved['state']=='complete'
-    assert (projection['state'],projection['refresh_pending'],projection['last_error'])==('ready',0,None)
-    assert driver.deliveries==[]
+    saved, projection = driver.state()
+    assert len(claims) == 1 and claims[0][0] == ("daily_queue",)
+    assert driver.executions == [(before[0]["generation"], driver.clock[0])]
+    assert (
+        saved["generation"] == before[0]["generation"] and saved["state"] == "complete"
+    )
+    assert (
+        projection["state"],
+        projection["refresh_pending"],
+        projection["last_error"],
+    ) == ("ready", 0, None)
+    assert driver.deliveries == []
 
-def test_issue135_queue_wake_continuation_progresses_during_foreground(retry_wakes, monkeypatch):
+
+def test_issue135_queue_wake_continuation_progresses_during_foreground(
+    retry_wakes, monkeypatch
+):
     driver = retry_wakes
 
     def checkpoint_then_complete(claimed):
         driver.executions.append((claimed["generation"], driver.clock[0]))
         with database.connection(background=True) as connection:
             if claimed["phase"] != "publish_projection":
-                assert durable_tasks.advance_task_slice_in_transaction(connection, claimed,
-                    next_phase="publish_projection", next_payload={**claimed["payload"], "after_card_id": "saved"})
+                assert durable_tasks.advance_task_slice_in_transaction(
+                    connection,
+                    claimed,
+                    next_phase="publish_projection",
+                    next_payload={**claimed["payload"], "after_card_id": "saved"},
+                )
                 return True
             assert claimed["payload"]["after_card_id"] == "saved"
             assert durable_tasks.complete_task_slice_in_transaction(connection, claimed)
-            durable_tasks.update_queue_refresh_status_in_transaction(connection, "daily_queue",
-                claimed["payload"], state="ready")
+            durable_tasks.update_queue_refresh_status_in_transaction(
+                connection, "daily_queue", claimed["payload"], state="ready"
+            )
         return False
 
-    monkeypatch.setattr(tasks, "execute_postgres_queue_refresh_slice", checkpoint_then_complete)
+    monkeypatch.setattr(
+        tasks, "execute_postgres_queue_refresh_slice", checkpoint_then_complete
+    )
     command_gateway.execute_command("checkpoint", "settings.update", {})
     driver.deliver_due(one=True)
     checkpoint = driver.state()
@@ -176,8 +242,8 @@ def test_issue135_queue_wake_continuation_progresses_during_foreground(retry_wak
     assert driver.publications[-1][1]["headers"]["queue_refresh_wake"] is True
     with tasks.activity_gate.foreground():
         driver.deliver_due()
-        assert len(driver.executions) == 2 and driver.state()[0]['state'] == 'complete'
-    assert driver.state()[0]['generation'] == checkpoint[0]['generation']
+        assert len(driver.executions) == 2 and driver.state()[0]["state"] == "complete"
+    assert driver.state()[0]["generation"] == checkpoint[0]["generation"]
     assert driver.state()[1]["state"] == "ready" and driver.deliveries == []
 
 
@@ -185,19 +251,29 @@ def replace_with_next_day():
     # A real rollover, unlike a same-day invalidation, supersedes the lease.
     with database.connection() as connection:
         return durable_tasks.enqueue_task_in_transaction(
-            connection, "daily_queue", "current", {"queue_date": "2026-10-10"}, priority=10,
+            connection,
+            "daily_queue",
+            "current",
+            {"queue_date": "2026-10-10"},
+            priority=10,
         )
 
 
-@pytest.mark.parametrize("replace_generation", [False, True], ids=["resume", "stale-deferral"])
+@pytest.mark.parametrize(
+    "replace_generation", [False, True], ids=["resume", "stale-deferral"]
+)
 def test_issue135_queue_wake_raced_claim_preserves_checkpoint_and_fences_deferral(
-    retry_wakes, monkeypatch, replace_generation,
+    retry_wakes,
+    monkeypatch,
+    replace_generation,
 ):
     driver = retry_wakes
     command_gateway.execute_command("raced-claim", "settings.update", {})
     with database.connection() as connection:
-        connection.execute("UPDATE background_tasks SET phase='publish_projection',payload_json=?",
-            ('{"queue_date":"2026-10-09","after_card_id":"saved"}',))
+        connection.execute(
+            "UPDATE background_tasks SET phase='publish_projection',payload_json=?",
+            ('{"queue_date":"2026-10-09","after_card_id":"saved"}',),
+        )
     original = driver.state()[0]
     original_claim = tasks.claim_task
     foreground_entered = Event()
@@ -212,7 +288,9 @@ def test_issue135_queue_wake_raced_claim_preserves_checkpoint_and_fences_deferra
                     with queue_refresh_wakeup.capture_queue_refresh_request():
                         replace_with_next_day()
                 foreground_entered.set()
-                assert release_foreground.wait(5), "Raced-claim proof did not release foreground"
+                assert release_foreground.wait(5), (
+                    "Raced-claim proof did not release foreground"
+                )
         except BaseException as error:
             foreground_errors.append(error)
 
@@ -229,18 +307,27 @@ def test_issue135_queue_wake_raced_claim_preserves_checkpoint_and_fences_deferra
         # One already-leased pre-upgrade delivery retains its old admission
         # and fencing behavior. New capacity wakes remain essential-only.
         heapq.heappop(driver.deliveries)
-        legacy = claim_before_foreground(kind='daily_queue')
+        legacy = claim_before_foreground(kind="daily_queue")
         tasks.execute_background_slice.run(legacy)
         saved, _projection = driver.state()
         assert saved["attempt_count"] == 0 and saved["lease_token"] is None
         assert saved["lease_expires_at"] is None and saved["last_error"] is None
         assert driver.executions == []
         if replace_generation:
-            assert saved["generation"] == original["generation"] + 1 and saved["state"] == "queued"
+            assert (
+                saved["generation"] == original["generation"] + 1
+                and saved["state"] == "queued"
+            )
             assert len(driver.publications) == 1 and driver.deliveries == []
         else:
-            assert saved["generation"] == original["generation"] and saved["state"] == "retrying"
-            assert saved["phase"] == original["phase"] and saved["payload_json"] == original["payload_json"]
+            assert (
+                saved["generation"] == original["generation"]
+                and saved["state"] == "retrying"
+            )
+            assert (
+                saved["phase"] == original["phase"]
+                and saved["payload_json"] == original["payload_json"]
+            )
             # The old executor never emitted the new marked capacity wake.
             # Its persisted retry is recovered by the essential periodic task.
             assert driver.deliveries == []
@@ -251,24 +338,36 @@ def test_issue135_queue_wake_raced_claim_preserves_checkpoint_and_fences_deferra
         assert not foreground_worker.is_alive() and foreground_errors == []
     monkeypatch.setattr(tasks, "claim_task", original_claim)
     if not replace_generation:
+
         def complete_saved_checkpoint(claimed):
             assert claimed["payload"]["after_card_id"] == "saved"
             driver.executions.append((claimed["generation"], driver.clock[0]))
             with database.connection(background=True) as connection:
-                assert durable_tasks.complete_task_slice_in_transaction(connection, claimed)
-                durable_tasks.update_queue_refresh_status_in_transaction(connection, "daily_queue",
-                    claimed["payload"], state="ready")
+                assert durable_tasks.complete_task_slice_in_transaction(
+                    connection, claimed
+                )
+                durable_tasks.update_queue_refresh_status_in_transaction(
+                    connection, "daily_queue", claimed["payload"], state="ready"
+                )
             return False
-        monkeypatch.setattr(tasks, "execute_postgres_queue_refresh_slice", complete_saved_checkpoint)
-        driver.clock[0] = datetime.fromisoformat(saved['next_attempt_at'])
+
+        monkeypatch.setattr(
+            tasks, "execute_postgres_queue_refresh_slice", complete_saved_checkpoint
+        )
+        driver.clock[0] = datetime.fromisoformat(saved["next_attempt_at"])
         tasks.progress_study_queue.run()
         assert driver.executions == [(original["generation"], driver.clock[0])]
-        assert driver.state()[0]["state"] == "complete" and driver.state()[1]["state"] == "ready"
+        assert (
+            driver.state()[0]["state"] == "complete"
+            and driver.state()[1]["state"] == "ready"
+        )
         assert driver.deliveries == []
 
 
-@pytest.mark.parametrize('retry_wakes', ['legacy-initial'], indirect=True)
-def test_issue135_foreground_delayed_wake_claims_only_current_generation_once(retry_wakes, monkeypatch):
+@pytest.mark.parametrize("retry_wakes", ["legacy-initial"], indirect=True)
+def test_issue135_foreground_delayed_wake_claims_only_current_generation_once(
+    retry_wakes, monkeypatch
+):
     driver = retry_wakes
     with tasks.activity_gate.foreground():
         command_gateway.execute_command("original", "settings.update", {})
@@ -285,33 +384,47 @@ def test_issue135_foreground_delayed_wake_claims_only_current_generation_once(re
             assert durable_tasks.complete_task_slice_in_transaction(connection, claimed)
         return False
 
-    monkeypatch.setattr(tasks, "execute_postgres_queue_refresh_slice", complete_replacement)
+    monkeypatch.setattr(
+        tasks, "execute_postgres_queue_refresh_slice", complete_replacement
+    )
     driver.clock[0] = driver.deliveries[0][0]
     heapq.heappush(driver.deliveries, driver.deliveries[0])
     driver.deliver_due()
     assert driver.executions == [(replacement["generation"], driver.clock[0])]
     assert driver.state()[0]["state"] == "complete"
-    assert driver.state()[1]["state"] == "refreshing"  # Previous day remains historical.
+    assert (
+        driver.state()[1]["state"] == "refreshing"
+    )  # Previous day remains historical.
     assert driver.deliveries == []
 
 
-def test_issue135_unmarked_periodic_poll_does_not_schedule_foreground_retry(retry_wakes):
+def test_issue135_unmarked_periodic_poll_does_not_schedule_foreground_retry(
+    retry_wakes,
+):
     driver = retry_wakes
     with tasks.activity_gate.foreground():
         assert tasks.poll_background_tasks.run() is False
-    assert driver.publications == [] and driver.deliveries == [] and driver.executions == []
+    assert (
+        driver.publications == []
+        and driver.deliveries == []
+        and driver.executions == []
+    )
 
 
-@pytest.mark.parametrize('retry_wakes', ['legacy-initial'], indirect=True)
-def test_issue135_foreground_retry_broker_failure_preserves_unclaimed_intent(retry_wakes, monkeypatch, caplog):
+@pytest.mark.parametrize("retry_wakes", ["legacy-initial"], indirect=True)
+def test_issue135_foreground_retry_broker_failure_preserves_unclaimed_intent(
+    retry_wakes, monkeypatch, caplog
+):
     from kombu.exceptions import EncodeError
 
     driver = retry_wakes
     with tasks.activity_gate.foreground():
         command_gateway.execute_command("committed", "settings.update", {})
         before = driver.state()
+
         def unavailable_retry(*_args, **_options):
             raise EncodeError("Controlled foreground retry broker failure")
+
         monkeypatch.setattr(tasks.celery_app, "send_task", unavailable_retry)
         driver.deliver_due()
         assert driver.state() == before and driver.executions == []
@@ -321,7 +434,9 @@ def test_issue135_foreground_retry_broker_failure_preserves_unclaimed_intent(ret
 
 def test_issue135_deferred_queue_recovers_without_periodic_polling(retry_wakes):
     driver = retry_wakes
-    assert command_gateway.execute_command("request", "settings.update", {}) == {"saved": True}
+    assert command_gateway.execute_command("request", "settings.update", {}) == {
+        "saved": True
+    }
     assert len(driver.publications) == 1 and "eta" not in driver.publications[0][1]
     driver.deliver_due()
     saved_task, projection = driver.state()
@@ -339,14 +454,22 @@ def test_issue135_deferred_queue_recovers_without_periodic_polling(retry_wakes):
     heapq.heappush(driver.deliveries, driver.deliveries[0])
     driver.deliver_due()
     saved_task, projection = driver.state()
-    assert driver.executions == [(saved_task["generation"], eligibility - timedelta(seconds=1)),
-        (saved_task["generation"], eligibility)]
+    assert driver.executions == [
+        (saved_task["generation"], eligibility - timedelta(seconds=1)),
+        (saved_task["generation"], eligibility),
+    ]
     assert saved_task["state"] == "complete"
-    assert (projection["state"], projection["refresh_pending"], projection["last_error"]) == ("ready", 0, None)
+    assert (
+        projection["state"],
+        projection["refresh_pending"],
+        projection["last_error"],
+    ) == ("ready", 0, None)
     assert driver.polls[-1] == (eligibility, False)
 
 
-def test_issue135_delayed_capacity_wake_cannot_execute_replaced_generation(retry_wakes, monkeypatch):
+def test_issue135_delayed_capacity_wake_cannot_execute_replaced_generation(
+    retry_wakes, monkeypatch
+):
     driver = retry_wakes
     command_gateway.execute_command("original", "settings.update", {})
     driver.deliver_due()
@@ -358,35 +481,58 @@ def test_issue135_delayed_capacity_wake_cannot_execute_replaced_generation(retry
         replace_with_next_day()
     replacement, _projection = driver.state()
     assert replacement["generation"] == original["generation"] + 1
+
     def consume_current_without_publishing(claimed):
         driver.executions.append((claimed["generation"], driver.clock[0]))
         with database.connection(background=True) as connection:
             assert durable_tasks.complete_task_slice_in_transaction(connection, claimed)
         return False
 
-    monkeypatch.setattr(tasks, "execute_postgres_queue_refresh_slice", consume_current_without_publishing)
+    monkeypatch.setattr(
+        tasks,
+        "execute_postgres_queue_refresh_slice",
+        consume_current_without_publishing,
+    )
     driver.clock[0] = eligibility
     driver.deliver_due()
-    assert [generation for generation, _time in driver.executions] == [original["generation"], replacement["generation"]]
+    assert [generation for generation, _time in driver.executions] == [
+        original["generation"],
+        replacement["generation"],
+    ]
     assert driver.state()[0]["state"] == "complete"
-    assert driver.state()[1]["state"] == "refreshing"  # Previous day remains historical.
+    assert (
+        driver.state()[1]["state"] == "refreshing"
+    )  # Previous day remains historical.
 
 
-def test_issue135_earlier_progress_makes_old_delayed_wake_harmless(retry_wakes, monkeypatch):
+def test_issue135_earlier_progress_makes_old_delayed_wake_harmless(
+    retry_wakes, monkeypatch
+):
     driver = retry_wakes
     command_gateway.execute_command("original", "settings.update", {})
     driver.deliver_due()
     original, _projection = driver.state()
     eligibility = datetime.fromisoformat(original["next_attempt_at"])
+
     def consume_current_without_publishing(claimed):
         driver.executions.append((claimed["generation"], driver.clock[0]))
         with database.connection(background=True) as connection:
             assert durable_tasks.complete_task_slice_in_transaction(connection, claimed)
         return False
 
-    monkeypatch.setattr(tasks, "execute_postgres_queue_refresh_slice", consume_current_without_publishing)
+    monkeypatch.setattr(
+        tasks,
+        "execute_postgres_queue_refresh_slice",
+        consume_current_without_publishing,
+    )
     with database.connection() as connection:
-        durable_tasks.enqueue_task_in_transaction(connection, "daily_queue", "current", {"queue_date": "2026-10-10"}, priority=10)
+        durable_tasks.enqueue_task_in_transaction(
+            connection,
+            "daily_queue",
+            "current",
+            {"queue_date": "2026-10-10"},
+            priority=10,
+        )
     queue_refresh_wakeup.wake_queue_refresh()
     driver.deliver_due()
     completed = driver.state()
@@ -397,7 +543,9 @@ def test_issue135_earlier_progress_makes_old_delayed_wake_harmless(retry_wakes, 
     assert driver.state() == completed and len(driver.executions) == 2
 
 
-def test_issue135_rejected_or_rolled_back_deferral_emits_no_delayed_wake(retry_wakes, monkeypatch):
+def test_issue135_rejected_or_rolled_back_deferral_emits_no_delayed_wake(
+    retry_wakes, monkeypatch
+):
     driver = retry_wakes
     command_gateway.execute_command("original", "settings.update", {})
     claimed = durable_tasks.claim_task("daily_queue")
@@ -412,15 +560,24 @@ def test_issue135_rejected_or_rolled_back_deferral_emits_no_delayed_wake(retry_w
     with monkeypatch.context() as rollback:
         rollback.setattr(durable_tasks, "_record_event", interrupted_event)
         with pytest.raises(RuntimeError, match="Controlled deferral commit failure"):
-            durable_tasks.defer_task_for_transaction_timeout(claimed, TransactionTimeout("Deadline"))
+            durable_tasks.defer_task_for_transaction_timeout(
+                claimed, TransactionTimeout("Deadline")
+            )
     assert driver.state() == before and len(driver.publications) == publication_count
     replace_with_next_day()
     publication_count = len(driver.publications)
-    assert durable_tasks.defer_task_for_transaction_timeout(claimed, TransactionTimeout("Stale deadline")) is False
+    assert (
+        durable_tasks.defer_task_for_transaction_timeout(
+            claimed, TransactionTimeout("Stale deadline")
+        )
+        is False
+    )
     assert len(driver.publications) == publication_count
 
 
-def test_issue135_delayed_wake_failure_retains_committed_deferral(retry_wakes, monkeypatch, caplog):
+def test_issue135_delayed_wake_failure_retains_committed_deferral(
+    retry_wakes, monkeypatch, caplog
+):
     from kombu.exceptions import EncodeError
 
     driver = retry_wakes
@@ -431,28 +588,39 @@ def test_issue135_delayed_wake_failure_retains_committed_deferral(retry_wakes, m
         raise EncodeError("Controlled delayed wake failure")
 
     monkeypatch.setattr(tasks.celery_app, "send_task", unavailable_wake)
-    assert durable_tasks.defer_task_for_transaction_timeout(claimed, TransactionTimeout("Deadline")) is True
+    assert (
+        durable_tasks.defer_task_for_transaction_timeout(
+            claimed, TransactionTimeout("Deadline")
+        )
+        is True
+    )
     saved_task, projection = driver.state()
     assert saved_task["state"] == "retrying" and saved_task["lease_token"] is None
-    assert datetime.fromisoformat(saved_task["next_attempt_at"]) == driver.clock[0] + timedelta(seconds=1)
+    assert datetime.fromisoformat(saved_task["next_attempt_at"]) == driver.clock[
+        0
+    ] + timedelta(seconds=1)
     assert projection["last_error"] == "Deadline"
     assert "Controlled delayed wake failure" in caplog.text
     assert str(datetime.fromisoformat(saved_task["next_attempt_at"])) in caplog.text
 
 
-@pytest.mark.parametrize('retry_wakes', ['essential'], indirect=True)
-def test_essential_wake_preserves_deadline_retry_and_recovers_during_foreground_activity(retry_wakes):
+@pytest.mark.parametrize("retry_wakes", ["essential"], indirect=True)
+def test_essential_wake_preserves_deadline_retry_and_recovers_during_foreground_activity(
+    retry_wakes,
+):
     driver = retry_wakes
     with tasks.activity_gate.foreground():
-        assert command_gateway.execute_command('request', 'settings.update', {}) == {'saved':True}
+        assert command_gateway.execute_command("request", "settings.update", {}) == {
+            "saved": True
+        }
         driver.deliver_due()
         saved, projection = driver.state()
-        eligibility = datetime.fromisoformat(saved['next_attempt_at'])
-        assert saved['state'] == 'retrying' and saved['lease_token'] is None
+        eligibility = datetime.fromisoformat(saved["next_attempt_at"])
+        assert saved["state"] == "retrying" and saved["lease_token"] is None
         assert len(driver.executions) == 1
-        assert projection['last_error'] == 'Controlled first queue slice deadline'
+        assert projection["last_error"] == "Controlled first queue slice deadline"
         driver.clock[0] = eligibility
         driver.deliver_due()
         saved, projection = driver.state()
-        assert saved['state'] == 'complete' and projection['state'] == 'ready'
+        assert saved["state"] == "complete" and projection["state"] == "ready"
         assert len(driver.executions) == 2 and driver.deliveries == []

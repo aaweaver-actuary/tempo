@@ -6,7 +6,9 @@ from tempo_legacy_database import connections as database
 from app.main import app
 
 
-def test_comparison_cards_returns_active_routes_and_all_repertoire_links(tmp_path, monkeypatch):
+def test_comparison_cards_returns_active_routes_and_all_repertoire_links(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
         with database.connection() as db:
@@ -25,8 +27,14 @@ def test_comparison_cards_returns_active_routes_and_all_repertoire_links(tmp_pat
                                          due_date,content_type,archived,pending_validation)
                        VALUES(?, 'london', 'prefix', ?, ?, ?, '2026-09-28',
                               'opening', ?, ?)""",
-                    (identifier, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-                     json.dumps(["d2d4", "d7d5"]), state, archived, pending),
+                    (
+                        identifier,
+                        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                        json.dumps(["d2d4", "d7d5"]),
+                        state,
+                        archived,
+                        pending,
+                    ),
                 )
                 db.execute(
                     "INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('london',?)",
@@ -37,10 +45,19 @@ def test_comparison_cards_returns_active_routes_and_all_repertoire_links(tmp_pat
             )
         response = client.get("/api/compare/cards")
         assert response.status_code == 200
-        assert response.json() == {"cards": [{
-            "id": "saved", "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-            "moves": ["d2d4", "d7d5"], "state": "locked", "kind": "prefix",
-            "trained_color": None,
-            "repertoires": [{"id": "london", "name": "London"},
-                            {"id": "transposed", "name": "Transposed"}],
-        }]}
+        assert response.json() == {
+            "cards": [
+                {
+                    "id": "saved",
+                    "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                    "moves": ["d2d4", "d7d5"],
+                    "state": "locked",
+                    "kind": "prefix",
+                    "trained_color": None,
+                    "repertoires": [
+                        {"id": "london", "name": "London"},
+                        {"id": "transposed", "name": "Transposed"},
+                    ],
+                }
+            ]
+        }

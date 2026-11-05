@@ -27,11 +27,21 @@ def _seed_repertoire(db, identifier="background-rep", *, lines=1):
     for index in range(lines):
         db.execute(
             "INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,?,?,?,?,?,?)",
-            (f"line-{index}", identifier, "Line", "white", START, json.dumps(["e2e4"]), now),
+            (
+                f"line-{index}",
+                identifier,
+                "Line",
+                "white",
+                START,
+                json.dumps(["e2e4"]),
+                now,
+            ),
         )
 
 
-def test_startup_serves_training_and_tactics_while_integrity_sweep_is_running(tmp_path, monkeypatch):
+def test_startup_serves_training_and_tactics_while_integrity_sweep_is_running(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     database.initialize()
     with database.connection() as db:
@@ -86,7 +96,9 @@ def test_background_connection_contract_rejects_foreground_connection():
                 pass
 
 
-def test_foreground_connection_waits_for_active_background_section(tmp_path, monkeypatch):
+def test_foreground_connection_waits_for_active_background_section(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     database.initialize()
     section_started = threading.Event()
@@ -118,7 +130,9 @@ def test_foreground_connection_waits_for_active_background_section(tmp_path, mon
     assert not worker.is_alive()
 
 
-def test_large_integrity_sweep_commits_and_resumes_one_source_at_a_time(tmp_path, monkeypatch):
+def test_large_integrity_sweep_commits_and_resumes_one_source_at_a_time(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     database.initialize()
     with database.connection() as db:
@@ -139,14 +153,19 @@ def test_large_integrity_sweep_commits_and_resumes_one_source_at_a_time(tmp_path
     summary = None
     with database.connection() as db:
         summary = repertoire_integrity.integrity_summary(db, "background-rep")
-        assert db.execute(
-            "SELECT COUNT(*) FROM repertoire_integrity_issues WHERE repertoire_id='background-rep'"
-        ).fetchone()[0] == 0
+        assert (
+            db.execute(
+                "SELECT COUNT(*) FROM repertoire_integrity_issues WHERE repertoire_id='background-rep'"
+            ).fetchone()[0]
+            == 0
+        )
     assert summary["scan_status"] == "idle"
     assert summary["scan_progress"]["completed"] == summary["scan_progress"]["total"]
 
 
-def test_last_known_good_repertoire_remains_trainable_during_rescan(tmp_path, monkeypatch):
+def test_last_known_good_repertoire_remains_trainable_during_rescan(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     database.initialize()
     with database.connection() as db:
@@ -159,7 +178,9 @@ def test_last_known_good_repertoire_remains_trainable_during_rescan(tmp_path, mo
     assert summary["scan_status"] == "queued"
 
 
-def test_never_validated_repertoire_is_quarantined_without_blocking_tactics(tmp_path, monkeypatch):
+def test_never_validated_repertoire_is_quarantined_without_blocking_tactics(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
         with database.connection() as db:

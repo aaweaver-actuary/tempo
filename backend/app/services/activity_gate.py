@@ -24,9 +24,13 @@ _work_class: ContextVar[str] = ContextVar("tempo_work_class", default="foregroun
 _background_job: ContextVar[tuple[str, str] | None] = ContextVar(
     "tempo_background_job", default=None
 )
-_yield_admission: ContextVar[bool] = ContextVar('tempo_yield_admission', default=False)
-_essential_study: ContextVar[bool] = ContextVar("tempo_essential_study_work", default=False)
-_control_section: ContextVar[bool] = ContextVar('tempo_background_control', default=False)
+_yield_admission: ContextVar[bool] = ContextVar("tempo_yield_admission", default=False)
+_essential_study: ContextVar[bool] = ContextVar(
+    "tempo_essential_study_work", default=False
+)
+_control_section: ContextVar[bool] = ContextVar(
+    "tempo_background_control", default=False
+)
 
 
 class ApplicationActivityGate:
@@ -37,16 +41,20 @@ class ApplicationActivityGate:
         self._background_work: tuple[str, str] | None = None
         self._browser_active_until = 0.0
 
-    def record_browser_activity(self, seconds: float = 3.0, *, session_id: str = 'legacy') -> None:
+    def record_browser_activity(
+        self, seconds: float = 3.0, *, session_id: str = "legacy"
+    ) -> None:
         if redis_admission_gate.configured():
             redis_admission_gate.record_browser_activity(seconds, session_id=session_id)
         with self._condition:
-            self._browser_active_until = max(self._browser_active_until, time.monotonic() + seconds)
+            self._browser_active_until = max(
+                self._browser_active_until, time.monotonic() + seconds
+            )
             self._condition.notify_all()
 
     @asynccontextmanager
     async def async_foreground(self):
-        token = _work_class.set('foreground')
+        token = _work_class.set("foreground")
         with self._condition:
             self._foreground_requests += 1
             self._condition.notify_all()
@@ -67,7 +75,8 @@ class ApplicationActivityGate:
         token = _work_class.set("foreground")
         shared_lease = (
             redis_admission_gate.foreground_lease()
-            if redis_admission_gate.configured() else nullcontext()
+            if redis_admission_gate.configured()
+            else nullcontext()
         )
         try:
             with shared_lease:
@@ -105,7 +114,9 @@ class ApplicationActivityGate:
         if activity_url:
             while True:
                 try:
-                    request = Request(activity_url, headers={"X-Tempo-Work-Class": "background"})
+                    request = Request(
+                        activity_url, headers={"X-Tempo-Work-Class": "background"}
+                    )
                     with urlopen(request, timeout=2) as response:
                         active = bool(json.load(response)["active"])
                 except (OSError, ValueError, KeyError):
@@ -121,23 +132,30 @@ class ApplicationActivityGate:
         if _control_section.get() or _essential_study.get():
             return
         if self.foreground_waiting:
-            raise BackgroundAdmissionDeferred('Waiting for foreground activity')
+            raise BackgroundAdmissionDeferred("Waiting for foreground activity")
         if redis_admission_gate.configured():
             import redis
+
             try:
                 if redis_admission_gate.foreground_present():
-                    raise BackgroundAdmissionDeferred('Waiting for foreground activity')
+                    raise BackgroundAdmissionDeferred("Waiting for foreground activity")
             except redis.RedisError as error:
-                raise BackgroundAdmissionDeferred('Foreground admission is unavailable') from error
-        elif activity_url := os.getenv('TEMPO_FOREGROUND_ACTIVITY_URL'):
+                raise BackgroundAdmissionDeferred(
+                    "Foreground admission is unavailable"
+                ) from error
+        elif activity_url := os.getenv("TEMPO_FOREGROUND_ACTIVITY_URL"):
             try:
-                request = Request(activity_url, headers={'X-Tempo-Work-Class': 'background'})
+                request = Request(
+                    activity_url, headers={"X-Tempo-Work-Class": "background"}
+                )
                 with urlopen(request, timeout=0.25) as response:
-                    active = bool(json.load(response)['active'])
+                    active = bool(json.load(response)["active"])
             except (OSError, ValueError, KeyError) as error:
-                raise BackgroundAdmissionDeferred('Foreground admission is unavailable') from error
+                raise BackgroundAdmissionDeferred(
+                    "Foreground admission is unavailable"
+                ) from error
             if active:
-                raise BackgroundAdmissionDeferred('Waiting for foreground activity')
+                raise BackgroundAdmissionDeferred("Waiting for foreground activity")
 
     @contextmanager
     def essential_study_progress(self, kind):
@@ -146,8 +164,8 @@ class ApplicationActivityGate:
         This grants no new task or database budget; optional dispatch never
         enters this scope and cannot select its kind through a request header.
         """
-        if kind not in {'daily_queue', 'study_game_feedback'}:
-            raise ValueError('Only essential Study owners bypass idle admission')
+        if kind not in {"daily_queue", "study_game_feedback"}:
+            raise ValueError("Only essential Study owners bypass idle admission")
         token = _essential_study.set(True)
         try:
             yield
@@ -180,9 +198,16 @@ class ApplicationActivityGate:
 
         shared_lease = (
             redis_admission_gate.background_lease()
-            if redis_admission_gate.configured() and not (_control_section.get() or _essential_study.get()) else nullcontext()
+            if redis_admission_gate.configured()
+            and not (_control_section.get() or _essential_study.get())
+            else nullcontext()
         )
-        from .background_runtime import admission_wait, reserved_database_telemetry, heartbeat
+        from .background_runtime import (
+            admission_wait,
+            reserved_database_telemetry,
+            heartbeat,
+        )
+
         # Acquire before suppressing so admission-wait heartbeats remain visible.
         # Exit leases before telemetry suppression, including error cleanup.
         with ExitStack() as telemetry, ExitStack() as leases:
@@ -191,15 +216,28 @@ class ApplicationActivityGate:
                 telemetry.enter_context(reserved_database_telemetry())
                 self.wait_for_foreground()
                 with self._condition:
-                    if _yield_admission.get() or redis_admission_gate.configured() or _control_section.get() or _essential_study.get():
-                        if (self._active_background_sections and not (_control_section.get() or _essential_study.get())) or (
-                            self._foreground_requests and not (_control_section.get() or _essential_study.get())
+                    if (
+                        _yield_admission.get()
+                        or redis_admission_gate.configured()
+                        or _control_section.get()
+                        or _essential_study.get()
+                    ):
+                        if (
+                            self._active_background_sections
+                            and not (_control_section.get() or _essential_study.get())
+                        ) or (
+                            self._foreground_requests
+                            and not (_control_section.get() or _essential_study.get())
                         ):
-                            raise BackgroundAdmissionDeferred('Waiting for a database section')
+                            raise BackgroundAdmissionDeferred(
+                                "Waiting for a database section"
+                            )
                     else:
                         self._condition.wait_for(
-                            lambda: self._foreground_requests == 0
-                            and self._active_background_sections == 0
+                            lambda: (
+                                self._foreground_requests == 0
+                                and self._active_background_sections == 0
+                            )
                         )
                     self._active_background_sections += 1
                     self._condition.notify_all()
@@ -255,7 +293,10 @@ class ApplicationActivityGate:
     @property
     def foreground_waiting(self) -> bool:
         with self._condition:
-            return self._foreground_requests > 0 or time.monotonic() < self._browser_active_until
+            return (
+                self._foreground_requests > 0
+                or time.monotonic() < self._browser_active_until
+            )
 
     @property
     def foreground_requests_active(self) -> bool:

@@ -13,13 +13,27 @@ def test_presentation_surface_exports_original_owner_identities():
     origins = {
         "application": ("Recombination",),
         "models": (
-            "AuthoredRouteFacts", "CleanStreak", "ComponentRef", "JoinDecision",
-            "JoinEvidence", "JoinHold", "JoinMember", "ParentConnection",
-            "RetainedUse", "ReviewEvent", "RouteContext", "RouteJoinPlan", "RouteUse",
+            "AuthoredRouteFacts",
+            "CleanStreak",
+            "ComponentRef",
+            "JoinDecision",
+            "JoinEvidence",
+            "JoinHold",
+            "JoinMember",
+            "ParentConnection",
+            "RetainedUse",
+            "ReviewEvent",
+            "RouteContext",
+            "RouteJoinPlan",
+            "RouteUse",
         ),
         "ports": (
-            "CurrentRoute", "NewPresentation", "Obligation", "PresentationChange",
-            "RecombinationStore", "StudyBoundary",
+            "CurrentRoute",
+            "NewPresentation",
+            "Obligation",
+            "PresentationChange",
+            "RecombinationStore",
+            "StudyBoundary",
         ),
     }
     expected = {name for names in origins.values() for name in names}
@@ -33,15 +47,24 @@ def test_presentation_surface_exports_original_owner_identities():
 
 
 def test_presentation_surface_keeps_existing_wire_and_capability_types():
-    from app.contracts.product_v02.presentation import JoinPlan, Presentation, PresentationChangeReceipt
+    from app.contracts.product_v02.presentation import (
+        JoinPlan,
+        Presentation,
+        PresentationChangeReceipt,
+    )
     from app.study.presentations.interfaces import (
-        CurrentRoute, NewPresentation, Recombination, RouteJoinPlan, StudyBoundary,
+        CurrentRoute,
+        NewPresentation,
+        Recombination,
+        RouteJoinPlan,
+        StudyBoundary,
     )
 
     assert issubclass(RouteJoinPlan, JoinPlan)
     assert get_type_hints(NewPresentation)["presentation"] is Presentation
     assert get_type_hints(Recombination.apply_join) == {
-        "plan": RouteJoinPlan, "return": PresentationChangeReceipt,
+        "plan": RouteJoinPlan,
+        "return": PresentationChangeReceipt,
     }
     assert get_type_hints(StudyBoundary.try_current)["return"] == CurrentRoute | None
 
@@ -86,8 +109,15 @@ def test_presentation_surface_cold_import_has_no_runtime_dependencies_or_effects
         print('cold presentation surface: no runtime imports or effects')
     """)
     completed = subprocess.run(
-        [sys.executable, "-c", source], cwd=repository, text=True,
-        capture_output=True, timeout=15, check=False,
+        [sys.executable, "-c", source],
+        cwd=repository,
+        text=True,
+        capture_output=True,
+        timeout=15,
+        check=False,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
-    assert completed.stdout.strip() == "cold presentation surface: no runtime imports or effects"
+    assert (
+        completed.stdout.strip()
+        == "cold presentation surface: no runtime imports or effects"
+    )

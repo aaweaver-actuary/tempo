@@ -17,7 +17,9 @@ class Database:
         return Cursor()
 
 
-def test_postgres_maia_availability_get_uses_foreground_reader(normal_study_mode, monkeypatch):
+def test_postgres_maia_availability_get_uses_foreground_reader(
+    normal_study_mode, monkeypatch
+):
     calls = []
 
     @contextmanager

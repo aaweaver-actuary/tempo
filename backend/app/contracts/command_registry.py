@@ -1,29 +1,34 @@
 """Pure command registration contracts; execution and transactions stay with the gateway."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, ContextManager, Generic, Protocol, TypeVar, cast
 
-Transaction = TypeVar('Transaction')
-Original = TypeVar('Original')
-Prepared = TypeVar('Prepared')
-Result = TypeVar('Result')
-TransactionContra = TypeVar('TransactionContra', contravariant=True)
-ResultContra = TypeVar('ResultContra', contravariant=True)
+Transaction = TypeVar("Transaction")
+Original = TypeVar("Original")
+Prepared = TypeVar("Prepared")
+Result = TypeVar("Result")
+TransactionContra = TypeVar("TransactionContra", contravariant=True)
+ResultContra = TypeVar("ResultContra", contravariant=True)
 
 
 class TransitionCommandLifecycle(Protocol[TransactionContra, ResultContra]):
     """Exceptional prefix-transition lifecycle, at the gateway's existing boundaries."""
+
     def writer_admission(self) -> ContextManager[Any]: ...
     def delayed_preparation_error(self, error: Exception) -> Exception: ...
-    def reject_after_rollback(self, database: TransactionContra, operation_id: str, error: Exception) -> bool: ...
+    def reject_after_rollback(
+        self, database: TransactionContra, operation_id: str, error: Exception
+    ) -> bool: ...
     def is_pending(self, result: ResultContra) -> bool: ...
 
 
 @dataclass(frozen=True)
 class CommandDescriptor(Generic[Transaction, Original, Prepared, Result]):
     """Correlate one command's original decoding, preparation, and application."""
+
     name: str
     decode: Callable[[dict[str, Any]], Original]
     prepare: Callable[[Original], Prepared]
@@ -34,26 +39,33 @@ class CommandDescriptor(Generic[Transaction, Original, Prepared, Result]):
 
 class CommandRegistry:
     """Own one heterogeneous collection; erasure is limited to this boundary."""
+
     def __init__(self) -> None:
         self.handlers: dict[str, Callable[..., Any]] = {}
         self.preparers: dict[str, Callable[[dict[str, Any]], Any]] = {}
         self._after_commit: dict[str, Callable[[Any], None]] = {}
         self.transition_lifecycles: dict[str, TransitionCommandLifecycle[Any, Any]] = {}
 
-    def register(self, descriptor: CommandDescriptor[Transaction, Original, Prepared, Result]) -> None:
+    def register(
+        self, descriptor: CommandDescriptor[Transaction, Original, Prepared, Result]
+    ) -> None:
         if descriptor.name in self.handlers:
-            raise ValueError(f'Duplicate command: {descriptor.name}')
+            raise ValueError(f"Duplicate command: {descriptor.name}")
 
         def prepare(payload: dict[str, Any]) -> Prepared:
             return descriptor.prepare(descriptor.decode(payload))
 
         def apply(transaction: Any, prepared: Any) -> Result:
-            return descriptor.apply(cast(Transaction, transaction), cast(Prepared, prepared))
+            return descriptor.apply(
+                cast(Transaction, transaction), cast(Prepared, prepared)
+            )
 
         self.handlers[descriptor.name] = apply
         self.preparers[descriptor.name] = prepare
         if descriptor.transition_lifecycle is not None:
-            self.transition_lifecycles[descriptor.name] = descriptor.transition_lifecycle
+            self.transition_lifecycles[descriptor.name] = (
+                descriptor.transition_lifecycle
+            )
         else:
             self.transition_lifecycles.pop(descriptor.name, None)
         if descriptor.after_commit is not None:
@@ -74,33 +86,72 @@ class CommandRegistry:
         if callback is not None:
             callback(result)
 
+
 # Immutable historical names: these envelopes may still be in the broker or
 # receipt table. Unknown and mixed commands are deliberately not classified.
-RETIRED_COMMANDS = frozenset({
-    'defense.recognition.submit', 'defense.attempt.submit', 'defense.candidate.change',
-    'endgames.template.create', 'endgames.attempt.create',
-    'game_findings.curate', 'game_findings.decide', 'game_findings.card.save',
-    'activity.progress', 'defensive.audit', 'defensive.backfill',
-    'coverage.refresh.request', 'discovery.accept',
-    'coverage.maia.claim', 'coverage.maia.heartbeat', 'coverage.maia.release',
-    'coverage.maia.failure', 'coverage.maia.submit',
-    'threat.analysis.claim', 'threat.analysis.report', 'threat.analysis.failure',
-    'threat.analysis.release', 'threat.analysis.retry',
-    'games.defensive_threats.refresh',
-    'games.analysis.claim', 'games.analysis.position.claim', 'games.analysis.position.report',
-    'games.analysis.position.release', 'games.analysis.failure', 'games.analysis.heartbeat',
-    'games.analysis.release', 'games.analysis.retry', 'games.analysis.repair_timeout',
-    'games.analysis.repair_provenance', 'games.analysis.finalize.admit', 'games.analysis.manual.admit',
-    'opening.segmentation.refresh', 'opening.segmentation.preference',
-    'studies.chapters.create', 'studies.chapters.reorder', 'studies.chapters.rename',
-})
-RETIRED_TASK_KINDS = frozenset({
-    'defensive_rubric_audit', 'defensive_admission', 'defensive_threat_report_audit',
-    'defensive_threat_scan', 'defensive_threat_backfill', 'defensive_threat_validate',
-    'next_opponent_profile', 'discovery_recommendation',
-    'discovery_admission', 'coverage_seed', 'coverage_explorer',
-    'game_analysis_publish', 'game_analysis_followup',
-})
+RETIRED_COMMANDS = frozenset(
+    {
+        "defense.recognition.submit",
+        "defense.attempt.submit",
+        "defense.candidate.change",
+        "endgames.template.create",
+        "endgames.attempt.create",
+        "game_findings.curate",
+        "game_findings.decide",
+        "game_findings.card.save",
+        "activity.progress",
+        "defensive.audit",
+        "defensive.backfill",
+        "coverage.refresh.request",
+        "discovery.accept",
+        "coverage.maia.claim",
+        "coverage.maia.heartbeat",
+        "coverage.maia.release",
+        "coverage.maia.failure",
+        "coverage.maia.submit",
+        "threat.analysis.claim",
+        "threat.analysis.report",
+        "threat.analysis.failure",
+        "threat.analysis.release",
+        "threat.analysis.retry",
+        "games.defensive_threats.refresh",
+        "games.analysis.claim",
+        "games.analysis.position.claim",
+        "games.analysis.position.report",
+        "games.analysis.position.release",
+        "games.analysis.failure",
+        "games.analysis.heartbeat",
+        "games.analysis.release",
+        "games.analysis.retry",
+        "games.analysis.repair_timeout",
+        "games.analysis.repair_provenance",
+        "games.analysis.finalize.admit",
+        "games.analysis.manual.admit",
+        "opening.segmentation.refresh",
+        "opening.segmentation.preference",
+        "studies.chapters.create",
+        "studies.chapters.reorder",
+        "studies.chapters.rename",
+    }
+)
+RETIRED_TASK_KINDS = frozenset(
+    {
+        "defensive_rubric_audit",
+        "defensive_admission",
+        "defensive_threat_report_audit",
+        "defensive_threat_scan",
+        "defensive_threat_backfill",
+        "defensive_threat_validate",
+        "next_opponent_profile",
+        "discovery_recommendation",
+        "discovery_admission",
+        "coverage_seed",
+        "coverage_explorer",
+        "game_analysis_publish",
+        "game_analysis_followup",
+    }
+)
+
 
 def is_retired_command(name: str) -> bool:
     return name in RETIRED_COMMANDS

@@ -31,7 +31,13 @@ from .repertoire_integrity import (
     enqueue_integrity_scans,
     requeue_integrity_slice,
 )
-from .durable_tasks import claim_task, complete_task, fail_task, requeue_interrupted_tasks, defer_paused_defensive_task
+from .durable_tasks import (
+    claim_task,
+    complete_task,
+    fail_task,
+    requeue_interrupted_tasks,
+    defer_paused_defensive_task,
+)
 from .background_activity import claimable, control_order, emit_progress
 from .opening_graph import (
     calculate_opening_graph_artifacts,
@@ -105,9 +111,12 @@ def _retry_sync_database_write(operation: Callable[[], None]) -> None:
             operation()
             return
         except sqlite3.OperationalError as error:
-            if not any(reason in str(error).lower() for reason in ("locked", "busy")) or retry_number == 5:
+            if (
+                not any(reason in str(error).lower() for reason in ("locked", "busy"))
+                or retry_number == 5
+            ):
                 raise
-            time.sleep(min(0.05 * (2 ** retry_number), 0.4))
+            time.sleep(min(0.05 * (2**retry_number), 0.4))
 
 
 def _execute_job(job: dict) -> None:
@@ -117,7 +126,9 @@ def _execute_job(job: dict) -> None:
             emit_progress("sync", job["id"], job["id"], "Fetching provider games")
             result = asyncio.run(sync_providers(request))
             _retry_sync_database_write(lambda: _finish_job(job["id"], result))
-            emit_progress("sync", job["id"], job["id"], f"Imported {result['imported']} games")
+            emit_progress(
+                "sync", job["id"], job["id"], f"Imported {result['imported']} games"
+            )
         except Exception as error:  # The job error must not overwrite provider state.
             _retry_sync_database_write(lambda: _fail_job(job["id"], error))
 
@@ -127,8 +138,6 @@ def enqueue_game_derivation(game_id: str, *, background: bool = False) -> None:
         activity_gate.wait_for_foreground()
     with connection(background=background) as database:
         storage.queue_derivation(database, game_id, _now())
-
-
 
 
 def _claim_derivation() -> str | None:
@@ -147,17 +156,31 @@ def _set_derivation_phase(game_id: str, phase: str) -> None:
     with connection(background=True) as database:
         storage.set_derivation_phase(database, game_id, phase, _now())
         row = storage.derivation_version(database, game_id)
-    phases = ("indexing_positions", "comparing_repertoire", "refreshing_findings",
-              "applying_real_game_misses", "refreshing_events", "refreshing_features")
+    phases = (
+        "indexing_positions",
+        "comparing_repertoire",
+        "refreshing_findings",
+        "applying_real_game_misses",
+        "refreshing_events",
+        "refreshing_features",
+    )
     if row and phase in phases:
-        emit_progress("derivation", game_id, str(row[0]), phase, phases.index(phase), len(phases))
+        emit_progress(
+            "derivation", game_id, str(row[0]), phase, phases.index(phase), len(phases)
+        )
 
 
 def _run_derivation_phase(
     game_id: str, phase: str, operation: Callable[[], None]
 ) -> None:
-    phases = ("indexing_positions", "comparing_repertoire", "refreshing_findings",
-              "applying_real_game_misses", "refreshing_events", "refreshing_features")
+    phases = (
+        "indexing_positions",
+        "comparing_repertoire",
+        "refreshing_findings",
+        "applying_real_game_misses",
+        "refreshing_events",
+        "refreshing_features",
+    )
     phase_index = phases.index(phase)
     with read_connection() as database:
         current = storage.derivation_phase_status(database, game_id)
@@ -171,11 +194,15 @@ def _run_derivation_phase(
     try:
         operation()
         with connection(background=True) as database:
-            changed = storage.advance_derivation_phase(database, game_id, phase_index + 1, phase_index, _now())
+            changed = storage.advance_derivation_phase(
+                database, game_id, phase_index + 1, phase_index, _now()
+            )
             version = storage.derivation_version(database, game_id)[0]
         if not changed:
             raise _DerivationStopped()
-        emit_progress("derivation", game_id, str(version), phase, phase_index + 1, len(phases))
+        emit_progress(
+            "derivation", game_id, str(version), phase, phase_index + 1, len(phases)
+        )
         _pause_derivation_if_requested(game_id)
     finally:
         logging.getLogger("tempo.background").info(
@@ -254,7 +281,9 @@ def _execute_derivation(game_id: str) -> None:
                             datetime.now(timezone.utc)
                             + timedelta(seconds=delay_seconds)
                         ).isoformat()
-                        storage.retry_derivation(database, game_id, str(error), retry_at, _now())
+                        storage.retry_derivation(
+                            database, game_id, str(error), retry_at, _now()
+                        )
                     break
                 except sqlite3.OperationalError:
                     if retry_number == 4:
@@ -280,9 +309,7 @@ def _index_game_positions(game_id: str) -> None:
         move = chess.Move.from_uci(move_uci)
         if move not in board.legal_moves:
             break
-        occurrences.append(
-            (game_id, ply, " ".join(board.fen().split()[:4]), move_uci)
-        )
+        occurrences.append((game_id, ply, " ".join(board.fen().split()[:4]), move_uci))
         board.push(move)
     occurrences.append(
         (game_id, len(occurrences), " ".join(board.fen().split()[:4]), None)
@@ -343,7 +370,11 @@ class GameSyncCoordinator:
                 try:
                     if source == "durable":
                         kinds = tuple(_durable_task_handlers)
-                        item = await asyncio.to_thread(claim_task, allowed_kinds=kinds) if kinds else None
+                        item = (
+                            await asyncio.to_thread(claim_task, allowed_kinds=kinds)
+                            if kinds
+                            else None
+                        )
                     elif source == "sync":
                         item = await asyncio.to_thread(_claim_job)
                     elif source == "derivation":
@@ -363,23 +394,53 @@ class GameSyncCoordinator:
                             continue
                         handler = _durable_task_handlers.get(item["kind"])
                         if handler is None:
-                            raise RuntimeError(f"No handler registered for task kind {item['kind']}")
+                            raise RuntimeError(
+                                f"No handler registered for task kind {item['kind']}"
+                            )
                         try:
-                            await asyncio.to_thread(emit_progress, "durable", item["id"], str(item["generation"]), "Running")
+                            await asyncio.to_thread(
+                                emit_progress,
+                                "durable",
+                                item["id"],
+                                str(item["generation"]),
+                                "Running",
+                            )
                             if item["kind"] == "opening_graph_rebuild":
-                                await asyncio.to_thread(emit_progress, "durable", item["id"], str(item["generation"]), "Preparing opening graph")
+                                await asyncio.to_thread(
+                                    emit_progress,
+                                    "durable",
+                                    item["id"],
+                                    str(item["generation"]),
+                                    "Preparing opening graph",
+                                )
                                 rebuild_input = await asyncio.to_thread(
                                     prepare_opening_graph_rebuild, item
                                 )
                                 if self._process_pool is None:
-                                    self._process_pool = ProcessPoolExecutor(max_workers=1)
-                                await asyncio.to_thread(emit_progress, "durable", item["id"], str(item["generation"]), "Calculating opening graph")
-                                graph_artifacts = await asyncio.get_running_loop().run_in_executor(
-                                    self._process_pool,
-                                    calculate_opening_graph_artifacts,
-                                    rebuild_input,
+                                    self._process_pool = ProcessPoolExecutor(
+                                        max_workers=1
+                                    )
+                                await asyncio.to_thread(
+                                    emit_progress,
+                                    "durable",
+                                    item["id"],
+                                    str(item["generation"]),
+                                    "Calculating opening graph",
                                 )
-                                await asyncio.to_thread(emit_progress, "durable", item["id"], str(item["generation"]), "Publishing opening graph")
+                                graph_artifacts = (
+                                    await asyncio.get_running_loop().run_in_executor(
+                                        self._process_pool,
+                                        calculate_opening_graph_artifacts,
+                                        rebuild_input,
+                                    )
+                                )
+                                await asyncio.to_thread(
+                                    emit_progress,
+                                    "durable",
+                                    item["id"],
+                                    str(item["generation"]),
+                                    "Publishing opening graph",
+                                )
                                 await asyncio.to_thread(
                                     publish_opening_graph_rebuild,
                                     item,
@@ -387,14 +448,28 @@ class GameSyncCoordinator:
                                 )
                             else:
                                 advanced = await asyncio.to_thread(handler, item)
-                            if item["kind"] not in {"defensive_threat_scan", "defensive_rubric_audit", "repertoire_game_refresh"} or not advanced:
+                            if (
+                                item["kind"]
+                                not in {
+                                    "defensive_threat_scan",
+                                    "defensive_rubric_audit",
+                                    "repertoire_game_refresh",
+                                }
+                                or not advanced
+                            ):
                                 await asyncio.to_thread(
                                     complete_task,
                                     item["id"],
                                     item["generation"],
                                     item["lease_token"],
                                 )
-                                await asyncio.to_thread(emit_progress, "durable", item["id"], str(item["generation"]), "Finished")
+                                await asyncio.to_thread(
+                                    emit_progress,
+                                    "durable",
+                                    item["id"],
+                                    str(item["generation"]),
+                                    "Finished",
+                                )
                         except Exception as error:
                             await asyncio.to_thread(
                                 fail_task,
@@ -431,7 +506,9 @@ class GameSyncCoordinator:
                 logging.getLogger("tempo.background").info(
                     "background slice source=%s item=%s slice_duration=%.3fs retry_count=%s preempted=%s",
                     source,
-                    item.get("id", item.get("game_id", item.get("repertoire_id", item))) if isinstance(item, dict) else item,
+                    item.get("id", item.get("game_id", item.get("repertoire_id", item)))
+                    if isinstance(item, dict)
+                    else item,
                     time.perf_counter() - slice_started,
                     item.get("attempts", 0) if isinstance(item, dict) else 0,
                     activity_gate.foreground_waiting,

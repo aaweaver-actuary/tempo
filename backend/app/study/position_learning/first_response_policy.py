@@ -7,12 +7,20 @@ immutable issued proof.  A later graph digest is not a substitute for that proof
 The accepted-ledger writer remains responsible for enforcing one Good per
 position per Study day across policies/epochs and for replay idempotency.
 """
+
 from __future__ import annotations
 
-from ..position_learning.contracts import AcceptedEvidence, DueAtIssuance, GradeProposal, Hold
+from ..position_learning.contracts import (
+    AcceptedEvidence,
+    DueAtIssuance,
+    GradeProposal,
+    Hold,
+)
 
 
-def propose_grade(evidence: AcceptedEvidence, due: DueAtIssuance) -> GradeProposal | Hold:
+def propose_grade(
+    evidence: AcceptedEvidence, due: DueAtIssuance
+) -> GradeProposal | Hold:
     """Classify one owner's accepted first response against its issuance witness.
 
     A terminal saved aggregate is required for a positive Good. An independently
@@ -43,7 +51,9 @@ def propose_grade(evidence: AcceptedEvidence, due: DueAtIssuance) -> GradePropos
         return Hold("first_response_not_authoritatively_classified")
     if evidence.disposition == "manual_failure" and not response.manual_failure:
         return Hold("first_response_disposition_conflict")
-    if evidence.disposition in {"wrong", "illegal"} and (correct or response.manual_failure):
+    if evidence.disposition in {"wrong", "illegal"} and (
+        correct or response.manual_failure
+    ):
         return Hold("first_response_disposition_conflict")
 
     # A response after guidance is coached evidence, not an independent failure
@@ -64,11 +74,7 @@ def propose_grade(evidence: AcceptedEvidence, due: DueAtIssuance) -> GradePropos
 
     # The Study owner supplies this authoritative day at acceptance and retains
     # it on replay. Never infer it from timestamp timezone offsets.
-    study_day = (
-        evidence.accepted_study_day
-        if grade == "again"
-        else due.study_day
-    )
+    study_day = evidence.accepted_study_day if grade == "again" else due.study_day
     return GradeProposal(
         position=response.definition.key,
         policy_version=response.definition.policy_version,

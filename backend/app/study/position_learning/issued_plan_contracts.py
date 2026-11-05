@@ -3,6 +3,7 @@
 The returned value is not an issuance receipt. A Study owner must validate the
 original queue/attempt and source/epoch in its transaction before saving it.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
@@ -160,7 +161,9 @@ def _json_value(value: Any) -> bool:
     if isinstance(value, list):
         return all(_json_value(item) for item in value)
     if isinstance(value, Mapping):
-        return all(isinstance(key, str) and _json_value(item) for key, item in value.items())
+        return all(
+            isinstance(key, str) and _json_value(item) for key, item in value.items()
+        )
     return False
 
 
@@ -174,20 +177,36 @@ def _authored_token_json(
 ) -> str | None | Hold:
     if token is None:
         return None
-    keys = {"original_snapshot_id", "original_source_revision", "original_source_digest",
-            "repertoire_id", "authored_digest", "header", "integrity"}
+    keys = {
+        "original_snapshot_id",
+        "original_source_revision",
+        "original_source_digest",
+        "repertoire_id",
+        "authored_digest",
+        "header",
+        "integrity",
+    }
     if not _exact_mapping(token, keys):
         return Hold("authored_source_token_fields_mismatch")
-    for name in ("original_snapshot_id", "original_source_revision", "original_source_digest",
-                 "repertoire_id", "authored_digest"):
+    for name in (
+        "original_snapshot_id",
+        "original_source_revision",
+        "original_source_digest",
+        "repertoire_id",
+        "authored_digest",
+    ):
         if not isinstance(token[name], str) or not token[name]:
             return Hold("invalid_authored_source_token", name)
-    if (token["original_snapshot_id"] != snapshot_id
-            or token["original_source_revision"] != source_revision
-            or token["original_source_digest"] != source_digest
-            or token["repertoire_id"] != repertoire_id):
+    if (
+        token["original_snapshot_id"] != snapshot_id
+        or token["original_source_revision"] != source_revision
+        or token["original_source_digest"] != source_digest
+        or token["repertoire_id"] != repertoire_id
+    ):
         return Hold("authored_source_token_scope_mismatch")
-    if not isinstance(token["header"], Mapping) or not isinstance(token["integrity"], Mapping):
+    if not isinstance(token["header"], Mapping) or not isinstance(
+        token["integrity"], Mapping
+    ):
         return Hold("invalid_authored_source_token_payload")
     if not _json_value(token["header"]) or not _json_value(token["integrity"]):
         return Hold("invalid_authored_source_token_payload")
@@ -199,11 +218,13 @@ def _record_payload(plan: IssuedPlan) -> dict[str, Any]:
     if plan.skipped_prefix_proof_ids:
         if len(plan.skipped_prefix_proof_ids) != 3:
             raise ValueError("invalid_skipped_prefix_proof_references")
-        proof_records.append({
-            "attempt_id": plan.skipped_prefix_proof_ids[0],
-            "terminal_receipt_id": plan.skipped_prefix_proof_ids[1],
-            "review_receipt_id": plan.skipped_prefix_proof_ids[2],
-        })
+        proof_records.append(
+            {
+                "attempt_id": plan.skipped_prefix_proof_ids[0],
+                "terminal_receipt_id": plan.skipped_prefix_proof_ids[1],
+                "review_receipt_id": plan.skipped_prefix_proof_ids[2],
+            }
+        )
     return {
         "record_version": 1,
         "original_card_id": plan.original_card_id,
@@ -252,18 +273,24 @@ def _record_payload(plan: IssuedPlan) -> dict[str, Any]:
         "local_day": plan.local_day.isoformat(),
         "prefix_proofs": proof_records,
         "issued_at": plan.issued_at.isoformat(),
-        "authored_source_token": (json.loads(plan._authored_source_token_json)
-                                  if plan._authored_source_token_json is not None else None),
+        "authored_source_token": (
+            json.loads(plan._authored_source_token_json)
+            if plan._authored_source_token_json is not None
+            else None
+        ),
     }
 
 
-def _proof_identities(plan: Plan, proofs: tuple[CleanPresentationProof, ...]) -> tuple[str, ...] | Hold:
+def _proof_identities(
+    plan: Plan, proofs: tuple[CleanPresentationProof, ...]
+) -> tuple[str, ...] | Hold:
     if not plan.skipped_prefix_decisions:
         if plan.prefix_credit_attempt_id is not None:
             return Hold("prefix_proof_without_skipped_decisions")
         return ()
     matches = tuple(
-        proof for proof in proofs
+        proof
+        for proof in proofs
         if proof.attempt_id == plan.prefix_credit_attempt_id
         and proof.terminal_complete
         and proof.terminal_receipt_id
@@ -293,14 +320,21 @@ def freeze_issued_plan(
     This is a deterministic proposal only: booleans on a source certificate
     are claims, and cannot establish owner authority or currentness.
     """
-    if (not isinstance(original_card_id, str) or not original_card_id
-            or type(original_card_revision) is not int or original_card_revision < 1
-            or type(queue_entry_id) is not int or queue_entry_id < 1
-            or not isinstance(attempt_id, str) or not attempt_id):
+    if (
+        not isinstance(original_card_id, str)
+        or not original_card_id
+        or type(original_card_revision) is not int
+        or original_card_revision < 1
+        or type(queue_entry_id) is not int
+        or queue_entry_id < 1
+        or not isinstance(attempt_id, str)
+        or not attempt_id
+    ):
         return Hold("invalid_original_attempt_identity")
-    if (target.key != plan.position or not any(
-        d.definition == target and d.ply == plan.target_ply for d in plan.decision_occurrences
-    )):
+    if target.key != plan.position or not any(
+        d.definition == target and d.ply == plan.target_ply
+        for d in plan.decision_occurrences
+    ):
         return Hold("target_definition_mismatch")
     if not plan.route_id or not plan.starting_fen or plan.start_ply < 0:
         return Hold("invalid_selected_route")
@@ -310,10 +344,14 @@ def freeze_issued_plan(
         return Hold("missing_due_witnesses")
     if not plan.decision_occurrences or len(plan.decision_occurrences) > 20:
         return Hold("issued_presentation_exceeds_wire_bound")
-    if len({d.ply for d in plan.decision_occurrences}) != len(plan.decision_occurrences):
+    if len({d.ply for d in plan.decision_occurrences}) != len(
+        plan.decision_occurrences
+    ):
         return Hold("repeated_position_in_one_presentation")
-    if any(d.ply < plan.start_ply or d.ply - plan.start_ply >= len(plan.moves_uci)
-           for d in plan.decision_occurrences):
+    if any(
+        d.ply < plan.start_ply or d.ply - plan.start_ply >= len(plan.moves_uci)
+        for d in plan.decision_occurrences
+    ):
         return Hold("decision_outside_selected_suffix")
     cert = plan.source_certificate
     if not (cert.snapshot_id and cert.source_revision and cert.source_digest):
@@ -358,7 +396,10 @@ def freeze_issued_plan(
     )
     # Slots must point to the exact authored expected move in the issued suffix.
     for slot in slots:
-        if slot.move_offset >= len(plan.moves_uci) or plan.moves_uci[slot.move_offset] != slot.definition.expected_uci:
+        if (
+            slot.move_offset >= len(plan.moves_uci)
+            or plan.moves_uci[slot.move_offset] != slot.definition.expected_uci
+        ):
             return Hold("decision_slot_move_mismatch")
     provisional = IssuedPlan(
         version=1,
@@ -408,25 +449,41 @@ def select_and_freeze(request: SelectionRequest) -> IssuedPlan | Hold:
     # Select the stable authored candidate first. Prefix proofs can come from
     # a different authored route; the shared verifier checks the exact ordered
     # root/move prefix, source, day, epoch and current definitions.
-    initial = choose_plan(request.target.key, request.routes, study_day=day, owner_epoch=epoch)
+    initial = choose_plan(
+        request.target.key, request.routes, study_day=day, owner_epoch=epoch
+    )
     if isinstance(initial, Hold):
         return initial
-    selected = tuple(route for route in request.routes if route.route_id == initial.route_id)
+    selected = tuple(
+        route for route in request.routes if route.route_id == initial.route_id
+    )
     if len(selected) != 1:
         return Hold("selected_route_identity_ambiguous")
-    chosen = choose_plan(request.target.key, selected, clean_proofs=request.clean_proofs,
-                         study_day=day, owner_epoch=epoch)
+    chosen = choose_plan(
+        request.target.key,
+        selected,
+        clean_proofs=request.clean_proofs,
+        study_day=day,
+        owner_epoch=epoch,
+    )
     if isinstance(chosen, Hold):
         return chosen
     if request.end_ply is not None:
         end = request.end_ply
-        if (type(end) is not int or end <= chosen.target_ply
-                or end >= chosen.start_ply + len(chosen.moves_uci)
-                or not any(d.ply + 1 == end for d in chosen.decision_occurrences)):
+        if (
+            type(end) is not int
+            or end <= chosen.target_ply
+            or end >= chosen.start_ply + len(chosen.moves_uci)
+            or not any(d.ply + 1 == end for d in chosen.decision_occurrences)
+        ):
             return Hold("invalid_presentation_end")
-        chosen = replace(chosen,
-            moves_uci=chosen.moves_uci[:end - chosen.start_ply],
-            decision_occurrences=tuple(d for d in chosen.decision_occurrences if d.ply < end))
+        chosen = replace(
+            chosen,
+            moves_uci=chosen.moves_uci[: end - chosen.start_ply],
+            decision_occurrences=tuple(
+                d for d in chosen.decision_occurrences if d.ply < end
+            ),
+        )
     return freeze_issued_plan(
         original_card_id=request.original_card_id,
         original_card_revision=request.original_card_revision,
@@ -491,15 +548,30 @@ def decode_issued_record(raw: Mapping[str, Any]) -> IssuedPlan | Hold:
     signature, transaction receipt, or proof that a trusted issuer wrote it.
     """
     top_keys = {
-        "record_version", "plan_id", "original_card_id", "original_card_revision",
-        "queue_entry_id", "attempt_id", "owner_epoch", "route", "target",
-        "due_witnesses", "source", "local_day", "prefix_proofs", "issued_at",
+        "record_version",
+        "plan_id",
+        "original_card_id",
+        "original_card_revision",
+        "queue_entry_id",
+        "attempt_id",
+        "owner_epoch",
+        "route",
+        "target",
+        "due_witnesses",
+        "source",
+        "local_day",
+        "prefix_proofs",
+        "issued_at",
         "authored_source_token",
     }
     if not _exact_mapping(raw, top_keys):
         return _record_hold("issued_record_fields_mismatch")
-    if (type(raw["record_version"]) is not int or raw["record_version"] != 1
-            or not isinstance(raw["plan_id"], str) or not _DIGEST_RE.fullmatch(raw["plan_id"])):
+    if (
+        type(raw["record_version"]) is not int
+        or raw["record_version"] != 1
+        or not isinstance(raw["plan_id"], str)
+        or not _DIGEST_RE.fullmatch(raw["plan_id"])
+    ):
         return _record_hold("invalid_issued_record_version_or_digest")
     for name in ("original_card_id", "attempt_id", "owner_epoch"):
         if not isinstance(raw[name], str) or not raw[name]:
@@ -509,30 +581,54 @@ def decode_issued_record(raw: Mapping[str, Any]) -> IssuedPlan | Hold:
             return _record_hold("invalid_issued_record_identity", name)
 
     route_keys = {
-        "route_id", "target_ply", "start_ply", "starting_fen", "moves_uci",
-        "opponent_cue_uci", "opponent_cue_ply", "decision_slots",
+        "route_id",
+        "target_ply",
+        "start_ply",
+        "starting_fen",
+        "moves_uci",
+        "opponent_cue_uci",
+        "opponent_cue_ply",
+        "decision_slots",
     }
     if not _exact_mapping(raw["route"], route_keys):
         return _record_hold("issued_record_route_fields_mismatch")
     route = raw["route"]
-    if (not isinstance(route["route_id"], str) or not route["route_id"]
-            or not isinstance(route["starting_fen"], str) or not route["starting_fen"]
-            or type(route["target_ply"]) is not int or route["target_ply"] < 0
-            or type(route["start_ply"]) is not int or route["start_ply"] < 0):
+    if (
+        not isinstance(route["route_id"], str)
+        or not route["route_id"]
+        or not isinstance(route["starting_fen"], str)
+        or not route["starting_fen"]
+        or type(route["target_ply"]) is not int
+        or route["target_ply"] < 0
+        or type(route["start_ply"]) is not int
+        or route["start_ply"] < 0
+    ):
         return _record_hold("invalid_issued_record_route")
     moves = route["moves_uci"]
     slots_raw = route["decision_slots"]
-    if (not isinstance(moves, list) or not moves or len(moves) > 40
-            or any(not isinstance(move, str) or not UCI_RE.fullmatch(move) for move in moves)
-            or not isinstance(slots_raw, list) or not 1 <= len(slots_raw) <= 20):
+    if (
+        not isinstance(moves, list)
+        or not moves
+        or len(moves) > 40
+        or any(
+            not isinstance(move, str) or not UCI_RE.fullmatch(move) for move in moves
+        )
+        or not isinstance(slots_raw, list)
+        or not 1 <= len(slots_raw) <= 20
+    ):
         return _record_hold("invalid_issued_record_route_bounds")
     cue, cue_ply = route["opponent_cue_uci"], route["opponent_cue_ply"]
     if cue is None:
         if cue_ply is not None:
             return _record_hold("invalid_issued_record_opponent_cue")
-    elif (not isinstance(cue, str) or not UCI_RE.fullmatch(cue)
-          or type(cue_ply) is not int or cue_ply != route["start_ply"]
-          or not moves or moves[0] != cue):
+    elif (
+        not isinstance(cue, str)
+        or not UCI_RE.fullmatch(cue)
+        or type(cue_ply) is not int
+        or cue_ply != route["start_ply"]
+        or not moves
+        or moves[0] != cue
+    ):
         return _record_hold("invalid_issued_record_opponent_cue")
 
     slots: list[DecisionSlot] = []
@@ -540,17 +636,28 @@ def decode_issued_record(raw: Mapping[str, Any]) -> IssuedPlan | Hold:
     previous_ply = -1
     for slot_raw in slots_raw:
         slot_keys = {"move_offset", "original_ply", "definition", "fen"}
-        if (not _exact_mapping(slot_raw, slot_keys)
-                or type(slot_raw["move_offset"]) is not int
-                or type(slot_raw["original_ply"]) is not int
-                or not isinstance(slot_raw["fen"], str) or not slot_raw["fen"]):
+        if (
+            not _exact_mapping(slot_raw, slot_keys)
+            or type(slot_raw["move_offset"]) is not int
+            or type(slot_raw["original_ply"]) is not int
+            or not isinstance(slot_raw["fen"], str)
+            or not slot_raw["fen"]
+        ):
             return _record_hold("invalid_issued_record_decision_slot")
         definition = _parse_definition(slot_raw["definition"])
         if isinstance(definition, Hold):
             return definition
-        offset, ply, fen = slot_raw["move_offset"], slot_raw["original_ply"], slot_raw["fen"]
-        if (offset != ply - route["start_ply"] or not 0 <= offset < len(moves)
-                or ply <= previous_ply or moves[offset] != definition.expected_uci):
+        offset, ply, fen = (
+            slot_raw["move_offset"],
+            slot_raw["original_ply"],
+            slot_raw["fen"],
+        )
+        if (
+            offset != ply - route["start_ply"]
+            or not 0 <= offset < len(moves)
+            or ply <= previous_ply
+            or moves[offset] != definition.expected_uci
+        ):
             return _record_hold("invalid_issued_record_decision_slot")
         prior_definition = definition_by_position.get(definition.key)
         if prior_definition is not None and prior_definition != definition:
@@ -571,14 +678,24 @@ def decode_issued_record(raw: Mapping[str, Any]) -> IssuedPlan | Hold:
     if len(target_matches) != 1 or target_matches[0].definition != target:
         return _record_hold("issued_record_target_definition_mismatch")
 
-    source_keys = {"snapshot_id", "source_revision", "source_digest", "complete",
-                   "current_integrity", "legal_verified"}
+    source_keys = {
+        "snapshot_id",
+        "source_revision",
+        "source_digest",
+        "complete",
+        "current_integrity",
+        "legal_verified",
+    }
     if not _exact_mapping(raw["source"], source_keys):
         return _record_hold("issued_record_source_fields_mismatch")
     source = raw["source"]
-    if (any(not isinstance(source[k], str) or not source[k]
-            for k in ("snapshot_id", "source_revision", "source_digest"))
-            or any(type(source[k]) is not bool for k in ("complete", "current_integrity", "legal_verified"))):
+    if any(
+        not isinstance(source[k], str) or not source[k]
+        for k in ("snapshot_id", "source_revision", "source_digest")
+    ) or any(
+        type(source[k]) is not bool
+        for k in ("complete", "current_integrity", "legal_verified")
+    ):
         return _record_hold("invalid_issued_record_source")
     token_json = _authored_token_json(
         raw["authored_source_token"],
@@ -599,24 +716,45 @@ def decode_issued_record(raw: Mapping[str, Any]) -> IssuedPlan | Hold:
     if not isinstance(due_raw, list) or len(due_raw) != len(ordered_unique_definitions):
         return _record_hold("invalid_issued_record_due_witnesses")
     dues: list[DueAtIssuance] = []
-    due_keys = {"definition", "due", "study_day", "owner_epoch", "position_revision", "issued_at"}
+    due_keys = {
+        "definition",
+        "due",
+        "study_day",
+        "owner_epoch",
+        "position_revision",
+        "issued_at",
+    }
     for witness_raw, expected_definition in zip(due_raw, ordered_unique_definitions):
-        if (not _exact_mapping(witness_raw, due_keys)
-                or type(witness_raw["due"]) is not bool
-                or type(witness_raw["position_revision"]) is not int
-                or witness_raw["position_revision"] < 1
-                or witness_raw["owner_epoch"] != raw["owner_epoch"]):
+        if (
+            not _exact_mapping(witness_raw, due_keys)
+            or type(witness_raw["due"]) is not bool
+            or type(witness_raw["position_revision"]) is not int
+            or witness_raw["position_revision"] < 1
+            or witness_raw["owner_epoch"] != raw["owner_epoch"]
+        ):
             return _record_hold("invalid_issued_record_due_witness")
         definition = _parse_definition(witness_raw["definition"])
         if isinstance(definition, Hold):
             return definition
         witness_day = _parse_record_date(witness_raw["study_day"])
         witness_time = _parse_record_datetime(witness_raw["issued_at"])
-        if (definition != expected_definition or witness_day != local_day or witness_time is None):
+        if (
+            definition != expected_definition
+            or witness_day != local_day
+            or witness_time is None
+        ):
             return _record_hold("issued_record_due_witness_mismatch")
         try:
-            dues.append(DueAtIssuance(definition, witness_raw["due"], witness_day,
-                                      raw["owner_epoch"], witness_raw["position_revision"], witness_time))
+            dues.append(
+                DueAtIssuance(
+                    definition,
+                    witness_raw["due"],
+                    witness_day,
+                    raw["owner_epoch"],
+                    witness_raw["position_revision"],
+                    witness_time,
+                )
+            )
         except (TypeError, ValueError) as exc:
             return _record_hold("invalid_issued_record_due_witness", str(exc))
     if min(d.issued_at for d in dues) != issued_at:
@@ -629,10 +767,15 @@ def decode_issued_record(raw: Mapping[str, Any]) -> IssuedPlan | Hold:
     if proof_raw:
         proof = proof_raw[0]
         proof_keys = {"attempt_id", "terminal_receipt_id", "review_receipt_id"}
-        if (not _exact_mapping(proof, proof_keys)
-                or any(not isinstance(proof[k], str) or not proof[k] for k in proof_keys)):
+        if not _exact_mapping(proof, proof_keys) or any(
+            not isinstance(proof[k], str) or not proof[k] for k in proof_keys
+        ):
             return _record_hold("invalid_issued_record_prefix_proof")
-        proof_ids = (proof["attempt_id"], proof["terminal_receipt_id"], proof["review_receipt_id"])
+        proof_ids = (
+            proof["attempt_id"],
+            proof["terminal_receipt_id"],
+            proof["review_receipt_id"],
+        )
 
     plan = IssuedPlan(
         version=1,
@@ -672,17 +815,44 @@ def decode_issued_record(raw: Mapping[str, Any]) -> IssuedPlan | Hold:
     return decoded
 
 
-def validate_wire_v1(value: Mapping[str, Any], *, expected_plan: IssuedPlan | None = None) -> Hold | dict[str, Any]:
+def validate_wire_v1(
+    value: Mapping[str, Any], *, expected_plan: IssuedPlan | None = None
+) -> Hold | dict[str, Any]:
     """Strictly validate browser-facing v1 shape; this cannot verify authority."""
-    fields = {"version", "plan_id", "original_card_id", "original_card_revision",
-              "queue_entry_id", "attempt_id", "owner_epoch", "route_id", "target_ply",
-              "starting_fen", "moves_uci", "decision_slots", "source_digest", "local_day",
-              "skipped_prefix_proof_ids"}
+    fields = {
+        "version",
+        "plan_id",
+        "original_card_id",
+        "original_card_revision",
+        "queue_entry_id",
+        "attempt_id",
+        "owner_epoch",
+        "route_id",
+        "target_ply",
+        "starting_fen",
+        "moves_uci",
+        "decision_slots",
+        "source_digest",
+        "local_day",
+        "skipped_prefix_proof_ids",
+    }
     if not isinstance(value, Mapping) or set(value) != fields:
         return Hold("issued_plan_wire_fields_mismatch")
-    if type(value["version"]) is not int or value["version"] != 1 or not isinstance(value["plan_id"], str) or not _DIGEST_RE.fullmatch(value["plan_id"]):
+    if (
+        type(value["version"]) is not int
+        or value["version"] != 1
+        or not isinstance(value["plan_id"], str)
+        or not _DIGEST_RE.fullmatch(value["plan_id"])
+    ):
         return Hold("invalid_issued_plan_wire_identity")
-    for name in ("original_card_id", "attempt_id", "owner_epoch", "route_id", "starting_fen", "source_digest"):
+    for name in (
+        "original_card_id",
+        "attempt_id",
+        "owner_epoch",
+        "route_id",
+        "starting_fen",
+        "source_digest",
+    ):
         if not isinstance(value[name], str) or not value[name]:
             return Hold("invalid_issued_plan_wire_identity", name)
     for name in ("original_card_revision", "queue_entry_id"):
@@ -693,20 +863,32 @@ def validate_wire_v1(value: Mapping[str, Any], *, expected_plan: IssuedPlan | No
     moves = value["moves_uci"]
     slots = value["decision_slots"]
     proof_ids = value["skipped_prefix_proof_ids"]
-    if not isinstance(moves, list) or len(moves) > 40 or any(not isinstance(m, str) or not UCI_RE.fullmatch(m) for m in moves):
+    if (
+        not isinstance(moves, list)
+        or len(moves) > 40
+        or any(not isinstance(m, str) or not UCI_RE.fullmatch(m) for m in moves)
+    ):
         return Hold("invalid_issued_plan_moves")
     if not isinstance(slots, list) or not 1 <= len(slots) <= 20:
         return Hold("invalid_issued_plan_slots")
-    if not isinstance(proof_ids, list) or any(not isinstance(i, str) or not i for i in proof_ids):
+    if not isinstance(proof_ids, list) or any(
+        not isinstance(i, str) or not i for i in proof_ids
+    ):
         return Hold("invalid_skipped_prefix_proofs")
     seen_offsets: set[int] = set()
     for slot in slots:
-        if (not isinstance(slot, Mapping) or set(slot) != {"move_offset", "position_key", "expected_uci"}
-                or type(slot["move_offset"]) is not int or not 0 <= slot["move_offset"] < len(moves)
-                or slot["move_offset"] in seen_offsets
-                or not isinstance(slot["position_key"], str) or not slot["position_key"]
-                or not isinstance(slot["expected_uci"], str) or not UCI_RE.fullmatch(slot["expected_uci"])
-                or moves[slot["move_offset"]] != slot["expected_uci"]):
+        if (
+            not isinstance(slot, Mapping)
+            or set(slot) != {"move_offset", "position_key", "expected_uci"}
+            or type(slot["move_offset"]) is not int
+            or not 0 <= slot["move_offset"] < len(moves)
+            or slot["move_offset"] in seen_offsets
+            or not isinstance(slot["position_key"], str)
+            or not slot["position_key"]
+            or not isinstance(slot["expected_uci"], str)
+            or not UCI_RE.fullmatch(slot["expected_uci"])
+            or moves[slot["move_offset"]] != slot["expected_uci"]
+        ):
             return Hold("invalid_issued_plan_slot")
         seen_offsets.add(slot["move_offset"])
     try:
@@ -716,7 +898,12 @@ def validate_wire_v1(value: Mapping[str, Any], *, expected_plan: IssuedPlan | No
     if parsed_day.isoformat() != value["local_day"]:
         return Hold("invalid_issued_plan_local_day")
     if expected_plan is not None:
-        actual_digest = hashlib.sha256(expected_plan._digest_material.encode("ascii")).hexdigest()
-        if (actual_digest != expected_plan.plan_id or dict(value) != expected_plan.to_wire()):
+        actual_digest = hashlib.sha256(
+            expected_plan._digest_material.encode("ascii")
+        ).hexdigest()
+        if (
+            actual_digest != expected_plan.plan_id
+            or dict(value) != expected_plan.to_wire()
+        ):
             return Hold("issued_plan_digest_or_payload_mismatch")
     return dict(value)

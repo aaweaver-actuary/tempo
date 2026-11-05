@@ -25,7 +25,9 @@ class LichessPuzzle:
 def parse_lichess_puzzle_row(row: dict[str, str]) -> LichessPuzzle:
     moves = row["Moves"].split()
     if len(moves) < 2:
-        raise ValueError("A Lichess puzzle needs a setup move and at least one solution move")
+        raise ValueError(
+            "A Lichess puzzle needs a setup move and at least one solution move"
+        )
     return LichessPuzzle(
         puzzle_id=row["PuzzleId"],
         source_fen=row["FEN"],
@@ -44,8 +46,13 @@ def load_packaged_decks(path: str | Path) -> dict[str, list[dict[str, object]]]:
     for record in records:
         deck_id = str(record["DeckId"])
         decks.setdefault(deck_id, []).append(record)
-    if any(len(cards) != (250 if deck_id.endswith("-focused") else 100) for deck_id, cards in decks.items()):
-        raise ValueError("Packaged tactics decks must contain 100 fundamentals or 250 focused cards")
+    if any(
+        len(cards) != (250 if deck_id.endswith("-focused") else 100)
+        for deck_id, cards in decks.items()
+    ):
+        raise ValueError(
+            "Packaged tactics decks must contain 100 fundamentals or 250 focused cards"
+        )
     return decks
 
 

@@ -5,7 +5,11 @@ import chess
 import pytest
 
 from app.chess import motifs as motif_detectors
-from app.chess.motifs import MOTIF_PRECEDENCE, classify_candidate_lines, select_primary_motif
+from app.chess.motifs import (
+    MOTIF_PRECEDENCE,
+    classify_candidate_lines,
+    select_primary_motif,
+)
 
 
 FIXTURE_PATH = Path(__file__).parents[2] / "tests/fixtures/motif-parity.json"
@@ -95,7 +99,8 @@ def test_primary_motif_precedence_is_stable_and_keeps_secondary_results():
 
 def test_motif_candidates_replay_each_line_once_for_all_detectors(monkeypatch):
     fixture = next(
-        item for item in json.loads(FIXTURE_PATH.read_text())
+        item
+        for item in json.loads(FIXTURE_PATH.read_text())
         if item["id"] == "pin-and-fork-are-both-preserved"
     )
     original_replay = motif_detectors._replay_line

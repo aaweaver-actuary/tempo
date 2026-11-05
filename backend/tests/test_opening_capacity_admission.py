@@ -570,14 +570,27 @@ def test_capacity_checkpoint_resume_retains_witness_and_rejects_old_lease(
 
     # This lease/checkpoint fixture admits legacy cards, with no position cohort.
     from app.services import position_queue_admission
-    from tempo_legacy_database.adapters.study import position_owner_epoch as position_owners
-    monkeypatch.setattr(position_queue_admission, "prepare_opening_introduction",
-        lambda _database, item: ("legacy", item["repertoire_id"]))
+    from tempo_legacy_database.adapters.study import (
+        position_owner_epoch as position_owners,
+    )
+
+    monkeypatch.setattr(
+        position_queue_admission,
+        "prepare_opening_introduction",
+        lambda _database, item: ("legacy", item["repertoire_id"]),
+    )
     original_mode = position_owners.owner_mode
-    monkeypatch.setattr(position_owners, "owner_mode", lambda conn, repertoire, digest:
-        position_owners.OwnerDecision("legacy", "inactive", None, None, "position_owner_absent")
-        if isinstance(conn, NativeSqlite) and repertoire == "rep"
-        else original_mode(conn, repertoire, digest))
+    monkeypatch.setattr(
+        position_owners,
+        "owner_mode",
+        lambda conn, repertoire, digest: (
+            position_owners.OwnerDecision(
+                "legacy", "inactive", None, None, "position_owner_absent"
+            )
+            if isinstance(conn, NativeSqlite) and repertoire == "rep"
+            else original_mode(conn, repertoire, digest)
+        ),
+    )
     connection, day, _ = capacity_database
     introduce_prefixes(connection, day, monkeypatch)
     planned = capacity_plan(connection, day)
@@ -691,12 +704,26 @@ def test_capacity_ready_publication_checks_translate_to_postgres_without_new_sto
 
 @pytest.fixture(autouse=True)
 def legacy_capacity_checkpoint_has_no_frozen_order(monkeypatch, request):
-    if request.node.name != 'test_capacity_checkpoint_resume_retains_witness_and_rejects_old_lease':
+    if (
+        request.node.name
+        != "test_capacity_checkpoint_resume_retains_witness_and_rejects_old_lease"
+    ):
         return
     from app.services import frozen_opening_order, postgres_queue_refresh
-    monkeypatch.setattr(frozen_opening_order, 'activation', lambda database, **kwargs: (None, 0))
+
+    monkeypatch.setattr(
+        frozen_opening_order, "activation", lambda database, **kwargs: (None, 0)
+    )
+
     @contextmanager
     def metadata_reader():
         yield object()
-    monkeypatch.setattr(postgres_queue_refresh, 'background_read_connection', metadata_reader)
-    monkeypatch.setattr(postgres_queue_refresh.read_storage, 'background_read_connection', metadata_reader)
+
+    monkeypatch.setattr(
+        postgres_queue_refresh, "background_read_connection", metadata_reader
+    )
+    monkeypatch.setattr(
+        postgres_queue_refresh.read_storage,
+        "background_read_connection",
+        metadata_reader,
+    )

@@ -1,4 +1,5 @@
 """Best-effort worker-stage presentation and monotonic timing."""
+
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -14,7 +15,9 @@ import socket
 import time
 
 from tempo_legacy_database.adapters.redis_control.wake_runtime import runtime as storage
-from tempo_legacy_database.adapters.redis_control.wake_runtime.runtime import _diagnostic_client
+from tempo_legacy_database.adapters.redis_control.wake_runtime.runtime import (
+    _diagnostic_client,
+)
 
 # Explicit compatibility aliases share the neutral timing contract's context.
 from app.contracts.runtime_timing import _training_timing, current_training_timing
@@ -32,13 +35,20 @@ def _training_latency_logger():
 
 @contextmanager
 def measure_training_timing(label: str, identity: str = ""):
-    if os.getenv("TEMPO_TRAINING_TIMINGS", '1') != "1":
+    if os.getenv("TEMPO_TRAINING_TIMINGS", "1") != "1":
         yield None
         return
     started = time.perf_counter()
-    measurement = {"label": label, "trace": hashlib.sha256(identity.encode()).hexdigest()[:16],
-                   "started_epoch_ms": time.time() * 1000, "stages_ms": {}, "connections": [],
-                   "sql_count": 0, "sql_ms": 0.0, 'slow_sql': []}
+    measurement = {
+        "label": label,
+        "trace": hashlib.sha256(identity.encode()).hexdigest()[:16],
+        "started_epoch_ms": time.time() * 1000,
+        "stages_ms": {},
+        "connections": [],
+        "sql_count": 0,
+        "sql_ms": 0.0,
+        "slow_sql": [],
+    }
     token = _training_timing.set(measurement)
     try:
         yield measurement
@@ -57,7 +67,9 @@ def training_timing_stage(label: str):
     finally:
         if measurement is not None:
             stages = measurement["stages_ms"]
-            stages[label] = stages.get(label, 0.0) + (time.perf_counter() - started) * 1000
+            stages[label] = (
+                stages.get(label, 0.0) + (time.perf_counter() - started) * 1000
+            )
 
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -67,15 +79,28 @@ from .background_metric_kinds import KINDS
 from .background_diagnostic_types import DiagnosticTimestamp, WorkKind
 
 _LOGGER = logging.getLogger("tempo.background.diagnostics")
-STAGES = ("idle", "dispatch", "foreground_admission", "database", "execution", "unknown")
-_reserved_database_depth: ContextVar[int] = ContextVar("diagnostic_database_reservation_depth", default=0)
-_current: ContextVar["RuntimeMeasurement | None"] = ContextVar("background_measurement", default=None)
+STAGES = (
+    "idle",
+    "dispatch",
+    "foreground_admission",
+    "database",
+    "execution",
+    "unknown",
+)
+_reserved_database_depth: ContextVar[int] = ContextVar(
+    "diagnostic_database_reservation_depth", default=0
+)
+_current: ContextVar["RuntimeMeasurement | None"] = ContextVar(
+    "background_measurement", default=None
+)
 
 
 class WorkerStage(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, allow_inf_nan=False)
     kind: WorkKind
-    stage: Literal["idle", "dispatch", "foreground_admission", "database", "execution", "unknown"]
+    stage: Literal[
+        "idle", "dispatch", "foreground_admission", "database", "execution", "unknown"
+    ]
     observed_at: DiagnosticTimestamp
     process_started_at: DiagnosticTimestamp
     admission_wait_seconds: float = Field(ge=0)
@@ -96,7 +121,15 @@ _PROCESS_STARTED = datetime.now(timezone.utc).isoformat()
 
 
 def _worker_slot() -> int:
-    return int.from_bytes(hashlib.blake2s(f"{socket.gethostname()}:{os.getpid()}".encode(), digest_size=2).digest(), "big") % 16
+    return (
+        int.from_bytes(
+            hashlib.blake2s(
+                f"{socket.gethostname()}:{os.getpid()}".encode(), digest_size=2
+            ).digest(),
+            "big",
+        )
+        % 16
+    )
 
 
 @dataclass
@@ -115,23 +148,32 @@ class RuntimeMeasurement:
         wait = self.admission_wait_seconds
         if self.admission_started is not None:
             wait += max(0.0, time.monotonic() - self.admission_started)
-        return WorkerStage(kind=self.kind if self.kind in KINDS else "other", stage=self.stage,
-                           observed_at=datetime.now(timezone.utc).isoformat(), process_started_at=_PROCESS_STARTED,
-                           admission_wait_seconds=wait, handler_elapsed_seconds=elapsed,
-                           execution_seconds=max(0.0, elapsed-wait), dispatch_wait_seconds=self.dispatch_wait_seconds)
+        return WorkerStage(
+            kind=self.kind if self.kind in KINDS else "other",
+            stage=self.stage,
+            observed_at=datetime.now(timezone.utc).isoformat(),
+            process_started_at=_PROCESS_STARTED,
+            admission_wait_seconds=wait,
+            handler_elapsed_seconds=elapsed,
+            execution_seconds=max(0.0, elapsed - wait),
+            dispatch_wait_seconds=self.dispatch_wait_seconds,
+        )
 
     def publish(self, *, force=False):
         from .activity_gate import activity_gate
+
         if _reserved_database_depth.get() or activity_gate.active_background_sections:
             return
         now = time.monotonic()
-        if not force and now-self.last_publish < 5:
+        if not force and now - self.last_publish < 5:
             return
         self.last_publish = now
         if redis_admission_gate.configured():
             try:
                 storage.publish_worker_stage(
-                    _diagnostic_client(), _worker_slot(), self.sample().model_dump_json(),
+                    _diagnostic_client(),
+                    _worker_slot(),
+                    self.sample().model_dump_json(),
                 )
             except Exception:
                 # Telemetry availability never changes admission or execution outcomes.
@@ -145,7 +187,7 @@ def measure_handler(kind: str, submitted_at=None):
         if submitted_at is not None:
             submitted = float(submitted_at)
             if submitted > 0 and submitted <= time.time():
-                dispatch_wait = time.time()-submitted
+                dispatch_wait = time.time() - submitted
     except (ValueError, TypeError, OverflowError):
         pass
     measurement = RuntimeMeasurement(kind, dispatch_wait)
@@ -178,7 +220,9 @@ def admission_wait():
     finally:
         measurement.admission_depth -= 1
         if measurement.admission_depth == 0:
-            measurement.admission_wait_seconds += max(0.0, time.monotonic()-measurement.admission_started)
+            measurement.admission_wait_seconds += max(
+                0.0, time.monotonic() - measurement.admission_started
+            )
             measurement.admission_started = None
             measurement.stage = previous_stage
 
@@ -216,7 +260,7 @@ def snapshot() -> RuntimeSnapshot:
                 sample = WorkerStage.model_validate_json(value)
                 if sample.kind not in KINDS:
                     raise ValueError("Unknown worker kind")
-                age = (now-datetime.fromisoformat(sample.observed_at)).total_seconds()
+                age = (now - datetime.fromisoformat(sample.observed_at)).total_seconds()
                 if 0 <= age < 15:
                     workers.append(sample)
         return RuntimeSnapshot(available=True, workers=workers)
@@ -227,7 +271,7 @@ def snapshot() -> RuntimeSnapshot:
 @contextmanager
 def reserved_database_telemetry():
     """Suppress diagnostic network I/O until both local and shared leases release."""
-    token = _reserved_database_depth.set(_reserved_database_depth.get()+1)
+    token = _reserved_database_depth.set(_reserved_database_depth.get() + 1)
     try:
         yield
     finally:
@@ -236,27 +280,50 @@ def reserved_database_telemetry():
 
 class StudyResponseTiming:
     """Measure response-body delivery independently of the handler/SQL spans."""
+
     def __init__(self, app):
         self.app = app
 
     async def __call__(self, scope, receive, send):
-        path = scope.get('path', '')
-        if (scope['type'] != 'http' or os.getenv('TEMPO_TRAINING_TIMINGS', '1') != '1'
-                or not (path.startswith('/api/queue/') or path.endswith('/review'))):
+        path = scope.get("path", "")
+        if (
+            scope["type"] != "http"
+            or os.getenv("TEMPO_TRAINING_TIMINGS", "1") != "1"
+            or not (path.startswith("/api/queue/") or path.endswith("/review"))
+        ):
             return await self.app(scope, receive, send)
         started = time.perf_counter()
         headers_started = None
-        identity = next((value for name,value in scope.get('headers', []) if name.lower() == b'idempotency-key'), b'')
+        identity = next(
+            (
+                value
+                for name, value in scope.get("headers", [])
+                if name.lower() == b"idempotency-key"
+            ),
+            b"",
+        )
+
         async def measured_send(message):
             nonlocal headers_started
-            if message['type'] == 'http.response.start':
+            if message["type"] == "http.response.start":
                 headers_started = time.perf_counter()
             await send(message)
-            if message['type'] == 'http.response.body' and not message.get('more_body', False):
+            if message["type"] == "http.response.body" and not message.get(
+                "more_body", False
+            ):
                 ended = time.perf_counter()
-                _training_latency_logger().info('study_response_timing %s', json.dumps({
-                    'trace': hashlib.sha256(identity).hexdigest()[:16],
-                    'request_through_delivery_ms': (ended-started)*1000,
-                    'response_delivery_ms': (ended-(headers_started or started))*1000,
-                }))
+                _training_latency_logger().info(
+                    "study_response_timing %s",
+                    json.dumps(
+                        {
+                            "trace": hashlib.sha256(identity).hexdigest()[:16],
+                            "request_through_delivery_ms": (ended - started) * 1000,
+                            "response_delivery_ms": (
+                                ended - (headers_started or started)
+                            )
+                            * 1000,
+                        }
+                    ),
+                )
+
         await self.app(scope, receive, measured_send)

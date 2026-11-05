@@ -16,8 +16,14 @@ def recover_one_explorer_run() -> bool:
         if run is None:
             return False
         enqueue_compact_postgres_task_in_transaction(
-            database, "coverage_explorer", run["repertoire_id"],
-            {"run_id": run["id"], "repertoire_id": run["repertoire_id"],
-             "after_node_id": ""}, priority=80,
+            database,
+            "coverage_explorer",
+            run["repertoire_id"],
+            {
+                "run_id": run["id"],
+                "repertoire_id": run["repertoire_id"],
+                "after_node_id": "",
+            },
+            priority=80,
         )
         return True

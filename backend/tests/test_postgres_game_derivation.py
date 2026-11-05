@@ -17,7 +17,9 @@ from app import tasks
 from app.services import postgres_game_derivation, repertoire_game_refresh
 
 
-def test_postgres_repertoire_refresh_admits_position_index_with_job_version(monkeypatch):
+def test_postgres_repertoire_refresh_admits_position_index_with_job_version(
+    monkeypatch,
+):
     enqueued: list[tuple[str, str, dict, int]] = []
     statements: list[str] = []
 
@@ -42,30 +44,50 @@ def test_postgres_repertoire_refresh_admits_position_index_with_job_version(monk
         assert background
         yield Database()
 
-    monkeypatch.setattr(repertoire_game_refresh.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(repertoire_game_refresh.activity_gate, "wait_for_foreground", lambda: None)
-    monkeypatch.setattr(repertoire_game_refresh, "connection", write_database)
-    monkeypatch.setattr(repertoire_game_refresh, "lock_current_slice", lambda *_args: True)
     monkeypatch.setattr(
-        repertoire_game_refresh, "enqueue_compact_postgres_task_in_transaction",
-        lambda _database, kind, key, payload, *, priority:
-        enqueued.append((kind, key, payload, priority)),
+        repertoire_game_refresh.postgres_store, "configured", lambda: True
+    )
+    monkeypatch.setattr(
+        repertoire_game_refresh.activity_gate, "wait_for_foreground", lambda: None
+    )
+    monkeypatch.setattr(repertoire_game_refresh, "connection", write_database)
+    monkeypatch.setattr(
+        repertoire_game_refresh, "lock_current_slice", lambda *_args: True
+    )
+    monkeypatch.setattr(
+        repertoire_game_refresh,
+        "enqueue_compact_postgres_task_in_transaction",
+        lambda _database, kind, key, payload, *, priority: enqueued.append(
+            (kind, key, payload, priority)
+        ),
         raising=False,
     )
 
-    assert repertoire_game_refresh.execute_repertoire_game_refresh_slice({
-        "id": "refresh", "generation": 1, "lease_token": "live",
-        "payload": {"after_game_id": ""},
-    })
+    assert repertoire_game_refresh.execute_repertoire_game_refresh_slice(
+        {
+            "id": "refresh",
+            "generation": 1,
+            "lease_token": "live",
+            "payload": {"after_game_id": ""},
+        }
+    )
     assert enqueued == [
-        ("game_derivation_positions", "game-one",
-         {"game_id": "game-one", "derivation_version": 7, "cursor": 0}, 125),
+        (
+            "game_derivation_positions",
+            "game-one",
+            {"game_id": "game-one", "derivation_version": 7, "cursor": 0},
+            125,
+        ),
         ("repertoire_game_refresh", "all", {"after_game_id": "game-one"}, 90),
     ]
-    assert any("INSERT INTO game_derivation_jobs" in statement for statement in statements)
+    assert any(
+        "INSERT INTO game_derivation_jobs" in statement for statement in statements
+    )
 
 
-def test_postgres_game_position_index_yields_to_foreground_and_replays_safely(monkeypatch):
+def test_postgres_game_position_index_yields_to_foreground_and_replays_safely(
+    monkeypatch,
+):
     assert "game_derivation_positions" in tasks._SUPPORTED_BACKGROUND_KINDS
     work_started = threading.Event()
     allow_work = threading.Event()
@@ -73,8 +95,12 @@ def test_postgres_game_position_index_yields_to_foreground_and_replays_safely(mo
     state = {"in_write": False, "lease_current": True, "version": 2}
     published = []
     advanced = []
-    task = {"id": "index-task", "generation": 3, "lease_token": "live",
-            "payload": {"game_id": "game-one", "derivation_version": 2, "cursor": 0}}
+    task = {
+        "id": "index-task",
+        "generation": 3,
+        "lease_token": "live",
+        "payload": {"game_id": "game-one", "derivation_version": 2, "cursor": 0},
+    }
 
     class Cursor:
         def __init__(self, row=None):
@@ -86,10 +112,17 @@ def test_postgres_game_position_index_yields_to_foreground_and_replays_safely(mo
     class Database:
         def execute(self, statement, parameters):
             if "FROM imported_games" in statement:
-                return Cursor({"start_fen": chess.STARTING_FEN, "moves_json": '["e2e4"]'})
+                return Cursor(
+                    {"start_fen": chess.STARTING_FEN, "moves_json": '["e2e4"]'}
+                )
             if "FROM game_derivation_jobs" in statement:
-                return Cursor({"derivation_version": state["version"],
-                               "completed_phases": 0, "status": "queued"})
+                return Cursor(
+                    {
+                        "derivation_version": state["version"],
+                        "completed_phases": 0,
+                        "status": "queued",
+                    }
+                )
             if "INSERT INTO game_position_occurrences" in statement:
                 published.append(parameters)
             return Cursor()
@@ -116,19 +149,35 @@ def test_postgres_game_position_index_yields_to_foreground_and_replays_safely(mo
         assert allow_work.wait(5)
         return real_prepare(*arguments)
 
-    monkeypatch.setattr(postgres_game_derivation, "background_read_connection", read_database)
+    monkeypatch.setattr(
+        postgres_game_derivation, "background_read_connection", read_database
+    )
     monkeypatch.setattr(postgres_game_derivation, "connection", write_database)
-    monkeypatch.setattr(postgres_game_derivation, "prepare_game_position", paused_prepare)
-    monkeypatch.setattr(postgres_game_derivation, "lock_current_slice",
-                        lambda _database, _task: state["lease_current"])
-    monkeypatch.setattr(postgres_game_derivation, "advance_task_slice_in_transaction",
-                        lambda _database, _task, *, next_phase, next_payload:
-                        advanced.append((next_phase, next_payload)) or True)
-    monkeypatch.setattr(postgres_game_derivation, "complete_task_slice_in_transaction",
-                        lambda *_arguments: True)
+    monkeypatch.setattr(
+        postgres_game_derivation, "prepare_game_position", paused_prepare
+    )
+    monkeypatch.setattr(
+        postgres_game_derivation,
+        "lock_current_slice",
+        lambda _database, _task: state["lease_current"],
+    )
+    monkeypatch.setattr(
+        postgres_game_derivation,
+        "advance_task_slice_in_transaction",
+        lambda _database, _task, *, next_phase, next_payload: (
+            advanced.append((next_phase, next_payload)) or True
+        ),
+    )
+    monkeypatch.setattr(
+        postgres_game_derivation,
+        "complete_task_slice_in_transaction",
+        lambda *_arguments: True,
+    )
 
     with ThreadPoolExecutor(max_workers=1) as pool:
-        pending = pool.submit(postgres_game_derivation.execute_game_position_index_slice, task)
+        pending = pool.submit(
+            postgres_game_derivation.execute_game_position_index_slice, task
+        )
         assert work_started.wait(2)
         assert not state["in_write"]
         foreground_completed.set()
@@ -150,7 +199,10 @@ def test_postgres_game_position_index_yields_to_foreground_and_replays_safely(mo
 
 def test_postgres_game_position_index_retains_final_legal_position_on_bad_move():
     prepared = postgres_game_derivation.prepare_game_position(
-        "game-one", chess.STARTING_FEN, ("e2e4", "e2e5", "g1f3"), 1,
+        "game-one",
+        chess.STARTING_FEN,
+        ("e2e4", "e2e5", "g1f3"),
+        1,
     )
     assert prepared.final_position
     assert prepared.move_uci is None
@@ -159,29 +211,51 @@ def test_postgres_game_position_index_retains_final_legal_position_on_bad_move()
     assert prepared.fen_key == " ".join(board.fen().split()[:4])
 
 
-def test_postgres_derivation_lock_conflicts_yield_without_failing_task(normal_study_mode, monkeypatch):
+def test_postgres_derivation_lock_conflicts_yield_without_failing_task(
+    normal_study_mode, monkeypatch
+):
     monkeypatch.setattr(tasks, "current_delivery", lambda _task: True)
     from contextlib import nullcontext
 
-    claimed = {"kind": "game_derivation_positions", "id": "index-task",
-               "generation": 3, "lease_token": "live", "payload": {}}
+    claimed = {
+        "kind": "game_derivation_positions",
+        "id": "index-task",
+        "generation": 3,
+        "lease_token": "live",
+        "payload": {},
+    }
     deferred = []
-    monkeypatch.setattr(tasks.activity_gate, "background_job", lambda *_args, **_kwargs: nullcontext())
-    monkeypatch.setattr(tasks, "defer_task_for_contention",
-                        lambda task_id, generation, lease_token, *, kind:
-                        deferred.append((task_id, generation, lease_token)))
-    monkeypatch.setattr(tasks, "fail_task",
-                        lambda *_arguments: (_ for _ in ()).throw(
-                            AssertionError("Expected lock conflict must not fail the task")))
+    monkeypatch.setattr(
+        tasks.activity_gate, "background_job", lambda *_args, **_kwargs: nullcontext()
+    )
+    monkeypatch.setattr(
+        tasks,
+        "defer_task_for_contention",
+        lambda task_id, generation, lease_token, *, kind: deferred.append(
+            (task_id, generation, lease_token)
+        ),
+    )
+    monkeypatch.setattr(
+        tasks,
+        "fail_task",
+        lambda *_arguments: (_ for _ in ()).throw(
+            AssertionError("Expected lock conflict must not fail the task")
+        ),
+    )
     monkeypatch.setattr(tasks.celery_app, "send_task", lambda *_args, **_kwargs: None)
     for conflict in (DeadlockDetected, SerializationFailure):
-        monkeypatch.setattr(tasks, "execute_game_position_index_slice",
-                            lambda _task: (_ for _ in ()).throw(conflict("retry")))
+        monkeypatch.setattr(
+            tasks,
+            "execute_game_position_index_slice",
+            lambda _task: (_ for _ in ()).throw(conflict("retry")),
+        )
         assert tasks.execute_background_slice.run(claimed)
     assert deferred == [("index-task", 3, "live"), ("index-task", 3, "live")]
 
 
-def test_postgres_analysis_followup_checkpoints_derivation_before_index_admission(monkeypatch):
+def test_postgres_analysis_followup_checkpoints_derivation_before_index_admission(
+    monkeypatch,
+):
     from app import game_analysis_publication
 
     statements = []
@@ -199,7 +273,9 @@ def test_postgres_analysis_followup_checkpoints_derivation_before_index_admissio
         def execute_native(self, statement, parameters):
             statements.append((statement, parameters))
             if "FROM imported_games" in statement:
-                return Cursor({"analysis_version": 2, "published_analysis_generation": 2})
+                return Cursor(
+                    {"analysis_version": 2, "published_analysis_generation": 2}
+                )
             if "SELECT derivation_version FROM game_derivation_jobs" in statement:
                 return Cursor({"derivation_version": 4})
             return Cursor(None)
@@ -210,27 +286,53 @@ def test_postgres_analysis_followup_checkpoints_derivation_before_index_admissio
         yield Database()
 
     monkeypatch.setattr(game_analysis_publication, "connection", open_database)
-    monkeypatch.setattr(game_analysis_publication, "lock_current_slice", lambda *_arguments: True)
-    monkeypatch.setattr(game_analysis_publication, "advance_task_slice_in_transaction",
-                        lambda _database, _task, *, next_phase, next_payload:
-                        advanced.append((next_phase, next_payload)) or True)
-    monkeypatch.setattr(game_analysis_publication,
-                        "enqueue_compact_postgres_task_in_transaction",
-                        lambda _database, kind, key, payload, *, priority:
-                        enqueued.append((kind, key, payload, priority)))
+    monkeypatch.setattr(
+        game_analysis_publication, "lock_current_slice", lambda *_arguments: True
+    )
+    monkeypatch.setattr(
+        game_analysis_publication,
+        "advance_task_slice_in_transaction",
+        lambda _database, _task, *, next_phase, next_payload: (
+            advanced.append((next_phase, next_payload)) or True
+        ),
+    )
+    monkeypatch.setattr(
+        game_analysis_publication,
+        "enqueue_compact_postgres_task_in_transaction",
+        lambda _database, kind, key, payload, *, priority: enqueued.append(
+            (kind, key, payload, priority)
+        ),
+    )
 
-    payload = {"game_id": "game-one", "analysis_version": 2,
-               "phase": "derivation", "cursor": ""}
-    task = {"id": "followup", "generation": 1, "lease_token": "live", "payload": payload}
+    payload = {
+        "game_id": "game-one",
+        "analysis_version": 2,
+        "phase": "derivation",
+        "cursor": "",
+    }
+    task = {
+        "id": "followup",
+        "generation": 1,
+        "lease_token": "live",
+        "payload": payload,
+    }
     assert game_analysis_publication.execute_game_analysis_followup_slice(task)
     assert advanced[-1][0] == "derivation_task"
-    assert any("INSERT INTO game_derivation_jobs" in statement for statement, _ in statements)
+    assert any(
+        "INSERT INTO game_derivation_jobs" in statement for statement, _ in statements
+    )
     assert not enqueued
     task["payload"] = {**payload, "phase": "derivation_task"}
     assert game_analysis_publication.execute_game_analysis_followup_slice(task)
     assert advanced[-1][0] == "threat"
-    assert enqueued == [("game_derivation_positions", "game-one",
-                         {"game_id": "game-one", "derivation_version": 4, "cursor": 0}, 125)]
+    assert enqueued == [
+        (
+            "game_derivation_positions",
+            "game-one",
+            {"game_id": "game-one", "derivation_version": 4, "cursor": 0},
+            125,
+        )
+    ]
 
 
 def test_postgres_game_position_import_keeps_legacy_view_until_generation_switch():
@@ -240,16 +342,27 @@ def test_postgres_game_position_import_keeps_legacy_view_until_generation_switch
         from database.tooling.migrate_sqlite_to_postgres import COPY_TARGETS
     finally:
         sys.path.pop(0)
-    migration = (Path(__file__).resolve().parents[2] / "database/tempo_legacy_database/ddl/migrations"
-                 / "011_versioned_game_positions.sql").read_text()
-    assert COPY_TARGETS["game_position_occurrences"] == "game_position_occurrences_legacy"
+    migration = (
+        Path(__file__).resolve().parents[2]
+        / "database/tempo_legacy_database/ddl/migrations"
+        / "011_versioned_game_positions.sql"
+    ).read_text()
+    assert (
+        COPY_TARGETS["game_position_occurrences"] == "game_position_occurrences_legacy"
+    )
     assert "COALESCE(job.published_position_version,0)=0" in migration
     assert "job.published_position_version=staged.derivation_version" in migration
 
 
-def test_postgres_game_position_index_rejects_incomplete_stage_before_visibility_switch(monkeypatch):
-    task = {"id": "index-task", "generation": 3, "lease_token": "live",
-            "payload": {"game_id": "game-one", "derivation_version": 2, "cursor": 0}}
+def test_postgres_game_position_index_rejects_incomplete_stage_before_visibility_switch(
+    monkeypatch,
+):
+    task = {
+        "id": "index-task",
+        "generation": 3,
+        "lease_token": "live",
+        "payload": {"game_id": "game-one", "derivation_version": 2, "cursor": 0},
+    }
     published = []
 
     class Cursor:
@@ -264,8 +377,9 @@ def test_postgres_game_position_index_rejects_incomplete_stage_before_visibility
             if "FROM imported_games" in statement:
                 return Cursor({"start_fen": chess.STARTING_FEN, "moves_json": "[]"})
             if "FROM game_derivation_jobs" in statement:
-                return Cursor({"derivation_version": 2, "completed_phases": 0,
-                               "status": "queued"})
+                return Cursor(
+                    {"derivation_version": 2, "completed_phases": 0, "status": "queued"}
+                )
             if "SELECT COUNT(*) FROM game_position_occurrences_staged" in statement:
                 return Cursor((0,))
             if "published_position_version" in statement:
@@ -276,9 +390,13 @@ def test_postgres_game_position_index_rejects_incomplete_stage_before_visibility
     def open_database(*, background=True):
         yield Database()
 
-    monkeypatch.setattr(postgres_game_derivation, "background_read_connection", open_database)
+    monkeypatch.setattr(
+        postgres_game_derivation, "background_read_connection", open_database
+    )
     monkeypatch.setattr(postgres_game_derivation, "connection", open_database)
-    monkeypatch.setattr(postgres_game_derivation, "lock_current_slice", lambda *_arguments: True)
+    monkeypatch.setattr(
+        postgres_game_derivation, "lock_current_slice", lambda *_arguments: True
+    )
     with pytest.raises(RuntimeError, match="incomplete"):
         postgres_game_derivation.execute_game_position_index_slice(task)
     assert not published

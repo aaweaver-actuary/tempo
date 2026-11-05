@@ -63,7 +63,9 @@ def build_graph(graph_input: GraphInput) -> tuple[GraphStep, ...]:
         for override in graph_input.prefix_overrides
     }
     for line in graph_input.lines:
-        maximum_decisions = int(line.get("learner_decision_count") or graph_input.default_depth)
+        maximum_decisions = int(
+            line.get("learner_decision_count") or graph_input.default_depth
+        )
         segments = decision_segments(
             line["start_fen"],
             tuple(json.loads(line["moves_json"])),
@@ -82,21 +84,23 @@ def build_graph(graph_input: GraphInput) -> tuple[GraphStep, ...]:
                 expanded_segments.append(expanded_segment)
                 parent_card_id = expanded_segment.card_id
         for segment in expanded_segments:
-            steps.append(GraphStep(
-                repertoire_id=graph_input.repertoire_id,
-                line_id=line["id"],
-                decision_index=segment.decision_index,
-                segment_kind=segment.segment_kind,
-                first_decision_index=segment.first_decision_index,
-                last_decision_index=segment.last_decision_index,
-                decision_fen_keys=segment.decision_fen_keys,
-                card_id=segment.card_id,
-                parent_card_id=segment.parent_card_id,
-                decision_fen_key=segment.decision_fen_keys[-1],
-                starting_fen=segment.starting_fen,
-                moves=segment.moves,
-                trained_color=segment.trained_color,
-            ))
+            steps.append(
+                GraphStep(
+                    repertoire_id=graph_input.repertoire_id,
+                    line_id=line["id"],
+                    decision_index=segment.decision_index,
+                    segment_kind=segment.segment_kind,
+                    first_decision_index=segment.first_decision_index,
+                    last_decision_index=segment.last_decision_index,
+                    decision_fen_keys=segment.decision_fen_keys,
+                    card_id=segment.card_id,
+                    parent_card_id=segment.parent_card_id,
+                    decision_fen_key=segment.decision_fen_keys[-1],
+                    starting_fen=segment.starting_fen,
+                    moves=segment.moves,
+                    trained_color=segment.trained_color,
+                )
+            )
     return tuple(steps)
 
 
@@ -145,9 +149,7 @@ def _expanded_segment(
         trained_color=segment.trained_color,
     )
     expanded_shortened = _expanded_segment(shortened_segment, override_by_source)
-    continuation_decision_index = segment.first_decision_index + len(
-        shortened_fen_keys
-    )
+    continuation_decision_index = segment.first_decision_index + len(shortened_fen_keys)
     continuation_segment = DecisionSegment(
         card_id=override["continuation_card_id"],
         decision_index=segment.decision_index + len(expanded_shortened),
@@ -207,9 +209,7 @@ def decision_segments(
             segment_kind="prefix",
             first_decision_index=0,
             last_decision_index=prefix_decision_count - 1,
-            decision_fen_keys=tuple(
-                learner_decision_fen_keys[:prefix_decision_count]
-            ),
+            decision_fen_keys=tuple(learner_decision_fen_keys[:prefix_decision_count]),
             starting_fen=starting_fen,
             moves=prefix_moves,
             parent_card_id=None,
@@ -280,13 +280,11 @@ def load_graph_input(repertoire_id: str) -> GraphInput:
 
     with read_connection() as database:
         lines = tuple(
-            dict(row)
-            for row in storage.source_line_rows(database, (repertoire_id,))
+            dict(row) for row in storage.source_line_rows(database, (repertoire_id,))
         )
         settings = storage.initial_depth_row(database)
         prefix_overrides = tuple(
-            dict(row)
-            for row in storage.prefix_override_rows(database)
+            dict(row) for row in storage.prefix_override_rows(database)
         )
     return GraphInput(
         repertoire_id,
@@ -296,21 +294,19 @@ def load_graph_input(repertoire_id: str) -> GraphInput:
     )
 
 
-def _load_legacy_snapshot(repertoire_id: str) -> tuple[tuple[dict, ...], dict[str, list[dict]], set[str]]:
+def _load_legacy_snapshot(
+    repertoire_id: str,
+) -> tuple[tuple[dict, ...], dict[str, list[dict]], set[str]]:
     from tempo_legacy_database.connections import read_connection
 
     with read_connection() as database:
         cards = tuple(
-            dict(row)
-            for row in storage.legacy_card_rows(database, (repertoire_id,))
+            dict(row) for row in storage.legacy_card_rows(database, (repertoire_id,))
         )
         reviews: dict[str, list[dict]] = {}
         for row in storage.legacy_review_rows(database, (repertoire_id,)):
             reviews.setdefault(row["card_id"], []).append(dict(row))
-        existing_card_ids = {
-            row[0]
-            for row in storage.existing_card_rows(database)
-        }
+        existing_card_ids = {row[0] for row in storage.existing_card_rows(database)}
     return cards, reviews, existing_card_ids
 
 
@@ -380,7 +376,10 @@ def _seed_values(
         ]
         if not successful_reviews and not legacy_card.get("first_correct_at"):
             continue
-        candidate = {"card": legacy_by_id[legacy_card_id], "reviews": successful_reviews}
+        candidate = {
+            "card": legacy_by_id[legacy_card_id],
+            "reviews": successful_reviews,
+        }
         for trained_decision in _trained_decisions(legacy_card):
             candidates_by_trained_decision.setdefault(trained_decision, []).append(
                 candidate
@@ -437,7 +436,10 @@ def _seed_values(
             int(source.get("seed_recent_clean") or 0), min(2, len(source_reviews))
         )
         verification_due = min(
-            min(date.fromisoformat(candidate["card"]["due_date"]) for candidate in qualifying),
+            min(
+                date.fromisoformat(candidate["card"]["due_date"])
+                for candidate in qualifying
+            ),
             latest_verification,
         )
         stability = min(
@@ -458,9 +460,12 @@ def _seed_values(
             "interval_days": min(7, max(0, int(source["interval_days"] or 0))),
             "stability": stability,
             "fsrs_card_json": fsrs_card.to_json(),
-            "first_correct_at": source["first_correct_at"] or source_reviews[-1]["reviewed_at"],
+            "first_correct_at": source["first_correct_at"]
+            or source_reviews[-1]["reviewed_at"],
             "introduced_at": source["introduced_at"] or today.isoformat(),
-            "baseline_successful_days": 3 if all_decisions_mature else min(2, successful_days),
+            "baseline_successful_days": 3
+            if all_decisions_mature
+            else min(2, successful_days),
             "baseline_recent_clean": 2 if all_decisions_mature else recent_clean,
             "verification_due": verification_due.isoformat(),
         }
@@ -478,8 +483,11 @@ def prepare_opening_graph_rebuild(task: dict) -> GraphRebuildInput:
     repertoire_id = task["payload"]["repertoire_id"]
     local_day = task["payload"].get("local_day") or date.today().isoformat()
     graph_input = load_graph_input(repertoire_id)
-    legacy_cards, reviews_by_card, existing_card_ids = _load_legacy_snapshot(repertoire_id)
+    legacy_cards, reviews_by_card, existing_card_ids = _load_legacy_snapshot(
+        repertoire_id
+    )
     from tempo_legacy_database.connections import background_read_connection
+
     with background_read_connection() as database:
         deleted_ids = frozenset(row[0] for row in storage.deleted_card_rows(database))
     return GraphRebuildInput(
@@ -498,7 +506,10 @@ def calculate_opening_graph_artifacts(
     """Perform chess traversal and migration scoring without SQLite access."""
 
     from ..card_deletion import omit_deleted_graph_steps
-    graph_steps = omit_deleted_graph_steps(build_graph(rebuild_input.graph_input), set(rebuild_input.deleted_card_ids))
+
+    graph_steps = omit_deleted_graph_steps(
+        build_graph(rebuild_input.graph_input), set(rebuild_input.deleted_card_ids)
+    )
     legacy_mappings = _legacy_mappings(graph_steps, rebuild_input.legacy_cards)
     schedule_seeds = _seed_values(
         graph_steps,
@@ -514,9 +525,7 @@ def calculate_opening_graph_artifacts(
     )
 
 
-def publish_opening_graph_rebuild(
-    task: dict, artifacts: GraphRebuildArtifacts
-) -> None:
+def publish_opening_graph_rebuild(task: dict, artifacts: GraphRebuildArtifacts) -> None:
     """Stage bounded writes and atomically publish a current graph generation."""
 
     from tempo_legacy_database.adapters.database_executor import submit_background_write
@@ -529,7 +538,10 @@ def publish_opening_graph_rebuild(
     schedule_seeds = artifacts.schedule_seeds
 
     def current_task(database):
-        return storage.leased_task(database, (task["id"], generation, task["lease_token"])) is not None
+        return (
+            storage.leased_task(database, (task["id"], generation, task["lease_token"]))
+            is not None
+        )
 
     def clear_staging(database: sqlite3.Connection) -> None:
         if not current_task(database):
@@ -541,6 +553,7 @@ def publish_opening_graph_rebuild(
         label=f"opening-graph-clear:{repertoire_id}:{generation}",
     )
     for graph_step_chunk in _chunks(graph_steps):
+
         def stage(
             database: sqlite3.Connection,
             values: tuple[GraphStep, ...] = graph_step_chunk,
@@ -548,10 +561,20 @@ def publish_opening_graph_rebuild(
             if not current_task(database):
                 return
             from ..card_deletion import omit_deleted_graph_steps
+
             deleted_ids = {row[0] for row in storage.deleted_card_rows(database)}
-            retained_steps = {(step.line_id, step.decision_index): step for step in omit_deleted_graph_steps(graph_steps, deleted_ids)}
-            values = tuple(retained_steps[(step.line_id, step.decision_index)] for step in values if (step.line_id, step.decision_index) in retained_steps)
-            storage.insert_steps(database, [
+            retained_steps = {
+                (step.line_id, step.decision_index): step
+                for step in omit_deleted_graph_steps(graph_steps, deleted_ids)
+            }
+            values = tuple(
+                retained_steps[(step.line_id, step.decision_index)]
+                for step in values
+                if (step.line_id, step.decision_index) in retained_steps
+            )
+            storage.insert_steps(
+                database,
+                [
                     (
                         step.repertoire_id,
                         generation,
@@ -569,12 +592,17 @@ def publish_opening_graph_rebuild(
                         step.trained_color,
                     )
                     for step in values
-                ])
-            storage.insert_cards(database, [
+                ],
+            )
+            storage.insert_cards(
+                database,
+                [
                     (
                         step.card_id,
                         repertoire_id,
-                        step.segment_kind if step.segment_kind == "prefix" else "response",
+                        step.segment_kind
+                        if step.segment_kind == "prefix"
+                        else "response",
                         step.starting_fen,
                         json.dumps(step.moves),
                         "new" if step.parent_card_id is None else "locked",
@@ -582,7 +610,8 @@ def publish_opening_graph_rebuild(
                         step.trained_color,
                     )
                     for step in values
-                ])
+                ],
+            )
 
         submit_background_write(
             stage,
@@ -595,11 +624,19 @@ def publish_opening_graph_rebuild(
         def stage_mappings(database: sqlite3.Connection, values=mapping_chunk) -> None:
             if not current_task(database):
                 return
-            values = tuple((source, target) for source, target in values if storage.card_present(database, (source,)) and storage.card_present(database, (target,)))
-            storage.insert_legacy_mappings(database, [
+            values = tuple(
+                (source, target)
+                for source, target in values
+                if storage.card_present(database, (source,))
+                and storage.card_present(database, (target,))
+            )
+            storage.insert_legacy_mappings(
+                database,
+                [
                     (repertoire_id, generation, legacy_card_id, decision_card_id)
                     for legacy_card_id, decision_card_id in values
-                ])
+                ],
+            )
 
         submit_background_write(
             stage_mappings,
@@ -617,17 +654,30 @@ def publish_opening_graph_rebuild(
             for decision_card_id, seed in values:
                 if not storage.card_present(database, (decision_card_id,)):
                     continue
-                storage.apply_seed(database, (
-                        seed["state"], seed["due_date"], seed["interval_days"],
-                        seed["stability"], seed["fsrs_card_json"],
-                        seed["first_correct_at"], seed["introduced_at"],
+                storage.apply_seed(
+                    database,
+                    (
+                        seed["state"],
+                        seed["due_date"],
+                        seed["interval_days"],
+                        seed["stability"],
+                        seed["fsrs_card_json"],
+                        seed["first_correct_at"],
+                        seed["introduced_at"],
                         decision_card_id,
-                    ))
-                storage.insert_seed(database, (
-                        decision_card_id, seed["source_card_id"],
-                        seed["baseline_successful_days"], seed["baseline_recent_clean"],
-                        seed["verification_due"], now,
-                    ))
+                    ),
+                )
+                storage.insert_seed(
+                    database,
+                    (
+                        decision_card_id,
+                        seed["source_card_id"],
+                        seed["baseline_successful_days"],
+                        seed["baseline_recent_clean"],
+                        seed["verification_due"],
+                        now,
+                    ),
+                )
 
         submit_background_write(
             apply_seeds,
@@ -644,17 +694,37 @@ def publish_opening_graph_rebuild(
         storage.classify_generated_cards(database, (repertoire_id, generation))
         storage.lock_unintroduced_descendants(database)
         storage.unlock_unintroduced_roots(database, (local_day,))
-        storage.retire_obsolete_queue(database, (repertoire_id, repertoire_id, generation))
+        storage.retire_obsolete_queue(
+            database, (repertoire_id, repertoire_id, generation)
+        )
         # Retire an orphaned generated owner association before deleting its
         # link, retaining history without reactivating owner fallback.
-        storage.archive_generated_owner(database, (repertoire_id, repertoire_id, repertoire_id, repertoire_id, generation))
+        storage.archive_generated_owner(
+            database,
+            (repertoire_id, repertoire_id, repertoire_id, repertoire_id, generation),
+        )
         # Reassign retained owners before deleting generated memberships, so
         # cleanup cannot reactivate a stale owner fallback.
-        storage.reassign_retained_owner(database, (repertoire_id, repertoire_id, repertoire_id, repertoire_id, repertoire_id, generation))
-        storage.delete_generated_links(database, (repertoire_id, repertoire_id, generation))
+        storage.reassign_retained_owner(
+            database,
+            (
+                repertoire_id,
+                repertoire_id,
+                repertoire_id,
+                repertoire_id,
+                repertoire_id,
+                generation,
+            ),
+        )
+        storage.delete_generated_links(
+            database, (repertoire_id, repertoire_id, generation)
+        )
         storage.archive_unlinked_generated_cards(database)
         storage.delete_blocks(database, (repertoire_id,))
-        storage.insert_blocks(database, (repertoire_id, f"graph:{generation}", now, repertoire_id, generation))
+        storage.insert_blocks(
+            database,
+            (repertoire_id, f"graph:{generation}", now, repertoire_id, generation),
+        )
         storage.refresh_validation(database, (repertoire_id, generation))
         return True
 
@@ -682,7 +752,6 @@ def publish_opening_graph_rebuild(
     )
 
 
-
 def execute_opening_graph_rebuild(task: dict) -> None:
     """Run the registered durable rebuild handler across short read and write phases."""
 
@@ -696,7 +765,9 @@ def execute_opening_graph_rebuild(task: dict) -> None:
     logging.getLogger("tempo.opening_graph").info(
         "graph rebuild repertoire_id=%s generation=%s graph_steps=%d "
         "prepare_ms=%.3f compute_ms=%.3f publish_ms=%.3f total_ms=%.3f",
-        task["payload"]["repertoire_id"], task["generation"], len(artifacts.graph_steps),
+        task["payload"]["repertoire_id"],
+        task["generation"],
+        len(artifacts.graph_steps),
         (prepared_at - started_at) * 1000,
         (calculated_at - prepared_at) * 1000,
         (published_at - calculated_at) * 1000,

@@ -1,4 +1,5 @@
 """Bounded-reader relocation and preserved queue/presentation query boundaries."""
+
 import ast
 from contextlib import contextmanager
 from pathlib import Path
@@ -12,34 +13,54 @@ from tempo_legacy_database.adapters.queue_refresh import reads
 
 
 def test_queue_refresh_and_capacity_keep_all_sql_and_driver_mechanics_in_root_database():
-    base = Path(__file__).resolve().parents[1] / 'app/services'
-    for filename in ('postgres_queue_refresh.py', 'opening_capacity_admission.py'):
+    base = Path(__file__).resolve().parents[1] / "app/services"
+    for filename in ("postgres_queue_refresh.py", "opening_capacity_admission.py"):
         tree = ast.parse((base / filename).read_text())
-        assert not [node for node in ast.walk(tree)
-                    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-                    and node.func.attr in {'execute', 'execute_native', 'executemany', 'cursor', 'configured'}], filename
-        assert not [node for node in ast.walk(tree)
-                    if isinstance(node, ast.Constant) and isinstance(node.value, str)
-                    and re.match(r'^(SELECT|INSERT|UPDATE|DELETE|WITH|FROM)\b', node.value)], filename
-    tree = ast.parse((base / 'queue_application.py').read_text())
-    presentation = next(node for node in tree.body if isinstance(node, ast.FunctionDef)
-                        and node.name == 'presentation_rows')
-    assert not [node for node in ast.walk(presentation)
-                if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-                and node.func.attr in {'execute', 'execute_native', 'executemany', 'cursor', 'configured'}]
+        assert not [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr
+            in {"execute", "execute_native", "executemany", "cursor", "configured"}
+        ], filename
+        assert not [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and re.match(r"^(SELECT|INSERT|UPDATE|DELETE|WITH|FROM)\b", node.value)
+        ], filename
+    tree = ast.parse((base / "queue_application.py").read_text())
+    presentation = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "presentation_rows"
+    )
+    assert not [
+        node
+        for node in ast.walk(presentation)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr
+        in {"execute", "execute_native", "executemany", "cursor", "configured"}
+    ]
 
 
-@pytest.mark.parametrize('frozen_active', [False, True])
-def test_study_query_preparation_captures_route_identity_before_read_callbacks(monkeypatch, frozen_active):
+@pytest.mark.parametrize("frozen_active", [False, True])
+def test_study_query_preparation_captures_route_identity_before_read_callbacks(
+    monkeypatch, frozen_active
+):
     statements = []
     read_last, read_page = reads.study_opening_queries(frozen_active)
-    monkeypatch.setattr(reads, '_STUDY_OPENING_ROUTES', 'poisoned-later-route')
-    monkeypatch.setattr(reads, '_STUDY_OPENING_ORDER', 'poisoned-later-order')
+    monkeypatch.setattr(reads, "_STUDY_OPENING_ROUTES", "poisoned-later-route")
+    monkeypatch.setattr(reads, "_STUDY_OPENING_ORDER", "poisoned-later-order")
 
     class Reader:
         def execute_native(self, statement, parameters):
             statements.append((statement, parameters))
             return self
+
         def fetchall(self):
             return []
 
@@ -48,81 +69,118 @@ def test_study_query_preparation_captures_route_identity_before_read_callbacks(m
         assert repertoire_snapshot
         yield Reader()
 
-    monkeypatch.setattr(reads, 'read_connection', snapshot)
+    monkeypatch.setattr(reads, "read_connection", snapshot)
     assert read_last() == []
     size = 8 if frozen_active else 6
     after, upper = tuple(range(size)), tuple(range(10, 10 + size))
     assert read_page(after, upper, 16) == []
     assert len(statements) == 2
-    assert all('poisoned-later' not in statement for statement, _ in statements)
+    assert all("poisoned-later" not in statement for statement, _ in statements)
     assert statements[1][1] == (*after, *upper, 16)
-    assert statements[1][0].count('%s') == 2 * size + 1
+    assert statements[1][0].count("%s") == 2 * size + 1
 
 
-@pytest.mark.parametrize('frozen_active', [False, True])
-def test_ordered_opening_occurrences_use_closed_snapshot_readers_with_original_cursors(monkeypatch, frozen_active):
+@pytest.mark.parametrize("frozen_active", [False, True])
+def test_ordered_opening_occurrences_use_closed_snapshot_readers_with_original_cursors(
+    monkeypatch, frozen_active
+):
     calls = []
+
     class Reader:
         def execute_native(self, statement, parameters):
-            calls.append(('query', statement, parameters))
+            calls.append(("query", statement, parameters))
             return self
+
         def fetchall(self):
-            return [('result',)]
+            return [("result",)]
+
     @contextmanager
     def read_connection(*, repertoire_snapshot=False):
         assert repertoire_snapshot is True
-        calls.append(('open',))
+        calls.append(("open",))
         yield Reader()
-        calls.append(('close',))
-    monkeypatch.setattr(reads, 'read_connection', read_connection, raising=False)
-    monkeypatch.setattr(reads, '_bounded_read', lambda *args, **kwargs: pytest.fail('occurrences must use snapshot reader'))
+        calls.append(("close",))
+
+    monkeypatch.setattr(reads, "read_connection", read_connection, raising=False)
+    monkeypatch.setattr(
+        reads,
+        "_bounded_read",
+        lambda *args, **kwargs: pytest.fail("occurrences must use snapshot reader"),
+    )
     last, page = reads.study_opening_queries(frozen_active)
     size = 8 if frozen_active else 6
     after, upper = tuple(range(size)), tuple(range(10, 10 + size))
-    assert last() == [('result',)]
-    assert page(after, upper, 16) == [('result',)]
-    assert [call[0] for call in calls] == ['open', 'query', 'close', 'open', 'query', 'close']
-    assert calls[1][1].endswith(' DESC LIMIT 1') and calls[1][2] == ()
-    assert calls[4][1].endswith(' LIMIT %s')
+    assert last() == [("result",)]
+    assert page(after, upper, 16) == [("result",)]
+    assert [call[0] for call in calls] == [
+        "open",
+        "query",
+        "close",
+        "open",
+        "query",
+        "close",
+    ]
+    assert calls[1][1].endswith(" DESC LIMIT 1") and calls[1][2] == ()
+    assert calls[4][1].endswith(" LIMIT %s")
     assert calls[4][2] == (*after, *upper, 16)
-    assert calls[4][1].count('%s') == 2 * size + 1
+    assert calls[4][1].count("%s") == 2 * size + 1
 
 
-def test_empty_presentation_keeps_single_read_without_review_or_eligibility_queries(monkeypatch):
+def test_empty_presentation_keeps_single_read_without_review_or_eligibility_queries(
+    monkeypatch,
+):
     statements = []
-    monkeypatch.setattr(reads.postgres_store, 'configured', lambda: False)
+    monkeypatch.setattr(reads.postgres_store, "configured", lambda: False)
 
     def read(statement, parameters):
         statements.append((statement, parameters))
         return []
 
-    assert queue_application.presentation_rows(None, '2026-10-21', read=read,
-                                              after_entry_id=7, limit=16) == []
+    assert (
+        queue_application.presentation_rows(
+            None, "2026-10-21", read=read, after_entry_id=7, limit=16
+        )
+        == []
+    )
     assert len(statements) == 1
-    assert statements[0][1] == ('2026-10-21', 7, 16)
+    assert statements[0][1] == ("2026-10-21", 7, 16)
 
 
 def _priority_presentation_row(number, reason, **values):
-    return dict(id=number, card_id=f"card-{number}", position=number, content_type="opening",
-        admission_kind=values.get('admission_kind', 'new'), gameplay_priority_reason=reason,
-        cycle=values.get('cycle', 0), attempt_state="clean", attempt_failed=False,
-        review_completed=False, revision=1, issued=False, presented=False, taught=False)
+    return dict(
+        id=number,
+        card_id=f"card-{number}",
+        position=number,
+        content_type="opening",
+        admission_kind=values.get("admission_kind", "new"),
+        gameplay_priority_reason=reason,
+        cycle=values.get("cycle", 0),
+        attempt_state="clean",
+        attempt_failed=False,
+        review_completed=False,
+        revision=1,
+        issued=False,
+        presented=False,
+        taught=False,
+    )
 
 
 def _presentation_reader(rows, *, owed=(), reviewed=(), eligible=(), failure=None):
     calls = []
+
     def read(statement, parameters=()):
-        assert not re.match(r'\s*(INSERT|UPDATE|DELETE)\b', statement, re.IGNORECASE)
+        assert not re.match(r"\s*(INSERT|UPDATE|DELETE)\b", statement, re.IGNORECASE)
         calls.append((statement, parameters))
-        if 'FROM study_game_feedback' in statement:
+        if "FROM study_game_feedback" in statement:
             if failure is not None:
                 raise failure
             return [(identity,) for identity in owed if identity in parameters]
-        if statement.startswith('SELECT q.id,q.card_id'):
+        if statement.startswith("SELECT q.id,q.card_id"):
             return rows
-        if statement.startswith('SELECT DISTINCT card_id FROM reviews'):
+        if statement.startswith("SELECT DISTINCT card_id FROM reviews"):
             return [(identity,) for identity in reviewed]
         return [(identity,) for identity in eligible]
+
     return read, calls
 
 
@@ -130,218 +188,385 @@ def _ready_priority_capability(monkeypatch, identities):
     # This suite owns bounded-reader plumbing. The native #622 owner case proves
     # the real ready/reset receipt query; a pending receipt alone is not ready.
     from tempo_legacy_database.adapters.study import game_feedback
+
     def ready(database, requested, *, read=None, include_regrouped=False):
         assert database is None and callable(read)
-        return {identity:dict(urgent_stream='forward',urgent_determined_at='2026-10-28T00:00:00Z',
-            urgent_effect_id='effect-'+identity) for identity in identities if identity in requested}
-    monkeypatch.setattr(game_feedback,'feedback_queue_priorities',ready)
+        return {
+            identity: dict(
+                urgent_stream="forward",
+                urgent_determined_at="2026-10-28T00:00:00Z",
+                urgent_effect_id="effect-" + identity,
+            )
+            for identity in identities
+            if identity in requested
+        }
+
+    monkeypatch.setattr(game_feedback, "feedback_queue_priorities", ready)
 
 
-def test_game_priority_bounded_presentation_keeps_owed_labels_without_connection(monkeypatch):
-    monkeypatch.setattr(reads.postgres_store, 'configured', lambda: False)
-    _ready_priority_capability(monkeypatch, ('card-1','card-2'))
-    rows = [_priority_presentation_row(1, 'product_game_lapse'),
-            _priority_presentation_row(2, 'product_game_encounter', cycle=1),
-            _priority_presentation_row(3, None, admission_kind='explicit')]
-    reader, calls = _presentation_reader(rows, owed=('card-1', 'card-2'),
-        reviewed=('card-1',), eligible=(1, 2))
-    result = queue_application.presentation_rows(None, '2026-10-28', read=reader,
-        after_entry_id=0, limit=16)
-    assert [row['id'] for row in result] == [1, 2, 3]
-    assert [row['card_id'] for row in result] == ['card-1', 'card-2', 'card-3']
-    assert [row['gameplay_priority_reason'] for row in result] == ['product_game_lapse', 'product_game_encounter', None]
-    assert [row['admission_kind'] for row in result] == ['review', 'review', 'explicit']
-    assert [row['eligible'] for row in result] == [True, True, False]
-    assert [row['position'] for row in result] == [1, 2, 3]
-    assert result[2] == {**rows[2], 'eligible': False}
-    assert result[0]['urgent_stream'] == result[1]['urgent_stream'] == 'forward'
-    owed_calls = [(sql, ids) for sql, ids in calls if 'FROM study_game_feedback' in sql]
-    assert len(owed_calls) == 1 and owed_calls[0][1] == ('card-1', 'card-2')
-    assert '?' in owed_calls[0][0] and all(identity not in owed_calls[0][0] for identity in ('card-1', 'card-2'))
+def test_game_priority_bounded_presentation_keeps_owed_labels_without_connection(
+    monkeypatch,
+):
+    monkeypatch.setattr(reads.postgres_store, "configured", lambda: False)
+    _ready_priority_capability(monkeypatch, ("card-1", "card-2"))
+    rows = [
+        _priority_presentation_row(1, "product_game_lapse"),
+        _priority_presentation_row(2, "product_game_encounter", cycle=1),
+        _priority_presentation_row(3, None, admission_kind="explicit"),
+    ]
+    reader, calls = _presentation_reader(
+        rows, owed=("card-1", "card-2"), reviewed=("card-1",), eligible=(1, 2)
+    )
+    result = queue_application.presentation_rows(
+        None, "2026-10-28", read=reader, after_entry_id=0, limit=16
+    )
+    assert [row["id"] for row in result] == [1, 2, 3]
+    assert [row["card_id"] for row in result] == ["card-1", "card-2", "card-3"]
+    assert [row["gameplay_priority_reason"] for row in result] == [
+        "product_game_lapse",
+        "product_game_encounter",
+        None,
+    ]
+    assert [row["admission_kind"] for row in result] == ["review", "review", "explicit"]
+    assert [row["eligible"] for row in result] == [True, True, False]
+    assert [row["position"] for row in result] == [1, 2, 3]
+    assert result[2] == {**rows[2], "eligible": False}
+    assert result[0]["urgent_stream"] == result[1]["urgent_stream"] == "forward"
+    owed_calls = [(sql, ids) for sql, ids in calls if "FROM study_game_feedback" in sql]
+    assert len(owed_calls) == 1 and owed_calls[0][1] == ("card-1", "card-2")
+    assert "?" in owed_calls[0][0] and all(
+        identity not in owed_calls[0][0] for identity in ("card-1", "card-2")
+    )
 
 
 def test_game_priority_bounded_presentation_clears_only_unowed_labels(monkeypatch):
-    monkeypatch.setattr(reads.postgres_store, 'configured', lambda: False)
-    _ready_priority_capability(monkeypatch, ('card-1','card-2'))
-    rows = [_priority_presentation_row(number,
-        'product_game_lapse' if number % 2 else 'product_game_encounter') for number in range(1, 16)]
+    monkeypatch.setattr(reads.postgres_store, "configured", lambda: False)
+    _ready_priority_capability(monkeypatch, ("card-1", "card-2"))
+    rows = [
+        _priority_presentation_row(
+            number, "product_game_lapse" if number % 2 else "product_game_encounter"
+        )
+        for number in range(1, 16)
+    ]
     for number, row in enumerate(rows):
-        row['card_id'] = f'card-{number % 4 + 1}'
-    rows.append(_priority_presentation_row(16, 'unrelated-priority'))
-    reader, calls = _presentation_reader(rows, owed=('card-1', 'card-2'), eligible=range(1, 17))
-    result = queue_application.presentation_rows(None, '2026-10-28', read=reader, limit=16)
-    assert [row['id'] for row in result] == list(range(1, 17))
+        row["card_id"] = f"card-{number % 4 + 1}"
+    rows.append(_priority_presentation_row(16, "unrelated-priority"))
+    reader, calls = _presentation_reader(
+        rows, owed=("card-1", "card-2"), eligible=range(1, 17)
+    )
+    result = queue_application.presentation_rows(
+        None, "2026-10-28", read=reader, limit=16
+    )
+    assert [row["id"] for row in result] == list(range(1, 17))
     for original, projected in zip(rows[:-1], result[:-1]):
-        assert projected['gameplay_priority_reason'] == (original['gameplay_priority_reason']
-            if original['card_id'] in {'card-1', 'card-2'} else None)
-    assert result[-1]['gameplay_priority_reason'] == 'unrelated-priority'
-    owed_calls = [(sql, ids) for sql, ids in calls if 'FROM study_game_feedback' in sql]
-    assert len(owed_calls) == 1 and owed_calls[0][1] == ('card-1', 'card-2', 'card-3', 'card-4')
+        assert projected["gameplay_priority_reason"] == (
+            original["gameplay_priority_reason"]
+            if original["card_id"] in {"card-1", "card-2"}
+            else None
+        )
+    assert result[-1]["gameplay_priority_reason"] == "unrelated-priority"
+    owed_calls = [(sql, ids) for sql, ids in calls if "FROM study_game_feedback" in sql]
+    assert len(owed_calls) == 1 and owed_calls[0][1] == (
+        "card-1",
+        "card-2",
+        "card-3",
+        "card-4",
+    )
     assert "status IN ('pending','applied')" in owed_calls[0][0]
 
 
 def test_owed_priority_only_receipt_is_not_ready_urgent_queue_authority(monkeypatch):
-    monkeypatch.setattr(reads.postgres_store,'configured',lambda:False)
+    monkeypatch.setattr(reads.postgres_store, "configured", lambda: False)
     _ready_priority_capability(monkeypatch, ())
-    rows = [_priority_presentation_row(1,'product_game_encounter')]
-    reader,_ = _presentation_reader(rows,owed=('card-1',),eligible=(1,))
-    projected, = queue_application.presentation_rows(None,'2026-10-28',read=reader,limit=16)
-    assert projected['eligible'] and projected['gameplay_priority_reason'] is None
+    rows = [_priority_presentation_row(1, "product_game_encounter")]
+    reader, _ = _presentation_reader(rows, owed=("card-1",), eligible=(1,))
+    (projected,) = queue_application.presentation_rows(
+        None, "2026-10-28", read=reader, limit=16
+    )
+    assert projected["eligible"] and projected["gameplay_priority_reason"] is None
 
 
 def test_game_priority_native_presentation_uses_borrowed_connection():
-    from tempo_legacy_database.adapters.study.game_feedback import owed_feedback_card_ids, has_owed_feedback
+    from tempo_legacy_database.adapters.study.game_feedback import (
+        owed_feedback_card_ids,
+        has_owed_feedback,
+    )
+
     calls = []
-    statuses = {'pending-card': 'pending', 'applied-card': 'applied',
-                'settled-card': 'settled', 'controlled-card': 'held'}
+    statuses = {
+        "pending-card": "pending",
+        "applied-card": "applied",
+        "settled-card": "settled",
+        "controlled-card": "held",
+    }
+
     class Borrowed:
         def execute_native(self, statement, parameters):
             calls.append((statement, parameters))
-            assert '%s::text[]' in statement and '?' not in statement
+            assert "%s::text[]" in statement and "?" not in statement
             assert "status IN ('pending','applied')" in statement
-            matched = [(identity,) for identity in parameters[0] if statuses.get(identity) in {'pending', 'applied'}]
+            matched = [
+                (identity,)
+                for identity in parameters[0]
+                if statuses.get(identity) in {"pending", "applied"}
+            ]
+
             class Cursor:
                 def fetchall(self):
                     return matched
+
             return Cursor()
+
         def close(self):
-            pytest.fail('The helper must not close a borrowed connection')
+            pytest.fail("The helper must not close a borrowed connection")
+
         def commit(self):
-            pytest.fail('The helper must not commit a borrowed connection')
+            pytest.fail("The helper must not commit a borrowed connection")
+
     borrowed = Borrowed()
-    ids = ('pending-card', 'applied-card', 'pending-card', 'settled-card', 'controlled-card', 'absent-card')
-    assert owed_feedback_card_ids(borrowed, ids) == {'pending-card', 'applied-card'}
+    ids = (
+        "pending-card",
+        "applied-card",
+        "pending-card",
+        "settled-card",
+        "controlled-card",
+        "absent-card",
+    )
+    assert owed_feedback_card_ids(borrowed, ids) == {"pending-card", "applied-card"}
     assert len(calls) == 1 and calls[0][1] == (list(dict.fromkeys(ids)),)
-    assert has_owed_feedback(borrowed, 'pending-card') and not has_owed_feedback(borrowed, 'settled-card')
+    assert has_owed_feedback(borrowed, "pending-card") and not has_owed_feedback(
+        borrowed, "settled-card"
+    )
+
     def forbidden(*args):
-        pytest.fail('An empty batch must not perform a read')
+        pytest.fail("An empty batch must not perform a read")
+
     assert owed_feedback_card_ids(None, (), read=forbidden) == set()
     assert owed_feedback_card_ids(borrowed, ()) == set()
-    with pytest.raises(RuntimeError, match='borrowed connection or bounded reader'):
-        owed_feedback_card_ids(None, ('pending-card',))
-    reader, callback_calls = _presentation_reader([], owed=('pending-card',))
-    assert owed_feedback_card_ids(object(), ('pending-card',), read=reader) == {'pending-card'}
+    with pytest.raises(RuntimeError, match="borrowed connection or bounded reader"):
+        owed_feedback_card_ids(None, ("pending-card",))
+    reader, callback_calls = _presentation_reader([], owed=("pending-card",))
+    assert owed_feedback_card_ids(object(), ("pending-card",), read=reader) == {
+        "pending-card"
+    }
     assert len(callback_calls) == 1
 
 
-def test_game_priority_lookup_failure_propagates_without_fabricating_settlement(monkeypatch):
+def test_game_priority_lookup_failure_propagates_without_fabricating_settlement(
+    monkeypatch,
+):
     from psycopg import OperationalError
-    monkeypatch.setattr(reads.postgres_store, 'configured', lambda: False)
-    rows = [_priority_presentation_row(1, 'product_game_lapse'),
-            _priority_presentation_row(2, 'product_game_encounter')]
-    failure = OperationalError('owed-feedback-read-unavailable')
+
+    monkeypatch.setattr(reads.postgres_store, "configured", lambda: False)
+    rows = [
+        _priority_presentation_row(1, "product_game_lapse"),
+        _priority_presentation_row(2, "product_game_encounter"),
+    ]
+    failure = OperationalError("owed-feedback-read-unavailable")
     reader, calls = _presentation_reader(rows, failure=failure)
-    with pytest.raises(OperationalError, match='owed-feedback-read-unavailable') as error:
-        queue_application.presentation_rows(None, '2026-10-28', read=reader, limit=16)
+    with pytest.raises(
+        OperationalError, match="owed-feedback-read-unavailable"
+    ) as error:
+        queue_application.presentation_rows(None, "2026-10-28", read=reader, limit=16)
     assert error.value is failure
-    assert [row['gameplay_priority_reason'] for row in rows] == ['product_game_lapse', 'product_game_encounter']
-    assert sum('FROM study_game_feedback' in sql for sql, _ in calls) == 1
+    assert [row["gameplay_priority_reason"] for row in rows] == [
+        "product_game_lapse",
+        "product_game_encounter",
+    ]
+    assert sum("FROM study_game_feedback" in sql for sql, _ in calls) == 1
 
 
-@pytest.mark.parametrize('reason', [None, BRIDGE_MISS_REASON])
+@pytest.mark.parametrize("reason", [None, BRIDGE_MISS_REASON])
 def test_nonpriority_presentation_does_not_read_owed_feedback(monkeypatch, reason):
-    monkeypatch.setattr(reads.postgres_store, 'configured', lambda: False)
+    monkeypatch.setattr(reads.postgres_store, "configured", lambda: False)
     rows = [_priority_presentation_row(1, reason)]
     reader, calls = _presentation_reader(rows, eligible=(1,))
-    result = queue_application.presentation_rows(None, '2026-10-28', read=reader, limit=16)
-    assert result[0]['gameplay_priority_reason'] == reason and result[0]['eligible']
-    assert not any('FROM study_game_feedback' in sql for sql, _ in calls)
+    result = queue_application.presentation_rows(
+        None, "2026-10-28", read=reader, limit=16
+    )
+    assert result[0]["gameplay_priority_reason"] == reason and result[0]["eligible"]
+    assert not any("FROM study_game_feedback" in sql for sql, _ in calls)
 
 
-@pytest.mark.parametrize('lookup,expected_paths', [
-    ('ready', {('owner','progress','target','card_id'),('owner','admission_status'),('owner','progress')}),
-    ('regrouped_ready', {('owner','progress','target','card_id'),('owner','progress'),
-        ('finding','repertoire_id'),('command','finding','repertoire_id'),
-        ('presentation','repertoire_id'),('presentation','presentation_id'),('presentation','revision')}),
-    ('regrouped', {('presentation','repertoire_id'),('finding','repertoire_id'),
-        ('command','finding','repertoire_id'),('command','decision','repertoire_id')}),
-])
-def test_feedback_priority_paths_survive_bounded_sql_translation(lookup, expected_paths):
+@pytest.mark.parametrize(
+    "lookup,expected_paths",
+    [
+        (
+            "ready",
+            {
+                ("owner", "progress", "target", "card_id"),
+                ("owner", "admission_status"),
+                ("owner", "progress"),
+            },
+        ),
+        (
+            "regrouped_ready",
+            {
+                ("owner", "progress", "target", "card_id"),
+                ("owner", "progress"),
+                ("finding", "repertoire_id"),
+                ("command", "finding", "repertoire_id"),
+                ("presentation", "repertoire_id"),
+                ("presentation", "presentation_id"),
+                ("presentation", "revision"),
+            },
+        ),
+        (
+            "regrouped",
+            {
+                ("presentation", "repertoire_id"),
+                ("finding", "repertoire_id"),
+                ("command", "finding", "repertoire_id"),
+                ("command", "decision", "repertoire_id"),
+            },
+        ),
+    ],
+)
+def test_feedback_priority_paths_survive_bounded_sql_translation(
+    lookup, expected_paths
+):
     from sqlglot import exp, parse_one
     from tempo_legacy_database.adapters.postgres_store import postgres_sql
-    from tempo_legacy_database.adapters.study.game_feedback import feedback_queue_priorities, owed_feedback_card_ids
+    from tempo_legacy_database.adapters.study.game_feedback import (
+        feedback_queue_priorities,
+        owed_feedback_card_ids,
+    )
+
     statements = []
+
     def bounded(statement, parameters):
         statements.append(postgres_sql(statement))
-        assert parameters == (('card-1',) * (3 if lookup=='regrouped_ready' else 2)
-            if lookup in {'ready', 'regrouped_ready'} else ('card-1',))
+        assert parameters == (
+            ("card-1",) * (3 if lookup == "regrouped_ready" else 2)
+            if lookup in {"ready", "regrouped_ready"}
+            else ("card-1",)
+        )
         return []
-    if lookup in {'ready', 'regrouped_ready'}:
-        assert feedback_queue_priorities(None, ('card-1',), read=bounded,
-            include_regrouped=lookup=='regrouped_ready')=={}
+
+    if lookup in {"ready", "regrouped_ready"}:
+        assert (
+            feedback_queue_priorities(
+                None,
+                ("card-1",),
+                read=bounded,
+                include_regrouped=lookup == "regrouped_ready",
+            )
+            == {}
+        )
     else:
-        assert owed_feedback_card_ids(None, ('card-1',), read=bounded, include_regrouped=True)==set()
-    assert len(statements)==1
+        assert (
+            owed_feedback_card_ids(
+                None, ("card-1",), read=bounded, include_regrouped=True
+            )
+            == set()
+        )
+    assert len(statements) == 1
+
     def path(node):
-        if not isinstance(node, (exp.JSONExtract,exp.JSONExtractScalar)):
+        if not isinstance(node, (exp.JSONExtract, exp.JSONExtractScalar)):
             return ()
-        return path(node.this)+tuple(part.this for part in node.expression.expressions
-            if isinstance(part,exp.JSONPathKey))
+        return path(node.this) + tuple(
+            part.this
+            for part in node.expression.expressions
+            if isinstance(part, exp.JSONPathKey)
+        )
+
     # Scalar terminal extraction also preserves SQL NULL for absent/JSON-null
     # legacy progress; JSON object extraction would change that fallback.
-    scalar_paths = {path(node) for node in parse_one(statements[0],read='postgres').find_all(exp.JSONExtractScalar)}
-    assert expected_paths<=scalar_paths, statements[0]
-    if lookup=='ready':
-        assert 'study_recombination_' not in statements[0]
-    if lookup=='regrouped_ready':
-        tree = parse_one(statements[0], read='postgres')
+    scalar_paths = {
+        path(node)
+        for node in parse_one(statements[0], read="postgres").find_all(
+            exp.JSONExtractScalar
+        )
+    }
+    assert expected_paths <= scalar_paths, statements[0]
+    if lookup == "ready":
+        assert "study_recombination_" not in statements[0]
+    if lookup == "regrouped_ready":
+        tree = parse_one(statements[0], read="postgres")
         assert len(list(tree.find_all(exp.Union))) == 1
         assert not list(tree.find_all(exp.Min)) and not list(tree.find_all(exp.Limit))
-        assert not any(isinstance(node, (exp.Insert, exp.Update, exp.Delete)) for node in tree.walk())
+        assert not any(
+            isinstance(node, (exp.Insert, exp.Update, exp.Delete))
+            for node in tree.walk()
+        )
 
 
-@pytest.mark.parametrize('installed,candidate,regrouped,expected', [
-    (True, 'mapped', True, False),
-    (True, 'ordinary', False, True),
-    (True, None, False, True),
-    (False, 'ordinary', False, False),
-])
+@pytest.mark.parametrize(
+    "installed,candidate,regrouped,expected",
+    [
+        (True, "mapped", True, False),
+        (True, "ordinary", False, True),
+        (True, None, False, True),
+        (False, "ordinary", False, False),
+    ],
+)
 def test_next_card_pending_work_respects_ready_regrouped_candidate_cutoff(
-        monkeypatch, installed, candidate, regrouped, expected):
+    monkeypatch, installed, candidate, regrouped, expected
+):
     from app.services import queue_next_card
     from app.services.queue_ordering import urgent_priority_key
     from tempo_legacy_database.adapters.study import game_feedback, recombination
+
     database, calls, sources = object(), [], []
-    ready = dict(urgent_stream='reconciliation', urgent_determined_at='2026-10-25T00:00:00Z',
-        urgent_effect_id='retained-effect')
-    later = dict(ready, urgent_determined_at='2026-10-26T00:00:00Z')
-    monkeypatch.setattr(game_feedback, 'installed', lambda borrowed: borrowed is database and installed)
+    ready = dict(
+        urgent_stream="reconciliation",
+        urgent_determined_at="2026-10-25T00:00:00Z",
+        urgent_effect_id="retained-effect",
+    )
+    later = dict(ready, urgent_determined_at="2026-10-26T00:00:00Z")
+    monkeypatch.setattr(
+        game_feedback, "installed", lambda borrowed: borrowed is database and installed
+    )
+
     def members(borrowed, requested):
         assert borrowed is database and requested == (candidate,)
-        calls.append('membership')
+        calls.append("membership")
         return {candidate} if regrouped else set()
+
     def priority(borrowed, requested, *, read=None, include_regrouped=False):
         assert borrowed is database and read is None and requested == (candidate,)
         assert include_regrouped is regrouped
-        calls.append('priority')
+        calls.append("priority")
         return {candidate: ready} if include_regrouped else {}
+
     def pending(borrowed, day, *, before_priority=None):
-        assert borrowed is database and day == '2026-10-28'
-        calls.append(('pending', before_priority))
-        return before_priority is None or urgent_priority_key(later) < urgent_priority_key(before_priority)
+        assert borrowed is database and day == "2026-10-28"
+        calls.append(("pending", before_priority))
+        return before_priority is None or urgent_priority_key(
+            later
+        ) < urgent_priority_key(before_priority)
+
     def source(borrowed, day, *, before_priority=None):
-        assert borrowed is database and day == '2026-10-28'
+        assert borrowed is database and day == "2026-10-28"
         sources.append(before_priority)
         return False
-    monkeypatch.setattr(recombination, 'regrouped_presentation_ids', members)
-    monkeypatch.setattr(game_feedback, 'feedback_queue_priorities', priority)
-    monkeypatch.setattr(game_feedback, 'pending_feedback_preparation', pending)
-    monkeypatch.setattr(queue_next_card, '_source_pending', source)
-    assert queue_next_card.pending_next_card_preparation(database, '2026-10-28',
-        candidate_card_id=candidate) is expected
+
+    monkeypatch.setattr(recombination, "regrouped_presentation_ids", members)
+    monkeypatch.setattr(game_feedback, "feedback_queue_priorities", priority)
+    monkeypatch.setattr(game_feedback, "pending_feedback_preparation", pending)
+    monkeypatch.setattr(queue_next_card, "_source_pending", source)
+    assert (
+        queue_next_card.pending_next_card_preparation(
+            database, "2026-10-28", candidate_card_id=candidate
+        )
+        is expected
+    )
     if installed and candidate is not None:
-        assert calls[:2] == ['membership', 'priority']
+        assert calls[:2] == ["membership", "priority"]
     else:
-        assert 'membership' not in calls and 'priority' not in calls
+        assert "membership" not in calls and "priority" not in calls
     assert sources == ([ready] if regrouped else [] if installed else [None])
 
 
-def test_presentation_protection_sets_match_correlated_facts_with_historical_and_null_evidence(monkeypatch):
+def test_presentation_protection_sets_match_correlated_facts_with_historical_and_null_evidence(
+    monkeypatch,
+):
     import sqlite3
     from tempo_legacy_database.adapters.queue_refresh import presentation
 
-    monkeypatch.setattr(presentation.postgres_store, 'configured', lambda: True)
-    with sqlite3.connect(':memory:') as database:
+    monkeypatch.setattr(presentation.postgres_store, "configured", lambda: True)
+    with sqlite3.connect(":memory:") as database:
         database.row_factory = sqlite3.Row
         database.executescript("""
             CREATE TABLE cards(id TEXT PRIMARY KEY, content_type TEXT, revision INT);
@@ -352,34 +577,60 @@ def test_presentation_protection_sets_match_correlated_facts_with_historical_and
             CREATE TABLE opening_evidence_attempts(queue_entry_id INT);
             CREATE TABLE teaching_states(card_id TEXT);
         """)
-        database.executemany("INSERT INTO cards VALUES(?,'opening',2)", [(f'card-{n}',) for n in range(575)])
-        database.executemany("INSERT INTO daily_queue VALUES(?,?,?,'today','queued','new',NULL,0,'clean',0,NULL)",
-                             [(n, f'card-{n}', n) for n in range(575)])
-        database.executemany('INSERT INTO opening_evidence_attempts VALUES(?)',
-                             [(None,)] + [(-n,) for n in range(1,5312)] + [(3,)])
-        database.executemany('INSERT INTO queue_attempt_origins VALUES(?,?,?,?)', [
-            (1,'card-1',2,1), (2,'card-2',1,1), (3,'wrong-card',2,1),
-            (4,'card-4',2,0), (None,'card-5',2,1),
-        ])
+        database.executemany(
+            "INSERT INTO cards VALUES(?,'opening',2)",
+            [(f"card-{n}",) for n in range(575)],
+        )
+        database.executemany(
+            "INSERT INTO daily_queue VALUES(?,?,?,'today','queued','new',NULL,0,'clean',0,NULL)",
+            [(n, f"card-{n}", n) for n in range(575)],
+        )
+        database.executemany(
+            "INSERT INTO opening_evidence_attempts VALUES(?)",
+            [(None,)] + [(-n,) for n in range(1, 5312)] + [(3,)],
+        )
+        database.executemany(
+            "INSERT INTO queue_attempt_origins VALUES(?,?,?,?)",
+            [
+                (1, "card-1", 2, 1),
+                (2, "card-2", 1, 1),
+                (3, "wrong-card", 2, 1),
+                (4, "card-4", 2, 0),
+                (None, "card-5", 2, 1),
+            ],
+        )
         database.execute("INSERT INTO teaching_states VALUES('card-7')")
-        expected = [tuple(row) for row in database.execute("""
+        expected = [
+            tuple(row)
+            for row in database.execute("""
             SELECT q.id,
                 EXISTS(SELECT 1 FROM queue_attempt_origins o WHERE o.queue_entry_id=q.id
                        AND o.card_id=c.id AND o.revision=c.revision AND o.issued_as_head=1),
                 EXISTS(SELECT 1 FROM opening_evidence_attempts a WHERE a.queue_entry_id=q.id),
                 EXISTS(SELECT 1 FROM teaching_states t WHERE t.card_id=c.id)
             FROM daily_queue q JOIN cards c ON c.id=q.card_id ORDER BY q.id
-        """)]
+        """)
+        ]
+
         def read(statement, parameters):
-            if statement.startswith('SELECT q.id,q.card_id'):
+            if statement.startswith("SELECT q.id,q.card_id"):
                 return database.execute(statement, parameters).fetchall()
-            if statement.startswith('SELECT DISTINCT card_id FROM reviews'):
+            if statement.startswith("SELECT DISTINCT card_id FROM reviews"):
                 return []
             return [(n,) for n in range(575)]
-        rows, reviewed, eligible = presentation.presentation_facts(None, 'today', 'miss', read=read)
-        assert [(r['id'],r['issued'],r['presented'],r['taught']) for r in rows] == expected
-        assert {r['id'] for r in rows if r['issued']} == {1}
-        assert {r['id'] for r in rows if r['presented']} == {3}
-        assert {r['id'] for r in rows if r['taught']} == {7}
-        assert all(r[field] in (0,1) for r in rows for field in ('issued','presented','taught'))
+
+        rows, reviewed, eligible = presentation.presentation_facts(
+            None, "today", "miss", read=read
+        )
+        assert [
+            (r["id"], r["issued"], r["presented"], r["taught"]) for r in rows
+        ] == expected
+        assert {r["id"] for r in rows if r["issued"]} == {1}
+        assert {r["id"] for r in rows if r["presented"]} == {3}
+        assert {r["id"] for r in rows if r["taught"]} == {7}
+        assert all(
+            r[field] in (0, 1)
+            for r in rows
+            for field in ("issued", "presented", "taught")
+        )
         assert len(rows) == len(eligible) == 575 and reviewed == set()

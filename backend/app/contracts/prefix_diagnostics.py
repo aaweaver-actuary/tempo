@@ -1,7 +1,13 @@
 """Read-only diagnostics over the v1 shadow observations; no scheduling contract."""
+
 from typing import Literal
 from pydantic import Field
-from .opening_evidence import EvidenceModel, OpeningDecisionManifest, OpeningManifestDecision, AssistanceKind
+from .opening_evidence import (
+    EvidenceModel,
+    OpeningDecisionManifest,
+    OpeningManifestDecision,
+    AssistanceKind,
+)
 
 
 class DiagnosticPrefix(EvidenceModel):
@@ -21,7 +27,7 @@ class PrefixDiagnosticsList(EvidenceModel):
 
 class DiagnosticObservation(EvidenceModel):
     attempt_id: str
-    state: Literal['active', 'partial', 'complete']
+    state: Literal["active", "partial", "complete"]
     decision_index: int
     decision_id: str
     expected_uci: str
@@ -35,13 +41,15 @@ class DiagnosticObservation(EvidenceModel):
     observed_at: str
     response_at: str | None
     failure_at: str | None
-    disposition: Literal['expected', 'alternate', 'wrong', 'illegal', 'unverified'] | None
+    disposition: (
+        Literal["expected", "alternate", "wrong", "illegal", "unverified"] | None
+    )
     clean: bool
     study_day: str
 
 
 class DecisionDiagnostics(OpeningManifestDecision):
-    coverage: Literal['unknown', 'weak', 'strong']
+    coverage: Literal["unknown", "weak", "strong"]
     reached_observations: int
     first_responses: int
     first_response_failures: int

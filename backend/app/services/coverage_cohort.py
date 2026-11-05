@@ -1,4 +1,5 @@
 """Borrowed-read cohort facts for coverage selection."""
+
 from datetime import datetime, timedelta, timezone
 from statistics import median
 
@@ -43,5 +44,3 @@ def recent_player_cohort(database, fallback_rating: int) -> dict:
         "speed_weights": speed_weights,
         "games": len(rows),
     }
-
-

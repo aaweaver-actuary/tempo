@@ -3,6 +3,7 @@
 The capability contains claims, not a receipt. The database owner checks it
 against the sealed source, admission, and every current schedule witness.
 """
+
 from dataclasses import dataclass, replace
 
 from tempo_evidence_math.position_learning import Hold
@@ -33,7 +34,9 @@ def prepare_position_issuance(source: Any, request: SelectionRequest):
 
     Prefix claims remain proposals; the writer re-reads their durable evidence.
     """
-    if not isinstance(request, SelectionRequest) or not all(hasattr(source, name) for name in ("routes", "authored_token")):
+    if not isinstance(request, SelectionRequest) or not all(
+        hasattr(source, name) for name in ("routes", "authored_token")
+    ):
         return Hold("position_issuance_preparation_required")
     if request.routes != source.routes:
         return Hold("position_routes_not_owner_prepared")

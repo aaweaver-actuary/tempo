@@ -3,13 +3,17 @@
 Shared Proposal, engine, probability and card values remain #482 contracts.
 Composition adapts retrieve(index, RetrievalRequest(...)) to SimilarityPort.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
 from app.contracts.product_v02.analysis import (
-    DisplayedCardChange, EngineContext, EngineEvidence, Proposal,
+    DisplayedCardChange,
+    EngineContext,
+    EngineEvidence,
+    Proposal,
 )
 from app.contracts.product_v02.repertoire import DecisionPresentation
 from .acceptability import QualityDecision
@@ -64,8 +68,15 @@ class RetrievalFacts(Protocol):
 
 
 class SimilarityPort(Protocol):
-    def retrieve(self, *, repertoire_id: str, target_fen: str, learner_color: str,
-                 variant: str, max_candidates: int) -> RetrievalFacts: ...
+    def retrieve(
+        self,
+        *,
+        repertoire_id: str,
+        target_fen: str,
+        learner_color: str,
+        variant: str,
+        max_candidates: int,
+    ) -> RetrievalFacts: ...
 
 
 class CapabilityUnavailable(RuntimeError):
@@ -83,7 +94,9 @@ class ProposalTarget:
     source_digest: str
     route_id: str
     context: EngineContext
-    kind: Literal["missing_reply", "covered_outlier", "common_blunder"] = "missing_reply"
+    kind: Literal["missing_reply", "covered_outlier", "common_blunder"] = (
+        "missing_reply"
+    )
     previous_response_uci: str | None = None
     existing_card: DecisionPresentation | None = None
     # Existing-card edits require the owner's exact displayed executable, never
@@ -99,8 +112,11 @@ class ProposalLimits:
     min_outlier_support: int = 2
 
     def __post_init__(self):
-        for name, maximum in (("max_candidates", 256), ("max_targets", 32),
-                              ("min_outlier_support", 256)):
+        for name, maximum in (
+            ("max_candidates", 256),
+            ("max_targets", 32),
+            ("min_outlier_support", 256),
+        ):
             value = getattr(self, name)
             if type(value) is not int or not 1 <= value <= maximum:
                 raise ValueError(f"invalid_{name}")

@@ -30,6 +30,7 @@ def dispatch_command(
         raise HTTPException(410, "Command retired")
     if command_name == "queue.issue_head" and idempotency_key is None:
         from .command_gateway import select_queue_issuance_operation
+
         try:
             operation_id = select_queue_issuance_operation(payload)
         except CommandConflict as error:
@@ -40,15 +41,18 @@ def dispatch_command(
         raise HTTPException(422, "Idempotency-Key must be at most 128 characters")
     try:
         task = celery_app.send_task(
-            "app.tasks.execute_background_command" if background else
-            "app.tasks.execute_foreground_command",
+            "app.tasks.execute_background_command"
+            if background
+            else "app.tasks.execute_foreground_command",
             args=[operation_id, command_name, payload],
             task_id=operation_id,
             queue="background" if background else "foreground",
             headers={"submitted_at": time.time()},
         )
     except BrokerUnavailable as error:
-        raise HTTPException(503, "Save queue unavailable; retry with the same Idempotency-Key") from error
+        raise HTTPException(
+            503, "Save queue unavailable; retry with the same Idempotency-Key"
+        ) from error
     try:
         task.get(timeout=wait_seconds, propagate=False)
     except (CeleryTimeout, RedisError, BrokerUnavailable):
@@ -65,6 +69,7 @@ def dispatch_command(
     except CommandConflict as error:
         if command_name in {"cards.review", "cards.review.reconcile"}:
             from app.contracts.review_conflicts import ReviewConflict
+
             raise ReviewConflict("command_identity_reused", str(error)) from error
         raise HTTPException(409, str(error)) from error
     if receipt["state"] == "complete":
@@ -73,8 +78,12 @@ def dispatch_command(
         error = receipt["error"]
         if error.get("code") and error.get("status_code") == 409:
             from app.contracts.review_conflicts import ReviewConflict
-            raise ReviewConflict(error["code"], error.get("detail", error["message"]),
-                                 retryable=error.get("retryable", False))
+
+            raise ReviewConflict(
+                error["code"],
+                error.get("detail", error["message"]),
+                retryable=error.get("retryable", False),
+            )
         failure = HTTPException(error.get("status_code", 500))
         # The constructor replaces None with a status phrase. Restore explicit
         # JSON null as well as other empty values from the durable receipt.
@@ -82,8 +91,13 @@ def dispatch_command(
         raise failure
     return JSONResponse(
         status_code=202,
-        content={"operation_id": operation_id, "state": receipt["state"],
-                 **({"message": receipt["message"]} if receipt.get("message") else {})},
-        headers={"Location": f"/api/operations/{operation_id}",
-                 **({"Retry-After": "1"} if command_name == "queue.issue_head" else {})},
+        content={
+            "operation_id": operation_id,
+            "state": receipt["state"],
+            **({"message": receipt["message"]} if receipt.get("message") else {}),
+        },
+        headers={
+            "Location": f"/api/operations/{operation_id}",
+            **({"Retry-After": "1"} if command_name == "queue.issue_head" else {}),
+        },
     )

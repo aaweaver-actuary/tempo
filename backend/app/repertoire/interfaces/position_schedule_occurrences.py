@@ -1,4 +1,5 @@
 """Public pure authored-route projection; does not provide source authority."""
+
 from ..position_schedule_occurrences import (
     PhysicalBindingFact,
     PositionBindingFacts,

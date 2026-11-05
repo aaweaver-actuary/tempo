@@ -3,6 +3,7 @@
 This is a bounded pure planner. Repertoire owns route legality and source
 integrity; Study owns the saved receipts represented by prefix proofs.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -10,7 +11,13 @@ from datetime import date
 
 import chess
 
-from .contracts import DecisionOccurrence, Hold, PositionKey, RouteOption, SourceCertificate
+from .contracts import (
+    DecisionOccurrence,
+    Hold,
+    PositionKey,
+    RouteOption,
+    SourceCertificate,
+)
 from .prefix_eligibility import CleanPresentationProof, verify_clean_prefix
 
 
@@ -89,8 +96,11 @@ def choose_plan(
     if len(definitions) != 1:
         return Hold("conflicting_target_definitions")
     source_fences = {
-        (route.certificate.snapshot_id, route.certificate.source_revision,
-         route.certificate.source_digest)
+        (
+            route.certificate.snapshot_id,
+            route.certificate.source_revision,
+            route.certificate.source_digest,
+        )
         for route, _ in candidates
     }
     if len(source_fences) != 1:
@@ -129,7 +139,10 @@ def choose_plan(
                 study_day=study_day,
                 owner_epoch=owner_epoch,
             )
-            if eligibility is not None and eligibility.first_uncovered_decision is not None:
+            if (
+                eligibility is not None
+                and eligibility.first_uncovered_decision is not None
+            ):
                 applicable.append(eligibility)
 
         # Prefer the proof that establishes the longest common move prefix;

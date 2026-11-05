@@ -1,4 +1,5 @@
 """Games-owned stored review projections and explicit configured commands."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -8,8 +9,19 @@ from typing import Literal, Protocol
 from pydantic import Field, model_validator
 
 from app.contracts.product_v02 import Identifier, Value
-from app.contracts.product_v02.games import Finding, GameSummary, GameWindow, ProviderSyncStatus, RecentGames
-from app.study.interfaces.game_priority import EncounterFeedbackPort, EncounterReceipt, GameEncounter, LearningReceipt
+from app.contracts.product_v02.games import (
+    Finding,
+    GameSummary,
+    GameWindow,
+    ProviderSyncStatus,
+    RecentGames,
+)
+from app.study.interfaces.game_priority import (
+    EncounterFeedbackPort,
+    EncounterReceipt,
+    GameEncounter,
+    LearningReceipt,
+)
 from app.contracts.product_v02.presentation import GameDetail
 from .ports import Delivery, JobSpec, JobState, SourceState
 
@@ -28,7 +40,9 @@ class SyncConfiguration(Value):
     account: Identifier
     window: GameWindow
     repertoire_ids: tuple[Identifier, ...] = Field(min_length=1)
-    speeds: tuple[Literal["bullet", "blitz", "rapid", "classical"], ...] = Field(min_length=1, max_length=4)
+    speeds: tuple[Literal["bullet", "blitz", "rapid", "classical"], ...] = Field(
+        min_length=1, max_length=4
+    )
     rated: bool | None
     interval_seconds: int | None = Field(ge=60, le=86400)
     revision: int = Field(default=1, ge=1)
@@ -38,67 +52,119 @@ class SyncConfiguration(Value):
         if self.account != self.account.strip():
             raise ValueError("account cannot contain surrounding whitespace")
         if self.provider == "chesscom" and self.rated is False:
-            raise ValueError("Chess.com supports rated-only or both; casual-only is unavailable")
+            raise ValueError(
+                "Chess.com supports rated-only or both; casual-only is unavailable"
+            )
         return self
 
 
 class ReviewStore(Protocol):
-    def configuration(self, workspace: str, provider: Provider) -> SyncConfiguration | None: ...
-    def configure(self, configuration: SyncConfiguration, expected_revision: int) -> SyncConfiguration: ...
+    def configuration(
+        self, workspace: str, provider: Provider
+    ) -> SyncConfiguration | None: ...
+    def configure(
+        self, configuration: SyncConfiguration, expected_revision: int
+    ) -> SyncConfiguration: ...
     def recent(self, workspace: str, limit: int) -> tuple[GameSummary, ...]: ...
-    def source_detail(self, workspace: str, provider: Provider, game_id: str) -> SourceState | None: ...
+    def source_detail(
+        self, workspace: str, provider: Provider, game_id: str
+    ) -> SourceState | None: ...
     def deliveries(self, source_key: str) -> tuple[Delivery, ...]: ...
     def last_job(self, workspace: str, provider: Provider) -> JobState | None: ...
-    def enqueue(self, configuration: SyncConfiguration, job: JobSpec, now: float) -> JobState: ...
-    def enqueue_refresh(self, workspace: str, provider: Provider, operation_id: str,
-                        build_job: Callable) -> tuple[JobState, bool]: ...
+    def enqueue(
+        self, configuration: SyncConfiguration, job: JobSpec, now: float
+    ) -> JobState: ...
+    def enqueue_refresh(
+        self, workspace: str, provider: Provider, operation_id: str, build_job: Callable
+    ) -> tuple[JobState, bool]: ...
     def refresh_job(self, workspace: str, operation_id: str) -> JobState | None: ...
-    def due_configuration(self, workspace: str, now: float) -> SyncConfiguration | None: ...
-    def due_configurations(self, workspace: str, now: float) -> tuple[SyncConfiguration, ...]: ...
-    def request_retry(self, workspace: str, source: SourceState, finding: Finding, operation_id: str,
-                      *, delivery_id: str | None = None) -> Delivery: ...
+    def due_configuration(
+        self, workspace: str, now: float
+    ) -> SyncConfiguration | None: ...
+    def due_configurations(
+        self, workspace: str, now: float
+    ) -> tuple[SyncConfiguration, ...]: ...
+    def request_retry(
+        self,
+        workspace: str,
+        source: SourceState,
+        finding: Finding,
+        operation_id: str,
+        *,
+        delivery_id: str | None = None,
+    ) -> Delivery: ...
     def delivery(self, operation_id: str) -> Delivery | None: ...
 
 
 def sync_status(provider: Provider, job: JobState | None) -> ProviderSyncStatus:
     if job is None:
-        return ProviderSyncStatus(provider=provider, status="idle", operation_id=None, error=None)
+        return ProviderSyncStatus(
+            provider=provider, status="idle", operation_id=None, error=None
+        )
     failed = job.status in {"retryable", "failed", "quarantined"}
-    return ProviderSyncStatus(provider=provider, operation_id=job.spec.job_id,
-        status="failed" if failed else "complete" if job.status == "complete" else "pending",
-        error=(job.error or job.status) if failed else None)
+    return ProviderSyncStatus(
+        provider=provider,
+        operation_id=job.spec.job_id,
+        status="failed"
+        if failed
+        else "complete"
+        if job.status == "complete"
+        else "pending",
+        error=(job.error or job.status) if failed else None,
+    )
 
 
 class GameReview:
-    def __init__(self, *, workspace: str, store: ReviewStore, learning: EncounterFeedbackPort,
-                 build_job: Callable[[SyncConfiguration, str], JobSpec],
-                 deliver: Callable[[Delivery], None], now: Callable[[], float]):
+    def __init__(
+        self,
+        *,
+        workspace: str,
+        store: ReviewStore,
+        learning: EncounterFeedbackPort,
+        build_job: Callable[[SyncConfiguration, str], JobSpec],
+        deliver: Callable[[Delivery], None],
+        now: Callable[[], float],
+    ):
         self.workspace, self.store, self.learning = workspace, store, learning
         self.build_job, self.deliver, self.now = build_job, deliver, now
 
     def configuration(self, provider: Provider) -> SyncConfiguration | None:
         return self.store.configuration(self.workspace, provider)
 
-    def configure(self, configuration: SyncConfiguration, expected_revision: int) -> SyncConfiguration:
+    def configure(
+        self, configuration: SyncConfiguration, expected_revision: int
+    ) -> SyncConfiguration:
         if configuration.workspace_id != self.workspace:
             raise ReviewUnavailable("configuration_workspace_mismatch")
         # Validate new writes here, not in the stored value's deserializer.
         # Historical/manual windows remain arbitrary-width and old seeds readable.
         if configuration.interval_seconds is not None:
-            start = datetime.fromisoformat(configuration.window.start_at.replace("Z", "+00:00"))
-            end = datetime.fromisoformat(configuration.window.end_at.replace("Z", "+00:00"))
+            start = datetime.fromisoformat(
+                configuration.window.start_at.replace("Z", "+00:00")
+            )
+            end = datetime.fromisoformat(
+                configuration.window.end_at.replace("Z", "+00:00")
+            )
             if not 60 <= (end - start).total_seconds() <= 86400:
                 raise ReviewUnavailable(
                     "Ongoing collection needs a UTC seed of 60–86400 seconds (1 minute–24 hours). "
-                    "Adjust the dates or choose Historical/manual import.", 422)
+                    "Adjust the dates or choose Historical/manual import.",
+                    422,
+                )
         return self.store.configure(configuration, expected_revision)
 
     def recent_games(self) -> RecentGames:
-        return RecentGames(games=self.store.recent(self.workspace, 50), sync=tuple(
-            sync_status(provider, self.store.last_job(self.workspace, provider))
-            for provider in ("lichess", "chesscom")))
+        return RecentGames(
+            games=self.store.recent(self.workspace, 50),
+            sync=tuple(
+                sync_status(provider, self.store.last_job(self.workspace, provider))
+                for provider in ("lichess", "chesscom")
+            ),
+        )
 
-    def game_detail(self, *, provider: Provider, game_id: str, repertoire_id: str | None) -> GameDetail:
+    def game_detail(
+        self, *, provider: Provider, game_id: str, repertoire_id: str | None
+    ) -> GameDetail:
         source = self.store.source_detail(self.workspace, provider, game_id)
         if source is None or source.normalized is None:
             raise ReviewUnavailable("game_not_available", 404)
@@ -106,46 +172,97 @@ class GameReview:
             # Preserve original captures; do not draw changed findings on old moves.
             raise ReviewUnavailable(source.diagnostic or "source_quarantined")
         game = source.normalized
-        canonical_provider = "chesscom" if game.source_id == "chess.com" else game.source_id
-        if (game.workspace_id, canonical_provider, game.game_id) != (self.workspace, provider, game_id):
+        canonical_provider = (
+            "chesscom" if game.source_id == "chess.com" else game.source_id
+        )
+        if (game.workspace_id, canonical_provider, game.game_id) != (
+            self.workspace,
+            provider,
+            game_id,
+        ):
             raise ReviewUnavailable("game_source_identity_mismatch")
         selection = source.first_departure
         if selection is not None and (
-                selection.workspace_id, selection.source.provider, selection.source.game_id,
-                selection.source.source_revision, selection.source.source_digest) != (
-                game.workspace_id, canonical_provider, game.game_id, game.source_revision, game.source_digest):
+            selection.workspace_id,
+            selection.source.provider,
+            selection.source.game_id,
+            selection.source.source_revision,
+            selection.source.source_digest,
+        ) != (
+            game.workspace_id,
+            canonical_provider,
+            game.game_id,
+            game.source_revision,
+            game.source_digest,
+        ):
             raise ReviewUnavailable("comparison_source_identity_mismatch")
-        findings = tuple(f for f in source.findings if repertoire_id is None or f.repertoire_id == repertoire_id)
-        encounter_keys = {effect.key.logical_id() for effect in source.effects
-                          if isinstance(effect, GameEncounter)}
+        findings = tuple(
+            f
+            for f in source.findings
+            if repertoire_id is None or f.repertoire_id == repertoire_id
+        )
+        encounter_keys = {
+            effect.key.logical_id()
+            for effect in source.effects
+            if isinstance(effect, GameEncounter)
+        }
         receipts = []
         for delivery in self.store.deliveries(source.source_key):
             key = delivery.command.key
-            if delivery.source_key != source.source_key or (key.workspace_id, key.provider, key.game_id) != (
-                    self.workspace, provider, game_id):
+            if delivery.source_key != source.source_key or (
+                key.workspace_id,
+                key.provider,
+                key.game_id,
+            ) != (self.workspace, provider, game_id):
                 continue
             # Controls retain the original effect kind. The legacy read operation
             # cannot represent encounter disposition/admission/deferral fields.
-            receipt = (self.learning.encounter_status(key)
-                if delivery.encounter is not None or delivery.qualification is not None or key.logical_id() in encounter_keys
-                else self.learning.effect_status(key))
+            receipt = (
+                self.learning.encounter_status(key)
+                if delivery.encounter is not None
+                or delivery.qualification is not None
+                or key.logical_id() in encounter_keys
+                else self.learning.effect_status(key)
+            )
             receipt = receipt if receipt is not None else delivery.receipt
             command = delivery.command
-            original = (command.source if delivery.encounter is not None else
-                        command.finding if delivery.lapse is not None else command)
+            original = (
+                command.source
+                if delivery.encounter is not None
+                else command.finding
+                if delivery.lapse is not None
+                else command
+            )
             # Correlate immutable occurrence/source facts. A remapped current
             # physical target is owner evidence, never a new matching key.
-            if (receipt is not None and receipt.key == key and receipt.source_revision == original.source_revision
-                    and (not isinstance(receipt, EncounterReceipt) or delivery.control is not None
-                         or receipt.source_digest == original.source_digest)
-                    and receipt not in receipts):
+            if (
+                receipt is not None
+                and receipt.key == key
+                and receipt.source_revision == original.source_revision
+                and (
+                    not isinstance(receipt, EncounterReceipt)
+                    or delivery.control is not None
+                    or receipt.source_digest == original.source_digest
+                )
+                and receipt not in receipts
+            ):
                 receipts.append(receipt)
-        return GameDetail(provider=provider, game_id=game.game_id,
-            source_revision=source.original.source_revision, played_at=source.original.played_at,
-            time_precision=source.original.time_precision, player_color=game.learner_color,
-            starting_fen=game.starting_fen, moves=tuple(game.moves), findings=findings, receipts=tuple(receipts),
-            first_departure=selection, determined_at=source.determined_at,
-            comparison_revision=source.comparison_revision, comparison_freshness="unknown")
+        return GameDetail(
+            provider=provider,
+            game_id=game.game_id,
+            source_revision=source.original.source_revision,
+            played_at=source.original.played_at,
+            time_precision=source.original.time_precision,
+            player_color=game.learner_color,
+            starting_fen=game.starting_fen,
+            moves=tuple(game.moves),
+            findings=findings,
+            receipts=tuple(receipts),
+            first_departure=selection,
+            determined_at=source.determined_at,
+            comparison_revision=source.comparison_revision,
+            comparison_freshness="unknown",
+        )
 
     def sync(self, *, provider: Provider, operation_id: str) -> ProviderSyncStatus:
         configuration = self.configuration(provider)
@@ -156,17 +273,23 @@ class GameReview:
 
     def refresh(self, *, provider: Provider, operation_id: str):
         from .refresh import refresh_job, refresh_status
+
         def build_refresh(configuration, checkpoint):
             try:
-                return refresh_job(configuration, checkpoint, self.now(), operation_id, self.build_job)
+                return refresh_job(
+                    configuration, checkpoint, self.now(), operation_id, self.build_job
+                )
             except ValueError as error:
                 raise ReviewUnavailable(str(error), 422) from error
-        job, created = self.store.enqueue_refresh(self.workspace, provider, operation_id,
-                                                 build_refresh)
+
+        job, created = self.store.enqueue_refresh(
+            self.workspace, provider, operation_id, build_refresh
+        )
         return refresh_status(operation_id, job), created
 
     def refresh_status(self, operation_id: str):
         from .refresh import refresh_status
+
         job = self.store.refresh_job(self.workspace, operation_id)
         if job is None:
             raise ReviewUnavailable("refresh_request_not_found", 404)
@@ -178,14 +301,25 @@ class GameReview:
             return False
         interval = configuration.interval_seconds
         operation = f"recurring:{configuration.provider}:{configuration.revision}:{int(self.now() // interval)}"
-        self.store.enqueue(configuration, self.build_job(configuration, operation), self.now())
+        self.store.enqueue(
+            configuration, self.build_job(configuration, operation), self.now()
+        )
         return True
 
     def retry_feedback(self, *, finding: Finding, operation_id: str) -> LearningReceipt:
-        source = self.store.source_detail(self.workspace, finding.provider, finding.game_id)
-        if source is None or source.quarantined or finding not in source.findings or not finding.lapse_eligible:
+        source = self.store.source_detail(
+            self.workspace, finding.provider, finding.game_id
+        )
+        if (
+            source is None
+            or source.quarantined
+            or finding not in source.findings
+            or not finding.lapse_eligible
+        ):
             raise ReviewUnavailable("current_confirmed_finding_required")
-        delivery = self.store.request_retry(self.workspace, source, finding, operation_id)
+        delivery = self.store.request_retry(
+            self.workspace, source, finding, operation_id
+        )
         current = self.learning.effect_status(delivery.command.key)
         if current is not None and delivery.state == "acknowledged":
             return current

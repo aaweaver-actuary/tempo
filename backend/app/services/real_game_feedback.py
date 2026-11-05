@@ -1,4 +1,5 @@
 """Real-game obligation policy over semantic facts; no database operations."""
+
 from app.study.review.feedback_contracts import RealGameFeedbackStore
 
 MISS_REASON = "Priority review · missed in a recent game"
@@ -8,7 +9,9 @@ def has_outstanding_real_game_miss(store: RealGameFeedbackStore, card_id: str) -
     return store.outstanding_card(card_id) is not None
 
 
-def promote_real_game_card(store: RealGameFeedbackStore, card_id: str, queue_date: str) -> bool:
+def promote_real_game_card(
+    store: RealGameFeedbackStore, card_id: str, queue_date: str
+) -> bool:
     """Recheck after the card lock; admission and review remain separate effects."""
     store.lock_card(card_id)
     outstanding = store.outstanding_card(card_id)
@@ -25,11 +28,15 @@ def promote_real_game_card(store: RealGameFeedbackStore, card_id: str, queue_dat
     return True
 
 
-def prioritize_real_game_miss(store: RealGameFeedbackStore, event_id: str, queue_day: str) -> bool:
+def prioritize_real_game_miss(
+    store: RealGameFeedbackStore, event_id: str, queue_day: str
+) -> bool:
     card_id = store.event_card(event_id)
     return bool(card_id and promote_real_game_card(store, card_id, queue_day))
 
 
 def clear_satisfied_miss_priority(store: RealGameFeedbackStore, card_id: str) -> None:
     if not has_outstanding_real_game_miss(store, card_id):
-        store.replace_miss_priority(card_id, MISS_REASON, store.accepted_miss_priority(card_id))
+        store.replace_miss_priority(
+            card_id, MISS_REASON, store.accepted_miss_priority(card_id)
+        )

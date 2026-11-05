@@ -8,7 +8,11 @@ import chess
 
 from app.contracts.transport.tactics import TacticCaptureRequest
 from tempo_legacy_database.adapters.tactics import captures as storage
-from app.contracts.tactic_capture import ValidatedCapture, TacticCaptureValidationError, TacticCaptureConflict
+from app.contracts.tactic_capture import (
+    ValidatedCapture,
+    TacticCaptureValidationError,
+    TacticCaptureConflict,
+)
 from app.study.interfaces.captured_tactic import CapturedTacticAdmission
 from app.chess.cards import card_id
 
@@ -17,7 +21,9 @@ def game_capture_id(finding_id: str) -> uuid.UUID:
     return uuid.uuid5(uuid.NAMESPACE_URL, f"tempo:tactic-capture:game:{finding_id}")
 
 
-def validate_tactic_line(starting_fen: str, moves: list[str]) -> tuple[str, list[str], str]:
+def validate_tactic_line(
+    starting_fen: str, moves: list[str]
+) -> tuple[str, list[str], str]:
     try:
         board = chess.Board(starting_fen)
         if not board.is_valid():
@@ -39,12 +45,23 @@ def validate_tactic_line(starting_fen: str, moves: list[str]) -> tuple[str, list
         raise TacticCaptureValidationError(f"Cannot capture tactic: {error}") from error
 
 
-def capture_tactic(database, request: TacticCaptureRequest, *, admission: CapturedTacticAdmission, game_finding: bool = False) -> dict:
+def capture_tactic(
+    database,
+    request: TacticCaptureRequest,
+    *,
+    admission: CapturedTacticAdmission,
+    game_finding: bool = False,
+) -> dict:
     """Atomically materialize one capture; the caller supplies a transaction."""
-    starting_fen, moves, trained_color = validate_tactic_line(request.starting_fen, request.moves)
+    starting_fen, moves, trained_color = validate_tactic_line(
+        request.starting_fen, request.moves
+    )
     identity_fen = " ".join(starting_fen.split()[:4])
-    normalized_request = {**request.model_dump(mode="json"),
-                          "starting_fen": identity_fen, "moves": moves}
+    normalized_request = {
+        **request.model_dump(mode="json"),
+        "starting_fen": identity_fen,
+        "moves": moves,
+    }
     request_json = json.dumps(normalized_request, sort_keys=True, separators=(",", ":"))
     capture_id = str(request.capture_id)
     queue_date = date.today().isoformat()
@@ -53,18 +70,45 @@ def capture_tactic(database, request: TacticCaptureRequest, *, admission: Captur
     previous = storage.capture_receipt(database, capture_id)
     if previous:
         if previous["request_json"] != request_json:
-            raise TacticCaptureConflict("This capture ID belongs to a different position, solution, or source. Start a new capture.")
+            raise TacticCaptureConflict(
+                "This capture ID belongs to a different position, solution, or source. Start a new capture."
+            )
         return json.loads(previous["result_json"])
 
     tactic_card_id = card_id(starting_fen, moves)
-    capture = ValidatedCapture(capture_id=capture_id, card_id=tactic_card_id, starting_fen=starting_fen, identity_fen=identity_fen,
-        moves=tuple(moves), trained_color=trained_color, source_kind=request.source_kind,
-        source_ref=request.source_ref, source_url=request.source_url, note=request.note,
-        game_finding=game_finding, request_json=request_json)
+    capture = ValidatedCapture(
+        capture_id=capture_id,
+        card_id=tactic_card_id,
+        starting_fen=starting_fen,
+        identity_fen=identity_fen,
+        moves=tuple(moves),
+        trained_color=trained_color,
+        source_kind=request.source_kind,
+        source_ref=request.source_ref,
+        source_url=request.source_url,
+        note=request.note,
+        game_finding=game_finding,
+        request_json=request_json,
+    )
     now = datetime.now(timezone.utc).isoformat()
     admitted = admission.admit(capture, queue_date, now)
-    result = {"capture_id": capture_id, "card_id": admitted["card_id"], "reused": admitted["reused"],
-              "queued": True, "introduced": admitted["introduced"]}
-    storage.save_capture_receipt(database, capture_id, tactic_card_id, request.source_kind, request.source_ref,
-        request.source_url, request.note, now, request_json, json.dumps(result))
+    result = {
+        "capture_id": capture_id,
+        "card_id": admitted["card_id"],
+        "reused": admitted["reused"],
+        "queued": True,
+        "introduced": admitted["introduced"],
+    }
+    storage.save_capture_receipt(
+        database,
+        capture_id,
+        tactic_card_id,
+        request.source_kind,
+        request.source_ref,
+        request.source_url,
+        request.note,
+        now,
+        request_json,
+        json.dumps(result),
+    )
     return result

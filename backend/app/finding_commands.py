@@ -8,7 +8,10 @@ from typing import Any
 from fastapi import HTTPException
 
 from .command_gateway import register_command
-from app.contracts.transport.game_findings import GameFindingCurationRequest, GameFindingDecisionRequest
+from app.contracts.transport.game_findings import (
+    GameFindingCurationRequest,
+    GameFindingDecisionRequest,
+)
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from tempo_legacy_database.adapters.games import findings as storage
 from .services.real_game_feedback_adapter import prioritize_real_game_miss
@@ -45,16 +48,25 @@ def decide_finding(database: PostgresConnection, payload: dict[str, Any]) -> dic
     queued = False
     if request.decision == "accepted" and finding["kind"] == "repertoire lapse":
         if not finding["card_id"]:
-            raise HTTPException(422, "This repertoire lapse is not linked to a study card")
+            raise HTTPException(
+                422, "This repertoire lapse is not linked to a study card"
+            )
         linked_event = storage.linked_miss_event(database, finding)
         if linked_event is None:
             raise HTTPException(
-                409, "Canonical game decision is unavailable. Reanalyze this game and try again.",
+                409,
+                "Canonical game decision is unavailable. Reanalyze this game and try again.",
             )
         queued = prioritize_real_game_miss(database, linked_event["id"])
-    storage.set_finding_decision(database, finding_id, request.decision, datetime.now(timezone.utc).isoformat())
-    return {"id": finding_id, "status": request.decision,
-            "scheduling": None, "queued": queued}
+    storage.set_finding_decision(
+        database, finding_id, request.decision, datetime.now(timezone.utc).isoformat()
+    )
+    return {
+        "id": finding_id,
+        "status": request.decision,
+        "scheduling": None,
+        "queued": queued,
+    }
 
 
 register_command("game_findings.curate", curate_finding)

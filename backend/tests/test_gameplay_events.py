@@ -23,7 +23,12 @@ def test_gameplay_events_reuse_both_sides_analysis_and_recompute_idempotently(
                 """INSERT INTO imported_games(
                        id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json,analysis_version
                    ) VALUES(?,'lichess','TempoPlayer',?,'rapid',1,'white','1-0',?,?,1)""",
-                (game_id, datetime.now(timezone.utc).isoformat(), START, json.dumps(moves)),
+                (
+                    game_id,
+                    datetime.now(timezone.utc).isoformat(),
+                    START,
+                    json.dumps(moves),
+                ),
             )
             db.execute(
                 """INSERT INTO game_move_analysis(
@@ -90,4 +95,6 @@ def test_multipv_gameplay_event_records_exploited_tactical_opportunity_and_evide
         assert event["outcome"] == "exploited"
         evidence = json.loads(event["evidence_json"])
         assert evidence["analysis_evidence_version"] == 2
-        assert evidence["motif_evidence"][0]["concrete_outcome"]["type"] == "material_gain"
+        assert (
+            evidence["motif_evidence"][0]["concrete_outcome"]["type"] == "material_gain"
+        )

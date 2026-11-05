@@ -1,11 +1,15 @@
 """Private T22 storage and retained-Study capabilities; caller owns the transaction."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
-from app.contracts.product_v02.presentation import Presentation, PresentationChangeReceipt
+from app.contracts.product_v02.presentation import (
+    Presentation,
+    PresentationChangeReceipt,
+)
 from .models import CleanStreak, JoinMember, ReviewEvent, RouteContext, RouteUse
 
 
@@ -17,12 +21,17 @@ class Obligation:
     carry their original determination (or receipt) instant in this internal
     compatibility field; it is not a wall-clock promise or an expiration time.
     """
+
     logical_id: str
     decision_id: str
     available_by: datetime
 
     def __post_init__(self):
-        if not self.logical_id or not self.decision_id or self.available_by.utcoffset() is None:
+        if (
+            not self.logical_id
+            or not self.decision_id
+            or self.available_by.utcoffset() is None
+        ):
             raise ValueError("original obligation identity and aware deadline required")
 
 
@@ -67,6 +76,7 @@ class StudyBoundary(Protocol):
     changes only this route's queue projections and preserves other uses. Both
     calls share the store's transaction. No Games or optional producer is needed.
     """
+
     def try_current(self, route_id: str) -> CurrentRoute | None: ...
     def saved_review(self, event: ReviewEvent) -> bool: ...
     def identity_available(self, presentation_id: str) -> bool: ...
@@ -81,6 +91,13 @@ class RecombinationStore(Protocol):
     def event(self, event_id: str) -> ReviewEvent | None: ...
     def save_event(self, event: ReviewEvent) -> None: ...
     def recent_completed(self, identity: CleanStreak) -> tuple[ReviewEvent, ...]: ...
-    def receipt(self, command_id: str) -> tuple[str, PresentationChangeReceipt] | None: ...
+    def receipt(
+        self, command_id: str
+    ) -> tuple[str, PresentationChangeReceipt] | None: ...
     def presentation_exists(self, presentation_id: str) -> bool: ...
-    def save_change(self, change: PresentationChange, digest: str, receipt: PresentationChangeReceipt) -> None: ...
+    def save_change(
+        self,
+        change: PresentationChange,
+        digest: str,
+        receipt: PresentationChangeReceipt,
+    ) -> None: ...

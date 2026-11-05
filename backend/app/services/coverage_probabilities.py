@@ -1,4 +1,5 @@
 """Pure coverage probability and reply-selection policy."""
+
 from dataclasses import dataclass
 
 
@@ -61,5 +62,3 @@ def required_reply_moves(
         required.add(candidate.move_uci)
         cumulative_probability += candidate.probability
     return required
-
-

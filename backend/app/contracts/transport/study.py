@@ -1,4 +1,5 @@
 """Study queue/review/teaching contracts."""
+
 from typing import Literal
 from pydantic import BaseModel, Field
 from ..opening_evidence import OpeningEvidenceCheckpoint
@@ -34,8 +35,11 @@ class ReviewRequest(BaseModel):
 
     def durable_payload(self):
         # Adding optional handoff metadata cannot change legacy delivery hashes.
-        omitted = {name for name in ("opening_evidence_completion", "prepared_next")
-                   if getattr(self, name) is None}
+        omitted = {
+            name
+            for name in ("opening_evidence_completion", "prepared_next")
+            if getattr(self, name) is None
+        }
         return self.model_dump(mode="json", exclude=omitted)
 
 

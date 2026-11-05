@@ -6,6 +6,7 @@ TEMPO_POSTGRES_INIT_TEST_CONTEXT, using make python-file FILE=<this file>.
 No image pull, port, production mount, password or live command is used.
 The ordinary backend suite discovers this file; no dedicated qualifier is added.
 """
+
 import json
 import os
 from pathlib import Path
@@ -90,9 +91,11 @@ def _wait_reaped_exit_two(container_id, pid):
     in the baseline. Some Docker init binaries omit verbose child-reap logs.
     """
     deadline = time.monotonic() + 10
-    command = (f"if [[ -f /tmp/orphan-outcome && ! -e /proc/{pid} ]]; then "
-               "IFS= read -r status < /tmp/orphan-outcome; printf '%s' \"$status\"; "
-               "else printf waiting; fi")
+    command = (
+        f"if [[ -f /tmp/orphan-outcome && ! -e /proc/{pid} ]]; then "
+        "IFS= read -r status < /tmp/orphan-outcome; printf '%s' \"$status\"; "
+        "else printf waiting; fi"
+    )
     while True:
         value = _docker("exec", container_id, "bash", "-c", command).stdout
         if value == "2":
@@ -104,13 +107,32 @@ def _wait_reaped_exit_two(container_id, pid):
 
 class HeldClient:
     """One psql process/connection; failure never creates a replacement client."""
+
     def __init__(self, container_id):
         context = os.environ.get("TEMPO_POSTGRES_INIT_TEST_CONTEXT")
         self.process = subprocess.Popen(
-            ["docker", *(["--context", context] if context else []), "exec", "-i",
-             container_id, "psql", "-X", "-qAt", "-w", "-v", "ON_ERROR_STOP=1",
-             "-h", "/tmp", "-U", "postgres", "-d", "postgres"],
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            [
+                "docker",
+                *(["--context", context] if context else []),
+                "exec",
+                "-i",
+                container_id,
+                "psql",
+                "-X",
+                "-qAt",
+                "-w",
+                "-v",
+                "ON_ERROR_STOP=1",
+                "-h",
+                "/tmp",
+                "-U",
+                "postgres",
+                "-d",
+                "postgres",
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
         )
         self.pending = b""
         self.errors = b""
@@ -135,7 +157,10 @@ class HeldClient:
                         return lines
                     lines.append(value)
                 if time.monotonic() >= deadline:
-                    raise RuntimeError("Original held client timed out: " + self.errors.decode(errors="replace"))
+                    raise RuntimeError(
+                        "Original held client timed out: "
+                        + self.errors.decode(errors="replace")
+                    )
                 for key, _ in selector.select(min(0.2, deadline - time.monotonic())):
                     chunk = os.read(key.fileobj.fileno(), 65536)
                     if not chunk:
@@ -144,7 +169,9 @@ class HeldClient:
                         self.pending += chunk
                     else:
                         self.errors += chunk
-        raise RuntimeError("Original held client closed: " + self.errors.decode(errors="replace"))
+        raise RuntimeError(
+            "Original held client closed: " + self.errors.decode(errors="replace")
+        )
 
     def close(self):
         if self.process.poll() is None:
@@ -167,45 +194,78 @@ class HeldClient:
 
 def _case(image, owner, init_enabled, evidence):
     name = owner + ("-init" if init_enabled else "-baseline")
-    report = {"init": init_enabled, "owner": owner, "container_name": name,
-              "image_id": image, "cleanup_verified": False}
+    report = {
+        "init": init_enabled,
+        "owner": owner,
+        "container_name": name,
+        "image_id": image,
+        "cleanup_verified": False,
+    }
     container_id = None
     held = None
     try:
         assert not _docker("ps", "-aq", "--filter", f"name=^/{name}$").stdout.strip()
-        arguments = ["run", "--detach", "--pull=never", "--name", name,
-            "--label", "tempo.owner=" + owner, "--label", "tempo.disposable=true",
-            "--network=none", "--memory=384m", "--memory-swap=384m",
-            "--pids-limit=64", "--read-only", "--user=postgres",
-            "--tmpfs", "/var/lib/postgresql:rw,nosuid,nodev,size=256m,mode=1777",
-            "--tmpfs", "/tmp:rw,nosuid,nodev,size=32m,mode=1777",
-            "--env", "TINI_VERBOSITY=3", "--entrypoint", "bash"]
+        arguments = [
+            "run",
+            "--detach",
+            "--pull=never",
+            "--name",
+            name,
+            "--label",
+            "tempo.owner=" + owner,
+            "--label",
+            "tempo.disposable=true",
+            "--network=none",
+            "--memory=384m",
+            "--memory-swap=384m",
+            "--pids-limit=64",
+            "--read-only",
+            "--user=postgres",
+            "--tmpfs",
+            "/var/lib/postgresql:rw,nosuid,nodev,size=256m,mode=1777",
+            "--tmpfs",
+            "/tmp:rw,nosuid,nodev,size=32m,mode=1777",
+            "--env",
+            "TINI_VERBOSITY=3",
+            "--entrypoint",
+            "bash",
+        ]
         if init_enabled:
             arguments.append("--init")
         container_id = _docker(*arguments, image, "-euc", BOOT).stdout.strip()
         report["container_id"] = container_id
         current = _owned(container_id, owner, image)
         assert bool(current["HostConfig"].get("Init")) == init_enabled
-        _wait_logs(container_id, lambda text: "database system is ready to accept connections" in text,
-                   seconds=45)
+        _wait_logs(
+            container_id,
+            lambda text: "database system is ready to accept connections" in text,
+            seconds=45,
+        )
         report["pid1"] = _proc(container_id, 1)
         assert report["pid1"]["Name"] == ("docker-init" if init_enabled else "postgres")
         held = HeldClient(container_id)
-        seeded = held.query("CREATE TABLE init_supervision_sentinel(value text PRIMARY KEY); "
+        seeded = held.query(
+            "CREATE TABLE init_supervision_sentinel(value text PRIMARY KEY); "
             "INSERT INTO init_supervision_sentinel VALUES('committed-sentinel'); "
-            "SELECT pg_backend_pid() || ':' || value FROM init_supervision_sentinel")
+            "SELECT pg_backend_pid() || ':' || value FROM init_supervision_sentinel"
+        )
         identity = seeded[-1]
         backend_pid = int(identity.split(":", 1)[0])
         postmaster_pid = int(_proc(container_id, backend_pid)["PPid"])
-        report.update(held_backend_pid=backend_pid, postmaster_pid=postmaster_pid,
-                      sentinel_before=identity.split(":", 1)[1])
+        report.update(
+            held_backend_pid=backend_pid,
+            postmaster_pid=postmaster_pid,
+            sentinel_before=identity.split(":", 1)[1],
+        )
         assert postmaster_pid != 1 if init_enabled else postmaster_pid == 1
         if init_enabled:
             assert _proc(container_id, postmaster_pid)["PPid"] == "1"
 
         # Authority/identity is checked immediately before the one injection.
         _owned(container_id, owner, image)
-        orphan_pid = int(_docker("exec", container_id, "bash", "-c", ORPHAN).stdout.strip())
+        orphan_pid = int(
+            _docker("exec", container_id, "bash", "-c", ORPHAN).stdout.strip()
+        )
         deadline = time.monotonic() + 5
         while True:
             adopted = _proc(container_id, orphan_pid)
@@ -215,34 +275,76 @@ def _case(image, owner, init_enabled, evidence):
             time.sleep(0.05)
         report["adopted_orphan"] = adopted
         _owned(container_id, owner, image)
-        _docker("exec", container_id, "bash", "-c", "echo release > /tmp/orphan-release")
+        _docker(
+            "exec", container_id, "bash", "-c", "echo release > /tmp/orphan-release"
+        )
 
         if not init_enabled:
-            signature = f"untracked child process (PID {orphan_pid}) exited with exit code 2"
-            _wait_logs(container_id, lambda text: signature in text and "reinitializing" in text)
+            signature = (
+                f"untracked child process (PID {orphan_pid}) exited with exit code 2"
+            )
+            _wait_logs(
+                container_id,
+                lambda text: signature in text and "reinitializing" in text,
+            )
             try:
-                held.query("SELECT pg_backend_pid() || ':' || value FROM init_supervision_sentinel")
+                held.query(
+                    "SELECT pg_backend_pid() || ':' || value FROM init_supervision_sentinel"
+                )
             except RuntimeError as error:
                 report["held_connection_interrupted"] = True
                 report["held_connection_error"] = str(error)
             else:
-                raise AssertionError("Baseline did not interrupt the original held connection")
-            _wait_logs(container_id, lambda text: text.count("database system is ready to accept connections") >= 2)
-            fresh = _docker("exec", container_id, "psql", "-X", "-qAt", "-w", "-h", "/tmp",
-                "-U", "postgres", "-d", "postgres", "-c", "SELECT value FROM init_supervision_sentinel").stdout.strip()
+                raise AssertionError(
+                    "Baseline did not interrupt the original held connection"
+                )
+            _wait_logs(
+                container_id,
+                lambda text: (
+                    text.count("database system is ready to accept connections") >= 2
+                ),
+            )
+            fresh = _docker(
+                "exec",
+                container_id,
+                "psql",
+                "-X",
+                "-qAt",
+                "-w",
+                "-h",
+                "/tmp",
+                "-U",
+                "postgres",
+                "-d",
+                "postgres",
+                "-c",
+                "SELECT value FROM init_supervision_sentinel",
+            ).stdout.strip()
             assert fresh == "committed-sentinel"
             report["fresh_post_recovery_sentinel"] = fresh
             report["baseline_mechanism_reproduced"] = True
         else:
             _wait_reaped_exit_two(container_id, orphan_pid)
-            after = held.query("SELECT pg_backend_pid() || ':' || value FROM init_supervision_sentinel")[-1]
-            assert after == identity, "Original backend identity or committed sentinel changed"
-            report.update(held_connection_retained=True, sentinel_after=after.split(":", 1)[1],
-                          held_backend_after=int(after.split(":", 1)[0]), orphan_reaped=True)
+            after = held.query(
+                "SELECT pg_backend_pid() || ':' || value FROM init_supervision_sentinel"
+            )[-1]
+            assert after == identity, (
+                "Original backend identity or committed sentinel changed"
+            )
+            report.update(
+                held_connection_retained=True,
+                sentinel_after=after.split(":", 1)[1],
+                held_backend_after=int(after.split(":", 1)[0]),
+                orphan_reaped=True,
+            )
             text = "\n".join(_logs(container_id))
-            assert "untracked child process" not in text and "reinitializing" not in text
+            assert (
+                "untracked child process" not in text and "reinitializing" not in text
+            )
             assert text.count("database system is ready to accept connections") == 1
-        report["orphan_outcome_marker"] = _docker("exec", container_id, "cat", "/tmp/orphan-outcome").stdout.strip()
+        report["orphan_outcome_marker"] = _docker(
+            "exec", container_id, "cat", "/tmp/orphan-outcome"
+        ).stdout.strip()
         assert report["orphan_outcome_marker"] == "2"
         held.close()
         held = None
@@ -250,11 +352,15 @@ def _case(image, owner, init_enabled, evidence):
         _docker("stop", "--time", "15", container_id, timeout=20)
         stopped = _owned(container_id, owner, image)
         text = "\n".join(_logs(container_id))
-        report["shutdown"] = {key: stopped["State"][key] for key in ("Running", "ExitCode", "OOMKilled")}
+        report["shutdown"] = {
+            key: stopped["State"][key] for key in ("Running", "ExitCode", "OOMKilled")
+        }
         report["shutdown"]["graceful_log"] = "database system is shut down" in text
         assert not stopped["State"]["Running"] and stopped["State"]["ExitCode"] == 0
         assert not stopped["State"]["OOMKilled"] and report["shutdown"]["graceful_log"]
-        assert "received fast shutdown request" in text, "Shutdown signal was not forwarded"
+        assert "received fast shutdown request" in text, (
+            "Shutdown signal was not forwarded"
+        )
         return report
     except BaseException as error:
         report["failure"] = f"{type(error).__name__}: {error}"
@@ -263,7 +369,9 @@ def _case(image, owner, init_enabled, evidence):
         if held is not None:
             held.close()
         # Resolve uncertain create outcomes by unique name; never prune resources.
-        found = _docker("ps", "-aq", "--no-trunc", "--filter", f"name=^/{name}$").stdout.strip()
+        found = _docker(
+            "ps", "-aq", "--no-trunc", "--filter", f"name=^/{name}$"
+        ).stdout.strip()
         if found:
             current = _owned(found, owner, image)
             report["container_id"] = found
@@ -285,16 +393,24 @@ def test_orphan_exit_two_is_reaped_by_init_without_postgres_recovery():
     selected = os.environ.get("TEMPO_POSTGRES_INIT_TEST_IMAGE", "postgres:18.6-trixie")
     inspected = _docker("image", "inspect", selected, check=False)
     if inspected.returncode:
-        pytest.skip("The explicitly selected existing PostgreSQL image is unavailable; no pull attempted")
+        pytest.skip(
+            "The explicitly selected existing PostgreSQL image is unavailable; no pull attempted"
+        )
     image = json.loads(inspected.stdout)[0]["Id"]
     if selected.startswith("sha256:"):
         assert selected == image
     owner = "tempo-pg-init-" + uuid.uuid4().hex
-    evidence = Path(os.environ.get("TEMPO_INIT_SUPERVISION_EVIDENCE",
-        str(ROOT / "test-results/postgres-init-supervision" / owner)))
+    evidence = Path(
+        os.environ.get(
+            "TEMPO_INIT_SUPERVISION_EVIDENCE",
+            str(ROOT / "test-results/postgres-init-supervision" / owner),
+        )
+    )
     evidence.mkdir(mode=0o700, parents=True, exist_ok=False)
     baseline = _case(image, owner, False, evidence)
-    assert baseline["baseline_mechanism_reproduced"], "Inconclusive baseline; do not claim mitigation"
+    assert baseline["baseline_mechanism_reproduced"], (
+        "Inconclusive baseline; do not claim mitigation"
+    )
     fixed = _case(image, owner, True, evidence)
     assert fixed["held_connection_retained"] and fixed["orphan_reaped"]
     assert baseline["cleanup_verified"] and fixed["cleanup_verified"]

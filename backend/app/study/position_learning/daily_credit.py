@@ -14,6 +14,7 @@ journal and do not finalize a grade receipt until saved completion.
 After accepted Again, terminal completion attaches settlement separately: replay
 the original negative receipt rather than resubmitting changed aggregate evidence.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
@@ -21,7 +22,10 @@ from datetime import date, datetime
 from typing import Literal
 
 from tempo_evidence_math.position_learning import (
-    AcceptedEvidence, GradeProposal, Hold, PositionDefinition,
+    AcceptedEvidence,
+    GradeProposal,
+    Hold,
+    PositionDefinition,
 )
 
 
@@ -38,7 +42,10 @@ class CurrentPositionState:
     def __post_init__(self) -> None:
         if self.revision < 1 or not self.owner_epoch:
             raise ValueError("invalid_current_position_state")
-        if self.last_transition_at is not None and self.last_transition_at.utcoffset() is None:
+        if (
+            self.last_transition_at is not None
+            and self.last_transition_at.utcoffset() is None
+        ):
             raise ValueError("last_transition_at_aware_required")
 
 
@@ -89,28 +96,37 @@ def accept_grade(
     response = evidence.first_response
     for receipt in receipts:
         original = receipt.evidence.first_response
-        if (original.attempt_id, original.index) == (response.attempt_id, response.index):
+        if (original.attempt_id, original.index) == (
+            response.attempt_id,
+            response.index,
+        ):
             return Hold("first_response_event_id_changed")
 
     if not evidence.saved:
         return Hold("evidence_not_durable")
     if not evidence.source_digest:
         return Hold("source_proof_unavailable")
-    if (proposal.event_id != response.event_id
-            or proposal.position != response.definition.key
-            or proposal.policy_version != response.definition.policy_version
-            or proposal.observed_at != response.observed_at
-            or proposal.accepted_at != evidence.accepted_at):
+    if (
+        proposal.event_id != response.event_id
+        or proposal.position != response.definition.key
+        or proposal.policy_version != response.definition.policy_version
+        or proposal.observed_at != response.observed_at
+        or proposal.accepted_at != evidence.accepted_at
+    ):
         return Hold("proposal_evidence_mismatch")
     if proposal.grade not in {"good", "again", "observe", "pending"}:
         return Hold("invalid_grade")
     if proposal.issued_position_revision < 1:
         return Hold("invalid_issued_position_revision")
-    if (proposal.accepted_at.utcoffset() is None
-            or proposal.observed_at.utcoffset() is None):
+    if (
+        proposal.accepted_at.utcoffset() is None
+        or proposal.observed_at.utcoffset() is None
+    ):
         return Hold("grade_timestamp_aware_required")
-    if (proposal.owner_epoch != current.owner_epoch
-            or evidence.owner_epoch != current.owner_epoch):
+    if (
+        proposal.owner_epoch != current.owner_epoch
+        or evidence.owner_epoch != current.owner_epoch
+    ):
         return Hold("owner_epoch_changed")
     if response.definition != current.definition:
         return Hold("response_definition_changed")
@@ -135,26 +151,42 @@ def accept_grade(
     if response.assistance_before:
         grade, reason = "observe", "assisted_first_response_no_new_grade"
     elif grade == "again":
-        if response.correct or evidence.disposition not in {"wrong", "illegal", "manual_failure"}:
+        if response.correct or evidence.disposition not in {
+            "wrong",
+            "illegal",
+            "manual_failure",
+        }:
             return Hold("again_requires_verified_first_wrong")
         if proposal.study_day != current.study_day:
             return Hold("negative_requires_accepted_study_day")
     elif grade == "good":
-        if not response.correct or not evidence.terminal_complete or not evidence.aggregate_review_saved:
+        if (
+            not response.correct
+            or not evidence.terminal_complete
+            or not evidence.aggregate_review_saved
+        ):
             return Hold("good_requires_completed_saved_recall")
         if proposal.study_day != current.study_day:
             grade, reason = "observe", "accepted_after_issued_study_day"
         elif proposal.issued_position_revision != current.revision:
             grade, reason = "observe", "stale_due_issuance"
-        elif any(receipt.final.position == proposal.position
-                 and receipt.final.study_day == proposal.study_day
-                 and receipt.final.grade == "good" for receipt in receipts):
+        elif any(
+            receipt.final.position == proposal.position
+            and receipt.final.study_day == proposal.study_day
+            and receipt.final.grade == "good"
+            for receipt in receipts
+        ):
             grade, reason = "observe", "already_good_today"
 
-    if (grade in {"good", "again"} and current.last_transition_at is not None
-            and proposal.accepted_at < current.last_transition_at):
+    if (
+        grade in {"good", "again"}
+        and current.last_transition_at is not None
+        and proposal.accepted_at < current.last_transition_at
+    ):
         return Hold("acceptance_precedes_current_transition")
 
     final = replace(proposal, grade=grade, reason=reason)
     resulting_revision = current.revision + int(grade in {"good", "again"})
-    return GradeAcceptance(AcceptedGradeReceipt(proposal, evidence, final, resulting_revision))
+    return GradeAcceptance(
+        AcceptedGradeReceipt(proposal, evidence, final, resulting_revision)
+    )

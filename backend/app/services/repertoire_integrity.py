@@ -22,6 +22,7 @@ from app.chess.cards import card_id
 from .repertoire_comparison import canonical_fen
 
 from ..card_deletion import SYSTEM_REPERTOIRE_IDS
+
 SYSTEM_REPERTOIRES = set(SYSTEM_REPERTOIRE_IDS)
 _LOGGER = logging.getLogger("tempo.background")
 
@@ -30,10 +31,14 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _issue_id(repertoire_id: str, kind: str, fen_key: str | None, sources: list[dict] | None = None) -> str:
+def _issue_id(
+    repertoire_id: str,
+    kind: str,
+    fen_key: str | None,
+    sources: list[dict] | None = None,
+) -> str:
     source_key = "|".join(
-        f"{source.get('type')}:{source.get('id')}"
-        for source in (sources or [])
+        f"{source.get('type')}:{source.get('id')}" for source in (sources or [])
     )
     return hashlib.sha256(
         f"{repertoire_id}\0{kind}\0{fen_key or source_key}".encode()
@@ -47,7 +52,12 @@ def _signature(issue: dict) -> str:
         "moves": sorted(issue.get("moves", [])),
         "sources": sorted(
             [
-                (source.get("type"), source.get("id"), source.get("move_index"), source.get("move"))
+                (
+                    source.get("type"),
+                    source.get("id"),
+                    source.get("move_index"),
+                    source.get("move"),
+                )
                 for source in issue.get("sources", [])
             ],
             key=repr,
@@ -63,7 +73,9 @@ def _source_rows(database: sqlite3.Connection, repertoire_id: str) -> list[dict]
     ]
     cards = [
         {**dict(row), "source_type": "card", "source_id": row["id"]}
-        for row in storage.source_cards(database, (repertoire_id, repertoire_id, repertoire_id))
+        for row in storage.source_cards(
+            database, (repertoire_id, repertoire_id, repertoire_id)
+        )
     ]
     return lines + cards
 
@@ -95,7 +107,11 @@ def _scan_source(
                 raise ValueError(f"illegal move at ply {move_index + 1}")
             last_moving_color = board.turn
             board.push(move)
-        if board.turn == target and any(board.legal_moves) and last_moving_color != target:
+        if (
+            board.turn == target
+            and any(board.legal_moves)
+            and last_moving_color != target
+        ):
             _record_position(positions, board, source, len(moves), None)
     except (TypeError, ValueError, json.JSONDecodeError, KeyError) as error:
         invalid.append(
@@ -124,7 +140,10 @@ def _scan_sources(database: sqlite3.Connection, repertoire_id: str) -> list[dict
     repertoire_color: str | None = None
     for source in _source_rows(database, repertoire_id):
         source_positions, source_invalid = _scan_source(source, repertoire_color)
-        if repertoire_color is None and source.get("trained_color") in {"white", "black"}:
+        if repertoire_color is None and source.get("trained_color") in {
+            "white",
+            "black",
+        }:
             repertoire_color = source["trained_color"]
         for key, value in source_positions.items():
             if key not in positions:
@@ -141,11 +160,18 @@ def _scan_sources(database: sqlite3.Connection, repertoire_id: str) -> list[dict
         value["kind"] = "missing_response" if not move_set else "multiple_responses"
         issues.append(value)
     for issue in invalid:
-        issue["id"] = _issue_id(repertoire_id, issue["kind"], None, issue.get("sources"))
+        issue["id"] = _issue_id(
+            repertoire_id, issue["kind"], None, issue.get("sources")
+        )
         issue["signature"] = _signature(issue)
         issues.append(issue)
     for issue in issues:
-        issue.setdefault("id", _issue_id(repertoire_id, issue["kind"], issue.get("fen_key"), issue.get("sources")))
+        issue.setdefault(
+            "id",
+            _issue_id(
+                repertoire_id, issue["kind"], issue.get("fen_key"), issue.get("sources")
+            ),
+        )
         issue.setdefault("signature", _signature(issue))
     return sorted(
         issues,
@@ -202,6 +228,8 @@ def _publish_card_blocks(
     }
     storage.insert_card_blocks(database, sorted(rows))
     storage.update_card_validation(database, (repertoire_id, repertoire_id))
+
+
 def sweep_repertoire(database: sqlite3.Connection, repertoire_id: str) -> dict:
     if not storage.repertoire_exists(database, (repertoire_id,)):
         raise KeyError("Repertoire not found")
@@ -251,7 +279,9 @@ def enqueue_integrity_scans(
     """Queue integrity work without changing the last published result."""
 
     queued: list[str] = []
-    stale_repertoire_targets, all_repertoire_targets = storage.repertoire_scan_targets(SYSTEM_REPERTOIRES)
+    stale_repertoire_targets, all_repertoire_targets = storage.repertoire_scan_targets(
+        SYSTEM_REPERTOIRES
+    )
     from tempo_legacy_database.connections import connection
 
     with connection(background=background) as database:
@@ -303,13 +333,22 @@ def _issues_from_observations(
         value["kind"] = "missing_response" if not move_set else "multiple_responses"
         issues.append(value)
     for issue in invalid:
-        issue["id"] = _issue_id(repertoire_id, issue["kind"], None, issue.get("sources"))
+        issue["id"] = _issue_id(
+            repertoire_id, issue["kind"], None, issue.get("sources")
+        )
         issue["signature"] = _signature(issue)
         issues.append(issue)
     for issue in issues:
-        issue.setdefault("id", _issue_id(repertoire_id, issue["kind"], issue.get("fen_key"), issue.get("sources")))
+        issue.setdefault(
+            "id",
+            _issue_id(
+                repertoire_id, issue["kind"], issue.get("fen_key"), issue.get("sources")
+            ),
+        )
         issue.setdefault("signature", _signature(issue))
-    return sorted(issues, key=lambda item: (item.get("fen_key") or "", item["kind"], item["id"]))
+    return sorted(
+        issues, key=lambda item: (item.get("fen_key") or "", item["kind"], item["id"])
+    )
 
 
 def claim_integrity_slice() -> dict | None:
@@ -322,7 +361,10 @@ def claim_integrity_slice() -> dict | None:
         if not row:
             return None
         now = _now()
-        if row["status"] == "finalizing" or row["source_offset"] >= row["total_sources"]:
+        if (
+            row["status"] == "finalizing"
+            or row["source_offset"] >= row["total_sources"]
+        ):
             storage.mark_scan_finalizing(database, (now, row["repertoire_id"]))
             storage.mark_state_running(database, (row["repertoire_id"],))
             return {**dict(row), "status": "finalizing"}
@@ -342,7 +384,9 @@ def execute_integrity_slice(job: dict) -> None:
                 staged = storage.staged_observations(database, (job["run_id"],))
             observations = [json.loads(row[0]) for row in staged]
             invalid = [item for row in staged for item in json.loads(row[1])]
-            issues = _issues_from_observations(job["repertoire_id"], observations, invalid)
+            issues = _issues_from_observations(
+                job["repertoire_id"], observations, invalid
+            )
             now = _now()
             with connection(background=True) as database:
                 current_job = storage.current_run(database, (job["repertoire_id"],))
@@ -355,9 +399,26 @@ def execute_integrity_slice(job: dict) -> None:
                     return
                 storage.clear_issues(database, (job["repertoire_id"],))
                 for issue in issues:
-                    storage.insert_staged_issue(database, (issue["id"], job["repertoire_id"], issue["kind"], issue.get("fen_key"), issue.get("fen"), issue.get("trained_color"), issue["signature"], json.dumps(sorted(set(issue.get("moves", [])))), json.dumps(issue.get("sources", [])), now, now))
+                    storage.insert_staged_issue(
+                        database,
+                        (
+                            issue["id"],
+                            job["repertoire_id"],
+                            issue["kind"],
+                            issue.get("fen_key"),
+                            issue.get("fen"),
+                            issue.get("trained_color"),
+                            issue["signature"],
+                            json.dumps(sorted(set(issue.get("moves", [])))),
+                            json.dumps(issue.get("sources", [])),
+                            now,
+                            now,
+                        ),
+                    )
                 status = "needs_repair" if issues else "clean"
-                storage.publish_scan_state(database, (status, now, job["run_id"], job["repertoire_id"]))
+                storage.publish_scan_state(
+                    database, (status, now, job["run_id"], job["repertoire_id"])
+                )
                 _publish_card_blocks(
                     database,
                     job["repertoire_id"],
@@ -377,7 +438,14 @@ def execute_integrity_slice(job: dict) -> None:
                     priority=10,
                     foreground=False,
                 )
-            emit_progress("integrity", job["repertoire_id"], job["run_id"], "Published integrity result", job["total_sources"], job["total_sources"])
+            emit_progress(
+                "integrity",
+                job["repertoire_id"],
+                job["run_id"],
+                "Published integrity result",
+                job["total_sources"],
+                job["total_sources"],
+            )
             return
 
         with connection(background=True) as database:
@@ -386,23 +454,55 @@ def execute_integrity_slice(job: dict) -> None:
             if not current_job or current_job["run_id"] != job["run_id"]:
                 return
             if len(sources) != int(current_job["total_sources"]):
-                storage.restart_changed_sources(database, (len(sources), _now(), job["repertoire_id"], job["run_id"]))
+                storage.restart_changed_sources(
+                    database,
+                    (len(sources), _now(), job["repertoire_id"], job["run_id"]),
+                )
                 storage.clear_staged_sources(database, (job["run_id"],))
                 return
             if int(job["source_offset"]) >= len(sources):
-                storage.finish_source_scanning(database, (_now(), job["repertoire_id"], job["run_id"]))
+                storage.finish_source_scanning(
+                    database, (_now(), job["repertoire_id"], job["run_id"])
+                )
                 return
             source = sources[job["source_offset"]]
-            repertoire_color = next((item.get("trained_color") for item in sources if item.get("trained_color") in {"white", "black"}), None)
+            repertoire_color = next(
+                (
+                    item.get("trained_color")
+                    for item in sources
+                    if item.get("trained_color") in {"white", "black"}
+                ),
+                None,
+            )
         positions, invalid = _scan_source(source, repertoire_color)
         now = _now()
         with connection(background=True) as database:
-            storage.stage_source_observations(database, (job["run_id"], job["source_offset"], json.dumps(list(positions.values())), json.dumps(invalid)))
+            storage.stage_source_observations(
+                database,
+                (
+                    job["run_id"],
+                    job["source_offset"],
+                    json.dumps(list(positions.values())),
+                    json.dumps(invalid),
+                ),
+            )
             next_offset = job["source_offset"] + 1
             status = "finalizing" if next_offset >= job["total_sources"] else "running"
-            storage.advance_scan_job(database, (status, next_offset, now, job["repertoire_id"], job["run_id"]))
-            storage.advance_scan_state(database, (next_offset, job["total_sources"], job["repertoire_id"]))
-        emit_progress("integrity", job["repertoire_id"], job["run_id"], "Scanning sources", next_offset, job["total_sources"])
+            storage.advance_scan_job(
+                database,
+                (status, next_offset, now, job["repertoire_id"], job["run_id"]),
+            )
+            storage.advance_scan_state(
+                database, (next_offset, job["total_sources"], job["repertoire_id"])
+            )
+        emit_progress(
+            "integrity",
+            job["repertoire_id"],
+            job["run_id"],
+            "Scanning sources",
+            next_offset,
+            job["total_sources"],
+        )
 
 
 def requeue_integrity_slice(job: dict, error: Exception) -> None:
@@ -413,13 +513,19 @@ def requeue_integrity_slice(job: dict, error: Exception) -> None:
     message = str(error)
     now = _now()
     with connection(background=True) as database:
-        attempts = storage.scan_attempts(database, (job["repertoire_id"], job["run_id"]))
+        attempts = storage.scan_attempts(
+            database, (job["repertoire_id"], job["run_id"])
+        )
         attempt_count = int(attempts[0]) if attempts else int(job.get("attempts") or 0)
         if attempt_count >= 5:
-            storage.fail_scan_job(database, (message, now, job["repertoire_id"], job["run_id"]))
+            storage.fail_scan_job(
+                database, (message, now, job["repertoire_id"], job["run_id"])
+            )
             storage.fail_scan_state(database, (message, job["repertoire_id"]))
         else:
-            storage.requeue_scan_job(database, (message, now, job["repertoire_id"], job["run_id"]))
+            storage.requeue_scan_job(
+                database, (message, now, job["repertoire_id"], job["run_id"])
+            )
             storage.requeue_scan_state(database, (message, job["repertoire_id"]))
     _LOGGER.warning(
         "integrity slice requeued job_type=integrity job_id=%s retry=%s error=%s",
@@ -450,7 +556,9 @@ def integrity_summary(database: sqlite3.Connection, repertoire_id: str) -> dict:
     }
 
 
-def list_integrity_issues(database: sqlite3.Connection, repertoire_id: str) -> list[dict]:
+def list_integrity_issues(
+    database: sqlite3.Connection, repertoire_id: str
+) -> list[dict]:
     rows = storage.issue_details(database, (repertoire_id,))
     results = []
     for row in rows:
@@ -469,7 +577,9 @@ def list_integrity_issues(database: sqlite3.Connection, repertoire_id: str) -> l
                 bucket["line_count"] += 1
             elif source.get("type") == "card":
                 bucket["card_count"] += 1
-                bucket["review_count"] += storage.card_review_count(database, (source["id"],))
+                bucket["review_count"] += storage.card_review_count(
+                    database, (source["id"],)
+                )
         results.append(
             {
                 "id": row["id"],
@@ -485,7 +595,9 @@ def list_integrity_issues(database: sqlite3.Connection, repertoire_id: str) -> l
     return results
 
 
-def _transform_source(start_fen: str, moves: list[str], trained_color: str, target_fen: str, selected: str) -> tuple[list[str], bool]:
+def _transform_source(
+    start_fen: str, moves: list[str], trained_color: str, target_fen: str, selected: str
+) -> tuple[list[str], bool]:
     board = chess.Board(start_fen)
     target = chess.WHITE if trained_color == "white" else chess.BLACK
     transformed = list(moves)
@@ -502,22 +614,41 @@ def _transform_source(start_fen: str, moves: list[str], trained_color: str, targ
     return transformed, False
 
 
-def _rewrite_line(database: sqlite3.Connection, row: sqlite3.Row, moves: list[str], *, validated_route: dict | None = None, certify: bool = True) -> bool:
+def _rewrite_line(
+    database: sqlite3.Connection,
+    row: sqlite3.Row,
+    moves: list[str],
+    *,
+    validated_route: dict | None = None,
+    certify: bool = True,
+) -> bool:
     from .canonical_prefix import ensure_line_in_scope, certify_admitted_route
+
     if validated_route is None:
-        validated_route = ensure_line_in_scope(database, row["repertoire_id"], row["start_fen"], moves, remember=False)
+        validated_route = ensure_line_in_scope(
+            database, row["repertoire_id"], row["start_fen"], moves, remember=False
+        )
     new_id = hashlib.sha256(
         f"{row['repertoire_id']}\0{card_id(row['start_fen'], moves)}".encode()
     ).hexdigest()
     if new_id == row["id"]:
         return False
-    storage.insert_replacement_line(database, (new_id, row["repertoire_id"], row["name"], row["trained_color"], row["start_fen"], json.dumps(moves), row["created_at"]))
+    storage.insert_replacement_line(
+        database,
+        (
+            new_id,
+            row["repertoire_id"],
+            row["name"],
+            row["trained_color"],
+            row["start_fen"],
+            json.dumps(moves),
+            row["created_at"],
+        ),
+    )
     storage.delete_source_line(database, (row["id"],))
     if certify:
         certify_admitted_route(database, row["repertoire_id"], validated_route)
     return True
-
-
 
 
 def _reconcile_derived_cards(database: sqlite3.Connection, repertoire_id: str) -> int:
@@ -532,11 +663,14 @@ def _reconcile_derived_cards(database: sqlite3.Connection, repertoire_id: str) -
     for card in cards:
         supported = any(
             canonical_fen(card["start_fen"]) == start_key
-            and route[: len(json.loads(card["moves_json"]))] == json.loads(card["moves_json"])
+            and route[: len(json.loads(card["moves_json"]))]
+            == json.loads(card["moves_json"])
             for start_key, route in line_routes
         )
         if not supported:
-            changed += int(_archive_unsupported_card(database, repertoire_id, card["id"]))
+            changed += int(
+                _archive_unsupported_card(database, repertoire_id, card["id"])
+            )
     return changed
 
 
@@ -548,29 +682,45 @@ def _archive_unsupported_card(
     card = storage.active_card_authority(database, (card_identifier,))
     if not card:
         return False
-    membership = storage.membership_authority(database, (repertoire_id, card_identifier))
+    membership = storage.membership_authority(
+        database, (repertoire_id, card_identifier)
+    )
     if membership is not None and membership["canonical_route_source"]:
         return False
-    if membership is None and (card["repertoire_id"] != repertoire_id or card["canonical_route_source"]):
+    if membership is None and (
+        card["repertoire_id"] != repertoire_id or card["canonical_route_source"]
+    ):
         return False
     remaining = storage.remaining_membership(database, (card_identifier, repertoire_id))
     if remaining and card["repertoire_id"] == repertoire_id:
-        storage.reassign_card_owner(database, (remaining["repertoire_id"], card_identifier))
-    elif not remaining and (not card["canonical_route_source"] or card["repertoire_id"] == repertoire_id):
+        storage.reassign_card_owner(
+            database, (remaining["repertoire_id"], card_identifier)
+        )
+    elif not remaining and (
+        not card["canonical_route_source"] or card["repertoire_id"] == repertoire_id
+    ):
         storage.archive_unsupported_card(database, (card_identifier,))
     storage.delete_membership(database, (repertoire_id, card_identifier))
     return True
 
 
 @refresh_game_publications_after_mutation
-def resolve_issue(database: sqlite3.Connection, repertoire_id: str, issue_id: str, signature: str, selected_move: str) -> dict:
+def resolve_issue(
+    database: sqlite3.Connection,
+    repertoire_id: str,
+    issue_id: str,
+    signature: str,
+    selected_move: str,
+) -> dict:
     row = storage.issue(database, (issue_id, repertoire_id))
     if not row:
         raise KeyError("Integrity issue not found")
     if row["signature"] != signature:
         raise RuntimeError("This integrity issue changed; refresh and try again")
     if not row["fen"]:
-        raise ValueError("Invalid source issues must be repaired by editing or removing the source")
+        raise ValueError(
+            "Invalid source issues must be repaired by editing or removing the source"
+        )
     board = chess.Board(row["fen"])
     selected = selected_move.lower()
     try:
@@ -580,6 +730,7 @@ def resolve_issue(database: sqlite3.Connection, repertoire_id: str, issue_id: st
     if move not in board.legal_moves:
         raise ValueError("Selected move is illegal from this position")
     from .canonical_prefix import ensure_line_in_scope, certify_admitted_route
+
     changed_lines = changed_cards = 0
     line_changes = []
     card_changes = []
@@ -589,31 +740,80 @@ def resolve_issue(database: sqlite3.Connection, repertoire_id: str, issue_id: st
             source_row = storage.source_line(database, (source["id"],))
             if not source_row:
                 continue
-            moves, changed = _transform_source(source_row["start_fen"], json.loads(source_row["moves_json"]), source_row["trained_color"], target_fen, selected)
+            moves, changed = _transform_source(
+                source_row["start_fen"],
+                json.loads(source_row["moves_json"]),
+                source_row["trained_color"],
+                target_fen,
+                selected,
+            )
             if changed:
-                line_changes.append((source_row, moves, ensure_line_in_scope(database, repertoire_id, source_row["start_fen"], moves, remember=False)))
+                line_changes.append(
+                    (
+                        source_row,
+                        moves,
+                        ensure_line_in_scope(
+                            database,
+                            repertoire_id,
+                            source_row["start_fen"],
+                            moves,
+                            remember=False,
+                        ),
+                    )
+                )
         elif source.get("type") == "card":
             source_row = storage.source_card(database, (source["id"],))
             if not source_row:
                 continue
             trained = source_row["trained_color"] or row["trained_color"]
-            moves, changed = _transform_source(source_row["start_fen"], json.loads(source_row["moves_json"]), trained, target_fen, selected)
+            moves, changed = _transform_source(
+                source_row["start_fen"],
+                json.loads(source_row["moves_json"]),
+                trained,
+                target_fen,
+                selected,
+            )
             if changed:
-                card_changes.append((source_row, moves, ensure_line_in_scope(database, repertoire_id, source_row["start_fen"], moves, remember=False)))
+                card_changes.append(
+                    (
+                        source_row,
+                        moves,
+                        ensure_line_in_scope(
+                            database,
+                            repertoire_id,
+                            source_row["start_fen"],
+                            moves,
+                            remember=False,
+                        ),
+                    )
+                )
     admitted_routes = []
     for source_row, moves, validated_route in line_changes:
-        if _rewrite_line(database, source_row, moves, validated_route=validated_route, certify=False):
+        if _rewrite_line(
+            database, source_row, moves, validated_route=validated_route, certify=False
+        ):
             changed_lines += 1
             admitted_routes.append(validated_route)
     for source_row, moves, validated_route in card_changes:
-        if rewrite_card(database, repertoire_id, source_row, moves, validated_route=validated_route, certify=False):
+        if rewrite_card(
+            database,
+            repertoire_id,
+            source_row,
+            moves,
+            validated_route=validated_route,
+            certify=False,
+        ):
             changed_cards += 1
             admitted_routes.append(validated_route)
     changed_cards += _reconcile_derived_cards(database, repertoire_id)
     for validated_route in admitted_routes:
         certify_admitted_route(database, repertoire_id, validated_route)
     summary = sweep_repertoire(database, repertoire_id)
-    return {"summary": summary, "changed_line_count": changed_lines, "changed_card_count": changed_cards}
+    return {
+        "summary": summary,
+        "changed_line_count": changed_lines,
+        "changed_card_count": changed_cards,
+    }
 
 
 def prepare_issue_resolution(
@@ -641,7 +841,9 @@ def prepare_issue_resolution(
     if issue["signature"] != signature:
         raise RuntimeError("This integrity issue changed; refresh and try again")
     if not issue["fen"]:
-        raise ValueError("Invalid source issues must be repaired by editing or removing the source")
+        raise ValueError(
+            "Invalid source issues must be repaired by editing or removing the source"
+        )
     board = chess.Board(issue["fen"])
     selected = selected_move.lower()
     try:
@@ -657,17 +859,22 @@ def prepare_issue_resolution(
         if source.get("type") == "line" and source.get("id") in line_rows:
             row = line_rows[source["id"]]
             moves, changed = _transform_source(
-                row["start_fen"], json.loads(row["moves_json"]),
-                row["trained_color"], issue["fen_key"], selected,
+                row["start_fen"],
+                json.loads(row["moves_json"]),
+                row["trained_color"],
+                issue["fen_key"],
+                selected,
             )
             if changed:
                 changed_lines[row["id"]] = moves
         elif source.get("type") == "card" and source.get("id") in card_rows:
             row = card_rows[source["id"]]
             moves, changed = _transform_source(
-                row["start_fen"], json.loads(row["moves_json"]),
+                row["start_fen"],
+                json.loads(row["moves_json"]),
                 row.get("trained_color") or issue["trained_color"],
-                issue["fen_key"], selected,
+                issue["fen_key"],
+                selected,
             )
             if changed:
                 changed_cards[row["id"]] = moves
@@ -720,26 +927,66 @@ def execute_durable_integrity_repair(task: dict) -> None:
 
     @refresh_game_publications_after_mutation
     def publish(database: sqlite3.Connection) -> None:
-        current = storage.issue_signature(database, (prepared["issue_id"], prepared["repertoire_id"]))
+        current = storage.issue_signature(
+            database, (prepared["issue_id"], prepared["repertoire_id"])
+        )
         if not current or current["signature"] != prepared["signature"]:
             raise RuntimeError("This integrity issue changed; refresh and try again")
         from .canonical_prefix import ensure_line_in_scope, certify_admitted_route
+
         line_changes = []
         card_changes = []
         for source_id, moves in prepared["changed_lines"].items():
             source_row = storage.source_line(database, (source_id,))
             if source_row:
-                line_changes.append((source_row, moves, ensure_line_in_scope(database, prepared["repertoire_id"], source_row["start_fen"], moves, remember=False)))
+                line_changes.append(
+                    (
+                        source_row,
+                        moves,
+                        ensure_line_in_scope(
+                            database,
+                            prepared["repertoire_id"],
+                            source_row["start_fen"],
+                            moves,
+                            remember=False,
+                        ),
+                    )
+                )
         for source_id, moves in prepared["changed_cards"].items():
             source_row = storage.source_card(database, (source_id,))
             if source_row:
-                card_changes.append((source_row, moves, ensure_line_in_scope(database, prepared["repertoire_id"], source_row["start_fen"], moves, remember=False)))
+                card_changes.append(
+                    (
+                        source_row,
+                        moves,
+                        ensure_line_in_scope(
+                            database,
+                            prepared["repertoire_id"],
+                            source_row["start_fen"],
+                            moves,
+                            remember=False,
+                        ),
+                    )
+                )
         admitted_routes = []
         for source_row, moves, validated_route in line_changes:
-            if _rewrite_line(database, source_row, moves, validated_route=validated_route, certify=False):
+            if _rewrite_line(
+                database,
+                source_row,
+                moves,
+                validated_route=validated_route,
+                certify=False,
+            ):
                 admitted_routes.append(validated_route)
         for source_row, moves, validated_route in card_changes:
-            if rewrite_card(database, prepared["repertoire_id"], source_row, moves, validated_route=validated_route, certify=False):
+            if rewrite_card(
+                database,
+                prepared["repertoire_id"],
+                source_row,
+                moves,
+                validated_route=validated_route,
+                certify=False,
+            ):
                 admitted_routes.append(validated_route)
         for card_identifier in prepared["unsupported_card_ids"]:
             _archive_unsupported_card(

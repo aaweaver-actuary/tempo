@@ -23,17 +23,26 @@ def execute_game_feature_slice(task: dict[str, Any]) -> bool:
         if not lock_current_slice(database, task):
             return False
         job = jobs.lock_job(database, game_id)
-        if (job is None or int(job["derivation_version"]) != version
-                or int(job["completed_phases"]) != 5
-                or job["status"] not in {"queued", "running"}):
+        if (
+            job is None
+            or int(job["derivation_version"]) != version
+            or int(job["completed_phases"]) != 5
+            or job["status"] not in {"queued", "running"}
+        ):
             return complete_task_slice_in_transaction(database, task)
         if feature_values is None:
             raise RuntimeError("Game feature input disappeared during derivation")
         storage.write_feature_values(database, feature_values)
         storage.advance_feature_phase(database, game_id, version)
         enqueue_compact_postgres_task_in_transaction(
-            database, "game_derivation_priorities", game_id,
-            {"game_id": game_id, "derivation_version": version,
-             "after_repertoire_id": ""}, priority=126,
+            database,
+            "game_derivation_priorities",
+            game_id,
+            {
+                "game_id": game_id,
+                "derivation_version": version,
+                "after_repertoire_id": "",
+            },
+            priority=126,
         )
         return complete_task_slice_in_transaction(database, task)

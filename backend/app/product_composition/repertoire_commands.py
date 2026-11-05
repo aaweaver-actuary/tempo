@@ -1,4 +1,5 @@
 """C command transport composition; canonical owners supply all state effects."""
+
 from __future__ import annotations
 
 import hashlib
@@ -18,10 +19,15 @@ def command_handlers(changes_for_transaction, *, audit_for_transaction=None):
     the actual scoped block/suspension operation used by audit_for_transaction.
     No connection, commit, schema query or cross-owner write is made here.
     """
+
     def translate(operation):
         try:
             result = operation()
-            return result.model_dump(mode="json") if hasattr(result, "model_dump") else result
+            return (
+                result.model_dump(mode="json")
+                if hasattr(result, "model_dump")
+                else result
+            )
         except ChangeError as error:
             raise HTTPException(409, str(error)) from error
 
@@ -32,66 +38,104 @@ def command_handlers(changes_for_transaction, *, audit_for_transaction=None):
             raise HTTPException(422, "invalid_proposal") from error
         if payload["repertoire_id"] != proposal.repertoire_id:
             raise HTTPException(422, "repertoire_scope_mismatch")
-        return translate(lambda: changes_for_transaction(database, proposal.repertoire_id).preview(proposal))
+        return translate(
+            lambda: changes_for_transaction(database, proposal.repertoire_id).preview(
+                proposal
+            )
+        )
 
     def decide(database, payload):
         try:
-            decision = ProposalDecision.model_validate_json(json.dumps(payload["decision"]))
+            decision = ProposalDecision.model_validate_json(
+                json.dumps(payload["decision"])
+            )
         except (ValidationError, KeyError, TypeError) as error:
             raise HTTPException(422, "invalid_decision") from error
-        return translate(lambda: changes_for_transaction(database, payload["repertoire_id"]).decide(decision))
+        return translate(
+            lambda: changes_for_transaction(database, payload["repertoire_id"]).decide(
+                decision
+            )
+        )
 
     def audit(database, payload):
         if audit_for_transaction is None:
-            raise HTTPException(503, "Current Study conflict enforcement is unavailable")
-        return translate(lambda: audit_for_transaction(database, payload["repertoire_id"]))
+            raise HTTPException(
+                503, "Current Study conflict enforcement is unavailable"
+            )
+        return translate(
+            lambda: audit_for_transaction(database, payload["repertoire_id"])
+        )
 
-    return {"product.repertoire.preview":preview, "product.repertoire.decide":decide,
-            "product.repertoire.audit":audit}
+    return {
+        "product.repertoire.preview": preview,
+        "product.repertoire.decide": decide,
+        "product.repertoire.audit": audit,
+    }
 
 
 def register_repertoire_commands(changes_for_transaction, *, audit_for_transaction):
     from app.command_gateway import register_command
-    for name, handler in command_handlers(changes_for_transaction,
-            audit_for_transaction=audit_for_transaction).items():
+
+    for name, handler in command_handlers(
+        changes_for_transaction, audit_for_transaction=audit_for_transaction
+    ).items():
         register_command(name, handler)
 
 
 class CurrentSnapshots:
     """Each read releases its owning read connection before returning a value."""
+
     def __init__(self, reader, current_snapshot, current_card_definitions=None):
         self.reader, self.current_snapshot = reader, current_snapshot
-        self.current_card_definitions=current_card_definitions
+        self.current_card_definitions = current_card_definitions
 
     def snapshot(self, repertoire_id):
         with self.reader() as database:
             return self.current_snapshot(database, repertoire_id)
 
-    def review_source(self,repertoire_id):
+    def review_source(self, repertoire_id):
         with self.reader() as database:
-            snapshot=self.current_snapshot(database,repertoire_id)
-            definitions=(() if self.current_card_definitions is None else
-                         self.current_card_definitions(database,repertoire_id))
+            snapshot = self.current_snapshot(database, repertoire_id)
+            definitions = (
+                ()
+                if self.current_card_definitions is None
+                else self.current_card_definitions(database, repertoire_id)
+            )
             if self.current_card_definitions is not None:
-                observed=self.current_snapshot(database,repertoire_id)
-                fence=lambda value:(value.membership.source_revision,value.membership.revision,value.membership.digest)
-                if fence(observed)!=fence(snapshot):
-                    raise ChangeError('repertoire_source_changed_during_display')
-            return snapshot,definitions
+                observed = self.current_snapshot(database, repertoire_id)
+                fence = lambda value: (
+                    value.membership.source_revision,
+                    value.membership.revision,
+                    value.membership.digest,
+                )
+                if fence(observed) != fence(snapshot):
+                    raise ChangeError("repertoire_source_changed_during_display")
+            return snapshot, definitions
 
 
 class DispatchedChanges:
     """The existing durable foreground gateway owns retry/receipt/transactions."""
+
     def __init__(self, repertoire_id, dispatch):
         self.repertoire_id, self.dispatch = repertoire_id, dispatch
 
     def _command(self, name, value):
-        payload = {"repertoire_id":self.repertoire_id, name:value.model_dump(mode="json")}
-        command = "product.repertoire.preview" if name=="proposal" else "product.repertoire.decide"
+        payload = {
+            "repertoire_id": self.repertoire_id,
+            name: value.model_dump(mode="json"),
+        }
+        command = (
+            "product.repertoire.preview"
+            if name == "proposal"
+            else "product.repertoire.decide"
+        )
         # Stable logical identity also survives a remount/lost HTTP acknowledgment.
-        key = hashlib.sha256(json.dumps([command,payload], sort_keys=True,
-                                      separators=(",", ":")).encode()).hexdigest()
-        return self.dispatch(command, payload, idempotency_key="repertoire:"+key)
+        key = hashlib.sha256(
+            json.dumps(
+                [command, payload], sort_keys=True, separators=(",", ":")
+            ).encode()
+        ).hexdigest()
+        return self.dispatch(command, payload, idempotency_key="repertoire:" + key)
 
     def preview(self, proposal):
         return self._command("proposal", proposal)
@@ -100,8 +144,14 @@ class DispatchedChanges:
         return self._command("decision", decision)
 
 
-def create_current_repertoire_http(*, reader, current_snapshot, dispatch, current_study_block,
-                                   current_card_definitions=None):
+def create_current_repertoire_http(
+    *,
+    reader,
+    current_snapshot,
+    dispatch,
+    current_study_block,
+    current_card_definitions=None,
+):
     """Complete outer HTTP wiring; supply actual owning read capabilities.
 
     The command worker separately calls register_repertoire_commands with the
@@ -110,17 +160,22 @@ def create_current_repertoire_http(*, reader, current_snapshot, dispatch, curren
     """
     from app.product_composition.repertoire import create_repertoire_review_router
 
-    snapshots = CurrentSnapshots(reader,current_snapshot,current_card_definitions)
+    snapshots = CurrentSnapshots(reader, current_snapshot, current_card_definitions)
 
-    def block(repertoire_id,routes,**source_fence):
+    def block(repertoire_id, routes, **source_fence):
         if current_study_block is None:
             return None
         with reader() as database:
-            return current_study_block(database,repertoire_id,routes,**source_fence)
+            return current_study_block(database, repertoire_id, routes, **source_fence)
 
     return create_repertoire_review_router(
-        lambda repertoire_id:DispatchedChanges(repertoire_id,dispatch), snapshots,
-        study_block=block,review_source=snapshots.review_source,
-        audit=lambda repertoire_id,key:dispatch("product.repertoire.audit",
-            {"repertoire_id":repertoire_id},idempotency_key=key),
+        lambda repertoire_id: DispatchedChanges(repertoire_id, dispatch),
+        snapshots,
+        study_block=block,
+        review_source=snapshots.review_source,
+        audit=lambda repertoire_id, key: dispatch(
+            "product.repertoire.audit",
+            {"repertoire_id": repertoire_id},
+            idempotency_key=key,
+        ),
     )

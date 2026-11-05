@@ -1,7 +1,8 @@
 """Read-only receiving-owner facts, separate from any promised service time."""
+
 from typing import TypedDict
 
-from app.contracts.product_v02.learning import EncounterProgress,IssuedAttemptEvidence
+from app.contracts.product_v02.learning import EncounterProgress, IssuedAttemptEvidence
 
 
 class QueuedFeedbackAttempt(TypedDict):

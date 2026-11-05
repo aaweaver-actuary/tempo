@@ -1,4 +1,5 @@
 """Games engine evidence contracts."""
+
 from typing import Literal
 from pydantic import BaseModel, Field
 from .engine import EngineAttemptDiagnostics
@@ -9,8 +10,18 @@ class GameAnalysisCandidate(BaseModel):
 
     # ``move_uci`` is accepted as a compatibility spelling for API clients that
     # use the persisted column name. New clients send the engine's ``uci`` key.
-    uci: str | None = Field(default=None, pattern=r"^[a-h][1-8][a-h][1-8][qrbn]?$", min_length=4, max_length=5)
-    move_uci: str | None = Field(default=None, pattern=r"^[a-h][1-8][a-h][1-8][qrbn]?$", min_length=4, max_length=5)
+    uci: str | None = Field(
+        default=None,
+        pattern=r"^[a-h][1-8][a-h][1-8][qrbn]?$",
+        min_length=4,
+        max_length=5,
+    )
+    move_uci: str | None = Field(
+        default=None,
+        pattern=r"^[a-h][1-8][a-h][1-8][qrbn]?$",
+        min_length=4,
+        max_length=5,
+    )
     cp: int | None = None
     score_cp: int | None = None
     mate: int | None = None
@@ -28,13 +39,23 @@ class GameAnalysisEvaluation(BaseModel):
     after_cp: int
     opponent_created_chance: bool = False
     depth: int | None = Field(default=None, ge=1, le=40)
-    best_move_uci: str | None = Field(default=None, pattern=r"^[a-h][1-8][a-h][1-8][qrbn]?$", min_length=4, max_length=5)
+    best_move_uci: str | None = Field(
+        default=None,
+        pattern=r"^[a-h][1-8][a-h][1-8][qrbn]?$",
+        min_length=4,
+        max_length=5,
+    )
     principal_variation: list[str] = Field(default_factory=list)
     mate_before: int | None = None
     mate_after: int | None = None
     mover_color: Literal["white", "black"] | None = None
     is_player_move: bool | None = None
-    actual_move_uci: str | None = Field(default=None, pattern=r"^[a-h][1-8][a-h][1-8][qrbn]?$", min_length=4, max_length=5)
+    actual_move_uci: str | None = Field(
+        default=None,
+        pattern=r"^[a-h][1-8][a-h][1-8][qrbn]?$",
+        min_length=4,
+        max_length=5,
+    )
     position_fen: str | None = None
     candidate_lines: list[GameAnalysisCandidate] = Field(default_factory=list)
     candidates: list[GameAnalysisCandidate] | None = None
@@ -66,6 +87,7 @@ class GameAnalysisPositionClaimRequest(BaseModel):
 
 class GameAnalysisLeaseRequest(BaseModel):
     """Request model for acquiring a game analysis lease."""
+
     diagnostics: EngineAttemptDiagnostics | None = None
 
     lease_id: str

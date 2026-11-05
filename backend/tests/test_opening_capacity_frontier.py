@@ -7,7 +7,13 @@ import sys
 
 import pytest
 
-from app.study.openings.capacity_frontier import CapacityCandidate, CapacityRoute, CapacitySnapshot, propose_capacity_expansion, plan_prioritized_opening_admissions
+from app.study.openings.capacity_frontier import (
+    CapacityCandidate,
+    CapacityRoute,
+    CapacitySnapshot,
+    propose_capacity_expansion,
+    plan_prioritized_opening_admissions,
+)
 
 DAY = "2026-10-12"
 MISS = "miss"

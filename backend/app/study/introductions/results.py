@@ -1,4 +1,5 @@
 """Shared introduction outcome; no weighted storage/runtime import."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -13,5 +14,3 @@ class CommitResult:
     status: str
     receipt: Receipt | None = None
     reason: str | None = None
-
-

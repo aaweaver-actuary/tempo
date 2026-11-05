@@ -1,4 +1,5 @@
 """Study-owned semantic operations. This module implements no scheduling or storage."""
+
 from __future__ import annotations
 
 import json
@@ -16,6 +17,7 @@ from .repertoire import DecisionPresentation, IntroductionGameScope
 
 class ImmutableEvidenceWithdrawal(EvidenceWithdrawal):
     """Existing v2/v3 wire fields with assignment frozen only in this new seam."""
+
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
 
 
@@ -28,7 +30,17 @@ class GameEffectKey(Value):
 
     def logical_id(self) -> str:
         """Collision-free stable identity; excludes delivery/comparison/source revisions."""
-        return json.dumps([self.workspace_id, self.provider, self.game_id, self.decision_id, self.occurrence_ply], separators=(",", ":"), ensure_ascii=False)
+        return json.dumps(
+            [
+                self.workspace_id,
+                self.provider,
+                self.game_id,
+                self.decision_id,
+                self.occurrence_ply,
+            ],
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
 
 
 class GameLapse(Value):
@@ -40,8 +52,20 @@ class GameLapse(Value):
 
     @model_validator(mode="after")
     def confirmed_same_occurrence(self):
-        if self.finding.kind != "confirmed_miss" or (self.key.provider, self.key.game_id, self.key.decision_id, self.key.occurrence_ply) != (self.finding.provider, self.finding.game_id, self.finding.decision_id, self.finding.ply):
-            raise ValueError("lapse must identify the same confirmed decision occurrence")
+        if self.finding.kind != "confirmed_miss" or (
+            self.key.provider,
+            self.key.game_id,
+            self.key.decision_id,
+            self.key.occurrence_ply,
+        ) != (
+            self.finding.provider,
+            self.finding.game_id,
+            self.finding.decision_id,
+            self.finding.ply,
+        ):
+            raise ValueError(
+                "lapse must identify the same confirmed decision occurrence"
+            )
         return self
 
 
@@ -49,7 +73,10 @@ class GameEffectControl(Value):
     key: GameEffectKey
     source_revision: Revision
     action: Literal["hold", "withdraw"]
-    reason: Literal["source_corrected", "source_excluded", "source_deleted", "reanalysis"] | None = None
+    reason: (
+        Literal["source_corrected", "source_excluded", "source_deleted", "reanalysis"]
+        | None
+    ) = None
     withdrawal: ImmutableEvidenceWithdrawal | None = None
 
     @field_validator("withdrawal", mode="before")
@@ -57,14 +84,24 @@ class GameEffectControl(Value):
     def copy_existing_withdrawal(cls, value):
         if value is None:
             return None
-        payload = value.model_dump(mode="json") if isinstance(value, EvidenceWithdrawal) else value
+        payload = (
+            value.model_dump(mode="json")
+            if isinstance(value, EvidenceWithdrawal)
+            else value
+        )
         return ImmutableEvidenceWithdrawal.model_validate_json(json.dumps(payload))
 
     @model_validator(mode="after")
     def reason_without_owner_identity(self):
         if self.reason is None and self.withdrawal is None:
-            raise ValueError("control requires a reason; owner obligation identity is optional")
-        if self.reason is not None and self.withdrawal is not None and self.reason != self.withdrawal.reason:
+            raise ValueError(
+                "control requires a reason; owner obligation identity is optional"
+            )
+        if (
+            self.reason is not None
+            and self.withdrawal is not None
+            and self.reason != self.withdrawal.reason
+        ):
             raise ValueError("control and existing withdrawal reasons must agree")
         return self
 
@@ -73,7 +110,14 @@ class LearningReceipt(Value):
     key: GameEffectKey
     source_revision: Revision
     status: Literal["pending", "held", "applied", "settled"]
-    outcome: Literal["accepted", "duplicate", "conflict", "stale_revision", "withdrawn", "historical_preserved"]
+    outcome: Literal[
+        "accepted",
+        "duplicate",
+        "conflict",
+        "stale_revision",
+        "withdrawn",
+        "historical_preserved",
+    ]
     owner_receipt_id: Identifier
     admitted_at: UtcTimestamp | None
     available_by: UtcTimestamp | None
@@ -93,6 +137,7 @@ class LearningFeedbackPort(Protocol):
     Producers must control an existing effect even after reclassification to a
     non-miss. A new receipt is not permission to release quarantined evidence.
     """
+
     def accept_lapse(self, lapse: GameLapse) -> LearningReceipt: ...
     def control_effect(self, command: GameEffectControl) -> LearningReceipt: ...
     def effect_status(self, key: GameEffectKey) -> LearningReceipt | None: ...
@@ -105,6 +150,7 @@ class FirstDepartureWitness(Value):
     the actual provider configuration/source and every relevant publication
     against trusted owner captures outside/inside its bounded write boundary.
     """
+
     selection: FirstDepartureSelection
     configuration_revision: Revision
     determined_at: UtcTimestamp
@@ -113,36 +159,58 @@ class FirstDepartureWitness(Value):
     @model_validator(mode="after")
     def only_exact_learner_departure(self):
         if self.selection.status != "own_actionable":
-            raise ValueError("only an exact learner first departure can qualify Study intake")
+            raise ValueError(
+                "only an exact learner first departure can qualify Study intake"
+            )
         return self
 
     def matches(self, command: GameEncounter | GameLapse) -> bool:
         """Bind original occurrence facts without replacing its payload/digest."""
         selected, key = self.selection, command.key
         if isinstance(command, GameEncounter):
-            source, decision, expected, played = command.source, command.decision, (command.expected_uci,), command.played_uci
+            source, decision, expected, played = (
+                command.source,
+                command.decision,
+                (command.expected_uci,),
+                command.played_uci,
+            )
             if command.observation != "missed":
                 return False
         else:
             finding = command.finding
-            source = IntroductionGameScope(provider=finding.provider, game_id=finding.game_id,
-                source_revision=finding.source_revision, source_digest=finding.source_digest)
-            decision, expected, played = finding, finding.expected_uci, finding.played_uci
-        return bool(selected.decision is not None and selected.source == source
-            and selected.workspace_id == key.workspace_id and selected.ply == key.occurrence_ply
+            source = IntroductionGameScope(
+                provider=finding.provider,
+                game_id=finding.game_id,
+                source_revision=finding.source_revision,
+                source_digest=finding.source_digest,
+            )
+            decision, expected, played = (
+                finding,
+                finding.expected_uci,
+                finding.played_uci,
+            )
+        return bool(
+            selected.decision is not None
+            and selected.source == source
+            and selected.workspace_id == key.workspace_id
+            and selected.ply == key.occurrence_ply
             and selected.decision.decision_id == key.decision_id == decision.decision_id
             and selected.position_key == decision.position_key
-            and selected.expected_uci == expected and selected.played_uci == played)
+            and selected.expected_uci == expected
+            and selected.played_uci == played
+        )
 
 
 class EncounterTarget(Value):
     """Actual current physical presentation; original decision identity is separate."""
+
     card_id: Identifier
     card_revision: Revision
 
 
 class IssuedAttemptEvidence(Value):
     """Queue-owner first issuance, never a prefetch/reload or invented old stamp."""
+
     queue_entry_id: int = Field(ge=1, le=2**53 - 1)
     card_id: Identifier
     card_revision: Revision
@@ -156,14 +224,18 @@ class RemediationFence(Value):
     established_at: UtcTimestamp
 
     def precedes(self, attempt: IssuedAttemptEvidence) -> bool:
-        return bool((attempt.card_id, attempt.card_revision) == (self.target.card_id, self.target.card_revision)
+        return bool(
+            (attempt.card_id, attempt.card_revision)
+            == (self.target.card_id, self.target.card_revision)
             and attempt.issuance_sequence > self.after_issuance_sequence
-            and datetime.fromisoformat(attempt.issued_at.replace("Z", "+00:00")) >=
-                datetime.fromisoformat(self.established_at.replace("Z", "+00:00")))
+            and datetime.fromisoformat(attempt.issued_at.replace("Z", "+00:00"))
+            >= datetime.fromisoformat(self.established_at.replace("Z", "+00:00"))
+        )
 
 
 class EncounterSettlement(Value):
     """Study's durable genuine clean completion receipt and its actual issuance."""
+
     review_id: int = Field(ge=1, le=2**53 - 1)
     attempt: IssuedAttemptEvidence
 
@@ -174,72 +246,138 @@ class EncounterProgress(Value):
     stream: Literal["forward", "reconciliation", "manual"]
     target: EncounterTarget
     scheduling_review_id: int | None = Field(ge=1, le=2**53 - 1)
-    position_grade_effect_id: Identifier | None = Field(default=None, exclude_if=lambda value: value is None)
+    position_grade_effect_id: Identifier | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     schedule_applied_at: UtcTimestamp | None
     introduction_applied_at: UtcTimestamp | None
     remediation_fence: RemediationFence | None
     prior_remediation_fences: tuple[RemediationFence, ...] = Field(
-        default=(), min_length=1, exclude_if=lambda value: not value)
+        default=(), min_length=1, exclude_if=lambda value: not value
+    )
     first_issued: IssuedAttemptEvidence | None
     first_issued_ordinal: int | None = Field(ge=1, le=2**53 - 1)
     settlement: EncounterSettlement | None
 
     @model_validator(mode="after")
     def actual_application_and_issuance_evidence(self):
-        receipts = sum(value is not None for value in (self.scheduling_review_id, self.position_grade_effect_id))
+        receipts = sum(
+            value is not None
+            for value in (self.scheduling_review_id, self.position_grade_effect_id)
+        )
         if receipts != (1 if self.schedule_applied_at is not None else 0):
-            raise ValueError("Again application needs exactly one actual scheduling receipt and application time")
-        if self.schedule_applied_at is not None and self.introduction_applied_at is not None:
-            raise ValueError("one accepted disposition cannot claim both Again and first introduction")
+            raise ValueError(
+                "Again application needs exactly one actual scheduling receipt and application time"
+            )
+        if (
+            self.schedule_applied_at is not None
+            and self.introduction_applied_at is not None
+        ):
+            raise ValueError(
+                "one accepted disposition cannot claim both Again and first introduction"
+            )
         application = self.schedule_applied_at or self.introduction_applied_at
         if (self.remediation_fence is None) != (application is None):
-            raise ValueError("application/admission and its issuance fence must be recorded together")
+            raise ValueError(
+                "application/admission and its issuance fence must be recorded together"
+            )
         if self.remediation_fence is not None:
-            if (self.remediation_fence.target != self.target
-                    or datetime.fromisoformat(self.remediation_fence.established_at.replace("Z", "+00:00")) <
-                       datetime.fromisoformat(application.replace("Z", "+00:00"))):
-                raise ValueError("remediation fence must bind the actual target and application boundary")
+            if self.remediation_fence.target != self.target or datetime.fromisoformat(
+                self.remediation_fence.established_at.replace("Z", "+00:00")
+            ) < datetime.fromisoformat(application.replace("Z", "+00:00")):
+                raise ValueError(
+                    "remediation fence must bind the actual target and application boundary"
+                )
         if self.prior_remediation_fences and self.remediation_fence is None:
-            raise ValueError("prior remediation fences need an actual current application fence")
-        fences = self.prior_remediation_fences + ((self.remediation_fence,) if self.remediation_fence else ())
+            raise ValueError(
+                "prior remediation fences need an actual current application fence"
+            )
+        fences = self.prior_remediation_fences + (
+            (self.remediation_fence,) if self.remediation_fence else ()
+        )
         for previous, current in zip(fences, fences[1:]):
-            if (previous.target == current.target or previous.after_issuance_sequence > current.after_issuance_sequence
-                    or datetime.fromisoformat(previous.established_at.replace("Z", "+00:00")) >
-                       datetime.fromisoformat(current.established_at.replace("Z", "+00:00"))):
-                raise ValueError("owner-issued remapping retains distinct targets and monotonic real issuance fences")
-        if fences and application is not None and (
-                datetime.fromisoformat(fences[0].established_at.replace("Z", "+00:00")) <
-                datetime.fromisoformat(application.replace("Z", "+00:00"))):
-            raise ValueError("original remediation fence cannot precede the actual application")
+            if (
+                previous.target == current.target
+                or previous.after_issuance_sequence > current.after_issuance_sequence
+                or datetime.fromisoformat(
+                    previous.established_at.replace("Z", "+00:00")
+                )
+                > datetime.fromisoformat(current.established_at.replace("Z", "+00:00"))
+            ):
+                raise ValueError(
+                    "owner-issued remapping retains distinct targets and monotonic real issuance fences"
+                )
+        if (
+            fences
+            and application is not None
+            and (
+                datetime.fromisoformat(fences[0].established_at.replace("Z", "+00:00"))
+                < datetime.fromisoformat(application.replace("Z", "+00:00"))
+            )
+        ):
+            raise ValueError(
+                "original remediation fence cannot precede the actual application"
+            )
         if (self.first_issued is None) != (self.first_issued_ordinal is None):
-            raise ValueError("actual first issuance and its measured ordinal must be supplied together")
+            raise ValueError(
+                "actual first issuance and its measured ordinal must be supplied together"
+            )
+
         def issued_in_fence_window(index):
             fence = fences[index]
             if not fence.precedes(self.first_issued):
                 return False
             following = fences[index + 1] if index + 1 < len(fences) else None
-            return following is None or (self.first_issued.issuance_sequence <= following.after_issuance_sequence
-                and datetime.fromisoformat(self.first_issued.issued_at.replace("Z", "+00:00")) <=
-                    datetime.fromisoformat(following.established_at.replace("Z", "+00:00")))
-        if self.first_issued is not None and not any(issued_in_fence_window(index) for index in range(len(fences))):
-            raise ValueError("first remedial issuance must be a genuine post-application target generation")
+            return following is None or (
+                self.first_issued.issuance_sequence <= following.after_issuance_sequence
+                and datetime.fromisoformat(
+                    self.first_issued.issued_at.replace("Z", "+00:00")
+                )
+                <= datetime.fromisoformat(
+                    following.established_at.replace("Z", "+00:00")
+                )
+            )
+
+        if self.first_issued is not None and not any(
+            issued_in_fence_window(index) for index in range(len(fences))
+        ):
+            raise ValueError(
+                "first remedial issuance must be a genuine post-application target generation"
+            )
         if self.first_issued is not None and (
-                datetime.fromisoformat(self.first_issued.issued_at.replace("Z", "+00:00")) <
-                datetime.fromisoformat(self.determined_at.replace("Z", "+00:00"))):
-            raise ValueError("target issuance cannot precede original actionable determination")
-        if self.settlement is not None and (self.first_issued is None or self.remediation_fence is None
-                or not self.remediation_fence.precedes(self.settlement.attempt)
-                or self.settlement.attempt.issuance_sequence < self.first_issued.issuance_sequence):
-            raise ValueError("settlement requires a genuine compatible post-application issued attempt")
+            datetime.fromisoformat(self.first_issued.issued_at.replace("Z", "+00:00"))
+            < datetime.fromisoformat(self.determined_at.replace("Z", "+00:00"))
+        ):
+            raise ValueError(
+                "target issuance cannot precede original actionable determination"
+            )
+        if self.settlement is not None and (
+            self.first_issued is None
+            or self.remediation_fence is None
+            or not self.remediation_fence.precedes(self.settlement.attempt)
+            or self.settlement.attempt.issuance_sequence
+            < self.first_issued.issuance_sequence
+        ):
+            raise ValueError(
+                "settlement requires a genuine compatible post-application issued attempt"
+            )
         if self.settlement is not None:
             first, completed = self.first_issued, self.settlement.attempt
-            same_generation = ((first.queue_entry_id, first.card_id, first.card_revision) ==
-                               (completed.queue_entry_id, completed.card_id, completed.card_revision))
+            same_generation = (
+                first.queue_entry_id,
+                first.card_id,
+                first.card_revision,
+            ) == (completed.queue_entry_id, completed.card_id, completed.card_revision)
             same_sequence = first.issuance_sequence == completed.issuance_sequence
-            same_time = (datetime.fromisoformat(first.issued_at.replace("Z", "+00:00")) ==
-                         datetime.fromisoformat(completed.issued_at.replace("Z", "+00:00")))
-            if (same_sequence and not same_generation) or (same_generation and not (same_sequence and same_time)):
-                raise ValueError("one once-stamped issuance must retain its actual generation, sequence and time")
+            same_time = datetime.fromisoformat(
+                first.issued_at.replace("Z", "+00:00")
+            ) == datetime.fromisoformat(completed.issued_at.replace("Z", "+00:00"))
+            if (same_sequence and not same_generation) or (
+                same_generation and not (same_sequence and same_time)
+            ):
+                raise ValueError(
+                    "one once-stamped issuance must retain its actual generation, sequence and time"
+                )
         return self
 
 
@@ -250,6 +388,7 @@ class GameEncounter(Value):
     is frequency evidence; only a qualified first learner departure can now
     create urgent introduction/Again. Study chooses disposition at acceptance.
     """
+
     interface_version: Literal["0.2.1"] = "0.2.1"
     key: GameEffectKey
     source: IntroductionGameScope
@@ -264,14 +403,26 @@ class GameEncounter(Value):
     @model_validator(mode="after")
     def same_source_and_decision_occurrence(self):
         if (self.key.provider, self.key.game_id, self.key.decision_id) != (
-                self.source.provider, self.source.game_id, self.decision.decision_id):
-            raise ValueError("encounter key must identify the same provider/game/decision")
+            self.source.provider,
+            self.source.game_id,
+            self.decision.decision_id,
+        ):
+            raise ValueError(
+                "encounter key must identify the same provider/game/decision"
+            )
         if self.expected_uci != self.decision.selected_response_uci:
-            raise ValueError("expected move must be the supplied approved decision response")
+            raise ValueError(
+                "expected move must be the supplied approved decision response"
+            )
         if (self.observation == "matched") != (self.played_uci == self.expected_uci):
             raise ValueError("observation must preserve actual expected/played facts")
-        if self.decision.introduction_game is not None and self.decision.introduction_game != self.source:
-            raise ValueError("supplied introduction chronology must identify this exact game source")
+        if (
+            self.decision.introduction_game is not None
+            and self.decision.introduction_game != self.source
+        ):
+            raise ValueError(
+                "supplied introduction chronology must identify this exact game source"
+            )
         return self
 
 
@@ -282,63 +433,143 @@ class EncounterReceipt(LearningReceipt):
     queue availability. Encounter first introductions bypass ordinary allowance
     and Study-only controls; explicit full pause and safety guards still apply.
     """
+
     interface_version: Literal["0.2.1", "0.2.2"] = "0.2.1"
     detected_at: UtcTimestamp
     source_digest: Digest
     observation: Literal["matched", "missed"]
     observation_recorded: bool
-    disposition: Literal["review_priority", "first_introduction", "existing_lapse", "frequency_only", "introduced_again"] | None
+    disposition: (
+        Literal[
+            "review_priority",
+            "first_introduction",
+            "existing_lapse",
+            "frequency_only",
+            "introduced_again",
+        ]
+        | None
+    )
     admission_status: Literal["pending", "available", "settled", "not_requested"]
-    deferred_reason: Literal["study_only", "disabled", "paused", "zero_limit", "introduction_allowance", "active_attempt", "authority_unavailable", "unknown_chronology"] | None
-    progress: EncounterProgress | None = Field(default=None, exclude_if=lambda value: value is None)
+    deferred_reason: (
+        Literal[
+            "study_only",
+            "disabled",
+            "paused",
+            "zero_limit",
+            "introduction_allowance",
+            "active_attempt",
+            "authority_unavailable",
+            "unknown_chronology",
+        ]
+        | None
+    )
+    progress: EncounterProgress | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
     @field_validator("progress", mode="before")
     @classmethod
     def independent_progress_is_omitted_not_null(cls, value):
         if value is None:
-            raise ValueError("legacy receipt omits progress; new policy requires actual progress")
-        payload = value.model_dump(mode="json") if isinstance(value, EncounterProgress) else value
+            raise ValueError(
+                "legacy receipt omits progress; new policy requires actual progress"
+            )
+        payload = (
+            value.model_dump(mode="json")
+            if isinstance(value, EncounterProgress)
+            else value
+        )
         return EncounterProgress.model_validate_json(json.dumps(payload))
 
     @model_validator(mode="after")
     def truthful_disposition_and_deferral(self):
         if self.observation == "matched" and self.disposition == "existing_lapse":
             raise ValueError("correct play cannot produce a lapse")
-        if self.disposition == "frequency_only" and self.admission_status != "not_requested":
+        if (
+            self.disposition == "frequency_only"
+            and self.admission_status != "not_requested"
+        ):
             raise ValueError("frequency-only evidence cannot claim Study admission")
         if self.disposition == "frequency_only" and self.observation != "matched":
-            raise ValueError("historical missed-response importance cannot be reduced to frequency-only")
-        if self.admission_status == "available" and (self.disposition is None or self.status == "held"):
+            raise ValueError(
+                "historical missed-response importance cannot be reduced to frequency-only"
+            )
+        if self.admission_status == "available" and (
+            self.disposition is None or self.status == "held"
+        ):
             raise ValueError("unresolved or held evidence cannot claim availability")
         if self.deferred_reason is not None and self.admission_status != "pending":
             raise ValueError("deferred work must remain visibly pending")
-        if self.admission_status == "pending" and self.deferred_reason is None and self.reason is None:
+        if (
+            self.admission_status == "pending"
+            and self.deferred_reason is None
+            and self.reason is None
+        ):
             raise ValueError("pending encounter admission requires an owner reason")
         if self.disposition == "first_introduction" and self.deferred_reason in {
-                "study_only", "zero_limit", "introduction_allowance"}:
-            raise ValueError("real-game first introduction is a targeted exception to ordinary cap and Study-only")
-        if self.deferred_reason in {"disabled", "paused"} and self.available_by is not None:
-            raise ValueError("explicit disabled controls cannot promise an availability deadline")
+            "study_only",
+            "zero_limit",
+            "introduction_allowance",
+        }:
+            raise ValueError(
+                "real-game first introduction is a targeted exception to ordinary cap and Study-only"
+            )
+        if (
+            self.deferred_reason in {"disabled", "paused"}
+            and self.available_by is not None
+        ):
+            raise ValueError(
+                "explicit disabled controls cannot promise an availability deadline"
+            )
         if self.interface_version == "0.2.1":
             if self.progress is not None or self.disposition == "introduced_again":
-                raise ValueError("first-departure application evidence requires receipt interface 0.2.2")
+                raise ValueError(
+                    "first-departure application evidence requires receipt interface 0.2.2"
+                )
             return self
-        if self.progress is None or self.disposition not in {"introduced_again", "first_introduction"} or self.observation != "missed":
-            raise ValueError("0.2.2 requires qualified missed-departure progress and its accepted disposition")
+        if (
+            self.progress is None
+            or self.disposition not in {"introduced_again", "first_introduction"}
+            or self.observation != "missed"
+        ):
+            raise ValueError(
+                "0.2.2 requires qualified missed-departure progress and its accepted disposition"
+            )
         progress = self.progress
-        if self.disposition == "introduced_again" and progress.introduction_applied_at is not None:
+        if (
+            self.disposition == "introduced_again"
+            and progress.introduction_applied_at is not None
+        ):
             raise ValueError("introduced Again cannot claim first introduction")
-        if self.disposition == "first_introduction" and (progress.scheduling_review_id is not None or progress.position_grade_effect_id is not None):
-            raise ValueError("first introduction cannot fabricate an Again scheduling review")
+        if self.disposition == "first_introduction" and (
+            progress.scheduling_review_id is not None
+            or progress.position_grade_effect_id is not None
+        ):
+            raise ValueError(
+                "first introduction cannot fabricate an Again scheduling review"
+            )
         if self.admission_status in {"available", "settled"}:
-            application = progress.schedule_applied_at if self.disposition == "introduced_again" else progress.introduction_applied_at
+            application = (
+                progress.schedule_applied_at
+                if self.disposition == "introduced_again"
+                else progress.introduction_applied_at
+            )
             if application is None or progress.remediation_fence is None:
-                raise ValueError("available consequence needs actual scheduling/admission evidence")
-        if ((self.admission_status == "settled") != (progress.settlement is not None)
-                or (progress.settlement is not None and self.status != "settled")
-                or (self.status == "settled" and progress.settlement is None
-                    and self.outcome not in {"withdrawn", "historical_preserved"})):
-            raise ValueError("settled consequence requires its genuine post-application completion receipt")
+                raise ValueError(
+                    "available consequence needs actual scheduling/admission evidence"
+                )
+        if (
+            (self.admission_status == "settled") != (progress.settlement is not None)
+            or (progress.settlement is not None and self.status != "settled")
+            or (
+                self.status == "settled"
+                and progress.settlement is None
+                and self.outcome not in {"withdrawn", "historical_preserved"}
+            )
+        ):
+            raise ValueError(
+                "settled consequence requires its genuine post-application completion receipt"
+            )
         return self
 
 
@@ -360,6 +591,7 @@ class EncounterFeedbackPort(LearningFeedbackPort, Protocol):
     guards remain. Foreground activity cannot indefinitely starve bounded local
     preparation. A supplied payload digest is a claim, not owner authority.
     """
+
     def accept_encounter(self, encounter: GameEncounter) -> EncounterReceipt: ...
     def encounter_status(self, key: GameEffectKey) -> EncounterReceipt | None: ...
 
@@ -373,16 +605,29 @@ class QualifiedGameFeedbackPort(EncounterFeedbackPort, Protocol):
     misses retain first-introduction intent. Preserve issued attempts and require
     a genuine compatible post-reset/post-admission issuance for settlement.
     """
-    def accept_qualified(self, command: GameEncounter | GameLapse, *,
-                         qualification: FirstDepartureWitness) -> EncounterReceipt: ...
+
+    def accept_qualified(
+        self,
+        command: GameEncounter | GameLapse,
+        *,
+        qualification: FirstDepartureWitness,
+    ) -> EncounterReceipt: ...
 
 
-def withdrawal_only_delivery(delivery: EvidenceDelivery, withdrawal: EvidenceWithdrawal) -> EvidenceDelivery:
+def withdrawal_only_delivery(
+    delivery: EvidenceDelivery, withdrawal: EvidenceWithdrawal
+) -> EvidenceDelivery:
     """Reuse v3's existing withdrawal-only envelope, retaining explicit authority.
 
     The caller supplies fresh envelope identity/revision and actual captured
     authority. No lookup, fabricated graph authority or owner mutation occurs.
     """
     payload = delivery.model_dump(mode="json")
-    payload.update(encounters=[], comparisons=[], misses=[], obligations=[], withdrawals=[withdrawal.model_dump(mode="json")])
+    payload.update(
+        encounters=[],
+        comparisons=[],
+        misses=[],
+        obligations=[],
+        withdrawals=[withdrawal.model_dump(mode="json")],
+    )
     return EvidenceDelivery.model_validate_json(json.dumps(payload))

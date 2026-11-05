@@ -69,10 +69,15 @@ def _persist_game(record: GameRecord) -> str:
 
 def _persist_game_once(record: GameRecord) -> str:
     with connection(background=True) as database:
-        existing = storage.imported_provider_game(database, record.provider, record.provider_game_id)
+        existing = storage.imported_provider_game(
+            database, record.provider, record.provider_game_id
+        )
         if not existing:
             existing = storage.imported_legacy_game(
-                database, record.provider, record.username, record.content_hash,
+                database,
+                record.provider,
+                record.username,
+                record.content_hash,
             )
         values = (
             record.provider_game_id,
@@ -97,9 +102,22 @@ def _persist_game_once(record: GameRecord) -> str:
                 existing[column] != value
                 for column, value in zip(
                     (
-                        "provider_game_id", "content_hash", "username", "played_at", "speed",
-                        "rated", "color", "result", "start_fen", "moves_json", "game_url", "opening_name",
-                        "player_rating", "opponent_rating", "rating_change", "time_control",
+                        "provider_game_id",
+                        "content_hash",
+                        "username",
+                        "played_at",
+                        "speed",
+                        "rated",
+                        "color",
+                        "result",
+                        "start_fen",
+                        "moves_json",
+                        "game_url",
+                        "opening_name",
+                        "player_rating",
+                        "opponent_rating",
+                        "rating_change",
+                        "time_control",
                     ),
                     values,
                 )
@@ -109,12 +127,17 @@ def _persist_game_once(record: GameRecord) -> str:
                 return "updated"
             return "duplicate"
         storage.insert_imported_game(
-            database, f"{record.provider}:{record.provider_game_id}", record.provider, values,
+            database,
+            f"{record.provider}:{record.provider_game_id}",
+            record.provider,
+            values,
         )
         return "inserted"
 
 
-def _starting_point(provider: str, username: str, request: GameSyncRequest, *, background: bool = False) -> datetime:
+def _starting_point(
+    provider: str, username: str, request: GameSyncRequest, *, background: bool = False
+) -> datetime:
     requested_cutoff = datetime.now(timezone.utc) - timedelta(days=request.days)
     if request.repair:
         return requested_cutoff
@@ -149,12 +172,18 @@ async def _sync_provider(
             return result
         if previous and previous["username"].casefold() != username.casefold():
             storage.reset_provider_cursor(database, provider)
-        storage.mark_provider_syncing(database, provider, username, started_at.isoformat())
+        storage.mark_provider_syncing(
+            database, provider, username, started_at.isoformat()
+        )
     since = _starting_point(provider, username, request, background=True)
     try:
         if provider == "lichess":
             records, counts = await fetch_lichess_games(
-                username, int(since.timestamp() * 1000), request.speeds, request.rated_only, client
+                username,
+                int(since.timestamp() * 1000),
+                request.speeds,
+                request.rated_only,
+                client,
             )
         else:
             records, counts = await fetch_chesscom_games(
@@ -163,25 +192,57 @@ async def _sync_provider(
         result.update(counts)
         for record in records:
             outcome = _persist_game(record)
-            result[{"inserted": "inserted", "updated": "updated", "duplicate": "duplicates"}[outcome]] += 1
+            result[
+                {
+                    "inserted": "inserted",
+                    "updated": "updated",
+                    "duplicate": "duplicates",
+                }[outcome]
+            ] += 1
         result["status"] = "idle"
         completed_at = datetime.now(timezone.utc)
         activity_gate.wait_for_foreground()
         with connection(background=True) as database:
             storage.save_provider_success(
-                database, provider, since.isoformat(), completed_at.isoformat(),
-                json.dumps({key: value for key, value in result.items() if not key.startswith("_")}),
+                database,
+                provider,
+                since.isoformat(),
+                completed_at.isoformat(),
+                json.dumps(
+                    {
+                        key: value
+                        for key, value in result.items()
+                        if not key.startswith("_")
+                    }
+                ),
             )
     except (ProviderRequestError, httpx.HTTPError) as error:
         result["status"] = "error"
         result["failed"] = 1
-        result["error"] = str(error) if isinstance(error, ProviderRequestError) else "The provider could not be reached. Retry when online."
-        result["retry_after"] = _retry_at(error.retry_after) if isinstance(error, ProviderRequestError) else None
+        result["error"] = (
+            str(error)
+            if isinstance(error, ProviderRequestError)
+            else "The provider could not be reached. Retry when online."
+        )
+        result["retry_after"] = (
+            _retry_at(error.retry_after)
+            if isinstance(error, ProviderRequestError)
+            else None
+        )
         activity_gate.wait_for_foreground()
         with connection(background=True) as database:
             storage.save_provider_failure(
-                database, provider, result["error"], result["retry_after"],
-                json.dumps({key: value for key, value in result.items() if not key.startswith("_")}),
+                database,
+                provider,
+                result["error"],
+                result["retry_after"],
+                json.dumps(
+                    {
+                        key: value
+                        for key, value in result.items()
+                        if not key.startswith("_")
+                    }
+                ),
             )
     return result
 
@@ -192,10 +253,14 @@ async def sync_providers(request: GameSyncRequest) -> dict:
         ("chess.com", request.chesscom_username.strip()),
     )
     results: dict[str, dict] = {}
-    async with httpx.AsyncClient(timeout=45, headers={"User-Agent": USER_AGENT}) as client:
+    async with httpx.AsyncClient(
+        timeout=45, headers={"User-Agent": USER_AGENT}
+    ) as client:
         for provider, username in provider_accounts:
             if username:
-                results[provider] = await _sync_provider(provider, username, request, client)
+                results[provider] = await _sync_provider(
+                    provider, username, request, client
+                )
     return {
         "imported": sum(item["inserted"] for item in results.values()),
         "cached": True,

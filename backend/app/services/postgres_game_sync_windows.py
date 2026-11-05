@@ -15,10 +15,15 @@ import httpx
 from app.contracts.transport.game_sync import GameSyncRequest
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection, connection
 from tempo_legacy_database.adapters.games.sync import windows as storage
-from app.games.providers.chesscom import fetch_chesscom_archive_month, fetch_chesscom_archive_urls
+from app.games.providers.chesscom import (
+    fetch_chesscom_archive_month,
+    fetch_chesscom_archive_urls,
+)
 from .durable_tasks import (
-    advance_task_slice_in_transaction, complete_task_slice_in_transaction,
-    enqueue_task_in_transaction, lock_current_slice,
+    advance_task_slice_in_transaction,
+    complete_task_slice_in_transaction,
+    enqueue_task_in_transaction,
+    lock_current_slice,
 )
 from .game_sync import USER_AGENT
 from .postgres_game_sync_completion import finish_game_sync_if_complete
@@ -30,70 +35,123 @@ _MAX_LICHESS_GAMES_PER_WINDOW = 100
 _MAX_CHESSCOM_GAMES_PER_MONTH = 1000
 
 
-def _window_id(job_id: str, provider: str, kind: str,
-               start_ms: int, end_ms: int) -> str:
-    return str(uuid.uuid5(
-        uuid.NAMESPACE_URL,
-        f"tempo:sync:{job_id}:{provider}:{kind}:{start_ms}:{end_ms}",
-    ))
+def _window_id(
+    job_id: str, provider: str, kind: str, start_ms: int, end_ms: int
+) -> str:
+    return str(
+        uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"tempo:sync:{job_id}:{provider}:{kind}:{start_ms}:{end_ms}",
+        )
+    )
 
 
-def _enqueue_window(database: PostgresConnection, *, job_id: str, provider: str,
-                    kind: str, start_ms: int, end_ms: int,
-                    source_url: str | None = None) -> str:
+def _enqueue_window(
+    database: PostgresConnection,
+    *,
+    job_id: str,
+    provider: str,
+    kind: str,
+    start_ms: int,
+    end_ms: int,
+    source_url: str | None = None,
+) -> str:
     identifier = _window_id(job_id, provider, kind, start_ms, end_ms)
     now = datetime.now(timezone.utc).isoformat()
     storage.insert_window(
-        database, identifier, job_id, provider, kind, start_ms, end_ms, source_url, now,
+        database,
+        identifier,
+        job_id,
+        provider,
+        kind,
+        start_ms,
+        end_ms,
+        source_url,
+        now,
     )
     enqueue_task_in_transaction(
-        database, "game_sync_window", f"{job_id}:{identifier}",
-        {"job_id": job_id, "window_id": identifier}, priority=80,
+        database,
+        "game_sync_window",
+        f"{job_id}:{identifier}",
+        {"job_id": job_id, "window_id": identifier},
+        priority=80,
     )
     return identifier
 
 
-async def _fetch_window(window: dict[str, Any], request: GameSyncRequest) -> tuple[list[dict], dict]:
-    username = (request.lichess_username if window["provider"] == "lichess"
-                else request.chesscom_username)
+async def _fetch_window(
+    window: dict[str, Any], request: GameSyncRequest
+) -> tuple[list[dict], dict]:
+    username = (
+        request.lichess_username
+        if window["provider"] == "lichess"
+        else request.chesscom_username
+    )
     since = datetime.fromtimestamp(window["window_start_ms"] / 1000, timezone.utc)
-    async with httpx.AsyncClient(timeout=45, headers={"User-Agent": USER_AGENT}) as provider_client:
+    async with httpx.AsyncClient(
+        timeout=45, headers={"User-Agent": USER_AGENT}
+    ) as provider_client:
         if window["window_kind"] == "archive_index":
             urls, rejected = await fetch_chesscom_archive_urls(
-                username, since, provider_client,
+                username,
+                since,
+                provider_client,
             )
             return [{"source_url": url} for url in urls], {
-                "fetched": 0, "filtered": 0, "rejected": rejected,
+                "fetched": 0,
+                "filtered": 0,
+                "rejected": rejected,
             }
         if window["provider"] == "lichess":
             records, counts = await fetch_lichess_games_window(
-                username, window["window_start_ms"], window["window_end_ms"],
-                request.speeds, request.rated_only, provider_client,
+                username,
+                window["window_start_ms"],
+                window["window_end_ms"],
+                request.speeds,
+                request.rated_only,
+                provider_client,
                 max_games=_MAX_LICHESS_GAMES_PER_WINDOW,
             )
         else:
             records, counts = await fetch_chesscom_archive_month(
-                username, window["source_url"], since, request.speeds,
-                request.rated_only, provider_client,
-                until=datetime.fromtimestamp(window["window_end_ms"] / 1000, timezone.utc),
+                username,
+                window["source_url"],
+                since,
+                request.speeds,
+                request.rated_only,
+                provider_client,
+                until=datetime.fromtimestamp(
+                    window["window_end_ms"] / 1000, timezone.utc
+                ),
             )
     return [asdict(record) for record in records], counts
 
 
-def _load_window_and_request(claimed_task: dict[str, Any]) -> tuple[dict, GameSyncRequest] | None:
+def _load_window_and_request(
+    claimed_task: dict[str, Any],
+) -> tuple[dict, GameSyncRequest] | None:
     with background_lease():
         with connection(read_only=True, background=True) as database:
-            window_row = storage.load_window(database, claimed_task["payload"]["window_id"])
+            window_row = storage.load_window(
+                database, claimed_task["payload"]["window_id"]
+            )
             if window_row is None:
                 return None
             job_row = storage.load_window_request(database, window_row["job_id"])
     if job_row is None or job_row["status"] not in {"queued", "running"}:
         return None
-    return dict(window_row), GameSyncRequest.model_validate_json(job_row["request_json"])
+    return dict(window_row), GameSyncRequest.model_validate_json(
+        job_row["request_json"]
+    )
 
 
-def _stage_window(database: PostgresConnection, claimed_task: dict[str, Any],
-                  window: dict, records: list[dict], counts: dict) -> bool:
+def _stage_window(
+    database: PostgresConnection,
+    claimed_task: dict[str, Any],
+    window: dict,
+    records: list[dict],
+    counts: dict,
+) -> bool:
     if not lock_current_slice(database, claimed_task):
         return False
     current = storage.lock_window_status(database, window["id"])
@@ -109,23 +167,38 @@ def _stage_window(database: PostgresConnection, claimed_task: dict[str, Any],
     if provider_page_full:
         midpoint = (window["window_start_ms"] + window["window_end_ms"]) // 2
         if midpoint <= window["window_start_ms"]:
-            raise RuntimeError("Too many provider games share a one-millisecond sync window")
+            raise RuntimeError(
+                "Too many provider games share a one-millisecond sync window"
+            )
         for start_ms, end_ms in (
             (window["window_start_ms"], midpoint),
             (midpoint, window["window_end_ms"]),
         ):
             _enqueue_window(
-                database, job_id=window["job_id"], provider=window["provider"],
-                kind="games", start_ms=start_ms, end_ms=end_ms,
+                database,
+                job_id=window["job_id"],
+                provider=window["provider"],
+                kind="games",
+                start_ms=start_ms,
+                end_ms=end_ms,
                 source_url=window.get("source_url"),
             )
-        storage.mark_window_split(database, window["id"], datetime.now(timezone.utc).isoformat())
+        storage.mark_window_split(
+            database, window["id"], datetime.now(timezone.utc).isoformat()
+        )
         return complete_task_slice_in_transaction(database, claimed_task)
     serialized = json.dumps(records, sort_keys=True, separators=(",", ":"))
     digest = hashlib.sha256(serialized.encode()).hexdigest()
     storage.stage_window_records(
-        database, window["id"], serialized, digest, len(records), counts["fetched"],
-        counts["filtered"], counts["rejected"], datetime.now(timezone.utc).isoformat(),
+        database,
+        window["id"],
+        serialized,
+        digest,
+        len(records),
+        counts["fetched"],
+        counts["filtered"],
+        counts["rejected"],
+        datetime.now(timezone.utc).isoformat(),
     )
     if not records:
         storage.mark_window_complete(database, window["id"])
@@ -134,7 +207,10 @@ def _stage_window(database: PostgresConnection, claimed_task: dict[str, Any],
             finish_game_sync_if_complete(database, window["job_id"])
         return completed
     return advance_task_slice_in_transaction(
-        database, claimed_task, next_phase="drain", next_payload=claimed_task["payload"],
+        database,
+        claimed_task,
+        next_phase="drain",
+        next_payload=claimed_task["payload"],
     )
 
 
@@ -152,25 +228,38 @@ def _dispatch_one(database: PostgresConnection, claimed_task: dict[str, Any]) ->
         archive_url = records[record_index]["source_url"]
         archive_year, archive_month = map(int, archive_url.rstrip("/").split("/")[-2:])
         month_start = datetime(archive_year, archive_month, 1, tzinfo=timezone.utc)
-        next_month = datetime(archive_year + (archive_month == 12),
-                              1 if archive_month == 12 else archive_month + 1,
-                              1, tzinfo=timezone.utc)
-        child_start_ms = max(window["window_start_ms"], int(month_start.timestamp() * 1000))
+        next_month = datetime(
+            archive_year + (archive_month == 12),
+            1 if archive_month == 12 else archive_month + 1,
+            1,
+            tzinfo=timezone.utc,
+        )
+        child_start_ms = max(
+            window["window_start_ms"], int(month_start.timestamp() * 1000)
+        )
         child_end_ms = min(window["window_end_ms"], int(next_month.timestamp() * 1000))
         if child_end_ms > child_start_ms:
             _enqueue_window(
-                database, job_id=window["job_id"], provider="chess.com", kind="games",
-                start_ms=child_start_ms, end_ms=child_end_ms, source_url=archive_url,
+                database,
+                job_id=window["job_id"],
+                provider="chess.com",
+                kind="games",
+                start_ms=child_start_ms,
+                end_ms=child_end_ms,
+                source_url=archive_url,
             )
     else:
         enqueue_task_in_transaction(
-            database, "game_sync_record",
+            database,
+            "game_sync_record",
             f"{window['job_id']}:{window['id']}:{record_index}",
             {"job_id": window["job_id"], "record": records[record_index]},
             priority=80,
         )
     next_index = record_index + 1
-    storage.advance_record_cursor(database, window["id"], next_index, datetime.now(timezone.utc).isoformat())
+    storage.advance_record_cursor(
+        database, window["id"], next_index, datetime.now(timezone.utc).isoformat()
+    )
     if next_index == len(records):
         storage.mark_window_complete(database, window["id"])
         completed = complete_task_slice_in_transaction(database, claimed_task)
@@ -178,7 +267,10 @@ def _dispatch_one(database: PostgresConnection, claimed_task: dict[str, Any]) ->
             finish_game_sync_if_complete(database, window["job_id"])
         return completed
     return advance_task_slice_in_transaction(
-        database, claimed_task, next_phase="drain", next_payload=claimed_task["payload"],
+        database,
+        claimed_task,
+        next_phase="drain",
+        next_payload=claimed_task["payload"],
     )
 
 

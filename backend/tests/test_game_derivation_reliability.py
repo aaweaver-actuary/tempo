@@ -49,9 +49,13 @@ def test_background_database_contention_retries_without_blocking_foreground_writ
         assert job["status"] == "queued"
         assert job["next_attempt_at"] is not None
         assert "locked" in job["last_error"]
-        assert client.put(
-            "/api/settings", json={**client.get("/api/settings").json(), "new_cards_per_day": 9}
-        ).status_code == 200
+        assert (
+            client.put(
+                "/api/settings",
+                json={**client.get("/api/settings").json(), "new_cards_per_day": 9},
+            ).status_code
+            == 200
+        )
 
 
 def test_derivation_backlog_resumes_after_restart_without_duplicate_findings(
@@ -84,10 +88,17 @@ def test_derivation_backlog_resumes_after_restart_without_duplicate_findings(
             ).fetchone()[0]
         game_sync_coordinator._execute_derivation(game_id)
         with database.connection() as connection:
-            assert connection.execute(
-                "SELECT COUNT(*) FROM game_findings WHERE game_id=?", (game_id,)
-            ).fetchone()[0] == first_finding_count
+            assert (
+                connection.execute(
+                    "SELECT COUNT(*) FROM game_findings WHERE game_id=?", (game_id,)
+                ).fetchone()[0]
+                == first_finding_count
+            )
             assert first_finding_count > 0
-            assert connection.execute(
-                "SELECT status FROM game_derivation_jobs WHERE game_id=?", (game_id,)
-            ).fetchone()[0] == "complete"
+            assert (
+                connection.execute(
+                    "SELECT status FROM game_derivation_jobs WHERE game_id=?",
+                    (game_id,),
+                ).fetchone()[0]
+                == "complete"
+            )

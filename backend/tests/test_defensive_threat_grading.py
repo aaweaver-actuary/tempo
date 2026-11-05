@@ -1,10 +1,16 @@
 """Issue 13 move-rubric regressions; scheduling is tested at the API boundary."""
 
-from app.chess.threat_geometry import find_defensive_knight_forks, propose_exercise_anchors
+from app.chess.threat_geometry import (
+    find_defensive_knight_forks,
+    propose_exercise_anchors,
+)
 from app.services.threat_grading import DefenseExercise, grade_defense_move
 from app.contracts.defense import GameSnapshot, SourceLine, ThreatPolicy
 from app.services.threat_validation import (
-    AnalysisLine, AnalysisReport, EngineScore, make_validation_plan,
+    AnalysisLine,
+    AnalysisReport,
+    EngineScore,
+    make_validation_plan,
 )
 
 
@@ -18,17 +24,40 @@ def exercise():
         game, SourceLine("engine", 1, ("b4c2", "e1d2", "c2a1", "d2c1"))
     )[0]
     anchor = propose_exercise_anchors(game, seed, POLICY)[0]
-    plan = make_validation_plan(anchor, engine_version="sf19", network_version="nnue", policy=POLICY)
-    best = AnalysisReport(plan.best_request, (
-        AnalysisLine("e1f2", ("e1f2", "e8e7"), EngineScore(cp=0), 14),
-        AnalysisLine("e1d2", ("e1d2", "e8e7"), EngineScore(cp=-20), 14),
-    ), True)
-    historical = AnalysisReport(plan.historical_request, (
-        AnalysisLine("a2a3", ("a2a3", "b4c2", "e1d2", "c2a1", "d2c1"),
-                     EngineScore(cp=-180), 14),
-    ), True)
-    return DefenseExercise("candidate", "finding", 1, anchor, seed, POLICY,
-                           best, (historical,), historical.lines[0].pv_uci)
+    plan = make_validation_plan(
+        anchor, engine_version="sf19", network_version="nnue", policy=POLICY
+    )
+    best = AnalysisReport(
+        plan.best_request,
+        (
+            AnalysisLine("e1f2", ("e1f2", "e8e7"), EngineScore(cp=0), 14),
+            AnalysisLine("e1d2", ("e1d2", "e8e7"), EngineScore(cp=-20), 14),
+        ),
+        True,
+    )
+    historical = AnalysisReport(
+        plan.historical_request,
+        (
+            AnalysisLine(
+                "a2a3",
+                ("a2a3", "b4c2", "e1d2", "c2a1", "d2c1"),
+                EngineScore(cp=-180),
+                14,
+            ),
+        ),
+        True,
+    )
+    return DefenseExercise(
+        "candidate",
+        "finding",
+        1,
+        anchor,
+        seed,
+        POLICY,
+        best,
+        (historical,),
+        historical.lines[0].pv_uci,
+    )
 
 
 def test_issue13_best_and_different_sound_moves_are_correct():
@@ -55,7 +84,8 @@ def test_issue13_bad_move_for_unrelated_reason_has_no_false_fork_feedback():
     request = item.best_report.request
     unrelated = AnalysisReport(
         type(request)(**{**request.__dict__, "multipv": 1, "root_move_uci": "a2a4"}),
-        (AnalysisLine("a2a4", ("a2a4", "e8e7"), EngineScore(cp=-200), 14),), True,
+        (AnalysisLine("a2a4", ("a2a4", "e8e7"), EngineScore(cp=-200), 14),),
+        True,
     )
     grade = grade_defense_move(item, "a2a4", additional_analysis=unrelated)
     assert grade.status == "incorrect"
@@ -68,6 +98,10 @@ def test_issue13_illegal_and_ambiguous_moves_do_not_get_definitive_grade():
     request = item.best_report.request
     uncertain = AnalysisReport(
         type(request)(**{**request.__dict__, "multipv": 1, "root_move_uci": "a2a4"}),
-        (AnalysisLine("a2a4", ("a2a4", "e8e7"), EngineScore(cp=-60), 14),), True,
+        (AnalysisLine("a2a4", ("a2a4", "e8e7"), EngineScore(cp=-60), 14),),
+        True,
     )
-    assert grade_defense_move(item, "a2a4", additional_analysis=uncertain).status == "ambiguous"
+    assert (
+        grade_defense_move(item, "a2a4", additional_analysis=uncertain).status
+        == "ambiguous"
+    )

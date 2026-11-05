@@ -12,8 +12,10 @@ from tempo_legacy_database.adapters import postgres_store
 from tempo_legacy_database.adapters.opening_graph import worker as storage
 from ..card_deletion import omit_deleted_graph_steps
 from .durable_tasks import (
-    advance_task_slice_in_transaction, complete_task_slice_in_transaction,
-    enqueue_task_in_transaction, lock_current_slice,
+    advance_task_slice_in_transaction,
+    complete_task_slice_in_transaction,
+    enqueue_task_in_transaction,
+    lock_current_slice,
 )
 from app.services.opening_graph import GraphInput, build_graph
 from app.contracts.opening_graph import GraphStep
@@ -26,7 +28,10 @@ _CLEANUP_CANDIDATE_PAGE_SIZE = 256
 
 
 def request_graph_rebuild_in_transaction(
-    database: postgres_store.PostgresConnection, repertoire_id: str, local_day: str, *,
+    database: postgres_store.PostgresConnection,
+    repertoire_id: str,
+    local_day: str,
+    *,
     origin_import_operation_id: str | None = None,
 ) -> dict[str, Any]:
     """Enqueue a new graph generation after all imported and staged generations."""
@@ -40,11 +45,23 @@ def request_graph_rebuild_in_transaction(
         int(latest_published[0]) if latest_published else 0,
     )
     return enqueue_task_in_transaction(
-        database, "opening_graph_rebuild", repertoire_id,
-        {"repertoire_id": repertoire_id, "local_day": local_day,
-         "after_line_id": "", "step_offset": 0, "after_card_id": "",
-         **({"origin_import_operation_id":origin_import_operation_id} if origin_import_operation_id else {})},
-        priority=40, minimum_generation=minimum_generation,
+        database,
+        "opening_graph_rebuild",
+        repertoire_id,
+        {
+            "repertoire_id": repertoire_id,
+            "local_day": local_day,
+            "after_line_id": "",
+            "step_offset": 0,
+            "after_card_id": "",
+            **(
+                {"origin_import_operation_id": origin_import_operation_id}
+                if origin_import_operation_id
+                else {}
+            ),
+        },
+        priority=40,
+        minimum_generation=minimum_generation,
     )
 
 
@@ -56,7 +73,9 @@ class PreparedGraphLine:
     steps: tuple[GraphStep, ...]
 
 
-def prepare_next_graph_line(repertoire_id: str, after_line_id: str) -> PreparedGraphLine | None:
+def prepare_next_graph_line(
+    repertoire_id: str, after_line_id: str
+) -> PreparedGraphLine | None:
     """Read one source line, close PostgreSQL, then traverse its moves."""
 
     with background_read_connection() as database:
@@ -64,23 +83,41 @@ def prepare_next_graph_line(repertoire_id: str, after_line_id: str) -> PreparedG
         if line is None:
             return None
         default_depth = storage.initial_depth(database)
-        prefix_overrides = tuple(dict(row) for row in storage.prefix_override_rows(database))
+        prefix_overrides = tuple(
+            dict(row) for row in storage.prefix_override_rows(database)
+        )
         source_line = dict(line)
-    graph_input = GraphInput(repertoire_id, (source_line,), int(default_depth), prefix_overrides)
+    graph_input = GraphInput(
+        repertoire_id, (source_line,), int(default_depth), prefix_overrides
+    )
     return PreparedGraphLine(source_line["id"], build_graph(graph_input))
 
 
 def stage_graph_steps(database, batch, generation):
     """Shared publisher writer; transition staging intentionally creates no cards."""
     with storage.graph_cursor(database) as cursor:
-        storage.insert_steps(cursor, [
-                (step.repertoire_id, generation, step.line_id, step.decision_index,
-                 step.segment_kind, step.first_decision_index, step.last_decision_index,
-                 json.dumps(step.decision_fen_keys), step.card_id, step.parent_card_id,
-                 step.decision_fen_key, step.starting_fen, json.dumps(step.moves),
-                 step.trained_color)
+        storage.insert_steps(
+            cursor,
+            [
+                (
+                    step.repertoire_id,
+                    generation,
+                    step.line_id,
+                    step.decision_index,
+                    step.segment_kind,
+                    step.first_decision_index,
+                    step.last_decision_index,
+                    json.dumps(step.decision_fen_keys),
+                    step.card_id,
+                    step.parent_card_id,
+                    step.decision_fen_key,
+                    step.starting_fen,
+                    json.dumps(step.moves),
+                    step.trained_color,
+                )
                 for step in batch
-            ])
+            ],
+        )
 
 
 def create_graph_cards(database, batch, study_day, *, strict=False):
@@ -88,10 +125,16 @@ def create_graph_cards(database, batch, study_day, *, strict=False):
     if not batch:
         return
     card_rows = [
-        (step.card_id, step.repertoire_id,
-         "prefix" if step.segment_kind == "prefix" else "response",
-         step.starting_fen, json.dumps(step.moves),
-         "new" if step.parent_card_id is None else "locked", study_day, step.trained_color)
+        (
+            step.card_id,
+            step.repertoire_id,
+            "prefix" if step.segment_kind == "prefix" else "response",
+            step.starting_fen,
+            json.dumps(step.moves),
+            "new" if step.parent_card_id is None else "locked",
+            study_day,
+            step.trained_color,
+        )
         for step in batch
     ]
     storage.insert_cards(database, card_rows, strict=strict)
@@ -109,20 +152,30 @@ def stage_graph_line_in_transaction(
     payload = dict(task["payload"])
     if prepared is None:
         return advance_task_slice_in_transaction(
-            database, task, next_phase="link", next_payload={**payload, "step_offset": 0},
+            database,
+            task,
+            next_phase="link",
+            next_payload={**payload, "step_offset": 0},
         )
     offset = int(payload.get("step_offset", 0))
     if offset < 0 or offset >= max(1, len(prepared.steps)):
         raise ValueError("Opening graph slice cursor is outside its source line")
-    original_batch = prepared.steps[offset:offset + _STEP_BATCH_SIZE]
+    original_batch = prepared.steps[offset : offset + _STEP_BATCH_SIZE]
     # Synchronize with permanent deletion before checking identity exclusions.
     # Parents must be fenced too: a child cannot retain a removed prerequisite.
     route_ids = sorted({step.card_id for step in prepared.steps})
     for identifier in route_ids:
         storage.lock_card_edit(database, identifier)
     deleted_ids = {row[0] for row in storage.deleted_card_rows(database, route_ids)}
-    retained_steps = {step.decision_index: step for step in omit_deleted_graph_steps(prepared.steps, deleted_ids)}
-    batch = tuple(retained_steps[step.decision_index] for step in original_batch if step.decision_index in retained_steps)
+    retained_steps = {
+        step.decision_index: step
+        for step in omit_deleted_graph_steps(prepared.steps, deleted_ids)
+    }
+    batch = tuple(
+        retained_steps[step.decision_index]
+        for step in original_batch
+        if step.decision_index in retained_steps
+    )
     generation = int(task["generation"])
     study_day = str(payload["local_day"])
     stage_graph_steps(database, batch, generation)
@@ -130,12 +183,16 @@ def stage_graph_line_in_transaction(
     next_offset = offset + len(original_batch)
     next_payload = {
         **payload,
-        "after_line_id": prepared.line_id if next_offset == len(prepared.steps)
+        "after_line_id": prepared.line_id
+        if next_offset == len(prepared.steps)
         else payload.get("after_line_id", ""),
         "step_offset": 0 if next_offset == len(prepared.steps) else next_offset,
     }
     return advance_task_slice_in_transaction(
-        database, task, next_phase="stage", next_payload=next_payload,
+        database,
+        task,
+        next_phase="stage",
+        next_payload=next_payload,
     )
 
 
@@ -144,7 +201,8 @@ def execute_graph_stage_slice(task: dict[str, Any]) -> bool:
 
     payload = task["payload"]
     prepared = prepare_next_graph_line(
-        str(payload["repertoire_id"]), str(payload.get("after_line_id", "")),
+        str(payload["repertoire_id"]),
+        str(payload.get("after_line_id", "")),
     )
     with background_lease():
         with storage.writer_connection() as database:
@@ -152,12 +210,18 @@ def execute_graph_stage_slice(task: dict[str, Any]) -> bool:
 
 
 def prepare_next_graph_cards(
-    repertoire_id: str, generation: int, after_card_id: str, *, limit: int = 8,
+    repertoire_id: str,
+    generation: int,
+    after_card_id: str,
+    *,
+    limit: int = 8,
 ) -> tuple[str, ...]:
     """Read a bounded set of distinct staged cards under the admission gate."""
 
     with background_read_connection() as database:
-        cards = storage.staged_card_ids(database, repertoire_id, generation, after_card_id, limit)
+        cards = storage.staged_card_ids(
+            database, repertoire_id, generation, after_card_id, limit
+        )
     return tuple(str(card[0]) for card in cards)
 
 
@@ -173,15 +237,25 @@ def link_graph_cards_in_transaction(
     payload = dict(task["payload"])
     if not card_ids:
         return advance_task_slice_in_transaction(
-            database, task, next_phase="publish", next_payload=payload,
+            database,
+            task,
+            next_phase="publish",
+            next_payload=payload,
         )
     repertoire_id = str(payload["repertoire_id"])
     generation = int(task["generation"])
     with storage.graph_cursor(database) as cursor:
-        storage.insert_links(cursor, [(repertoire_id, card_id, repertoire_id, generation, card_id)
-             for card_id in card_ids])
+        storage.insert_links(
+            cursor,
+            [
+                (repertoire_id, card_id, repertoire_id, generation, card_id)
+                for card_id in card_ids
+            ],
+        )
     return advance_task_slice_in_transaction(
-        database, task, next_phase="link",
+        database,
+        task,
+        next_phase="link",
         next_payload={**payload, "after_card_id": card_ids[-1]},
     )
 
@@ -191,7 +265,8 @@ def execute_graph_link_slice(task: dict[str, Any]) -> bool:
 
     payload = task["payload"]
     card_ids = prepare_next_graph_cards(
-        str(payload["repertoire_id"]), int(task["generation"]),
+        str(payload["repertoire_id"]),
+        int(task["generation"]),
         str(payload.get("after_card_id", "")),
     )
     with background_lease():
@@ -204,11 +279,14 @@ def publish_graph_generation(database, repertoire_id, generation):
     missing_link = storage.missing_link(database, repertoire_id, generation)
     if missing_link:
         raise RuntimeError("Opening graph generation has unlinked cards")
-    storage.publish_generation(database, (repertoire_id, generation, datetime.now(timezone.utc).isoformat()))
+    storage.publish_generation(
+        database, (repertoire_id, generation, datetime.now(timezone.utc).isoformat())
+    )
 
 
 def publish_graph_in_transaction(
-    database: postgres_store.PostgresConnection, task: dict[str, Any],
+    database: postgres_store.PostgresConnection,
+    task: dict[str, Any],
 ) -> bool:
     """Change the visible generation only after every staged card is linked."""
 
@@ -219,7 +297,9 @@ def publish_graph_in_transaction(
     generation = int(task["generation"])
     publish_graph_generation(database, repertoire_id, generation)
     return advance_task_slice_in_transaction(
-        database, task, next_phase="classify",
+        database,
+        task,
+        next_phase="classify",
         next_payload={**payload, "after_card_id": ""},
     )
 
@@ -242,7 +322,9 @@ def classify_graph_cards_in_transaction(
     payload = dict(task["payload"])
     if not card_ids:
         return advance_task_slice_in_transaction(
-            database, task, next_phase="integrity",
+            database,
+            task,
+            next_phase="integrity",
             next_payload={**payload, "after_card_id": ""},
         )
     study_day = str(payload["local_day"])
@@ -252,11 +334,17 @@ def classify_graph_cards_in_transaction(
             raise RuntimeError("Published graph card disappeared before classification")
         kind = "prefix" if classification[0] else "response"
         next_state = "new" if classification[1] else "locked"
-        if ('maintenance_scope' in task or task.get('explicit_import_preparation')) and storage.protected_card(database, card_id, kind):
-            raise ValueError('Rebuild would reclassify a protected card; stop for diagnosis')
+        if (
+            "maintenance_scope" in task or task.get("explicit_import_preparation")
+        ) and storage.protected_card(database, card_id, kind):
+            raise ValueError(
+                "Rebuild would reclassify a protected card; stop for diagnosis"
+            )
         storage.classify_card(database, kind, next_state, study_day, card_id)
     return advance_task_slice_in_transaction(
-        database, task, next_phase="classify",
+        database,
+        task,
+        next_phase="classify",
         next_payload={**payload, "after_card_id": card_ids[-1]},
     )
 
@@ -264,7 +352,8 @@ def classify_graph_cards_in_transaction(
 def execute_graph_classify_slice(task: dict[str, Any]) -> bool:
     payload = task["payload"]
     card_ids = prepare_next_graph_cards(
-        str(payload["repertoire_id"]), int(task["generation"]),
+        str(payload["repertoire_id"]),
+        int(task["generation"]),
         str(payload.get("after_card_id", "")),
     )
     with background_lease():
@@ -284,7 +373,9 @@ def refresh_graph_integrity_in_transaction(
     payload = dict(task["payload"])
     if not card_ids:
         return advance_task_slice_in_transaction(
-            database, task, next_phase="cleanup",
+            database,
+            task,
+            next_phase="cleanup",
             next_payload={**payload, "after_card_id": ""},
         )
     repertoire_id = str(payload["repertoire_id"])
@@ -292,11 +383,23 @@ def refresh_graph_integrity_in_transaction(
     now = datetime.now(timezone.utc).isoformat()
     for card_id in card_ids:
         storage.delete_card_blocks(database, repertoire_id, card_id)
-        storage.insert_card_blocks(database, (repertoire_id, card_id, f"graph:{generation}", now,
-             repertoire_id, generation, card_id))
+        storage.insert_card_blocks(
+            database,
+            (
+                repertoire_id,
+                card_id,
+                f"graph:{generation}",
+                now,
+                repertoire_id,
+                generation,
+                card_id,
+            ),
+        )
         storage.refresh_validation(database, card_id)
     return advance_task_slice_in_transaction(
-        database, task, next_phase="integrity",
+        database,
+        task,
+        next_phase="integrity",
         next_payload={**payload, "after_card_id": card_ids[-1]},
     )
 
@@ -304,8 +407,10 @@ def refresh_graph_integrity_in_transaction(
 def execute_graph_integrity_slice(task: dict[str, Any]) -> bool:
     payload = task["payload"]
     card_ids = prepare_next_graph_cards(
-        str(payload["repertoire_id"]), int(task["generation"]),
-        str(payload.get("after_card_id", "")), limit=2,
+        str(payload["repertoire_id"]),
+        int(task["generation"]),
+        str(payload.get("after_card_id", "")),
+        limit=2,
     )
     with background_lease():
         with storage.writer_connection() as database:
@@ -321,12 +426,20 @@ class PreparedGraphCleanupSlice:
 
 
 def prepare_obsolete_graph_cards(
-    repertoire_id: str, generation: int, after_card_id: str,
+    repertoire_id: str,
+    generation: int,
+    after_card_id: str,
 ) -> PreparedGraphCleanupSlice:
     """Inspect a bounded raw-key page before deciding which old links to remove."""
 
     with background_read_connection() as database:
-        rows = storage.cleanup_candidates(database, repertoire_id, after_card_id, _CLEANUP_CANDIDATE_PAGE_SIZE, generation)
+        rows = storage.cleanup_candidates(
+            database,
+            repertoire_id,
+            after_card_id,
+            _CLEANUP_CANDIDATE_PAGE_SIZE,
+            generation,
+        )
     obsolete_card_ids: list[str] = []
     checkpoint_card_id = None
     for row in rows:
@@ -349,7 +462,12 @@ def remove_obsolete_graph_memberships(database, repertoire_id, generation, card_
     """
     if not card_ids:
         return
-    eligible_card_ids = [row[0] for row in storage.eligible_cleanup_cards(database, repertoire_id, card_ids, generation)]
+    eligible_card_ids = [
+        row[0]
+        for row in storage.eligible_cleanup_cards(
+            database, repertoire_id, card_ids, generation
+        )
+    ]
     if not eligible_card_ids:
         return
     storage.retire_orphaned_queue(database, eligible_card_ids, repertoire_id)
@@ -374,19 +492,32 @@ def cleanup_graph_cards_in_transaction(
     payload = dict(task["payload"])
     if prepared.checkpoint_card_id is None:
         return advance_task_slice_in_transaction(
-            database, task, next_phase="finalize", next_payload=payload,
+            database,
+            task,
+            next_phase="finalize",
+            next_payload=payload,
         )
     repertoire_id = str(payload["repertoire_id"])
     generation = int(task["generation"])
-    if task.get('explicit_import_preparation') and prepared.obsolete_card_ids:
-        raise ValueError('Explicit import would retire existing graph cards; review content separately')
-    if 'maintenance_scope' in task and prepared.obsolete_card_ids:
-        protected = storage.protected_queue_entry(database, (list(prepared.obsolete_card_ids), payload['local_day']))
+    if task.get("explicit_import_preparation") and prepared.obsolete_card_ids:
+        raise ValueError(
+            "Explicit import would retire existing graph cards; review content separately"
+        )
+    if "maintenance_scope" in task and prepared.obsolete_card_ids:
+        protected = storage.protected_queue_entry(
+            database, (list(prepared.obsolete_card_ids), payload["local_day"])
+        )
         if protected:
-            raise ValueError('Selected rebuild would retire a protected queue entry; stop for diagnosis')
-    remove_obsolete_graph_memberships(database, repertoire_id, generation, prepared.obsolete_card_ids)
+            raise ValueError(
+                "Selected rebuild would retire a protected queue entry; stop for diagnosis"
+            )
+    remove_obsolete_graph_memberships(
+        database, repertoire_id, generation, prepared.obsolete_card_ids
+    )
     return advance_task_slice_in_transaction(
-        database, task, next_phase="cleanup",
+        database,
+        task,
+        next_phase="cleanup",
         next_payload={**payload, "after_card_id": prepared.checkpoint_card_id},
     )
 
@@ -394,7 +525,8 @@ def cleanup_graph_cards_in_transaction(
 def execute_graph_cleanup_slice(task: dict[str, Any]) -> bool:
     payload = task["payload"]
     prepared = prepare_obsolete_graph_cards(
-        str(payload["repertoire_id"]), int(task["generation"]),
+        str(payload["repertoire_id"]),
+        int(task["generation"]),
         str(payload.get("after_card_id", "")),
     )
     with background_lease():
@@ -403,7 +535,8 @@ def execute_graph_cleanup_slice(task: dict[str, Any]) -> bool:
 
 
 def finalize_graph_in_transaction(
-    database: postgres_store.PostgresConnection, task: dict[str, Any],
+    database: postgres_store.PostgresConnection,
+    task: dict[str, Any],
 ) -> bool:
     """Queue the foreground-visible refresh and complete this graph generation."""
 
@@ -412,10 +545,20 @@ def finalize_graph_in_transaction(
     from .postgres_integrity import request_integrity_scan_in_transaction
 
     request_integrity_scan_in_transaction(
-        database, str(task["payload"]["repertoire_id"]),
-        int(task["generation"]), str(task["payload"]["local_day"]),
-        **({"origin_import_operation_id":task["payload"]["origin_import_operation_id"],
-            "origin_graph_task_id":task["id"]} if task["payload"].get("origin_import_operation_id") else {}),
+        database,
+        str(task["payload"]["repertoire_id"]),
+        int(task["generation"]),
+        str(task["payload"]["local_day"]),
+        **(
+            {
+                "origin_import_operation_id": task["payload"][
+                    "origin_import_operation_id"
+                ],
+                "origin_graph_task_id": task["id"],
+            }
+            if task["payload"].get("origin_import_operation_id")
+            else {}
+        ),
     )
     if not complete_task_slice_in_transaction(database, task):
         raise RuntimeError("Opening graph lease changed before finalization")

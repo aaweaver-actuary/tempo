@@ -21,20 +21,31 @@ def execute_game_priority_handoff_slice(task: dict[str, Any]) -> bool:
     after_repertoire_id = str(payload.get("after_repertoire_id", ""))
     with background_read_connection() as database:
         game = storage.game_color(database, game_id)
-        repertoire = storage.next_repertoire(database, game["color"], after_repertoire_id) if game else None
+        repertoire = (
+            storage.next_repertoire(database, game["color"], after_repertoire_id)
+            if game
+            else None
+        )
     with connection(background=True) as database:
         if not lock_current_slice(database, task):
             return False
         job = jobs.lock_job(database, game_id)
-        if (job is None or int(job["derivation_version"]) != version
-                or int(job["completed_phases"]) != 6
-                or job["status"] not in {"queued", "running"}):
+        if (
+            job is None
+            or int(job["derivation_version"]) != version
+            or int(job["completed_phases"]) != 6
+            or job["status"] not in {"queued", "running"}
+        ):
             return complete_task_slice_in_transaction(database, task)
         if repertoire is not None:
             repertoire_id = repertoire["repertoire_id"]
             return advance_task_slice_in_transaction(
-                database, task, next_phase="enqueueing_priorities",
+                database,
+                task,
+                next_phase="enqueueing_priorities",
                 next_payload={**payload, "after_repertoire_id": repertoire_id},
             )
-        storage.complete_derivation(database, game_id, version, datetime.now(timezone.utc).isoformat())
+        storage.complete_derivation(
+            database, game_id, version, datetime.now(timezone.utc).isoformat()
+        )
         return complete_task_slice_in_transaction(database, task)

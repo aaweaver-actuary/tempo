@@ -1,4 +1,5 @@
 """Check with mypy --warn-unused-ignores and the owner source on MYPYPATH."""
+
 import sqlite3
 
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
@@ -15,7 +16,9 @@ def postgres_connection_matches(database: PostgresConnection) -> None:
     borrowed: BorrowedTransaction = database
 
 
-def consumers_do_not_own_lifetime(reader: ReadConnection, borrowed: BorrowedTransaction) -> None:
+def consumers_do_not_own_lifetime(
+    reader: ReadConnection, borrowed: BorrowedTransaction
+) -> None:
     reader.commit()  # type: ignore[attr-defined]
     reader.close()  # type: ignore[attr-defined]
     borrowed.commit()  # type: ignore[attr-defined]

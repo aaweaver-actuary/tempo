@@ -7,6 +7,7 @@ PYTHONPATH=backend:database backend/.venv/bin/python backend/benchmarks/pgn_payl
 Without --pgn, measure deterministic comb trees and an approximately 425 KB
 branching corpus. These synthetic cases do not reproduce production delivery.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -38,7 +39,11 @@ def branching_fixture(plies: int) -> bytes:
     repeated_moves = ("g1f3", "g8f6", "f3g1", "f6g8")
     for ply in range(plies):
         main_move = chess.Move.from_uci(repeated_moves[ply % 4])
-        alternative = next(move for move in sorted(board.legal_moves, key=lambda move: move.uci()) if move != main_move)
+        alternative = next(
+            move
+            for move in sorted(board.legal_moves, key=lambda move: move.uci())
+            if move != main_move
+        )
         continuation = node.add_variation(main_move)
         node.add_variation(alternative)
         board.push(main_move)
@@ -51,14 +56,19 @@ def serialized_bytes(value, serializer: str) -> int:
     return len(body.encode(encoding) if isinstance(body, str) else body)
 
 
-def measure_payload(raw_bytes: bytes, source_name: str, trained_color: str, initial_depth: int) -> dict:
+def measure_payload(
+    raw_bytes: bytes, source_name: str, trained_color: str, initial_depth: int
+) -> dict:
     raw_pgn = raw_bytes.decode("utf-8-sig")
     games, lines = parse_pgn(raw_pgn)
-    payload = prepare_import_payload(source_name, trained_color, initial_depth, games, lines)
+    payload = prepare_import_payload(
+        source_name, trained_color, initial_depth, games, lines
+    )
     serializer = celery_app.conf.task_serializer
     payload_bytes = serialized_bytes(payload, serializer)
     message = celery_app.amqp.create_task_message(
-        task_id="pgn-payload-diagnostic", name="app.tasks.execute_foreground_command",
+        task_id="pgn-payload-diagnostic",
+        name="app.tasks.execute_foreground_command",
         args=["pgn-payload-diagnostic", "imports.pgn.admit", payload],
     )
     source_nodes = 0
@@ -72,8 +82,10 @@ def measure_payload(raw_bytes: bytes, source_name: str, trained_color: str, init
     return {
         "source_name": source_name,
         "source_sha256": hashlib.sha256(raw_bytes).hexdigest(),
-        "trained_color": trained_color, "initial_depth": initial_depth,
-        "raw_pgn_bytes": len(raw_bytes), "games": games,
+        "trained_color": trained_color,
+        "initial_depth": initial_depth,
+        "raw_pgn_bytes": len(raw_bytes),
+        "games": games,
         "source_move_nodes": source_nodes,
         "expanded_leaf_lines": len(lines),
         "total_expanded_moves": sum(len(line.moves) for line in lines),
@@ -89,25 +101,44 @@ def measure_payload(raw_bytes: bytes, source_name: str, trained_color: str, init
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--pgn", type=Path, action="append", help="Measure a file; repeat for multiple files")
+    parser.add_argument(
+        "--pgn",
+        type=Path,
+        action="append",
+        help="Measure a file; repeat for multiple files",
+    )
     parser.add_argument("--trained-color", choices=("white", "black"), default="white")
     parser.add_argument("--initial-depth", type=int, choices=range(2, 21), default=6)
     parser.add_argument("--output", type=Path)
     options = parser.parse_args()
     sources = [(path.name, path.read_bytes()) for path in options.pgn or []]
     if not sources:
-        sources = [(f"comb-{plies}.pgn", branching_fixture(plies)) for plies in (16, 32, 64, 128)]
+        sources = [
+            (f"comb-{plies}.pgn", branching_fixture(plies))
+            for plies in (16, 32, 64, 128)
+        ]
         # Existing deterministic fixture: 32-ply games, variation every five plies.
         from benchmarks.pgn_parse import fixture
+
         sources.append(("branching-corpus-425kb.pgn", fixture(615).encode("utf-8")))
     revision = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-    dirty = bool(subprocess.check_output(["git", "status", "--porcelain"], text=True).strip())
+    dirty = bool(
+        subprocess.check_output(["git", "status", "--porcelain"], text=True).strip()
+    )
     report = {
-        "schema_version": 1, "revision": revision, "dirty_tree": dirty,
+        "schema_version": 1,
+        "revision": revision,
+        "dirty_tree": dirty,
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "environment": {"python": sys.version.split()[0], "platform": platform.platform()},
+        "environment": {
+            "python": sys.version.split()[0],
+            "platform": platform.platform(),
+        },
         "measurement": "Configured serializer bytes; Celery task body excludes broker envelope/base64 framing. No delivery benchmark.",
-        "cases": [measure_payload(raw, name, options.trained_color, options.initial_depth) for name, raw in sources],
+        "cases": [
+            measure_payload(raw, name, options.trained_color, options.initial_depth)
+            for name, raw in sources
+        ],
     }
     rendered = json.dumps(report, indent=2) + "\n"
     if options.output:

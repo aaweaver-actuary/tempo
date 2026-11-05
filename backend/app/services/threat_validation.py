@@ -1,5 +1,7 @@
 """Compatibility exports; executable semantics are Learning-owned."""
+
 from tempo_learning_runtime import threat_validation as _owned
+
 asdict = _owned.asdict
 dataclass = _owned.dataclass
 Literal = _owned.Literal

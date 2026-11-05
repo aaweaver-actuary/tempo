@@ -1,4 +1,5 @@
 """Immutable issue #107 contracts; freshness is separate from model identity."""
+
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field

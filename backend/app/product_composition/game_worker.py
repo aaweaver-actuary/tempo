@@ -1,10 +1,12 @@
 """Optional worker loop only. The ordinary HTTP/Study application never starts it."""
+
 import signal
 from threading import Event
 
 
-def run_optional_worker(runtime, *, enqueue_due, idle_seconds=1.0,
-                        stop_when_idle=False, max_units=None):
+def run_optional_worker(
+    runtime, *, enqueue_due, idle_seconds=1.0, stop_when_idle=False, max_units=None
+):
     """One process owns its signal handlers, bounded runner and cancellation.
 
     Composition supplies the durable configured-job trigger. A stopped worker
@@ -13,7 +15,9 @@ def run_optional_worker(runtime, *, enqueue_due, idle_seconds=1.0,
     """
     if not 0.01 <= idle_seconds <= 30:
         raise ValueError("finite idle interval required")
-    if max_units is not None and (type(max_units) is not int or not 1 <= max_units <= 10000):
+    if max_units is not None and (
+        type(max_units) is not int or not 1 <= max_units <= 10000
+    ):
         raise ValueError("max_units must be 1..10000")
     stopped = Event()
     previous = {}

@@ -32,10 +32,17 @@ def _position_before_ply(start_fen: str, moves: list[str], ply: int) -> chess.Bo
 
 
 def refresh_gameplay_events(
-    game_id: str, *, background: bool = False, prepare_only: bool = False,
+    game_id: str,
+    *,
+    background: bool = False,
+    prepare_only: bool = False,
 ) -> list[tuple] | None:
     """Compute outside a transaction and replace only this version in one short write."""
-    read_section = background_read_connection if prepare_only else lambda: connection(background=background)
+    read_section = (
+        background_read_connection
+        if prepare_only
+        else lambda: connection(background=background)
+    )
     with read_section() as database:
         game = storage.source_game(database, game_id)
         if not game:
@@ -70,7 +77,9 @@ def refresh_gameplay_events(
         if candidate_lines:
             if not bool(row["is_player_move"]):
                 continue
-            opportunity_board = _position_before_ply(game["start_fen"], moves, int(row["ply"]))
+            opportunity_board = _position_before_ply(
+                game["start_fen"], moves, int(row["ply"])
+            )
             motif_evidence = classify_candidate_lines(
                 opportunity_board,
                 row["actual_move_uci"],
@@ -117,7 +126,9 @@ def refresh_gameplay_events(
             }
             computed_events.append(
                 (
-                    _event_id(game_id, analysis_version, event_ply, "tactical opportunity"),
+                    _event_id(
+                        game_id, analysis_version, event_ply, "tactical opportunity"
+                    ),
                     game_id,
                     analysis_version,
                     CLASSIFIER_VERSION,
@@ -151,7 +162,9 @@ def refresh_gameplay_events(
             continue
         beneficiary_color = "black" if created_by_color == "white" else "white"
         response_row = rows_by_ply.get(mistake_ply + 1)
-        opportunity_board = _position_before_ply(game["start_fen"], moves, mistake_ply + 1)
+        opportunity_board = _position_before_ply(
+            game["start_fen"], moves, mistake_ply + 1
+        )
         best_move_uci = response_row["best_move_uci"] if response_row else None
         principal_variation = (
             json.loads(response_row["principal_variation_json"] or "[]")
@@ -185,12 +198,16 @@ def refresh_gameplay_events(
             "motif_evidence": [item.to_dict() for item in motif_evidence],
             "source_mistake_ply": mistake_ply,
             "source_loss_cp": loss_cp,
-            "response_loss_cp": int(response_row["loss_cp"] or 0) if response_row else None,
+            "response_loss_cp": int(response_row["loss_cp"] or 0)
+            if response_row
+            else None,
             "player_was_beneficiary": beneficiary_color == game["color"],
         }
         computed_events.append(
             (
-                _event_id(game_id, analysis_version, mistake_ply, "tactical opportunity"),
+                _event_id(
+                    game_id, analysis_version, mistake_ply, "tactical opportunity"
+                ),
                 game_id,
                 analysis_version,
                 CLASSIFIER_VERSION,

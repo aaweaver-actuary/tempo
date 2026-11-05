@@ -1,4 +1,5 @@
 """Engine counters are accepted once with the existing fenced callback."""
+
 from app.contracts.transport.engine import EngineAttemptDiagnostics
 from .background_metrics import increment
 
@@ -15,20 +16,28 @@ def record_engine_outcome(database, kind, identity, payload, *, completed=False)
             raise ValueError("Engine release/failure cannot report a successful search")
         if completed and diagnostic.outcome != "success":
             raise ValueError("Engine report requires a successful outcome")
-        if expected == 'success':
-            counts.update(engine_successful_seconds=diagnostic.elapsed_seconds,engine_successful_max_seconds=diagnostic.elapsed_seconds,engine_successful_samples=1)
+        if expected == "success":
+            counts.update(
+                engine_successful_seconds=diagnostic.elapsed_seconds,
+                engine_successful_max_seconds=diagnostic.elapsed_seconds,
+                engine_successful_samples=1,
+            )
         else:
-            counts.update(engine_abandoned_seconds=diagnostic.elapsed_seconds,engine_abandoned_max_seconds=diagnostic.elapsed_seconds,engine_abandoned_samples=1)
+            counts.update(
+                engine_abandoned_seconds=diagnostic.elapsed_seconds,
+                engine_abandoned_max_seconds=diagnostic.elapsed_seconds,
+                engine_abandoned_samples=1,
+            )
         if expected == "preempted":
-            counts['engine_preempted_seconds'] = diagnostic.elapsed_seconds
-            counts['engine_preempted_max_seconds'] = diagnostic.elapsed_seconds
-            counts['engine_preemptions'] = 1
-            if payload.get('error'):
-                counts['engine_failures'] = 1
+            counts["engine_preempted_seconds"] = diagnostic.elapsed_seconds
+            counts["engine_preempted_max_seconds"] = diagnostic.elapsed_seconds
+            counts["engine_preemptions"] = 1
+            if payload.get("error"):
+                counts["engine_failures"] = 1
         elif expected == "timeout":
-            counts['engine_timeouts'] = 1
+            counts["engine_timeouts"] = 1
         elif expected == "failure":
-            counts['engine_failures'] = 1
+            counts["engine_failures"] = 1
     if not completed and diagnostics is None and payload.get("error"):
         counts["engine_failures"] = 1
     if diagnostics is None:

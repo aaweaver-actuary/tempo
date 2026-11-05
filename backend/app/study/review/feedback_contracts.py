@@ -3,6 +3,7 @@
 Implementations own queries, database locks and existing queue writers. No method
 accepts SQL or owns commit/rollback; all effects must share the caller's receipt.
 """
+
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -34,16 +35,25 @@ class RealGameFeedbackStore(Protocol):
     def prioritize_queued_misses(self, queue_day: str) -> None: ...
     def event_card(self, event_id: str) -> str | None: ...
     def accepted_miss_priority(self, card_id: str) -> str | None: ...
-    def replace_miss_priority(self, card_id: str, previous: str, replacement: str | None) -> None: ...
+    def replace_miss_priority(
+        self, card_id: str, previous: str, replacement: str | None
+    ) -> None: ...
 
 
 def utc_instant(timestamp: str) -> datetime:
     instant = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-    return instant.replace(tzinfo=timezone.utc) if instant.tzinfo is None else instant.astimezone(timezone.utc)
+    return (
+        instant.replace(tzinfo=timezone.utc)
+        if instant.tzinfo is None
+        else instant.astimezone(timezone.utc)
+    )
 
 
 class FeedbackProjectionStore(Protocol):
     """Bounded typed read capabilities; no SQL strings cross this boundary."""
+
     def outstanding_cards(self, card_ids: tuple[str, ...]) -> tuple[MissCard, ...]: ...
     def missed_event_batches(self, game_id: str) -> Iterator[tuple[str, ...]]: ...
-    def repertoire_miss_batches(self, repertoire_id: str) -> Iterator[tuple[MissEvidence, ...]]: ...
+    def repertoire_miss_batches(
+        self, repertoire_id: str
+    ) -> Iterator[tuple[MissEvidence, ...]]: ...

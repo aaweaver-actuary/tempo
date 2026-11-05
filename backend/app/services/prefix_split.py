@@ -10,7 +10,9 @@ import chess
 
 from .repertoire_game_refresh import refresh_game_publications_after_mutation
 from tempo_legacy_database.connections import card_columns
-from tempo_legacy_database.adapters.authored_repertoires.opening_mutations import prefix_splits as storage
+from tempo_legacy_database.adapters.authored_repertoires.opening_mutations import (
+    prefix_splits as storage,
+)
 from app.chess.cards import card_id
 from app.study.queue_order import capture_daily_queue_order, preserve_daily_queue_order
 
@@ -132,10 +134,14 @@ def _queue_split_followups(
         queued_entry = storage.queued_followup(database, today, card_id)
         if queued_entry is None:
             cycle = storage.next_queue_cycle(database, today, card_id)
-            queued_entry = storage.insert_followup(database, (today, card_id, cycle, 2_000_000_000, attempt_state))
+            queued_entry = storage.insert_followup(
+                database, (today, card_id, cycle, 2_000_000_000, attempt_state)
+            )
         followup_ids.append(queued_entry["id"])
     queued_entries = storage.queued_positions(database, today)
-    unaffected_ids = [entry["id"] for entry in queued_entries if entry["id"] not in followup_ids]
+    unaffected_ids = [
+        entry["id"] for entry in queued_entries if entry["id"] not in followup_ids
+    ]
     insertion_index = min(4, len(unaffected_ids))
     reordered_ids = (
         unaffected_ids[:insertion_index]
@@ -143,11 +149,14 @@ def _queue_split_followups(
         + unaffected_ids[insertion_index:]
     )
     current_positions = {entry["id"]: entry["position"] for entry in queued_entries}
-    storage.update_queue_positions(database, (
+    storage.update_queue_positions(
+        database,
+        (
             (position, entry_id)
             for position, entry_id in enumerate(reordered_ids)
             if current_positions[entry_id] != position
-        ))
+        ),
+    )
     preserve_daily_queue_order(database, today, previous=previous_order)
 
 
@@ -205,22 +214,28 @@ def apply_prefix_split(
             },
         )
         copied_child_ids.append(shortened_card_id)
-    storage.insert_revision(database, (
+    storage.insert_revision(
+        database,
+        (
             source_card_id,
             int(source_card["revision"]) + 1,
             source_card["start_fen"],
             source_card["moves_json"],
             "preserve",
             now,
-        ))
+        ),
+    )
     storage.reassign_reviews(database, shortened_card_id, source_card_id)
     queued_entries = storage.source_queue_entries(database, source_card_id)
     for queue_entry in queued_entries:
-        collision = storage.queue_collision(database, (
+        collision = storage.queue_collision(
+            database,
+            (
                 queue_entry["queue_date"],
                 shortened_card_id,
                 queue_entry["cycle"],
-            ))
+            ),
+        )
         if collision:
             storage.complete_queue_entry(database, queue_entry["id"])
         else:
@@ -262,7 +277,9 @@ def apply_prefix_split(
         copied_child_ids.append(continuation_card_id)
     for repertoire_id, membership_source in source_memberships:
         for child_card_id in (shortened_card_id, continuation_card_id):
-            storage.upsert_membership(database, repertoire_id, child_card_id, membership_source)
+            storage.upsert_membership(
+                database, repertoire_id, child_card_id, membership_source
+            )
     if source_card["canonical_route_source"]:
         for child_card_id in copied_child_ids:
             storage.promote_card_source(database, child_card_id)
@@ -271,16 +288,22 @@ def apply_prefix_split(
     storage.archive_source_card(database, shortened_card_id, source_card_id)
     storage.delete_source_memberships(database, source_card_id)
     _queue_split_followups(
-        database, shortened_card_id, continuation_card_id, today,
+        database,
+        shortened_card_id,
+        continuation_card_id,
+        today,
         previous_order=previous_order,
     )
-    storage.insert_split(database, (
+    storage.insert_split(
+        database,
+        (
             source_card_id,
             expected_revision,
             shortened_card_id,
             continuation_card_id,
             now,
-        ))
+        ),
+    )
     return _response(
         source_card_id,
         expected_revision,

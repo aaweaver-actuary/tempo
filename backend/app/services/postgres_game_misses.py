@@ -27,20 +27,30 @@ def execute_game_miss_slice(task: dict[str, Any]) -> bool:
         if not lock_current_slice(database, task):
             return False
         job = jobs.lock_job(database, game_id)
-        if (job is None or int(job["derivation_version"]) != version
-                or int(job["completed_phases"]) != 3
-                or job["status"] not in {"queued", "running"}):
+        if (
+            job is None
+            or int(job["derivation_version"]) != version
+            or int(job["completed_phases"]) != 3
+            or job["status"] not in {"queued", "running"}
+        ):
             return complete_task_slice_in_transaction(database, task)
         if event is not None:
             prioritize_real_game_miss(database, event["id"])
             return advance_task_slice_in_transaction(
-                database, task, next_phase="applying_real_game_misses",
-                next_payload={**payload, "after_ply": int(event["ply"]),
-                              "after_id": event["id"]},
+                database,
+                task,
+                next_phase="applying_real_game_misses",
+                next_payload={
+                    **payload,
+                    "after_ply": int(event["ply"]),
+                    "after_id": event["id"],
+                },
             )
         storage.advance_miss_phase(database, game_id, version)
         enqueue_compact_postgres_task_in_transaction(
-            database, "game_derivation_events", game_id,
+            database,
+            "game_derivation_events",
+            game_id,
             {"game_id": game_id, "derivation_version": version, "cursor": 0},
             priority=126,
         )

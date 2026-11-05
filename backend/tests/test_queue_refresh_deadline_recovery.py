@@ -48,62 +48,82 @@ def queue_refresh_store(tmp_path, monkeypatch):
     with database.connection(background=True) as connection:
         connection.execute(
             "INSERT INTO queue_projections(queue_date,state,generation,refresh_pending) "
-            "VALUES(?,'refreshing',0,1)", (QUEUE_DATE,),
+            "VALUES(?,'refreshing',0,1)",
+            (QUEUE_DATE,),
         )
     return observed_clock
 
 
 def _queue_task():
     return durable_tasks.enqueue_task(
-        "daily_queue", "current", {"queue_date": QUEUE_DATE}, priority=10,
+        "daily_queue",
+        "current",
+        {"queue_date": QUEUE_DATE},
+        priority=10,
         foreground=False,
     )
 
 
 def _saved_task(task_id):
     with database.read_connection() as connection:
-        return dict(connection.execute(
-            "SELECT * FROM background_tasks WHERE id=?", (task_id,),
-        ).fetchone())
+        return dict(
+            connection.execute(
+                "SELECT * FROM background_tasks WHERE id=?",
+                (task_id,),
+            ).fetchone()
+        )
 
 
 def _projection():
     with database.read_connection() as connection:
-        return dict(connection.execute(
-            "SELECT * FROM queue_projections WHERE queue_date=?", (QUEUE_DATE,),
-        ).fetchone())
+        return dict(
+            connection.execute(
+                "SELECT * FROM queue_projections WHERE queue_date=?",
+                (QUEUE_DATE,),
+            ).fetchone()
+        )
 
 
 def _deadline(claimed_task):
     return durable_tasks.defer_task_for_transaction_timeout(
-        claimed_task, TransactionTimeout("Daily queue database deadline exceeded"),
+        claimed_task,
+        TransactionTimeout("Daily queue database deadline exceeded"),
     )
 
 
 @pytest.mark.parametrize("previous_state", ["retrying", "complete"])
 def test_issue135_new_queue_generation_does_not_inherit_deadline_cooldown(
-    queue_refresh_store, previous_state,
+    queue_refresh_store,
+    previous_state,
 ):
     observed_clock = queue_refresh_store
     for _generation_number in range(7):
         if previous_state == "retrying" and _generation_number:
             with database.connection(background=True) as connection:
-                connection.execute("UPDATE background_tasks SET state='failed' WHERE kind='daily_queue'")
+                connection.execute(
+                    "UPDATE background_tasks SET state='failed' WHERE kind='daily_queue'"
+                )
         queued = _queue_task()
         claimed = durable_tasks.claim_task("daily_queue")
         assert _deadline(claimed)
         saved = _saved_task(queued["id"])
         assert saved["transaction_timeout_count"] == 1
-        assert datetime.fromisoformat(saved["next_attempt_at"]) == observed_clock[0] + timedelta(seconds=1)
+        assert datetime.fromisoformat(saved["next_attempt_at"]) == observed_clock[
+            0
+        ] + timedelta(seconds=1)
         if previous_state == "complete":
             observed_clock[0] += timedelta(seconds=1)
             resumed = durable_tasks.claim_task("daily_queue")
             with database.connection(background=True) as connection:
-                assert durable_tasks.complete_task_slice_in_transaction(connection, resumed)
+                assert durable_tasks.complete_task_slice_in_transaction(
+                    connection, resumed
+                )
 
 
 @pytest.mark.parametrize("transition", ["advance", "complete_slice", "complete"])
-def test_issue135_queue_progress_resets_deadline_episode(queue_refresh_store, transition):
+def test_issue135_queue_progress_resets_deadline_episode(
+    queue_refresh_store, transition
+):
     observed_clock = queue_refresh_store
     queued = _queue_task()
     claimed = durable_tasks.claim_task("daily_queue")
@@ -111,16 +131,28 @@ def test_issue135_queue_progress_resets_deadline_episode(queue_refresh_store, tr
     observed_clock[0] += timedelta(seconds=1)
     resumed = durable_tasks.claim_task("daily_queue")
     if transition == "complete":
-        assert durable_tasks.complete_task(resumed["id"], resumed["generation"], resumed["lease_token"], kind="daily_queue")
+        assert durable_tasks.complete_task(
+            resumed["id"],
+            resumed["generation"],
+            resumed["lease_token"],
+            kind="daily_queue",
+        )
     else:
         with database.connection(background=True) as connection:
             if transition == "advance":
                 assert durable_tasks.advance_task_slice_in_transaction(
-                    connection, resumed, next_phase="admit_due",
-                    next_payload={"queue_date": QUEUE_DATE, "_queue_phase": "admit_due"},
+                    connection,
+                    resumed,
+                    next_phase="admit_due",
+                    next_payload={
+                        "queue_date": QUEUE_DATE,
+                        "_queue_phase": "admit_due",
+                    },
                 )
             else:
-                assert durable_tasks.complete_task_slice_in_transaction(connection, resumed)
+                assert durable_tasks.complete_task_slice_in_transaction(
+                    connection, resumed
+                )
     saved = _saved_task(queued["id"])
     assert saved["transaction_timeout_count"] == 0
     assert saved["transaction_timeout_checkpoint"] is None
@@ -128,7 +160,9 @@ def test_issue135_queue_progress_resets_deadline_episode(queue_refresh_store, tr
     assert _projection()["last_error"] is None
 
 
-def test_issue135_queue_retry_error_is_visible_and_generation_fenced(queue_refresh_store):
+def test_issue135_queue_retry_error_is_visible_and_generation_fenced(
+    queue_refresh_store,
+):
     queued = _queue_task()
     original_delivery = durable_tasks.claim_task("daily_queue")
     assert _deadline(original_delivery)
@@ -138,29 +172,50 @@ def test_issue135_queue_retry_error_is_visible_and_generation_fenced(queue_refre
     assert _saved_task(queued["id"])["state"] == "retrying"
     replacement = _queue_task()
     with database.connection(background=True) as connection:
-        connection.execute("UPDATE queue_projections SET last_error=NULL WHERE queue_date=?", (QUEUE_DATE,))
+        connection.execute(
+            "UPDATE queue_projections SET last_error=NULL WHERE queue_date=?",
+            (QUEUE_DATE,),
+        )
     assert not _deadline(original_delivery)
     with database.connection(background=True) as connection:
         assert not durable_tasks.advance_task_slice_in_transaction(
-            connection, original_delivery, next_phase="stale",
+            connection,
+            original_delivery,
+            next_phase="stale",
             next_payload=original_delivery["payload"],
         )
-        assert not durable_tasks.complete_task_slice_in_transaction(connection, original_delivery)
-    assert durable_tasks.fail_task(original_delivery["id"], original_delivery["generation"], original_delivery["lease_token"], RuntimeError("stale error"))["state"] == "superseded"
+        assert not durable_tasks.complete_task_slice_in_transaction(
+            connection, original_delivery
+        )
+    assert (
+        durable_tasks.fail_task(
+            original_delivery["id"],
+            original_delivery["generation"],
+            original_delivery["lease_token"],
+            RuntimeError("stale error"),
+        )["state"]
+        == "superseded"
+    )
     assert _saved_task(queued["id"])["generation"] == replacement["generation"]
     assert _projection()["last_error"] is None
 
 
-def test_issue135_unchanged_checkpoint_backoff_survives_restart_and_stale_replay(queue_refresh_store):
+def test_issue135_unchanged_checkpoint_backoff_survives_restart_and_stale_replay(
+    queue_refresh_store,
+):
     observed_clock = queue_refresh_store
     queued = _queue_task()
-    for timeout_number, delay_seconds in enumerate((1, 2, 4, 8, 16, 32, 60, 60), start=1):
+    for timeout_number, delay_seconds in enumerate(
+        (1, 2, 4, 8, 16, 32, 60, 60), start=1
+    ):
         claimed = durable_tasks.claim_task("daily_queue")
         assert _deadline(claimed)
         saved = _saved_task(queued["id"])
         assert saved["transaction_timeout_count"] == timeout_number
         assert saved["attempt_count"] == 0
-        assert datetime.fromisoformat(saved["next_attempt_at"]) == observed_clock[0] + timedelta(seconds=delay_seconds)
+        assert datetime.fromisoformat(saved["next_attempt_at"]) == observed_clock[
+            0
+        ] + timedelta(seconds=delay_seconds)
         # Reopen the store and replay an acknowledged delivery without progress.
         assert _saved_task(queued["id"])["transaction_timeout_count"] == timeout_number
         assert not _deadline(claimed)
@@ -177,30 +232,61 @@ def test_issue135_unchanged_checkpoint_backoff_survives_restart_and_stale_replay
 
 
 @pytest.mark.parametrize("retry_path", ["compatibility", "postgres_command"])
-def test_issue135_terminal_queue_failure_and_explicit_retry_publish_recoverable_status(queue_refresh_store, retry_path):
+def test_issue135_terminal_queue_failure_and_explicit_retry_publish_recoverable_status(
+    queue_refresh_store, retry_path
+):
     queued = _queue_task()
     claimed = durable_tasks.claim_task("daily_queue")
     assert _deadline(claimed)
     queue_refresh_store[0] += timedelta(seconds=1)
     resumed = durable_tasks.claim_task("daily_queue")
     with database.connection(background=True) as connection:
-        connection.execute("UPDATE background_tasks SET attempt_count=max_attempts WHERE id=?", (queued["id"],))
-    assert durable_tasks.fail_task(resumed["id"], resumed["generation"], resumed["lease_token"], RuntimeError("Queue preparation needs repair"))["state"] == "failed"
+        connection.execute(
+            "UPDATE background_tasks SET attempt_count=max_attempts WHERE id=?",
+            (queued["id"],),
+        )
+    assert (
+        durable_tasks.fail_task(
+            resumed["id"],
+            resumed["generation"],
+            resumed["lease_token"],
+            RuntimeError("Queue preparation needs repair"),
+        )["state"]
+        == "failed"
+    )
     projection = _projection()
-    assert (projection["state"], projection["refresh_pending"], projection["last_error"]) == ("failed", 0, "Queue preparation needs repair")
+    assert (
+        projection["state"],
+        projection["refresh_pending"],
+        projection["last_error"],
+    ) == ("failed", 0, "Queue preparation needs repair")
     if retry_path == "compatibility":
         assert durable_tasks.retry_task(queued["id"])["state"] == "queued"
     else:
         with database.connection(background=True) as connection:
-            assert activity_commands.retry_failed_task(NativeSqlite(connection), {"task_id": queued["id"]})["state"] == "queued"
+            assert (
+                activity_commands.retry_failed_task(
+                    NativeSqlite(connection), {"task_id": queued["id"]}
+                )["state"]
+                == "queued"
+            )
     saved = _saved_task(queued["id"])
-    assert saved["transaction_timeout_count"] == 0 and saved["transaction_timeout_checkpoint"] is None
+    assert (
+        saved["transaction_timeout_count"] == 0
+        and saved["transaction_timeout_checkpoint"] is None
+    )
     projection = _projection()
-    assert (projection["state"], projection["refresh_pending"], projection["last_error"]) == ("refreshing", 1, None)
+    assert (
+        projection["state"],
+        projection["refresh_pending"],
+        projection["last_error"],
+    ) == ("refreshing", 1, None)
     assert json.loads(saved["payload_json"]) == {"queue_date": QUEUE_DATE}
 
 
-def test_issue135_queue_failure_and_projection_error_roll_back_together(queue_refresh_store, monkeypatch):
+def test_issue135_queue_failure_and_projection_error_roll_back_together(
+    queue_refresh_store, monkeypatch
+):
     queued = _queue_task()
     claimed = durable_tasks.claim_task("daily_queue")
     original_status_update = durable_tasks.update_queue_refresh_status_in_transaction
@@ -209,7 +295,11 @@ def test_issue135_queue_failure_and_projection_error_roll_back_together(queue_re
         original_status_update(*args, **kwargs)
         raise RuntimeError("controlled failure after projection update")
 
-    monkeypatch.setattr(durable_tasks, "update_queue_refresh_status_in_transaction", interrupted_projection_update)
+    monkeypatch.setattr(
+        durable_tasks,
+        "update_queue_refresh_status_in_transaction",
+        interrupted_projection_update,
+    )
     with pytest.raises(RuntimeError, match="controlled failure"):
         _deadline(claimed)
     saved = _saved_task(queued["id"])
@@ -218,62 +308,116 @@ def test_issue135_queue_failure_and_projection_error_roll_back_together(queue_re
     assert _projection()["last_error"] is None
 
 
-def test_issue135_ordinary_queue_retry_reports_error_without_false_readiness(queue_refresh_store):
+def test_issue135_ordinary_queue_retry_reports_error_without_false_readiness(
+    queue_refresh_store,
+):
     queued = _queue_task()
     claimed = durable_tasks.claim_task("daily_queue")
-    result = durable_tasks.fail_task(claimed["id"], claimed["generation"], claimed["lease_token"], RuntimeError("Retryable queue failure"))
+    result = durable_tasks.fail_task(
+        claimed["id"],
+        claimed["generation"],
+        claimed["lease_token"],
+        RuntimeError("Retryable queue failure"),
+    )
     assert result["state"] == "retrying"
-    assert result["next_attempt_at"] == (queue_refresh_store[0] + timedelta(seconds=1)).isoformat()
+    assert (
+        result["next_attempt_at"]
+        == (queue_refresh_store[0] + timedelta(seconds=1)).isoformat()
+    )
     assert _saved_task(queued["id"])["last_error"] == "Retryable queue failure"
     projection = _projection()
-    assert (projection["state"], projection["refresh_pending"], projection["last_error"]) == ("refreshing", 1, "Retryable queue failure")
+    assert (
+        projection["state"],
+        projection["refresh_pending"],
+        projection["last_error"],
+    ) == ("refreshing", 1, "Retryable queue failure")
 
 
-def test_issue135_pre_upgrade_deadline_checkpoint_resumes_without_losing_backoff(queue_refresh_store):
+def test_issue135_pre_upgrade_deadline_checkpoint_resumes_without_losing_backoff(
+    queue_refresh_store,
+):
     queued = _queue_task()
     claimed = durable_tasks.claim_task("daily_queue")
-    legacy_checkpoint = json.dumps([claimed["phase"], claimed["payload"]], sort_keys=True)
+    legacy_checkpoint = json.dumps(
+        [claimed["phase"], claimed["payload"]], sort_keys=True
+    )
     with database.connection(background=True) as connection:
-        connection.execute("UPDATE background_tasks SET transaction_timeout_count=5,transaction_timeout_checkpoint=? WHERE id=?", (legacy_checkpoint, queued["id"]))
+        connection.execute(
+            "UPDATE background_tasks SET transaction_timeout_count=5,transaction_timeout_checkpoint=? WHERE id=?",
+            (legacy_checkpoint, queued["id"]),
+        )
     assert _deadline(claimed)
     saved = _saved_task(queued["id"])
     assert saved["transaction_timeout_count"] == 6
-    assert datetime.fromisoformat(saved["next_attempt_at"]) == queue_refresh_store[0] + timedelta(seconds=32)
-    assert json.loads(saved["transaction_timeout_checkpoint"])[0] == claimed["generation"]
+    assert datetime.fromisoformat(saved["next_attempt_at"]) == queue_refresh_store[
+        0
+    ] + timedelta(seconds=32)
+    assert (
+        json.loads(saved["transaction_timeout_checkpoint"])[0] == claimed["generation"]
+    )
 
 
 @pytest.mark.parametrize("state", ["queued", "leased", "retrying"])
-def test_issue135_periodic_ensure_preserves_current_queue_retry_error(queue_refresh_store, state):
+def test_issue135_periodic_ensure_preserves_current_queue_retry_error(
+    queue_refresh_store, state
+):
     queued = _queue_task()
     if state in {"leased", "retrying"}:
         claimed = durable_tasks.claim_task("daily_queue")
         if state == "retrying":
             assert _deadline(claimed)
     with database.connection(background=True) as connection:
-        payload = dict(queue_date=QUEUE_DATE, preserve_through_entry_id=42, _queue_phase="prepare", cursor=19)
-        connection.execute("UPDATE background_tasks SET payload_json=? WHERE id=?", (json.dumps(payload), queued["id"]))
+        payload = dict(
+            queue_date=QUEUE_DATE,
+            preserve_through_entry_id=42,
+            _queue_phase="prepare",
+            cursor=19,
+        )
+        connection.execute(
+            "UPDATE background_tasks SET payload_json=? WHERE id=?",
+            (json.dumps(payload), queued["id"]),
+        )
     before_ensure = _saved_task(queued["id"])
     for _ in range(2):
         with database.connection(background=True) as connection:
-            ensured = queue_commands.ensure_current_queue(NativeSqlite(connection), {"queue_date": QUEUE_DATE})
+            ensured = queue_commands.ensure_current_queue(
+                NativeSqlite(connection), {"queue_date": QUEUE_DATE}
+            )
         assert ensured["task_id"] == queued["id"] and ensured["refresh_pending"] is True
         assert _saved_task(queued["id"]) == before_ensure
-    assert _projection()["last_error"] == ("Daily queue database deadline exceeded" if state == "retrying" else None)
+    assert _projection()["last_error"] == (
+        "Daily queue database deadline exceeded" if state == "retrying" else None
+    )
 
 
-def test_issue135_ensure_ready_projection_without_task_does_not_enqueue(queue_refresh_store):
+def test_issue135_ensure_ready_projection_without_task_does_not_enqueue(
+    queue_refresh_store,
+):
     with database.connection(background=True) as connection:
-        connection.execute("UPDATE queue_projections SET state='ready',refresh_pending=0 WHERE queue_date=?", (QUEUE_DATE,))
-        assert queue_commands.ensure_current_queue(NativeSqlite(connection), {"queue_date": QUEUE_DATE}) == {
-            "queue_date": QUEUE_DATE, "refresh_pending": False,
+        connection.execute(
+            "UPDATE queue_projections SET state='ready',refresh_pending=0 WHERE queue_date=?",
+            (QUEUE_DATE,),
+        )
+        assert queue_commands.ensure_current_queue(
+            NativeSqlite(connection), {"queue_date": QUEUE_DATE}
+        ) == {
+            "queue_date": QUEUE_DATE,
+            "refresh_pending": False,
         }
-        assert connection.execute("SELECT COUNT(*) FROM background_tasks WHERE kind='daily_queue'").fetchone()[0] == 0
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM background_tasks WHERE kind='daily_queue'"
+            ).fetchone()[0]
+            == 0
+        )
     assert _projection()["state"] == "ready"
 
 
 @pytest.mark.parametrize("failure_transition", ["deadline", "failure"])
 def test_issue135_replacement_generation_wins_failure_publication_race(
-    queue_refresh_store, monkeypatch, failure_transition,
+    queue_refresh_store,
+    monkeypatch,
+    failure_transition,
 ):
     queued = _queue_task()
     original_delivery = durable_tasks.claim_task("daily_queue")
@@ -284,7 +428,10 @@ def test_issue135_replacement_generation_wins_failure_publication_race(
 
         def execute(self, statement, parameters=()):
             cursor = self.connection.execute(statement, parameters)
-            if not statement.startswith("SELECT ") or "AND lease_token=? AND state='leased'" not in statement:
+            if (
+                not statement.startswith("SELECT ")
+                or "AND lease_token=? AND state='leased'" not in statement
+            ):
                 return cursor
             selected_task = cursor.fetchone()
             cursor.close()
@@ -294,10 +441,17 @@ def test_issue135_replacement_generation_wins_failure_publication_race(
             # PostgreSQL foreground writers do not share the SQLite admission gate.
             with sqlite3.connect(database.DB_PATH) as replacement_connection:
                 replacement_connection.row_factory = sqlite3.Row
-                durable_tasks.enqueue_task_in_transaction(replacement_connection,
-                    "daily_queue", "current", {"queue_date": "2026-10-08"}, priority=10)
-                replacement_connection.execute("UPDATE queue_projections SET last_error=? WHERE queue_date=?",
-                    ("Replacement generation owns status", QUEUE_DATE))
+                durable_tasks.enqueue_task_in_transaction(
+                    replacement_connection,
+                    "daily_queue",
+                    "current",
+                    {"queue_date": "2026-10-08"},
+                    priority=10,
+                )
+                replacement_connection.execute(
+                    "UPDATE queue_projections SET last_error=? WHERE queue_date=?",
+                    ("Replacement generation owns status", QUEUE_DATE),
+                )
 
             class SelectedTask:
                 def fetchone(self):
@@ -309,12 +463,21 @@ def test_issue135_replacement_generation_wins_failure_publication_race(
         with database.connection(background=True) as connection:
             return operation(ReplacementBeforeWrite(connection))
 
-    monkeypatch.setattr(durable_tasks, "submit_background_write", write_with_replacement)
+    monkeypatch.setattr(
+        durable_tasks, "submit_background_write", write_with_replacement
+    )
     if failure_transition == "deadline":
         assert not _deadline(original_delivery)
     else:
-        assert durable_tasks.fail_task(original_delivery["id"], original_delivery["generation"],
-            original_delivery["lease_token"], RuntimeError("Late failure"))["state"] == "superseded"
+        assert (
+            durable_tasks.fail_task(
+                original_delivery["id"],
+                original_delivery["generation"],
+                original_delivery["lease_token"],
+                RuntimeError("Late failure"),
+            )["state"]
+            == "superseded"
+        )
     saved = _saved_task(queued["id"])
     assert saved["generation"] == original_delivery["generation"] + 1
     assert saved["state"] == "queued" and saved["transaction_timeout_count"] == 0
@@ -322,38 +485,90 @@ def test_issue135_replacement_generation_wins_failure_publication_race(
     assert _projection()["last_error"] == "Replacement generation owns status"
 
 
-@pytest.mark.parametrize("receipt", [PRESENTATION_VERSION + ":receipt", "queue-presentation-v2:receipt", None,
-                                     "unmixed:" + PRESENTATION_VERSION + ":receipt"])
-def test_ready_nonempty_queue_adopts_version_once_without_replacing_active_generation(queue_refresh_store, receipt):
+@pytest.mark.parametrize(
+    "receipt",
+    [
+        PRESENTATION_VERSION + ":receipt",
+        "queue-presentation-v2:receipt",
+        None,
+        "unmixed:" + PRESENTATION_VERSION + ":receipt",
+    ],
+)
+def test_ready_nonempty_queue_adopts_version_once_without_replacing_active_generation(
+    queue_refresh_store, receipt
+):
     with database.connection(background=True) as connection:
-        connection.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('ready','Ready','fixture',?)", (QUEUE_DATE,))
-        connection.execute("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date)
-                              VALUES('ready-card','ready','prefix','fen','[]','learning',?)""", (QUEUE_DATE,))
-        connection.execute("INSERT INTO daily_queue(queue_date,card_id,position,status) VALUES(?,'ready-card',0,'queued')", (QUEUE_DATE,))
+        connection.execute(
+            "INSERT INTO repertoires(id,name,source_name,created_at) VALUES('ready','Ready','fixture',?)",
+            (QUEUE_DATE,),
+        )
+        connection.execute(
+            """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date)
+                              VALUES('ready-card','ready','prefix','fen','[]','learning',?)""",
+            (QUEUE_DATE,),
+        )
+        connection.execute(
+            "INSERT INTO daily_queue(queue_date,card_id,position,status) VALUES(?,'ready-card',0,'queued')",
+            (QUEUE_DATE,),
+        )
         if receipt:
-            connection.execute("INSERT INTO daily_queue_days(queue_date,seed,membership_hash,generated_at) VALUES(?,1,?,?)",
-                               (QUEUE_DATE, receipt, QUEUE_DATE))
-        connection.execute("UPDATE queue_projections SET state='ready',refresh_pending=0 WHERE queue_date=?", (QUEUE_DATE,))
-        ensured = queue_commands.ensure_current_queue(NativeSqlite(connection), {"queue_date": QUEUE_DATE})
+            connection.execute(
+                "INSERT INTO daily_queue_days(queue_date,seed,membership_hash,generated_at) VALUES(?,1,?,?)",
+                (QUEUE_DATE, receipt, QUEUE_DATE),
+            )
+        connection.execute(
+            "UPDATE queue_projections SET state='ready',refresh_pending=0 WHERE queue_date=?",
+            (QUEUE_DATE,),
+        )
+        ensured = queue_commands.ensure_current_queue(
+            NativeSqlite(connection), {"queue_date": QUEUE_DATE}
+        )
     stale = receipt != PRESENTATION_VERSION + ":receipt"
     assert ensured["refresh_pending"] is stale
     if not stale:
         with database.read_connection() as connection:
-            assert connection.execute("SELECT COUNT(*) FROM background_tasks").fetchone()[0] == 0
+            assert (
+                connection.execute("SELECT COUNT(*) FROM background_tasks").fetchone()[
+                    0
+                ]
+                == 0
+            )
         return
     before = _saved_task(ensured["task_id"])
     with database.connection(background=True) as connection:
-        repeated = queue_commands.ensure_current_queue(NativeSqlite(connection), {"queue_date": QUEUE_DATE})
+        repeated = queue_commands.ensure_current_queue(
+            NativeSqlite(connection), {"queue_date": QUEUE_DATE}
+        )
     assert repeated == ensured
     assert _saved_task(ensured["task_id"]) == before
     # Model completed publication at the readiness seam; C owns the real native publication journey.
     with database.connection(background=True) as connection:
-        connection.execute("UPDATE background_tasks SET state='complete' WHERE id=?", (ensured["task_id"],))
-        connection.execute("INSERT INTO daily_queue_days(queue_date,seed,membership_hash,generated_at) VALUES(?,1,?,?) "
-                           "ON CONFLICT(queue_date) DO UPDATE SET membership_hash=excluded.membership_hash",
-                           (QUEUE_DATE, PRESENTATION_VERSION + ":published", QUEUE_DATE))
-        connection.execute("UPDATE queue_projections SET state='ready',refresh_pending=0 WHERE queue_date=?", (QUEUE_DATE,))
-        published_task = dict(connection.execute("SELECT * FROM background_tasks WHERE id=?", (ensured["task_id"],)).fetchone())
-        assert queue_commands.ensure_current_queue(NativeSqlite(connection), {"queue_date": QUEUE_DATE}) == dict(
-            queue_date=QUEUE_DATE, refresh_pending=False)
-        assert dict(connection.execute("SELECT * FROM background_tasks WHERE id=?", (ensured["task_id"],)).fetchone()) == published_task
+        connection.execute(
+            "UPDATE background_tasks SET state='complete' WHERE id=?",
+            (ensured["task_id"],),
+        )
+        connection.execute(
+            "INSERT INTO daily_queue_days(queue_date,seed,membership_hash,generated_at) VALUES(?,1,?,?) "
+            "ON CONFLICT(queue_date) DO UPDATE SET membership_hash=excluded.membership_hash",
+            (QUEUE_DATE, PRESENTATION_VERSION + ":published", QUEUE_DATE),
+        )
+        connection.execute(
+            "UPDATE queue_projections SET state='ready',refresh_pending=0 WHERE queue_date=?",
+            (QUEUE_DATE,),
+        )
+        published_task = dict(
+            connection.execute(
+                "SELECT * FROM background_tasks WHERE id=?", (ensured["task_id"],)
+            ).fetchone()
+        )
+        assert queue_commands.ensure_current_queue(
+            NativeSqlite(connection), {"queue_date": QUEUE_DATE}
+        ) == dict(queue_date=QUEUE_DATE, refresh_pending=False)
+        assert (
+            dict(
+                connection.execute(
+                    "SELECT * FROM background_tasks WHERE id=?", (ensured["task_id"],)
+                ).fetchone()
+            )
+            == published_task
+        )

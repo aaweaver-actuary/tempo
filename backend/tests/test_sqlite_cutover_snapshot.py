@@ -11,10 +11,15 @@ import sys
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
-from database.tooling.create_sqlite_cutover_snapshot import create_snapshot, verify_snapshot
+from database.tooling.create_sqlite_cutover_snapshot import (
+    create_snapshot,
+    verify_snapshot,
+)
 
 
-def test_cutover_snapshot_includes_committed_uncheckpointed_wal_and_verifies_manifest(tmp_path):
+def test_cutover_snapshot_includes_committed_uncheckpointed_wal_and_verifies_manifest(
+    tmp_path,
+):
     source_directory = tmp_path / "source"
     source_directory.mkdir()
     source_path = source_directory / "tempo.db"
@@ -38,12 +43,17 @@ def test_cutover_snapshot_includes_committed_uncheckpointed_wal_and_verifies_man
         manifest = verify_snapshot(snapshot_path, manifest_path)
         assert manifest["table_counts"] == {"daily_queue": 1}
         with sqlite3.connect(snapshot_path) as restored:
-            assert restored.execute("SELECT card_id FROM daily_queue").fetchone() == ("card-1",)
+            assert restored.execute("SELECT card_id FROM daily_queue").fetchone() == (
+                "card-1",
+            )
 
         remounted_path = tmp_path / "remounted" / "tempo.db"
         remounted_path.parent.mkdir()
         shutil.copy2(snapshot_path, remounted_path)
-        assert verify_snapshot(remounted_path, manifest_path)["snapshot_sha256"] == manifest["snapshot_sha256"]
+        assert (
+            verify_snapshot(remounted_path, manifest_path)["snapshot_sha256"]
+            == manifest["snapshot_sha256"]
+        )
 
         altered_manifest = json.loads(manifest_path.read_text())
         altered_manifest["queue_order_sha256"] = "0" * 64

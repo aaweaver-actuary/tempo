@@ -2,6 +2,7 @@
 
 No app startup, store construction, engine or database access at import time.
 """
+
 from collections.abc import Callable
 from dataclasses import asdict
 import json
@@ -10,13 +11,19 @@ from pydantic import ValidationError
 
 from fastapi import APIRouter, HTTPException
 
-from app.contracts.product_v02.analysis import Proposal, ProposalDecision, RepertoireChangePort
+from app.contracts.product_v02.analysis import (
+    Proposal,
+    ProposalDecision,
+    RepertoireChangePort,
+)
 from app.contracts.product_v02.repertoire import RepertoireSnapshotPort
 from .application import conflict_report
 from .ports import ChangeError
 
 
-def routes(changes: Callable[[str], RepertoireChangePort], snapshots: RepertoireSnapshotPort) -> APIRouter:
+def routes(
+    changes: Callable[[str], RepertoireChangePort], snapshots: RepertoireSnapshotPort
+) -> APIRouter:
     router = APIRouter(prefix="/api/product/repertoires", tags=["repertoire-changes"])
 
     def invoke(operation):
@@ -30,6 +37,7 @@ def routes(changes: Callable[[str], RepertoireChangePort], snapshots: Repertoire
         def report():
             value = conflict_report(snapshots.snapshot(repertoire_id))
             return asdict(value) | {"clean": value.clean}
+
         return invoke(report)
 
     @router.post("/{repertoire_id}/changes/preview")

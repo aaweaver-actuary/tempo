@@ -35,9 +35,11 @@ def measure_batch(fixtures: list[dict], repeat_count: int) -> dict[str, float | 
             position = chess.Board(fixture["fen"])
             parse_seconds += time.perf_counter() - parse_started_at
             detector_started_at = time.perf_counter()
-            evidence_count += len(classify_candidate_lines(
-                position, fixture.get("played_move"), fixture["candidates"]
-            ))
+            evidence_count += len(
+                classify_candidate_lines(
+                    position, fixture.get("played_move"), fixture["candidates"]
+                )
+            )
             detector_seconds += time.perf_counter() - detector_started_at
     return {
         "total_ms": (time.perf_counter() - started_at) * 1000,
@@ -50,29 +52,51 @@ def measure_batch(fixtures: list[dict], repeat_count: int) -> dict[str, float | 
 def main() -> None:
     fixtures = json.loads(FIXTURE_PATH.read_text())
     cases = []
-    for name, repeat_count in (("small", 1), ("typical", 10), ("large", 100), ("stress", 400)):
+    for name, repeat_count in (
+        ("small", 1),
+        ("typical", 10),
+        ("large", 100),
+        ("stress", 400),
+    ):
         measure_batch(fixtures, 1)
         samples = [measure_batch(fixtures, repeat_count) for _ in range(7)]
         total_samples = [sample["total_ms"] for sample in samples]
-        cases.append({
-            "name": name,
-            "positions": len(fixtures) * repeat_count,
-            "candidate_lines": sum(len(item["candidates"]) for item in fixtures) * repeat_count,
-            "pv_plies": sum(len(candidate["pv"]) for item in fixtures for candidate in item["candidates"]) * repeat_count,
-            "evidence_count": samples[0]["evidence_count"],
-            "samples": samples,
-            "p50_total_ms": statistics.median(total_samples),
-            "p95_total_ms": percentile(total_samples, 0.95),
-            "p50_fen_parse_ms": statistics.median(sample["fen_parse_ms"] for sample in samples),
-            "p50_detector_ms": statistics.median(sample["detector_ms"] for sample in samples),
-        })
+        cases.append(
+            {
+                "name": name,
+                "positions": len(fixtures) * repeat_count,
+                "candidate_lines": sum(len(item["candidates"]) for item in fixtures)
+                * repeat_count,
+                "pv_plies": sum(
+                    len(candidate["pv"])
+                    for item in fixtures
+                    for candidate in item["candidates"]
+                )
+                * repeat_count,
+                "evidence_count": samples[0]["evidence_count"],
+                "samples": samples,
+                "p50_total_ms": statistics.median(total_samples),
+                "p95_total_ms": percentile(total_samples, 0.95),
+                "p50_fen_parse_ms": statistics.median(
+                    sample["fen_parse_ms"] for sample in samples
+                ),
+                "p50_detector_ms": statistics.median(
+                    sample["detector_ms"] for sample in samples
+                ),
+            }
+        )
     report = {
         "schema_version": 1,
-        "commit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+        "commit": subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], text=True
+        ).strip(),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "fixture": "repeated-motif-parity-corpus-v1",
         "fixture_ids": [fixture["id"] for fixture in fixtures],
-        "environment": {"python": sys.version.split()[0], "platform": platform.platform()},
+        "environment": {
+            "python": sys.version.split()[0],
+            "platform": platform.platform(),
+        },
         "cases": cases,
     }
     output_path = Path("test-results/performance/motif-detection-benchmark.json")

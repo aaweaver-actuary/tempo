@@ -1,16 +1,18 @@
 """Contradictory trained moves over supplied authored-line snapshots; no I/O."""
+
 from __future__ import annotations
 from collections import defaultdict
 from functools import lru_cache
 import json
 import chess
 
+
 def trained_move_index_from_snapshot(
-    lines: tuple[tuple[str, ...], ...], *, conflict_fens: dict | None = None,
+    lines: tuple[tuple[str, ...], ...],
+    *,
+    conflict_fens: dict | None = None,
 ) -> dict:
-    index: dict[tuple, dict[str, set[str]]] = defaultdict(
-        lambda: defaultdict(set)
-    )
+    index: dict[tuple, dict[str, set[str]]] = defaultdict(lambda: defaultdict(set))
     for line_id, repertoire_id, _name, trained_color, start_fen, moves_json in lines:
         try:
             board = chess.Board(start_fen)
@@ -23,12 +25,19 @@ def trained_move_index_from_snapshot(
                     # Conflict discovery only needs an EPD when two different
                     # moves reach the same position. The transposition key
                     # keeps the legal en-passant and castling distinctions.
-                    position = (repertoire_id, board.epd() if conflict_fens is None
-                                else board._transposition_key())
+                    position = (
+                        repertoire_id,
+                        board.epd()
+                        if conflict_fens is None
+                        else board._transposition_key(),
+                    )
                     moves_at_position = index[position]
-                    if (conflict_fens is not None and moves_at_position
-                            and move_uci not in moves_at_position
-                            and position not in conflict_fens):
+                    if (
+                        conflict_fens is not None
+                        and moves_at_position
+                        and move_uci not in moves_at_position
+                        and position not in conflict_fens
+                    ):
                         conflict_fens[position] = board.epd()
                     moves_at_position[move_uci].add(line_id)
                 board.push(move)
@@ -42,7 +51,8 @@ def conflicts_from_snapshot(lines: tuple[tuple[str, ...], ...]) -> tuple[dict, .
     conflicts = []
     conflict_fens: dict = {}
     for position, moves in trained_move_index_from_snapshot(
-        lines, conflict_fens=conflict_fens,
+        lines,
+        conflict_fens=conflict_fens,
     ).items():
         if len(moves) < 2:
             continue
@@ -57,4 +67,6 @@ def conflicts_from_snapshot(lines: tuple[tuple[str, ...], ...]) -> tuple[dict, .
                 ],
             }
         )
-    return tuple(sorted(conflicts, key=lambda item: (item["repertoire_id"], item["fen"])))
+    return tuple(
+        sorted(conflicts, key=lambda item: (item["repertoire_id"], item["fen"]))
+    )

@@ -19,17 +19,23 @@ from .services.durable_tasks import enqueue_task_in_transaction
 from .card_deletion import SYSTEM_REPERTOIRE_IDS as _SYSTEM_REPERTOIRES
 
 
-def select_main_repertoire(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+def select_main_repertoire(
+    database: PostgresConnection, payload: dict[str, Any]
+) -> dict[str, Any]:
     repertoire_id = str(payload["repertoire_id"])
     repertoire_ids = storage.lock_main_selection(database, _SYSTEM_REPERTOIRES)
     if repertoire_id not in repertoire_ids:
         raise HTTPException(404, "Repertoire not found")
     storage.store_main_selection(database, repertoire_id, _SYSTEM_REPERTOIRES)
-    enqueue_task_in_transaction(database, "repertoire_game_refresh", "all", {"after_game_id": ""}, priority=90)
+    enqueue_task_in_transaction(
+        database, "repertoire_game_refresh", "all", {"after_game_id": ""}, priority=90
+    )
     return {"id": repertoire_id, "is_main": True}
 
 
-def rename_repertoire(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+def rename_repertoire(
+    database: PostgresConnection, payload: dict[str, Any]
+) -> dict[str, Any]:
     repertoire_id = str(payload["repertoire_id"])
     name = str(payload["name"]).strip()
     if not storage.rename_repertoire(database, name, repertoire_id):
@@ -37,9 +43,16 @@ def rename_repertoire(database: PostgresConnection, payload: dict[str, Any]) -> 
     return {"id": repertoire_id, "name": name}
 
 
-def delete_repertoire(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+def delete_repertoire(
+    database: PostgresConnection, payload: dict[str, Any]
+) -> dict[str, Any]:
     from .card_deletion import delete_repertoire_data
-    return delete_repertoire_data(database, str(payload["repertoire_id"]), str(payload.get("learned_cards", "delete")))
+
+    return delete_repertoire_data(
+        database,
+        str(payload["repertoire_id"]),
+        str(payload.get("learned_cards", "delete")),
+    )
 
 
 register_command("repertoires.main.select", select_main_repertoire)
@@ -47,7 +60,9 @@ register_command("repertoires.rename", rename_repertoire)
 register_command("repertoires.delete", delete_repertoire)
 
 
-def update_repertoire_settings(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+def update_repertoire_settings(
+    database: PostgresConnection, payload: dict[str, Any]
+) -> dict[str, Any]:
     repertoire_id = str(payload["repertoire_id"])
     settings = RepertoireSettingsRequest.model_validate(payload["settings"])
     repertoire_settings_response(database, repertoire_id)

@@ -9,16 +9,22 @@ import sqlite3
 import chess
 from fastapi import HTTPException
 from app.contracts.transport.authored_repertoire import CanonicalPrefixSaveRequest
-from tempo_legacy_database.adapters.authored_repertoires import prefix_commands as command_storage
+from tempo_legacy_database.adapters.authored_repertoires import (
+    prefix_commands as command_storage,
+)
 from .durable_tasks import enqueue_task_in_transaction
 from ..chess.position_identity import position_key
-from tempo_legacy_database.adapters.authored_repertoires.canonical_prefix import scope as storage
+from tempo_legacy_database.adapters.authored_repertoires.canonical_prefix import (
+    scope as storage,
+)
 
 
 def parse_prefix(movetext: str) -> list[str]:
     """Parse one SAN sequence; variations, null moves, and headers are not prefixes."""
     if any(character in movetext for character in "(){}[];"):
-        raise ValueError("Enter one sequence of SAN moves without variations or PGN headers")
+        raise ValueError(
+            "Enter one sequence of SAN moves without variations or PGN headers"
+        )
     tokens = re.sub(r"\d+\.(?:\.\.)?", " ", movetext).split()
     if len(tokens) > 160:
         raise ValueError("A canonical prefix can contain at most 160 moves")
@@ -28,7 +34,9 @@ def parse_prefix(movetext: str) -> list[str]:
         try:
             move = board.parse_san(token)
         except ValueError as error:
-            raise ValueError(f"Invalid SAN move {token!r} after {prefix_projection(moves)['san'] or 'the starting position'}") from error
+            raise ValueError(
+                f"Invalid SAN move {token!r} after {prefix_projection(moves)['san'] or 'the starting position'}"
+            ) from error
         if not move:
             raise ValueError("A canonical prefix cannot contain a null move")
         moves.append(move.uci())
@@ -47,26 +55,34 @@ def prefix_projection(moves: list[str], revision: int = 0) -> dict:
             notation.append(f"{board.fullmove_number}.")
         notation.append(board.san(move))
         board.push(move)
-    return {"moves_uci": moves, "san": " ".join(notation),
-            "ending_fen": board.fen(), "revision": revision}
+    return {
+        "moves_uci": moves,
+        "san": " ".join(notation),
+        "ending_fen": board.fen(),
+        "revision": revision,
+    }
 
 
 def read_prefix(database, repertoire_id: str, *, lock: bool = False) -> dict:
     row = storage.prefix_row(database, repertoire_id, lock=lock)
     if row is None:
         return {"moves": [], "revision": 0, "preview_id": None, "source_revision": 0}
-    return {"moves": json.loads(row["canonical_prefix_moves_json"]),
-            "revision": int(row["canonical_prefix_revision"]),
-            "preview_id": row["canonical_prefix_preview_id"],
-            "source_revision": int(row["scope_source_revision"])}
+    return {
+        "moves": json.loads(row["canonical_prefix_moves_json"]),
+        "revision": int(row["canonical_prefix_revision"]),
+        "preview_id": row["canonical_prefix_preview_id"],
+        "source_revision": int(row["scope_source_revision"]),
+    }
 
 
 def game_in_scope(starting_fen: str, moves: list[str], prefix_moves: list[str]) -> bool:
     if not prefix_moves:
         return True
-    return (position_key(starting_fen) == position_key(chess.STARTING_FEN)
-            and len(moves) >= len(prefix_moves)
-            and moves[:len(prefix_moves)] == prefix_moves)
+    return (
+        position_key(starting_fen) == position_key(chess.STARTING_FEN)
+        and len(moves) >= len(prefix_moves)
+        and moves[: len(prefix_moves)] == prefix_moves
+    )
 
 
 def assumed_position_keys(prefix_moves: list[str]) -> set[str]:
@@ -79,13 +95,21 @@ def assumed_position_keys(prefix_moves: list[str]) -> set[str]:
     return positions
 
 
-def validate_scoped_line(starting_fen: str, moves: list[str], prefix_moves: list[str],
-                         origin: list[str] | None) -> dict:
+def validate_scoped_line(
+    starting_fen: str,
+    moves: list[str],
+    prefix_moves: list[str],
+    origin: list[str] | None,
+) -> dict:
     """Validate one line from a verified route, keeping its original training start."""
     if position_key(starting_fen) == position_key(chess.STARTING_FEN):
         origin = []
     if origin is None and prefix_moves:
-        return {"status": "pending", "reason": "No verified route from the canonical prefix", "disagreement_ply": None}
+        return {
+            "status": "pending",
+            "reason": "No verified route from the canonical prefix",
+            "disagreement_ply": None,
+        }
     route = [*(origin or []), *moves]
     if prefix_moves:
         for ply, (actual, expected) in enumerate(zip(route, prefix_moves)):
@@ -93,34 +117,58 @@ def validate_scoped_line(starting_fen: str, moves: list[str], prefix_moves: list
                 board = chess.Board()
                 for earlier in route[:ply]:
                     board.push_uci(earlier)
-                return {"status": "conflict", "reason":
-                        f"Move {ply + 1}: expected {board.san(chess.Move.from_uci(expected))}, "
-                        f"found {board.san(chess.Move.from_uci(actual))}", "disagreement_ply": ply}
+                return {
+                    "status": "conflict",
+                    "reason": f"Move {ply + 1}: expected {board.san(chess.Move.from_uci(expected))}, "
+                    f"found {board.san(chess.Move.from_uci(actual))}",
+                    "disagreement_ply": ply,
+                }
     board = chess.Board(starting_fen)
     if origin is not None:
         origin_board = chess.Board()
         for move_uci in origin:
             origin_board.push_uci(move_uci)
         if position_key(origin_board.fen()) != position_key(starting_fen):
-            return {"status": "conflict", "reason": "Saved route does not reach this line's starting position", "disagreement_ply": None}
+            return {
+                "status": "conflict",
+                "reason": "Saved route does not reach this line's starting position",
+                "disagreement_ply": None,
+            }
     positions = []
     for ply in range(len(moves) + 1):
         if origin is not None:
             absolute_ply = len(origin) + ply
-            positions.append({"fen_key": position_key(board.fen()), "fen": board.fen(),
-                              "route_json": json.dumps([*origin, *moves[:ply]]), "ply": absolute_ply,
-                              "in_scope": int(absolute_ply >= len(prefix_moves))})
+            positions.append(
+                {
+                    "fen_key": position_key(board.fen()),
+                    "fen": board.fen(),
+                    "route_json": json.dumps([*origin, *moves[:ply]]),
+                    "ply": absolute_ply,
+                    "in_scope": int(absolute_ply >= len(prefix_moves)),
+                }
+            )
         if ply < len(moves):
             move = chess.Move.from_uci(moves[ply])
             if move not in board.legal_moves:
-                return {"status": "conflict", "reason": f"Illegal move at offset {ply + 1}", "disagreement_ply": ply}
+                return {
+                    "status": "conflict",
+                    "reason": f"Illegal move at offset {ply + 1}",
+                    "disagreement_ply": ply,
+                }
             board.push(move)
-    return {"status": "valid", "reason": None, "disagreement_ply": None,
-            "origin": origin, "scope_start_ply": max(0, len(prefix_moves) - len(origin or [])),
-            "positions": positions}
+    return {
+        "status": "valid",
+        "reason": None,
+        "disagreement_ply": None,
+        "origin": origin,
+        "scope_start_ply": max(0, len(prefix_moves) - len(origin or [])),
+        "positions": positions,
+    }
 
 
-def line_origin(database, preview_id: str | None, starting_fen: str) -> list[str] | None:
+def line_origin(
+    database, preview_id: str | None, starting_fen: str
+) -> list[str] | None:
     if position_key(starting_fen) == position_key(chess.STARTING_FEN):
         return []
     if not preview_id:
@@ -129,30 +177,56 @@ def line_origin(database, preview_id: str | None, starting_fen: str) -> list[str
     return json.loads(anchor["route_json"]) if anchor else None
 
 
-def ensure_line_in_scope(database, repertoire_id: str, starting_fen: str,
-                         moves: list[str], *, remember: bool = True) -> dict:
+def ensure_line_in_scope(
+    database,
+    repertoire_id: str,
+    starting_fen: str,
+    moves: list[str],
+    *,
+    remember: bool = True,
+) -> dict:
     prefix = read_prefix(database, repertoire_id, lock=True)
     if not prefix["moves"]:
         return {"scope_start_ply": 0, "origin": None}
-    result = validate_scoped_line(starting_fen, moves, prefix["moves"],
-                                  line_origin(database, prefix["preview_id"], starting_fen))
+    result = validate_scoped_line(
+        starting_fen,
+        moves,
+        prefix["moves"],
+        line_origin(database, prefix["preview_id"], starting_fen),
+    )
     if result["status"] != "valid":
         from fastapi import HTTPException
-        raise HTTPException(409, "This line is outside the repertoire's canonical prefix. " + result["reason"]
-                            + ". Check the canonical prefix again to verify current routes.")
+
+        raise HTTPException(
+            409,
+            "This line is outside the repertoire's canonical prefix. "
+            + result["reason"]
+            + ". Check the canonical prefix again to verify current routes.",
+        )
     if remember and prefix["preview_id"]:
-        store_positions(database, prefix["preview_id"], result["positions"], source_revision=prefix["source_revision"])
+        store_positions(
+            database,
+            prefix["preview_id"],
+            result["positions"],
+            source_revision=prefix["source_revision"],
+        )
     return result
 
 
-def certify_admitted_route(database, repertoire_id: str, validation_result: dict) -> None:
+def certify_admitted_route(
+    database, repertoire_id: str, validation_result: dict
+) -> None:
     """Certify only a route validated by this transaction, after its final source write."""
     if not validation_result.get("positions"):
         return
     current = read_prefix(database, repertoire_id, lock=True)
     if current["moves"] and current["preview_id"]:
-        store_positions(database, current["preview_id"], validation_result["positions"],
-                        source_revision=current["source_revision"])
+        store_positions(
+            database,
+            current["preview_id"],
+            validation_result["positions"],
+            source_revision=current["source_revision"],
+        )
 
 
 def position_rank(position: dict) -> tuple[int, int, str]:
@@ -160,16 +234,28 @@ def position_rank(position: dict) -> tuple[int, int, str]:
     return (-position["in_scope"], position["ply"], position["route_json"])
 
 
-def ensure_batch_lines_in_scope(database, candidates: list[tuple[str, str, list[str]]]) -> list[dict]:
+def ensure_batch_lines_in_scope(
+    database, candidates: list[tuple[str, str, list[str]]]
+) -> list[dict]:
     """Resolve selected routes together without persisting validation certificates."""
     storage.begin_batch_scope(database)
-    prefixes = {repertoire_id: read_prefix(database, repertoire_id, lock=True)
-                for repertoire_id in sorted({candidate[0] for candidate in candidates})}
-    local_positions: dict[str, dict[str, dict]] = {repertoire_id: {} for repertoire_id in prefixes}
+    prefixes = {
+        repertoire_id: read_prefix(database, repertoire_id, lock=True)
+        for repertoire_id in sorted({candidate[0] for candidate in candidates})
+    }
+    local_positions: dict[str, dict[str, dict]] = {
+        repertoire_id: {} for repertoire_id in prefixes
+    }
     certified_origins: dict[tuple[str, str], list[str] | None] = {}
     validated_routes: dict[int, dict] = {}
-    ordered_indices = sorted(range(len(candidates)), key=lambda index: (
-        candidates[index][0], position_key(candidates[index][1]), tuple(candidates[index][2])))
+    ordered_indices = sorted(
+        range(len(candidates)),
+        key=lambda index: (
+            candidates[index][0],
+            position_key(candidates[index][1]),
+            tuple(candidates[index][2]),
+        ),
+    )
 
     while True:
         unresolved_indices = []
@@ -179,7 +265,10 @@ def ensure_batch_lines_in_scope(database, candidates: list[tuple[str, str, list[
             repertoire_id, starting_fen, moves = candidates[candidate_index]
             prefix = prefixes[repertoire_id]
             if not prefix["moves"]:
-                validated_routes[candidate_index] = {"scope_start_ply": 0, "origin": None}
+                validated_routes[candidate_index] = {
+                    "scope_start_ply": 0,
+                    "origin": None,
+                }
                 continue
             starting_key = position_key(starting_fen)
             if starting_key == position_key(chess.STARTING_FEN):
@@ -187,17 +276,32 @@ def ensure_batch_lines_in_scope(database, candidates: list[tuple[str, str, list[
             else:
                 certificate_key = (repertoire_id, starting_key)
                 if certificate_key not in certified_origins:
-                    certified_origins[certificate_key] = line_origin(database, prefix["preview_id"], starting_fen)
+                    certified_origins[certificate_key] = line_origin(
+                        database, prefix["preview_id"], starting_fen
+                    )
                 available_origins = []
                 certified_origin = certified_origins[certificate_key]
                 if certified_origin is not None:
-                    available_origins.append({"in_scope": int(len(certified_origin) >= len(prefix["moves"])),
-                                              "ply": len(certified_origin), "route_json": json.dumps(certified_origin)})
+                    available_origins.append(
+                        {
+                            "in_scope": int(
+                                len(certified_origin) >= len(prefix["moves"])
+                            ),
+                            "ply": len(certified_origin),
+                            "route_json": json.dumps(certified_origin),
+                        }
+                    )
                 local_origin = local_positions[repertoire_id].get(starting_key)
                 if local_origin is not None:
                     available_origins.append(local_origin)
-                origin = json.loads(min(available_origins, key=position_rank)["route_json"]) if available_origins else None
-            validation = validate_scoped_line(starting_fen, moves, prefix["moves"], origin)
+                origin = (
+                    json.loads(min(available_origins, key=position_rank)["route_json"])
+                    if available_origins
+                    else None
+                )
+            validation = validate_scoped_line(
+                starting_fen, moves, prefix["moves"], origin
+            )
             if validation["status"] != "valid":
                 unresolved_indices.append(candidate_index)
                 failed_routes[candidate_index] = validation
@@ -205,7 +309,9 @@ def ensure_batch_lines_in_scope(database, candidates: list[tuple[str, str, list[
             validated_routes[candidate_index] = validation
             for position in validation["positions"]:
                 previous = local_positions[repertoire_id].get(position["fen_key"])
-                if previous is None or position_rank(position) < position_rank(previous):
+                if previous is None or position_rank(position) < position_rank(
+                    previous
+                ):
                     local_positions[repertoire_id][position["fen_key"]] = position
                     origins_improved = True
         # Already valid continuations may have used an older, longer origin.
@@ -214,14 +320,21 @@ def ensure_batch_lines_in_scope(database, candidates: list[tuple[str, str, list[
             continue
         if unresolved_indices:
             from fastapi import HTTPException
+
             failure = failed_routes[unresolved_indices[0]]
-            raise HTTPException(409, "This line is outside the repertoire's canonical prefix. " + failure["reason"]
-                                + ". Check the canonical prefix again to verify current routes.")
+            raise HTTPException(
+                409,
+                "This line is outside the repertoire's canonical prefix. "
+                + failure["reason"]
+                + ". Check the canonical prefix again to verify current routes.",
+            )
         break
     return [validated_routes[index] for index in range(len(candidates))]
 
 
-def scope_line(database, repertoire_id: str, line: dict, prefix: dict | None = None) -> dict:
+def scope_line(
+    database, repertoire_id: str, line: dict, prefix: dict | None = None
+) -> dict:
     """Build an analysis route without changing the saved training start or moves."""
     prefix = prefix if prefix is not None else read_prefix(database, repertoire_id)
     if not prefix["moves"]:
@@ -230,10 +343,17 @@ def scope_line(database, repertoire_id: str, line: dict, prefix: dict | None = N
     # Stored lines passed the write boundary. Reconstruct their verified origin so
     # downstream opponent moves retain their probabilities and absolute horizon.
     if origin is None:
-        return {**line, "scope_start_ply": len(json.loads(line["moves_json"])) + 1, "scope_pending": True}
-    return {**line, "start_fen": chess.STARTING_FEN,
-            "moves_json": json.dumps([*origin, *json.loads(line["moves_json"])]),
-            "scope_start_ply": len(prefix["moves"])}
+        return {
+            **line,
+            "scope_start_ply": len(json.loads(line["moves_json"])) + 1,
+            "scope_pending": True,
+        }
+    return {
+        **line,
+        "start_fen": chess.STARTING_FEN,
+        "moves_json": json.dumps([*origin, *json.loads(line["moves_json"])]),
+        "scope_start_ply": len(prefix["moves"]),
+    }
 
 
 def scope_lines(database, repertoire_id: str, lines: list[dict]) -> list[dict]:
@@ -243,7 +363,13 @@ def scope_lines(database, repertoire_id: str, lines: list[dict]) -> list[dict]:
     return [scope_line(database, repertoire_id, line, prefix) for line in lines]
 
 
-def store_positions(database, preview_id: str, positions: list[dict], *, source_revision: int | None = None) -> None:
+def store_positions(
+    database,
+    preview_id: str,
+    positions: list[dict],
+    *,
+    source_revision: int | None = None,
+) -> None:
     if not positions:
         return
     if source_revision is None:
@@ -262,6 +388,7 @@ def store_positions(database, preview_id: str, positions: list[dict], *, source_
 
 def preview_command(database, payload: dict) -> dict:
     from .canonical_prefix_preview import request_preview
+
     try:
         return request_preview(database, payload["repertoire_id"], payload["moves"])
     except KeyError as error:
@@ -276,19 +403,38 @@ def save_prefix(database, payload: dict) -> dict:
     if not command_storage.repertoire_presence(database, repertoire_id):
         raise HTTPException(404, "Repertoire not found")
     current = read_prefix(database, repertoire_id, lock=True)
-    preview = command_storage.prefix_preview(database, request.preview_id, repertoire_id)
-    if (not preview or preview["state"] != "ready" or current["revision"] != request.expected_revision
-            or preview["expected_revision"] != current["revision"]
-            or preview["source_revision"] != current["source_revision"]):
-        raise HTTPException(409, "Resolve conflicting lines and check the current prefix again before saving.")
+    preview = command_storage.prefix_preview(
+        database, request.preview_id, repertoire_id
+    )
+    if (
+        not preview
+        or preview["state"] != "ready"
+        or current["revision"] != request.expected_revision
+        or preview["expected_revision"] != current["revision"]
+        or preview["source_revision"] != current["source_revision"]
+    ):
+        raise HTTPException(
+            409,
+            "Resolve conflicting lines and check the current prefix again before saving.",
+        )
     moves = json.loads(preview["moves_json"])
     if moves == current["moves"] and not moves:
-        command_storage.set_empty_prefix_preview(database, request.preview_id, repertoire_id)
+        command_storage.set_empty_prefix_preview(
+            database, request.preview_id, repertoire_id
+        )
         return prefix_projection(moves, current["revision"])
     revision = current["revision"] + int(moves != current["moves"])
-    command_storage.save_prefix_values(database, json.dumps(moves), revision, request.preview_id, repertoire_id)
+    command_storage.save_prefix_values(
+        database, json.dumps(moves), revision, request.preview_id, repertoire_id
+    )
     if moves != current["moves"]:
-        enqueue_task_in_transaction(database, "repertoire_game_refresh", "all", {"after_game_id": ""}, priority=90)
+        enqueue_task_in_transaction(
+            database,
+            "repertoire_game_refresh",
+            "all",
+            {"after_game_id": ""},
+            priority=90,
+        )
     if not command_storage.postgres_is_configured():
         command_storage.fail_active_local_coverage(database, repertoire_id)
     if command_storage.postgres_is_configured():

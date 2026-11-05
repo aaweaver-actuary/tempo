@@ -1,4 +1,5 @@
 """Games-owned workflow facts and capabilities; shared DTOs stay with T01."""
+
 from __future__ import annotations
 
 import hashlib
@@ -8,8 +9,23 @@ from typing import Literal, Protocol
 from pydantic import Field, model_validator
 
 from app.contracts.product_v02 import Digest, UtcTimestamp, Value
-from app.contracts.product_v02.games import CanonicalGame, Finding, FirstDepartureSelection, GamePage, GameRecord, GameRejection, GameWindow
-from app.contracts.product_v02.learning import EncounterReceipt, FirstDepartureWitness, GameEffectControl, GameEncounter, GameLapse, LearningReceipt
+from app.contracts.product_v02.games import (
+    CanonicalGame,
+    Finding,
+    FirstDepartureSelection,
+    GamePage,
+    GameRecord,
+    GameRejection,
+    GameWindow,
+)
+from app.contracts.product_v02.learning import (
+    EncounterReceipt,
+    FirstDepartureWitness,
+    GameEffectControl,
+    GameEncounter,
+    GameLapse,
+    LearningReceipt,
+)
 from app.contracts.product_v02.repertoire import RepertoireSnapshot
 
 
@@ -39,7 +55,9 @@ class HistoryProviderLimitRecovery(Value):
 class JobState(Value):
     spec: JobSpec
     version: int = 0
-    status: Literal["queued", "running", "retryable", "failed", "quarantined", "complete"] = "queued"
+    status: Literal[
+        "queued", "running", "retryable", "failed", "quarantined", "complete"
+    ] = "queued"
     continuation: str | None = None
     window_complete: bool = False
     last_checkpoint_at: str | None = None
@@ -50,8 +68,11 @@ class JobState(Value):
     error: str | None = None
     rejections: tuple[GameRejection, ...] = ()
     history_recoveries: tuple[HistoryProviderLimitRecovery, ...] = Field(
-        default=(), max_length=8, exclude_if=lambda value: not value)
-    history_replay_cursor: str | None = Field(default=None, exclude_if=lambda value: value is None)
+        default=(), max_length=8, exclude_if=lambda value: not value
+    )
+    history_replay_cursor: str | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class SourceState(Value):
@@ -109,31 +130,58 @@ class Delivery(Value):
 
     @model_validator(mode="after")
     def exactly_one_command(self):
-        if sum(item is not None for item in (self.lapse, self.encounter, self.control)) != 1:
+        if (
+            sum(item is not None for item in (self.lapse, self.encounter, self.control))
+            != 1
+        ):
             raise ValueError("delivery requires exactly one semantic owner command")
         if self.qualification is not None:
             if self.control is not None or not self.qualification.matches(self.command):
-                raise ValueError("qualification must bind the original automatic command")
+                raise ValueError(
+                    "qualification must bind the original automatic command"
+                )
             if self.determined_at != self.qualification.determined_at:
-                raise ValueError("qualification cannot restart the actionable determination")
+                raise ValueError(
+                    "qualification cannot restart the actionable determination"
+                )
         if self.qualification_status == "ready" and self.qualification is None:
-            raise ValueError("ready delivery requires complete first-departure qualification")
-        if self.qualification_status in {"held", "ineligible"} and not self.qualification_reason:
+            raise ValueError(
+                "ready delivery requires complete first-departure qualification"
+            )
+        if (
+            self.qualification_status in {"held", "ineligible"}
+            and not self.qualification_reason
+        ):
             raise ValueError("held or ineligible delivery requires an explicit reason")
         return self
 
     @property
     def command_kind(self) -> str:
-        return "control" if self.control is not None else ("encounter" if self.encounter is not None else "lapse")
+        return (
+            "control"
+            if self.control is not None
+            else ("encounter" if self.encounter is not None else "lapse")
+        )
 
     @property
     def command(self) -> GameLapse | GameEncounter | GameEffectControl:
-        return self.control if self.control is not None else (self.encounter if self.encounter is not None else self.lapse)
+        return (
+            self.control
+            if self.control is not None
+            else (self.encounter if self.encounter is not None else self.lapse)
+        )
 
 
-
-DeliveryReadiness = Literal["terminal", "control", "acknowledgment_uncertain", "ineligible",
-    "held", "unavailable", "unqualified", "ready"]
+DeliveryReadiness = Literal[
+    "terminal",
+    "control",
+    "acknowledgment_uncertain",
+    "ineligible",
+    "held",
+    "unavailable",
+    "unqualified",
+    "ready",
+]
 
 
 def delivery_readiness(delivery: Delivery) -> DeliveryReadiness:
@@ -155,8 +203,11 @@ def delivery_readiness(delivery: Delivery) -> DeliveryReadiness:
     if delivery.error is not None:
         return "unavailable"
     witness = delivery.qualification
-    if (delivery.qualification_status != "ready" or witness is None
-            or not witness.matches(delivery.command)):
+    if (
+        delivery.qualification_status != "ready"
+        or witness is None
+        or not witness.matches(delivery.command)
+    ):
         return "unqualified"
     return "ready"
 
@@ -171,22 +222,39 @@ def delivery_blocks_issuance(delivery: Delivery) -> bool:
 
 
 def stable_id(*parts: object) -> str:
-    return hashlib.sha256(json.dumps(parts, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+    return hashlib.sha256(
+        json.dumps(parts, separators=(",", ":"), ensure_ascii=False).encode()
+    ).hexdigest()
 
 
 def source_revision(command: GameLapse | GameEncounter | GameEffectControl) -> int:
     if isinstance(command, GameLapse):
         return command.finding.source_revision
-    return command.source.source_revision if isinstance(command, GameEncounter) else command.source_revision
+    return (
+        command.source.source_revision
+        if isinstance(command, GameEncounter)
+        else command.source_revision
+    )
 
 
-def delivery_for(source_key: str, command: GameLapse | GameEncounter | GameEffectControl) -> Delivery:
+def delivery_for(
+    source_key: str, command: GameLapse | GameEncounter | GameEffectControl
+) -> Delivery:
     """Construct immutable delivery facts without loading an optional producer."""
-    kind = "lapse" if isinstance(command, GameLapse) else ("encounter" if isinstance(command, GameEncounter) else command.action)
-    return Delivery(operation_id=stable_id(kind, command.key.logical_id(), source_revision(command)), source_key=source_key,
-                    lapse=command if isinstance(command, GameLapse) else None,
-                    encounter=command if isinstance(command, GameEncounter) else None,
-                    control=command if isinstance(command, GameEffectControl) else None)
+    kind = (
+        "lapse"
+        if isinstance(command, GameLapse)
+        else ("encounter" if isinstance(command, GameEncounter) else command.action)
+    )
+    return Delivery(
+        operation_id=stable_id(
+            kind, command.key.logical_id(), source_revision(command)
+        ),
+        source_key=source_key,
+        lapse=command if isinstance(command, GameLapse) else None,
+        encounter=command if isinstance(command, GameEncounter) else None,
+        control=command if isinstance(command, GameEffectControl) else None,
+    )
 
 
 class PageCommit(Value):
@@ -204,6 +272,7 @@ class ConcurrentUpdate(RuntimeError):
 
 class DeliveryDeferred(RuntimeError):
     """Known uncommitted semantic/preparation hold, not uncertain transport."""
+
     def __init__(self, reason: str, *, retry_after: float = 1, retryable: bool = True):
         self.reason, self.retry_after = reason, max(0, retry_after)
         self.retryable = retryable
@@ -224,7 +293,10 @@ class Clock(Protocol):
 
 class Acquisition(Protocol):
     """Composition supplies a finite-timeout, bounded-page provider adapter."""
-    def fetch_page(self, *, account: str, window: GameWindow, continuation: str | None = None) -> GamePage: ...
+
+    def fetch_page(
+        self, *, account: str, window: GameWindow, continuation: str | None = None
+    ) -> GamePage: ...
 
 
 class Normalizer(Protocol):
@@ -241,7 +313,10 @@ class SourceIdentity(Protocol):
     spec) to prove a loss of precision without changing the occurrence; absence
     of that capability leaves the existing exact-time requirement in force.
     """
-    def bind_source(self, game: CanonicalGame, *, record: GameRecord, spec: JobSpec) -> CanonicalGame: ...
+
+    def bind_source(
+        self, game: CanonicalGame, *, record: GameRecord, spec: JobSpec
+    ) -> CanonicalGame: ...
 
 
 class PreparedFirstBoundaryScope(Value):
@@ -251,13 +326,25 @@ class PreparedFirstBoundaryScope(Value):
 
 class FirstBoundaryPreparation(Protocol):
     """Prepare explicit current mappings outside writer; selector stays pure."""
-    def __call__(self, game: CanonicalGame, *, snapshots: tuple[RepertoireSnapshot, ...],
-                 selection: FirstDepartureSelection) -> PreparedFirstBoundaryScope: ...
+
+    def __call__(
+        self,
+        game: CanonicalGame,
+        *,
+        snapshots: tuple[RepertoireSnapshot, ...],
+        selection: FirstDepartureSelection,
+    ) -> PreparedFirstBoundaryScope: ...
 
 
 class Comparer(Protocol):
-    def compare(self, game: CanonicalGame, snapshot: RepertoireSnapshot, *,
-                record: GameRecord, spec: JobSpec) -> tuple[Finding, ...]: ...
+    def compare(
+        self,
+        game: CanonicalGame,
+        snapshot: RepertoireSnapshot,
+        *,
+        record: GameRecord,
+        spec: JobSpec,
+    ) -> tuple[Finding, ...]: ...
 
 
 class GamesStore(Protocol):
@@ -267,22 +354,36 @@ class GamesStore(Protocol):
     inserts commands idempotently, supersedes unsent lapse/encounter commands for controlled keys,
     and publishes all facts/checkpoint atomically. No external code runs inside it.
     """
+
     def enqueue(self, spec: JobSpec) -> JobState: ...
-    def claim_job(self, now: float, lease_until: float, *, job_id: str | None = None) -> JobState | None: ...
+    def claim_job(
+        self, now: float, lease_until: float, *, job_id: str | None = None
+    ) -> JobState | None: ...
     def load_job(self, job_id: str) -> JobState | None: ...
     def save_job(self, job: JobState) -> None: ...
     def source(self, source_key: str) -> SourceState | None: ...
     def commit_page(self, commit: PageCommit) -> None: ...
-    def pending_delivery(self, now: float, *, ready_only: bool = False,
-                         workspace: str | None = None, priority_order: bool = False) -> Delivery | None: ...
-    def has_determined_delivery(self, workspace: str, *, before_stream: str | None = None,
-                               before_determined_at: str | None = None,
-                               before_effect_id: str | None = None) -> bool: ...
+    def pending_delivery(
+        self,
+        now: float,
+        *,
+        ready_only: bool = False,
+        workspace: str | None = None,
+        priority_order: bool = False,
+    ) -> Delivery | None: ...
+    def has_determined_delivery(
+        self,
+        workspace: str,
+        *,
+        before_stream: str | None = None,
+        before_determined_at: str | None = None,
+        before_effect_id: str | None = None,
+    ) -> bool: ...
     def save_delivery(self, delivery: Delivery, *, serviced: bool = False) -> None: ...
     def delivery(self, operation_id: str) -> Delivery | None: ...
 
 
 class DeliveryQualifier(Protocol):
     """Complete local comparison before owner delivery, outside its writer."""
-    def prepare(self, delivery: Delivery) -> Delivery: ...
 
+    def prepare(self, delivery: Delivery) -> Delivery: ...

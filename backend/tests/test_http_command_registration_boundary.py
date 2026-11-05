@@ -1,11 +1,12 @@
 """HTTP composition does not register worker command handlers."""
+
 import os
 import subprocess
 import sys
 
 
 def test_http_routers_import_without_worker_registration_or_main():
-    script = '''
+    script = """
 import importlib.abc, socket, subprocess, sys
 def forbidden(*args, **kwargs): raise AssertionError("network or process startup")
 socket.socket.connect = forbidden
@@ -34,5 +35,7 @@ checkpoint = next(route for route in opening_evidence_api.router.routes if route
 assert checkpoint.methods == {'POST'}
 assert checkpoint.endpoint.__annotations__['request'] is OpeningEvidenceCheckpoint
 assert not {'app.main', 'app.tasks', 'app.canonical_prefix_commands', 'app.opening_evidence_commands'} & sys.modules.keys()
-'''
-    subprocess.run([sys.executable, '-c', script], env=os.environ.copy(), check=True, timeout=20)
+"""
+    subprocess.run(
+        [sys.executable, "-c", script], env=os.environ.copy(), check=True, timeout=20
+    )

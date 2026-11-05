@@ -11,7 +11,7 @@ single label so secondary motifs remain reviewable.
 # Consumers of these detectors will really consume a list of the various detectors subclassing the protocol.
 
 # We should not be defining details about relative piece values here for example--those belong in a typed chess piece
-# abstraction that we define separately. We should not be doing that sort of work over and over. 
+# abstraction that we define separately. We should not be doing that sort of work over and over.
 
 from __future__ import annotations
 
@@ -59,8 +59,8 @@ class EngineCandidate:
 class MotifEvidence:
     """Structured proof that one motif occurs in one candidate line."""
 
-    # Should this be an enum? 
-    motif: str 
+    # Should this be an enum?
+    motif: str
     confidence: float
     candidate_move_uci: str
     played_move_uci: str | None
@@ -106,15 +106,17 @@ class _PinGeometry:
         )
 
 
-# Do we need this? This feels like indirection that isn't simplifying anything or making 
+# Do we need this? This feels like indirection that isn't simplifying anything or making
 # the code easier to read. Something like this is not related to a "motif", this is a property
-# of a chess piece. It belongs closer to where we integrate chess concepts for our use. 
+# of a chess piece. It belongs closer to where we integrate chess concepts for our use.
 def _piece_value_cp(piece: chess.Piece | None) -> int:
     return PIECE_VALUES_CP.get(piece.piece_type, 0) if piece else 0
 
 
-# See above--not sure why this is defined here. 
-def _piece_evidence(board: chess.Board, square: chess.Square, role: str) -> dict[str, Any]:
+# See above--not sure why this is defined here.
+def _piece_evidence(
+    board: chess.Board, square: chess.Square, role: str
+) -> dict[str, Any]:
     piece = board.piece_at(square)
     return {
         "role": role,
@@ -125,7 +127,7 @@ def _piece_evidence(board: chess.Board, square: chess.Square, role: str) -> dict
 
 
 # Instead of the next few "helpers" (if you can really call them that), we should explicitly
-# define all the diagonals on the board. There aren't so many that this is unreasonable. 
+# define all the diagonals on the board. There aren't so many that this is unreasonable.
 def _direction_between(
     first: chess.Square, second: chess.Square
 ) -> tuple[int, int] | None:
@@ -175,9 +177,9 @@ def _directions_for_piece(piece_type: chess.PieceType) -> tuple[tuple[int, int],
     return ()
 
 
-# Instead of having all these be in a single module, I think it makes much more sense to have a defined 
+# Instead of having all these be in a single module, I think it makes much more sense to have a defined
 # pin detection module. It also seems like the process could be simpler and more rigorously based on actual
-# chess definitions. 
+# chess definitions.
 def _find_pins(board: chess.Board) -> tuple[_PinGeometry, ...]:
     geometries: list[_PinGeometry] = []
     for pinner_color in (chess.WHITE, chess.BLACK):
@@ -185,7 +187,10 @@ def _find_pins(board: chess.Board) -> tuple[_PinGeometry, ...]:
             for pinner_square in board.pieces(piece_type, pinner_color):
                 for direction in _directions_for_piece(piece_type):
                     pinned_square = _step(pinner_square, direction)
-                    while pinned_square is not None and board.piece_at(pinned_square) is None:
+                    while (
+                        pinned_square is not None
+                        and board.piece_at(pinned_square) is None
+                    ):
                         pinned_square = _step(pinned_square, direction)
                     if pinned_square is None:
                         continue
@@ -193,7 +198,10 @@ def _find_pins(board: chess.Board) -> tuple[_PinGeometry, ...]:
                     if not pinned_piece or pinned_piece.color == pinner_color:
                         continue
                     target_square = _step(pinned_square, direction)
-                    while target_square is not None and board.piece_at(target_square) is None:
+                    while (
+                        target_square is not None
+                        and board.piece_at(target_square) is None
+                    ):
                         target_square = _step(target_square, direction)
                     if target_square is None:
                         continue
@@ -313,9 +321,9 @@ def _line_consequence(
         captured_piece = before.piece_at(captured_square)
         if not captured_piece or captured_piece.color == actor_color:
             continue
-        material_gain_cp = _material_balance_cp(after, actor_color) - _material_balance_cp(
-            baseline, actor_color
-        )
+        material_gain_cp = _material_balance_cp(
+            after, actor_color
+        ) - _material_balance_cp(baseline, actor_color)
         if material_gain_cp >= MINIMUM_MATERIAL_GAIN_CP:
             return move_index, {
                 "type": "material_gain",
@@ -513,7 +521,9 @@ def detect_forks(
     ]
 
 
-def _find_skewers(board: chess.Board, attacker_color: chess.Color) -> tuple[tuple[chess.Square, chess.Square, chess.Square], ...]:
+def _find_skewers(
+    board: chess.Board, attacker_color: chess.Color
+) -> tuple[tuple[chess.Square, chess.Square, chess.Square], ...]:
     skewers: list[tuple[chess.Square, chess.Square, chess.Square]] = []
     for piece_type in (chess.BISHOP, chess.ROOK, chess.QUEEN):
         for pinner_square in board.pieces(piece_type, attacker_color):
@@ -622,10 +632,16 @@ def detect_discovered_attacks(
             for target_square in _attacked_targets(after, slider_square, position.turn):
                 if target_square in before.attacks(slider_square):
                     continue
-                if candidate_move.from_square not in _line_between(slider_square, target_square):
+                if candidate_move.from_square not in _line_between(
+                    slider_square, target_square
+                ):
                     continue
                 candidate = next(
-                    (item for item in engine_candidates if item.move_uci == candidate_move.uci()),
+                    (
+                        item
+                        for item in engine_candidates
+                        if item.move_uci == candidate_move.uci()
+                    ),
                     EngineCandidate(candidate_move.uci()),
                 )
                 consequence = _line_consequence(
@@ -770,8 +786,14 @@ def detect_mating_patterns(
 
 
 MotifDetector = Callable[
-    [chess.Board, chess.Move | None, Sequence[EngineCandidate], Sequence[str],
-     Sequence[chess.Board], Sequence[chess.Move]],
+    [
+        chess.Board,
+        chess.Move | None,
+        Sequence[EngineCandidate],
+        Sequence[str],
+        Sequence[chess.Board],
+        Sequence[chess.Move],
+    ],
     list[MotifEvidence],
 ]
 
@@ -805,7 +827,14 @@ def classify_tactical_motifs(
     seen: set[tuple[str, tuple[tuple[str, str], ...], tuple[str, ...]]] = set()
     boards, moves = _replay_line(position, resulting_line)
     for detector in DETECTORS:
-        for item in detector(position.copy(), played_move, engine_candidates, resulting_line, boards, moves):
+        for item in detector(
+            position.copy(),
+            played_move,
+            engine_candidates,
+            resulting_line,
+            boards,
+            moves,
+        ):
             key = (
                 item.motif,
                 tuple(sorted(item.involved_squares.items())),
@@ -824,7 +853,10 @@ def select_primary_motif(evidence: Sequence[MotifEvidence]) -> MotifEvidence | N
     precedence = {motif: index for index, motif in enumerate(MOTIF_PRECEDENCE)}
     return min(
         evidence,
-        key=lambda item: (precedence.get(item.motif, len(precedence)), -item.confidence),
+        key=lambda item: (
+            precedence.get(item.motif, len(precedence)),
+            -item.confidence,
+        ),
         default=None,
     )
 
@@ -867,7 +899,9 @@ def classify_candidate_lines(
         fallback = EngineCandidate(best_move_uci)
         normalized_candidates.append(fallback)
         lines.append((fallback, principal_variation))
-    if played_move_uci and not any(item.move_uci == played_move_uci for item in normalized_candidates):
+    if played_move_uci and not any(
+        item.move_uci == played_move_uci for item in normalized_candidates
+    ):
         normalized_candidates.append(
             EngineCandidate(
                 move_uci=played_move_uci,

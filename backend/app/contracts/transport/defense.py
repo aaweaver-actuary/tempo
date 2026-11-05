@@ -1,4 +1,5 @@
 """Defense analysis/practice contracts."""
+
 from typing import Literal
 from pydantic import BaseModel, Field
 from .engine import EngineAttemptDiagnostics
@@ -21,7 +22,9 @@ class DefenseAttemptRequest(BaseModel):
     exercise_revision: int = Field(ge=1)
     queue_entry_id: int = Field(ge=1)
     move_uci: str = Field(min_length=4, max_length=5)
-    recognition_attempt_id: str | None = Field(default=None, min_length=1, max_length=100)
+    recognition_attempt_id: str | None = Field(
+        default=None, min_length=1, max_length=100
+    )
 
 
 class DefenseRecognitionRequest(BaseModel):

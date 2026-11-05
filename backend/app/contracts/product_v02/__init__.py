@@ -1,4 +1,5 @@
 """Product v0.2 value seams; no runtime composition or effect implementation."""
+
 from datetime import datetime, timezone
 from typing import Annotated
 
@@ -13,7 +14,11 @@ UciMove = Annotated[str, Field(pattern=r"^[a-h][1-8][a-h][1-8][qrbn]?$")]
 
 def utc_timestamp(value: str) -> str:
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    if "T" not in value or parsed.tzinfo is None or parsed.utcoffset() != timezone.utc.utcoffset(parsed):
+    if (
+        "T" not in value
+        or parsed.tzinfo is None
+        or parsed.utcoffset() != timezone.utc.utcoffset(parsed)
+    ):
         raise ValueError("timestamp must explicitly identify UTC")
     return value
 
@@ -22,4 +27,6 @@ UtcTimestamp = Annotated[str, AfterValidator(utc_timestamp)]
 
 
 class Value(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True, frozen=True, allow_inf_nan=False)
+    model_config = ConfigDict(
+        extra="forbid", strict=True, frozen=True, allow_inf_nan=False
+    )

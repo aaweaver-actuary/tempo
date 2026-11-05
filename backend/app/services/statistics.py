@@ -43,7 +43,9 @@ def _local_datetime(played_at: str, configured_timezone: str) -> datetime:
         return moment.astimezone()
 
 
-def _evaluation_before_ply(rows_by_ply: dict[int, object], ply: int, color: str) -> int | None:
+def _evaluation_before_ply(
+    rows_by_ply: dict[int, object], ply: int, color: str
+) -> int | None:
     row = rows_by_ply.get(ply)
     if not row or row["eval_before_cp"] is None:
         return None
@@ -52,9 +54,16 @@ def _evaluation_before_ply(rows_by_ply: dict[int, object], ply: int, color: str)
 
 
 def refresh_game_features(
-    game_id: str, *, background: bool = False, prepare_only: bool = False,
+    game_id: str,
+    *,
+    background: bool = False,
+    prepare_only: bool = False,
 ) -> tuple | None:
-    read_section = background_read_connection if prepare_only else lambda: connection(background=background)
+    read_section = (
+        background_read_connection
+        if prepare_only
+        else lambda: connection(background=background)
+    )
     with read_section() as database:
         game = storage.game_row(database, game_id)
         if not game:
@@ -76,7 +85,8 @@ def refresh_game_features(
     endgame_entry_ply: int | None = None
     for ply, move_uci in enumerate(moves):
         phase_score = sum(
-            MATERIAL_PHASE_VALUES[piece.piece_type] for piece in board.piece_map().values()
+            MATERIAL_PHASE_VALUES[piece.piece_type]
+            for piece in board.piece_map().values()
         )
         if phase_score <= 6:
             endgame_entry_ply = ply
@@ -84,26 +94,46 @@ def refresh_game_features(
         board.push_uci(move_uci)
     local_moment = _local_datetime(game["played_at"], configured_timezone)
     player_opportunities = [
-        event for event in events
+        event
+        for event in events
         if event["kind"] == "tactical opportunity"
-        and event["beneficiary_color"] == game["color"] and event["confidence"] >= 0.8
+        and event["beneficiary_color"] == game["color"]
+        and event["confidence"] >= 0.8
     ]
     conceded_opportunities = [
-        event for event in events
+        event
+        for event in events
         if event["kind"] == "tactical opportunity"
-        and event["created_by_color"] == game["color"] and event["confidence"] >= 0.8
+        and event["created_by_color"] == game["color"]
+        and event["confidence"] >= 0.8
     ]
     feature_values = (
-        game_id, FEATURE_VERSION, local_moment.date().isoformat(), local_moment.hour,
-        local_moment.weekday(), _player_score(game["result"], game["color"]),
+        game_id,
+        FEATURE_VERSION,
+        local_moment.date().isoformat(),
+        local_moment.hour,
+        local_moment.weekday(),
+        _player_score(game["result"], game["color"]),
         len(player_rows),
-        (sum(max(0, int(row["loss_cp"] or 0)) for row in player_rows) / len(player_rows)) if player_rows else None,
-        sum(int(row["loss_cp"] or 0) >= 100 for row in player_rows) if player_rows else None,
-        opening_exit_ply, _evaluation_before_ply(rows_by_ply, opening_exit_ply, game["color"]),
+        (
+            sum(max(0, int(row["loss_cp"] or 0)) for row in player_rows)
+            / len(player_rows)
+        )
+        if player_rows
+        else None,
+        sum(int(row["loss_cp"] or 0) >= 100 for row in player_rows)
+        if player_rows
+        else None,
+        opening_exit_ply,
+        _evaluation_before_ply(rows_by_ply, opening_exit_ply, game["color"]),
         endgame_entry_ply,
-        _evaluation_before_ply(rows_by_ply, endgame_entry_ply, game["color"]) if endgame_entry_ply is not None else None,
-        len(player_opportunities), sum(event["outcome"] == "found" for event in player_opportunities),
-        len(conceded_opportunities), primary_match["repertoire_id"] if primary_match else None,
+        _evaluation_before_ply(rows_by_ply, endgame_entry_ply, game["color"])
+        if endgame_entry_ply is not None
+        else None,
+        len(player_opportunities),
+        sum(event["outcome"] == "found" for event in player_opportunities),
+        len(conceded_opportunities),
+        primary_match["repertoire_id"] if primary_match else None,
         datetime.now(timezone.utc).isoformat(),
     )
     if prepare_only:

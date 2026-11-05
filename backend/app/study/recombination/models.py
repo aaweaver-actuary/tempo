@@ -3,6 +3,7 @@
 Presentation/JoinPlan reuse #482's exact shared values. The route read protocol
 accepts #483-supplied facts or a task fixture; no sibling implementation is used.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -25,11 +26,22 @@ class CleanStreak:
     last_event_at: datetime | None = None
 
     def __post_init__(self):
-        if not self.presentation_id or not self.evidence_epoch or self.presentation_revision < 1:
-            raise ValueError("a streak needs exact presentation/revision/epoch identity")
+        if (
+            not self.presentation_id
+            or not self.evidence_epoch
+            or self.presentation_revision < 1
+        ):
+            raise ValueError(
+                "a streak needs exact presentation/revision/epoch identity"
+            )
         if not 0 <= self.count <= 3:
             raise ValueError("clean count must be between zero and three")
-        for field in ("seen_event_ids", "completed_attempt_ids", "completed_review_ids", "tainted_attempt_ids"):
+        for field in (
+            "seen_event_ids",
+            "completed_attempt_ids",
+            "completed_review_ids",
+            "tainted_attempt_ids",
+        ):
             object.__setattr__(self, field, frozenset(getattr(self, field)))
         if self.last_event_at is not None and self.last_event_at.utcoffset() is None:
             raise ValueError("last_event_at must be timezone-aware")
@@ -57,10 +69,20 @@ class ReviewEvent:
         if not self.event_id or not self.presentation_id or not self.evidence_epoch:
             raise ValueError("event and presentation/epoch identities are required")
         if self.presentation_revision < 1 or self.occurred_at.utcoffset() is None:
-            raise ValueError("event needs a positive revision and aware occurrence time")
+            raise ValueError(
+                "event needs a positive revision and aware occurrence time"
+            )
         if self.source not in {"study", "real_game", "admitted_lapse"}:
             raise ValueError("unknown review source")
-        if self.outcome not in {"correct", "wrong", "again", "hint", "reveal", "guided", "failure"}:
+        if self.outcome not in {
+            "correct",
+            "wrong",
+            "again",
+            "hint",
+            "reveal",
+            "guided",
+            "failure",
+        }:
             raise ValueError("unknown review outcome")
         if self.assistance not in {"unassisted", "assisted", "unknown"}:
             raise ValueError("unknown assistance evidence")
@@ -69,11 +91,14 @@ class ReviewEvent:
         if self.source == "study" and self.complete and not self.review_id:
             raise ValueError("completed Study reviews need a review identity")
         if self.source == "admitted_lapse" and self.outcome != "failure":
-            raise ValueError("only an explicitly admitted failure can invalidate a game streak")
+            raise ValueError(
+                "only an explicitly admitted failure can invalidate a game streak"
+            )
 
 
 class AuthoredRouteFacts(Protocol):
     """Immutable projection of authored route plus snapshot source revision."""
+
     route_id: str
     repertoire_id: str
     learner_color: str
@@ -91,7 +116,11 @@ class RouteUse:
     stop_ply: int  # Exclusive; includes the presentation's own opponent cues.
 
     def __post_init__(self):
-        if not self.route_id or not self.occurrence_id or not 0 <= self.start_ply < self.stop_ply:
+        if (
+            not self.route_id
+            or not self.occurrence_id
+            or not 0 <= self.start_ply < self.stop_ply
+        ):
             raise ValueError("a route occurrence needs a nonempty exact ply range")
 
 
@@ -144,7 +173,9 @@ class RouteContext:
     def __post_init__(self):
         object.__setattr__(self, "parent_connections", tuple(self.parent_connections))
         object.__setattr__(self, "authored_routes", tuple(self.authored_routes))
-        object.__setattr__(self, "unresolved_obligation_ids", tuple(self.unresolved_obligation_ids))
+        object.__setattr__(
+            self, "unresolved_obligation_ids", tuple(self.unresolved_obligation_ids)
+        )
 
 
 @dataclass(frozen=True, order=True)
@@ -157,6 +188,7 @@ class RetainedUse:
 @dataclass(frozen=True)
 class JoinEvidence:
     """Local executable proof supplements the exact shared JoinPlan."""
+
     source_revision: str
     policy_id: str
     route_starting_fen: str
@@ -172,6 +204,7 @@ class JoinEvidence:
 
 class RouteJoinPlan(JoinPlan):
     """Shared wire plan reused unchanged, plus Study's local route proof."""
+
     evidence: JoinEvidence
 
 

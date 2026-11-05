@@ -1,11 +1,12 @@
 """The production worker registers these commands without HTTP routers."""
+
 import os
 import subprocess
 import sys
 
 
 def test_worker_registers_prefix_and_checkpoint_without_http_or_starting_providers():
-    script = '''
+    script = """
 import importlib.abc
 import socket
 import subprocess
@@ -40,14 +41,20 @@ for module in ("app.threat_analysis_commands", "app.game_analysis_commands", "ap
     assert module not in sys.modules
 for name in ("threat.analysis.claim", "games.analysis.claim", "games.analysis.position.report"):
     assert not command_gateway.is_command_registered(name)
-'''
-    subprocess.run([sys.executable, '-c', script], env=os.environ.copy(), check=True, timeout=20)
+"""
+    subprocess.run(
+        [sys.executable, "-c", script], env=os.environ.copy(), check=True, timeout=20
+    )
 
 
 def test_retired_game_commands_are_not_lazy_loaded():
     from app.product_composition.worker_game_commands import resolve_worker_game_command
     from app.command_gateway import is_command_registered
-    for name in ('games.analysis.position.claim', 'games.analysis.finalize.admit',
-                 'games.defensive_threats.refresh'):
+
+    for name in (
+        "games.analysis.position.claim",
+        "games.analysis.finalize.admit",
+        "games.defensive_threats.refresh",
+    ):
         resolve_worker_game_command(name)
         assert not is_command_registered(name)

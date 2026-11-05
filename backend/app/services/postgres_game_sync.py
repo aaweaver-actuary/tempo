@@ -9,7 +9,8 @@ from typing import Any
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection, connection
 from tempo_legacy_database.adapters.games.sync import records as storage
 from .durable_tasks import (
-    complete_task_slice_in_transaction, lock_current_slice,
+    complete_task_slice_in_transaction,
+    lock_current_slice,
 )
 from app.games.records import GameRecord
 from .postgres_game_sync_completion import finish_game_sync_if_complete
@@ -17,29 +18,50 @@ from .redis_admission_gate import background_lease
 
 
 def persist_game_record_in_transaction(
-    database: PostgresConnection, record: GameRecord,
+    database: PostgresConnection,
+    record: GameRecord,
 ) -> tuple[str, str]:
     """Publish one normalized game to the local library."""
 
     identity = f"{record.provider}:{record.provider_game_id}"
     storage.lock_import_identity(database, identity)
-    existing = storage.imported_provider_game(database, record.provider, record.provider_game_id)
+    existing = storage.imported_provider_game(
+        database, record.provider, record.provider_game_id
+    )
     if existing is None:
         existing = storage.imported_legacy_game(
-            database, record.provider, record.username, record.content_hash,
+            database,
+            record.provider,
+            record.username,
+            record.content_hash,
         )
     values = (
-        record.provider_game_id, record.content_hash, record.username,
-        record.played_at, record.speed, int(record.rated), record.color,
-        record.result, record.start_fen, json.dumps(record.uci_moves),
-        record.game_url, record.opening_name, record.player_rating,
-        record.opponent_rating, record.rating_change, record.time_control,
+        record.provider_game_id,
+        record.content_hash,
+        record.username,
+        record.played_at,
+        record.speed,
+        int(record.rated),
+        record.color,
+        record.result,
+        record.start_fen,
+        json.dumps(record.uci_moves),
+        record.game_url,
+        record.opening_name,
+        record.player_rating,
+        record.opponent_rating,
+        record.rating_change,
+        record.time_control,
     )
     if existing:
         game_id = existing["id"]
-        changed = any(existing[column_name] != value for column_name, value in zip(
-            storage.GAME_COLUMNS, values,
-        ))
+        changed = any(
+            existing[column_name] != value
+            for column_name, value in zip(
+                storage.GAME_COLUMNS,
+                values,
+            )
+        )
         if changed:
             storage.update_imported_game(database, game_id, values)
         outcome = "updated" if changed else "duplicate"
@@ -65,9 +87,14 @@ def execute_game_sync_record_slice(claimed_task: dict[str, Any]) -> bool:
                 return False
             outcome, _ = persist_game_record_in_transaction(database, record)
             result = json.loads(job["result_json"]) if job["result_json"] else {}
-            counts = result.setdefault("providers", {}).setdefault(record.provider, {
-                "inserted": 0, "updated": 0, "duplicates": 0,
-            })
+            counts = result.setdefault("providers", {}).setdefault(
+                record.provider,
+                {
+                    "inserted": 0,
+                    "updated": 0,
+                    "duplicates": 0,
+                },
+            )
             count_name = "duplicates" if outcome == "duplicate" else outcome
             counts[count_name] = int(counts.get(count_name, 0)) + 1
             result["imported"] = sum(
@@ -75,7 +102,9 @@ def execute_game_sync_record_slice(claimed_task: dict[str, Any]) -> bool:
                 for provider_counts in result["providers"].values()
             )
             storage.save_sync_progress(
-                database, job_id, json.dumps(result, separators=(",", ":")),
+                database,
+                job_id,
+                json.dumps(result, separators=(",", ":")),
                 datetime.now(timezone.utc).isoformat(),
             )
             if not complete_task_slice_in_transaction(database, claimed_task):

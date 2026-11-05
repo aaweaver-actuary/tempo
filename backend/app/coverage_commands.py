@@ -11,10 +11,13 @@ from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from .services.coverage_seed_request import request_coverage_seed_in_transaction
 
 
-def request_coverage_refresh(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, str]:
+def request_coverage_refresh(
+    database: PostgresConnection, payload: dict[str, Any]
+) -> dict[str, str]:
     try:
         return request_coverage_seed_in_transaction(
-            database, str(payload["repertoire_id"]),
+            database,
+            str(payload["repertoire_id"]),
             automatic=bool(payload.get("automatic", False)),
         )
     except KeyError as error:

@@ -18,12 +18,17 @@ def _cutoff(window: str, configured_timezone: str) -> int | None:
     if window not in WINDOWS:
         raise ValueError("Unknown statistics window")
     days = WINDOWS[window]
-    today = date.fromisoformat(_study_day(datetime.now(timezone.utc).isoformat(), configured_timezone))
+    today = date.fromisoformat(
+        _study_day(datetime.now(timezone.utc).isoformat(), configured_timezone)
+    )
     return today.toordinal() - days + 1 if days is not None else None
 
 
 def _in_window(timestamp: str, cutoff_ordinal: int | None) -> bool:
-    return cutoff_ordinal is None or date.fromisoformat(timestamp[:10]).toordinal() >= cutoff_ordinal
+    return (
+        cutoff_ordinal is None
+        or date.fromisoformat(timestamp[:10]).toordinal() >= cutoff_ordinal
+    )
 
 
 def _study_day(timestamp: str, configured_timezone: str) -> str:
@@ -59,7 +64,11 @@ def repertoire_statistics(repertoire_id: str, window: str) -> dict:
         position_total = storage.published_position_count(database, repertoire_id)
         frontier = storage.frontier_rows(database, repertoire_id)
 
-    valid_study_reviews = [row for row in review_rows if row["source_kind"] == "study" and row["card_id"] in card_ids]
+    valid_study_reviews = [
+        row
+        for row in review_rows
+        if row["source_kind"] == "study" and row["card_id"] in card_ids
+    ]
     studied_ids = {row["card_id"] for row in valid_study_reviews}
     first_attempts: dict[tuple[str, str], dict] = {}
     for review in valid_study_reviews:
@@ -68,55 +77,141 @@ def repertoire_statistics(repertoire_id: str, window: str) -> dict:
             first_attempts.setdefault((review["card_id"], study_day), review)
     study_attempts = len(first_attempts)
     study_correct = sum(row["rating"] == "correct" for row in first_attempts.values())
-    current_games = [row for row in game_rows if _in_window(_study_day(row["played_at"], timezone_name), cutoff)]
-    current_decisions = [row for row in decision_rows if row["card_id"] in card_ids
-                         and _in_window(_study_day(row["played_at"], timezone_name), cutoff)]
+    current_games = [
+        row
+        for row in game_rows
+        if _in_window(_study_day(row["played_at"], timezone_name), cutoff)
+    ]
+    current_decisions = [
+        row
+        for row in decision_rows
+        if row["card_id"] in card_ids
+        and _in_window(_study_day(row["played_at"], timezone_name), cutoff)
+    ]
     game_correct = sum(row["outcome"] == "success" for row in current_decisions)
-    wins = sum((row["result"] == "1-0") == (row["color"] == "white") for row in current_games if row["result"] != "1/2-1/2")
+    wins = sum(
+        (row["result"] == "1-0") == (row["color"] == "white")
+        for row in current_games
+        if row["result"] != "1/2-1/2"
+    )
     draws = sum(row["result"] == "1/2-1/2" for row in current_games)
     prefixes = [card for card in cards if card["kind"] == "prefix"]
-    paused_ids = blocked_ids | {card["id"] for card in cards if card["pending_validation"]}
+    paused_ids = blocked_ids | {
+        card["id"] for card in cards if card["pending_validation"]
+    }
     due_today = date.today().isoformat()
     seven_days = date.fromordinal(date.today().toordinal() + 7).isoformat()
     upcoming_cards = []
     for candidate in frontier:
         parent_id = candidate["parent_card_id"]
-        blocked = (candidate["card_id"] in paused_ids or parent_id in paused_ids
-                   or candidate["pending_validation"] or candidate["child_pending_validation"])
-        status = ("paused" if blocked else "unavailable" if candidate["parent_archived"]
-                  else "ready" if candidate["parent_practiced"] else "waiting_practice")
-        upcoming_cards.append({
-            "card_id": candidate["card_id"], "parent_card_id": parent_id,
-            "line_name": candidate["line_name"], "parent_due_date": candidate["due_date"],
-            "earliest_unlock_date": due_today if status == "ready" else None,
-            "status": status,
-        })
+        blocked = (
+            candidate["card_id"] in paused_ids
+            or parent_id in paused_ids
+            or candidate["pending_validation"]
+            or candidate["child_pending_validation"]
+        )
+        status = (
+            "paused"
+            if blocked
+            else "unavailable"
+            if candidate["parent_archived"]
+            else "ready"
+            if candidate["parent_practiced"]
+            else "waiting_practice"
+        )
+        upcoming_cards.append(
+            {
+                "card_id": candidate["card_id"],
+                "parent_card_id": parent_id,
+                "line_name": candidate["line_name"],
+                "parent_due_date": candidate["due_date"],
+                "earliest_unlock_date": due_today if status == "ready" else None,
+                "status": status,
+            }
+        )
     status_order = {"ready": 0, "waiting_practice": 1, "paused": 2, "unavailable": 3}
-    upcoming_cards.sort(key=lambda item: (status_order[item["status"]], item["card_id"], item["parent_card_id"]))
+    upcoming_cards.sort(
+        key=lambda item: (
+            status_order[item["status"]],
+            item["card_id"],
+            item["parent_card_id"],
+        )
+    )
     unique_upcoming_cards = {}
     for item in upcoming_cards:
         unique_upcoming_cards.setdefault(item["card_id"], item)
     return {
-        "repertoire_id": repertoire_id, "window": window, "graph_updated_at": publication["published_at"] if publication else None,
-        "graph_state": "failed" if task and task["state"] == "failed" else "refreshing" if not publication or task and task["state"] in {"queued", "leased", "retrying"} else "ready",
-        "game_state": "failed" if refresh and refresh["state"] == "failed" or failed_derivations else "refreshing" if pending_derivations or refresh and refresh["state"] in {"queued", "leased", "retrying"} else "ready",
-        "prefix": {"total": len(prefixes), "active": sum(card["state"] != "locked" and card["id"] not in paused_ids for card in prefixes),
-                   "studied": sum(card["id"] in studied_ids for card in prefixes), "unseen": sum(card["id"] not in studied_ids for card in prefixes),
-                   "locked": sum(card["state"] == "locked" for card in prefixes), "paused": sum(card["id"] in paused_ids for card in prefixes)},
-        "cards": {"total": len(cards), **{state: sum(card["state"] == state for card in cards) for state in ("new", "learning", "mature", "locked")},
-                  "difficult": sum(card["scheduling_mode"] == "hard" for card in cards),
-                  "due_today": sum(card["state"] in {"learning", "mature"} and card["due_date"] <= due_today and card["id"] not in paused_ids for card in cards),
-                  "due_next_seven_days": sum(card["state"] in {"learning", "mature"} and due_today < card["due_date"] <= seven_days and card["id"] not in paused_ids for card in cards)},
-        "study": {"correct": study_correct, "attempts": study_attempts, "accuracy": study_correct / study_attempts if study_attempts else None},
-        "games": {"matched": len(current_games), "correct": game_correct, "decisions": len(current_decisions),
-                  "adherence": game_correct / len(current_decisions) if current_decisions else None,
-                  "wins": wins, "draws": draws, "losses": len(current_games) - wins - draws,
-                  "positions_seen": len({row["fen_key"] for row in current_decisions}), "positions_total": position_total},
+        "repertoire_id": repertoire_id,
+        "window": window,
+        "graph_updated_at": publication["published_at"] if publication else None,
+        "graph_state": "failed"
+        if task and task["state"] == "failed"
+        else "refreshing"
+        if not publication or task and task["state"] in {"queued", "leased", "retrying"}
+        else "ready",
+        "game_state": "failed"
+        if refresh and refresh["state"] == "failed" or failed_derivations
+        else "refreshing"
+        if pending_derivations
+        or refresh
+        and refresh["state"] in {"queued", "leased", "retrying"}
+        else "ready",
+        "prefix": {
+            "total": len(prefixes),
+            "active": sum(
+                card["state"] != "locked" and card["id"] not in paused_ids
+                for card in prefixes
+            ),
+            "studied": sum(card["id"] in studied_ids for card in prefixes),
+            "unseen": sum(card["id"] not in studied_ids for card in prefixes),
+            "locked": sum(card["state"] == "locked" for card in prefixes),
+            "paused": sum(card["id"] in paused_ids for card in prefixes),
+        },
+        "cards": {
+            "total": len(cards),
+            **{
+                state: sum(card["state"] == state for card in cards)
+                for state in ("new", "learning", "mature", "locked")
+            },
+            "difficult": sum(card["scheduling_mode"] == "hard" for card in cards),
+            "due_today": sum(
+                card["state"] in {"learning", "mature"}
+                and card["due_date"] <= due_today
+                and card["id"] not in paused_ids
+                for card in cards
+            ),
+            "due_next_seven_days": sum(
+                card["state"] in {"learning", "mature"}
+                and due_today < card["due_date"] <= seven_days
+                and card["id"] not in paused_ids
+                for card in cards
+            ),
+        },
+        "study": {
+            "correct": study_correct,
+            "attempts": study_attempts,
+            "accuracy": study_correct / study_attempts if study_attempts else None,
+        },
+        "games": {
+            "matched": len(current_games),
+            "correct": game_correct,
+            "decisions": len(current_decisions),
+            "adherence": game_correct / len(current_decisions)
+            if current_decisions
+            else None,
+            "wins": wins,
+            "draws": draws,
+            "losses": len(current_games) - wins - draws,
+            "positions_seen": len({row["fen_key"] for row in current_decisions}),
+            "positions_total": position_total,
+        },
         "unlocks": list(unique_upcoming_cards.values())[:3],
     }
 
 
-def repertoire_positions(repertoire_id: str, window: str, sort: str, cursor: str | None, limit: int) -> dict:
+def repertoire_positions(
+    repertoire_id: str, window: str, sort: str, cursor: str | None, limit: int
+) -> dict:
     if sort not in {"attention", "frequency"}:
         raise ValueError("Unknown position sort")
     if not 1 <= limit <= 50:
@@ -131,15 +226,35 @@ def repertoire_positions(repertoire_id: str, window: str, sort: str, cursor: str
         events = storage.position_decision_rows(database, repertoire_id)
     positions: dict[str, dict] = {}
     for event in events:
-        if event["fen_key"] not in known_positions or event["card_id"] not in current_card_ids or not _in_window(_study_day(event["played_at"], timezone_name), cutoff):
+        if (
+            event["fen_key"] not in known_positions
+            or event["card_id"] not in current_card_ids
+            or not _in_window(_study_day(event["played_at"], timezone_name), cutoff)
+        ):
             continue
-        position = positions.setdefault(event["fen_key"], {"fen_key": event["fen_key"], "games": set(), "encounters": 0, "correct": 0, "missed": 0,
-            "last_seen_at": "", "expected_moves": set(), "played_moves": {}, "card_id": None, "sample_game_id": None, "sample_ply": None})
+        position = positions.setdefault(
+            event["fen_key"],
+            {
+                "fen_key": event["fen_key"],
+                "games": set(),
+                "encounters": 0,
+                "correct": 0,
+                "missed": 0,
+                "last_seen_at": "",
+                "expected_moves": set(),
+                "played_moves": {},
+                "card_id": None,
+                "sample_game_id": None,
+                "sample_ply": None,
+            },
+        )
         position["games"].add(event["game_id"])
         position["encounters"] += 1
         position["correct" if event["outcome"] == "success" else "missed"] += 1
         position["expected_moves"].add(event["expected_uci"])
-        position["played_moves"][event["actual_uci"]] = position["played_moves"].get(event["actual_uci"], 0) + 1
+        position["played_moves"][event["actual_uci"]] = (
+            position["played_moves"].get(event["actual_uci"], 0) + 1
+        )
         if event["played_at"] >= position["last_seen_at"]:
             position["last_seen_at"] = event["played_at"]
             position["sample_game_id"] = event["game_id"]
@@ -151,14 +266,33 @@ def repertoire_positions(repertoire_id: str, window: str, sort: str, cursor: str
     else:
         rows.sort(key=lambda row: (-row["encounters"], -row["missed"], row["fen_key"]))
     try:
-        offset = int(base64.urlsafe_b64decode(cursor.encode()).decode()) if cursor else 0
+        offset = (
+            int(base64.urlsafe_b64decode(cursor.encode()).decode()) if cursor else 0
+        )
     except (ValueError, UnicodeDecodeError):
         raise ValueError("Invalid positions cursor") from None
     if offset < 0:
         raise ValueError("Invalid positions cursor")
-    page = rows[offset:offset + limit]
-    return {"positions": [{**row, "fen": row["fen_key"] + " 0 1", "games": len(row["games"]),
-                             "expected_moves": sorted(row["expected_moves"]),
-                             "played_moves": [{"move_uci": move, "count": count} for move, count in sorted(row["played_moves"].items(), key=lambda item: (-item[1], item[0]))]}
-                            for row in page],
-            "total": len(rows), "next_cursor": base64.urlsafe_b64encode(str(offset + limit).encode()).decode() if offset + limit < len(rows) else None}
+    page = rows[offset : offset + limit]
+    return {
+        "positions": [
+            {
+                **row,
+                "fen": row["fen_key"] + " 0 1",
+                "games": len(row["games"]),
+                "expected_moves": sorted(row["expected_moves"]),
+                "played_moves": [
+                    {"move_uci": move, "count": count}
+                    for move, count in sorted(
+                        row["played_moves"].items(),
+                        key=lambda item: (-item[1], item[0]),
+                    )
+                ],
+            }
+            for row in page
+        ],
+        "total": len(rows),
+        "next_cursor": base64.urlsafe_b64encode(str(offset + limit).encode()).decode()
+        if offset + limit < len(rows)
+        else None,
+    }

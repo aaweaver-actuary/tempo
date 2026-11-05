@@ -9,7 +9,9 @@ import sys
 from app import tasks
 from tempo_legacy_database.adapters import postgres_store
 from app.services import (
-    postgres_game_events, postgres_game_features, postgres_game_priorities,
+    postgres_game_events,
+    postgres_game_features,
+    postgres_game_priorities,
 )
 
 
@@ -31,13 +33,28 @@ class Cursor:
         return self.row
 
 
-
-
 def test_postgres_game_events_stage_then_publish_without_stale_replay(monkeypatch):
     assert "game_derivation_events" in tasks._SUPPORTED_BACKGROUND_KINDS
-    event = ("event-one", "game-one", 3, 1, 12, "tactical opportunity", "fork",
-             "white", "black", "missed", 0.9, 100, "e2e4", "d2d4",
-             "[]", "{}", "created", "updated")
+    event = (
+        "event-one",
+        "game-one",
+        3,
+        1,
+        12,
+        "tactical opportunity",
+        "fork",
+        "white",
+        "black",
+        "missed",
+        0.9,
+        100,
+        "e2e4",
+        "d2d4",
+        "[]",
+        "{}",
+        "created",
+        "updated",
+    )
     staged = []
     updates = []
     queued = []
@@ -48,8 +65,9 @@ def test_postgres_game_events_stage_then_publish_without_stale_replay(monkeypatc
     class Database:
         def execute(self, statement, parameters=()):
             if "FROM game_derivation_jobs" in statement:
-                return Cursor({"derivation_version": 7, "completed_phases": 4,
-                               "status": "queued"})
+                return Cursor(
+                    {"derivation_version": 7, "completed_phases": 4, "status": "queued"}
+                )
             if "COUNT(*) FROM gameplay_events_staged" in statement:
                 return Cursor((len(staged),))
             if "UPDATE game_derivation_jobs" in statement:
@@ -66,20 +84,40 @@ def test_postgres_game_events_stage_then_publish_without_stale_replay(monkeypatc
         yield Database()
 
     monkeypatch.setattr(postgres_game_events, "connection", write_database)
-    monkeypatch.setattr(postgres_game_events, "refresh_gameplay_events",
-                        lambda _game_id, **_kwargs: [event])
-    monkeypatch.setattr(postgres_game_events, "lock_current_slice", lambda *_args: lease_current)
-    monkeypatch.setattr(postgres_game_events, "advance_task_slice_in_transaction",
-                        lambda _database, _task, *, next_phase, next_payload:
-                        advanced.append(next_payload) or True)
-    monkeypatch.setattr(postgres_game_events, "enqueue_compact_postgres_task_in_transaction",
-                        lambda _database, kind, key, payload, *, priority:
-                        queued.append((kind, key, payload, priority)))
-    monkeypatch.setattr(postgres_game_events, "complete_task_slice_in_transaction",
-                        lambda _database, _task: completed.append(True) or True)
+    monkeypatch.setattr(
+        postgres_game_events,
+        "refresh_gameplay_events",
+        lambda _game_id, **_kwargs: [event],
+    )
+    monkeypatch.setattr(
+        postgres_game_events, "lock_current_slice", lambda *_args: lease_current
+    )
+    monkeypatch.setattr(
+        postgres_game_events,
+        "advance_task_slice_in_transaction",
+        lambda _database, _task, *, next_phase, next_payload: (
+            advanced.append(next_payload) or True
+        ),
+    )
+    monkeypatch.setattr(
+        postgres_game_events,
+        "enqueue_compact_postgres_task_in_transaction",
+        lambda _database, kind, key, payload, *, priority: queued.append(
+            (kind, key, payload, priority)
+        ),
+    )
+    monkeypatch.setattr(
+        postgres_game_events,
+        "complete_task_slice_in_transaction",
+        lambda _database, _task: completed.append(True) or True,
+    )
 
-    task = {"id": "events", "generation": 1, "lease_token": "live",
-            "payload": {"game_id": "game-one", "derivation_version": 7, "cursor": 0}}
+    task = {
+        "id": "events",
+        "generation": 1,
+        "lease_token": "live",
+        "payload": {"game_id": "game-one", "derivation_version": 7, "cursor": 0},
+    }
     assert postgres_game_events.execute_game_event_slice(task)
     assert len(staged) == 1
     assert staged[0][-1] == 7
@@ -90,8 +128,14 @@ def test_postgres_game_events_stage_then_publish_without_stale_replay(monkeypatc
     task["payload"] = advanced[0]
     assert postgres_game_events.execute_game_event_slice(task)
     assert updates == [(7, "game-one", 7)]
-    assert queued == [("game_derivation_features", "game-one",
-                       {"game_id": "game-one", "derivation_version": 7}, 126)]
+    assert queued == [
+        (
+            "game_derivation_features",
+            "game-one",
+            {"game_id": "game-one", "derivation_version": 7},
+            126,
+        )
+    ]
     assert completed == [True]
 
 
@@ -104,8 +148,9 @@ def test_postgres_game_features_publish_then_handoff_with_current_version(monkey
     class Database:
         def execute(self, statement, parameters=()):
             if "FROM game_derivation_jobs" in statement:
-                return Cursor({"derivation_version": 7, "completed_phases": 5,
-                               "status": "queued"})
+                return Cursor(
+                    {"derivation_version": 7, "completed_phases": 5, "status": "queued"}
+                )
             writes.append((statement, parameters))
             return Cursor()
 
@@ -115,28 +160,51 @@ def test_postgres_game_features_publish_then_handoff_with_current_version(monkey
         yield Database()
 
     monkeypatch.setattr(postgres_game_features, "connection", write_database)
-    monkeypatch.setattr(postgres_game_features, "refresh_game_features",
-                        lambda _game_id, **_kwargs: ("game-one", "features"))
-    monkeypatch.setattr(postgres_game_features, "lock_current_slice", lambda *_args: lease_current)
-    monkeypatch.setattr(postgres_game_features, "enqueue_compact_postgres_task_in_transaction",
-                        lambda _database, kind, key, payload, *, priority:
-                        queued.append((kind, key, payload, priority)))
-    monkeypatch.setattr(postgres_game_features, "complete_task_slice_in_transaction",
-                        lambda _database, _task: True)
+    monkeypatch.setattr(
+        postgres_game_features,
+        "refresh_game_features",
+        lambda _game_id, **_kwargs: ("game-one", "features"),
+    )
+    monkeypatch.setattr(
+        postgres_game_features, "lock_current_slice", lambda *_args: lease_current
+    )
+    monkeypatch.setattr(
+        postgres_game_features,
+        "enqueue_compact_postgres_task_in_transaction",
+        lambda _database, kind, key, payload, *, priority: queued.append(
+            (kind, key, payload, priority)
+        ),
+    )
+    monkeypatch.setattr(
+        postgres_game_features,
+        "complete_task_slice_in_transaction",
+        lambda _database, _task: True,
+    )
 
-    task = {"id": "features", "generation": 1, "lease_token": "live",
-            "payload": {"game_id": "game-one", "derivation_version": 7}}
+    task = {
+        "id": "features",
+        "generation": 1,
+        "lease_token": "live",
+        "payload": {"game_id": "game-one", "derivation_version": 7},
+    }
     assert postgres_game_features.execute_game_feature_slice(task)
     assert writes[0][1] == ("game-one", "features")
-    assert queued == [("game_derivation_priorities", "game-one",
-                       {"game_id": "game-one", "derivation_version": 7,
-                        "after_repertoire_id": ""}, 126)]
+    assert queued == [
+        (
+            "game_derivation_priorities",
+            "game-one",
+            {"game_id": "game-one", "derivation_version": 7, "after_repertoire_id": ""},
+            126,
+        )
+    ]
     lease_current = False
     assert not postgres_game_features.execute_game_feature_slice(task)
     assert len(writes) == 2
 
 
-def test_postgres_game_priority_handoff_finishes_only_after_last_repertoire(monkeypatch):
+def test_postgres_game_priority_handoff_finishes_only_after_last_repertoire(
+    monkeypatch,
+):
     assert "game_derivation_priorities" in tasks._SUPPORTED_BACKGROUND_KINDS
     queued = []
     advanced = []
@@ -148,11 +216,13 @@ def test_postgres_game_priority_handoff_finishes_only_after_last_repertoire(monk
             if "FROM imported_games" in statement:
                 return Cursor({"color": "white"})
             if "FROM repertoire_lines" in statement:
-                return Cursor({"repertoire_id": "repertoire-one"}
-                              if parameters[1] == "" else None)
+                return Cursor(
+                    {"repertoire_id": "repertoire-one"} if parameters[1] == "" else None
+                )
             if "FROM game_derivation_jobs" in statement:
-                return Cursor({"derivation_version": 7, "completed_phases": 6,
-                               "status": "queued"})
+                return Cursor(
+                    {"derivation_version": 7, "completed_phases": 6, "status": "queued"}
+                )
             if "UPDATE game_derivation_jobs" in statement:
                 updates.append(parameters)
             return Cursor()
@@ -162,29 +232,65 @@ def test_postgres_game_priority_handoff_finishes_only_after_last_repertoire(monk
         assert background
         yield Database()
 
-    monkeypatch.setattr(postgres_game_priorities, "background_read_connection", database_connection)
+    monkeypatch.setattr(
+        postgres_game_priorities, "background_read_connection", database_connection
+    )
     monkeypatch.setattr(postgres_game_priorities, "connection", database_connection)
-    monkeypatch.setattr(postgres_game_priorities, "lock_current_slice", lambda *_args: True)
+    monkeypatch.setattr(
+        postgres_game_priorities, "lock_current_slice", lambda *_args: True
+    )
+
     def unavailable_priority(*_args, **_kwargs):
-        raise AssertionError("Game derivation must complete without optional adaptive priority")
+        raise AssertionError(
+            "Game derivation must complete without optional adaptive priority"
+        )
 
-    monkeypatch.setattr(postgres_game_priorities, "enqueue_priority_refresh_in_transaction",
-                        unavailable_priority, raising=False)
-    monkeypatch.setattr(postgres_game_priorities, "enqueue_opportunity_refresh_in_transaction",
-                        lambda *_args: (_ for _ in ()).throw(AssertionError("Retired opportunity producer called")), raising=False)
-    monkeypatch.setattr(postgres_game_priorities, "advance_task_slice_in_transaction",
-                        lambda _database, _task, *, next_phase, next_payload:
-                        advanced.append(next_payload) or True)
-    monkeypatch.setattr(postgres_game_priorities, "complete_task_slice_in_transaction",
-                        lambda _database, _task: completed.append(True) or True)
+    monkeypatch.setattr(
+        postgres_game_priorities,
+        "enqueue_priority_refresh_in_transaction",
+        unavailable_priority,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        postgres_game_priorities,
+        "enqueue_opportunity_refresh_in_transaction",
+        lambda *_args: (_ for _ in ()).throw(
+            AssertionError("Retired opportunity producer called")
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        postgres_game_priorities,
+        "advance_task_slice_in_transaction",
+        lambda _database, _task, *, next_phase, next_payload: (
+            advanced.append(next_payload) or True
+        ),
+    )
+    monkeypatch.setattr(
+        postgres_game_priorities,
+        "complete_task_slice_in_transaction",
+        lambda _database, _task: completed.append(True) or True,
+    )
 
-    task = {"id": "priorities", "generation": 1, "lease_token": "live",
-            "payload": {"game_id": "game-one", "derivation_version": 7,
-                        "after_repertoire_id": ""}}
+    task = {
+        "id": "priorities",
+        "generation": 1,
+        "lease_token": "live",
+        "payload": {
+            "game_id": "game-one",
+            "derivation_version": 7,
+            "after_repertoire_id": "",
+        },
+    }
     assert postgres_game_priorities.execute_game_priority_handoff_slice(task)
     assert queued == []
-    assert advanced == [{"game_id": "game-one", "derivation_version": 7,
-                         "after_repertoire_id": "repertoire-one"}]
+    assert advanced == [
+        {
+            "game_id": "game-one",
+            "derivation_version": 7,
+            "after_repertoire_id": "repertoire-one",
+        }
+    ]
     task["payload"] = advanced[0]
     assert postgres_game_priorities.execute_game_priority_handoff_slice(task)
     assert updates[0][1:] == ("game-one", 7)

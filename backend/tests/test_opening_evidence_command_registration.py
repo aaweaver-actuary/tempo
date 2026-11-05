@@ -1,11 +1,12 @@
 """Checkpoint registration does not require the HTTP router."""
+
 import os
 import subprocess
 import sys
 
 
 def test_opening_checkpoint_registration_imports_without_http_router():
-    script = '''
+    script = """
 import importlib.abc
 import sys
 class RejectHTTP(importlib.abc.MetaPathFinder):
@@ -19,5 +20,7 @@ name = "opening_evidence.checkpoint"
 assert command_gateway._handlers[name] is commands.commit_standalone_checkpoint
 assert command_gateway._preparers[name] is commands.prepare_standalone_checkpoint
 assert "app.opening_evidence_api" not in sys.modules
-'''
-    subprocess.run([sys.executable, '-c', script], env=os.environ.copy(), check=True, timeout=20)
+"""
+    subprocess.run(
+        [sys.executable, "-c", script], env=os.environ.copy(), check=True, timeout=20
+    )

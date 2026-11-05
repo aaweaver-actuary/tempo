@@ -1,4 +1,5 @@
 """Legal replay and exact-scope contract for synthetic position Study fixtures."""
+
 from collections import defaultdict
 from dataclasses import FrozenInstanceError
 
@@ -73,21 +74,36 @@ def test_decision_values_and_conflict_are_explicit_and_stably_ordered():
     assert sum(EXPECTED_DECISION_COUNTS.values()) == len(DECISIONS)
     for label, expected_count in EXPECTED_DECISION_COUNTS.items():
         assert sum(decision.route == label for decision in DECISIONS) == expected_count
-    assert STABLE_DECISIONS == tuple(sorted(
-        DECISIONS,
-        key=lambda item: (item.repertoire, item.position, item.expected_uci, item.route, item.ply),
-    ))
+    assert STABLE_DECISIONS == tuple(
+        sorted(
+            DECISIONS,
+            key=lambda item: (
+                item.repertoire,
+                item.position,
+                item.expected_uci,
+                item.route,
+                item.ply,
+            ),
+        )
+    )
     decisions_at = defaultdict(set)
     for decision in DECISIONS:
         assert decision.variant == "standard"
-        assert decision.expected_uci in {move.uci() for move in chess.Board(
-            FRAMES[decision.route][decision.ply].fen
-        ).legal_moves}
-        decisions_at[(decision.repertoire, decision.position)].add(decision.expected_uci)
+        assert decision.expected_uci in {
+            move.uci()
+            for move in chess.Board(
+                FRAMES[decision.route][decision.ply].fen
+            ).legal_moves
+        }
+        decisions_at[(decision.repertoire, decision.position)].add(
+            decision.expected_uci
+        )
     labels = SOURCE_CASES["selected-response-conflict"]
     by_label = {route.label: route for route in ROUTES}
     conflict_routes = [by_label[label] for label in labels]
-    root_keys = {(route.repertoire, FRAMES[route.label][0].position) for route in conflict_routes}
+    root_keys = {
+        (route.repertoire, FRAMES[route.label][0].position) for route in conflict_routes
+    }
     assert len(root_keys) == 1
     assert {route.moves[0] for route in conflict_routes} == {"e2e4", "d2d4"}
     assert len(decisions_at[next(iter(root_keys))]) == 2
@@ -109,13 +125,33 @@ def test_evidence_scenarios_cover_due_partial_retry_and_duplicate_receipts():
     assert cases["due-first-clean"].expected_grades == ("good",)
     assert cases["nondue-clean-observation"].expected_grades == ("observe",)
     partial = cases["partial-first-response-error"]
-    assert partial.expected_grades == ("again",) and partial.terminal_complete == (False,)
+    assert partial.expected_grades == ("again",) and partial.terminal_complete == (
+        False,
+    )
     later_wrong = cases["good-then-fresh-wrong"]
     assert later_wrong.expected_grades == ("good", "again")
     duplicate = cases["duplicate-offline-receipt"]
     assert duplicate.duplicate_receipt
     assert duplicate.expected_grades == ("again", "duplicate-no-grade")
     for case in EVIDENCE_CASES:
-        assert len({len(case.responses), len(case.expected_grades), len(case.saved), len(case.terminal_complete)}) == 1
-        assert all(response in {move.uci() for move in chess.Board(POSITION_REFS[case.position_ref].fen).legal_moves}
-                   for response in case.responses)
+        assert (
+            len(
+                {
+                    len(case.responses),
+                    len(case.expected_grades),
+                    len(case.saved),
+                    len(case.terminal_complete),
+                }
+            )
+            == 1
+        )
+        assert all(
+            response
+            in {
+                move.uci()
+                for move in chess.Board(
+                    POSITION_REFS[case.position_ref].fen
+                ).legal_moves
+            }
+            for response in case.responses
+        )

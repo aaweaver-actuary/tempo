@@ -3,6 +3,7 @@
 The caller supplies the captured snapshot and its matching immutable index.
 This module acquires nothing and submits no learning command.
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -15,9 +16,19 @@ from tempo_repertoire_comparison import RouteFrontier, TraversalRoute
 
 from app.contracts.product_v02.games import Finding, GameRecord, TimePrecision
 from app.contracts.product_v02.learning import GameEffectKey
-from app.contracts.product_v02.repertoire import DecisionPresentation, ImmutableAuthoredRoute, RepertoireSnapshot
+from app.contracts.product_v02.repertoire import (
+    DecisionPresentation,
+    ImmutableAuthoredRoute,
+    RepertoireSnapshot,
+)
 
-__all__ = ["ReentryLookup", "normalize_record", "compare_record", "compare_game", "effect_key"]
+__all__ = [
+    "ReentryLookup",
+    "normalize_record",
+    "compare_record",
+    "compare_game",
+    "effect_key",
+]
 
 
 class _ReentryOccurrence(Protocol):
@@ -35,25 +46,36 @@ class ReentryLookup(Protocol):
     No concrete sibling implementation is imported. Composition supplies the
     index built from this snapshot; tests may supply a fake with the same seam.
     """
+
     snapshot_id: str
     source_revision: str
     revision: int
     digest: str
 
-    def reentry_candidate(self, repertoire_id: str, fen: str,
-                          variant: str = "standard") -> _ReentryOccurrence | None: ...
+    def reentry_candidate(
+        self, repertoire_id: str, fen: str, variant: str = "standard"
+    ) -> _ReentryOccurrence | None: ...
 
 
-def normalize_record(record: GameRecord, *, provider: str, account: str,
-                     workspace_id: str, game_id: str | None = None) -> CanonicalGame:
+def normalize_record(
+    record: GameRecord,
+    *,
+    provider: str,
+    account: str,
+    workspace_id: str,
+    game_id: str | None = None,
+) -> CanonicalGame:
     """Reuse the strict ingester; the original PGN/time precision stay in record."""
     if provider not in {"lichess", "chesscom"}:
         raise ValueError("unsupported_provider")
     game = PgnGameIngester().ingest(
-        BytesInput(record.pgn.encode("utf-8")), workspace_id=workspace_id,
+        BytesInput(record.pgn.encode("utf-8")),
+        workspace_id=workspace_id,
         game_id=record.source_game_id if game_id is None else game_id,
-        game_revision=record.source_revision, source_id=provider,
-        source_revision=record.source_revision, player=account,
+        game_revision=record.source_revision,
+        source_id=provider,
+        source_revision=record.source_revision,
+        player=account,
         played_at=record.played_at,
     )
     if game.source_digest != record.source_digest:
@@ -67,30 +89,54 @@ def effect_key(finding: Finding, *, workspace_id: str) -> GameEffectKey:
     """Stable logical identity also usable for a mapped reclassified finding."""
     if finding.decision_id is None:
         raise ValueError("decision_identity_required_for_effect_key")
-    return GameEffectKey(workspace_id=workspace_id, provider=finding.provider,
-                         game_id=finding.game_id, decision_id=finding.decision_id,
-                         occurrence_ply=finding.ply)
+    return GameEffectKey(
+        workspace_id=workspace_id,
+        provider=finding.provider,
+        game_id=finding.game_id,
+        decision_id=finding.decision_id,
+        occurrence_ply=finding.ply,
+    )
 
 
-def compare_record(record: GameRecord, *, provider: str, account: str,
-                   workspace_id: str, snapshot: RepertoireSnapshot,
-                   reentry_lookup: ReentryLookup | None = None,
-                   game_id: str | None = None) -> tuple[Finding, ...]:
+def compare_record(
+    record: GameRecord,
+    *,
+    provider: str,
+    account: str,
+    workspace_id: str,
+    snapshot: RepertoireSnapshot,
+    reentry_lookup: ReentryLookup | None = None,
+    game_id: str | None = None,
+) -> tuple[Finding, ...]:
     """Normalize one supplied provider record and classify against captured facts.
 
     After a departure only an exact authored anchor validated by the supplied
     index can resume traversal. A later reentry never rewrites earlier findings.
     """
-    game = normalize_record(record, provider=provider, account=account,
-                            workspace_id=workspace_id, game_id=game_id)
-    return compare_game(game, provider=provider, time_precision=record.time_precision,
-                        snapshot=snapshot, reentry_lookup=reentry_lookup)
+    game = normalize_record(
+        record,
+        provider=provider,
+        account=account,
+        workspace_id=workspace_id,
+        game_id=game_id,
+    )
+    return compare_game(
+        game,
+        provider=provider,
+        time_precision=record.time_precision,
+        snapshot=snapshot,
+        reentry_lookup=reentry_lookup,
+    )
 
 
-def compare_game(game: CanonicalGame, *, provider: str,
-                 snapshot: RepertoireSnapshot,
-                 time_precision: TimePrecision = "unknown",
-                 reentry_lookup: ReentryLookup | None = None) -> tuple[Finding, ...]:
+def compare_game(
+    game: CanonicalGame,
+    *,
+    provider: str,
+    snapshot: RepertoireSnapshot,
+    time_precision: TimePrecision = "unknown",
+    reentry_lookup: ReentryLookup | None = None,
+) -> tuple[Finding, ...]:
     """Compare a retained canonical game without requiring original PGN bytes.
 
     Preserve the supplied source identity, revision and digest; legal replay
@@ -119,23 +165,45 @@ def compare_game(game: CanonicalGame, *, provider: str,
     scope = tuple(membership.scope_repertoire_ids)
     if len(scope) != len(set(scope)):
         raise ValueError("duplicate_scope_repertoire")
-    routes = [route for route in membership.routes if route.learner_color == game.learner_color]
+    routes = [
+        route
+        for route in membership.routes
+        if route.learner_color == game.learner_color
+    ]
     if any(route.repertoire_id not in scope for route in routes):
         raise ValueError("route_outside_snapshot_scope")
     if len({(route.repertoire_id, route.route_id) for route in routes}) != len(routes):
         raise ValueError("duplicate_route_identity")
     findings = []
     for repertoire_id in sorted(scope):
-        findings.extend(_compare_repertoire(game, provider=provider, snapshot=snapshot,
-            routes=[route for route in routes if route.repertoire_id == repertoire_id],
-            repertoire_id=repertoire_id, time_precision=time_precision, reentry_lookup=reentry_lookup))
-    return tuple(sorted(findings, key=lambda finding: (finding.ply, finding.repertoire_id)))
+        findings.extend(
+            _compare_repertoire(
+                game,
+                provider=provider,
+                snapshot=snapshot,
+                routes=[
+                    route for route in routes if route.repertoire_id == repertoire_id
+                ],
+                repertoire_id=repertoire_id,
+                time_precision=time_precision,
+                reentry_lookup=reentry_lookup,
+            )
+        )
+    return tuple(
+        sorted(findings, key=lambda finding: (finding.ply, finding.repertoire_id))
+    )
 
 
-def _compare_repertoire(game: CanonicalGame, *, provider: str, snapshot: RepertoireSnapshot,
-                        routes: list[ImmutableAuthoredRoute], repertoire_id: str,
-                        time_precision: TimePrecision,
-                        reentry_lookup: ReentryLookup | None) -> tuple[Finding, ...]:
+def _compare_repertoire(
+    game: CanonicalGame,
+    *,
+    provider: str,
+    snapshot: RepertoireSnapshot,
+    routes: list[ImmutableAuthoredRoute],
+    repertoire_id: str,
+    time_precision: TimePrecision,
+    reentry_lookup: ReentryLookup | None,
+) -> tuple[Finding, ...]:
     """One repertoire owns its frontier; other repertoires cannot end its coverage."""
     membership = snapshot.membership
     scope = (repertoire_id,)
@@ -144,11 +212,17 @@ def _compare_repertoire(game: CanonicalGame, *, provider: str, snapshot: Reperto
     for route, frames in zip(routes, route_positions):
         for ply, frame in enumerate(frames[:-1]):
             if frame["turn"] == game.learner_color:
-                own_responses_by_position.setdefault((route.repertoire_id, frame["comparison_key"]), set()).add(route.moves[ply])
+                own_responses_by_position.setdefault(
+                    (route.repertoire_id, frame["comparison_key"]), set()
+                ).add(route.moves[ply])
     # No unconditional FEN-based anchors: only the supplied index may validate
     # one for the current game position, route and current physical mapping.
-    traversal = [TraversalRoute(tuple(p["comparison_key"] for p in positions), tuple(route.moves))
-                 for route, positions in zip(routes, route_positions)]
+    traversal = [
+        TraversalRoute(
+            tuple(p["comparison_key"] for p in positions), tuple(route.moves)
+        )
+        for route, positions in zip(routes, route_positions)
+    ]
     positions = replay_line(game.starting_fen, game.moves)
     frontier = RouteFrontier(traversal, positions[0]["comparison_key"])
     boundaries = {item.route_id: item for item in snapshot.boundaries}
@@ -158,89 +232,185 @@ def _compare_repertoire(game: CanonicalGame, *, provider: str, snapshot: Reperto
         key = position["comparison_key"]
         authority = None
         candidates = frontier.candidates(key)
-        if (departed and not candidates and reentry_lookup is not None
-                and reentry_lookup.snapshot_id == membership.snapshot_id
-                and reentry_lookup.source_revision == membership.source_revision
-                and reentry_lookup.revision == membership.revision
-                and reentry_lookup.digest == membership.digest):
+        if (
+            departed
+            and not candidates
+            and reentry_lookup is not None
+            and reentry_lookup.snapshot_id == membership.snapshot_id
+            and reentry_lookup.source_revision == membership.source_revision
+            and reentry_lookup.revision == membership.revision
+            and reentry_lookup.digest == membership.digest
+        ):
             validated = []
             for repertoire_id in scope:
-                candidate = reentry_lookup.reentry_candidate(repertoire_id, position["fen"], snapshot.variant)
+                candidate = reentry_lookup.reentry_candidate(
+                    repertoire_id, position["fen"], snapshot.variant
+                )
                 if candidate is None:
                     continue
                 for index, route in enumerate(routes):
-                    if (route.repertoire_id != repertoire_id or route.route_id != candidate.route_id
-                            or candidate.source_revision != membership.source_revision
-                            or not candidate.route_complete or not 0 <= candidate.ply < len(route.moves)
-                            or traversal[index].position_keys[candidate.ply] != key):
+                    if (
+                        route.repertoire_id != repertoire_id
+                        or route.route_id != candidate.route_id
+                        or candidate.source_revision != membership.source_revision
+                        or not candidate.route_complete
+                        or not 0 <= candidate.ply < len(route.moves)
+                        or traversal[index].position_keys[candidate.ply] != key
+                    ):
                         continue
                     binding = candidate.binding
-                    if binding is None or not _mapping_applies(binding, route.route_id, candidate.ply):
+                    if binding is None or not _mapping_applies(
+                        binding, route.route_id, candidate.ply
+                    ):
                         continue
-                    anchors = [item for item in route.reentries if item.ply == candidate.ply
-                               and item.authority_id == candidate.reentry_authority_id]
-                    mappings = [item for item in snapshot.decision_presentations
-                                if item.repertoire_id == repertoire_id and item.position_key == key
-                                and item.decision_id == binding.decision_id
-                                and item.presentation_id == binding.presentation_id
-                                and item.presentation_revision == binding.presentation_revision
-                                and item.selected_response_uci == route.moves[candidate.ply]
-                                and _mapping_applies(item, route.route_id, candidate.ply)]
+                    anchors = [
+                        item
+                        for item in route.reentries
+                        if item.ply == candidate.ply
+                        and item.authority_id == candidate.reentry_authority_id
+                    ]
+                    mappings = [
+                        item
+                        for item in snapshot.decision_presentations
+                        if item.repertoire_id == repertoire_id
+                        and item.position_key == key
+                        and item.decision_id == binding.decision_id
+                        and item.presentation_id == binding.presentation_id
+                        and item.presentation_revision == binding.presentation_revision
+                        and item.selected_response_uci == route.moves[candidate.ply]
+                        and _mapping_applies(item, route.route_id, candidate.ply)
+                    ]
                     if len(anchors) == 1 and len(mappings) == 1:
-                        validated.append((index, candidate.ply, anchors[0].authority_id))
+                        validated.append(
+                            (index, candidate.ply, anchors[0].authority_id)
+                        )
             if len(validated) == 1:
                 index, ply, authority = validated[0]
                 candidates = {(index, ply)}
         if not candidates:
             if not departed:
                 for repertoire_id in sorted(scope):
-                    findings.append(_finding(game, provider, membership, position, repertoire_id, (),
-                                             "known_unavailable", "no_applicable_authored_route", None, None))
+                    findings.append(
+                        _finding(
+                            game,
+                            provider,
+                            membership,
+                            position,
+                            repertoire_id,
+                            (),
+                            "known_unavailable",
+                            "no_applicable_authored_route",
+                            None,
+                            None,
+                        )
+                    )
             departed = True
             continue
         learner_turn = position["turn"] == game.learner_color
         # P02 applies across every occurrence in this repertoire, including a
         # different authored route with the same exact transposed position.
-        own_responses = own_responses_by_position.get((repertoire_id, key), set()) if any(
-            ply < len(routes[index].moves) for index, ply in candidates) else set()
-        expected = tuple(sorted(own_responses if learner_turn else {
-            routes[index].moves[ply] for index, ply in candidates if ply < len(routes[index].moves)}))
-        terminal = any(ply == len(routes[index].moves) and boundaries[routes[index].route_id].deliberate
-                       for index, ply in candidates)
-        mappings = tuple({item for item in snapshot.decision_presentations
-                          if item.repertoire_id == repertoire_id and item.position_key == key
-                          and any(_mapping_applies(item, routes[index].route_id, ply)
-                                  for index, ply in candidates)})
+        own_responses = (
+            own_responses_by_position.get((repertoire_id, key), set())
+            if any(ply < len(routes[index].moves) for index, ply in candidates)
+            else set()
+        )
+        expected = tuple(
+            sorted(
+                own_responses
+                if learner_turn
+                else {
+                    routes[index].moves[ply]
+                    for index, ply in candidates
+                    if ply < len(routes[index].moves)
+                }
+            )
+        )
+        terminal = any(
+            ply == len(routes[index].moves)
+            and boundaries[routes[index].route_id].deliberate
+            for index, ply in candidates
+        )
+        mappings = tuple(
+            {
+                item
+                for item in snapshot.decision_presentations
+                if item.repertoire_id == repertoire_id
+                and item.position_key == key
+                and any(
+                    _mapping_applies(item, routes[index].route_id, ply)
+                    for index, ply in candidates
+                )
+            }
+        )
         mapping = resolve_equivalent_mapping(mappings)
-        incompatible_mapping = learner_turn and len(expected) == 1 and any(
-            item.selected_response_uci not in expected for item in mappings)
+        incompatible_mapping = (
+            learner_turn
+            and len(expected) == 1
+            and any(item.selected_response_uci not in expected for item in mappings)
+        )
         if incompatible_mapping:
             mapping = None
-        active_occurrences = {(routes[index].route_id, ply) for index, ply in candidates}
-        route_mapping_ambiguous = (learner_turn and len(expected) == 1 and len(active_occurrences) > 1
+        active_occurrences = {
+            (routes[index].route_id, ply) for index, ply in candidates
+        }
+        route_mapping_ambiguous = (
+            learner_turn
+            and len(expected) == 1
+            and len(active_occurrences) > 1
             and any(item.route_id is not None for item in mappings)
-            and (mapping is None or any(not any(_mapping_applies(item, route_id, ply) for item in mappings)
-                                       for route_id, ply in active_occurrences)))
+            and (
+                mapping is None
+                or any(
+                    not any(_mapping_applies(item, route_id, ply) for item in mappings)
+                    for route_id, ply in active_occurrences
+                )
+            )
+        )
         result = classify_response(
-            played_uci=position["move"], expected_uci=expected, learner_turn=learner_turn,
-            complete=membership.complete and membership.available, terminal=terminal,
-            ambiguous=route_mapping_ambiguous or incompatible_mapping, mapping_count=1 if mapping is not None else len(mappings),
+            played_uci=position["move"],
+            expected_uci=expected,
+            learner_turn=learner_turn,
+            complete=membership.complete and membership.available,
+            terminal=terminal,
+            ambiguous=route_mapping_ambiguous or incompatible_mapping,
+            mapping_count=1 if mapping is not None else len(mappings),
             available=mapping is not None and getattr(mapping, "available", False),
-            introduced=None if mapping is None or mapping.introduction == "unknown" else mapping.introduction == "introduced",
-            introduced_at=_timestamp(None if mapping is None else mapping.introduced_at),
+            introduced=None
+            if mapping is None or mapping.introduction == "unknown"
+            else mapping.introduction == "introduced",
+            introduced_at=_timestamp(
+                None if mapping is None else mapping.introduced_at
+            ),
             introduced_before_game=_scoped_introduction(mapping, game, provider),
             occurred_at=_timestamp(game.played_at),
             occurrence_is_exact=time_precision in {"second", "millisecond"},
-            introduction_matches_content=mapping is not None and getattr(mapping, "introduction_matches_current_content", False),
+            introduction_matches_content=mapping is not None
+            and getattr(mapping, "introduction_matches_current_content", False),
         )
         if result is not None:
             kind, diagnostic = result
             if kind in {"ambiguous", "conflict"}:
                 mapping = None
-            findings.append(_finding(game, provider, membership, position, repertoire_id,
-                                     expected, kind, diagnostic, mapping, authority))
-            if (membership.complete and membership.available and position["move"] in expected
-                    and kind not in {"conflict", "coverage_end"}):
+            findings.append(
+                _finding(
+                    game,
+                    provider,
+                    membership,
+                    position,
+                    repertoire_id,
+                    expected,
+                    kind,
+                    diagnostic,
+                    mapping,
+                    authority,
+                )
+            )
+            if (
+                membership.complete
+                and membership.available
+                and position["move"] in expected
+                and kind not in {"conflict", "coverage_end"}
+            ):
                 # Authored traversal is independent of learning/card availability.
                 # Preserve mapping diagnostics without inventing a departure.
                 frontier.advance(candidates, position["move"])
@@ -255,11 +425,16 @@ def _compare_repertoire(game: CanonicalGame, *, provider: str, snapshot: Reperto
 
 
 def _timestamp(value):
-    return None if value is None else datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return (
+        None if value is None else datetime.fromisoformat(value.replace("Z", "+00:00"))
+    )
 
 
 def _mapping_applies(mapping, route_id, route_ply):
-    return mapping.route_id is None or (mapping.route_id, mapping.route_ply) == (route_id, route_ply)
+    return mapping.route_id is None or (mapping.route_id, mapping.route_ply) == (
+        route_id,
+        route_ply,
+    )
 
 
 def _scoped_introduction(mapping, game, provider):
@@ -267,34 +442,66 @@ def _scoped_introduction(mapping, game, provider):
         return None
     scope = mapping.introduction_game
     if (scope.provider, scope.game_id, scope.source_revision, scope.source_digest) != (
-            provider, game.game_id, game.source_revision, game.source_digest):
+        provider,
+        game.game_id,
+        game.source_revision,
+        game.source_digest,
+    ):
         return None
     return mapping.introduced_before_game
 
 
-def _finding(game, provider, membership, position, repertoire_id, expected, kind,
-             diagnostic, mapping, authority):
+def _finding(
+    game,
+    provider,
+    membership,
+    position,
+    repertoire_id,
+    expected,
+    kind,
+    diagnostic,
+    mapping,
+    authority,
+):
     if kind == "conflict":
         membership_fact = "conflict"
-    elif (not membership.complete or not membership.available
-          or (kind in {"ambiguous", "known_unavailable"} and not expected)):
+    elif (
+        not membership.complete
+        or not membership.available
+        or (kind in {"ambiguous", "known_unavailable"} and not expected)
+    ):
         membership_fact = "unknown"
     else:
         membership_fact = "present" if expected else "absent"
     introduction_fact = _scoped_introduction(mapping, game, provider)
     if introduction_fact is None:
-        introduction_fact = True if kind == "confirmed_miss" else False if kind == "known_unintroduced" else None
+        introduction_fact = (
+            True
+            if kind == "confirmed_miss"
+            else False
+            if kind == "known_unintroduced"
+            else None
+        )
     return Finding(
-        kind=kind, provider=provider, game_id=game.game_id,
-        source_revision=game.source_revision, source_digest=game.source_digest,
-        ply=position["ply"] + 1, position_key=position["comparison_key"],
-        expected_uci=expected, played_uci=position["move"], repertoire_id=repertoire_id,
+        kind=kind,
+        provider=provider,
+        game_id=game.game_id,
+        source_revision=game.source_revision,
+        source_digest=game.source_digest,
+        ply=position["ply"] + 1,
+        position_key=position["comparison_key"],
+        expected_uci=expected,
+        played_uci=position["move"],
+        repertoire_id=repertoire_id,
         repertoire_revision=membership.revision,
         decision_id=None if mapping is None else mapping.decision_id,
         presentation_id=None if mapping is None else mapping.presentation_id,
-        presentation_revision=None if mapping is None else mapping.presentation_revision,
+        presentation_revision=None
+        if mapping is None
+        else mapping.presentation_revision,
         introduced_before_game=introduction_fact,
         membership=membership_fact,
-        lapse_eligible=kind == "confirmed_miss", diagnostic=diagnostic,
+        lapse_eligible=kind == "confirmed_miss",
+        diagnostic=diagnostic,
         reentry_authority_id=authority,
     )

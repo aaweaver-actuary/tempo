@@ -15,7 +15,9 @@ from datetime import datetime, timezone
 import chess
 import chess.pgn
 
-from tempo_legacy_database.adapters.authored_repertoires import analysis_paste as storage
+from tempo_legacy_database.adapters.authored_repertoires import (
+    analysis_paste as storage,
+)
 
 from .repertoire_game_refresh import refresh_game_publications_after_mutation
 from app.chess.cards import card_id
@@ -27,7 +29,9 @@ MAX_PASTE_BYTES = 65_536
 MAX_PASTE_LINES = 50
 MAX_LINE_PLIES = 256
 STANDARD_FEN_KEY = canonical_fen(chess.STARTING_FEN)
-_PARSED_EXISTING_CACHE: OrderedDict[str, dict[str, list[tuple[str, list[tuple[str, str]], str]]]] = OrderedDict()
+_PARSED_EXISTING_CACHE: OrderedDict[
+    str, dict[str, list[tuple[str, list[tuple[str, str]], str]]]
+] = OrderedDict()
 _PARSED_EXISTING_CACHE_LOCK = threading.Lock()
 
 
@@ -49,31 +53,45 @@ class PastedLine:
 def _validate_movetext_tokens(source: str) -> None:
     """python-chess ignores unknown PGN words, so reject them explicitly."""
     without_headers = re.sub(r"(?m)^\s*\[[^\n]*\]\s*$", " ", source)
-    without_comments = re.sub(r"\{[^}]*\}|;[^\n]*|(?m:^%[^\n]*)", " ", without_headers, flags=re.S)
+    without_comments = re.sub(
+        r"\{[^}]*\}|;[^\n]*|(?m:^%[^\n]*)", " ", without_headers, flags=re.S
+    )
     without_numbers = re.sub(r"\b\d+\.(?:\.\.)?|\.\.\.", " ", without_comments)
     without_nags = re.sub(r"\$\d+", " ", without_numbers)
     for token in re.sub(r"[()]", " ", without_nags).split():
         if token in {"*", "1-0", "0-1", "1/2-1/2"}:
             continue
         normalized = token.rstrip("!?")
-        if not chess.SAN_REGEX.fullmatch(normalized) and not re.fullmatch(r"[O0]-[O0](?:-[O0])?[+#]?", normalized):
+        if not chess.SAN_REGEX.fullmatch(normalized) and not re.fullmatch(
+            r"[O0]-[O0](?:-[O0])?[+#]?", normalized
+        ):
             raise PasteInputError(f"Unrecognized move text: {token}")
 
 
-def _collect_variations(node: chess.pgn.GameNode, moves: tuple[str, ...], board: chess.Board) -> list[tuple[str, ...]]:
+def _collect_variations(
+    node: chess.pgn.GameNode, moves: tuple[str, ...], board: chess.Board
+) -> list[tuple[str, ...]]:
     if len(moves) > MAX_LINE_PLIES:
-        raise PasteInputError(f"A pasted line may contain at most {MAX_LINE_PLIES} moves")
+        raise PasteInputError(
+            f"A pasted line may contain at most {MAX_LINE_PLIES} moves"
+        )
     if not node.variations:
         return [moves] if moves else []
     collected: list[tuple[str, ...]] = []
     for child in node.variations:
         if len(collected) >= MAX_PASTE_LINES:
-            raise PasteInputError(f"Paste at most {MAX_PASTE_LINES} variations at a time")
+            raise PasteInputError(
+                f"Paste at most {MAX_PASTE_LINES} variations at a time"
+            )
         next_board = board.copy(stack=False)
         if child.move not in next_board.legal_moves:
-            raise PasteInputError(f"Illegal move after {board.fullmove_number}: {child.san()}")
+            raise PasteInputError(
+                f"Illegal move after {board.fullmove_number}: {child.san()}"
+            )
         next_board.push(child.move)
-        collected.extend(_collect_variations(child, (*moves, child.move.uci()), next_board))
+        collected.extend(
+            _collect_variations(child, (*moves, child.move.uci()), next_board)
+        )
     return collected
 
 
@@ -108,7 +126,9 @@ def parse_pasted_lines(raw_text: str, starting_fen: str | None) -> list[PastedLi
                 raise PasteInputError("PGN starting position is invalid")
             for moves in _collect_variations(game, (), board):
                 if len(parsed) >= MAX_PASTE_LINES:
-                    raise PasteInputError(f"Paste at most {MAX_PASTE_LINES} variations at a time")
+                    raise PasteInputError(
+                        f"Paste at most {MAX_PASTE_LINES} variations at a time"
+                    )
                 replay = board.copy(stack=False)
                 san_moves: list[str] = []
                 for move_uci in moves:
@@ -133,12 +153,15 @@ def _position_moves(line: PastedLine) -> list[tuple[str, str]]:
 def _snapshot(database: sqlite3.Connection) -> tuple[list[dict], list[dict], str]:
     repertoires = storage.repertoires(database)
     lines = storage.lines(database)
-    signature = hashlib.sha256(json.dumps([repertoires, lines], sort_keys=True).encode()).hexdigest()
+    signature = hashlib.sha256(
+        json.dumps([repertoires, lines], sort_keys=True).encode()
+    ).hexdigest()
     return repertoires, lines, signature
 
 
 def _parsed_existing_lines(
-    stored_lines: list[dict], signature: str,
+    stored_lines: list[dict],
+    signature: str,
 ) -> dict[str, list[tuple[str, list[tuple[str, str]], str]]]:
     with _PARSED_EXISTING_CACHE_LOCK:
         cached = _PARSED_EXISTING_CACHE.get(signature)
@@ -167,7 +190,12 @@ def _parsed_existing_lines(
     return parsed_existing
 
 
-def _destination_options(pasted: PastedLine, repertoires: list[dict], stored_lines: list[dict], parsed_existing: dict[str, list[tuple[str, list[tuple[str, str]], str]]]) -> list[dict]:
+def _destination_options(
+    pasted: PastedLine,
+    repertoires: list[dict],
+    stored_lines: list[dict],
+    parsed_existing: dict[str, list[tuple[str, list[tuple[str, str]], str]]],
+) -> list[dict]:
     pasted_edges = _position_moves(pasted)
     options: list[dict] = []
     for repertoire in repertoires:
@@ -175,7 +203,9 @@ def _destination_options(pasted: PastedLine, repertoires: list[dict], stored_lin
         colors = {color for color, _, _ in routes}
         trained_color = next(iter(colors)) if len(colors) == 1 else None
         known_edges = {edge for _, edges, _ in routes for edge in edges}
-        known_positions = {position for position, _ in known_edges} | {terminal for _, _, terminal in routes}
+        known_positions = {position for position, _ in known_edges} | {
+            terminal for _, _, terminal in routes
+        }
         score = sum(edge in known_edges for edge in pasted_edges)
         if score == 0 and canonical_fen(pasted.starting_fen) != STANDARD_FEN_KEY:
             score = int(canonical_fen(pasted.starting_fen) in known_positions)
@@ -193,51 +223,86 @@ def _destination_options(pasted: PastedLine, repertoires: list[dict], stored_lin
                 if color != trained_color:
                     continue
                 for position, move_uci in edges:
-                    if position.split()[1] == ("w" if trained_color == "white" else "b"):
+                    if position.split()[1] == (
+                        "w" if trained_color == "white" else "b"
+                    ):
                         existing_responses.setdefault(position, set()).add(move_uci)
             for position, move_uci in pasted_edges:
                 if board.turn == (trained_color == "white"):
                     alternatives = existing_responses.get(position, set()) - {move_uci}
                     if alternatives:
-                        conflicts.append({"fen": position, "existing_moves": sorted(alternatives), "pasted_move": move_uci})
+                        conflicts.append(
+                            {
+                                "fen": position,
+                                "existing_moves": sorted(alternatives),
+                                "pasted_move": move_uci,
+                            }
+                        )
                 board.push_uci(move_uci)
-        options.append({
-            "repertoire_id": repertoire["id"], "name": repertoire["name"],
-            "trained_color": trained_color, "score": score,
-            "duplicate": duplicate, "conflicts": conflicts,
-            "trainable": bool(trained_color and ends_on_trained_move(pasted.starting_fen, list(pasted.moves), trained_color)),
-        })
+        options.append(
+            {
+                "repertoire_id": repertoire["id"],
+                "name": repertoire["name"],
+                "trained_color": trained_color,
+                "score": score,
+                "duplicate": duplicate,
+                "conflicts": conflicts,
+                "trainable": bool(
+                    trained_color
+                    and ends_on_trained_move(
+                        pasted.starting_fen, list(pasted.moves), trained_color
+                    )
+                ),
+            }
+        )
     for option in options:
         option["matched"] = option["score"] > 0
     return options
 
 
 def build_paste_preview(
-    database: sqlite3.Connection, raw_text: str, starting_fen: str | None,
+    database: sqlite3.Connection,
+    raw_text: str,
+    starting_fen: str | None,
     source_gap_id: str | None,
 ) -> dict:
     parsed = parse_pasted_lines(raw_text, starting_fen)
     repertoires, stored_lines, signature = _snapshot(database)
     if not repertoires:
         raise PasteInputError("Import a repertoire before pasting analysis")
-    token = hashlib.sha256(json.dumps(
-        [raw_text, starting_fen, source_gap_id, signature], sort_keys=True
-    ).encode()).hexdigest()
+    token = hashlib.sha256(
+        json.dumps(
+            [raw_text, starting_fen, source_gap_id, signature], sort_keys=True
+        ).encode()
+    ).hexdigest()
     parsed_existing = _parsed_existing_lines(stored_lines, signature)
     lines = []
     for index, pasted in enumerate(parsed):
-        options = _destination_options(pasted, repertoires, stored_lines, parsed_existing)
+        options = _destination_options(
+            pasted, repertoires, stored_lines, parsed_existing
+        )
         matches = [option for option in options if option["matched"]]
-        lines.append({
-            "index": index, "starting_fen": pasted.starting_fen,
-            "san": pasted.san, "moves": list(pasted.moves),
-            "suggested_repertoire_id": matches[0]["repertoire_id"] if len(matches) == 1 else None,
-            "options": options,
-        })
+        lines.append(
+            {
+                "index": index,
+                "starting_fen": pasted.starting_fen,
+                "san": pasted.san,
+                "moves": list(pasted.moves),
+                "suggested_repertoire_id": matches[0]["repertoire_id"]
+                if len(matches) == 1
+                else None,
+                "options": options,
+            }
+        )
     return {"preview_token": token, "lines": lines}
 
 
-def _resolves_gap(database: sqlite3.Connection, source_gap_id: str, repertoire_id: str, pasted: PastedLine) -> bool:
+def _resolves_gap(
+    database: sqlite3.Connection,
+    source_gap_id: str,
+    repertoire_id: str,
+    pasted: PastedLine,
+) -> bool:
     try:
         node_id, opponent_move = source_gap_id.split(":", 1)
     except ValueError as error:
@@ -247,26 +312,41 @@ def _resolves_gap(database: sqlite3.Connection, source_gap_id: str, repertoire_i
         return False
     gap_fen_key = canonical_fen(gap["fen"])
     for position_index, (position, move) in enumerate(_position_moves(pasted)):
-        if position == gap_fen_key and move == opponent_move and position_index + 1 < len(pasted.moves):
+        if (
+            position == gap_fen_key
+            and move == opponent_move
+            and position_index + 1 < len(pasted.moves)
+        ):
             return True
     return False
 
 
 @refresh_game_publications_after_mutation
 def commit_pasted_lines(
-    database: sqlite3.Connection, raw_text: str, starting_fen: str | None,
-    source_gap_id: str | None, preview_token: str, selections: list[dict],
-    prepared_preview: dict, parsed: list[PastedLine],
+    database: sqlite3.Connection,
+    raw_text: str,
+    starting_fen: str | None,
+    source_gap_id: str | None,
+    preview_token: str,
+    selections: list[dict],
+    prepared_preview: dict,
+    parsed: list[PastedLine],
 ) -> dict:
     storage.begin_write_if_needed(database)
     if prepared_preview["preview_token"] != preview_token:
-        raise StalePastePreview("Repertoires changed since the preview. Preview again before saving")
+        raise StalePastePreview(
+            "Repertoires changed since the preview. Preview again before saving"
+        )
     _, _, current_signature = _snapshot(database)
-    current_token = hashlib.sha256(json.dumps(
-        [raw_text, starting_fen, source_gap_id, current_signature], sort_keys=True
-    ).encode()).hexdigest()
+    current_token = hashlib.sha256(
+        json.dumps(
+            [raw_text, starting_fen, source_gap_id, current_signature], sort_keys=True
+        ).encode()
+    ).hexdigest()
     if current_token != preview_token:
-        raise StalePastePreview("Repertoires changed since the preview. Preview again before saving")
+        raise StalePastePreview(
+            "Repertoires changed since the preview. Preview again before saving"
+        )
     by_index = {item["index"]: item for item in selections}
     if len(by_index) != len(selections) or not selections:
         raise PasteInputError("Choose at least one unique line to save")
@@ -275,7 +355,14 @@ def commit_pasted_lines(
     for index, selected in sorted(by_index.items()):
         if not isinstance(index, int) or index < 0 or index >= len(parsed):
             raise PasteInputError("Invalid pasted line selection")
-        option = next((value for value in prepared_preview["lines"][index]["options"] if value["repertoire_id"] == selected["repertoire_id"]), None)
+        option = next(
+            (
+                value
+                for value in prepared_preview["lines"][index]["options"]
+                if value["repertoire_id"] == selected["repertoire_id"]
+            ),
+            None,
+        )
         if not option or option["trained_color"] not in ("white", "black"):
             raise PasteInputError("Selected repertoire has no defined training side")
         trained_turn = "w" if option["trained_color"] == "white" else "b"
@@ -288,13 +375,32 @@ def commit_pasted_lines(
                 batch_conflict_indices.update((index, previous[1]))
             else:
                 batch_responses[key] = (move, index)
-    if any(not by_index[index].get("acknowledge_conflict") for index in batch_conflict_indices):
-        raise PasteInputError("Confirm conflicting trained moves between pasted lines before saving")
+    if any(
+        not by_index[index].get("acknowledge_conflict")
+        for index in batch_conflict_indices
+    ):
+        raise PasteInputError(
+            "Confirm conflicting trained moves between pasted lines before saving"
+        )
     from .canonical_prefix import ensure_batch_lines_in_scope, certify_admitted_route
+
     selected_indices = sorted(by_index)
-    validated_routes = dict(zip(selected_indices, ensure_batch_lines_in_scope(database, [
-        (by_index[index]["repertoire_id"], parsed[index].starting_fen, list(parsed[index].moves))
-        for index in selected_indices])))
+    validated_routes = dict(
+        zip(
+            selected_indices,
+            ensure_batch_lines_in_scope(
+                database,
+                [
+                    (
+                        by_index[index]["repertoire_id"],
+                        parsed[index].starting_fen,
+                        list(parsed[index].moves),
+                    )
+                    for index in selected_indices
+                ],
+            ),
+        )
+    )
     admitted_routes = []
     now = datetime.now(timezone.utc).isoformat()
     saved: list[dict] = []
@@ -303,7 +409,14 @@ def commit_pasted_lines(
     inserted_keys: set[tuple[str, str, tuple[str, ...]]] = set()
     for index, selected in sorted(by_index.items()):
         line = prepared_preview["lines"][index]
-        option = next((value for value in line["options"] if value["repertoire_id"] == selected["repertoire_id"]), None)
+        option = next(
+            (
+                value
+                for value in line["options"]
+                if value["repertoire_id"] == selected["repertoire_id"]
+            ),
+            None,
+        )
         if not option:
             raise PasteInputError("Selected repertoire is unavailable")
         if option["conflicts"] and not selected.get("acknowledge_conflict"):
@@ -311,31 +424,58 @@ def commit_pasted_lines(
         if option["trained_color"] not in ("white", "black"):
             raise PasteInputError("Selected repertoire has no defined training side")
         if not option["trainable"]:
-            raise PasteInputError("Each saved line must finish with a move by the side being trained")
+            raise PasteInputError(
+                "Each saved line must finish with a move by the side being trained"
+            )
         pasted = parsed[index]
         line_id = hashlib.sha256(
             f"{selected['repertoire_id']}\0{card_id(pasted.starting_fen, list(pasted.moves))}".encode()
         ).hexdigest()
-        insert_key = (selected["repertoire_id"], canonical_fen(pasted.starting_fen), pasted.moves)
+        insert_key = (
+            selected["repertoire_id"],
+            canonical_fen(pasted.starting_fen),
+            pasted.moves,
+        )
         duplicate = option["duplicate"] or insert_key in inserted_keys
         inserted_keys.add(insert_key)
         if not duplicate:
             inserted_rows = storage.insert_line(
-                database, line_id, selected["repertoire_id"], pasted.san,
-                option["trained_color"], pasted.starting_fen, json.dumps(list(pasted.moves)), now,
+                database,
+                line_id,
+                selected["repertoire_id"],
+                pasted.san,
+                option["trained_color"],
+                pasted.starting_fen,
+                json.dumps(list(pasted.moves)),
+                now,
             )
             if inserted_rows:
-                admitted_routes.append((selected["repertoire_id"], validated_routes[index]))
+                admitted_routes.append(
+                    (selected["repertoire_id"], validated_routes[index])
+                )
             depth = storage.initial_depth(database)
             storage.set_line_depth(database, line_id, depth)
             affected.add(selected["repertoire_id"])
-        if source_gap_id and _resolves_gap(database, source_gap_id, selected["repertoire_id"], pasted):
+        if source_gap_id and _resolves_gap(
+            database, source_gap_id, selected["repertoire_id"], pasted
+        ):
             node_id, opponent_move = source_gap_id.split(":", 1)
             storage.cover_gap(database, node_id, opponent_move)
             resolved_gap = True
             affected.add(selected["repertoire_id"])
-        saved.append({"index": index, "repertoire_id": selected["repertoire_id"],
-                      "duplicate": duplicate, "conflict": bool(option["conflicts"]) or index in batch_conflict_indices})
+        saved.append(
+            {
+                "index": index,
+                "repertoire_id": selected["repertoire_id"],
+                "duplicate": duplicate,
+                "conflict": bool(option["conflicts"])
+                or index in batch_conflict_indices,
+            }
+        )
     for repertoire_id, validated_route in admitted_routes:
         certify_admitted_route(database, repertoire_id, validated_route)
-    return {"saved": saved, "affected_repertoire_ids": sorted(affected), "gap_resolved": resolved_gap}
+    return {
+        "saved": saved,
+        "affected_repertoire_ids": sorted(affected),
+        "gap_resolved": resolved_gap,
+    }

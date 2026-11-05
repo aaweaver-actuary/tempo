@@ -1,7 +1,6 @@
 """Authored discovery contracts."""
+
 from pydantic import BaseModel, Field
-
-
 
 
 class DiscoveryAcceptanceRequest(BaseModel):

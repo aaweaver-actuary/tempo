@@ -1,4 +1,5 @@
 """Issue 80: one exact-plan application, invisible staging and atomic activation."""
+
 from dataclasses import dataclass, replace
 from datetime import date
 import json
@@ -9,32 +10,64 @@ from psycopg.errors import LockNotAvailable, SerializationFailure
 
 from tempo_legacy_database.adapters import postgres_store
 from tempo_legacy_database.adapters.prefix_application import storage
-from . import prefix_evaluation_source as structural, prefix_transition_source as planner_api
+from . import (
+    prefix_evaluation_source as structural,
+    prefix_transition_source as planner_api,
+)
 from ..command_gateway import register_descriptor
 from ..contracts.command_registry import CommandDescriptor
-from app.contracts.prefix_transition import PrefixTransitionApplyRequest, PrefixTransitionPlan
+from app.contracts.prefix_transition import (
+    PrefixTransitionApplyRequest,
+    PrefixTransitionPlan,
+)
 from tempo_legacy_database.adapters.snapshot_reads import SnapshotRead, snapshot_rows
-from .durable_tasks import enqueue_task_in_transaction, lock_current_slice, advance_task_slice_in_transaction, complete_task_slice_in_transaction
+from .durable_tasks import (
+    enqueue_task_in_transaction,
+    lock_current_slice,
+    advance_task_slice_in_transaction,
+    complete_task_slice_in_transaction,
+)
 from .prefix_evaluation import snapshot_identity
-from .prefix_transition import iter_transition_plan, transition_snapshot_identity, validate_shortening
-from .postgres_opening_graph import stage_graph_steps, create_graph_cards, remove_obsolete_graph_memberships, publish_graph_generation
+from .prefix_transition import (
+    iter_transition_plan,
+    transition_snapshot_identity,
+    validate_shortening,
+)
+from .postgres_opening_graph import (
+    stage_graph_steps,
+    create_graph_cards,
+    remove_obsolete_graph_memberships,
+    publish_graph_generation,
+)
 
-COMMAND = 'repertoire.prefix_transition.apply'
-TASK_KIND = 'prefix_transition_application'
+COMMAND = "repertoire.prefix_transition.apply"
+TASK_KIND = "prefix_transition_application"
 _LOGGER = logging.getLogger(__name__)
 
 
 def conflict(code, message):
-    return HTTPException(409, {'code': code, 'message': message})
+    return HTTPException(409, {"code": code, "message": message})
 
 
 def validate_approved_plan(request, plan, *, today):
-    if plan.status == 'blocked':
-        raise conflict('blocked_plan', 'This transition is blocked. Resolve its named blockers and request a fresh plan.')
-    if (request.study_day != today or request.plan_id != plan.plan_id or request.snapshot_id != plan.snapshot_id
-            or request.transition_snapshot_id != plan.transition_snapshot_id or request.graph_generation != plan.graph_generation
-            or request.study_day != plan.study_day or tuple(sorted(request.selected_line_ids)) != plan.selected_line_ids):
-        raise conflict('stale_plan', 'The approved transition changed. Refresh the source and approve a fresh plan with a new operation identity.')
+    if plan.status == "blocked":
+        raise conflict(
+            "blocked_plan",
+            "This transition is blocked. Resolve its named blockers and request a fresh plan.",
+        )
+    if (
+        request.study_day != today
+        or request.plan_id != plan.plan_id
+        or request.snapshot_id != plan.snapshot_id
+        or request.transition_snapshot_id != plan.transition_snapshot_id
+        or request.graph_generation != plan.graph_generation
+        or request.study_day != plan.study_day
+        or tuple(sorted(request.selected_line_ids)) != plan.selected_line_ids
+    ):
+        raise conflict(
+            "stale_plan",
+            "The approved transition changed. Refresh the source and approve a fresh plan with a new operation identity.",
+        )
 
 
 @dataclass(frozen=True)
@@ -50,76 +83,172 @@ class PreparedApplication:
 
 
 def prepare_application(payload):
-    request = PrefixTransitionApplyRequest.model_validate(payload['request'])
+    request = PrefixTransitionApplyRequest.model_validate(payload["request"])
     with postgres_store.connection(read_only=True, authoritative=True) as database:
-        receipt = storage.receipt_state(database, payload['operation_id'])
-        if receipt and receipt[0] in {'complete', 'failed'}:
+        receipt = storage.receipt_state(database, payload["operation_id"])
+        if receipt and receipt[0] in {"complete", "failed"}:
             return PreparedApplication(payload, None)
-        prior = storage.prior_application(database, payload['operation_id'])
-    if prior and prior[0] in {'publishing', 'complete', 'recovery_required', 'rejected'}:
+        prior = storage.prior_application(database, payload["operation_id"])
+    if prior and prior[0] in {
+        "publishing",
+        "complete",
+        "recovery_required",
+        "rejected",
+    }:
         return PreparedApplication(payload, None)
     # Worker preparation is secondary and must not inherit its own foreground
     # lease. These are exactly the planner's limits and admission rules.
     with structural.diagnostic_request() as deadline:
-        source = structural.load_snapshot(payload['repertoire_id'], deadline)
+        source = structural.load_snapshot(payload["repertoire_id"], deadline)
         if snapshot_identity(source) != request.snapshot_id:
-            raise conflict('stale_plan', 'The repertoire source changed. Approve a fresh plan.')
+            raise conflict(
+                "stale_plan", "The repertoire source changed. Approve a fresh plan."
+            )
         validate_shortening(source, request.selected_line_ids, request.candidate_depths)
-        evaluation = planner_api.calculate(structural.iter_prefix_evaluation(source, request.selected_line_ids, request.candidate_depths), deadline)
-        lookup_ids = {step['card_id'] for phase in ('current', 'proposed') for step in evaluation['whole_repertoire'][phase]['steps']}
-        lookup_ids.update(planner_api.discover_memberships(payload['repertoire_id'], deadline))
+        evaluation = planner_api.calculate(
+            structural.iter_prefix_evaluation(
+                source, request.selected_line_ids, request.candidate_depths
+            ),
+            deadline,
+        )
+        lookup_ids = {
+            step["card_id"]
+            for phase in ("current", "proposed")
+            for step in evaluation["whole_repertoire"][phase]["steps"]
+        }
+        lookup_ids.update(
+            planner_api.discover_memberships(payload["repertoire_id"], deadline)
+        )
         for split in source.prefix_overrides:
-            lookup_ids.update((split.source_card_id, split.shortened_card_id, split.continuation_card_id))
+            lookup_ids.update(
+                (
+                    split.source_card_id,
+                    split.shortened_card_id,
+                    split.continuation_card_id,
+                )
+            )
         reads = []
-        snapshot = planner_api.load_transition_snapshot(payload['repertoire_id'], lookup_ids, request.study_day, deadline, reads=reads)
-        plan = planner_api.calculate(iter_transition_plan(snapshot, request.selected_line_ids, request.candidate_depths, evaluation), deadline)
-        refreshed = planner_api.load_transition_snapshot(payload['repertoire_id'], lookup_ids, request.study_day, deadline)
+        snapshot = planner_api.load_transition_snapshot(
+            payload["repertoire_id"],
+            lookup_ids,
+            request.study_day,
+            deadline,
+            reads=reads,
+        )
+        plan = planner_api.calculate(
+            iter_transition_plan(
+                snapshot,
+                request.selected_line_ids,
+                request.candidate_depths,
+                evaluation,
+            ),
+            deadline,
+        )
+        refreshed = planner_api.load_transition_snapshot(
+            payload["repertoire_id"], lookup_ids, request.study_day, deadline
+        )
         if transition_snapshot_identity(refreshed) != plan.transition_snapshot_id:
-            raise conflict('stale_plan', 'Study or source state changed during preparation. Approve a fresh plan.')
+            raise conflict(
+                "stale_plan",
+                "Study or source state changed during preparation. Approve a fresh plan.",
+            )
         validate_approved_plan(request, plan, today=date.today().isoformat())
-    if plan.status != 'no_op':
+    if plan.status != "no_op":
         with postgres_store.connection(read_only=True, background=True) as database:
             integrity_rows = storage.integrity_rows(database, plan.repertoire_id)
         integrity = json.loads(integrity_rows[0]) if len(integrity_rows) == 1 else None
-        if not (integrity and integrity['status'] == 'clean' and integrity['scan_status'] == 'idle'
-                and integrity['state'] == 'complete' and integrity['scan_generation'] == f"{integrity['id']}:{integrity['generation']}"
-                and json.loads(integrity['payload_json'])['graph_generation'] == plan.graph_generation):
-            raise conflict('source_integrity_not_ready', 'Wait for the current source graph to finish its clean integrity scan, then approve a fresh plan.')
+        if not (
+            integrity
+            and integrity["status"] == "clean"
+            and integrity["scan_status"] == "idle"
+            and integrity["state"] == "complete"
+            and integrity["scan_generation"]
+            == f"{integrity['id']}:{integrity['generation']}"
+            and json.loads(integrity["payload_json"])["graph_generation"]
+            == plan.graph_generation
+        ):
+            raise conflict(
+                "source_integrity_not_ready",
+                "Wait for the current source graph to finish its clean integrity scan, then approve a fresh plan.",
+            )
         reads.append(storage.integrity_evidence(plan.repertoire_id, integrity_rows))
         structural.check_available(deadline)
-    if prior and prior[0] == 'staged':
+    if prior and prior[0] == "staged":
         parameters = (plan.repertoire_id, prior[1])
         with postgres_store.connection(read_only=True, background=True) as database:
             staged = storage.staged_rows(database, parameters)
         expected = []
         for step in plan.proposed_steps:
-            expected.append(dict(line_id=step.line_id, decision_index=step.decision_index, segment_kind=step.segment_kind,
-                                 first_decision_index=step.first_decision_index, last_decision_index=step.last_decision_index,
-                                 decision_fen_keys_json=json.dumps(step.decision_fen_keys), card_id=step.card_id,
-                                 parent_card_id=step.parent_card_id, decision_fen_key=step.decision_fen_key,
-                                 starting_fen=step.starting_fen, moves_json=json.dumps(step.moves), trained_color=step.trained_color))
-        if sorted((json.loads(row) for row in staged), key=lambda row: (row['line_id'], row['decision_index'])) != sorted(expected, key=lambda row: (row['line_id'], row['decision_index'])):
-            raise conflict('stale_plan', 'The staged graph does not match the approved transition. Request a fresh plan.')
+            expected.append(
+                dict(
+                    line_id=step.line_id,
+                    decision_index=step.decision_index,
+                    segment_kind=step.segment_kind,
+                    first_decision_index=step.first_decision_index,
+                    last_decision_index=step.last_decision_index,
+                    decision_fen_keys_json=json.dumps(step.decision_fen_keys),
+                    card_id=step.card_id,
+                    parent_card_id=step.parent_card_id,
+                    decision_fen_key=step.decision_fen_key,
+                    starting_fen=step.starting_fen,
+                    moves_json=json.dumps(step.moves),
+                    trained_color=step.trained_color,
+                )
+            )
+        if sorted(
+            (json.loads(row) for row in staged),
+            key=lambda row: (row["line_id"], row["decision_index"]),
+        ) != sorted(expected, key=lambda row: (row["line_id"], row["decision_index"])):
+            raise conflict(
+                "stale_plan",
+                "The staged graph does not match the approved transition. Request a fresh plan.",
+            )
         reads.append(storage.staged_evidence(parameters, staged))
         structural.check_available(deadline)
     first_step_by_card_and_root_role = {}
     for step in plan.proposed_steps:
-        first_step_by_card_and_root_role.setdefault((step.card_id, step.parent_card_id is None), step)
+        first_step_by_card_and_root_role.setdefault(
+            (step.card_id, step.parent_card_id is None), step
+        )
         structural.check_available(deadline)
     creations = []
     for card in plan.cards:
-        if card.lifecycle != 'create':
+        if card.lifecycle != "create":
             continue
-        fresh_card_is_root = json.loads(card.schedule_json)['state'] == 'new'
-        reference = first_step_by_card_and_root_role.get((card.card_id, fresh_card_is_root))
+        fresh_card_is_root = json.loads(card.schedule_json)["state"] == "new"
+        reference = first_step_by_card_and_root_role.get(
+            (card.card_id, fresh_card_is_root)
+        )
         if reference is None:
             raise StopIteration
-        creations.append(replace(reference, segment_kind='prefix' if card.kind_after == 'prefix' else 'decision'))
+        creations.append(
+            replace(
+                reference,
+                segment_kind="prefix" if card.kind_after == "prefix" else "decision",
+            )
+        )
         structural.check_available(deadline)
-    return PreparedApplication(payload, plan, snapshot, tuple(reads), tuple(creations),
-                               tuple(sorted({row['id'] for row in snapshot.rows('repertoires')} | {plan.repertoire_id})),
-                               tuple(sorted(attempt.object_id for attempt in plan.attempts if attempt.kind == 'pending_command')),
-                               prior[1] if prior and prior[0] == 'staged' else None)
+    return PreparedApplication(
+        payload,
+        plan,
+        snapshot,
+        tuple(reads),
+        tuple(creations),
+        tuple(
+            sorted(
+                {row["id"] for row in snapshot.rows("repertoires")}
+                | {plan.repertoire_id}
+            )
+        ),
+        tuple(
+            sorted(
+                attempt.object_id
+                for attempt in plan.attempts
+                if attempt.kind == "pending_command"
+            )
+        ),
+        prior[1] if prior and prior[0] == "staged" else None,
+    )
 
 
 def own_application(database, operation_id):
@@ -141,23 +270,44 @@ def lock_and_revalidate(database, prepared):
     storage.lock_pending_receipts(database, pending_ids)
     storage.lock_source_tasks(database, repertoire_ids)
     if not storage.try_reservation_barrier(database)[0]:
-        raise LockNotAvailable('Prefix transition yielded to a structural or queue writer')
-    occupied = storage.occupied_fences(database, list(snapshot.lookup_card_ids), prepared.payload['operation_id'], repertoire_ids, prepared.payload['operation_id'])
-    if occupied and prepared.plan.status != 'no_op':
-        raise conflict('prefix_transition_in_progress', 'A conflicting prefix application owns these identities. Wait for its publication or recovery.')
+        raise LockNotAvailable(
+            "Prefix transition yielded to a structural or queue writer"
+        )
+    occupied = storage.occupied_fences(
+        database,
+        list(snapshot.lookup_card_ids),
+        prepared.payload["operation_id"],
+        repertoire_ids,
+        prepared.payload["operation_id"],
+    )
+    if occupied and prepared.plan.status != "no_op":
+        raise conflict(
+            "prefix_transition_in_progress",
+            "A conflicting prefix application owns these identities. Wait for its publication or recovery.",
+        )
     storage.lock_repertoires(database, repertoire_ids)
     storage.share_integrity_rows(database, repertoire_ids)
     storage.lock_lines(database, prepared.plan.repertoire_id)
     storage.lock_line_depths(database, prepared.plan.repertoire_id)
     storage.lock_cards(database, list(snapshot.lookup_card_ids))
-    storage.lock_memberships(database, list(snapshot.lookup_card_ids), prepared.plan.repertoire_id)
+    storage.lock_memberships(
+        database, list(snapshot.lookup_card_ids), prepared.plan.repertoire_id
+    )
     storage.lock_attempt_rows(database, snapshot)
     for captured in prepared.reads:
         if storage.snapshot_evidence(database, captured) != captured.rows:
-            _LOGGER.warning('prefix_transition_stale_input query=%s', captured.query[:160])
-            raise conflict('stale_plan', 'Source, cards, schedules, memberships or attempts changed before the write. Approve a fresh plan.')
+            _LOGGER.warning(
+                "prefix_transition_stale_input query=%s", captured.query[:160]
+            )
+            raise conflict(
+                "stale_plan",
+                "Source, cards, schedules, memberships or attempts changed before the write. Approve a fresh plan.",
+            )
     if prepared.plan.study_day != date.today().isoformat():
-        raise conflict('stale_plan', 'The study day changed before application. Approve a fresh plan.')
+        raise conflict(
+            "stale_plan",
+            "The study day changed before application. Approve a fresh plan.",
+        )
 
 
 def release_fences(database, operation_id):
@@ -168,88 +318,176 @@ def reject_unactivated_application(database, operation_id, error):
     application = storage.locked_application_state(database, operation_id)
     if not application:
         return False
-    committed = application[0] in {'publishing', 'recovery_required'}
-    storage.record_rejection(database, 'recovery_required' if committed else 'rejected', str(error)[:500], operation_id)
+    committed = application[0] in {"publishing", "recovery_required"}
+    storage.record_rejection(
+        database,
+        "recovery_required" if committed else "rejected",
+        str(error)[:500],
+        operation_id,
+    )
     if not committed:
         release_fences(database, operation_id)
     return committed
 
 
 def apply_command(database, prepared):
-    operation_id = prepared.payload['operation_id']
+    operation_id = prepared.payload["operation_id"]
     # A recovered command must never revalidate the pre-application snapshot
     # against its already committed business effect.
     application = storage.locked_application(database, operation_id)
-    if application and application['state'] in {'publishing', 'recovery_required', 'complete'}:
-        if application['state'] == 'complete':
-            return json.loads(application['result_json'])
+    if application and application["state"] in {
+        "publishing",
+        "recovery_required",
+        "complete",
+    }:
+        if application["state"] == "complete":
+            return json.loads(application["result_json"])
         resume_publication(database, application)
-        return {'status': 'pending'}
-    if application and application['state'] == 'rejected':
-        raise conflict('stale_plan', 'This transition was rejected before activation. Approve a fresh plan with a new operation identity.')
+        return {"status": "pending"}
+    if application and application["state"] == "rejected":
+        raise conflict(
+            "stale_plan",
+            "This transition was rejected before activation. Approve a fresh plan with a new operation identity.",
+        )
     if prepared.plan is None:
-        raise conflict('stale_plan', 'No current prepared transition is available.')
+        raise conflict("stale_plan", "No current prepared transition is available.")
     lock_and_revalidate(database, prepared)
-    if prepared.plan.status == 'no_op':
-        return {'status': 'complete', 'operation_id': operation_id, 'plan_id': prepared.plan.plan_id,
-                'repertoire_id': prepared.plan.repertoire_id, 'graph_generation': prepared.plan.graph_generation, 'no_op': True}
+    if prepared.plan.status == "no_op":
+        return {
+            "status": "complete",
+            "operation_id": operation_id,
+            "plan_id": prepared.plan.plan_id,
+            "repertoire_id": prepared.plan.repertoire_id,
+            "graph_generation": prepared.plan.graph_generation,
+            "no_op": True,
+        }
     if application is None:
-        generation = storage.next_graph_generation(database, prepared.plan.repertoire_id)[0]
-        storage.insert_application(database, operation_id, prepared.plan.repertoire_id, prepared.plan.plan_id, prepared.plan.model_dump_json(), generation)
-        storage.insert_card_fences(database, operation_id, list(prepared.snapshot.lookup_card_ids))
-        storage.insert_repertoire_fences(database, operation_id, list(prepared.repertoire_ids))
-        task = enqueue_task_in_transaction(database, TASK_KIND, operation_id, {'operation_id': operation_id, 'offset': 0}, priority=40)
-        storage.record_staging_task(database, task['id'], operation_id)
-        return {'status': 'pending'}
-    if application['state'] == 'staging':
-        return {'status': 'pending'}
-    if prepared.staged_generation != application['graph_generation']:
-        raise SerializationFailure('Staging finished during preparation; recapture its exact graph before activation')
+        generation = storage.next_graph_generation(
+            database, prepared.plan.repertoire_id
+        )[0]
+        storage.insert_application(
+            database,
+            operation_id,
+            prepared.plan.repertoire_id,
+            prepared.plan.plan_id,
+            prepared.plan.model_dump_json(),
+            generation,
+        )
+        storage.insert_card_fences(
+            database, operation_id, list(prepared.snapshot.lookup_card_ids)
+        )
+        storage.insert_repertoire_fences(
+            database, operation_id, list(prepared.repertoire_ids)
+        )
+        task = enqueue_task_in_transaction(
+            database,
+            TASK_KIND,
+            operation_id,
+            {"operation_id": operation_id, "offset": 0},
+            priority=40,
+        )
+        storage.record_staging_task(database, task["id"], operation_id)
+        return {"status": "pending"}
+    if application["state"] == "staging":
+        return {"status": "pending"}
+    if prepared.staged_generation != application["graph_generation"]:
+        raise SerializationFailure(
+            "Staging finished during preparation; recapture its exact graph before activation"
+        )
     activate_application(database, prepared, application)
-    return {'status': 'pending'}
+    return {"status": "pending"}
 
 
 def activate_application(database, prepared, application):
     plan = prepared.plan
-    operation_id = application['operation_id']
-    generation = application['graph_generation']
+    operation_id = application["operation_id"]
+    generation = application["graph_generation"]
     own_application(database, operation_id)
     # Strict creates are protected by missing-ID reservations, never ON CONFLICT
     # adoption. Existing cards retain every scheduling/default/history column.
     create_graph_cards(database, prepared.creations, plan.study_day, strict=True)
-    storage.write_line_depths(database, [change.line_id for change in plan.depth_changes], [change.after for change in plan.depth_changes])
-    added_memberships = [membership for membership in plan.memberships if membership.action == 'add_generated']
-    storage.add_memberships(database, [membership.repertoire_id for membership in added_memberships], [membership.card_id for membership in added_memberships])
+    storage.write_line_depths(
+        database,
+        [change.line_id for change in plan.depth_changes],
+        [change.after for change in plan.depth_changes],
+    )
+    added_memberships = [
+        membership
+        for membership in plan.memberships
+        if membership.action == "add_generated"
+    ]
+    storage.add_memberships(
+        database,
+        [membership.repertoire_id for membership in added_memberships],
+        [membership.card_id for membership in added_memberships],
+    )
     classified_cards = [card for card in plan.cards if card.kind_after is not None]
-    storage.write_card_kinds(database, [card.card_id for card in classified_cards], [card.kind_after for card in classified_cards])
-    obsolete_ids = tuple(membership.card_id for membership in plan.memberships if membership.action == 'obsolete')
-    remove_obsolete_graph_memberships(database, plan.repertoire_id, generation, obsolete_ids)
-    for kind in ('opening_attempt', 'study_attempt'):
-        retired = [attempt.object_id for attempt in plan.attempts if attempt.kind == kind and attempt.action == 'retire_with_conflict']
+    storage.write_card_kinds(
+        database,
+        [card.card_id for card in classified_cards],
+        [card.kind_after for card in classified_cards],
+    )
+    obsolete_ids = tuple(
+        membership.card_id
+        for membership in plan.memberships
+        if membership.action == "obsolete"
+    )
+    remove_obsolete_graph_memberships(
+        database, plan.repertoire_id, generation, obsolete_ids
+    )
+    for kind in ("opening_attempt", "study_attempt"):
+        retired = [
+            attempt.object_id
+            for attempt in plan.attempts
+            if attempt.kind == kind and attempt.action == "retire_with_conflict"
+        ]
         storage.retire_attempts(database, kind, operation_id, retired)
-    retired_commands = [attempt.object_id for attempt in plan.attempts if attempt.kind == 'pending_command' and attempt.action == 'retire_with_conflict']
-    error = json.dumps({'message': 'The original presentation was archived by an approved prefix transition.', 'code': 'card_archived', 'status_code': 409, 'retryable': False})
+    retired_commands = [
+        attempt.object_id
+        for attempt in plan.attempts
+        if attempt.kind == "pending_command"
+        and attempt.action == "retire_with_conflict"
+    ]
+    error = json.dumps(
+        {
+            "message": "The original presentation was archived by an approved prefix transition.",
+            "code": "card_archived",
+            "status_code": 409,
+            "retryable": False,
+        }
+    )
     storage.retire_pending_commands(database, error, retired_commands)
     publish_graph_generation(database, plan.repertoire_id, generation)
-    graph_task = enqueue_task_in_transaction(database, 'opening_graph_rebuild', plan.repertoire_id,
-                                            {'repertoire_id': plan.repertoire_id, 'local_day': plan.study_day}, priority=40, minimum_generation=generation-1)
-    if graph_task['generation'] != generation:
-        raise conflict('stale_plan', 'The graph generation changed before activation.')
-    storage.finalize_graph_task(database, graph_task['id'], generation)
-    storage.mark_publishing(database, graph_task['id'], operation_id)
+    graph_task = enqueue_task_in_transaction(
+        database,
+        "opening_graph_rebuild",
+        plan.repertoire_id,
+        {"repertoire_id": plan.repertoire_id, "local_day": plan.study_day},
+        priority=40,
+        minimum_generation=generation - 1,
+    )
+    if graph_task["generation"] != generation:
+        raise conflict("stale_plan", "The graph generation changed before activation.")
+    storage.finalize_graph_task(database, graph_task["id"], generation)
+    storage.mark_publishing(database, graph_task["id"], operation_id)
 
 
 def execute_application_slice(task):
     """One eight-step invisible stage or one bounded finalization, then yield."""
-    operation_id = task['payload']['operation_id']
+    operation_id = task["payload"]["operation_id"]
     with postgres_store.connection(read_only=True, background=True) as database:
         application = storage.application(database, operation_id)
     if not application:
-        raise RuntimeError('Transition application state is missing')
-    plan = PrefixTransitionPlan.model_validate_json(application['plan_json'])
-    offset = int(task['payload'].get('offset', 0))
-    batch = plan.proposed_steps[offset:offset+8] if application['state'] == 'staging' else ()
+        raise RuntimeError("Transition application state is missing")
+    plan = PrefixTransitionPlan.model_validate_json(application["plan_json"])
+    offset = int(task["payload"].get("offset", 0))
+    batch = (
+        plan.proposed_steps[offset : offset + 8]
+        if application["state"] == "staging"
+        else ()
+    )
     from .redis_admission_gate import background_lease
+
     with background_lease():
         with postgres_store.connection(read_only=False, background=True) as database:
             # Completion may race command replay; receipt comes before task/app.
@@ -257,60 +495,122 @@ def execute_application_slice(task):
             if not lock_current_slice(database, task):
                 return False
             current = storage.locked_application(database, operation_id)
-            if current['state'] == 'staging':
+            if current["state"] == "staging":
                 own_application(database, operation_id)
-                stage_graph_steps(database, batch, current['graph_generation'])
+                stage_graph_steps(database, batch, current["graph_generation"])
                 if batch:
-                    return advance_task_slice_in_transaction(database, task, next_phase='stage', next_payload={'operation_id': operation_id, 'offset': offset+len(batch)})
+                    return advance_task_slice_in_transaction(
+                        database,
+                        task,
+                        next_phase="stage",
+                        next_payload={
+                            "operation_id": operation_id,
+                            "offset": offset + len(batch),
+                        },
+                    )
                 storage.mark_staged(database, operation_id)
                 storage.requeue_pending_operation(database, operation_id)
-            elif current['state'] in {'publishing', 'recovery_required'}:
+            elif current["state"] in {"publishing", "recovery_required"}:
                 finish_application(database, current, plan)
             return complete_task_slice_in_transaction(database, task)
 
 
 def resume_publication(database, application):
-    own_application(database, application['operation_id'])
-    for kind, task_id in (('opening_graph_rebuild', None), ('integrity_scan', application['integrity_task_id']), ('daily_queue', application['queue_task_id'])):
-        storage.requeue_failed_task(database, kind, task_id, task_id, application['repertoire_id'])
-    storage.resume_application(database, application['operation_id'])
-    if application['queue_task_id'] and storage.completed_queue(database, application['queue_task_id'], application['queue_generation']):
-        enqueue_completion(database, application['queue_task_id'], application['queue_generation'], application['queue_date'])
+    own_application(database, application["operation_id"])
+    for kind, task_id in (
+        ("opening_graph_rebuild", None),
+        ("integrity_scan", application["integrity_task_id"]),
+        ("daily_queue", application["queue_task_id"]),
+    ):
+        storage.requeue_failed_task(
+            database, kind, task_id, task_id, application["repertoire_id"]
+        )
+    storage.resume_application(database, application["operation_id"])
+    if application["queue_task_id"] and storage.completed_queue(
+        database, application["queue_task_id"], application["queue_generation"]
+    ):
+        enqueue_completion(
+            database,
+            application["queue_task_id"],
+            application["queue_generation"],
+            application["queue_date"],
+        )
 
 
 def enqueue_completion(database, queue_task_id, queue_generation, queue_day):
-    application = storage.completion_target(database, queue_task_id, queue_generation, queue_day)
+    application = storage.completion_target(
+        database, queue_task_id, queue_generation, queue_day
+    )
     if application:
-        enqueue_task_in_transaction(database, TASK_KIND, application[0], {'operation_id': application[0], 'phase': 'complete'}, priority=40)
+        enqueue_task_in_transaction(
+            database,
+            TASK_KIND,
+            application[0],
+            {"operation_id": application[0], "phase": "complete"},
+            priority=40,
+        )
 
 
 def finish_application(database, application, plan):
     from ..queue_commands import request_queue_refresh_in_transaction
+
     today = date.today().isoformat()
-    if application['queue_date'] != today:
+    if application["queue_date"] != today:
         task = request_queue_refresh_in_transaction(database, today)
-        record_queue_target(database, application['repertoire_id'], application['graph_generation'], task, today)
+        record_queue_target(
+            database,
+            application["repertoire_id"],
+            application["graph_generation"],
+            task,
+            today,
+        )
         return
-    ready = storage.publication_ready(database, application['integrity_task_id'], application['queue_task_id'], today, application['repertoire_id'], application['graph_generation'], f"{application['integrity_task_id']}:{application['integrity_generation']}", application['integrity_generation'], application['queue_generation'], today)
+    ready = storage.publication_ready(
+        database,
+        application["integrity_task_id"],
+        application["queue_task_id"],
+        today,
+        application["repertoire_id"],
+        application["graph_generation"],
+        f"{application['integrity_task_id']}:{application['integrity_generation']}",
+        application["integrity_generation"],
+        application["queue_generation"],
+        today,
+    )
     if not ready:
-        raise RuntimeError('Transition publication is not at the recorded clean graph/integrity/queue steady state; retry the existing operation after resolving its linked tasks.')
-    result = json.dumps({'status': 'complete', 'operation_id': application['operation_id'], 'plan_id': plan.plan_id,
-                         'repertoire_id': plan.repertoire_id, 'graph_generation': application['graph_generation'], 'queue_date': today, 'no_op': False})
-    storage.complete_application(database, result, application['operation_id'])
-    storage.complete_receipt(database, result, application['operation_id'])
-    release_fences(database, application['operation_id'])
+        raise RuntimeError(
+            "Transition publication is not at the recorded clean graph/integrity/queue steady state; retry the existing operation after resolving its linked tasks."
+        )
+    result = json.dumps(
+        {
+            "status": "complete",
+            "operation_id": application["operation_id"],
+            "plan_id": plan.plan_id,
+            "repertoire_id": plan.repertoire_id,
+            "graph_generation": application["graph_generation"],
+            "queue_date": today,
+            "no_op": False,
+        }
+    )
+    storage.complete_application(database, result, application["operation_id"])
+    storage.complete_receipt(database, result, application["operation_id"])
+    release_fences(database, application["operation_id"])
     # The shared queue may have completed a newer generation for several
     # applications. Chain the next bounded completion against that actual
     # generation, rather than stranding a later target behind this older one.
-    enqueue_completion(database, application['queue_task_id'], ready[0], today)
+    enqueue_completion(database, application["queue_task_id"], ready[0], today)
 
 
 def record_integrity_target(database, repertoire_id, graph_generation, task):
-    return storage.record_integrity_target(database, repertoire_id, graph_generation, task)
+    return storage.record_integrity_target(
+        database, repertoire_id, graph_generation, task
+    )
 
 
 def record_queue_target(database, repertoire_id, graph_generation, task, queue_day):
-    return storage.record_queue_target(database, repertoire_id, graph_generation, task, queue_day)
+    return storage.record_queue_target(
+        database, repertoire_id, graph_generation, task, queue_day
+    )
 
 
 def lock_linked_receipts(database, task_id, generation):
@@ -319,36 +619,69 @@ def lock_linked_receipts(database, task_id, generation):
 
 
 def record_linked_failure(database, task_id, generation, error):
-    applications = storage.linked_applications(database, task_id, task_id, generation, task_id, generation, task_id, generation)
+    applications = storage.linked_applications(
+        database, task_id, task_id, generation, task_id, generation, task_id, generation
+    )
     for application in applications:
-        committed = reject_unactivated_application(database, application['operation_id'], error)
-        error_json = json.dumps({'message': str(error)[:500], 'status_code': 409,
-                                 'detail': {'code': 'publication_recovery_required' if committed else 'staging_failed',
-                                            'message': 'Retry this operation to resume its linked publication tasks.' if committed
-                                            else 'Staging failed before activation. The source is unchanged; approve a fresh plan.'}})
-        storage.record_receipt_failure(database, 'blocked' if committed else 'failed', None if committed else error_json, error_json if committed else None, application['operation_id'])
+        committed = reject_unactivated_application(
+            database, application["operation_id"], error
+        )
+        error_json = json.dumps(
+            {
+                "message": str(error)[:500],
+                "status_code": 409,
+                "detail": {
+                    "code": "publication_recovery_required"
+                    if committed
+                    else "staging_failed",
+                    "message": "Retry this operation to resume its linked publication tasks."
+                    if committed
+                    else "Staging failed before activation. The source is unchanged; approve a fresh plan.",
+                },
+            }
+        )
+        storage.record_receipt_failure(
+            database,
+            "blocked" if committed else "failed",
+            None if committed else error_json,
+            error_json if committed else None,
+            application["operation_id"],
+        )
 
 
 @dataclass(frozen=True)
 class PrefixTransitionLifecycle:
     def writer_admission(self):
         from .activity_gate import activity_gate
+
         return activity_gate.foreground()
 
     def delayed_preparation_error(self, error: Exception) -> Exception:
         if isinstance(error, HTTPException) and error.status_code == 503:
-            return SerializationFailure('Transition preparation yielded to foreground work; retry its durable operation')
+            return SerializationFailure(
+                "Transition preparation yielded to foreground work; retry its durable operation"
+            )
         return error
 
-    def reject_after_rollback(self, database: postgres_store.PostgresConnection, operation_id: str, error: Exception) -> bool:
+    def reject_after_rollback(
+        self,
+        database: postgres_store.PostgresConnection,
+        operation_id: str,
+        error: Exception,
+    ) -> bool:
         return reject_unactivated_application(database, operation_id, error)
 
     def is_pending(self, result: dict) -> bool:
-        return result.get('status') == 'pending'
+        return result.get("status") == "pending"
 
 
-PREFIX_TRANSITION_COMMAND: CommandDescriptor[postgres_store.PostgresConnection, dict, PreparedApplication, dict] = CommandDescriptor(
-    name=COMMAND, decode=lambda payload: payload, prepare=prepare_application, apply=apply_command,
+PREFIX_TRANSITION_COMMAND: CommandDescriptor[
+    postgres_store.PostgresConnection, dict, PreparedApplication, dict
+] = CommandDescriptor(
+    name=COMMAND,
+    decode=lambda payload: payload,
+    prepare=prepare_application,
+    apply=apply_command,
     transition_lifecycle=PrefixTransitionLifecycle(),
 )
 register_descriptor(PREFIX_TRANSITION_COMMAND)

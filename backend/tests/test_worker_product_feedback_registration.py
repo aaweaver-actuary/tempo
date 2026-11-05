@@ -1,15 +1,19 @@
 """Retained product feedback is registered only on its worker delivery."""
+
 from test_worker_legacy_evidence_registration import SETUP, run_fresh
 
 
 def test_essential_queue_does_not_import_product_feedback():
-    run_fresh('''
+    run_fresh(
+        """
 import importlib.abc, sys
 class Deny(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
         if fullname == 'app.product_composition.feedback_commands': raise AssertionError(fullname)
 sys.meta_path.insert(0, Deny())
-''' + SETUP + '''
+"""
+        + SETUP
+        + """
 tasks.activity_gate.essential_study_progress = lambda *_: nullcontext()
 tasks.defer_paused_defensive_task = lambda _: False
 tasks.current_delivery = lambda _: True
@@ -18,11 +22,14 @@ tasks.claim_task = lambda kind: claimed
 tasks.execute_postgres_queue_refresh_slice = lambda task: False if task is claimed else (_ for _ in ()).throw(AssertionError('changed task'))
 assert tasks.progress_study_queue.run() is False
 assert 'app.product_composition.feedback_commands' not in sys.modules
-''')
+"""
+    )
 
 
 def test_retained_feedback_resolves_after_receipt_with_original_identity():
-    run_fresh(SETUP + '''
+    run_fresh(
+        SETUP
+        + """
 name = 'game_evidence.product_accept'; original = {'game_id':'game','occurrence_ply':7}
 events = []
 def attempt(op, command, payload, **kw):
@@ -37,11 +44,13 @@ def execute(op, command, payload, **kw):
 tasks.execute_command = execute
 assert tasks.execute_background_command.run('retained',name,original) == {'accepted':True}
 assert events == [('attempt','retained',name,original),('execute','retained',name,original,{'background':True,'attempt_token':'original-token'})]
-''')
+"""
+    )
 
 
 def test_concurrent_selection_import_failure_retry_and_core_nonblocking():
-    run_fresh('''
+    run_fresh(
+        """
 import importlib.abc, threading
 from concurrent.futures import ThreadPoolExecutor
 class DenyOnce(importlib.abc.MetaPathFinder):
@@ -51,7 +60,9 @@ class DenyOnce(importlib.abc.MetaPathFinder):
             self.fail = False; raise ImportError('temporary unavailable')
 import sys
 sys.meta_path.insert(0, DenyOnce())
-''' + SETUP + '''
+"""
+        + SETUP
+        + """
 from app.product_composition import worker_product_feedback as resolver
 name = 'game_evidence.product_accept'
 try: resolver.resolve_worker_product_feedback(name)
@@ -66,11 +77,14 @@ with resolver._lock:
     worker = threading.Thread(target=lambda: (resolver.resolve_worker_product_feedback('queue.issue_head'),done.set()))
     worker.start(); assert done.wait(2)
 worker.join(2); assert not worker.is_alive()
-''')
+"""
+    )
 
 
 def test_finished_conflict_and_failure_keep_original_attempt_fence():
-    run_fresh(SETUP + '''
+    run_fresh(
+        SETUP
+        + """
 name = 'game_evidence.product_accept'
 tasks.record_operation_attempt = lambda *_a, **_kw: (False, {}, None, 1)
 tasks.resolve_worker_product_feedback = lambda *_: (_ for _ in ()).throw(AssertionError('unexpected resolve'))
@@ -88,11 +102,14 @@ try: tasks.execute_background_command.run('retained',name,{'original':1})
 except ImportError: pass
 else: raise AssertionError('failure hidden')
 assert events == [('retained','token','unavailable',{'retryable':False,'background':True})]
-''')
+"""
+    )
 
 
 def test_preexisting_registration_conflicts_without_override():
-    run_fresh(SETUP + '''
+    run_fresh(
+        SETUP
+        + """
 from app.product_composition import worker_product_feedback as resolver
 name = 'game_evidence.product_accept'
 handler = lambda *_: None
@@ -103,4 +120,5 @@ except ValueError as error: assert str(error) == 'Duplicate command: ' + name
 else: raise AssertionError('duplicate accepted')
 assert command_gateway._handlers[name] is handler and command_gateway._preparers[name] is prepare
 assert not resolver._loaded
-''')
+"""
+    )

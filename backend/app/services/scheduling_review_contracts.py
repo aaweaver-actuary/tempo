@@ -1,5 +1,7 @@
 """Compatibility exports; executable semantics are Learning-owned."""
+
 from tempo_learning_runtime import scheduling_review_contracts as _owned
+
 dataclass = _owned.dataclass
 datetime = _owned.datetime
 Protocol = _owned.Protocol

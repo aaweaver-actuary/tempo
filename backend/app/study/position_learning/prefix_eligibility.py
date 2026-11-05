@@ -5,6 +5,7 @@ attempt and its server-side saved terminal/review receipts. The values here are
 claims to verify against the selected route; constructing them (including a
 receipt ID) does not itself prove that storage occurred.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -137,8 +138,11 @@ def verify_clean_prefix(
     board = chess.Board(proof.root_fen)
     learner_turn = chess.WHITE if route.learner_color == "white" else chess.BLACK
     for decision in proof.attempt_decisions:
-        if (decision.ply in decision_by_ply or decision.ply >= len(proof.moves_uci)
-                or decision.definition.expected_uci != proof.moves_uci[decision.ply]):
+        if (
+            decision.ply in decision_by_ply
+            or decision.ply >= len(proof.moves_uci)
+            or decision.definition.expected_uci != proof.moves_uci[decision.ply]
+        ):
             return None
         decision_by_ply[decision.ply] = decision
         response = response_by_ply.get(decision.ply)
@@ -159,11 +163,16 @@ def verify_clean_prefix(
         if board.turn == learner_turn:
             decision = decision_by_ply.get(ply)
             try:
-                decision_fen = chess.Board(decision.fen).fen() if decision is not None else None
+                decision_fen = (
+                    chess.Board(decision.fen).fen() if decision is not None else None
+                )
             except ValueError:
                 return None
-            if (decision is None or decision_fen != board.fen()
-                    or decision.definition.key.position != opening_position_key(board.fen())):
+            if (
+                decision is None
+                or decision_fen != board.fen()
+                or decision.definition.key.position != opening_position_key(board.fen())
+            ):
                 return None
         elif ply in decision_by_ply:
             return None
@@ -210,7 +219,9 @@ def verify_clean_prefix(
     if not through_target:
         return None
     uncovered = tuple(d for d in through_target if d.ply >= shared)
-    target_is_clean = any(d.ply == target_ply and d.ply < shared for d in through_target)
+    target_is_clean = any(
+        d.ply == target_ply and d.ply < shared for d in through_target
+    )
     all_decisions_covered = bool(through_target) and not uncovered
     # With no earlier move to skip and no cleanly covered target, the caller
     # should safely fall back to the authored root without using this proof.

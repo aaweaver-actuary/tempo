@@ -1,4 +1,5 @@
 """Validated capture facts and failures; no transaction or transport dependency."""
+
 from dataclasses import dataclass
 
 

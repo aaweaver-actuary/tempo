@@ -27,7 +27,8 @@ STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
 
 def test_opening_graph_rebuild_reports_prepare_compute_publish_phase_timings(
-    monkeypatch, caplog,
+    monkeypatch,
+    caplog,
 ):
     phases = []
     prepared_input = object()
@@ -47,13 +48,19 @@ def test_opening_graph_rebuild_reports_prepare_compute_publish_phase_timings(
         phases.append("publish")
 
     monkeypatch.setattr(opening_graph_module, "prepare_opening_graph_rebuild", prepare)
-    monkeypatch.setattr(opening_graph_module, "calculate_opening_graph_artifacts", calculate)
+    monkeypatch.setattr(
+        opening_graph_module, "calculate_opening_graph_artifacts", calculate
+    )
     monkeypatch.setattr(opening_graph_module, "publish_opening_graph_rebuild", publish)
     with caplog.at_level(logging.INFO, logger="tempo.opening_graph"):
-        execute_opening_graph_rebuild({"payload": {"repertoire_id": "timed-repertoire"}, "generation": 3})
+        execute_opening_graph_rebuild(
+            {"payload": {"repertoire_id": "timed-repertoire"}, "generation": 3}
+        )
 
     assert phases == ["prepare", "compute", "publish"]
-    timing_records = [record for record in caplog.records if record.name == "tempo.opening_graph"]
+    timing_records = [
+        record for record in caplog.records if record.name == "tempo.opening_graph"
+    ]
     assert len(timing_records) == 1
     message = timing_records[0].getMessage()
     assert "repertoire_id=timed-repertoire" in message
@@ -79,9 +86,7 @@ def _publish_graph(repertoire_id: str) -> None:
     raise AssertionError(f"opening graph did not publish for {repertoire_id}")
 
 
-def test_daily_queue_graph_unlock_has_a_card_first_lookup_index(
-    tmp_path, monkeypatch
-):
+def test_daily_queue_graph_unlock_has_a_card_first_lookup_index(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     database.initialize()
     with database.connection() as connection:
@@ -146,9 +151,7 @@ def test_hybrid_graph_migration_enqueues_each_existing_repertoire_once(
         assert tuple(repeated) == (5, "queued")
 
 
-def test_hybrid_migration_freezes_legacy_line_prefix_depth_once(
-    tmp_path, monkeypatch
-):
+def test_hybrid_migration_freezes_legacy_line_prefix_depth_once(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     database.initialize()
     with database.connection() as connection:
@@ -168,26 +171,42 @@ def test_hybrid_migration_freezes_legacy_line_prefix_depth_once(
 
     database.initialize()
     with database.connection() as connection:
-        assert connection.execute(
-            """SELECT learner_decision_count
+        assert (
+            connection.execute(
+                """SELECT learner_decision_count
                FROM repertoire_line_training_depths
                WHERE line_id='legacy-depth-line'"""
-        ).fetchone()[0] == 5
+            ).fetchone()[0]
+            == 5
+        )
         connection.execute("UPDATE settings SET initial_depth=9 WHERE id=1")
 
     database.initialize()
     with database.connection() as connection:
-        assert connection.execute(
-            """SELECT learner_decision_count
+        assert (
+            connection.execute(
+                """SELECT learner_decision_count
                FROM repertoire_line_training_depths
                WHERE line_id='legacy-depth-line'"""
-        ).fetchone()[0] == 5
+            ).fetchone()[0]
+            == 5
+        )
 
 
 def test_configured_black_route_materializes_as_one_cumulative_prefix():
     route = [
-        "e2e4", "c7c6", "d2d4", "d7d5", "e4e5", "c6c5",
-        "c2c3", "b8c6", "g1f3", "c5d4", "c3d4", "c8g4",
+        "e2e4",
+        "c7c6",
+        "d2d4",
+        "d7d5",
+        "e4e5",
+        "c6c5",
+        "c2c3",
+        "b8c6",
+        "g1f3",
+        "c5d4",
+        "c3d4",
+        "c8g4",
     ]
 
     segments = decision_segments(STARTING_FEN, route, "black", 6)
@@ -248,15 +267,25 @@ def test_post_prefix_cards_test_exactly_one_learner_decision():
     segments = decision_segments(
         STARTING_FEN,
         [
-            "e2e4", "e7e5", "g1f3", "b8c6", "f1b5", "a7a6",
-            "b5a4", "g8f6", "e1g1",
+            "e2e4",
+            "e7e5",
+            "g1f3",
+            "b8c6",
+            "f1b5",
+            "a7a6",
+            "b5a4",
+            "g8f6",
+            "e1g1",
         ],
         "white",
         2,
     )
 
     assert [segment.segment_kind for segment in segments] == [
-        "prefix", "decision", "decision", "decision"
+        "prefix",
+        "decision",
+        "decision",
+        "decision",
     ]
     assert segments[0].moves == ("e2e4", "e7e5", "g1f3")
     assert all(
@@ -269,8 +298,15 @@ def test_full_line_descendants_are_materialized_beyond_prefix_depth():
     segments = decision_segments(
         STARTING_FEN,
         [
-            "e2e4", "e7e5", "g1f3", "b8c6", "f1b5", "a7a6",
-            "b5a4", "g8f6", "e1g1",
+            "e2e4",
+            "e7e5",
+            "g1f3",
+            "b8c6",
+            "f1b5",
+            "a7a6",
+            "b5a4",
+            "g8f6",
+            "e1g1",
         ],
         "white",
         2,
@@ -339,17 +375,23 @@ def test_descendant_requires_completed_parent_practice(tmp_path, monkeypatch):
                    WHERE repertoire_id='frontier-repertoire'
                    ORDER BY decision_index"""
             ).fetchall()
-            assert connection.execute(
-                "SELECT state FROM cards WHERE id=?", (steps[1]["card_id"],)
-            ).fetchone()[0] == "locked"
+            assert (
+                connection.execute(
+                    "SELECT state FROM cards WHERE id=?", (steps[1]["card_id"],)
+                ).fetchone()[0]
+                == "locked"
+            )
             connection.execute(
                 "INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval) VALUES(?,'again',?,0,0)",
-                (steps[0]["card_id"], date.today().isoformat())
+                (steps[0]["card_id"], date.today().isoformat()),
             )
             seed_queue(connection, date.today().isoformat())
-            assert connection.execute(
-                "SELECT state FROM cards WHERE id=?", (steps[1]["card_id"],)
-            ).fetchone()[0] == "learning"
+            assert (
+                connection.execute(
+                    "SELECT state FROM cards WHERE id=?", (steps[1]["card_id"],)
+                ).fetchone()[0]
+                == "learning"
+            )
 
 
 def test_graph_rebuild_holds_no_sqlite_connection_during_chess_traversal(
@@ -365,9 +407,7 @@ def test_graph_rebuild_holds_no_sqlite_connection_during_chess_traversal(
             {
                 "id": "line-1",
                 "start_fen": STARTING_FEN,
-                "moves_json": json.dumps(
-                    ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"]
-                ),
+                "moves_json": json.dumps(["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"]),
                 "trained_color": "white",
                 "learner_decision_count": 3,
             },
@@ -382,17 +422,22 @@ def test_graph_rebuild_holds_no_sqlite_connection_during_chess_traversal(
 
 def test_graph_steps_reuse_exact_last_decision_fen_for_white_and_black_routes():
     moves = ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5", "a7a6", "b5a4", "g8f6"]
-    graph = build_graph(GraphInput(
-        "fen-reuse",
-        tuple({
-            "id": f"{color}-line",
-            "start_fen": STARTING_FEN,
-            "moves_json": json.dumps(moves),
-            "trained_color": color,
-            "learner_decision_count": 2,
-        } for color in ("white", "black")),
-        2,
-    ))
+    graph = build_graph(
+        GraphInput(
+            "fen-reuse",
+            tuple(
+                {
+                    "id": f"{color}-line",
+                    "start_fen": STARTING_FEN,
+                    "moves_json": json.dumps(moves),
+                    "trained_color": color,
+                    "learner_decision_count": 2,
+                }
+                for color in ("white", "black")
+            ),
+            2,
+        )
+    )
     assert len(graph) > 2
     for step in graph:
         board = chess.Board(step.starting_fen)
@@ -484,12 +529,18 @@ def test_failed_seed_verification_does_not_revoke_introduced_descendants(
                 reviewed_at=now,
                 review_day=date.today(),
             )
-            assert connection.execute(
-                "SELECT state FROM cards WHERE id=?", (parent_id,)
-            ).fetchone()[0] == "learning"
-            assert connection.execute(
-                "SELECT state FROM cards WHERE id=?", (child_id,)
-            ).fetchone()[0] == "learning"
+            assert (
+                connection.execute(
+                    "SELECT state FROM cards WHERE id=?", (parent_id,)
+                ).fetchone()[0]
+                == "learning"
+            )
+            assert (
+                connection.execute(
+                    "SELECT state FROM cards WHERE id=?", (child_id,)
+                ).fetchone()[0]
+                == "learning"
+            )
 
 
 def test_cumulative_graph_prefix_offers_splitting_but_decisions_do_not(
@@ -510,8 +561,14 @@ def test_cumulative_graph_prefix_offers_splitting_but_decisions_do_not(
                 """SELECT card_id FROM opening_graph_steps
                    WHERE repertoire_id='split-repertoire' ORDER BY decision_index"""
             ).fetchall()
-        assert client.get(f"/api/cards/{cards[0]['card_id']}/prefix-split").status_code == 200
-        assert client.get(f"/api/cards/{cards[1]['card_id']}/prefix-split").status_code == 422
+        assert (
+            client.get(f"/api/cards/{cards[0]['card_id']}/prefix-split").status_code
+            == 200
+        )
+        assert (
+            client.get(f"/api/cards/{cards[1]['card_id']}/prefix-split").status_code
+            == 422
+        )
 
 
 def test_graph_publication_restarts_integrity_scan_with_current_sources(
@@ -549,7 +606,13 @@ def _insert_repertoire_line(connection, repertoire_id: str, line_id: str, moves)
         """INSERT INTO repertoire_lines(
                id,repertoire_id,name,trained_color,start_fen,moves_json,created_at
            ) VALUES(?,?,?,'white',?,?, '2026-09-21')""",
-        (line_id, repertoire_id, f"{repertoire_id}.pgn", STARTING_FEN, __import__("json").dumps(moves)),
+        (
+            line_id,
+            repertoire_id,
+            f"{repertoire_id}.pgn",
+            STARTING_FEN,
+            __import__("json").dumps(moves),
+        ),
     )
     connection.execute(
         "INSERT INTO repertoire_line_training_depths(line_id,learner_decision_count) VALUES(?,3)",
@@ -577,20 +640,27 @@ def test_repeated_graph_rebuilds_are_generation_guarded_and_idempotent(
         assert claimed and claimed["id"] == first["id"]
         enqueue_opening_graph_rebuild("graph-repertoire")
         execute_opening_graph_rebuild(claimed)
-        assert complete_task(
-            claimed["id"], claimed["generation"], claimed["lease_token"]
-        ) is False
+        assert (
+            complete_task(claimed["id"], claimed["generation"], claimed["lease_token"])
+            is False
+        )
         with database.connection() as connection:
-            assert connection.execute(
-                "SELECT 1 FROM opening_graph_publications WHERE repertoire_id='graph-repertoire'"
-            ).fetchone() is None
+            assert (
+                connection.execute(
+                    "SELECT 1 FROM opening_graph_publications WHERE repertoire_id='graph-repertoire'"
+                ).fetchone()
+                is None
+            )
 
         current = claim_task("opening_graph_rebuild")
         if current is not None:
             execute_opening_graph_rebuild(current)
-            assert complete_task(
-                current["id"], current["generation"], current["lease_token"]
-            ) is True
+            assert (
+                complete_task(
+                    current["id"], current["generation"], current["lease_token"]
+                )
+                is True
+            )
             expected_generation = current["generation"]
         else:
             import time
@@ -610,11 +680,14 @@ def test_repeated_graph_rebuilds_are_generation_guarded_and_idempotent(
                 "SELECT generation FROM opening_graph_publications WHERE repertoire_id='graph-repertoire'"
             ).fetchone()
             assert publication["generation"] == expected_generation
-            assert connection.execute(
-                """SELECT COUNT(DISTINCT card_id) FROM opening_graph_steps
+            assert (
+                connection.execute(
+                    """SELECT COUNT(DISTINCT card_id) FROM opening_graph_steps
                    WHERE repertoire_id='graph-repertoire' AND generation=?""",
-                (expected_generation,),
-            ).fetchone()[0] == 1
+                    (expected_generation,),
+                ).fetchone()[0]
+                == 1
+            )
 
 
 def test_exact_archived_prefix_restores_its_original_reviews_and_schedule(
@@ -651,9 +724,7 @@ def test_exact_archived_prefix_restores_its_original_reviews_and_schedule(
                 "INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)",
                 ("migration-repertoire", legacy_id),
             )
-            connection.execute(
-                "UPDATE cards SET archived=1 WHERE id=?", (legacy_id,)
-            )
+            connection.execute("UPDATE cards SET archived=1 WHERE id=?", (legacy_id,))
             for day in ("2026-08-01", "2026-08-03", "2026-08-05"):
                 connection.execute(
                     """INSERT INTO reviews(
@@ -673,15 +744,26 @@ def test_exact_archived_prefix_restores_its_original_reviews_and_schedule(
         _publish_graph("migration-repertoire")
 
         with database.connection() as connection:
-            assert connection.execute(
-                "SELECT COUNT(*) FROM reviews WHERE card_id=?", (legacy_id,)
-            ).fetchone()[0] == 3
-            assert connection.execute(
-                "SELECT status FROM daily_queue WHERE card_id=? AND cycle=0", (legacy_id,)
-            ).fetchone()[0] == "complete"
-            assert connection.execute(
-                "SELECT status FROM daily_queue WHERE card_id=? AND cycle=1", (legacy_id,)
-            ).fetchone()[0] == "queued"
+            assert (
+                connection.execute(
+                    "SELECT COUNT(*) FROM reviews WHERE card_id=?", (legacy_id,)
+                ).fetchone()[0]
+                == 3
+            )
+            assert (
+                connection.execute(
+                    "SELECT status FROM daily_queue WHERE card_id=? AND cycle=0",
+                    (legacy_id,),
+                ).fetchone()[0]
+                == "complete"
+            )
+            assert (
+                connection.execute(
+                    "SELECT status FROM daily_queue WHERE card_id=? AND cycle=1",
+                    (legacy_id,),
+                ).fetchone()[0]
+                == "queued"
+            )
             seeded = connection.execute(
                 """SELECT card.stability,seed.baseline_successful_days,seed.verification_due
                    FROM opening_card_schedule_seeds seed
@@ -689,7 +771,8 @@ def test_exact_archived_prefix_restores_its_original_reviews_and_schedule(
             ).fetchall()
             assert seeded == []
             restored = connection.execute(
-                "SELECT archived,state,stability,due_date FROM cards WHERE id=?", (legacy_id,)
+                "SELECT archived,state,stability,due_date FROM cards WHERE id=?",
+                (legacy_id,),
             ).fetchone()
             assert tuple(restored) == (0, "mature", 30, "2026-12-01")
 
@@ -806,15 +889,23 @@ def test_synthesized_prefix_evidence_caps_stability_and_copies_no_reviews(
             ).fetchone()
             assert prefix["state"] == "mature"
             assert prefix["stability"] == 14
-            assert date.fromisoformat(prefix["due_date"]) <= date.today() + timedelta(days=7)
-            assert connection.execute(
-                "SELECT COUNT(*) FROM reviews WHERE card_id=?",
-                (expected_prefix_id,),
-            ).fetchone()[0] == 0
-            assert connection.execute(
-                "SELECT COUNT(*) FROM reviews WHERE card_id IN (?,?)",
-                tuple(identifier for identifier, _, _ in legacy_cards),
-            ).fetchone()[0] == 6
+            assert date.fromisoformat(prefix["due_date"]) <= date.today() + timedelta(
+                days=7
+            )
+            assert (
+                connection.execute(
+                    "SELECT COUNT(*) FROM reviews WHERE card_id=?",
+                    (expected_prefix_id,),
+                ).fetchone()[0]
+                == 0
+            )
+            assert (
+                connection.execute(
+                    "SELECT COUNT(*) FROM reviews WHERE card_id IN (?,?)",
+                    tuple(identifier for identifier, _, _ in legacy_cards),
+                ).fetchone()[0]
+                == 6
+            )
 
 
 def test_manual_prefix_split_survives_graph_rebuild(tmp_path, monkeypatch):

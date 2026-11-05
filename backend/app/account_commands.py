@@ -16,8 +16,14 @@ def update_game_accounts(
 ) -> dict[str, str]:
     lichess_username = str(payload["lichess_username"]).strip()
     chesscom_username = str(payload["chesscom_username"]).strip()
-    if storage.update_account_settings(database, lichess_username, chesscom_username) != 1:
-        raise HTTPException(503, "Account settings are unavailable; retry after the database is restored")
+    if (
+        storage.update_account_settings(database, lichess_username, chesscom_username)
+        != 1
+    ):
+        raise HTTPException(
+            503,
+            "Account settings are unavailable; retry after the database is restored",
+        )
     for provider, username in (
         ("lichess", lichess_username),
         ("chess.com", chesscom_username),

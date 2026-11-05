@@ -1,12 +1,22 @@
 """Retained defensive producer slices load only after the delivery fence."""
+
 import pytest
 from test_worker_legacy_evidence_registration import SETUP, run_fresh
 
 
-@pytest.mark.parametrize('kind', ['defensive_threat_report_audit','defensive_threat_scan',
-                                   'defensive_threat_backfill','defensive_threat_validate'])
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "defensive_threat_report_audit",
+        "defensive_threat_scan",
+        "defensive_threat_backfill",
+        "defensive_threat_validate",
+    ],
+)
 def test_retained_threat_slice_calls_actual_owner_after_original_fence(kind):
-    run_fresh(SETUP + f'''
+    run_fresh(
+        SETUP
+        + f"""
 from app.services import threat_pipeline as owner
 tasks.defer_paused_defensive_task = lambda _: False
 owner.activity_gate.wait_for_foreground = lambda: None
@@ -35,17 +45,21 @@ else:
     assert completed == []
 if {kind!r} in ('defensive_threat_backfill','defensive_threat_validate'):
     assert locks == [claimed] and locks[0] is claimed
-''')
+"""
+    )
 
 
 def test_stale_threat_work_does_not_import_and_missing_owner_keeps_failure_identity():
-    run_fresh('''
+    run_fresh(
+        """
 import importlib.abc, sys
 class Deny(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
         if fullname == 'app.services.threat_pipeline': raise ImportError('missing threat producer')
 sys.meta_path.insert(0,Deny())
-''' + SETUP + '''
+"""
+        + SETUP
+        + """
 claimed={'kind':'defensive_threat_scan','id':'retained','generation':8,'lease_token':'original-lease','payload':{}}
 tasks.defer_paused_defensive_task=lambda _:False
 events=[]
@@ -61,4 +75,5 @@ try: tasks._execute_claimed_background_slice(claimed,None)
 except ImportError as error: assert str(error)=='missing threat producer'
 else: raise AssertionError('missing owner hidden')
 assert events == [('fence',claimed),('failed','retained',8,'original-lease','missing threat producer')]
-''')
+"""
+    )

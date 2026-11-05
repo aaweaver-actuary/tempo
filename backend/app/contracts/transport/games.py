@@ -1,4 +1,5 @@
 """Games read contracts."""
+
 from typing import Literal
 from pydantic import BaseModel, Field
 from .game_sync import GameProvider

@@ -25,38 +25,67 @@ def store(tmp_path, monkeypatch):
 def request(store, day=DAY, preserve=None):
     with store.connection(background=True) as connection:
         return queue_application.request_queue_refresh_in_transaction(
-            connection, day, preserve_through_entry_id=preserve,
+            connection,
+            day,
+            preserve_through_entry_id=preserve,
         )
 
 
 def task_and_projection(store, day=DAY):
     with store.read_connection() as connection:
-        task = dict(connection.execute(
-            "SELECT * FROM background_tasks WHERE kind='daily_queue' AND deduplication_key='current'"
-        ).fetchone())
-        projection = dict(connection.execute(
-            "SELECT * FROM queue_projections WHERE queue_date=?", (day,)
-        ).fetchone())
+        task = dict(
+            connection.execute(
+                "SELECT * FROM background_tasks WHERE kind='daily_queue' AND deduplication_key='current'"
+            ).fetchone()
+        )
+        projection = dict(
+            connection.execute(
+                "SELECT * FROM queue_projections WHERE queue_date=?", (day,)
+            ).fetchone()
+        )
     return task, projection
 
 
 @pytest.mark.parametrize("state", ["queued", "leased", "retrying"])
-def test_queue_refresh_active_request_retains_generation_lease_and_checkpoint(store, state):
+def test_queue_refresh_active_request_retains_generation_lease_and_checkpoint(
+    store, state
+):
     initial = request(store, preserve=42)
-    payload = {"queue_date": DAY, "preserve_through_entry_id": 42,
-               "_queue_phase": "admit_due", "cursor": 19, "_refresh_cycle_epoch": 1}
+    payload = {
+        "queue_date": DAY,
+        "preserve_through_entry_id": 42,
+        "_queue_phase": "admit_due",
+        "cursor": 19,
+        "_refresh_cycle_epoch": 1,
+    }
     with store.connection(background=True) as connection:
         connection.execute(
             "UPDATE background_tasks SET state=?, phase=?, payload_json=?, lease_token=?, "
             "lease_expires_at=?, transaction_timeout_count=?, transaction_timeout_checkpoint=? WHERE id=?",
-            (state, "admit_due", json.dumps(payload), "lease-1" if state == "leased" else None,
-             "2030-01-01T00:00:00+00:00" if state == "leased" else None, 3, "admit_due:19", initial["id"]),
+            (
+                state,
+                "admit_due",
+                json.dumps(payload),
+                "lease-1" if state == "leased" else None,
+                "2030-01-01T00:00:00+00:00" if state == "leased" else None,
+                3,
+                "admit_due:19",
+                initial["id"],
+            ),
         )
     before, _ = task_and_projection(store)
     request(store)
     after, projection = task_and_projection(store)
-    for field in ("id", "generation", "state", "phase", "lease_token", "lease_expires_at",
-                  "transaction_timeout_count", "transaction_timeout_checkpoint"):
+    for field in (
+        "id",
+        "generation",
+        "state",
+        "phase",
+        "lease_token",
+        "lease_expires_at",
+        "transaction_timeout_count",
+        "transaction_timeout_checkpoint",
+    ):
         assert after[field] == before[field], field
     assert json.loads(after["payload_json"]) == payload
     assert projection["state"] == "refreshing" and projection["refresh_pending"] == 1
@@ -64,7 +93,9 @@ def test_queue_refresh_active_request_retains_generation_lease_and_checkpoint(st
     assert projection["published_refresh_epoch"] < projection["requested_refresh_epoch"]
 
 
-def test_queue_refresh_twenty_committed_requests_coalesce_and_record_each_invalidation(store):
+def test_queue_refresh_twenty_committed_requests_coalesce_and_record_each_invalidation(
+    store,
+):
     initial = request(store)
     for _ in range(20):
         request(store)
@@ -89,7 +120,9 @@ def test_queue_refresh_rolled_back_request_does_not_change_task_or_projection(st
 def test_queue_refresh_terminal_task_starts_new_generation(store, state):
     initial = request(store)
     with store.connection(background=True) as connection:
-        connection.execute("UPDATE background_tasks SET state=? WHERE id=?", (state, initial["id"]))
+        connection.execute(
+            "UPDATE background_tasks SET state=? WHERE id=?", (state, initial["id"])
+        )
     request(store)
     task, projection = task_and_projection(store)
     assert task["generation"] > initial["generation"]
@@ -110,23 +143,37 @@ def test_queue_refresh_new_day_replaces_singleton_without_marking_old_day_ready(
 
 
 def test_queue_refresh_late_older_day_does_not_replace_newer_task(store):
-    new = request(store, '2026-10-08')
-    before = task_and_projection(store, '2026-10-08')
+    new = request(store, "2026-10-08")
+    before = task_and_projection(store, "2026-10-08")
     request(store, DAY)
-    assert task_and_projection(store, '2026-10-08') == before
+    assert task_and_projection(store, "2026-10-08") == before
     with store.read_connection() as conn:
-        assert conn.execute('SELECT count(*) FROM queue_projections WHERE queue_date=?', (DAY,)).fetchone()[0] == 0
+        assert (
+            conn.execute(
+                "SELECT count(*) FROM queue_projections WHERE queue_date=?", (DAY,)
+            ).fetchone()[0]
+            == 0
+        )
 
 
-def test_queue_refresh_advance_preserves_new_pointer_from_locked_task(store, monkeypatch):
+def test_queue_refresh_advance_preserves_new_pointer_from_locked_task(
+    store, monkeypatch
+):
     request(store, preserve=42)
+
     def write(operation, *, label):
         with store.connection(background=True) as conn:
             return operation(conn)
-    monkeypatch.setattr(durable_tasks, 'submit_background_write', write)
-    claimed = durable_tasks.claim_task('daily_queue')
+
+    monkeypatch.setattr(durable_tasks, "submit_background_write", write)
+    claimed = durable_tasks.claim_task("daily_queue")
     request(store, preserve=50)
     with store.connection(background=True) as conn:
-        assert durable_tasks.advance_task_slice_in_transaction(conn, claimed, next_phase='next', next_payload={'queue_date': DAY, '_queue_phase': 'next'})
+        assert durable_tasks.advance_task_slice_in_transaction(
+            conn,
+            claimed,
+            next_phase="next",
+            next_payload={"queue_date": DAY, "_queue_phase": "next"},
+        )
     after, _ = task_and_projection(store)
-    assert json.loads(after['payload_json'])['preserve_through_entry_id'] == 50
+    assert json.loads(after["payload_json"])["preserve_through_entry_id"] == 50

@@ -1,4 +1,5 @@
 """Golden examples for stable position identity and mutable answer definition."""
+
 from dataclasses import replace
 
 import chess
@@ -30,9 +31,9 @@ def test_italian_common_trunk_and_knight_giuoco_continuations_are_legal():
     trunk_ply = 5
     assert ITALIAN_KNIGHT.position(trunk_ply) == ITALIAN_GIUOCO.position(trunk_ply)
     assert ITALIAN_KNIGHT.moves_uci[:trunk_ply] == ITALIAN_GIUOCO.moves_uci[:trunk_ply]
-    assert ITALIAN_KNIGHT.position(len(ITALIAN_KNIGHT.moves_uci)) != ITALIAN_GIUOCO.position(
-        len(ITALIAN_GIUOCO.moves_uci)
-    )
+    assert ITALIAN_KNIGHT.position(
+        len(ITALIAN_KNIGHT.moves_uci)
+    ) != ITALIAN_GIUOCO.position(len(ITALIAN_GIUOCO.moves_uci))
     for path in (ITALIAN_KNIGHT, ITALIAN_GIUOCO):
         assert path.board_at(len(path.moves_uci)).is_valid()
 
@@ -108,6 +109,8 @@ def test_incomplete_or_unverified_source_claim_cannot_form_route_option():
         legal_verified=True,
     )
     with pytest.raises(ValueError, match="route_not_certified"):
-        RouteOption(**(arguments | {"certificate": replace(good_source, complete=False)}))
+        RouteOption(
+            **(arguments | {"certificate": replace(good_source, complete=False)})
+        )
     with pytest.raises(ValueError, match="route_not_certified"):
         RouteOption(**(arguments | {"legal_verified": False}))

@@ -15,52 +15,94 @@ from app.contracts.opening_graph import GraphStep
 
 def test_pr102_obsolete_cleanup_has_constant_command_count():
     from types import SimpleNamespace
+
     for card_count in (16, 64):
         statements = []
-        card_ids = tuple(f'obsolete-{index}' for index in range(card_count))
+        card_ids = tuple(f"obsolete-{index}" for index in range(card_count))
+
         class Database:
             def execute_native(self, statement, parameters=()):
                 statements.append((statement, parameters))
-                membership = (0, 'rep') if 'FOR UPDATE OF link,card' in statement else None
-                return SimpleNamespace(fetchone=lambda: membership,
-                                       fetchall=lambda: [(identifier,) for identifier in card_ids])
-        postgres_opening_graph.remove_obsolete_graph_memberships(Database(), 'rep', 2, card_ids)
-        assert len(statements) <= 7, f'Cleanup executed {len(statements)} statements for {card_count} cards'
+                membership = (
+                    (0, "rep") if "FOR UPDATE OF link,card" in statement else None
+                )
+                return SimpleNamespace(
+                    fetchone=lambda: membership,
+                    fetchall=lambda: [(identifier,) for identifier in card_ids],
+                )
+
+        postgres_opening_graph.remove_obsolete_graph_memberships(
+            Database(), "rep", 2, card_ids
+        )
+        assert len(statements) <= 7, (
+            f"Cleanup executed {len(statements)} statements for {card_count} cards"
+        )
 
 
 def test_pr102_graph_card_creation_uses_one_strict_bulk_statement():
     from types import SimpleNamespace
-    steps = tuple(GraphStep(
-        repertoire_id='rep', line_id='line', decision_index=index, segment_kind='prefix',
-        first_decision_index=index, last_decision_index=index, decision_fen_keys=('fen',),
-        card_id=f'card-{index}', parent_card_id=None if index == 0 else 'card-0',
-        decision_fen_key='fen', starting_fen=chess.STARTING_FEN, moves=('e2e4',),
-        trained_color='white') for index in range(64))
+
+    steps = tuple(
+        GraphStep(
+            repertoire_id="rep",
+            line_id="line",
+            decision_index=index,
+            segment_kind="prefix",
+            first_decision_index=index,
+            last_decision_index=index,
+            decision_fen_keys=("fen",),
+            card_id=f"card-{index}",
+            parent_card_id=None if index == 0 else "card-0",
+            decision_fen_key="fen",
+            starting_fen=chess.STARTING_FEN,
+            moves=("e2e4",),
+            trained_color="white",
+        )
+        for index in range(64)
+    )
     statements = []
-    database = SimpleNamespace(execute_native=lambda statement, parameters=(): statements.append((statement, parameters)))
-    postgres_opening_graph.create_graph_cards(database, steps, '2026-10-08', strict=True)
+    database = SimpleNamespace(
+        execute_native=lambda statement, parameters=(): statements.append(
+            (statement, parameters)
+        )
+    )
+    postgres_opening_graph.create_graph_cards(
+        database, steps, "2026-10-08", strict=True
+    )
     assert len(statements) == 1
     statement, parameters = statements[0]
-    assert 'UNNEST(' in statement and 'ON CONFLICT' not in statement
+    assert "UNNEST(" in statement and "ON CONFLICT" not in statement
     assert all(len(column) == len(steps) for column in parameters)
-    assert parameters[5] == ['new'] + ['locked'] * 63
+    assert parameters[5] == ["new"] + ["locked"] * 63
     statements.clear()
-    postgres_opening_graph.create_graph_cards(database, steps, '2026-10-08')
-    assert 'ON CONFLICT(id) DO NOTHING' in statements[0][0]
+    postgres_opening_graph.create_graph_cards(database, steps, "2026-10-08")
+    assert "ON CONFLICT(id) DO NOTHING" in statements[0][0]
     statements.clear()
-    postgres_opening_graph.create_graph_cards(database, (), '2026-10-08', strict=True)
+    postgres_opening_graph.create_graph_cards(database, (), "2026-10-08", strict=True)
     assert statements == []
 
 
-def test_postgres_graph_line_slices_match_whole_graph_and_close_read_before_traversal(monkeypatch):
+def test_postgres_graph_line_slices_match_whole_graph_and_close_read_before_traversal(
+    monkeypatch,
+):
     starting_fen = chess.STARTING_FEN
     lines = (
-        {"id": "a", "repertoire_id": "rep", "start_fen": starting_fen,
-         "moves_json": json.dumps(["e2e4", "e7e5", "g1f3", "b8c6"]),
-         "trained_color": "white", "learner_decision_count": 2},
-        {"id": "b", "repertoire_id": "rep", "start_fen": starting_fen,
-         "moves_json": json.dumps(["d2d4", "d7d5", "c2c4", "e7e6"]),
-         "trained_color": "white", "learner_decision_count": 2},
+        {
+            "id": "a",
+            "repertoire_id": "rep",
+            "start_fen": starting_fen,
+            "moves_json": json.dumps(["e2e4", "e7e5", "g1f3", "b8c6"]),
+            "trained_color": "white",
+            "learner_decision_count": 2,
+        },
+        {
+            "id": "b",
+            "repertoire_id": "rep",
+            "start_fen": starting_fen,
+            "moves_json": json.dumps(["d2d4", "d7d5", "c2c4", "e7e6"]),
+            "trained_color": "white",
+            "learner_decision_count": 2,
+        },
     )
     read_open = False
 
@@ -77,7 +119,9 @@ def test_postgres_graph_line_slices_match_whole_graph_and_close_read_before_trav
     class Database:
         def execute_native(self, statement, parameters=()):
             if "FROM repertoire_lines line" in statement:
-                return Cursor([line for line in lines if line["id"] > parameters[1]][:1])
+                return Cursor(
+                    [line for line in lines if line["id"] > parameters[1]][:1]
+                )
             if "FROM settings" in statement:
                 return Cursor([(2,)])
             if "FROM prefix_splits" in statement:
@@ -106,18 +150,32 @@ def test_postgres_graph_line_slices_match_whole_graph_and_close_read_before_trav
     second = postgres_opening_graph.prepare_next_graph_line("rep", first.line_id)
     assert second is not None and second.line_id == "b"
     assert postgres_opening_graph.prepare_next_graph_line("rep", second.line_id) is None
-    assert first.steps + second.steps == original_build_graph(GraphInput("rep", lines, 2))
+    assert first.steps + second.steps == original_build_graph(
+        GraphInput("rep", lines, 2)
+    )
 
 
-def test_postgres_graph_stage_checkpoints_eight_steps_and_replays_by_cursor(monkeypatch):
-    steps = tuple(GraphStep(
-        repertoire_id="rep", line_id="line", decision_index=index,
-        segment_kind="decision", first_decision_index=index,
-        last_decision_index=index, decision_fen_keys=("fen",),
-        card_id=f"card-{index}", parent_card_id=None if index == 0 else f"card-{index - 1}",
-        decision_fen_key="fen", starting_fen=chess.STARTING_FEN,
-        moves=("e2e4",), trained_color="white",
-    ) for index in range(10))
+def test_postgres_graph_stage_checkpoints_eight_steps_and_replays_by_cursor(
+    monkeypatch,
+):
+    steps = tuple(
+        GraphStep(
+            repertoire_id="rep",
+            line_id="line",
+            decision_index=index,
+            segment_kind="decision",
+            first_decision_index=index,
+            last_decision_index=index,
+            decision_fen_keys=("fen",),
+            card_id=f"card-{index}",
+            parent_card_id=None if index == 0 else f"card-{index - 1}",
+            decision_fen_key="fen",
+            starting_fen=chess.STARTING_FEN,
+            moves=("e2e4",),
+            trained_color="white",
+        )
+        for index in range(10)
+    )
     prepared = postgres_opening_graph.PreparedGraphLine("line", steps)
     batches = []
     next_payloads = []
@@ -136,28 +194,41 @@ def test_postgres_graph_stage_checkpoints_eight_steps_and_replays_by_cursor(monk
         raw = type("Raw", (), {"cursor": lambda self: Cursor()})()
 
         def execute_native(self, _statement, _parameters=()):
-            if _statement.startswith('INSERT INTO cards'):
+            if _statement.startswith("INSERT INTO cards"):
                 batches.append(list(zip(*_parameters)))
             return []
 
-    monkeypatch.setattr(postgres_opening_graph, "lock_current_slice", lambda *_args: True)
+    monkeypatch.setattr(
+        postgres_opening_graph, "lock_current_slice", lambda *_args: True
+    )
 
     def advance(_database, _task, *, next_phase, next_payload):
         assert next_phase == "stage"
         next_payloads.append(next_payload)
         return True
 
-    monkeypatch.setattr(postgres_opening_graph, "advance_task_slice_in_transaction", advance)
-    task = {"generation": 3, "payload": {
-        "repertoire_id": "rep", "local_day": "2026-09-27", "after_line_id": "",
-        "step_offset": 0,
-    }}
-    assert postgres_opening_graph.stage_graph_line_in_transaction(Database(), task, prepared)
+    monkeypatch.setattr(
+        postgres_opening_graph, "advance_task_slice_in_transaction", advance
+    )
+    task = {
+        "generation": 3,
+        "payload": {
+            "repertoire_id": "rep",
+            "local_day": "2026-09-27",
+            "after_line_id": "",
+            "step_offset": 0,
+        },
+    }
+    assert postgres_opening_graph.stage_graph_line_in_transaction(
+        Database(), task, prepared
+    )
     assert [len(batch) for batch in batches] == [8, 8]
     assert next_payloads[-1]["step_offset"] == 8
     assert next_payloads[-1]["after_line_id"] == ""
     task["payload"] = next_payloads[-1]
-    assert postgres_opening_graph.stage_graph_line_in_transaction(Database(), task, prepared)
+    assert postgres_opening_graph.stage_graph_line_in_transaction(
+        Database(), task, prepared
+    )
     assert [len(batch) for batch in batches] == [8, 8, 2, 2]
     assert next_payloads[-1]["step_offset"] == 0
     assert next_payloads[-1]["after_line_id"] == "line"
@@ -180,15 +251,24 @@ def test_postgres_graph_links_eight_cards_before_publication(monkeypatch):
     class Database:
         raw = type("Raw", (), {"cursor": lambda self: Cursor()})()
 
-    monkeypatch.setattr(postgres_opening_graph, "lock_current_slice", lambda *_args: True)
     monkeypatch.setattr(
-        postgres_opening_graph, "advance_task_slice_in_transaction",
-        lambda _database, _task, *, next_phase, next_payload:
-        transitions.append((next_phase, next_payload)) or True,
+        postgres_opening_graph, "lock_current_slice", lambda *_args: True
     )
-    task = {"generation": 4, "payload": {"repertoire_id": "rep", "local_day": "2026-09-27"}}
+    monkeypatch.setattr(
+        postgres_opening_graph,
+        "advance_task_slice_in_transaction",
+        lambda _database, _task, *, next_phase, next_payload: (
+            transitions.append((next_phase, next_payload)) or True
+        ),
+    )
+    task = {
+        "generation": 4,
+        "payload": {"repertoire_id": "rep", "local_day": "2026-09-27"},
+    }
     cards = tuple(f"card-{index}" for index in range(8))
-    assert postgres_opening_graph.link_graph_cards_in_transaction(Database(), task, cards)
+    assert postgres_opening_graph.link_graph_cards_in_transaction(
+        Database(), task, cards
+    )
     assert len(observed_batches[0]) == 8
     assert transitions[-1][0] == "link"
     assert transitions[-1][1]["after_card_id"] == "card-7"
@@ -196,7 +276,9 @@ def test_postgres_graph_links_eight_cards_before_publication(monkeypatch):
     assert transitions[-1][0] == "publish"
 
 
-def test_postgres_graph_publication_rejects_missing_links_and_checks_generation(monkeypatch):
+def test_postgres_graph_publication_rejects_missing_links_and_checks_generation(
+    monkeypatch,
+):
     transitions = []
     statements = []
 
@@ -206,15 +288,24 @@ def test_postgres_graph_publication_rejects_missing_links_and_checks_generation(
 
         def execute_native(self, statement, _parameters=()):
             statements.append(statement)
-            return type("Cursor", (), {"fetchone": lambda _self: (1,) if self.missing else None})()
+            return type(
+                "Cursor", (), {"fetchone": lambda _self: (1,) if self.missing else None}
+            )()
 
-    monkeypatch.setattr(postgres_opening_graph, "lock_current_slice", lambda *_args: True)
     monkeypatch.setattr(
-        postgres_opening_graph, "advance_task_slice_in_transaction",
-        lambda _database, _task, *, next_phase, next_payload:
-        transitions.append((next_phase, next_payload)) or True,
+        postgres_opening_graph, "lock_current_slice", lambda *_args: True
     )
-    task = {"generation": 5, "payload": {"repertoire_id": "rep", "local_day": "2026-09-27"}}
+    monkeypatch.setattr(
+        postgres_opening_graph,
+        "advance_task_slice_in_transaction",
+        lambda _database, _task, *, next_phase, next_payload: (
+            transitions.append((next_phase, next_payload)) or True
+        ),
+    )
+    task = {
+        "generation": 5,
+        "payload": {"repertoire_id": "rep", "local_day": "2026-09-27"},
+    }
     try:
         postgres_opening_graph.publish_graph_in_transaction(Database(True), task)
     except RuntimeError as error:
@@ -238,42 +329,77 @@ def test_postgres_graph_classifies_eight_cards_after_publication(monkeypatch):
             updates.append((statement, parameters))
             return None
 
-    monkeypatch.setattr(postgres_opening_graph, "lock_current_slice", lambda *_args: True)
     monkeypatch.setattr(
-        postgres_opening_graph, "advance_task_slice_in_transaction",
-        lambda _database, _task, *, next_phase, next_payload:
-        transitions.append((next_phase, next_payload)) or True,
+        postgres_opening_graph, "lock_current_slice", lambda *_args: True
     )
-    task = {"generation": 6, "payload": {"repertoire_id": "rep", "local_day": "2026-09-27"}}
+    monkeypatch.setattr(
+        postgres_opening_graph,
+        "advance_task_slice_in_transaction",
+        lambda _database, _task, *, next_phase, next_payload: (
+            transitions.append((next_phase, next_payload)) or True
+        ),
+    )
+    task = {
+        "generation": 6,
+        "payload": {"repertoire_id": "rep", "local_day": "2026-09-27"},
+    }
     cards = tuple(f"card-{index}" for index in range(8))
-    assert postgres_opening_graph.classify_graph_cards_in_transaction(Database(), task, cards)
+    assert postgres_opening_graph.classify_graph_cards_in_transaction(
+        Database(), task, cards
+    )
     assert len(updates) == 8
     assert all(parameters[0:2] == ("prefix", "new") for _, parameters in updates)
     assert transitions[-1][0] == "classify"
     assert transitions[-1][1]["after_card_id"] == "card-7"
-    assert postgres_opening_graph.classify_graph_cards_in_transaction(Database(), task, ())
+    assert postgres_opening_graph.classify_graph_cards_in_transaction(
+        Database(), task, ()
+    )
     assert transitions[-1][0] == "integrity"
 
 
 def test_explicit_import_cannot_reclassify_existing_learned_or_issued_card(monkeypatch):
     import pytest
-    monkeypatch.setattr(postgres_opening_graph, 'lock_current_slice', lambda *a: True)
-    monkeypatch.setattr(postgres_opening_graph.storage, 'classification', lambda *a: (True, True))
-    monkeypatch.setattr(postgres_opening_graph.storage, 'protected_card', lambda *a: True)
-    monkeypatch.setattr(postgres_opening_graph.storage, 'classify_card', lambda *a: pytest.fail('Protected card mutated'))
-    task = {'explicit_import_preparation': True, 'payload': {'local_day': '2026-10-28'}}
-    with pytest.raises(ValueError, match='protected card'):
-        postgres_opening_graph.classify_graph_cards_in_transaction(object(), task, ('existing-card',))
+
+    monkeypatch.setattr(postgres_opening_graph, "lock_current_slice", lambda *a: True)
+    monkeypatch.setattr(
+        postgres_opening_graph.storage, "classification", lambda *a: (True, True)
+    )
+    monkeypatch.setattr(
+        postgres_opening_graph.storage, "protected_card", lambda *a: True
+    )
+    monkeypatch.setattr(
+        postgres_opening_graph.storage,
+        "classify_card",
+        lambda *a: pytest.fail("Protected card mutated"),
+    )
+    task = {"explicit_import_preparation": True, "payload": {"local_day": "2026-10-28"}}
+    with pytest.raises(ValueError, match="protected card"):
+        postgres_opening_graph.classify_graph_cards_in_transaction(
+            object(), task, ("existing-card",)
+        )
 
 
 def test_explicit_import_cannot_retire_existing_membership_or_active_queue(monkeypatch):
     import pytest
-    monkeypatch.setattr(postgres_opening_graph, 'lock_current_slice', lambda *a: True)
-    monkeypatch.setattr(postgres_opening_graph, 'remove_obsolete_graph_memberships', lambda *a: pytest.fail('Existing content retired'))
-    task = {'explicit_import_preparation': True, 'generation': 2, 'payload': {'repertoire_id': 'rep'}}
-    prepared = postgres_opening_graph.PreparedGraphCleanupSlice(('existing-card',), 'existing-card')
-    with pytest.raises(ValueError, match='retire existing graph cards'):
-        postgres_opening_graph.cleanup_graph_cards_in_transaction(object(), task, prepared)
+
+    monkeypatch.setattr(postgres_opening_graph, "lock_current_slice", lambda *a: True)
+    monkeypatch.setattr(
+        postgres_opening_graph,
+        "remove_obsolete_graph_memberships",
+        lambda *a: pytest.fail("Existing content retired"),
+    )
+    task = {
+        "explicit_import_preparation": True,
+        "generation": 2,
+        "payload": {"repertoire_id": "rep"},
+    }
+    prepared = postgres_opening_graph.PreparedGraphCleanupSlice(
+        ("existing-card",), "existing-card"
+    )
+    with pytest.raises(ValueError, match="retire existing graph cards"):
+        postgres_opening_graph.cleanup_graph_cards_in_transaction(
+            object(), task, prepared
+        )
 
 
 def test_postgres_graph_integrity_refreshes_two_cards_before_cleanup(monkeypatch):
@@ -284,25 +410,43 @@ def test_postgres_graph_integrity_refreshes_two_cards_before_cleanup(monkeypatch
         def execute_native(self, statement, parameters=()):
             statements.append((statement, parameters))
 
-    monkeypatch.setattr(postgres_opening_graph, "lock_current_slice", lambda *_args: True)
     monkeypatch.setattr(
-        postgres_opening_graph, "advance_task_slice_in_transaction",
-        lambda _database, _task, *, next_phase, next_payload:
-        transitions.append((next_phase, next_payload)) or True,
+        postgres_opening_graph, "lock_current_slice", lambda *_args: True
     )
-    task = {"generation": 8, "payload": {"repertoire_id": "rep", "local_day": "2026-09-27"}}
+    monkeypatch.setattr(
+        postgres_opening_graph,
+        "advance_task_slice_in_transaction",
+        lambda _database, _task, *, next_phase, next_payload: (
+            transitions.append((next_phase, next_payload)) or True
+        ),
+    )
+    task = {
+        "generation": 8,
+        "payload": {"repertoire_id": "rep", "local_day": "2026-09-27"},
+    }
     assert postgres_opening_graph.refresh_graph_integrity_in_transaction(
-        Database(), task, ("card-a", "card-b"),
+        Database(),
+        task,
+        ("card-a", "card-b"),
     )
-    assert sum(statement.startswith("INSERT INTO repertoire_integrity_card_blocks")
-               for statement, _ in statements) == 2
+    assert (
+        sum(
+            statement.startswith("INSERT INTO repertoire_integrity_card_blocks")
+            for statement, _ in statements
+        )
+        == 2
+    )
     assert transitions[-1][0] == "integrity"
     assert transitions[-1][1]["after_card_id"] == "card-b"
-    assert postgres_opening_graph.refresh_graph_integrity_in_transaction(Database(), task, ())
+    assert postgres_opening_graph.refresh_graph_integrity_in_transaction(
+        Database(), task, ()
+    )
     assert transitions[-1][0] == "cleanup"
 
 
-def test_postgres_graph_cleanup_removes_only_obsolete_links_in_bounded_slices(monkeypatch):
+def test_postgres_graph_cleanup_removes_only_obsolete_links_in_bounded_slices(
+    monkeypatch,
+):
     statements = []
     transitions = []
 
@@ -310,46 +454,85 @@ def test_postgres_graph_cleanup_removes_only_obsolete_links_in_bounded_slices(mo
         def execute_native(self, statement, parameters=()):
             statements.append((statement, parameters))
             if "FOR UPDATE OF link,card" in statement:
-                assert 'link.canonical_route_source=0' in statement and 'NOT EXISTS' in statement
-                assert parameters[1] == ['obsolete', 'adopted', 'current']
-            return type("Cursor", (), {"fetchall": lambda _self: [('obsolete',)]})()
+                assert (
+                    "link.canonical_route_source=0" in statement
+                    and "NOT EXISTS" in statement
+                )
+                assert parameters[1] == ["obsolete", "adopted", "current"]
+            return type("Cursor", (), {"fetchall": lambda _self: [("obsolete",)]})()
 
-    monkeypatch.setattr(postgres_opening_graph, "lock_current_slice", lambda *_args: True)
     monkeypatch.setattr(
-        postgres_opening_graph, "advance_task_slice_in_transaction",
-        lambda _database, _task, *, next_phase, next_payload:
-        transitions.append((next_phase, next_payload)) or True,
+        postgres_opening_graph, "lock_current_slice", lambda *_args: True
     )
-    task = {"generation": 7, "payload": {"repertoire_id": "rep", "local_day": "2026-09-27"}}
+    monkeypatch.setattr(
+        postgres_opening_graph,
+        "advance_task_slice_in_transaction",
+        lambda _database, _task, *, next_phase, next_payload: (
+            transitions.append((next_phase, next_payload)) or True
+        ),
+    )
+    task = {
+        "generation": 7,
+        "payload": {"repertoire_id": "rep", "local_day": "2026-09-27"},
+    }
     assert postgres_opening_graph.cleanup_graph_cards_in_transaction(
-        Database(), task, postgres_opening_graph.PreparedGraphCleanupSlice(("obsolete", "adopted", "current"), "current"),
+        Database(),
+        task,
+        postgres_opening_graph.PreparedGraphCleanupSlice(
+            ("obsolete", "adopted", "current"), "current"
+        ),
     )
-    assert sum(statement.startswith("DELETE FROM repertoire_cards") for statement, _ in statements) == 1
-    assert next(parameters for statement, parameters in statements if statement.startswith('DELETE FROM repertoire_cards')) == ('rep', ['obsolete'])
+    assert (
+        sum(
+            statement.startswith("DELETE FROM repertoire_cards")
+            for statement, _ in statements
+        )
+        == 1
+    )
+    assert next(
+        parameters
+        for statement, parameters in statements
+        if statement.startswith("DELETE FROM repertoire_cards")
+    ) == ("rep", ["obsolete"])
     assert transitions[-1][0] == "cleanup"
     assert transitions[-1][1]["after_card_id"] == "current"
     assert postgres_opening_graph.cleanup_graph_cards_in_transaction(
-        Database(), task, postgres_opening_graph.PreparedGraphCleanupSlice((), None),
+        Database(),
+        task,
+        postgres_opening_graph.PreparedGraphCleanupSlice((), None),
     )
     assert transitions[-1][0] == "finalize"
 
 
-def test_postgres_graph_finalization_checkpoints_integrity_scan_and_completion(monkeypatch):
+def test_postgres_graph_finalization_checkpoints_integrity_scan_and_completion(
+    monkeypatch,
+):
     from app.services import postgres_integrity
 
     events = []
-    monkeypatch.setattr(postgres_opening_graph, "lock_current_slice", lambda *_args: True)
     monkeypatch.setattr(
-        postgres_integrity, "request_integrity_scan_in_transaction",
-        lambda _database, repertoire_id, generation, local_day:
-            events.append(("integrity", repertoire_id, generation, local_day)),
+        postgres_opening_graph, "lock_current_slice", lambda *_args: True
     )
     monkeypatch.setattr(
-        postgres_opening_graph, "complete_task_slice_in_transaction",
+        postgres_integrity,
+        "request_integrity_scan_in_transaction",
+        lambda _database, repertoire_id, generation, local_day: events.append(
+            ("integrity", repertoire_id, generation, local_day)
+        ),
+    )
+    monkeypatch.setattr(
+        postgres_opening_graph,
+        "complete_task_slice_in_transaction",
         lambda _database, _task: events.append(("complete", None)) or True,
     )
-    task = {"generation": 9, "payload": {"repertoire_id": "rep", "local_day": "2026-09-27"}}
-    monkeypatch.setattr("app.services.durable_tasks.enqueue_compact_postgres_task_in_transaction", lambda *_args, **_kwargs: None)
+    task = {
+        "generation": 9,
+        "payload": {"repertoire_id": "rep", "local_day": "2026-09-27"},
+    }
+    monkeypatch.setattr(
+        "app.services.durable_tasks.enqueue_compact_postgres_task_in_transaction",
+        lambda *_args, **_kwargs: None,
+    )
     assert postgres_opening_graph.finalize_graph_in_transaction(object(), task) is False
     assert events == [("integrity", "rep", 9, "2026-09-27"), ("complete", None)]
 
@@ -368,26 +551,43 @@ def test_postgres_graph_finalization_warms_sql_before_bounded_transaction(monkey
     def lease():
         yield
 
-    monkeypatch.setattr(durable_tasks, "warm_completion_sql", lambda: events.append("warm"))
+    monkeypatch.setattr(
+        durable_tasks, "warm_completion_sql", lambda: events.append("warm")
+    )
     monkeypatch.setattr(postgres_opening_graph, "background_lease", lease)
-    monkeypatch.setattr(postgres_opening_graph.postgres_store, "connection", database_connection)
-    monkeypatch.setattr(postgres_opening_graph, "finalize_graph_in_transaction",
-                        lambda *_args: events.append("finalize") or False)
+    monkeypatch.setattr(
+        postgres_opening_graph.postgres_store, "connection", database_connection
+    )
+    monkeypatch.setattr(
+        postgres_opening_graph,
+        "finalize_graph_in_transaction",
+        lambda *_args: events.append("finalize") or False,
+    )
     assert postgres_opening_graph.execute_graph_finalize_slice({"payload": {}}) is False
     assert events == ["warm", "connection", "finalize"]
 
 
-def test_postgres_graph_stage_yields_to_foreground_and_discards_restart_replay(monkeypatch):
+def test_postgres_graph_stage_yields_to_foreground_and_discards_restart_replay(
+    monkeypatch,
+):
     foreground_finished = threading.Event()
     connection_opened = threading.Event()
     writes = []
     current_lease = {"token": "lease-1"}
     step = GraphStep(
-        repertoire_id="rep", line_id="line", decision_index=0,
-        segment_kind="prefix", first_decision_index=0, last_decision_index=0,
-        decision_fen_keys=("fen",), card_id="card", parent_card_id=None,
-        decision_fen_key="fen", starting_fen=chess.STARTING_FEN,
-        moves=("e2e4",), trained_color="white",
+        repertoire_id="rep",
+        line_id="line",
+        decision_index=0,
+        segment_kind="prefix",
+        first_decision_index=0,
+        last_decision_index=0,
+        decision_fen_keys=("fen",),
+        card_id="card",
+        parent_card_id=None,
+        decision_fen_key="fen",
+        starting_fen=chess.STARTING_FEN,
+        moves=("e2e4",),
+        trained_color="white",
     )
 
     class Cursor:
@@ -404,7 +604,7 @@ def test_postgres_graph_stage_yields_to_foreground_and_discards_restart_replay(m
         raw = type("Raw", (), {"cursor": lambda self: Cursor()})()
 
         def execute_native(self, _statement, _parameters=()):
-            if _statement.startswith('INSERT INTO cards'):
+            if _statement.startswith("INSERT INTO cards"):
                 writes.append(len(_parameters[0]))
             return []
 
@@ -418,19 +618,37 @@ def test_postgres_graph_stage_yields_to_foreground_and_discards_restart_replay(m
         connection_opened.set()
         yield Database()
 
-    monkeypatch.setattr(postgres_opening_graph, "prepare_next_graph_line",
-                        lambda *_args: postgres_opening_graph.PreparedGraphLine("line", (step,)))
+    monkeypatch.setattr(
+        postgres_opening_graph,
+        "prepare_next_graph_line",
+        lambda *_args: postgres_opening_graph.PreparedGraphLine("line", (step,)),
+    )
     monkeypatch.setattr(postgres_opening_graph, "background_lease", gated_lease)
-    monkeypatch.setattr(postgres_opening_graph.postgres_store, "connection", database_connection)
-    monkeypatch.setattr(postgres_opening_graph, "lock_current_slice",
-                        lambda _database, task: task["lease_token"] == current_lease["token"])
-    monkeypatch.setattr(postgres_opening_graph, "advance_task_slice_in_transaction",
-                        lambda *_args, **_kwargs: current_lease.update(token="complete") or True)
-    task = {"id": "graph", "generation": 1, "lease_token": "lease-1", "phase": "stage",
-            "payload": {"repertoire_id": "rep", "local_day": "2026-09-27"}}
+    monkeypatch.setattr(
+        postgres_opening_graph.postgres_store, "connection", database_connection
+    )
+    monkeypatch.setattr(
+        postgres_opening_graph,
+        "lock_current_slice",
+        lambda _database, task: task["lease_token"] == current_lease["token"],
+    )
+    monkeypatch.setattr(
+        postgres_opening_graph,
+        "advance_task_slice_in_transaction",
+        lambda *_args, **_kwargs: current_lease.update(token="complete") or True,
+    )
+    task = {
+        "id": "graph",
+        "generation": 1,
+        "lease_token": "lease-1",
+        "phase": "stage",
+        "payload": {"repertoire_id": "rep", "local_day": "2026-09-27"},
+    }
     results = []
     worker = threading.Thread(
-        target=lambda: results.append(postgres_opening_graph.execute_graph_stage_slice(task)),
+        target=lambda: results.append(
+            postgres_opening_graph.execute_graph_stage_slice(task)
+        ),
     )
     worker.start()
     assert not connection_opened.wait(0.05)
@@ -458,14 +676,21 @@ def test_postgres_graph_worker_routes_each_restartable_phase(monkeypatch):
         ("finalize", "execute_graph_finalize_slice"),
     )
     for phase, name in phase_handlers:
-        monkeypatch.setattr(postgres_opening_graph, name,
-                            lambda _task, phase=phase: observed.append(phase) or True)
+        monkeypatch.setattr(
+            postgres_opening_graph,
+            name,
+            lambda _task, phase=phase: observed.append(phase) or True,
+        )
     for phase, _ in phase_handlers:
-        assert postgres_opening_graph.execute_postgres_opening_graph_slice({"phase": phase})
+        assert postgres_opening_graph.execute_postgres_opening_graph_slice(
+            {"phase": phase}
+        )
     assert observed == [phase for phase, _ in phase_handlers]
 
 
-def test_postgres_graph_enqueue_advances_past_imported_generation_without_task_row(monkeypatch):
+def test_postgres_graph_enqueue_advances_past_imported_generation_without_task_row(
+    monkeypatch,
+):
     enqueued = []
 
     class Database:
@@ -479,12 +704,16 @@ def test_postgres_graph_enqueue_advances_past_imported_generation_without_task_r
             return type("Cursor", (), {"fetchone": lambda _self: row})()
 
     monkeypatch.setattr(
-        postgres_opening_graph, "enqueue_task_in_transaction",
-        lambda _database, kind, key, payload, **options:
-        enqueued.append((kind, key, payload, options)) or {"generation": 32},
+        postgres_opening_graph,
+        "enqueue_task_in_transaction",
+        lambda _database, kind, key, payload, **options: (
+            enqueued.append((kind, key, payload, options)) or {"generation": 32}
+        ),
     )
     result = postgres_opening_graph.request_graph_rebuild_in_transaction(
-        Database(), "rep", "2026-09-27",
+        Database(),
+        "rep",
+        "2026-09-27",
     )
     assert result["generation"] == 32
     assert enqueued[0][0:2] == ("opening_graph_rebuild", "rep")
@@ -492,7 +721,9 @@ def test_postgres_graph_enqueue_advances_past_imported_generation_without_task_r
     assert enqueued[0][2]["after_line_id"] == ""
 
 
-def test_postgres_graph_cleanup_prepares_bounded_current_pages_before_exhaustion(monkeypatch):
+def test_postgres_graph_cleanup_prepares_bounded_current_pages_before_exhaustion(
+    monkeypatch,
+):
     """A no-obsolete page must advance instead of scanning the entire remaining tail."""
     statements = []
     read_open = False
@@ -509,7 +740,11 @@ def test_postgres_graph_cleanup_prepares_bounded_current_pages_before_exhaustion
         def execute_native(self, statement, parameters):
             statements.append((statement, parameters))
             if "MATERIALIZED" in statement:
-                return Cursor([row for row in candidate_rows if row[0] > parameters[1]][:parameters[2]])
+                return Cursor(
+                    [row for row in candidate_rows if row[0] > parameters[1]][
+                        : parameters[2]
+                    ]
+                )
             return Cursor([])  # The old anti-join has no matching obsolete card.
 
     @contextmanager
@@ -526,23 +761,41 @@ def test_postgres_graph_cleanup_prepares_bounded_current_pages_before_exhaustion
     assert not read_open
     assert getattr(first, "checkpoint_card_id", None) == "card-0255"
     assert first.obsolete_card_ids == ()
-    second = postgres_opening_graph.prepare_obsolete_graph_cards("rep", 4, first.checkpoint_card_id)
+    second = postgres_opening_graph.prepare_obsolete_graph_cards(
+        "rep", 4, first.checkpoint_card_id
+    )
     assert second.checkpoint_card_id == "card-0511" and second.obsolete_card_ids == ()
-    exhausted = postgres_opening_graph.prepare_obsolete_graph_cards("rep", 4, second.checkpoint_card_id)
+    exhausted = postgres_opening_graph.prepare_obsolete_graph_cards(
+        "rep", 4, second.checkpoint_card_id
+    )
     assert exhausted.checkpoint_card_id is None and exhausted.obsolete_card_ids == ()
     assert all(parameters[2] == 256 for _, parameters in statements)
 
 
-def test_postgres_graph_cleanup_page_frontier_never_skips_third_obsolete_card(monkeypatch):
-    candidate_rows = [("card-00", False), ("card-01", True), ("card-02", False),
-                      ("card-03", True), ("card-04", True), ("card-05", False)]
+def test_postgres_graph_cleanup_page_frontier_never_skips_third_obsolete_card(
+    monkeypatch,
+):
+    candidate_rows = [
+        ("card-00", False),
+        ("card-01", True),
+        ("card-02", False),
+        ("card-03", True),
+        ("card-04", True),
+        ("card-05", False),
+    ]
 
     class Database:
         def execute_native(self, statement, parameters):
             if "MATERIALIZED" in statement:
-                rows = [row for row in candidate_rows if row[0] > parameters[1]][:parameters[2]]
+                rows = [row for row in candidate_rows if row[0] > parameters[1]][
+                    : parameters[2]
+                ]
             else:
-                rows = [(row[0],) for row in candidate_rows if row[0] > parameters[1] and row[1]][:2]
+                rows = [
+                    (row[0],)
+                    for row in candidate_rows
+                    if row[0] > parameters[1] and row[1]
+                ][:2]
             return type("Cursor", (), {"fetchall": lambda _self: rows})()
 
     @contextmanager
@@ -553,11 +806,18 @@ def test_postgres_graph_cleanup_page_frontier_never_skips_third_obsolete_card(mo
     first = postgres_opening_graph.prepare_obsolete_graph_cards("rep", 4, "")
     assert getattr(first, "checkpoint_card_id", None) == "card-03"
     assert first.obsolete_card_ids == ("card-01", "card-03")
-    second = postgres_opening_graph.prepare_obsolete_graph_cards("rep", 4, first.checkpoint_card_id)
-    assert second.obsolete_card_ids == ("card-04",) and second.checkpoint_card_id == "card-05"
+    second = postgres_opening_graph.prepare_obsolete_graph_cards(
+        "rep", 4, first.checkpoint_card_id
+    )
+    assert (
+        second.obsolete_card_ids == ("card-04",)
+        and second.checkpoint_card_id == "card-05"
+    )
 
 
-def test_postgres_graph_cleanup_current_page_checkpoints_without_finalizing_and_fences_replay(monkeypatch):
+def test_postgres_graph_cleanup_current_page_checkpoints_without_finalizing_and_fences_replay(
+    monkeypatch,
+):
     from types import SimpleNamespace
 
     saved_checkpoints = []
@@ -569,16 +829,34 @@ def test_postgres_graph_cleanup_current_page_checkpoints_without_finalizing_and_
             statements.append(statement)
             raise AssertionError("A current-only prepared page needs no card mutations")
 
-    monkeypatch.setattr(postgres_opening_graph, "lock_current_slice", lambda *_args: lease_current)
-    monkeypatch.setattr(postgres_opening_graph, "advance_task_slice_in_transaction",
-                        lambda _database, _task, *, next_phase, next_payload:
-                        saved_checkpoints.append((next_phase, next_payload)) or True)
-    task = {"generation": 4, "payload": {"repertoire_id": "rep", "after_card_id": "card-0000"}}
+    monkeypatch.setattr(
+        postgres_opening_graph, "lock_current_slice", lambda *_args: lease_current
+    )
+    monkeypatch.setattr(
+        postgres_opening_graph,
+        "advance_task_slice_in_transaction",
+        lambda _database, _task, *, next_phase, next_payload: (
+            saved_checkpoints.append((next_phase, next_payload)) or True
+        ),
+    )
+    task = {
+        "generation": 4,
+        "payload": {"repertoire_id": "rep", "after_card_id": "card-0000"},
+    }
     prepared = SimpleNamespace(obsolete_card_ids=(), checkpoint_card_id="card-0256")
-    assert postgres_opening_graph.cleanup_graph_cards_in_transaction(Database(), task, prepared)
-    assert saved_checkpoints == [("cleanup", {"repertoire_id": "rep", "after_card_id": "card-0256"})]
+    assert postgres_opening_graph.cleanup_graph_cards_in_transaction(
+        Database(), task, prepared
+    )
+    assert saved_checkpoints == [
+        ("cleanup", {"repertoire_id": "rep", "after_card_id": "card-0256"})
+    ]
     lease_current = False
-    assert postgres_opening_graph.cleanup_graph_cards_in_transaction(Database(), task, prepared) is False
+    assert (
+        postgres_opening_graph.cleanup_graph_cards_in_transaction(
+            Database(), task, prepared
+        )
+        is False
+    )
     assert len(saved_checkpoints) == 1 and statements == []
 
 
@@ -586,30 +864,32 @@ def test_postgres_graph_bounded_cleanup_page_excludes_authored_memberships(monke
     """Raw page progress must retain authored cards even without a current graph step."""
     import sqlite3
 
-    connection = sqlite3.connect(':memory:')
-    connection.executescript('''
+    connection = sqlite3.connect(":memory:")
+    connection.executescript("""
         CREATE TABLE cards(id TEXT PRIMARY KEY,content_type TEXT);
         CREATE TABLE repertoire_cards(repertoire_id TEXT,card_id TEXT,canonical_route_source INTEGER);
         CREATE TABLE opening_graph_steps(repertoire_id TEXT,generation INTEGER,card_id TEXT);
         INSERT INTO cards VALUES('authored','opening'),('obsolete','opening'),('tail','opening');
         INSERT INTO repertoire_cards VALUES('rep','authored',1),('rep','obsolete',0),('rep','tail',1);
-    ''')
+    """)
 
     class NativeDatabase:
         def execute_native(self, statement, parameters):
-            return connection.execute(statement.replace('%s', '?'), parameters)
+            return connection.execute(statement.replace("%s", "?"), parameters)
 
     @contextmanager
     def read():
         yield NativeDatabase()
 
-    monkeypatch.setattr(postgres_opening_graph, 'background_read_connection', read)
+    monkeypatch.setattr(postgres_opening_graph, "background_read_connection", read)
     try:
-        prepared = postgres_opening_graph.prepare_obsolete_graph_cards('rep', 7, '')
-        assert prepared.obsolete_card_ids == ('obsolete',)
-        assert prepared.checkpoint_card_id == 'tail'
-        authored_tail = postgres_opening_graph.prepare_obsolete_graph_cards('rep', 7, 'obsolete')
+        prepared = postgres_opening_graph.prepare_obsolete_graph_cards("rep", 7, "")
+        assert prepared.obsolete_card_ids == ("obsolete",)
+        assert prepared.checkpoint_card_id == "tail"
+        authored_tail = postgres_opening_graph.prepare_obsolete_graph_cards(
+            "rep", 7, "obsolete"
+        )
         assert authored_tail.obsolete_card_ids == ()
-        assert authored_tail.checkpoint_card_id == 'tail'
+        assert authored_tail.checkpoint_card_id == "tail"
     finally:
         connection.close()

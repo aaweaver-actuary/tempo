@@ -18,11 +18,21 @@ def _line(db, identifier: str, repertoire: str, color: str, moves: list[str]):
     )
     db.execute(
         "INSERT INTO repertoire_lines VALUES(?,?,?,?,?,?,?)",
-        (identifier, repertoire, identifier, color, START, json.dumps(moves), "2026-09-19T00:00:00+00:00"),
+        (
+            identifier,
+            repertoire,
+            identifier,
+            color,
+            START,
+            json.dumps(moves),
+            "2026-09-19T00:00:00+00:00",
+        ),
     )
 
 
-def test_same_repertoire_trained_player_move_conflict_is_detected(tmp_path, monkeypatch):
+def test_same_repertoire_trained_player_move_conflict_is_detected(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
         with database.connection() as db:
@@ -33,7 +43,9 @@ def test_same_repertoire_trained_player_move_conflict_is_detected(tmp_path, monk
         assert [move["uci"] for move in conflicts[0]["moves"]] == ["d2d4", "e2e4"]
 
 
-def test_opponent_branches_and_cross_repertoire_moves_are_not_conflicts(tmp_path, monkeypatch):
+def test_opponent_branches_and_cross_repertoire_moves_are_not_conflicts(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
         with database.connection() as db:
@@ -51,7 +63,9 @@ def test_conflict_snapshot_cache_invalidates_after_line_edit(tmp_path, monkeypat
             _line(db, "two", "cache-rep", "white", ["d2d4"])
         assert len(client.get("/api/repertoire/conflicts").json()["conflicts"]) == 1
         with database.connection() as db:
-            db.execute("UPDATE repertoire_lines SET moves_json=? WHERE id='two'", ('["e2e4"]',))
+            db.execute(
+                "UPDATE repertoire_lines SET moves_json=? WHERE id='two'", ('["e2e4"]',)
+            )
         assert client.get("/api/repertoire/conflicts").json()["conflicts"] == []
 
 
@@ -59,12 +73,20 @@ def test_conflict_fast_position_key_preserves_en_passant_distinction():
     with_en_passant = "rnbqkbnr/1pp1pppp/p7/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 3"
     without_en_passant = with_en_passant.replace(" d6 ", " - ")
     moves = (
-        (with_en_passant, "e5d6"), (with_en_passant, "g1f3"),
-        (without_en_passant, "g1f3"), (without_en_passant, "f1e2"),
+        (with_en_passant, "e5d6"),
+        (with_en_passant, "g1f3"),
+        (without_en_passant, "g1f3"),
+        (without_en_passant, "f1e2"),
     )
     snapshot = tuple(
-        (f"line-{index}", "repertoire", f"Line {index}", "white", fen,
-         json.dumps([move]))
+        (
+            f"line-{index}",
+            "repertoire",
+            f"Line {index}",
+            "white",
+            fen,
+            json.dumps([move]),
+        )
         for index, (fen, move) in enumerate(moves)
     )
     conflicts = _conflicts_from_snapshot(snapshot)
@@ -73,8 +95,11 @@ def test_conflict_fast_position_key_preserves_en_passant_distinction():
         " ".join(with_en_passant.split()[:4]),
         " ".join(without_en_passant.split()[:4]),
     }
-    assert {tuple(move["uci"] for move in conflict["moves"]) for conflict in conflicts} == {
-        ("e5d6", "g1f3"), ("f1e2", "g1f3"),
+    assert {
+        tuple(move["uci"] for move in conflict["moves"]) for conflict in conflicts
+    } == {
+        ("e5d6", "g1f3"),
+        ("f1e2", "g1f3"),
     }
 
 
@@ -82,7 +107,8 @@ def test_authored_studies_conflict_policy_imports_without_database_or_sibling_do
     from pathlib import Path
     import subprocess
     import sys
-    probe = r'''
+
+    probe = r"""
 from importlib.abc import MetaPathFinder
 import sys
 sys.path.insert(0, sys.argv[1])
@@ -95,9 +121,13 @@ class RejectInfrastructure(MetaPathFinder):
 sys.meta_path.insert(0, RejectInfrastructure())
 from app.studies.repertoire_conflicts import conflicts_from_snapshot
 assert conflicts_from_snapshot(()) == ()
-'''
-    result = subprocess.run([sys.executable, '-I', '-c', probe, str(Path(__file__).resolve().parents[1])],
-                            capture_output=True, text=True, timeout=10)
+"""
+    result = subprocess.run(
+        [sys.executable, "-I", "-c", probe, str(Path(__file__).resolve().parents[1])],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
     assert result.returncode == 0, result.stdout + result.stderr
 
 
@@ -115,4 +145,7 @@ def test_new_conflicting_branch_enters_integrity_repair(tmp_path, monkeypatch):
         response = client.post("/api/repertoire/branches", json=payload)
         assert response.status_code == 200
         wait_for_integrity(client, "white-rep")
-        assert client.get("/api/repertoires/white-rep/integrity").json()["status"] == "needs_repair"
+        assert (
+            client.get("/api/repertoires/white-rep/integrity").json()["status"]
+            == "needs_repair"
+        )

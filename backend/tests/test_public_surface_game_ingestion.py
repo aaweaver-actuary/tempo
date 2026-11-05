@@ -1,4 +1,5 @@
 """Allocated Games surfaces: identity, useful operations and cold no-I/O import."""
+
 import ast
 import hashlib
 import importlib
@@ -11,7 +12,10 @@ from types import ModuleType
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-EXTRA_SOURCE_ROOTS = (ROOT / "services/game-evidence/src", ROOT / "contracts/content-publication/src")
+EXTRA_SOURCE_ROOTS = (
+    ROOT / "services/game-evidence/src",
+    ROOT / "contracts/content-publication/src",
+)
 for directory in EXTRA_SOURCE_ROOTS:
     sys.path.insert(0, str(directory))
 
@@ -27,25 +31,62 @@ SURFACES = {
     },
     "app.games.feedback.interfaces": {
         "app.games.feedback.continuous": ("ContinuousSync", "ForwardWindow"),
-        "app.games.feedback.coordinator": ("Coordinator", "delivery_for", "project_encounters", "stable_id"),
+        "app.games.feedback.coordinator": (
+            "Coordinator",
+            "delivery_for",
+            "project_encounters",
+            "stable_id",
+        ),
         "app.games.feedback.first_boundary": ("select_first_boundary",),
         "app.games.feedback.jobs": ("FeedbackRunner",),
-        "app.games.feedback.ports": ("Acquisition", "AcquisitionFailure", "Capture", "Clock", "Comparer",
-            "ConcurrentUpdate", "Delivery", "DeliveryDeferred", "GamesStore", "HistoryProviderLimitRecovery", "JobSpec", "JobState", "Normalizer",
-            "PageCommit", "SourceIdentity", "SourceState", "FirstBoundaryPreparation", "PreparedFirstBoundaryScope"),
-        "app.games.feedback.review": ("GameReview", "ReviewStore", "ReviewUnavailable", "SyncConfiguration"),
+        "app.games.feedback.ports": (
+            "Acquisition",
+            "AcquisitionFailure",
+            "Capture",
+            "Clock",
+            "Comparer",
+            "ConcurrentUpdate",
+            "Delivery",
+            "DeliveryDeferred",
+            "GamesStore",
+            "HistoryProviderLimitRecovery",
+            "JobSpec",
+            "JobState",
+            "Normalizer",
+            "PageCommit",
+            "SourceIdentity",
+            "SourceState",
+            "FirstBoundaryPreparation",
+            "PreparedFirstBoundaryScope",
+        ),
+        "app.games.feedback.review": (
+            "GameReview",
+            "ReviewStore",
+            "ReviewUnavailable",
+            "SyncConfiguration",
+        ),
     },
     "tempo_game_evidence.interfaces": {
-        "tempo_game_evidence.snapshot": ("ComparisonSnapshot", "ComparisonSnapshotV2", "parse_snapshot"),
-        "tempo_game_evidence.legacy_authority": ("LegacyComparisonSnapshot", "PhysicalCard"),
-        "tempo_game_evidence.legacy_scoped_authority": ("LegacyScopedComparisonSnapshot",),
+        "tempo_game_evidence.snapshot": (
+            "ComparisonSnapshot",
+            "ComparisonSnapshotV2",
+            "parse_snapshot",
+        ),
+        "tempo_game_evidence.legacy_authority": (
+            "LegacyComparisonSnapshot",
+            "PhysicalCard",
+        ),
+        "tempo_game_evidence.legacy_scoped_authority": (
+            "LegacyScopedComparisonSnapshot",
+        ),
         "tempo_game_evidence.legacy_payloads": ("preview_legacy_observation",),
     },
 }
 
 
 def cold_import(module, *, blocked=(), allowed=()):
-    code = '''
+    code = (
+        """
 import importlib, importlib.abc, socket, sqlite3, subprocess, sys, threading
 import httpx, psycopg
 def forbidden(*args, **kwargs):
@@ -65,12 +106,23 @@ class NoConcreteAssembly(importlib.abc.MetaPathFinder):
 sys.meta_path.insert(0, NoConcreteAssembly())
 importlib.import_module(MODULE)
 print("ok")
-'''.replace("BLOCKED", repr(tuple(blocked))).replace("ALLOWED", repr(tuple(allowed))).replace("MODULE", repr(module))
+""".replace("BLOCKED", repr(tuple(blocked)))
+        .replace("ALLOWED", repr(tuple(allowed)))
+        .replace("MODULE", repr(module))
+    )
     environment = dict(os.environ)
     environment["PYTHONPATH"] = os.pathsep.join(
-        [str(directory) for directory in EXTRA_SOURCE_ROOTS] + [environment.get("PYTHONPATH", "")])
-    result = subprocess.run([sys.executable, "-B", "-c", code], cwd=ROOT,
-        env=environment, capture_output=True, text=True, timeout=10)
+        [str(directory) for directory in EXTRA_SOURCE_ROOTS]
+        + [environment.get("PYTHONPATH", "")]
+    )
+    result = subprocess.run(
+        [sys.executable, "-B", "-c", code],
+        cwd=ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "ok"
 
@@ -85,9 +137,12 @@ def test_ingestion_public_exports_keep_exact_existing_identity(module):
     # Importing this documented public child module attaches it to the package
     # namespace. It is a module path, not an extra root export; any other
     # undeclared package value still fails this exact-surface assertion.
-    if (module == "app.games.feedback.interfaces" and "managed_mode" in visible
-            and isinstance(public.managed_mode, ModuleType)
-            and public.managed_mode.__name__ == module + ".managed_mode"):
+    if (
+        module == "app.games.feedback.interfaces"
+        and "managed_mode" in visible
+        and isinstance(public.managed_mode, ModuleType)
+        and public.managed_mode.__name__ == module + ".managed_mode"
+    ):
         visible.remove("managed_mode")
     assert visible == expected
     for origin, names in SURFACES[module].items():
@@ -95,8 +150,10 @@ def test_ingestion_public_exports_keep_exact_existing_identity(module):
         for name in names:
             assert getattr(public, name) is getattr(implementation, name)
     tree = ast.parse(Path(public.__file__).read_text())
-    assert not any(isinstance(node, ast.ImportFrom) and any(a.name == "*" for a in node.names)
-                   for node in ast.walk(tree))
+    assert not any(
+        isinstance(node, ast.ImportFrom) and any(a.name == "*" for a in node.names)
+        for node in ast.walk(tree)
+    )
     assert not hasattr(public, "__getattr__")
 
 
@@ -104,17 +161,39 @@ def test_ingestion_public_exports_keep_exact_existing_identity(module):
 def test_ingestion_public_cold_import_has_no_effect_or_study_root_dependency(module):
     # Public type dependency is supported; every private Study implementation
     # remains blocked, including any import attempted by that interface itself.
-    allowed = (("app.study", "app.study.interfaces", "app.study.interfaces.game_priority")
-               if module == "app.games.feedback.interfaces" else ())
-    cold_import(module, blocked=("app.main", "app.tasks", "app.study", "app.product_composition",
-        "tempo_learning_review", "tempo_learning_remediation", "tempo_learning_runtime"), allowed=allowed)
+    allowed = (
+        ("app.study", "app.study.interfaces", "app.study.interfaces.game_priority")
+        if module == "app.games.feedback.interfaces"
+        else ()
+    )
+    cold_import(
+        module,
+        blocked=(
+            "app.main",
+            "app.tasks",
+            "app.study",
+            "app.product_composition",
+            "tempo_learning_review",
+            "tempo_learning_remediation",
+            "tempo_learning_runtime",
+        ),
+        allowed=allowed,
+    )
 
 
 def test_public_ingester_preserves_exact_source_and_explicit_identity():
     from tempo_game_ingestion.interfaces import BytesInput, PgnGameIngester
+
     raw = b'[White "Learner"]\n[Black "Opponent"]\n[Result "1-0"]\n\n1. d4 d5 1-0\n'
-    game = PgnGameIngester().ingest(BytesInput(raw), workspace_id="workspace", game_id="exact-game",
-        game_revision=3, source_id="exact-source", source_revision=7, player="Learner")
+    game = PgnGameIngester().ingest(
+        BytesInput(raw),
+        workspace_id="workspace",
+        game_id="exact-game",
+        game_revision=3,
+        source_id="exact-source",
+        source_revision=7,
+        player="Learner",
+    )
     assert game.game_id == "exact-game" and game.source_id == "exact-source"
     assert game.game_revision == 3 and game.source_revision == 7
     assert game.source_digest == hashlib.sha256(raw).hexdigest()
@@ -122,16 +201,39 @@ def test_public_ingester_preserves_exact_source_and_explicit_identity():
 
 
 def test_retained_ingestion_public_operations_are_not_stubs_or_effects():
-    from app.games.ingestion.interfaces import GameRecord, RejectedGame, normalize_provider_pgn, serialize_job
+    from app.games.ingestion.interfaces import (
+        GameRecord,
+        RejectedGame,
+        normalize_provider_pgn,
+        serialize_job,
+    )
+
     raw = '[White "Learner"]\n[Black "Opponent"]\n[Result "1-0"]\n\n1. d4 1-0\n'
-    game = normalize_provider_pgn("lichess", "Learner", raw, provider_game_id="exact",
-        played_at="2026-10-27T12:00:00Z", speed="rapid", rated=False)
+    game = normalize_provider_pgn(
+        "lichess",
+        "Learner",
+        raw,
+        provider_game_id="exact",
+        played_at="2026-10-27T12:00:00Z",
+        speed="rapid",
+        rated=False,
+    )
     assert isinstance(game, GameRecord) and game.provider_game_id == "exact"
     assert game.uci_moves == ["d2d4"] and not game.rated
     with pytest.raises(RejectedGame):
-        normalize_provider_pgn("lichess", "AnotherPlayer", raw, provider_game_id="exact")
-    row = dict(id="job", status="queued", created_at="t", started_at=None,
-        completed_at=None, updated_at="t", error=None, result_json="not ready JSON")
+        normalize_provider_pgn(
+            "lichess", "AnotherPlayer", raw, provider_game_id="exact"
+        )
+    row = dict(
+        id="job",
+        status="queued",
+        created_at="t",
+        started_at=None,
+        completed_at=None,
+        updated_at="t",
+        error=None,
+        result_json="not ready JSON",
+    )
     assert serialize_job(row)["result"] is None
     row.update(status="complete", result_json='{"imported":1}')
     assert serialize_job(row)["result"] == {"imported": 1}
@@ -139,6 +241,7 @@ def test_retained_ingestion_public_operations_are_not_stubs_or_effects():
 
 def test_game_evidence_surface_does_not_hide_foreign_storage_or_ingestion_exports():
     from tempo_game_evidence import interfaces
+
     assert not hasattr(interfaces, "EvidenceStore")
     assert not hasattr(interfaces, "normalize_pgn")
     assert not hasattr(interfaces, "LegacyAuthorityToken")

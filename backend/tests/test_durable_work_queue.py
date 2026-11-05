@@ -115,8 +115,16 @@ def test_concurrent_queue_progress_repertoire_and_settings_reads_never_return_bu
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
         _seed_due_tactic()
-        assert client.post("/api/system/tasks/daily-queue:today/retry").status_code in {200, 404}
-        paths = ["/api/queue/today", "/api/progress", "/api/repertoires", "/api/settings"] * 10
+        assert client.post("/api/system/tasks/daily-queue:today/retry").status_code in {
+            200,
+            404,
+        }
+        paths = [
+            "/api/queue/today",
+            "/api/progress",
+            "/api/repertoires",
+            "/api/settings",
+        ] * 10
         with ThreadPoolExecutor(max_workers=12) as pool:
             responses = list(pool.map(client.get, paths))
     assert all(response.status_code == 200 for response in responses)
@@ -179,7 +187,12 @@ def test_workspace_reads_complete_under_one_second_during_full_background_backlo
         started = time.perf_counter()
         response_durations = {}
         responses = []
-        for path in ("/api/queue/today", "/api/progress", "/api/repertoires", "/api/settings"):
+        for path in (
+            "/api/queue/today",
+            "/api/progress",
+            "/api/repertoires",
+            "/api/settings",
+        ):
             request_started = time.perf_counter()
             responses.append(client.get(path))
             response_durations[path] = round(time.perf_counter() - request_started, 3)
@@ -209,14 +222,20 @@ def test_daily_queue_admission_is_single_flight_and_idempotent(tmp_path, monkeyp
             enqueue_daily_queue_refresh()
         assert _wait_for_queue_count(client, 1)["count"] == 1
         with database.connection() as connection:
-            assert connection.execute(
-                "SELECT COUNT(*) FROM daily_queue WHERE queue_date=? AND card_id='durable-tactic'",
-                (date.today().isoformat(),),
-            ).fetchone()[0] == 1
-            assert connection.execute(
-                "SELECT COUNT(*) FROM background_tasks WHERE kind='daily_queue' AND deduplication_key=?",
-                ("current",),
-            ).fetchone()[0] == 1
+            assert (
+                connection.execute(
+                    "SELECT COUNT(*) FROM daily_queue WHERE queue_date=? AND card_id='durable-tactic'",
+                    (date.today().isoformat(),),
+                ).fetchone()[0]
+                == 1
+            )
+            assert (
+                connection.execute(
+                    "SELECT COUNT(*) FROM background_tasks WHERE kind='daily_queue' AND deduplication_key=?",
+                    ("current",),
+                ).fetchone()[0]
+                == 1
+            )
 
 
 def test_terminal_task_failure_is_visible_and_retryable(tmp_path, monkeypatch):
@@ -234,7 +253,10 @@ def test_terminal_task_failure_is_visible_and_retryable(tmp_path, monkeypatch):
                 (now, now, now),
             )
         tasks = client.get("/api/system/tasks").json()["tasks"]
-        assert next(task for task in tasks if task["id"] == "failed-task")["last_error"] == "sanitized failure"
+        assert (
+            next(task for task in tasks if task["id"] == "failed-task")["last_error"]
+            == "sanitized failure"
+        )
         retried = client.post("/api/system/tasks/failed-task/retry")
         assert retried.status_code == 200
         assert retried.json()["state"] == "queued"
@@ -320,10 +342,14 @@ def test_foreground_review_preempts_queued_background_commits(tmp_path, monkeypa
         target=lambda: writer.submit_background_write(first_background, label="first")
     )
     second_thread = threading.Thread(
-        target=lambda: writer.submit_background_write(record("second-background"), label="second")
+        target=lambda: writer.submit_background_write(
+            record("second-background"), label="second"
+        )
     )
     foreground_thread = threading.Thread(
-        target=lambda: writer.submit_foreground_write(record("foreground-review"), label="review")
+        target=lambda: writer.submit_foreground_write(
+            record("foreground-review"), label="review"
+        )
     )
     first_thread.start()
     assert first_started.wait(timeout=1)
@@ -369,13 +395,20 @@ def test_database_writer_logs_queue_gate_lock_and_transaction_phase_timings(
     finally:
         writer.stop()
     write_logs = [
-        record.message for record in caplog.records
+        record.message
+        for record in caplog.records
         if record.name == "tempo.writer" and "label=timing-regression" in record.message
     ]
     assert len(write_logs) == 1
     for phase in (
-        "queue_wait", "gate_wait", "compatibility_lock_wait", "begin",
-        "operation", "commit", "hold", "total",
+        "queue_wait",
+        "gate_wait",
+        "compatibility_lock_wait",
+        "begin",
+        "operation",
+        "commit",
+        "hold",
+        "total",
     ):
         assert f"{phase}=" in write_logs[0]
 
@@ -396,7 +429,9 @@ def test_last_published_queue_remains_playable_during_refresh(tmp_path, monkeypa
     assert refreshing["cards"][0]["id"] == "durable-tactic"
 
 
-def test_needs_repair_openings_do_not_hide_or_inflate_due_tactics(tmp_path, monkeypatch):
+def test_needs_repair_openings_do_not_hide_or_inflate_due_tactics(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
         _seed_due_tactic()
@@ -508,9 +543,7 @@ def test_queue_refresh_never_resurrects_completed_attempts(tmp_path, monkeypatch
     assert tuple(completed) == ("complete", "complete")
 
 
-def test_same_day_repair_requeues_newly_unblocked_due_cards_once(
-    tmp_path, monkeypatch
-):
+def test_same_day_repair_requeues_newly_unblocked_due_cards_once(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
         with database.connection() as connection:
@@ -534,7 +567,9 @@ def test_same_day_repair_requeues_newly_unblocked_due_cards_once(
     assert [card["queue_entry_id"] for card in second["cards"]] == [entry_id]
 
 
-def test_daily_queue_remains_exact_across_restart_and_midday_admission(tmp_path, monkeypatch):
+def test_daily_queue_remains_exact_across_restart_and_midday_admission(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
         _seed_due_tactic()
@@ -543,7 +578,9 @@ def test_daily_queue_remains_exact_across_restart_and_midday_admission(tmp_path,
         first_entry_ids = [card["queue_entry_id"] for card in first["cards"]]
     with TestClient(app) as client:
         after_restart = client.get("/api/queue/today").json()
-        assert [card["queue_entry_id"] for card in after_restart["cards"]] == first_entry_ids
+        assert [
+            card["queue_entry_id"] for card in after_restart["cards"]
+        ] == first_entry_ids
         with database.connection() as connection:
             connection.execute(
                 """INSERT INTO cards(
@@ -562,7 +599,9 @@ def test_daily_queue_remains_exact_across_restart_and_midday_admission(tmp_path,
     assert first_entry_ids[0] in [card["queue_entry_id"] for card in midday["cards"]]
 
 
-def test_multi_worker_api_is_rejected_until_database_owner_is_cross_process(monkeypatch):
+def test_multi_worker_api_is_rejected_until_database_owner_is_cross_process(
+    monkeypatch,
+):
     monkeypatch.setenv("WEB_CONCURRENCY", "2")
     context = lifespan(app)
     try:

@@ -12,7 +12,6 @@ from ..records import GameRecord
 from ..contracts import ProviderRequestError
 
 
-
 async def fetch_lichess_games(
     username: str,
     since_ms: int,
@@ -21,7 +20,13 @@ async def fetch_lichess_games(
     client: httpx.AsyncClient,
 ) -> tuple[list[GameRecord], dict[str, int]]:
     return await fetch_lichess_games_window(
-        username, since_ms, None, speeds, rated_only, client, max_games=None,
+        username,
+        since_ms,
+        None,
+        speeds,
+        rated_only,
+        client,
+        max_games=None,
     )
 
 
@@ -65,7 +70,9 @@ async def fetch_lichess_games_window(
             "Lichess rate limit reached", 429, response.headers.get("Retry-After")
         )
     if not response.is_success:
-        raise ProviderRequestError(f"Lichess sync failed ({response.status_code})", response.status_code)
+        raise ProviderRequestError(
+            f"Lichess sync failed ({response.status_code})", response.status_code
+        )
     content_type = response.headers.get("content-type", "").lower()
     if "html" in content_type:
         raise ProviderRequestError("Lichess returned HTML instead of games")
@@ -74,9 +81,15 @@ async def fetch_lichess_games_window(
     rejected = 0
     pgn_stream = io.StringIO(response.text)
     while game := chess.pgn.read_game(pgn_stream):
-        exported = game.accept(chess.pgn.StringExporter(headers=True, variations=False, comments=False))
+        exported = game.accept(
+            chess.pgn.StringExporter(headers=True, variations=False, comments=False)
+        )
         try:
             records.append(normalize_provider_pgn("lichess", username, exported))
         except RejectedGame:
             rejected += 1
-    return records, {"fetched": len(records) + rejected, "filtered": 0, "rejected": rejected}
+    return records, {
+        "fetched": len(records) + rejected,
+        "filtered": 0,
+        "rejected": rejected,
+    }

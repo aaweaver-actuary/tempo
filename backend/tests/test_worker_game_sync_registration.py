@@ -1,4 +1,5 @@
 """The real worker selects the retained Games sync command only on dispatch."""
+
 import os
 import subprocess
 import sys
@@ -6,11 +7,16 @@ import sys
 
 def run_fresh(script):
     guard = "import socket\ndef no_network(*args, **kwargs): raise AssertionError('unexpected network')\nsocket.socket.connect = no_network\nsocket.create_connection = no_network\n"
-    subprocess.run([sys.executable, '-c', guard + script], env=os.environ.copy(), check=True, timeout=20)
+    subprocess.run(
+        [sys.executable, "-c", guard + script],
+        env=os.environ.copy(),
+        check=True,
+        timeout=20,
+    )
 
 
 def test_worker_cold_import_does_not_load_games_sync_command():
-    run_fresh('''
+    run_fresh("""
 import importlib.abc, sys
 class Deny(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
@@ -20,11 +26,11 @@ from app import tasks, command_gateway
 assert 'app.game_sync_commands' not in sys.modules
 assert not command_gateway.is_command_registered('games.sync.enqueue')
 assert command_gateway.is_command_registered('queue.issue_head')
-''')
+""")
 
 
 def test_actual_worker_resolves_and_dispatches_original_retained_command():
-    run_fresh('''
+    run_fresh("""
 from contextlib import nullcontext
 from app import tasks, command_gateway
 from app.services import background_runtime
@@ -53,11 +59,11 @@ assert result['job_id'] == 'existing'
 assert seen[0][1:4] == ('retained-id', 'games.sync.enqueue', payload)
 assert seen[1][1:4] == ('retained-id', 'games.sync.enqueue', payload)
 assert seen[1][4] == {'attempt_token': 'original-token'}
-''')
+""")
 
 
 def test_concurrent_resolution_and_failed_import_retry():
-    run_fresh('''
+    run_fresh("""
 import builtins, concurrent.futures
 from app import command_gateway
 from app.product_composition import worker_game_sync as owner
@@ -80,11 +86,11 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
 from app import game_sync_commands
 assert command_gateway.is_command_registered('games.sync.enqueue')
 assert command_gateway._handlers['games.sync.enqueue'] is game_sync_commands.enqueue_game_sync
-''')
+""")
 
 
 def test_study_dispatch_does_not_wait_for_blocked_optional_resolution():
-    run_fresh('''
+    run_fresh("""
 import builtins, threading
 from contextlib import nullcontext
 from app import tasks
@@ -112,11 +118,11 @@ try:
 finally:
     release.set(); optional.join(5); worker.join(5)
 assert not optional.is_alive() and not worker.is_alive()
-''')
+""")
 
 
 def test_failed_import_follows_receipt_and_records_original_fenced_failure():
-    run_fresh('''
+    run_fresh("""
 from contextlib import nullcontext
 from app import tasks, command_gateway
 from app.services import background_runtime
@@ -148,11 +154,11 @@ assert events[0][1:4] == ('retained-id', 'games.sync.enqueue', payload)
 assert events[1] == ('resolve', 'games.sync.enqueue')
 assert events[2] == ('failure', 'retained-id', 'fenced-token', error, {'retryable': False, 'background': False})
 assert not command_gateway.is_command_registered('games.sync.enqueue')
-''')
+""")
 
 
 def test_finished_receipt_does_not_import_optional_command():
-    run_fresh('''
+    run_fresh("""
 from contextlib import nullcontext
 from app import tasks, command_gateway
 from app.services import background_runtime
@@ -170,11 +176,11 @@ except command_gateway.CommandConflict:
     pass
 else: raise AssertionError('conflict was hidden')
 assert not command_gateway.is_command_registered('games.sync.enqueue')
-''')
+""")
 
 
 def test_retained_queued_delivery_resolves_after_dependency_recovers():
-    run_fresh('''
+    run_fresh("""
 from contextlib import nullcontext
 from app import tasks, command_gateway
 from app.services import background_runtime
@@ -190,4 +196,4 @@ def execute(op, name, original, **kw):
     return {'accepted': True}
 tasks.execute_command = execute
 assert tasks.execute_foreground_command.run('queued-id', 'games.sync.enqueue', payload) == {'accepted': True}
-''')
+""")

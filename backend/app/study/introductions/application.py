@@ -1,11 +1,17 @@
 """Offline-safe ranking consumption and atomic Study-owned introduction effects."""
+
 from app.contracts.product_v02.analysis import RankingOutput
 from app.contracts.product_v02.repertoire import RepertoireSnapshot
 from .policy import Candidate, RankingContext, Selection, compatible_ranking, select
 from .ports import IntroductionOwner, IntroductionStore, Receipt
 from .results import CommitResult
-from .encounter import (introduction_is_held, target_alternatives, ordinary_encounter_allowance,
-                        encounter_allowance, validate_study_day)
+from .encounter import (
+    introduction_is_held,
+    target_alternatives,
+    ordinary_encounter_allowance,
+    encounter_allowance,
+    validate_study_day,
+)
 
 
 def repertoire_introduction_binding(snapshot: RepertoireSnapshot) -> str:
@@ -18,24 +24,42 @@ def repertoire_introduction_binding(snapshot: RepertoireSnapshot) -> str:
     """
     from tempo_game_evidence_contracts.legacy import fingerprint
     from .ports import RepertoireIntroductionSource
+
     source = RepertoireIntroductionSource(snapshot)
     membership = source.snapshot.membership
-    mappings = tuple({key:value for key,value in item.model_dump(mode='json').items()
-                      if not key.startswith('introduc')}
-                     for item in source.snapshot.decision_presentations)
-    return fingerprint(dict(repertoire_id=source.repertoire_id,workspace_id=membership.workspace_id,
-        source_revision=membership.revision,complete=membership.complete,available=membership.available,
-        variant=source.snapshot.variant,learner_color=source.snapshot.learner_color,
-        routes=tuple(route.model_dump(mode='json') for route in membership.routes),
-        boundaries=tuple(item.model_dump(mode='json') for item in source.snapshot.boundaries),
-        mappings=mappings))
+    mappings = tuple(
+        {
+            key: value
+            for key, value in item.model_dump(mode="json").items()
+            if not key.startswith("introduc")
+        }
+        for item in source.snapshot.decision_presentations
+    )
+    return fingerprint(
+        dict(
+            repertoire_id=source.repertoire_id,
+            workspace_id=membership.workspace_id,
+            source_revision=membership.revision,
+            complete=membership.complete,
+            available=membership.available,
+            variant=source.snapshot.variant,
+            learner_color=source.snapshot.learner_color,
+            routes=tuple(route.model_dump(mode="json") for route in membership.routes),
+            boundaries=tuple(
+                item.model_dump(mode="json") for item in source.snapshot.boundaries
+            ),
+            mappings=mappings,
+        )
+    )
 
 
 class Introductions:
     def __init__(self, store: IntroductionStore, owner: IntroductionOwner):
         self.store, self.owner = store, owner
 
-    def accept_ranking(self, day: str, context: RankingContext, ranking: RankingOutput) -> str:
+    def accept_ranking(
+        self, day: str, context: RankingContext, ranking: RankingOutput
+    ) -> str:
         """Receiving advisory data only saves facts, never touches active work."""
         self._day(day)
         self.store.lock_allocation()
@@ -49,7 +73,9 @@ class Introductions:
     def _day(day):
         validate_study_day(day)
 
-    def preview(self, day: str, *, priority: tuple[str, str] | None = None) -> Selection:
+    def preview(
+        self, day: str, *, priority: tuple[str, str] | None = None
+    ) -> Selection:
         self._day(day)
         facts = self.owner.facts(day)
         state = self.store.state(day)
@@ -61,16 +87,31 @@ class Introductions:
         # covers an introduction after queue rebuild or membership removal.
         for receipt in state.charges:
             spent[receipt.presentation_id] = receipt.repertoire_id
-        return select(candidates=facts.candidates, ranking=ranking,
-                      global_budget=facts.global_budget, weights=facts.weights,
-                      spent=tuple(spent.items()), introduced=facts.introduced,
-                      mandatory=facts.mandatory,
-                      rotation_after=state.period_rotation_after if state.period_started else state.rotation_after,
-                      enabled=facts.enabled, paused=facts.paused, study_only=facts.study_only,
-                      priority=priority)
+        return select(
+            candidates=facts.candidates,
+            ranking=ranking,
+            global_budget=facts.global_budget,
+            weights=facts.weights,
+            spent=tuple(spent.items()),
+            introduced=facts.introduced,
+            mandatory=facts.mandatory,
+            rotation_after=state.period_rotation_after
+            if state.period_started
+            else state.rotation_after,
+            enabled=facts.enabled,
+            paused=facts.paused,
+            study_only=facts.study_only,
+            priority=priority,
+        )
 
-    def commit(self, day: str, candidate: Candidate, context: RankingContext, *,
-               priority: tuple[str, str] | None = None) -> CommitResult:
+    def commit(
+        self,
+        day: str,
+        candidate: Candidate,
+        context: RankingContext,
+        *,
+        priority: tuple[str, str] | None = None,
+    ) -> CommitResult:
         """Borrow one transaction: owner introduction + receipt + charge + rotation.
 
         Roll back the entire caller transaction on any exception. This method
@@ -93,6 +134,10 @@ class Introductions:
         if outcome != "introduced":
             return CommitResult(outcome)
         receipt = Receipt(candidate.presentation_id, day, candidate.repertoire_id)
-        seed = state.period_rotation_after if state.period_started else state.rotation_after
+        seed = (
+            state.period_rotation_after
+            if state.period_started
+            else state.rotation_after
+        )
         self.store.record_introduction(receipt, period_rotation_after=seed)
         return CommitResult("introduced", receipt)

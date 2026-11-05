@@ -5,13 +5,17 @@ are claims, not authority. This module never authorizes a grade or reuses prefix
 credit: consumers must reprepare changed presentations and revalidate saved
 attempts against their original immutable proof through the existing owner.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Literal
 
 from tempo_evidence_math.position_learning import (
-    PositionDefinition, PositionKey, RouteOption, SourceCertificate,
+    PositionDefinition,
+    PositionKey,
+    RouteOption,
+    SourceCertificate,
 )
 
 
@@ -34,7 +38,13 @@ class ScopedPositionSource:
 @dataclass(frozen=True)
 class SourceChangeDecision:
     position: PositionKey
-    disposition: Literal["preserve_schedule", "hold_definition", "retire_new_issuance", "independent", "new"]
+    disposition: Literal[
+        "preserve_schedule",
+        "hold_definition",
+        "retire_new_issuance",
+        "independent",
+        "new",
+    ]
     reason: str
     allow_new_issuance: bool
     reuse_schedule: bool
@@ -51,8 +61,11 @@ class SourceChangeDecision:
         another position. Reauthorization must be explicit and owner-validated.
         """
         return {
-            "position": {"repertoire_id": self.position.repertoire_id,
-                         "position": self.position.position, "variant": self.position.variant},
+            "position": {
+                "repertoire_id": self.position.repertoire_id,
+                "position": self.position.position,
+                "variant": self.position.variant,
+            },
             "disposition": self.disposition,
             "reason": self.reason,
             "allow_new_issuance": self.allow_new_issuance,
@@ -66,12 +79,15 @@ class SourceChangeDecision:
             "retain_accepted_grade_history": True,
             "prior_attempt_rule": (
                 "hold_positive_until_explicit_reauthorization"
-                if self.requires_reauthorization else "revalidate_original_attempt_proof"
+                if self.requires_reauthorization
+                else "revalidate_original_attempt_proof"
             ),
         }
 
 
-def _facts(source: ScopedPositionSource) -> tuple[tuple[PositionDefinition, ...], tuple[str, ...]] | str:
+def _facts(
+    source: ScopedPositionSource,
+) -> tuple[tuple[PositionDefinition, ...], tuple[str, ...]] | str:
     cert = source.certificate
     if not cert.complete or not cert.current_integrity or not source.authored_digest:
         return "source_integrity_unavailable"
@@ -85,9 +101,13 @@ def _facts(source: ScopedPositionSource) -> tuple[tuple[PositionDefinition, ...]
         if route.route_id in route_ids:
             return "ambiguous_route_identity"
         route_ids.add(route.route_id)
-        occurrences = tuple(d for d in route.decisions if d.definition.key == source.key)
-        if not occurrences or any(d.definition.key.repertoire_id != source.key.repertoire_id
-                                  for d in route.decisions):
+        occurrences = tuple(
+            d for d in route.decisions if d.definition.key == source.key
+        )
+        if not occurrences or any(
+            d.definition.key.repertoire_id != source.key.repertoire_id
+            for d in route.decisions
+        ):
             return "route_scope_mismatch"
         definitions.update(d.definition for d in occurrences)
     if len(definitions) > 1:
@@ -110,31 +130,72 @@ def compare_source_change(
     current = _facts(after)
     prior = _facts(before) if before is not None and before.key == after.key else None
 
-    def result(disposition, reason, *, issue=False, reuse=False, reauthorize=False,
-               reprepare=True, added=(), retired=()):
-        return SourceChangeDecision(after.key, disposition, reason, issue, reuse, reauthorize,
-                                    reprepare, added, retired)
+    def result(
+        disposition,
+        reason,
+        *,
+        issue=False,
+        reuse=False,
+        reauthorize=False,
+        reprepare=True,
+        added=(),
+        retired=(),
+    ):
+        return SourceChangeDecision(
+            after.key,
+            disposition,
+            reason,
+            issue,
+            reuse,
+            reauthorize,
+            reprepare,
+            added,
+            retired,
+        )
 
     if isinstance(current, str) or isinstance(prior, str):
-        return result("hold_definition", current if isinstance(current, str) else prior,
-                      reauthorize=True)
+        return result(
+            "hold_definition",
+            current if isinstance(current, str) else prior,
+            reauthorize=True,
+        )
     definitions, routes = current
     if before is not None and before.key != after.key:
-        return result("independent", "different_exact_position_or_repertoire",
-                      issue=bool(definitions), added=routes)
+        return result(
+            "independent",
+            "different_exact_position_or_repertoire",
+            issue=bool(definitions),
+            added=routes,
+        )
     prior_definitions, prior_routes = prior if prior is not None else ((), ())
     added = tuple(sorted(set(routes) - set(prior_routes)))
     retired = tuple(sorted(set(prior_routes) - set(routes)))
     if not definitions:
-        return result("retire_new_issuance", "no_current_authored_route", retired=retired)
+        return result(
+            "retire_new_issuance", "no_current_authored_route", retired=retired
+        )
     if not prior_definitions:
         return result("new", "new_scoped_definition", issue=True, added=added)
     old, new = prior_definitions[0], definitions[0]
     if old.expected_uci != new.expected_uci or old.policy_version != new.policy_version:
-        return result("hold_definition", "selected_response_changed" if old.expected_uci != new.expected_uci
-                      else "content_policy_changed", reauthorize=True, added=added, retired=retired)
-    return result("preserve_schedule", "same_position_and_approved_response", issue=True,
-                  reuse=True, reprepare=before != after, added=added, retired=retired)
+        return result(
+            "hold_definition",
+            "selected_response_changed"
+            if old.expected_uci != new.expected_uci
+            else "content_policy_changed",
+            reauthorize=True,
+            added=added,
+            retired=retired,
+        )
+    return result(
+        "preserve_schedule",
+        "same_position_and_approved_response",
+        issue=True,
+        reuse=True,
+        reprepare=before != after,
+        added=added,
+        retired=retired,
+    )
 
 
 def compare_persisted_definition(
@@ -153,8 +214,9 @@ def compare_persisted_definition(
     key = current.key if current is not None else previous.key
 
     def result(disposition, reason, *, issue=False, reuse=False, reauthorize=False):
-        return SourceChangeDecision(key, disposition, reason, issue, reuse,
-                                    reauthorize, True, (), ())
+        return SourceChangeDecision(
+            key, disposition, reason, issue, reuse, reauthorize, True, (), ()
+        )
 
     if current is None:
         return result("hold_definition", "current_source_unavailable", reauthorize=True)
@@ -163,8 +225,11 @@ def compare_persisted_definition(
         return result("hold_definition", facts, reauthorize=True)
     definitions, _ = facts
     if previous.key != current.key:
-        return result("independent", "different_exact_position_or_repertoire",
-                      issue=bool(definitions))
+        return result(
+            "independent",
+            "different_exact_position_or_repertoire",
+            issue=bool(definitions),
+        )
     if not definitions:
         return result("retire_new_issuance", "no_current_authored_route")
     selected = definitions[0]
@@ -172,5 +237,9 @@ def compare_persisted_definition(
         return result("hold_definition", "selected_response_changed", reauthorize=True)
     if previous.policy_version != selected.policy_version:
         return result("hold_definition", "content_policy_changed", reauthorize=True)
-    return result("preserve_schedule", "same_position_and_approved_response",
-                  issue=True, reuse=True)
+    return result(
+        "preserve_schedule",
+        "same_position_and_approved_response",
+        issue=True,
+        reuse=True,
+    )

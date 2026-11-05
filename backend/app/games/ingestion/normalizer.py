@@ -103,7 +103,9 @@ def normalize_provider_pgn(
     if result not in {"1-0", "0-1", "1/2-1/2"}:
         # python-chess supplies a default "*" even when Result is absent.
         # Only an explicit unfinished header is a benign acquisition exclusion.
-        if result == "*" and re.search(r'^\s*\[Result\s+"\*"\]\s*$', pgn_text, re.MULTILINE):
+        if result == "*" and re.search(
+            r'^\s*\[Result\s+"\*"\]\s*$', pgn_text, re.MULTILINE
+        ):
             raise RejectedGame("game is unfinished")
         raise RejectedGame("game has a missing or unsupported result")
 

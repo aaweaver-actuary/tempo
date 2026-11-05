@@ -1,4 +1,5 @@
 """Version-one diagnostic contract; it grants no mutation authority."""
+
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
@@ -8,7 +9,7 @@ Count = Annotated[int, Field(ge=0)]
 
 
 class PrefixEvaluationRequest(BaseModel):
-    model_config = ConfigDict(extra='forbid')
+    model_config = ConfigDict(extra="forbid")
     snapshot_id: str = Field(min_length=1, max_length=128)
     selected_line_ids: list[str] = Field(max_length=2000)
     candidate_depths: dict[str, Depth] | None = Field(default=None, max_length=2000)
@@ -24,7 +25,7 @@ class SourceRoute(BaseModel):
     name: str
     start_fen: str
     moves: list[str]
-    trained_color: Literal['white', 'black']
+    trained_color: Literal["white", "black"]
     saved_depth: int
 
 
@@ -65,8 +66,8 @@ class StructuralCard(BaseModel):
     card_id: str
     starting_fen: str
     moves: list[str]
-    trained_color: Literal['white', 'black']
-    roles: list[Literal['prefix', 'decision']]
+    trained_color: Literal["white", "black"]
+    roles: list[Literal["prefix", "decision"]]
     line_ids: list[str]
     decision_ids: list[str]
 
@@ -75,7 +76,7 @@ class StructuralStep(BaseModel):
     repertoire_id: str
     line_id: str
     decision_index: Count
-    segment_kind: Literal['prefix', 'decision']
+    segment_kind: Literal["prefix", "decision"]
     first_decision_index: Count
     last_decision_index: Count
     decision_fen_keys: list[str]
@@ -84,7 +85,7 @@ class StructuralStep(BaseModel):
     decision_fen_key: str
     starting_fen: str
     moves: list[str]
-    trained_color: Literal['white', 'black']
+    trained_color: Literal["white", "black"]
 
 
 class StructuralPresentation(BaseModel):
@@ -121,7 +122,7 @@ class PrefixEvaluationResponse(BaseModel):
     snapshot_id: str
     selected_line_ids: list[str]
     selected_line_count: Count
-    status: Literal['empty_selection', 'changed', 'no_change']
+    status: Literal["empty_selection", "changed", "no_change"]
     depth_configuration_changed: bool
     structure_changed: bool
     current_depth_distribution: list[DepthDistribution]

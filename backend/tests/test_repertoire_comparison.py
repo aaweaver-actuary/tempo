@@ -61,7 +61,9 @@ def test_repertoire_comparison_retains_identity_across_deviation_and_transpositi
         assert match["deepest_covered_ply"] == 5
 
 
-def test_line_ending_is_out_of_book_rather_than_a_player_deviation(tmp_path, monkeypatch):
+def test_line_ending_is_out_of_book_rather_than_a_player_deviation(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app):
         with database.connection() as db:

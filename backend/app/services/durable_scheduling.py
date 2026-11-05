@@ -6,34 +6,54 @@ from tempo_legacy_database.adapters.scheduling.durable import persist_scheduling
 
 
 # Interleave the two larger pipelines instead of giving them consecutive bursts.
-SCHEDULING_TURNS = ('graph', 'game', 'graph', 'game', 'priority', 'coverage', 'sync')
+SCHEDULING_TURNS = ("graph", "game", "graph", "game", "priority", "coverage", "sync")
 CLASS_KINDS = {
-    'graph': ('opening_graph_rebuild', 'integrity_scan'),
-    'game': ('game_derivation_positions', 'game_derivation_compare',
-             'game_derivation_findings', 'game_derivation_misses',
-             'game_derivation_events', 'game_derivation_features',
-             'game_derivation_priorities', 'repertoire_game_refresh',
-             'game_analysis_followup'),
-    'priority': ('discovery_recommendation',),
-    'coverage': ('coverage_seed', 'coverage_explorer', 'opening_segmentation'),
-    'sync': ('game_sync_record', 'game_sync_window', 'product_game_refresh', *DEFENSIVE_TASK_KINDS),
+    "graph": ("opening_graph_rebuild", "integrity_scan"),
+    "game": (
+        "game_derivation_positions",
+        "game_derivation_compare",
+        "game_derivation_findings",
+        "game_derivation_misses",
+        "game_derivation_events",
+        "game_derivation_features",
+        "game_derivation_priorities",
+        "repertoire_game_refresh",
+        "game_analysis_followup",
+    ),
+    "priority": ("discovery_recommendation",),
+    "coverage": ("coverage_seed", "coverage_explorer", "opening_segmentation"),
+    "sync": (
+        "game_sync_record",
+        "game_sync_window",
+        "product_game_refresh",
+        *DEFENSIVE_TASK_KINDS,
+    ),
 }
 # User-dependent publications and controls get prompt, but finite, preference.
-CONTROL_KINDS = ('daily_queue', 'prefix_transition_application',
-                 'canonical_prefix_preview', 'discovery_admission', 'game_analysis_publish')
+CONTROL_KINDS = (
+    "daily_queue",
+    "prefix_transition_application",
+    "canonical_prefix_preview",
+    "discovery_admission",
+    "game_analysis_publish",
+)
 
 
 def _candidate_sql(kinds, *, promoted=False, control=False):
-    return storage.candidate_sql(kinds, DEFENSIVE_TASK_KINDS, promoted=promoted, control=control)
+    return storage.candidate_sql(
+        kinds, DEFENSIVE_TASK_KINDS, promoted=promoted, control=control
+    )
 
 
 def _selected_classes(allowed_kinds):
     allowed = set(allowed_kinds)
-    classes = {name: tuple(kind for kind in kinds if kind in allowed)
-               for name, kinds in CLASS_KINDS.items()}
+    classes = {
+        name: tuple(kind for kind in kinds if kind in allowed)
+        for name, kinds in CLASS_KINDS.items()
+    }
     known = set(CONTROL_KINDS).union(*(set(kinds) for kinds in CLASS_KINDS.values()))
     # A newly supported handler still gets bounded turns until assigned explicitly.
-    classes['sync'] += tuple(kind for kind in allowed_kinds if kind not in known)
+    classes["sync"] += tuple(kind for kind in allowed_kinds if kind not in known)
     controls = tuple(kind for kind in CONTROL_KINDS if kind in allowed)
     ordinary = tuple(kind for kinds in classes.values() for kind in kinds)
     return classes, controls, ordinary
@@ -50,9 +70,9 @@ def select_scheduled_task(database, allowed_kinds, now):
     if not scheduler:
         return None, None
     classes, controls, ordinary = _selected_classes(allowed_kinds)
-    next_turn = scheduler['next_turn']
-    promoted_since_turn = scheduler['promoted_since_turn']
-    control_streak = scheduler['control_streak']
+    next_turn = scheduler["next_turn"]
+    promoted_since_turn = scheduler["promoted_since_turn"]
+    control_streak = scheduler["control_streak"]
 
     def candidate(kinds, **kwargs):
         if not kinds:

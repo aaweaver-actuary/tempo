@@ -14,9 +14,21 @@ import psycopg
 from .command_gateway import register_command
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from .queue_commands import request_queue_refresh_in_transaction
-from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
-from app.contracts.studies import ChapterCreate, StudyBundleImportRequest, StudyCreate, StudyImportCommitRequest, StudyLinkCreate
-from app.contracts.studies import ExerciseCreate, ExerciseRevisionRequest, ExerciseSpecification
+from tempo_legacy_database.adapters.queue_position_lock import (
+    lock_queue_date_for_position,
+)
+from app.contracts.studies import (
+    ChapterCreate,
+    StudyBundleImportRequest,
+    StudyCreate,
+    StudyImportCommitRequest,
+    StudyLinkCreate,
+)
+from app.contracts.studies import (
+    ExerciseCreate,
+    ExerciseRevisionRequest,
+    ExerciseSpecification,
+)
 from .services.study_grading import validate_exercise
 from .services.study_portable import import_bundle
 from pydantic import TypeAdapter
@@ -34,7 +46,9 @@ def _require_record(database: PostgresConnection, table_name: str, identifier: s
     return record
 
 
-def create_study(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, str]:
+def create_study(
+    database: PostgresConnection, payload: dict[str, Any]
+) -> dict[str, str]:
     request = StudyCreate.model_validate(payload)
     identifier = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
@@ -49,7 +63,9 @@ def create_study(database: PostgresConnection, payload: dict[str, Any]) -> dict[
     return {"id": identifier}
 
 
-def update_study(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, str]:
+def update_study(
+    database: PostgresConnection, payload: dict[str, Any]
+) -> dict[str, str]:
     request = StudyCreate.model_validate(payload["study"])
     study_id = str(payload["study_id"])
     if study_storage.locked_study_exists(database, study_id) is None:
@@ -65,21 +81,29 @@ def update_study(database: PostgresConnection, payload: dict[str, Any]) -> dict[
     return {"id": study_id}
 
 
-def archive_study(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+def archive_study(
+    database: PostgresConnection, payload: dict[str, Any]
+) -> dict[str, Any]:
     study_id = str(payload["study_id"])
     if study_storage.locked_study_identity(database, study_id) is None:
         raise HTTPException(404, "Study not found")
-    study_storage.archive_study(database, datetime.now(timezone.utc).isoformat(), study_id)
+    study_storage.archive_study(
+        database, datetime.now(timezone.utc).isoformat(), study_id
+    )
     study_storage.archive_study_cards(database, study_id)
     request_queue_refresh_in_transaction(database, date.today().isoformat())
     return {"id": study_id, "archived": True}
 
 
-def unarchive_study(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+def unarchive_study(
+    database: PostgresConnection, payload: dict[str, Any]
+) -> dict[str, Any]:
     study_id = str(payload["study_id"])
     if study_storage.locked_study_identity(database, study_id) is None:
         raise HTTPException(404, "Study not found")
-    study_storage.unarchive_study(database, datetime.now(timezone.utc).isoformat(), study_id)
+    study_storage.unarchive_study(
+        database, datetime.now(timezone.utc).isoformat(), study_id
+    )
     return {"id": study_id, "archived": False}
 
 
@@ -91,7 +115,9 @@ def _lock_exercise_in_study(database: PostgresConnection, payload: dict[str, Any
     return exercise
 
 
-def suspend_exercise(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, bool]:
+def suspend_exercise(
+    database: PostgresConnection, payload: dict[str, Any]
+) -> dict[str, bool]:
     exercise = _lock_exercise_in_study(database, payload)
     study_storage.suspend_exercise_cards(database, exercise["id"])
     study_storage.block_exercise_queue(database, exercise["id"])
@@ -99,7 +125,9 @@ def suspend_exercise(database: PostgresConnection, payload: dict[str, Any]) -> d
     return {"suspended": True}
 
 
-def resume_exercise(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, bool]:
+def resume_exercise(
+    database: PostgresConnection, payload: dict[str, Any]
+) -> dict[str, bool]:
     exercise = _lock_exercise_in_study(database, payload)
     if exercise["status"] == "archived":
         raise HTTPException(409, "Exercise unavailable")
@@ -108,7 +136,9 @@ def resume_exercise(database: PostgresConnection, payload: dict[str, Any]) -> di
     return {"suspended": False}
 
 
-def archive_exercise(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, bool]:
+def archive_exercise(
+    database: PostgresConnection, payload: dict[str, Any]
+) -> dict[str, bool]:
     exercise = _lock_exercise_in_study(database, payload)
     study_storage.archive_exercise(database, exercise["id"])
     study_storage.archive_exercise_cards(database, exercise["id"])
@@ -117,7 +147,9 @@ def archive_exercise(database: PostgresConnection, payload: dict[str, Any]) -> d
     return {"archived": True}
 
 
-def create_exercise(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+def create_exercise(
+    database: PostgresConnection, payload: dict[str, Any]
+) -> dict[str, Any]:
     request = ExerciseCreate.model_validate(payload["exercise"])
     study_id = str(payload["study_id"])
     study = study_storage.locked_study(database, study_id)
@@ -138,8 +170,11 @@ def create_exercise(database: PostgresConnection, payload: dict[str, Any]) -> di
         raise HTTPException(422, str(error)) from error
     exercise_id = str(uuid.uuid4())
     created_at = datetime.now(timezone.utc).isoformat()
-    specification_json = json.dumps(request.specification.model_dump(mode="json"),
-                                    sort_keys=True, separators=(",", ":"))
+    specification_json = json.dumps(
+        request.specification.model_dump(mode="json"),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     specification_digest = hashlib.sha256(specification_json.encode()).hexdigest()
     study_storage.insert_exercise(
         database,
@@ -162,7 +197,9 @@ def create_exercise(database: PostgresConnection, payload: dict[str, Any]) -> di
     return {"id": exercise_id, "revision": 1, "status": "draft"}
 
 
-def enroll_exercise(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+def enroll_exercise(
+    database: PostgresConnection, payload: dict[str, Any]
+) -> dict[str, Any]:
     study_id = str(payload["study_id"])
     exercise_id = str(payload["exercise_id"])
     study = study_storage.locked_study(database, study_id)
@@ -174,10 +211,14 @@ def enroll_exercise(database: PostgresConnection, payload: dict[str, Any]) -> di
     position = _require_record(database, "study_positions", exercise["position_id"])
     if not position["valid"]:
         raise HTTPException(422, "Source position is invalid")
-    revision = study_storage.exercise_revision(database, exercise_id, exercise["current_revision"])
+    revision = study_storage.exercise_revision(
+        database, exercise_id, exercise["current_revision"]
+    )
     if revision is None:
         raise HTTPException(409, "Exercise revision is unavailable")
-    specification = _SPECIFICATION_ADAPTER.validate_python(json.loads(revision["specification_json"]))
+    specification = _SPECIFICATION_ADAPTER.validate_python(
+        json.loads(revision["specification_json"])
+    )
     try:
         validate_exercise(specification, position["fen"])
     except ValueError as error:
@@ -198,7 +239,9 @@ def enroll_exercise(database: PostgresConnection, payload: dict[str, Any]) -> di
     return {"card_id": card_id, "idempotent": False}
 
 
-def train_exercise_now(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+def train_exercise_now(
+    database: PostgresConnection, payload: dict[str, Any]
+) -> dict[str, Any]:
     study_id = str(payload["study_id"])
     exercise_id = str(payload["exercise_id"])
     queue_date = date.today().isoformat()
@@ -207,7 +250,12 @@ def train_exercise_now(database: PostgresConnection, payload: dict[str, Any]) ->
         raise HTTPException(404, "Studies not found")
     exercise = _lock_exercise_in_study(database, payload)
     card = study_storage.locked_active_card(database, exercise_id)
-    if study["archived"] or exercise["status"] != "published" or not card or card["pending_validation"]:
+    if (
+        study["archived"]
+        or exercise["status"] != "published"
+        or not card
+        or card["pending_validation"]
+    ):
         raise HTTPException(409, "Enroll and resume this exercise before training it")
     lock_queue_date_for_position(database, queue_date)
     existing = study_storage.queued_exercise_entry(database, card["id"], queue_date)
@@ -226,7 +274,9 @@ def train_exercise_now(database: PostgresConnection, payload: dict[str, Any]) ->
     return {"queue_entry_id": queue_entry_id, "idempotent": False}
 
 
-def revise_exercise(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+def revise_exercise(
+    database: PostgresConnection, payload: dict[str, Any]
+) -> dict[str, Any]:
     request = ExerciseRevisionRequest.model_validate(payload["revision"])
     exercise_id = str(payload["exercise_id"])
     study_id = str(payload["study_id"])
@@ -235,8 +285,10 @@ def revise_exercise(database: PostgresConnection, payload: dict[str, Any]) -> di
     exercise = study_storage.locked_exercise(database, exercise_id)
     if exercise is None:
         raise HTTPException(404, "Study Exercises not found")
-    if (exercise["study_id"] != study_id
-            or exercise["current_revision"] != request.expected_revision):
+    if (
+        exercise["study_id"] != study_id
+        or exercise["current_revision"] != request.expected_revision
+    ):
         raise HTTPException(409, "Exercise changed since it was opened")
     position = _require_record(database, "study_positions", exercise["position_id"])
     try:
@@ -252,12 +304,15 @@ def revise_exercise(database: PostgresConnection, payload: dict[str, Any]) -> di
         raise HTTPException(409, "Exercise revision is unavailable")
     previous = json.loads(previous_revision["specification_json"])
     revised = request.specification.model_dump(mode="json")
-    material = (
-        {key: value for key, value in revised.items()
-         if key not in {"explanation", "further_analysis"}}
-        != {key: value for key, value in previous.items()
-            if key not in {"explanation", "further_analysis"}}
-    )
+    material = {
+        key: value
+        for key, value in revised.items()
+        if key not in {"explanation", "further_analysis"}
+    } != {
+        key: value
+        for key, value in previous.items()
+        if key not in {"explanation", "further_analysis"}
+    }
     next_revision = int(exercise["current_revision"]) + 1
     now = datetime.now(timezone.utc).isoformat()
     revised_json = json.dumps(revised, sort_keys=True, separators=(",", ":"))
@@ -300,11 +355,17 @@ def revise_exercise(database: PostgresConnection, payload: dict[str, Any]) -> di
         study_storage.update_card_revision(database, next_revision, exercise_id)
     if material:
         request_queue_refresh_in_transaction(database, date.today().isoformat())
-    return {"id": exercise_id, "revision": next_revision, "material": material,
-            "schedule_reset": material and request.schedule_decision == "reset"}
+    return {
+        "id": exercise_id,
+        "revision": next_revision,
+        "material": material,
+        "schedule_reset": material and request.schedule_decision == "reset",
+    }
 
 
-def create_chapter(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+def create_chapter(
+    database: PostgresConnection, payload: dict[str, Any]
+) -> dict[str, Any]:
     request = ChapterCreate.model_validate(payload["chapter"])
     study_id = str(payload["study_id"])
     study = study_storage.locked_study(database, study_id)
@@ -325,7 +386,9 @@ def create_chapter(database: PostgresConnection, payload: dict[str, Any]) -> dic
     return {"id": chapter_id, "position": position}
 
 
-def reorder_chapters(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+def reorder_chapters(
+    database: PostgresConnection, payload: dict[str, Any]
+) -> dict[str, Any]:
     study_id = str(payload["study_id"])
     chapter_ids = [str(identifier) for identifier in payload["chapter_ids"]]
     # Lock the parent so concurrent create/reorder commands agree on one order.
@@ -341,22 +404,30 @@ def reorder_chapters(database: PostgresConnection, payload: dict[str, Any]) -> d
     return {"chapter_ids": chapter_ids}
 
 
-def rename_chapter(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, str]:
+def rename_chapter(
+    database: PostgresConnection, payload: dict[str, Any]
+) -> dict[str, str]:
     request = ChapterCreate.model_validate(payload["chapter"])
     study_id = str(payload["study_id"])
     chapter_id = str(payload["chapter_id"])
     chapter = _require_record(database, "study_chapters", chapter_id)
     if chapter["study_id"] != study_id:
         raise HTTPException(404, "Chapter not in this study")
-    study_storage.rename_chapter(database, request.title, request.description, chapter_id)
+    study_storage.rename_chapter(
+        database, request.title, request.description, chapter_id
+    )
     return {"id": chapter_id}
 
 
-def create_link(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, str]:
+def create_link(
+    database: PostgresConnection, payload: dict[str, Any]
+) -> dict[str, str]:
     request = StudyLinkCreate.model_validate(payload["link"])
     study_id = str(payload["study_id"])
     if bool(request.target_position_id) == bool(request.target_exercise_id):
-        raise HTTPException(422, "A teaching link needs one position or exercise target")
+        raise HTTPException(
+            422, "A teaching link needs one position or exercise target"
+        )
     _require_record(database, "studies", study_id)
 
     def position_study_id(position_id: str) -> str:
@@ -371,7 +442,12 @@ def create_link(database: PostgresConnection, payload: dict[str, Any]) -> dict[s
     if request.target_position_id:
         if position_study_id(request.target_position_id) != study_id:
             raise HTTPException(422, "Target position is outside the study")
-    elif _require_record(database, "study_exercises", request.target_exercise_id)["study_id"] != study_id:
+    elif (
+        _require_record(database, "study_exercises", request.target_exercise_id)[
+            "study_id"
+        ]
+        != study_id
+    ):
         raise HTTPException(422, "Target exercise is outside the study")
     link_id = str(uuid.uuid4())
     study_storage.insert_link(
@@ -386,14 +462,18 @@ def create_link(database: PostgresConnection, payload: dict[str, Any]) -> dict[s
     return {"id": link_id}
 
 
-def commit_study_import(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+def commit_study_import(
+    database: PostgresConnection, payload: dict[str, Any]
+) -> dict[str, Any]:
     """Save a parsed PGN source under the chapter lock and command receipt."""
 
     request = StudyImportCommitRequest.model_validate(payload["request"])
     study_id = str(payload["study_id"])
     records = payload["records"]
-    if (len(records) != len(request.selected_records)
-            or [record["index"] for record in records] != request.selected_records):
+    if (
+        len(records) != len(request.selected_records)
+        or [record["index"] for record in records] != request.selected_records
+    ):
         raise HTTPException(422, "Selected PGN records are invalid")
     chapter = study_storage.locked_chapter_study(database, request.chapter_id)
     if chapter is None or chapter["study_id"] != study_id:
@@ -405,12 +485,19 @@ def commit_study_import(database: PostgresConnection, payload: dict[str, Any]) -
         request.source_group_id,
     )
     exact = exact_rows[0] if exact_rows and request.mode != "copy" else None
-    existing_records = {row["record_index"] for row in exact_rows
-                        if exact and row["source_group_id"] == exact["source_group_id"]
-                        and row["version"] == exact["version"]}
+    existing_records = {
+        row["record_index"]
+        for row in exact_rows
+        if exact
+        and row["source_group_id"] == exact["source_group_id"]
+        and row["version"] == exact["version"]
+    }
     if exact and set(request.selected_records) <= existing_records:
-        return {"source_group_id": exact["source_group_id"],
-                "created_source_ids": [], "idempotent": True}
+        return {
+            "source_group_id": exact["source_group_id"],
+            "created_source_ids": [],
+            "idempotent": True,
+        }
     if exact:
         source_group_id = exact["source_group_id"]
         version = exact["version"]
@@ -473,12 +560,17 @@ def commit_study_import(database: PostgresConnection, payload: dict[str, Any]) -
                 int(record["valid"]),
             )
         created_source_ids.append(source_id)
-    return {"source_group_id": source_group_id,
-            "created_source_ids": created_source_ids,
-            "idempotent": False, "version": version}
+    return {
+        "source_group_id": source_group_id,
+        "created_source_ids": created_source_ids,
+        "idempotent": False,
+        "version": version,
+    }
 
 
-def import_study_bundle(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+def import_study_bundle(
+    database: PostgresConnection, payload: dict[str, Any]
+) -> dict[str, Any]:
     request = StudyBundleImportRequest.model_validate(payload)
     try:
         return import_bundle(database, request.bundle, copy=request.mode == "copy")

@@ -1,4 +1,5 @@
 """Games provider/sync contracts."""
+
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -103,7 +104,9 @@ class GameSyncJob(BaseModel):
     @model_validator(mode="after")
     def completed_result_matches_status(self):
         if (self.status == "complete") != (self.result is not None):
-            raise ValueError("Only complete game sync jobs may expose a completed result")
+            raise ValueError(
+                "Only complete game sync jobs may expose a completed result"
+            )
         return self
 
 

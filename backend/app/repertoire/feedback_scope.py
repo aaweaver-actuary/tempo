@@ -4,6 +4,7 @@ This value owns no database, currentness, learning or provider authority. Comple
 routes are retained even when only the elected boundary's physical bindings are
 read. Legal execution uses exact in-memory position identity, never persisted IDs.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -28,10 +29,19 @@ def _position(board):
     Public bitboards retain each piece/color, turn and cleaned castling rights.
     Clocks and promotion provenance are absent from ordinary repertoire identity.
     """
-    return (board.pawns, board.knights, board.bishops, board.rooks, board.queens,
-            board.kings, board.occupied_co[chess.WHITE], board.occupied_co[chess.BLACK],
-            board.turn, board.clean_castling_rights(),
-            board.ep_square if board.has_legal_en_passant() else None)
+    return (
+        board.pawns,
+        board.knights,
+        board.bishops,
+        board.rooks,
+        board.queens,
+        board.kings,
+        board.occupied_co[chess.WHITE],
+        board.occupied_co[chess.BLACK],
+        board.turn,
+        board.clean_castling_rights(),
+        board.ep_square if board.has_legal_en_passant() else None,
+    )
 
 
 def _game_keys(game):
@@ -39,14 +49,14 @@ def _game_keys(game):
     frames = replay_line(game.starting_fen, game.moves)
     keys = {}
     for frame in frames:
-        keys[_position(board)] = frame['comparison_key']
-        if frame['move'] is not None:
-            board.push_uci(frame['move'])
+        keys[_position(board)] = frame["comparison_key"]
+        if frame["move"] is not None:
+            board.push_uci(frame["move"])
     return MappingProxyType(keys)
 
 
 class _Node:
-    __slots__ = ('children', 'position', 'turn')
+    __slots__ = ("children", "position", "turn")
 
     def __init__(self):
         self.children = {}
@@ -59,15 +69,26 @@ def _legal_routes(routes, *, active):
     started = perf_counter()
     paths, roots = {}, {}
     input_plies = nodes = replayed = batches = 0
+
     def account(value):
         nonlocal batches
         # Enforce the existing source work ceiling inside long traversal too.
         if value > 100000:
-            raise RepertoireSnapshotBoundExceeded(stage='projection', sample_complete=True,
-                violations=[dict(dimension='authored_moves', observed=value, limit=100000,
-                                 observation='exact')])
+            raise RepertoireSnapshotBoundExceeded(
+                stage="projection",
+                sample_complete=True,
+                violations=[
+                    dict(
+                        dimension="authored_moves",
+                        observed=value,
+                        limit=100000,
+                        observation="exact",
+                    )
+                ],
+            )
         if value and value % 128 == 0:
             batches += 1
+
     for route in routes:
         if not active:
             continue
@@ -112,12 +133,22 @@ def _legal_routes(routes, *, active):
             stack.append(iter(node.children.items()))
     values = {}
     for route_id, path in paths.items():
-        values[route_id] = (None if any(node.position is None for node in path) else
-                           tuple((node.position, node.turn) for node in path))
-    return MappingProxyType(values), MappingProxyType(dict(
-        input_plies=input_plies, prefix_nodes=nodes, replayed_nodes=replayed,
-        accounting_batches=batches, elapsed_seconds=perf_counter() - started,
-        work_limit_plies=100000, accounting_interval_nodes=128))
+        values[route_id] = (
+            None
+            if any(node.position is None for node in path)
+            else tuple((node.position, node.turn) for node in path)
+        )
+    return MappingProxyType(values), MappingProxyType(
+        dict(
+            input_plies=input_plies,
+            prefix_nodes=nodes,
+            replayed_nodes=replayed,
+            accounting_batches=batches,
+            elapsed_seconds=perf_counter() - started,
+            work_limit_plies=100000,
+            accounting_interval_nodes=128,
+        )
+    )
 
 
 def _comparison_routes(execution, routes, game_positions):
@@ -132,11 +163,16 @@ def _comparison_routes(execution, routes, game_positions):
             continue
         key = (route.starting_fen, tuple(route.moves))
         if key not in aliases:
-            aliases[key] = tuple(MappingProxyType(dict(
-                comparison_key=game_positions.get(position, ''),
-                turn='white' if turn else 'black',
-                move=route.moves[ply] if ply < len(route.moves) else None))
-                for ply, (position, turn) in enumerate(frames))
+            aliases[key] = tuple(
+                MappingProxyType(
+                    dict(
+                        comparison_key=game_positions.get(position, ""),
+                        turn="white" if turn else "black",
+                        move=route.moves[ply] if ply < len(route.moves) else None,
+                    )
+                )
+                for ply, (position, turn) in enumerate(frames)
+            )
             count += len(aliases[key])
         result[route.route_id] = aliases[key]
     return MappingProxyType(result), count, perf_counter() - started
@@ -150,6 +186,7 @@ class PreparedFirstBoundaryRepertoire:
     complete owner read, explicitly named in the digest, never a whole-catalogue
     claim. The Study owner independently runs policy and fences current reads.
     """
+
     _authored_json: str
     _candidate_json: str | None
     _game_json: str
@@ -160,109 +197,212 @@ class PreparedFirstBoundaryRepertoire:
     work: Mapping
     snapshot: RepertoireSnapshot
 
-    def __init__(self, facts: Mapping, *, game: CanonicalGame, captured_at: str | None = None):
+    def __init__(
+        self, facts: Mapping, *, game: CanonicalGame, captured_at: str | None = None
+    ):
         started = perf_counter()
-        game = CanonicalGame.model_validate(game.model_dump(mode='python'))
-        encoded = json.dumps(facts, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
+        game = CanonicalGame.model_validate(game.model_dump(mode="python"))
+        encoded = json.dumps(
+            facts, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        )
         owned = json.loads(encoded)
-        if set(owned) != {'repertoire', 'lines', 'card_count', 'membership_count', 'graph_count'}:
-            raise ValueError('invalid_first_boundary_authored_scope')
-        for field in ('card_count', 'membership_count', 'graph_count'):
+        if set(owned) != {
+            "repertoire",
+            "lines",
+            "card_count",
+            "membership_count",
+            "graph_count",
+        }:
+            raise ValueError("invalid_first_boundary_authored_scope")
+        for field in ("card_count", "membership_count", "graph_count"):
             if type(owned[field]) is not int or owned[field] < 0:
-                raise ValueError('invalid_first_boundary_authored_scope')
-        for field, dimension in (('card_count', 'card_rows'), ('membership_count', 'membership_rows')):
+                raise ValueError("invalid_first_boundary_authored_scope")
+        for field, dimension in (
+            ("card_count", "card_rows"),
+            ("membership_count", "membership_rows"),
+        ):
             if owned[field] > 10000:
-                raise RepertoireSnapshotBoundExceeded(stage='projection', sample_complete=True,
-                    violations=[dict(dimension=dimension, observed=owned[field], limit=10000,
-                                     observation='exact')])
-        owned['lines'].sort(key=lambda row: row['id'])
-        encoded = json.dumps(owned, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
+                raise RepertoireSnapshotBoundExceeded(
+                    stage="projection",
+                    sample_complete=True,
+                    violations=[
+                        dict(
+                            dimension=dimension,
+                            observed=owned[field],
+                            limit=10000,
+                            observation="exact",
+                        )
+                    ],
+                )
+        owned["lines"].sort(key=lambda row: row["id"])
+        encoded = json.dumps(
+            owned, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        )
         raw = owned | dict(cards=[], memberships=[], graphs=[])
         snapshot = _project_repertoire(raw, captured_at=captured_at, published=True)
         if snapshot.membership.workspace_id != game.workspace_id:
-            raise ValueError('first_boundary_workspace_mismatch')
-        execution, work = _legal_routes(snapshot.membership.routes,
-            active=snapshot.learner_color == game.learner_color)
-        object.__setattr__(self, '_authored_json', encoded)
-        object.__setattr__(self, '_candidate_json', None)
-        object.__setattr__(self, '_game_json', game.model_dump_json())
-        object.__setattr__(self, '_route_execution', execution)
+            raise ValueError("first_boundary_workspace_mismatch")
+        execution, work = _legal_routes(
+            snapshot.membership.routes,
+            active=snapshot.learner_color == game.learner_color,
+        )
+        object.__setattr__(self, "_authored_json", encoded)
+        object.__setattr__(self, "_candidate_json", None)
+        object.__setattr__(self, "_game_json", game.model_dump_json())
+        object.__setattr__(self, "_route_execution", execution)
         game_positions = _game_keys(game)
         comparison_frames, frame_count, frame_seconds = _comparison_routes(
-            execution, snapshot.membership.routes, game_positions)
-        object.__setattr__(self, '_game_positions', game_positions)
-        object.__setattr__(self, '_comparison_frames', comparison_frames)
-        object.__setattr__(self, '_route_values', MappingProxyType({
-            route.route_id: route for route in snapshot.membership.routes}))
-        object.__setattr__(self, 'snapshot', self._snapshot_identity(snapshot, owned, None, game))
-        object.__setattr__(self, 'work', MappingProxyType(dict(work,
-            route_replay_seconds=work['elapsed_seconds'], projected_frame_records=frame_count,
-            frame_projection_seconds=frame_seconds, elapsed_seconds=perf_counter() - started)))
+            execution, snapshot.membership.routes, game_positions
+        )
+        object.__setattr__(self, "_game_positions", game_positions)
+        object.__setattr__(self, "_comparison_frames", comparison_frames)
+        object.__setattr__(
+            self,
+            "_route_values",
+            MappingProxyType(
+                {route.route_id: route for route in snapshot.membership.routes}
+            ),
+        )
+        object.__setattr__(
+            self, "snapshot", self._snapshot_identity(snapshot, owned, None, game)
+        )
+        object.__setattr__(
+            self,
+            "work",
+            MappingProxyType(
+                dict(
+                    work,
+                    route_replay_seconds=work["elapsed_seconds"],
+                    projected_frame_records=frame_count,
+                    frame_projection_seconds=frame_seconds,
+                    elapsed_seconds=perf_counter() - started,
+                )
+            ),
+        )
 
     @staticmethod
     def _snapshot_identity(snapshot, authored, candidate, game):
-        digest = fingerprint(dict(kind='game_bound_first_boundary_repertoire', schema_version=1,
-            authored=authored, candidate_bindings=candidate, game=game.model_dump(mode='json')))
-        return snapshot.model_copy(update={'membership': snapshot.membership.model_copy(update={
-            'snapshot_id': 'first-boundary:' + digest, 'source_revision': digest, 'digest': digest,
-            'scope_id': 'first-boundary:' + authored['repertoire']['id']})})
+        digest = fingerprint(
+            dict(
+                kind="game_bound_first_boundary_repertoire",
+                schema_version=1,
+                authored=authored,
+                candidate_bindings=candidate,
+                game=game.model_dump(mode="json"),
+            )
+        )
+        return snapshot.model_copy(
+            update={
+                "membership": snapshot.membership.model_copy(
+                    update={
+                        "snapshot_id": "first-boundary:" + digest,
+                        "source_revision": digest,
+                        "digest": digest,
+                        "scope_id": "first-boundary:" + authored["repertoire"]["id"],
+                    }
+                )
+            }
+        )
 
     def authored_facts(self):
         return json.loads(self._authored_json)
 
     def candidate_facts(self):
-        return None if self._candidate_json is None else json.loads(self._candidate_json)
+        return (
+            None if self._candidate_json is None else json.loads(self._candidate_json)
+        )
 
     def for_game(self, game):
         return type(game) is CanonicalGame and game.model_dump_json() == self._game_json
 
     def accepts(self, snapshot):
-        return (snapshot.membership == self.snapshot.membership
-                and snapshot.variant == self.snapshot.variant
-                and snapshot.learner_color == self.snapshot.learner_color
-                and snapshot.boundaries == self.snapshot.boundaries)
+        return (
+            snapshot.membership == self.snapshot.membership
+            and snapshot.variant == self.snapshot.variant
+            and snapshot.learner_color == self.snapshot.learner_color
+            and snapshot.boundaries == self.snapshot.boundaries
+        )
 
     def replay_route(self, game, route):
         if not self.for_game(game) or self._route_values.get(route.route_id) != route:
-            raise ValueError('first_boundary_prepared_scope_mismatch')
+            raise ValueError("first_boundary_prepared_scope_mismatch")
         frames = self._comparison_frames.get(route.route_id)
         if frames is None:
-            raise ValueError('invalid_authored_scope')
+            raise ValueError("invalid_authored_scope")
         return frames
-
 
     def with_bindings(self, facts):
         """Bind a complete candidate read; missing candidate routes stay unknown."""
-        encoded = json.dumps(facts, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
+        encoded = json.dumps(
+            facts, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        )
         owned = json.loads(encoded)
-        if set(owned) != {'repertoire', 'route_ids', 'cards', 'memberships', 'graphs'}:
-            raise ValueError('invalid_first_boundary_candidate_scope')
+        if set(owned) != {"repertoire", "route_ids", "cards", "memberships", "graphs"}:
+            raise ValueError("invalid_first_boundary_candidate_scope")
         authored = self.authored_facts()
-        if owned['repertoire'] != authored['repertoire']:
-            raise ValueError('first_departure_selected_publication_changed')
-        route_ids = owned['route_ids']
-        if (not route_ids or route_ids != sorted(set(route_ids))
-                or not set(route_ids) <= set(self._route_values)):
-            raise ValueError('invalid_candidate_route_scope')
-        owned['cards'].sort(key=lambda row: row['id'])
-        owned['memberships'].sort(key=lambda row: (row['repertoire_id'], row['card_id']))
-        owned['graphs'].sort(key=lambda row: (row['line_id'], row['decision_index']))
-        encoded = json.dumps(owned, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
-        repertoire_id = authored['repertoire']['id']
-        if any(graph['line_id'] not in route_ids or graph['repertoire_id'] != repertoire_id
-               for graph in owned['graphs']):
-            raise ValueError('first_departure_candidate_routes_changed')
-        if len(owned['cards']) > 10000 or len(owned['memberships']) > 10000:
-            raise ValueError('first_boundary_candidate_scope_exceeds_bound')
-        mappings = _mappings(dict(tables=dict(cards=owned['cards'], repertoire_cards=owned['memberships']),
-            graphs=owned['graphs'], authority=dict(graph_generation=authored['repertoire']['graph_generation'])),
-            {(repertoire_id, route_id): route for route_id, route in self._route_values.items()},
-            self.snapshot.membership.revision, include_unavailable=True)
+        if owned["repertoire"] != authored["repertoire"]:
+            raise ValueError("first_departure_selected_publication_changed")
+        route_ids = owned["route_ids"]
+        if (
+            not route_ids
+            or route_ids != sorted(set(route_ids))
+            or not set(route_ids) <= set(self._route_values)
+        ):
+            raise ValueError("invalid_candidate_route_scope")
+        owned["cards"].sort(key=lambda row: row["id"])
+        owned["memberships"].sort(
+            key=lambda row: (row["repertoire_id"], row["card_id"])
+        )
+        owned["graphs"].sort(key=lambda row: (row["line_id"], row["decision_index"]))
+        encoded = json.dumps(
+            owned, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        )
+        repertoire_id = authored["repertoire"]["id"]
+        if any(
+            graph["line_id"] not in route_ids or graph["repertoire_id"] != repertoire_id
+            for graph in owned["graphs"]
+        ):
+            raise ValueError("first_departure_candidate_routes_changed")
+        if len(owned["cards"]) > 10000 or len(owned["memberships"]) > 10000:
+            raise ValueError("first_boundary_candidate_scope_exceeds_bound")
+        mappings = _mappings(
+            dict(
+                tables=dict(
+                    cards=owned["cards"], repertoire_cards=owned["memberships"]
+                ),
+                graphs=owned["graphs"],
+                authority=dict(
+                    graph_generation=authored["repertoire"]["graph_generation"]
+                ),
+            ),
+            {
+                (repertoire_id, route_id): route
+                for route_id, route in self._route_values.items()
+            },
+            self.snapshot.membership.revision,
+            include_unavailable=True,
+        )
         result = object.__new__(type(self))
-        for field in ('_authored_json', '_game_json', '_route_execution', '_game_positions', '_comparison_frames', '_route_values', 'work'):
+        for field in (
+            "_authored_json",
+            "_game_json",
+            "_route_execution",
+            "_game_positions",
+            "_comparison_frames",
+            "_route_values",
+            "work",
+        ):
             object.__setattr__(result, field, getattr(self, field))
-        object.__setattr__(result, '_candidate_json', encoded)
-        snapshot = self.snapshot.model_copy(update={'decision_presentations': mappings})
-        object.__setattr__(result, 'snapshot', self._snapshot_identity(snapshot, authored, owned,
-            CanonicalGame.model_validate_json(self._game_json)))
+        object.__setattr__(result, "_candidate_json", encoded)
+        snapshot = self.snapshot.model_copy(update={"decision_presentations": mappings})
+        object.__setattr__(
+            result,
+            "snapshot",
+            self._snapshot_identity(
+                snapshot,
+                authored,
+                owned,
+                CanonicalGame.model_validate_json(self._game_json),
+            ),
+        )
         return result

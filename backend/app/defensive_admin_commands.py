@@ -10,21 +10,29 @@ from .services.durable_tasks import enqueue_task_in_transaction
 
 
 def request_defensive_audit(
-    database: PostgresConnection, _payload: dict[str, Any],
+    database: PostgresConnection,
+    _payload: dict[str, Any],
 ) -> dict[str, str]:
     task = enqueue_task_in_transaction(
-        database, "defensive_threat_report_audit", "saved-reports",
-        {"cursor": ""}, priority=135,
+        database,
+        "defensive_threat_report_audit",
+        "saved-reports",
+        {"cursor": ""},
+        priority=135,
     )
     return {"status": "queued", "task_id": task["id"]}
 
 
 def request_defensive_backfill(
-    database: PostgresConnection, _payload: dict[str, Any],
+    database: PostgresConnection,
+    _payload: dict[str, Any],
 ) -> dict[str, str]:
     task = enqueue_task_in_transaction(
-        database, "defensive_threat_backfill", "analyzed-games",
-        {"phase": "games", "cursor": ""}, priority=160,
+        database,
+        "defensive_threat_backfill",
+        "analyzed-games",
+        {"phase": "games", "cursor": ""},
+        priority=160,
     )
     return {"status": "queued", "task_id": task["id"]}
 

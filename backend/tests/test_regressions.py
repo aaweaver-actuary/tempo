@@ -33,9 +33,12 @@ def test_legacy_timestamp_introduced_at_is_repaired_to_a_study_date(
     database.initialize()
 
     with database.connection() as db:
-        assert db.execute(
-            "SELECT introduced_at FROM cards WHERE id='repair-card'"
-        ).fetchone()[0] == "2026-09-19"
+        assert (
+            db.execute(
+                "SELECT introduced_at FROM cards WHERE id='repair-card'"
+            ).fetchone()[0]
+            == "2026-09-19"
+        )
 
 
 def test_prefixes_match_rust_including_incomplete_trained_turns():
@@ -68,7 +71,9 @@ def test_python_card_ids_match_shared_rust_parity_fixture():
         (Path(__file__).parents[2] / "tests/fixtures/card-id-parity.json").read_text()
     )
     for fixture in fixtures:
-        assert card_id(fixture["fen"], fixture["moves"]) == fixture["cardId"], fixture["name"]
+        assert card_id(fixture["fen"], fixture["moves"]) == fixture["cardId"], fixture[
+            "name"
+        ]
 
 
 def test_legacy_introduced_but_unreviewed_queue_is_capped_without_losing_reviews(
@@ -118,9 +123,11 @@ def test_legacy_introduced_but_unreviewed_queue_is_capped_without_losing_reviews
             time.sleep(0.01)
         queue = client.get("/api/queue/today").json()
         assert queue["count"] == 2  # due reinforcement plus one new introduction
-        introduced_card = next(card for card in queue['cards'] if card['id'] != first['id'])
-        assert introduced_card['has_study_review'] == 0
-        assert len({card['id'] for card in queue['cards']}) == 2
+        introduced_card = next(
+            card for card in queue["cards"] if card["id"] != first["id"]
+        )
+        assert introduced_card["has_study_review"] == 0
+        assert len({card["id"] for card in queue["cards"]}) == 2
         assert queue == client.get("/api/queue/today").json()
         with database.connection() as db:
             assert db.execute("SELECT COUNT(*) FROM reviews").fetchone()[0] == 1
@@ -134,9 +141,12 @@ def test_legacy_introduced_but_unreviewed_queue_is_capped_without_losing_reviews
                 "SELECT child.state FROM opening_graph_steps step "
                 "JOIN opening_graph_publications publication ON publication.repertoire_id=step.repertoire_id "
                 "AND publication.generation=step.generation JOIN cards child ON child.id=step.card_id "
-                "WHERE step.parent_card_id=?", (first['id'],),
+                "WHERE step.parent_card_id=?",
+                (first["id"],),
             ).fetchall()
-            assert child_states and all(row[0] in ('new', 'learning') for row in child_states)
+            assert child_states and all(
+                row[0] in ("new", "learning") for row in child_states
+            )
 
 
 def test_completed_queue_entry_is_idempotent_and_reinforcement_schedules_into_the_future(
@@ -144,9 +154,9 @@ def test_completed_queue_entry_is_idempotent_and_reinforcement_schedules_into_th
 ):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
-        settings = client.get('/api/settings').json()
-        settings['new_cards_per_day'] = 1
-        assert client.put('/api/settings', json=settings).status_code == 200
+        settings = client.get("/api/settings").json()
+        settings["new_cards_per_day"] = 1
+        assert client.put("/api/settings", json=settings).status_code == 200
         imported = client.post(
             "/api/imports/pgn",
             files={"file": ("one.pgn", PGN)},
@@ -163,13 +173,14 @@ def test_completed_queue_entry_is_idempotent_and_reinforcement_schedules_into_th
         assert repeated["queue_entry_id"] == first["queue_entry_id"]
         assert {
             key: value for key, value in repeated.items() if key != "idempotent"
-        } == {
-            key: value for key, value in saved.items() if key != "idempotent"
-        }
+        } == {key: value for key, value in saved.items() if key != "idempotent"}
         with database.connection() as db:
-            assert db.execute(
-                "SELECT COUNT(*) FROM reviews WHERE card_id=?", (first["id"],)
-            ).fetchone()[0] == 1
+            assert (
+                db.execute(
+                    "SELECT COUNT(*) FROM reviews WHERE card_id=?", (first["id"],)
+                ).fetchone()[0]
+                == 1
+            )
         reinforcement = client.get("/api/queue/today").json()["cards"][0]
         assert reinforcement["queue_entry_id"] != first["queue_entry_id"]
         assert reinforcement["attempt_state"] == "reinforcement"
@@ -182,7 +193,7 @@ def test_completed_queue_entry_is_idempotent_and_reinforcement_schedules_into_th
         ).json()
         assert scheduled["interval_days"] >= 1
         assert scheduled["next_due"] > date.today().isoformat()
-        assert wait_for_daily_queue(client, 0)['count'] == 0
+        assert wait_for_daily_queue(client, 0)["count"] == 0
         with database.connection() as db:
             assert db.execute("SELECT COUNT(*) FROM reviews").fetchone()[0] == 2
 
@@ -301,10 +312,13 @@ def test_delete_branch_rebuilds_missing_retained_cards_without_server_error(
 
         wait_for_daily_queue(client)
         with database.connection() as db:
-            assert db.execute(
-                "SELECT COUNT(*) FROM cards WHERE repertoire_id=? AND archived=0",
-                (repertoire_id,),
-            ).fetchone()[0] >= 1
+            assert (
+                db.execute(
+                    "SELECT COUNT(*) FROM cards WHERE repertoire_id=? AND archived=0",
+                    (repertoire_id,),
+                ).fetchone()[0]
+                >= 1
+            )
 
 
 def test_tactic_discovery_is_idempotent_and_cursors_are_per_deck(tmp_path, monkeypatch):
@@ -397,14 +411,8 @@ def test_local_sync_persists_errors_and_success_without_sample_fallback(
         status = 200
         with database.connection() as db:
             db.execute("UPDATE game_sync_state SET retry_after=NULL")
-        assert (
-            complete_sync(client, {"lichess_username": "andy"})["imported"]
-            == 1
-        )
-        assert (
-            complete_sync(client, {"lichess_username": "andy"})["imported"]
-            == 0
-        )
+        assert complete_sync(client, {"lichess_username": "andy"})["imported"] == 1
+        assert complete_sync(client, {"lichess_username": "andy"})["imported"] == 0
         assert client.get("/api/games/summary").json()["total"] == 1
         game_id = client.get("/api/games/summary").json()["games"][0]["id"]
         from urllib.parse import quote
@@ -529,9 +537,12 @@ def test_stale_failed_attempt_request_cannot_mark_a_later_queue_entry(
             ).fetchone()[0]
         assert client.post(f"/api/queue/entries/{later_entry}/fail").status_code == 409
         with database.read_connection() as db:
-            assert db.execute(
-                "SELECT attempt_failed FROM daily_queue WHERE id=?", (later_entry,)
-            ).fetchone()[0] == 0
+            assert (
+                db.execute(
+                    "SELECT attempt_failed FROM daily_queue WHERE id=?", (later_entry,)
+                ).fetchone()[0]
+                == 0
+            )
 
 
 def test_queue_entry_state_distinguishes_head_future_and_completed_attempts(
@@ -554,27 +565,32 @@ def test_queue_entry_state_distinguishes_head_future_and_completed_attempts(
                 (date.today().isoformat(), first["id"], 99, 999),
             ).fetchone()[0]
         assert client.get(f"/api/queue/entries/{first_entry_id}/state").json() == {
-            "state": "head", "attempt_failed": False,
+            "state": "head",
+            "attempt_failed": False,
         }
         assert client.get(f"/api/queue/entries/{later_entry_id}/state").json() == {
-            "state": "queued", "attempt_failed": False,
+            "state": "queued",
+            "attempt_failed": False,
         }
         with database.connection() as db:
-            db.execute("UPDATE daily_queue SET status='complete' WHERE id=?", (first_entry_id,))
+            db.execute(
+                "UPDATE daily_queue SET status='complete' WHERE id=?", (first_entry_id,)
+            )
         assert client.get(f"/api/queue/entries/{first_entry_id}/state").json() == {
-            "state": "completed", "attempt_failed": False,
+            "state": "completed",
+            "attempt_failed": False,
         }
         assert client.get(f"/api/queue/entries/{later_entry_id}/state").json() == {
-            "state": "head", "attempt_failed": False,
+            "state": "head",
+            "attempt_failed": False,
         }
         assert client.get("/api/queue/entries/999999999/state").json() == {
-            "state": "unavailable", "attempt_failed": False,
+            "state": "unavailable",
+            "attempt_failed": False,
         }
 
 
-def test_guided_review_after_stale_failure_marking_is_saved_once(
-    tmp_path, monkeypatch
-):
+def test_guided_review_after_stale_failure_marking_is_saved_once(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
         imported = client.post(
@@ -590,8 +606,14 @@ def test_guided_review_after_stale_failure_marking_is_saved_once(
                    VALUES(?,?,?,?) RETURNING id""",
                 (date.today().isoformat(), first["id"], 99, 999),
             ).fetchone()[0]
-        assert client.post(f"/api/queue/entries/{later_entry_id}/fail").status_code == 409
-        request = {"outcome": "correct", "guided": True, "queue_entry_id": later_entry_id}
+        assert (
+            client.post(f"/api/queue/entries/{later_entry_id}/fail").status_code == 409
+        )
+        request = {
+            "outcome": "correct",
+            "guided": True,
+            "queue_entry_id": later_entry_id,
+        }
         saved = client.post(f"/api/cards/{first['id']}/review", json=request)
         repeated = client.post(f"/api/cards/{first['id']}/review", json=request)
         assert saved.status_code == 200

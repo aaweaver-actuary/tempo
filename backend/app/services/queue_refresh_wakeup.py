@@ -13,7 +13,8 @@ class QueueRefreshRequest:
 
 
 _command_queue_request: ContextVar[QueueRefreshRequest | None] = ContextVar(
-    "command_queue_refresh_request", default=None,
+    "command_queue_refresh_request",
+    default=None,
 )
 _LOGGER = logging.getLogger("tempo.queue_refresh")
 
@@ -39,23 +40,35 @@ def wake_queue_refresh(*, eligible_at: datetime | None = None) -> None:
 
     try:
         from ..celery_app import celery_app
+
         delivery_options = {}
         if eligible_at is not None:
             if eligible_at.utcoffset() is None:
-                raise ValueError("Queue capacity wake eligibility must include a timezone")
+                raise ValueError(
+                    "Queue capacity wake eligibility must include a timezone"
+                )
             delivery_options["eta"] = eligible_at
         # A disposable connection bounds this advisory publish independently
         # of the command receipt. Never hold its database connection over I/O.
         transport_options = {
             **celery_app.conf.broker_transport_options,
-            "socket_connect_timeout": 1, "socket_timeout": 1,
-            "max_retries": 0, "retry_on_timeout": False,
+            "socket_connect_timeout": 1,
+            "socket_timeout": 1,
+            "max_retries": 0,
+            "retry_on_timeout": False,
         }
-        with celery_app.connection_for_write(connect_timeout=1, transport_options=transport_options) as connection:
-            celery_app.send_task("app.tasks.progress_study_queue", queue="foreground",
-                                 connection=connection, retry=False, ignore_result=True,
-                                 headers={"queue_refresh_wake": True},
-                                 **delivery_options)
+        with celery_app.connection_for_write(
+            connect_timeout=1, transport_options=transport_options
+        ) as connection:
+            celery_app.send_task(
+                "app.tasks.progress_study_queue",
+                queue="foreground",
+                connection=connection,
+                retry=False,
+                ignore_result=True,
+                headers={"queue_refresh_wake": True},
+                **delivery_options,
+            )
     except Exception:
         # The command has committed. Do not misreport it as failed or undo its
         # receipt. Celery normalizes transport errors only around publication;

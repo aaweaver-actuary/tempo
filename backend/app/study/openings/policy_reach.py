@@ -4,6 +4,7 @@ No policy selection/fusion, recall estimation, eligibility or admission occurs h
 Complete legal prefixes establish mutually exclusive opponent continuations; an
 unresolved learner action prevents exporting downstream events to the kernel.
 """
+
 from __future__ import annotations
 
 from collections import defaultdict
@@ -15,9 +16,16 @@ from typing import Iterable, Literal
 import chess
 
 from app.contracts.opening_move_probability import (
-    FusedMoveDistribution, OpeningMoveEvidence, serialize_contract,
+    FusedMoveDistribution,
+    OpeningMoveEvidence,
+    serialize_contract,
 )
-from .preparedness import ProbabilityEvidence, RouteReach, decision_reach, route_probability
+from .preparedness import (
+    ProbabilityEvidence,
+    RouteReach,
+    decision_reach,
+    route_probability,
+)
 from app.chess.opening_segments import decision_identity, opening_position_key
 
 REACH_VERSION = "explicit-policy-reach-v1"
@@ -75,9 +83,14 @@ class LearnerPolicy:
         actions = tuple(self.actions)
         if any(action.policy_id != self.policy_id for action in actions):
             raise ValueError("Foreign policy action")
-        if any(chess.Board(action.position_key).turn != (self.trained_color == "white") for action in actions):
+        if any(
+            chess.Board(action.position_key).turn != (self.trained_color == "white")
+            for action in actions
+        ):
             raise ValueError("Policy action must be at a learner position")
-        object.__setattr__(self, "actions", _unique(actions, lambda action: action.position_key))
+        object.__setattr__(
+            self, "actions", _unique(actions, lambda action: action.position_key)
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,6 +132,7 @@ class SelectedOpponentEvidence:
     evidence_id is the source ID for OpeningMoveEvidence, or an explicit caller
     identity for a fused result. JSON detaches nested Pydantic metadata immediately.
     """
+
     context_id: str
     evidence_id: str
     evidence: InitVar[OpeningMoveEvidence | FusedMoveDistribution]
@@ -131,17 +145,30 @@ class SelectedOpponentEvidence:
         _identifier(self.evidence_id)
         if not isinstance(evidence, (OpeningMoveEvidence, FusedMoveDistribution)):
             raise ValueError("Expected #154 selected opponent evidence")
-        if isinstance(evidence, OpeningMoveEvidence) and evidence.evidence_id != self.evidence_id:
+        if (
+            isinstance(evidence, OpeningMoveEvidence)
+            and evidence.evidence_id != self.evidence_id
+        ):
             raise ValueError("Evidence identity mismatch")
         object.__setattr__(self, "kind", type(evidence).__name__)
         object.__setattr__(self, "snapshot_json", serialize_contract(evidence))
-        object.__setattr__(self, "sensitivity_bounds", _unique(
-            tuple((move, bound) for move, bound in self.sensitivity_bounds), lambda entry: entry[0]))
+        object.__setattr__(
+            self,
+            "sensitivity_bounds",
+            _unique(
+                tuple((move, bound) for move, bound in self.sensitivity_bounds),
+                lambda entry: entry[0],
+            ),
+        )
         # Validate a detached snapshot, not mutable caller metadata.
         _reply_probabilities(self)
 
     def snapshot(self):
-        model = OpeningMoveEvidence if self.kind == "OpeningMoveEvidence" else FusedMoveDistribution
+        model = (
+            OpeningMoveEvidence
+            if self.kind == "OpeningMoveEvidence"
+            else FusedMoveDistribution
+        )
         return model.model_validate_json(self.snapshot_json)
 
 
@@ -169,15 +196,28 @@ def _reply_probabilities(selection: SelectedOpponentEvidence):
             reason = f"unknown_reply:{selection.evidence_id}:{move}"
             bound = bounds.get(move, ProbabilityEvidence.unknown(reason))
             if bound.status == "exact":
-                raise ValueError("Unknown allocation cannot become exact sensitivity evidence")
+                raise ValueError(
+                    "Unknown allocation cannot become exact sensitivity evidence"
+                )
             upper = min(bound.upper, distribution.unknown_mass)
             if bound.lower > upper:
                 raise ValueError("Sensitivity bounds exceed unknown mass")
-            probabilities[move] = (ProbabilityEvidence.unknown(reason) if bound.status == "unknown" and upper == 1
-                                   else ProbabilityEvidence.bounded(bound.lower, upper, reason + "; " + bound.reason))
-    unknown = tuple(probabilities[move] for move, probability in moves.items() if probability is None)
-    if unknown and (fsum(item.lower for item in unknown) > distribution.unknown_mass + 1e-12
-                    or fsum(item.upper for item in unknown) < distribution.unknown_mass - 1e-12):
+            probabilities[move] = (
+                ProbabilityEvidence.unknown(reason)
+                if bound.status == "unknown" and upper == 1
+                else ProbabilityEvidence.bounded(
+                    bound.lower, upper, reason + "; " + bound.reason
+                )
+            )
+    unknown = tuple(
+        probabilities[move]
+        for move, probability in moves.items()
+        if probability is None
+    )
+    if unknown and (
+        fsum(item.lower for item in unknown) > distribution.unknown_mass + 1e-12
+        or fsum(item.upper for item in unknown) < distribution.unknown_mass - 1e-12
+    ):
         raise ValueError("Sensitivity bounds cannot allocate total unknown mass")
     return probabilities, distribution
 
@@ -236,21 +276,33 @@ class PolicyReachResult:
 def _aggregate(identity, paths, policy_id):
     # Prefix absorption is the event union rule, not a numerical maximum.
     first_visits = []
-    for path in sorted(paths, key=lambda item: (len(item.route.move_prefix), item.route.move_prefix)):
-        if any(path.route.move_prefix[:len(earlier.route.move_prefix)] == earlier.route.move_prefix
-               for earlier in first_visits):
+    for path in sorted(
+        paths, key=lambda item: (len(item.route.move_prefix), item.route.move_prefix)
+    ):
+        if any(
+            path.route.move_prefix[: len(earlier.route.move_prefix)]
+            == earlier.route.move_prefix
+            for earlier in first_visits
+        ):
             continue
         first_visits.append(path)
     first_visits.sort(key=lambda item: item.route.identity)
     unresolved = any(path.unresolved_policy_positions for path in first_visits)
-    probability = (ProbabilityEvidence.unknown("unresolved_policy_union:" + identity) if unresolved
-                   else decision_reach((path.route for path in first_visits), policy_id=policy_id))
+    probability = (
+        ProbabilityEvidence.unknown("unresolved_policy_union:" + identity)
+        if unresolved
+        else decision_reach((path.route for path in first_visits), policy_id=policy_id)
+    )
     return UniqueReach(identity, probability, tuple(first_visits), unresolved)
 
 
-def propagate_policy_reach(policy: LearnerPolicy, routes: Iterable[PolicyReachRoute],
-                           opponent_evidence: Iterable[SelectedOpponentEvidence], *,
-                           context: PolicyReachContext) -> PolicyReachResult:
+def propagate_policy_reach(
+    policy: LearnerPolicy,
+    routes: Iterable[PolicyReachRoute],
+    opponent_evidence: Iterable[SelectedOpponentEvidence],
+    *,
+    context: PolicyReachContext,
+) -> PolicyReachResult:
     """Propagate finite complete prefixes; never traverse a persistent graph.
 
     Full prefixes share one root. Once every learner action is verified, their
@@ -268,12 +320,22 @@ def propagate_policy_reach(policy: LearnerPolicy, routes: Iterable[PolicyReachRo
     selections_by_id = {}
     reply_tables = {}
     for selection in selections:
-        if selection.evidence_id in selections_by_id and selections_by_id[selection.evidence_id] != selection:
+        if (
+            selection.evidence_id in selections_by_id
+            and selections_by_id[selection.evidence_id] != selection
+        ):
             raise ValueError("Conflicting opponent evidence identity")
         selections_by_id[selection.evidence_id] = selection
         snapshot = selection.snapshot()
-        position = snapshot.distribution.position if isinstance(snapshot, OpeningMoveEvidence) else snapshot.position
-        if isinstance(snapshot, FusedMoveDistribution) and _canonical_json(snapshot.target_context) != context.target_context_json:
+        position = (
+            snapshot.distribution.position
+            if isinstance(snapshot, OpeningMoveEvidence)
+            else snapshot.position
+        )
+        if (
+            isinstance(snapshot, FusedMoveDistribution)
+            and _canonical_json(snapshot.target_context) != context.target_context_json
+        ):
             raise ValueError("Opponent target context mismatch")
         previous = selections_by_position.get(position.fen_key)
         if previous is not None and previous != selection:
@@ -287,31 +349,66 @@ def propagate_policy_reach(policy: LearnerPolicy, routes: Iterable[PolicyReachRo
     paths_by_prefix = {}
     representations = defaultdict(set)
     covered_replies = defaultdict(set)
-    for authored_route in sorted(routes, key=lambda route: (route.moves, route.publication_id, route.line_id)):
+    for authored_route in sorted(
+        routes, key=lambda route: (route.moves, route.publication_id, route.line_id)
+    ):
         board = chess.Board(context.root_fen)
         factors = []
         unresolved = set()
         for offset in range(len(authored_route.moves) + 1):
             prefix = authored_route.moves[:offset]
             position_key = opening_position_key(board.fen())
-            next_move = authored_route.moves[offset] if offset < len(authored_route.moves) else None
-            requires_learner_action = board.turn == learner_turn and bool(board.legal_moves)
+            next_move = (
+                authored_route.moves[offset]
+                if offset < len(authored_route.moves)
+                else None
+            )
+            requires_learner_action = board.turn == learner_turn and bool(
+                board.legal_moves
+            )
             prescribed = actions.get(position_key) if requires_learner_action else None
             decision_id = None
             if board.turn == learner_turn and prescribed is not None:
                 if next_move is not None and next_move != prescribed:
                     raise ValueError("Route contradicts selected learner action")
-                decision_id = decision_identity(policy.repertoire_id, board.fen(), policy.trained_color,
-                                                prescribed, policy.policy_version)
-            probability = (ProbabilityEvidence.unknown("missing_policy_action:" + ",".join(sorted(unresolved)))
-                           if unresolved else route_probability(context.root_probability, (item[3] for item in factors)))
-            path = PathReach(position_key, RouteReach(context.context_id, root_key, prefix, probability,
-                             policy_id=policy.policy_id), decision_id, prescribed, tuple(factors), tuple(sorted(unresolved)),
-                             requires_learner_action and prescribed is None, ())
+                decision_id = decision_identity(
+                    policy.repertoire_id,
+                    board.fen(),
+                    policy.trained_color,
+                    prescribed,
+                    policy.policy_version,
+                )
+            probability = (
+                ProbabilityEvidence.unknown(
+                    "missing_policy_action:" + ",".join(sorted(unresolved))
+                )
+                if unresolved
+                else route_probability(
+                    context.root_probability, (item[3] for item in factors)
+                )
+            )
+            path = PathReach(
+                position_key,
+                RouteReach(
+                    context.context_id,
+                    root_key,
+                    prefix,
+                    probability,
+                    policy_id=policy.policy_id,
+                ),
+                decision_id,
+                prescribed,
+                tuple(factors),
+                tuple(sorted(unresolved)),
+                requires_learner_action and prescribed is None,
+                (),
+            )
             if prefix in paths_by_prefix and paths_by_prefix[prefix] != path:
                 raise ValueError("Conflicting prefix evidence")
             paths_by_prefix[prefix] = path
-            representations[prefix].add((authored_route.publication_id, authored_route.line_id))
+            representations[prefix].add(
+                (authored_route.publication_id, authored_route.line_id)
+            )
             if next_move is None:
                 break
             move = chess.Move.from_uci(next_move)
@@ -323,12 +420,29 @@ def propagate_policy_reach(policy: LearnerPolicy, routes: Iterable[PolicyReachRo
                 covered_replies[position_key].add(next_move)
                 selection = selections_by_position.get(position_key)
                 probabilities, distribution = reply_tables.get(position_key, ({}, None))
-                factor = probabilities.get(next_move, ProbabilityEvidence.unknown("missing_opponent_evidence:" + position_key))
-                factors.append((position_key, next_move, selection.evidence_id if selection else None, factor))
+                factor = probabilities.get(
+                    next_move,
+                    ProbabilityEvidence.unknown(
+                        "missing_opponent_evidence:" + position_key
+                    ),
+                )
+                factors.append(
+                    (
+                        position_key,
+                        next_move,
+                        selection.evidence_id if selection else None,
+                        factor,
+                    )
+                )
             board.push(move)
 
-    paths = tuple(replace(paths_by_prefix[prefix], representations=tuple(sorted(representations[prefix])))
-                  for prefix in sorted(paths_by_prefix))
+    paths = tuple(
+        replace(
+            paths_by_prefix[prefix],
+            representations=tuple(sorted(representations[prefix])),
+        )
+        for prefix in sorted(paths_by_prefix)
+    )
     position_paths = defaultdict(list)
     decision_paths = defaultdict(list)
     for path in paths:
@@ -342,18 +456,54 @@ def propagate_policy_reach(policy: LearnerPolicy, routes: Iterable[PolicyReachRo
         covered = covered_replies[position_key]
         known_covered = known_outside = 0.0
         if distribution is not None:
-            known_covered = fsum(move.probability for move in distribution.moves
-                                 if move.probability is not None and move.move_uci in covered)
-            known_outside = fsum(move.probability for move in distribution.moves
-                                 if move.probability is not None and move.move_uci not in covered)
+            known_covered = fsum(
+                move.probability
+                for move in distribution.moves
+                if move.probability is not None and move.move_uci in covered
+            )
+            known_outside = fsum(
+                move.probability
+                for move in distribution.moves
+                if move.probability is not None and move.move_uci not in covered
+            )
         snapshot = selection.snapshot() if selection else None
-        reason = (() if distribution is not None else (
-            "missing_opponent_evidence" if selection is None else "unavailable_opponent_evidence:" + snapshot.unavailable_reason,))
-        diagnostics.append(OpponentReachDiagnostic(position_key, selection.evidence_id if selection else None,
-            selection.snapshot_json if selection else None, tuple(sorted(probabilities.items())), tuple(sorted(covered)),
-            known_covered, known_outside, ProbabilityEvidence.exact(distribution.unknown_mass) if distribution is not None
-            else ProbabilityEvidence.unknown(reason[0]), reason))
-    return PolicyReachResult(policy.policy_id, context.context_id, root_key, context.target_context_json, paths,
-        tuple(_aggregate(identity, position_paths[identity], policy.policy_id) for identity in sorted(position_paths)),
-        tuple(_aggregate(identity, decision_paths[identity], policy.policy_id) for identity in sorted(decision_paths)),
-        tuple(diagnostics))
+        reason = (
+            ()
+            if distribution is not None
+            else (
+                "missing_opponent_evidence"
+                if selection is None
+                else "unavailable_opponent_evidence:" + snapshot.unavailable_reason,
+            )
+        )
+        diagnostics.append(
+            OpponentReachDiagnostic(
+                position_key,
+                selection.evidence_id if selection else None,
+                selection.snapshot_json if selection else None,
+                tuple(sorted(probabilities.items())),
+                tuple(sorted(covered)),
+                known_covered,
+                known_outside,
+                ProbabilityEvidence.exact(distribution.unknown_mass)
+                if distribution is not None
+                else ProbabilityEvidence.unknown(reason[0]),
+                reason,
+            )
+        )
+    return PolicyReachResult(
+        policy.policy_id,
+        context.context_id,
+        root_key,
+        context.target_context_json,
+        paths,
+        tuple(
+            _aggregate(identity, position_paths[identity], policy.policy_id)
+            for identity in sorted(position_paths)
+        ),
+        tuple(
+            _aggregate(identity, decision_paths[identity], policy.policy_id)
+            for identity in sorted(decision_paths)
+        ),
+        tuple(diagnostics),
+    )

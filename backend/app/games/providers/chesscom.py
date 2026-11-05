@@ -14,7 +14,9 @@ from ..contracts import ProviderRequestError
 def _validate_json(response: httpx.Response, provider_label: str) -> dict:
     content_type = response.headers.get("content-type", "").lower()
     if content_type and "json" not in content_type:
-        raise ProviderRequestError(f"{provider_label} returned an unexpected content type")
+        raise ProviderRequestError(
+            f"{provider_label} returned an unexpected content type"
+        )
     try:
         payload = response.json()
     except ValueError as error:
@@ -36,7 +38,12 @@ async def fetch_chesscom_games(
     fetched = filtered = 0
     for archive_url in archive_urls:
         month_records, month_counts = await fetch_chesscom_archive_month(
-            username, archive_url, since, speeds, rated_only, client,
+            username,
+            archive_url,
+            since,
+            speeds,
+            rated_only,
+            client,
         )
         records.extend(month_records)
         fetched += month_counts["fetched"]
@@ -46,7 +53,9 @@ async def fetch_chesscom_games(
 
 
 async def fetch_chesscom_archive_urls(
-    username: str, since: datetime, client: httpx.AsyncClient,
+    username: str,
+    since: datetime,
+    client: httpx.AsyncClient,
 ) -> tuple[list[str], int]:
     """List complete months so a Celery sync can checkpoint between archives."""
 
@@ -58,7 +67,9 @@ async def fetch_chesscom_archive_urls(
         raise ProviderRequestError("Chess.com username not found", 404)
     if archive_response.status_code == 429:
         raise ProviderRequestError(
-            "Chess.com rate limit reached", 429, archive_response.headers.get("Retry-After")
+            "Chess.com rate limit reached",
+            429,
+            archive_response.headers.get("Retry-After"),
         )
     if not archive_response.is_success:
         raise ProviderRequestError(
@@ -71,7 +82,9 @@ async def fetch_chesscom_archive_urls(
     rejected = 0
     for archive_url in archive_payload.get("archives", []):
         try:
-            archive_year, archive_month = map(int, archive_url.rstrip("/").split("/")[-2:])
+            archive_year, archive_month = map(
+                int, archive_url.rstrip("/").split("/")[-2:]
+            )
         except (TypeError, ValueError):
             rejected += 1
             continue
@@ -100,16 +113,23 @@ async def fetch_chesscom_archive_month(
         )
     if not response.is_success:
         raise ProviderRequestError(
-            f"Chess.com monthly archive failed ({response.status_code})", response.status_code
+            f"Chess.com monthly archive failed ({response.status_code})",
+            response.status_code,
         )
     records: list[GameRecord] = []
     fetched = filtered = rejected = 0
-    for raw_game in _validate_json(response, "Chess.com monthly archive").get("games", []):
+    for raw_game in _validate_json(response, "Chess.com monthly archive").get(
+        "games", []
+    ):
         played_at = datetime.fromtimestamp(raw_game.get("end_time", 0), timezone.utc)
         if until is not None and not since <= played_at < until:
             continue
         fetched += 1
-        speed = "classical" if raw_game.get("time_class") == "daily" else str(raw_game.get("time_class", "unknown")).lower()
+        speed = (
+            "classical"
+            if raw_game.get("time_class") == "daily"
+            else str(raw_game.get("time_class", "unknown")).lower()
+        )
         if (
             played_at < since
             or raw_game.get("rules", "chess") != "chess"

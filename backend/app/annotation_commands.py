@@ -33,7 +33,13 @@ def save_position_annotation(
         storage.delete_position_annotation(database, repertoire_id, fen_key)
     else:
         storage.save_position_annotation(
-            database, repertoire_id, fen_key, comment, arrows, squares, updated_at,
+            database,
+            repertoire_id,
+            fen_key,
+            comment,
+            arrows,
+            squares,
+            updated_at,
         )
     return {
         "repertoireId": repertoire_id,

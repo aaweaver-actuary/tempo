@@ -14,7 +14,9 @@ from .services.repertoire_game_refresh import refresh_game_publications_after_mu
 from .command_gateway import register_command
 from app.repertoire.changes.application import validate_source_rows
 from app.repertoire.changes.ports import ChangeError
-from tempo_legacy_database.adapters.authored_repertoires import product_changes as change_storage
+from tempo_legacy_database.adapters.authored_repertoires import (
+    product_changes as change_storage,
+)
 from app.contracts.transport.authored_lines import BranchRequest, RemoveBranchRequest
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from tempo_legacy_database.adapters.authored_repertoires import branches as storage
@@ -26,7 +28,9 @@ from .services.repertoire_integrity import integrity_summary
 
 
 @refresh_game_publications_after_mutation
-def add_repertoire_branch(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+def add_repertoire_branch(
+    database: PostgresConnection, payload: dict[str, Any]
+) -> dict[str, Any]:
     request = BranchRequest.model_validate(payload)
     try:
         board = chess.Board(request.starting_fen)
@@ -46,16 +50,34 @@ def add_repertoire_branch(database: PostgresConnection, payload: dict[str, Any])
     if storage.lock_repertoire_for_add(database, repertoire_id) is None:
         raise HTTPException(404, "Repertoire not found")
     try:
-        validate_source_rows(repertoire_id, change_storage.lock_sources(database, repertoire_id) + (
-            dict(source_id=f"branch:{line_id}", start_fen=request.starting_fen,
-                 moves_json=json.dumps(moves), trained_color=request.trained_color),))
+        validate_source_rows(
+            repertoire_id,
+            change_storage.lock_sources(database, repertoire_id)
+            + (
+                dict(
+                    source_id=f"branch:{line_id}",
+                    start_fen=request.starting_fen,
+                    moves_json=json.dumps(moves),
+                    trained_color=request.trained_color,
+                ),
+            ),
+        )
     except ChangeError as error:
         raise HTTPException(409, str(error)) from error
-    validated_route = ensure_line_in_scope(database, repertoire_id, request.starting_fen, moves, remember=False)
+    validated_route = ensure_line_in_scope(
+        database, repertoire_id, request.starting_fen, moves, remember=False
+    )
     inserted = storage.insert_line_values(
         database,
-        (line_id, repertoire_id, request.name, request.trained_color,
-         request.starting_fen, json.dumps(moves), datetime.now(timezone.utc).isoformat()),
+        (
+            line_id,
+            repertoire_id,
+            request.name,
+            request.trained_color,
+            request.starting_fen,
+            json.dumps(moves),
+            datetime.now(timezone.utc).isoformat(),
+        ),
     )
     depth = storage.initial_training_depth(database)
     storage.set_line_training_depth(database, line_id, depth)
@@ -69,22 +91,31 @@ def add_repertoire_branch(database: PostgresConnection, payload: dict[str, Any])
             raise HTTPException(422, "Coverage gap does not belong to this repertoire")
         if not moves or moves[0] != gap_move_uci or len(moves) < 2:
             raise HTTPException(
-                422, "A resolved gap must include the missing opponent move and your response",
+                422,
+                "A resolved gap must include the missing opponent move and your response",
             )
         storage.mark_gap_covered(database, gap_node_id, gap_move_uci)
     if inserted is not None:
         certify_admitted_route(database, repertoire_id, validated_route)
     invalidate_integrity_in_transaction(database, repertoire_id)
-    request_graph_rebuild_in_transaction(database, repertoire_id, date.today().isoformat())
-    return {"id": line_id, "duplicate": inserted is None, "moves": moves,
-            "integrity": integrity_summary(database, repertoire_id)}
+    request_graph_rebuild_in_transaction(
+        database, repertoire_id, date.today().isoformat()
+    )
+    return {
+        "id": line_id,
+        "duplicate": inserted is None,
+        "moves": moves,
+        "integrity": integrity_summary(database, repertoire_id),
+    }
 
 
 register_command("repertoire.branch.add", add_repertoire_branch)
 
 
 @refresh_game_publications_after_mutation
-def remove_repertoire_branch(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+def remove_repertoire_branch(
+    database: PostgresConnection, payload: dict[str, Any]
+) -> dict[str, Any]:
     request = RemoveBranchRequest.model_validate(payload)
     if not request.moves:
         raise HTTPException(422, "Choose a nonempty branch to remove")
@@ -105,14 +136,16 @@ def remove_repertoire_branch(database: PostgresConnection, payload: dict[str, An
         if " ".join(str(stored_line["start_fen"]).split()[:4]) != position_key:
             continue
         try:
-            if json.loads(stored_line["moves_json"])[:len(moves)] == moves:
+            if json.loads(stored_line["moves_json"])[: len(moves)] == moves:
                 matching_line_ids.append(str(stored_line["id"]))
         except (TypeError, ValueError, json.JSONDecodeError):
             continue
     if matching_line_ids:
         storage.delete_matching_lines(database, matching_line_ids)
         invalidate_integrity_in_transaction(database, repertoire_id)
-        request_graph_rebuild_in_transaction(database, repertoire_id, date.today().isoformat())
+        request_graph_rebuild_in_transaction(
+            database, repertoire_id, date.today().isoformat()
+        )
     return {
         "deleted_line_count": len(matching_line_ids),
         "deleted_card_count": 0,

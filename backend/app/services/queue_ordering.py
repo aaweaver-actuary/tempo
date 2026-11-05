@@ -1,5 +1,7 @@
 """Compatibility exports; executable semantics are Learning-owned."""
+
 from tempo_learning_runtime import queue_ordering as _owned
+
 Sequence = _owned.Sequence
 TypedDict = _owned.TypedDict
 MISS_REASON = _owned.MISS_REASON
@@ -18,24 +20,38 @@ _queue_presentation_state = _owned._queue_presentation_state
 def _priority_projection(rows):
     """Normalize the backend's separate bridge label into shared presentation."""
     from .legacy_game_evidence_scope import BRIDGE_MISS_REASON
-    return [{**row, "gameplay_priority_reason": MISS_REASON}
-            if row.get("gameplay_priority_reason") in {
-                BRIDGE_MISS_REASON, "product_game_lapse", "product_game_encounter"
-            } else row for row in rows]
+
+    return [
+        {**row, "gameplay_priority_reason": MISS_REASON}
+        if row.get("gameplay_priority_reason")
+        in {BRIDGE_MISS_REASON, "product_game_lapse", "product_game_encounter"}
+        else row
+        for row in rows
+    ]
 
 
 def _priority_queue_order(rows):
     originals = {row["id"]: row for row in rows}
-    return [originals[row["id"]] for row in _owned.priority_queue_order(_priority_projection(rows))]
+    return [
+        originals[row["id"]]
+        for row in _owned.priority_queue_order(_priority_projection(rows))
+    ]
 
 
 def _protected_queue_ids(rows, *, preserve_through_entry_id=None, urgent=False):
-    return _owned._protected_queue_ids(_priority_projection(rows), preserve_through_entry_id=preserve_through_entry_id,
-                                      urgent=urgent)
+    return _owned._protected_queue_ids(
+        _priority_projection(rows),
+        preserve_through_entry_id=preserve_through_entry_id,
+        urgent=urgent,
+    )
 
 
 def _plan_daily_queue_order(rows, day, saved, *, preserve_through_entry_id=None):
     originals = {row["id"]: row for row in rows}
-    seed, _, ordered = _owned._plan_daily_queue_order(_priority_projection(rows), day, saved,
-        preserve_through_entry_id=preserve_through_entry_id)
+    seed, _, ordered = _owned._plan_daily_queue_order(
+        _priority_projection(rows),
+        day,
+        saved,
+        preserve_through_entry_id=preserve_through_entry_id,
+    )
     return seed, _queue_membership_hash(rows), [originals[row["id"]] for row in ordered]

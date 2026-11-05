@@ -26,8 +26,11 @@ def finish_game_sync_if_complete(database: PostgresConnection, job_id: str) -> b
     providers = {}
     for window_count in window_counts:
         provider = window_count["provider"]
-        username = (request.lichess_username if provider == "lichess"
-                    else request.chesscom_username).strip()
+        username = (
+            request.lichess_username
+            if provider == "lichess"
+            else request.chesscom_username
+        ).strip()
         saved_counts = current_providers.get(provider, {})
         provider_result = {
             "provider": provider,
@@ -46,7 +49,11 @@ def finish_game_sync_if_complete(database: PostgresConnection, job_id: str) -> b
         providers[provider] = provider_result
         since = datetime.fromtimestamp(window_count["earliest_ms"] / 1000, timezone.utc)
         storage.save_provider_result(
-            database, provider, username, since.isoformat(), now,
+            database,
+            provider,
+            username,
+            since.isoformat(),
+            now,
             json.dumps(provider_result, separators=(",", ":")),
         )
     result = {
@@ -57,6 +64,9 @@ def finish_game_sync_if_complete(database: PostgresConnection, job_id: str) -> b
         "providers": providers,
     }
     storage.complete_sync_job(
-        database, job_id, json.dumps(result, separators=(",", ":")), now,
+        database,
+        job_id,
+        json.dumps(result, separators=(",", ":")),
+        now,
     )
     return True

@@ -1,4 +1,5 @@
 """Explorer's bounded request and capabilities; shared evidence stays T01-owned."""
+
 from typing import Literal, Protocol
 
 from pydantic import Field, model_validator
@@ -25,17 +26,31 @@ class ExplorerRequest(Value):
 
     @model_validator(mode="after")
     def ordered_bounds(self):
-        if self.since > self.until or self.connect_timeout_seconds > self.timeout_seconds:
+        if (
+            self.since > self.until
+            or self.connect_timeout_seconds > self.timeout_seconds
+        ):
             raise ValueError("invalid request bounds")
         return self
 
 
 DiagnosticCode = Literal[
-    "configuration_required", "unsupported_population", "unsupported_variant",
-    "invalid_request", "credential_missing", "credential_rejected", "rate_limited",
-    "provider_unavailable", "provider_request_rejected", "provider_timeout",
-    "invalid_response", "response_too_large", "result_limit_exceeded", "cancelled",
-    "cache_unavailable", "invalid_cache_entry",
+    "configuration_required",
+    "unsupported_population",
+    "unsupported_variant",
+    "invalid_request",
+    "credential_missing",
+    "credential_rejected",
+    "rate_limited",
+    "provider_unavailable",
+    "provider_request_rejected",
+    "provider_timeout",
+    "invalid_response",
+    "response_too_large",
+    "result_limit_exceeded",
+    "cancelled",
+    "cache_unavailable",
+    "invalid_cache_entry",
 ]
 
 
@@ -53,6 +68,7 @@ class ExplorerResult(Value):
     population for population evidence. All other failures retain that context
     in shared unavailable ProbabilityEvidence.
     """
+
     request_key: str = Field(pattern=r"^[0-9a-f]{64}$")
     request: ExplorerRequest
     source: Identifier
@@ -68,22 +84,39 @@ class ExplorerResult(Value):
     def bind_result(self):
         evidence = self.evidence
         if self.diagnostic is not None:
-            if self.reported_counts or self.from_cache or (evidence is not None and evidence.distribution is not None):
+            if (
+                self.reported_counts
+                or self.from_cache
+                or (evidence is not None and evidence.distribution is not None)
+            ):
                 raise ValueError("failure cannot claim successful sample evidence")
-            if evidence is not None and evidence.unavailable_reason != self.diagnostic.code:
+            if (
+                evidence is not None
+                and evidence.unavailable_reason != self.diagnostic.code
+            ):
                 raise ValueError("unavailable evidence must retain diagnostic reason")
         elif evidence is None or evidence.distribution is None:
             raise ValueError("success requires shared probability evidence")
-        if evidence is not None and (evidence.position != self.request.position
-                or evidence.population != self.request.population
-                or evidence.provider != "lichess-explorer" or evidence.model is not None):
+        if evidence is not None and (
+            evidence.position != self.request.position
+            or evidence.population != self.request.population
+            or evidence.provider != "lichess-explorer"
+            or evidence.model is not None
+        ):
             raise ValueError("evidence context does not match request")
         moves = [item.move_uci for item in self.reported_counts]
-        if len(set(moves)) != len(moves) or not set(moves).issubset(self.request.position.legal_moves):
+        if len(set(moves)) != len(moves) or not set(moves).issubset(
+            self.request.position.legal_moves
+        ):
             raise ValueError("reported counts must refer to unique legal moves")
-        if evidence is not None and evidence.counts is not None and (
+        if (
+            evidence is not None
+            and evidence.counts is not None
+            and (
                 sorted(evidence.counts.moves, key=lambda item: item.move_uci)
-                != sorted(self.reported_counts, key=lambda item: item.move_uci)):
+                != sorted(self.reported_counts, key=lambda item: item.move_uci)
+            )
+        ):
             raise ValueError("reported counts disagree with shared sample evidence")
         return self
 
@@ -95,6 +128,7 @@ class ExplorerCache(Protocol):
     successful immutable results are offered for storage. Composition owns
     persistence, eviction and capacity; keys are opaque and credential-free.
     """
+
     async def get(self, key: str) -> ExplorerResult | None: ...
     async def put(self, key: str, value: ExplorerResult) -> None: ...
 
@@ -105,5 +139,10 @@ class Cancellation(Protocol):
 
 
 class ExplorerProbabilityProvider(Protocol):
-    async def fetch(self, request: ExplorerRequest, *, credential: str | None,
-                    cancellation: Cancellation | None = None) -> ExplorerResult: ...
+    async def fetch(
+        self,
+        request: ExplorerRequest,
+        *,
+        credential: str | None,
+        cancellation: Cancellation | None = None,
+    ) -> ExplorerResult: ...

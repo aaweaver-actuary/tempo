@@ -1,4 +1,5 @@
 """Regression: fresh backend assembly installs Learning without service startup."""
+
 import json
 from pathlib import Path
 import subprocess
@@ -7,7 +8,7 @@ import sys
 
 def test_backend_learning_distribution_and_command_import_need_no_source_or_services():
     backend = Path(__file__).resolve().parents[1]
-    probe = '''
+    probe = """
 import importlib, importlib.metadata as metadata, json, sys
 from pathlib import Path
 sys.path.insert(0, sys.argv[1])
@@ -34,9 +35,20 @@ from app.services import learning_review_adapter
 assert command_gateway._handlers['cards.review'] is review_commands.submit_review
 assert command_gateway._handlers['cards.review.reconcile'] is review_commands.reconcile_review
 assert 'app.main' not in sys.modules
-'''
-    result = subprocess.run([sys.executable, '-I', '-c', probe, str(backend), str(backend.parent / 'database')],
-                            capture_output=True, text=True, timeout=30)
+"""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-c",
+            probe,
+            str(backend),
+            str(backend.parent / "database"),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
     assert result.returncode == 0, result.stdout + result.stderr
     origins = [json.loads(line) for line in result.stdout.splitlines()]
     assert len(origins) == 3

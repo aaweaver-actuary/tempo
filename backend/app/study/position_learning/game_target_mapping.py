@@ -3,13 +3,16 @@
 This module consumes immutable Study command/qualification values and delegates
 currentness to the Repertoire owner. It never rewrites the original game key.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Protocol
 
 from app.contracts.product_v02.learning import (
-    GameEncounter, FirstDepartureWitness, GameEffectKey,
+    GameEncounter,
+    FirstDepartureWitness,
+    GameEffectKey,
 )
 from app.contracts.product_v02.games import FirstDepartureSelection
 from tempo_evidence_math.position_learning import Hold, PositionDefinition, PositionKey
@@ -23,8 +26,9 @@ class CurrentPositionDefinitionPort(Protocol):
     proof of currentness.
     """
 
-    def current_definition(self, *, repertoire_id: str,
-                            position: str) -> PositionDefinition | Hold: ...
+    def current_definition(
+        self, *, repertoire_id: str, position: str
+    ) -> PositionDefinition | Hold: ...
 
 
 @dataclass(frozen=True)
@@ -50,21 +54,28 @@ def map_first_departure(
     """
     if qualification is None:
         return Hold("first_departure_qualification_missing")
-    selected = (qualification.selection if isinstance(qualification, FirstDepartureWitness)
-                else qualification)
+    selected = (
+        qualification.selection
+        if isinstance(qualification, FirstDepartureWitness)
+        else qualification
+    )
     if selected.status == "opponent_gap":
         return Hold("opponent_first_gap_not_a_lapse")
     if selected.status != "own_actionable" or selected.actor != "learner":
         return Hold("first_departure_not_actionable")
-    if (not isinstance(qualification, FirstDepartureWitness)
-            or encounter.observation != "missed" or not qualification.matches(encounter)):
+    if (
+        not isinstance(qualification, FirstDepartureWitness)
+        or encounter.observation != "missed"
+        or not qualification.matches(encounter)
+    ):
         return Hold("saved_first_departure_mismatch")
 
     decision = selected.decision
     if decision is None or len(selected.expected_uci) != 1:
         return Hold("first_departure_target_unavailable")
     route_occurrences = tuple(
-        route for route in selected.surviving_routes
+        route
+        for route in selected.surviving_routes
         if (route.repertoire_id, route.route_id, route.route_ply)
         == (decision.repertoire_id, decision.route_id, decision.route_ply)
     )

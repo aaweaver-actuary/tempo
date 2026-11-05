@@ -57,13 +57,18 @@ def test_stockfish_timeout_preserves_game_positions_and_remains_retryable(
                 "SELECT game_id,fen_key,move_uci FROM game_position_occurrences WHERE game_id=?",
                 ("lichess:timeout",),
             ).fetchall()
-            assert db.execute(
-                "SELECT COUNT(*) FROM game_findings WHERE game_id='lichess:timeout'"
-            ).fetchone()[0] == 0
+            assert (
+                db.execute(
+                    "SELECT COUNT(*) FROM game_findings WHERE game_id='lichess:timeout'"
+                ).fetchone()[0]
+                == 0
+            )
         assert job["status"] == "failed"
         assert job["last_error"] == "Stockfish took too long"
         assert game["analysis_state"] == "failed"
-        assert [tuple(row) for row in personal_positions] == [("lichess:timeout", opponent_position_key, "e7e5")]
+        assert [tuple(row) for row in personal_positions] == [
+            ("lichess:timeout", opponent_position_key, "e7e5")
+        ]
         retried = client.post("/api/games/analysis/lichess:timeout/retry")
         assert retried.status_code == 200
         assert retried.json()["status"] == "queued"
@@ -91,7 +96,12 @@ def seed_lapse(database_connection, finding_id: str = "lapse"):
     database_connection.execute(
         """INSERT INTO game_findings(id,game_id,analysis_version,ply,kind,confidence,evidence_json,repertoire_id,card_id,created_at,updated_at)
            VALUES(?,'lichess:game',1,0,'repertoire lapse',1,?,'rep','card',?,?)""",
-        (finding_id, json.dumps({"fen": START, "expected": ["e2e4"], "actual": "d2d4"}), now, now),
+        (
+            finding_id,
+            json.dumps({"fen": START, "expected": ["e2e4"], "actual": "d2d4"}),
+            now,
+            now,
+        ),
     )
 
 
@@ -101,21 +111,37 @@ def test_ignored_gameplay_finding_never_changes_card_scheduling(tmp_path, monkey
         with database.connection() as db:
             seed_lapse(db)
             before = dict(db.execute("SELECT * FROM cards WHERE id='card'").fetchone())
-        response = client.post("/api/game-findings/lapse/decision", json={"decision": "ignored"})
+        response = client.post(
+            "/api/game-findings/lapse/decision", json={"decision": "ignored"}
+        )
         assert response.status_code == 200
         with database.connection() as db:
             after = dict(db.execute("SELECT * FROM cards WHERE id='card'").fetchone())
-            assert db.execute("SELECT COUNT(*) FROM reviews WHERE card_id='card'").fetchone()[0] == 0
-            assert db.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id='card'").fetchone()[0] == 0
+            assert (
+                db.execute(
+                    "SELECT COUNT(*) FROM reviews WHERE card_id='card'"
+                ).fetchone()[0]
+                == 0
+            )
+            assert (
+                db.execute(
+                    "SELECT COUNT(*) FROM daily_queue WHERE card_id='card'"
+                ).fetchone()[0]
+                == 0
+            )
         assert after == before
 
 
-def test_accepted_repertoire_finding_prioritizes_without_fsrs_review(tmp_path, monkeypatch):
+def test_accepted_repertoire_finding_prioritizes_without_fsrs_review(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
         with database.connection() as db:
             seed_lapse(db)
-            played_at = db.execute("SELECT played_at FROM imported_games WHERE id='lichess:game'").fetchone()[0]
+            played_at = db.execute(
+                "SELECT played_at FROM imported_games WHERE id='lichess:game'"
+            ).fetchone()[0]
             db.execute(
                 "INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,source_kind) "
                 "VALUES('card','correct',?,0,7,'study')",
@@ -127,39 +153,76 @@ def test_accepted_repertoire_finding_prioritizes_without_fsrs_review(tmp_path, m
                    VALUES('miss-event','lichess:game','rep','card',0,?,'e2e4','d2d4','miss',?,?)""",
                 (" ".join(START.split()[:4]), played_at, played_at),
             )
-            card_before = dict(db.execute("SELECT * FROM cards WHERE id='card'").fetchone())
-        response = client.post("/api/game-findings/lapse/decision", json={"decision": "accepted"})
+            card_before = dict(
+                db.execute("SELECT * FROM cards WHERE id='card'").fetchone()
+            )
+        response = client.post(
+            "/api/game-findings/lapse/decision", json={"decision": "accepted"}
+        )
         assert response.status_code == 200
         assert response.json()["scheduling"] is None
         assert response.json()["queued"] is True
         with database.connection() as db:
-            assert dict(db.execute("SELECT * FROM cards WHERE id='card'").fetchone()) == card_before
-            assert db.execute("SELECT COUNT(*) FROM reviews WHERE card_id='card'").fetchone()[0] == 1
-            queued = db.execute("SELECT gameplay_priority_reason FROM daily_queue WHERE card_id='card' AND status='queued'").fetchall()
+            assert (
+                dict(db.execute("SELECT * FROM cards WHERE id='card'").fetchone())
+                == card_before
+            )
+            assert (
+                db.execute(
+                    "SELECT COUNT(*) FROM reviews WHERE card_id='card'"
+                ).fetchone()[0]
+                == 1
+            )
+            queued = db.execute(
+                "SELECT gameplay_priority_reason FROM daily_queue WHERE card_id='card' AND status='queued'"
+            ).fetchall()
             assert len(queued) == 1
             assert queued[0][0] == "Priority review · missed in a recent game"
 
 
-def test_repertoire_finding_without_canonical_event_requires_reanalysis(tmp_path, monkeypatch):
+def test_repertoire_finding_without_canonical_event_requires_reanalysis(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
         with database.connection() as db:
             seed_lapse(db)
-        response = client.post("/api/game-findings/lapse/decision", json={"decision": "accepted"})
+        response = client.post(
+            "/api/game-findings/lapse/decision", json={"decision": "accepted"}
+        )
         assert response.status_code == 409
         assert "Reanalyze this game" in response.json()["detail"]
         with database.connection() as db:
-            assert db.execute("SELECT status FROM game_findings WHERE id='lapse'").fetchone()[0] == "pending"
-            assert db.execute("SELECT COUNT(*) FROM reviews WHERE card_id='card'").fetchone()[0] == 0
-            assert db.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id='card'").fetchone()[0] == 0
+            assert (
+                db.execute(
+                    "SELECT status FROM game_findings WHERE id='lapse'"
+                ).fetchone()[0]
+                == "pending"
+            )
+            assert (
+                db.execute(
+                    "SELECT COUNT(*) FROM reviews WHERE card_id='card'"
+                ).fetchone()[0]
+                == 0
+            )
+            assert (
+                db.execute(
+                    "SELECT COUNT(*) FROM daily_queue WHERE card_id='card'"
+                ).fetchone()[0]
+                == 0
+            )
 
 
-def test_blocked_repertoire_finding_preserves_event_without_queuing(tmp_path, monkeypatch):
+def test_blocked_repertoire_finding_preserves_event_without_queuing(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
         with database.connection() as db:
             seed_lapse(db)
-            played_at = db.execute("SELECT played_at FROM imported_games WHERE id='lichess:game'").fetchone()[0]
+            played_at = db.execute(
+                "SELECT played_at FROM imported_games WHERE id='lichess:game'"
+            ).fetchone()[0]
             db.execute("UPDATE cards SET pending_validation=1 WHERE id='card'")
             db.execute(
                 """INSERT INTO repertoire_decision_events(
@@ -167,13 +230,30 @@ def test_blocked_repertoire_finding_preserves_event_without_queuing(tmp_path, mo
                    VALUES('blocked-event','lichess:game','rep','card',0,?,'e2e4','d2d4','miss',?,?)""",
                 (" ".join(START.split()[:4]), played_at, played_at),
             )
-        response = client.post("/api/game-findings/lapse/decision", json={"decision": "accepted"})
+        response = client.post(
+            "/api/game-findings/lapse/decision", json={"decision": "accepted"}
+        )
         assert response.status_code == 200
         assert response.json()["queued"] is False
         with database.connection() as db:
-            assert db.execute("SELECT COUNT(*) FROM repertoire_decision_events WHERE id='blocked-event'").fetchone()[0] == 1
-            assert db.execute("SELECT COUNT(*) FROM reviews WHERE card_id='card'").fetchone()[0] == 0
-            assert db.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id='card'").fetchone()[0] == 0
+            assert (
+                db.execute(
+                    "SELECT COUNT(*) FROM repertoire_decision_events WHERE id='blocked-event'"
+                ).fetchone()[0]
+                == 1
+            )
+            assert (
+                db.execute(
+                    "SELECT COUNT(*) FROM reviews WHERE card_id='card'"
+                ).fetchone()[0]
+                == 0
+            )
+            assert (
+                db.execute(
+                    "SELECT COUNT(*) FROM daily_queue WHERE card_id='card'"
+                ).fetchone()[0]
+                == 0
+            )
 
 
 def test_confirmed_gameplay_miss_promotes_then_replays_without_fsrs_review_or_reordering(
@@ -183,7 +263,9 @@ def test_confirmed_gameplay_miss_promotes_then_replays_without_fsrs_review_or_re
     with TestClient(app) as client:
         with database.connection() as db:
             seed_lapse(db)
-            played_at = db.execute("SELECT played_at FROM imported_games WHERE id='lichess:game'").fetchone()[0]
+            played_at = db.execute(
+                "SELECT played_at FROM imported_games WHERE id='lichess:game'"
+            ).fetchone()[0]
             db.execute(
                 "INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,source_kind) "
                 "VALUES('card','correct',?,0,7,'study')",
@@ -205,17 +287,29 @@ def test_confirmed_gameplay_miss_promotes_then_replays_without_fsrs_review_or_re
                     "INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,?,?)",
                     (date.today().isoformat(), card_id, index),
                 )
-        first = client.post("/api/game-findings/lapse/decision", json={"decision": "accepted"})
+        first = client.post(
+            "/api/game-findings/lapse/decision", json={"decision": "accepted"}
+        )
         with database.connection() as db:
-            first_order = [row["card_id"] for row in db.execute(
-                "SELECT card_id FROM daily_queue WHERE queue_date=? AND status='queued' ORDER BY position,id",
-                (date.today().isoformat(),),
-            )]
-        second = client.post("/api/game-findings/lapse/decision", json={"decision": "accepted"})
+            first_order = [
+                row["card_id"]
+                for row in db.execute(
+                    "SELECT card_id FROM daily_queue WHERE queue_date=? AND status='queued' ORDER BY position,id",
+                    (date.today().isoformat(),),
+                )
+            ]
+        second = client.post(
+            "/api/game-findings/lapse/decision", json={"decision": "accepted"}
+        )
         assert first.status_code == second.status_code == 200
         assert first.json()["queued"] is second.json()["queued"] is True
         with database.connection() as db:
-            assert db.execute("SELECT COUNT(*) FROM reviews WHERE source_kind='game'").fetchone()[0] == 0
+            assert (
+                db.execute(
+                    "SELECT COUNT(*) FROM reviews WHERE source_kind='game'"
+                ).fetchone()[0]
+                == 0
+            )
             card = db.execute("SELECT due_date FROM cards WHERE id='card'").fetchone()
             assert card["due_date"] == (date.today() + timedelta(days=7)).isoformat()
             queued = db.execute(
@@ -241,24 +335,52 @@ def test_first_big_mistake_creates_a_previewed_deduplicated_middlegame_card(
             db.execute(
                 """INSERT INTO game_findings(id,game_id,analysis_version,ply,kind,confidence,evidence_json,created_at,updated_at)
                    VALUES('mistake','lichess:mistake',1,0,'first big mistake',1,?,?,?)""",
-                (json.dumps({"fen": START, "best_move_uci": "e2e4", "principal_variation": ["e2e4", "e7e5", "g1f3"]}), now, now),
+                (
+                    json.dumps(
+                        {
+                            "fen": START,
+                            "best_move_uci": "e2e4",
+                            "principal_variation": ["e2e4", "e7e5", "g1f3"],
+                        }
+                    ),
+                    now,
+                    now,
+                ),
             )
-        preview = client.post("/api/game-findings/mistake/card", json={"save": False}).json()
+        preview = client.post(
+            "/api/game-findings/mistake/card", json={"save": False}
+        ).json()
         assert preview["saved"] is False
         assert preview["preview"]["best_move"] == "e2e4"
         with database.connection() as db:
-            assert db.execute("SELECT COUNT(*) FROM cards WHERE content_type='middlegame'").fetchone()[0] == 0
-        saved = client.post("/api/game-findings/mistake/card", json={"save": True}).json()
-        repeated = client.post("/api/game-findings/mistake/card", json={"save": True}).json()
+            assert (
+                db.execute(
+                    "SELECT COUNT(*) FROM cards WHERE content_type='middlegame'"
+                ).fetchone()[0]
+                == 0
+            )
+        saved = client.post(
+            "/api/game-findings/mistake/card", json={"save": True}
+        ).json()
+        repeated = client.post(
+            "/api/game-findings/mistake/card", json={"save": True}
+        ).json()
         assert saved["saved"] is True
         assert repeated["reused"] is True
         assert repeated["card_id"] == saved["card_id"]
         with database.connection() as db:
-            card = db.execute("SELECT * FROM cards WHERE id=?", (saved["card_id"],)).fetchone()
+            card = db.execute(
+                "SELECT * FROM cards WHERE id=?", (saved["card_id"],)
+            ).fetchone()
             assert card["content_type"] == "middlegame"
             assert card["due_date"] == date.today().isoformat()
             assert card["trained_color"] == "white"
-            assert db.execute("SELECT COUNT(*) FROM cards WHERE content_type='middlegame'").fetchone()[0] == 1
+            assert (
+                db.execute(
+                    "SELECT COUNT(*) FROM cards WHERE content_type='middlegame'"
+                ).fetchone()[0]
+                == 1
+            )
 
 
 def test_game_gap_with_nearby_mistake_prioritizes_existing_unseen_card_for_tomorrow(
@@ -305,12 +427,15 @@ def test_game_gap_with_nearby_mistake_prioritizes_existing_unseen_card_for_tomor
 
             seed_queue(db, tomorrow)
             queued = db.execute(
-                "SELECT card_id FROM daily_queue WHERE queue_date=? ORDER BY position", (tomorrow,)
+                "SELECT card_id FROM daily_queue WHERE queue_date=? ORDER BY position",
+                (tomorrow,),
             ).fetchall()
             assert [row["card_id"] for row in queued][0] == "future-card"
 
 
-def test_missing_game_gap_line_requires_preview_before_card_creation(tmp_path, monkeypatch):
+def test_missing_game_gap_line_requires_preview_before_card_creation(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     now = datetime.now(timezone.utc).isoformat()
     with TestClient(app) as client:
@@ -332,6 +457,9 @@ def test_missing_game_gap_line_requires_preview_before_card_creation(tmp_path, m
         ).json()
         assert preview["saved"] is False
         with database.connection() as db:
-            assert db.execute(
-                "SELECT COUNT(*) FROM cards WHERE source_ref=?", (gap["id"],)
-            ).fetchone()[0] == 0
+            assert (
+                db.execute(
+                    "SELECT COUNT(*) FROM cards WHERE source_ref=?", (gap["id"],)
+                ).fetchone()[0]
+                == 0
+            )

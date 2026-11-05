@@ -6,4 +6,8 @@ from .services.postgres_opening_evidence import (
     prepare_standalone_checkpoint,
 )
 
-register_command('opening_evidence.checkpoint', commit_standalone_checkpoint, prepare=prepare_standalone_checkpoint)
+register_command(
+    "opening_evidence.checkpoint",
+    commit_standalone_checkpoint,
+    prepare=prepare_standalone_checkpoint,
+)

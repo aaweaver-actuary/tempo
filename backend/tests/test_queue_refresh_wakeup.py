@@ -22,11 +22,14 @@ def queue_wakeup_store(tmp_path, monkeypatch):
 
 
 def enqueue_queue(connection):
-    return durable_tasks.enqueue_task_in_transaction(connection, "daily_queue", "current",
-        {"queue_date": "2026-10-09"}, priority=10)
+    return durable_tasks.enqueue_task_in_transaction(
+        connection, "daily_queue", "current", {"queue_date": "2026-10-09"}, priority=10
+    )
 
 
-def test_issue135_queue_wake_occurs_only_after_closed_committed_command(queue_wakeup_store, monkeypatch):
+def test_issue135_queue_wake_occurs_only_after_closed_committed_command(
+    queue_wakeup_store, monkeypatch
+):
     connection_open = False
     observed_wakes = []
 
@@ -47,17 +50,23 @@ def test_issue135_queue_wake_occurs_only_after_closed_committed_command(queue_wa
     def wake_after_commit():
         assert not connection_open
         with sqlite3.connect(queue_wakeup_store) as observer:
-            assert observer.execute("SELECT state,lease_token FROM background_tasks").fetchone() == ("queued", None)
+            assert observer.execute(
+                "SELECT state,lease_token FROM background_tasks"
+            ).fetchone() == ("queued", None)
         observed_wakes.append(True)
 
     monkeypatch.setattr(command_gateway, "_execute_command", committed_command)
     monkeypatch.setattr(queue_refresh_wakeup, "wake_queue_refresh", wake_after_commit)
-    assert command_gateway.execute_command("save", "settings.update", {}) == {"saved": True}
+    assert command_gateway.execute_command("save", "settings.update", {}) == {
+        "saved": True
+    }
     assert observed_wakes == [True]
 
 
 @pytest.mark.parametrize("failure_outcome", ["handled", "raised"])
-def test_issue135_queue_wake_does_not_escape_rolled_back_command(queue_wakeup_store, monkeypatch, failure_outcome):
+def test_issue135_queue_wake_does_not_escape_rolled_back_command(
+    queue_wakeup_store, monkeypatch, failure_outcome
+):
     observed_wakes = []
 
     def rolled_back_command(*args, **kwargs):
@@ -70,21 +79,31 @@ def test_issue135_queue_wake_does_not_escape_rolled_back_command(queue_wakeup_st
             return None
 
     monkeypatch.setattr(command_gateway, "_execute_command", rolled_back_command)
-    monkeypatch.setattr(queue_refresh_wakeup, "wake_queue_refresh", lambda: observed_wakes.append(True))
+    monkeypatch.setattr(
+        queue_refresh_wakeup, "wake_queue_refresh", lambda: observed_wakes.append(True)
+    )
     if failure_outcome == "raised":
         with pytest.raises(RuntimeError, match="Controlled failed command"):
             command_gateway.execute_command("rollback", "settings.update", {})
     else:
-        assert command_gateway.execute_command("rollback", "settings.update", {}) is None
+        assert (
+            command_gateway.execute_command("rollback", "settings.update", {}) is None
+        )
     with sqlite3.connect(queue_wakeup_store) as observer:
-        assert observer.execute("SELECT COUNT(*) FROM background_tasks").fetchone()[0] == 0
+        assert (
+            observer.execute("SELECT COUNT(*) FROM background_tasks").fetchone()[0] == 0
+        )
     assert observed_wakes == []
-    monkeypatch.setattr(command_gateway, "_execute_command", lambda *args, **kwargs: {"saved": True})
+    monkeypatch.setattr(
+        command_gateway, "_execute_command", lambda *args, **kwargs: {"saved": True}
+    )
     command_gateway.execute_command("later", "unrelated.command", {})
     assert observed_wakes == []
 
 
-def test_issue135_queue_wake_coalesces_replacements_without_claiming(queue_wakeup_store, monkeypatch):
+def test_issue135_queue_wake_coalesces_replacements_without_claiming(
+    queue_wakeup_store, monkeypatch
+):
     observed_wakes = []
 
     def replacement_command(*args, **kwargs):
@@ -95,21 +114,35 @@ def test_issue135_queue_wake_coalesces_replacements_without_claiming(queue_wakeu
         return {"saved": True}
 
     monkeypatch.setattr(command_gateway, "_execute_command", replacement_command)
-    monkeypatch.setattr(queue_refresh_wakeup, "wake_queue_refresh", lambda: observed_wakes.append(True))
+    monkeypatch.setattr(
+        queue_refresh_wakeup, "wake_queue_refresh", lambda: observed_wakes.append(True)
+    )
     command_gateway.execute_command("replace", "settings.update", {})
     with sqlite3.connect(queue_wakeup_store) as observer:
-        assert observer.execute("SELECT generation,state,lease_token FROM background_tasks").fetchone() == (1, "queued", None)
+        assert observer.execute(
+            "SELECT generation,state,lease_token FROM background_tasks"
+        ).fetchone() == (1, "queued", None)
     assert observed_wakes == [True]
     with sqlite3.connect(queue_wakeup_store) as observer:
-        assert observer.execute("SELECT requested_refresh_epoch,published_refresh_epoch FROM queue_projections").fetchone() == (7, 0)
+        assert observer.execute(
+            "SELECT requested_refresh_epoch,published_refresh_epoch FROM queue_projections"
+        ).fetchone() == (7, 0)
 
 
 def test_issue135_queue_ensure_receipt_replay_wakes_without_replacing_work(monkeypatch):
     observed_wakes = []
     # The inner boundary returns the saved receipt without calling its handler.
-    monkeypatch.setattr(command_gateway, "_execute_command", lambda *args, **kwargs: {"refresh_pending": True})
-    monkeypatch.setattr(queue_refresh_wakeup, "wake_queue_refresh", lambda: observed_wakes.append(True))
-    assert command_gateway.execute_command("replay", "queue.ensure_current", {}) == {"refresh_pending": True}
+    monkeypatch.setattr(
+        command_gateway,
+        "_execute_command",
+        lambda *args, **kwargs: {"refresh_pending": True},
+    )
+    monkeypatch.setattr(
+        queue_refresh_wakeup, "wake_queue_refresh", lambda: observed_wakes.append(True)
+    )
+    assert command_gateway.execute_command("replay", "queue.ensure_current", {}) == {
+        "refresh_pending": True
+    }
     assert observed_wakes == [True]
 
 
@@ -133,11 +166,22 @@ def test_issue135_queue_wake_requests_do_not_cross_concurrent_commands():
 
 
 @pytest.mark.parametrize("failure_stage", ["connection", "publish", "teardown"])
-@pytest.mark.parametrize("broker_error", [BrokerUnavailable("Connection refused"),
-    ConnectionRefusedError("Connection refused"), socket.timeout("Broker socket timed out"),
-    EncodeError("Broker message encoding failed")], ids=["operational", "refused", "timeout", "encode"])
+@pytest.mark.parametrize(
+    "broker_error",
+    [
+        BrokerUnavailable("Connection refused"),
+        ConnectionRefusedError("Connection refused"),
+        socket.timeout("Broker socket timed out"),
+        EncodeError("Broker message encoding failed"),
+    ],
+    ids=["operational", "refused", "timeout", "encode"],
+)
 def test_issue135_queue_wake_publish_failure_preserves_committed_result(
-    queue_wakeup_store, monkeypatch, caplog, failure_stage, broker_error,
+    queue_wakeup_store,
+    monkeypatch,
+    caplog,
+    failure_stage,
+    broker_error,
 ):
     from app.celery_app import celery_app
 
@@ -171,25 +215,44 @@ def test_issue135_queue_wake_publish_failure_preserves_committed_result(
         assert options["retry"] is False
         observed_stages.append("publish")
         with sqlite3.connect(queue_wakeup_store) as observer:
-            assert observer.execute("SELECT new_cards_per_day FROM settings WHERE id=1").fetchone()[0] == 17
-            assert observer.execute("SELECT state FROM background_tasks").fetchone()[0] == "queued"
+            assert (
+                observer.execute(
+                    "SELECT new_cards_per_day FROM settings WHERE id=1"
+                ).fetchone()[0]
+                == 17
+            )
+            assert (
+                observer.execute("SELECT state FROM background_tasks").fetchone()[0]
+                == "queued"
+            )
         if failure_stage == "publish":
             raise broker_error
 
     monkeypatch.setattr(command_gateway, "_execute_command", committed_command)
     monkeypatch.setattr(celery_app, "connection_for_write", bounded_connection)
     monkeypatch.setattr(celery_app, "send_task", unavailable_wake)
-    assert command_gateway.execute_command("wake-loss", "settings.update", {}) == {"saved": True}
+    assert command_gateway.execute_command("wake-loss", "settings.update", {}) == {
+        "saved": True
+    }
     with sqlite3.connect(queue_wakeup_store) as observer:
-        assert observer.execute("SELECT generation,state,lease_token FROM background_tasks").fetchone() == (1, "queued", None)
-        assert observer.execute("SELECT new_cards_per_day FROM settings WHERE id=1").fetchone()[0] == 17
+        assert observer.execute(
+            "SELECT generation,state,lease_token FROM background_tasks"
+        ).fetchone() == (1, "queued", None)
+        assert (
+            observer.execute(
+                "SELECT new_cards_per_day FROM settings WHERE id=1"
+            ).fetchone()[0]
+            == 17
+        )
     assert failure_stage in observed_stages
     assert "durable work remains pending for periodic recovery" in caplog.text
     assert str(broker_error) in caplog.text
 
 
 @pytest.mark.parametrize("process_control", [KeyboardInterrupt, SystemExit])
-def test_issue135_advisory_queue_wake_preserves_process_control(monkeypatch, process_control):
+def test_issue135_advisory_queue_wake_preserves_process_control(
+    monkeypatch, process_control
+):
     from app.celery_app import celery_app
 
     def interrupted_connection(**options):

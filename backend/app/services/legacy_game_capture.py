@@ -4,16 +4,24 @@ No connection survives a reader call. This is an ephemeral capture, not an index
 or second work frontier. A generation change, missing EOF or budget exhaustion
 invalidates the whole observation; no partial proof can authorize admission.
 """
+
 from dataclasses import dataclass
 import json
 import time
 
 import chess
 from tempo_chess_core import canonical_fen_key
-from tempo_game_evidence_contracts.legacy import (authority_source_projection,
-    authority_graph_digest, canonical)
-from tempo_game_evidence_contracts.legacy_scope import (LegacyDecisionScope,
-    LegacyRowDigest, LegacyScopedCatalogueProof, LegacyStreamManifest)
+from tempo_game_evidence_contracts.legacy import (
+    authority_source_projection,
+    authority_graph_digest,
+    canonical,
+)
+from tempo_game_evidence_contracts.legacy_scope import (
+    LegacyDecisionScope,
+    LegacyRowDigest,
+    LegacyScopedCatalogueProof,
+    LegacyStreamManifest,
+)
 from tempo_learning_remediation import RemediationError
 from tempo_legacy_database.adapters.games.authority import capture as storage
 from tempo_legacy_database.adapters.games.authority import headers
@@ -53,8 +61,11 @@ class Traversal:
         self.deadline = clock() + budget.max_seconds
         self.pages = self.rows = self.bytes = 0
         self.preflight = {}
-        if (min(budget.max_rows, budget.max_pages, budget.max_bytes) < 1
-                or budget.max_seconds <= 0 or not 1 <= budget.max_candidates <= 64):
+        if (
+            min(budget.max_rows, budget.max_pages, budget.max_bytes) < 1
+            or budget.max_seconds <= 0
+            or not 1 <= budget.max_candidates <= 64
+        ):
             raise ValueError("finite positive capture budget required")
         for stream in streams:
             self.check_time()
@@ -63,8 +74,11 @@ class Traversal:
             if type(count) is not int or count < 0 or bool(count) != bool(last):
                 self.fail("legacy_capture_preflight_changed")
             self.preflight[stream.name] = (count, stream.key(last[0]) if last else ())
-        if (sum(count for count, _ in self.preflight.values()) > budget.max_rows
-                or sum(count // PAGE_SIZE + 1 for count, _ in self.preflight.values()) > budget.max_pages):
+        if (
+            sum(count for count, _ in self.preflight.values()) > budget.max_rows
+            or sum(count // PAGE_SIZE + 1 for count, _ in self.preflight.values())
+            > budget.max_pages
+        ):
             self.fail("legacy_capture_preflight_exceeds_budget")
 
     @staticmethod
@@ -77,7 +91,9 @@ class Traversal:
 
     def walk(self, stream, project):
         expected, highwater = self.preflight[stream.name]
-        cursor = tuple(-1 if key.endswith("decision_index") else "" for key in stream.keys)
+        cursor = tuple(
+            -1 if key.endswith("decision_index") else "" for key in stream.keys
+        )
         digest, visited = LegacyRowDigest(), 0
         last_key = ()
         while expected:
@@ -107,9 +123,14 @@ class Traversal:
                 try:
                     digest.add(project(row))
                 except (ValueError, TypeError, KeyError) as error:
-                    raise RemediationError("stale_revision", "legacy_capture_uncertain_source") from error
-                if (visited > expected or self.rows > self.budget.max_rows
-                        or self.bytes > self.budget.max_bytes):
+                    raise RemediationError(
+                        "stale_revision", "legacy_capture_uncertain_source"
+                    ) from error
+                if (
+                    visited > expected
+                    or self.rows > self.budget.max_rows
+                    or self.bytes > self.budget.max_bytes
+                ):
                     self.fail("legacy_capture_row_or_byte_budget")
                 last_key = key
                 yield row
@@ -120,37 +141,71 @@ class Traversal:
         self.check_time()
         if visited != expected or last_key != highwater:
             self.fail("legacy_capture_incomplete_exhaustion")
-        self.manifest = LegacyStreamManifest(name=stream.name, expected_rows=expected,
-            visited_rows=visited, highwater=list(highwater), last_key=list(last_key),
-            digest=digest.hexdigest(), exhausted=True)
+        self.manifest = LegacyStreamManifest(
+            name=stream.name,
+            expected_rows=expected,
+            visited_rows=visited,
+            highwater=list(highwater),
+            last_key=list(last_key),
+            digest=digest.hexdigest(),
+            exhausted=True,
+        )
 
 
 def source_row(name, row):
     if name == "graphs":
         return {"source_row_digest": authority_graph_digest([row])}
-    tables = {key: [] for key in ("repertoires", "repertoire_lines", "cards", "repertoire_cards")}
+    tables = {
+        key: []
+        for key in ("repertoires", "repertoire_lines", "cards", "repertoire_cards")
+    }
     tables[name] = [row]
     return authority_source_projection(tables)[name][0]
 
 
-def capture_scope(delivery, reader, metadata, *, budget=DEFAULT_BUDGET, clock=time.monotonic):
-    request = CaptureRequest(delivery.authority.repertoire_id, delivery.game_id,
-        tuple(sorted({item.ply for item in delivery.encounters})))
+def capture_scope(
+    delivery, reader, metadata, *, budget=DEFAULT_BUDGET, clock=time.monotonic
+):
+    request = CaptureRequest(
+        delivery.authority.repertoire_id,
+        delivery.game_id,
+        tuple(sorted({item.ply for item in delivery.encounters})),
+    )
     return capture_source_scope(request, reader, metadata, budget=budget, clock=clock)
 
 
-def capture_source_scope(request: CaptureRequest, reader, metadata, *, budget=DEFAULT_BUDGET, clock=time.monotonic):
+def capture_source_scope(
+    request: CaptureRequest,
+    reader,
+    metadata,
+    *,
+    budget=DEFAULT_BUDGET,
+    clock=time.monotonic,
+):
     """Read-only inspection port; no obligation/delivery/attempt is constructed."""
-    from .legacy_game_authority import (Capture, current_token, completed_game_time, introduced_before_game, comparison_key,
-                                       _CARD_COLUMNS, _GAME_COLUMNS, _REPERTOIRE_COLUMNS)
+    from .legacy_game_authority import (
+        Capture,
+        current_token,
+        completed_game_time,
+        introduced_before_game,
+        comparison_key,
+        _CARD_COLUMNS,
+        _GAME_COLUMNS,
+        _REPERTOIRE_COLUMNS,
+    )
     from .legacy_game_evidence_scope import LEGACY_WORKSPACE_ID
+
     repertoire_id = request.repertoire_id
     before = metadata(repertoire_id)
     if before["graph_state"] != "ready" or not before.get("integrity_current"):
         Traversal.fail("legacy_completed_current_integrity_required")
     identities = headers.backend_identity(reader)
     games = headers.imported_game(reader, request.game_id)
-    if len(identities) != 1 or identities[0]["workspace_id"] != LEGACY_WORKSPACE_ID or len(games) != 1:
+    if (
+        len(identities) != 1
+        or identities[0]["workspace_id"] != LEGACY_WORKSPACE_ID
+        or len(games) != 1
+    ):
         Traversal.fail("legacy_capture_header_missing")
     game = games[0]
     occurred_at = completed_game_time(game)
@@ -159,12 +214,21 @@ def capture_source_scope(request: CaptureRequest, reader, metadata, *, budget=DE
         Traversal.fail("legacy_invalid_source_position")
     root = canonical_fen_key(board.fen(en_passant="legal"))
     moves = json.loads(game["moves_json"])
-    scope = LegacyDecisionScope(game_id=request.game_id, content_hash=game["content_hash"], occurred_at=occurred_at.isoformat(),
-        learner_color=game["color"], starting_position_key=root, moves=moves,
-        decision_plies=list(request.decision_plies))
+    scope = LegacyDecisionScope(
+        game_id=request.game_id,
+        content_hash=game["content_hash"],
+        occurred_at=occurred_at.isoformat(),
+        learner_color=game["color"],
+        starting_position_key=root,
+        moves=moves,
+        decision_plies=list(request.decision_plies),
+    )
     streams = storage.source_streams(repertoire_id, before["graph_generation"])
     traversal = Traversal(reader, streams, budget, clock)
-    tables = {name: [] for name in ("repertoires", "repertoire_lines", "cards", "repertoire_cards")}
+    tables = {
+        name: []
+        for name in ("repertoires", "repertoire_lines", "cards", "repertoire_cards")
+    }
     graphs, manifests = [], []
     prefixes = [set() for _ in range(max(scope.decision_plies) + 1)]
     candidate_ids, card_ids = set(), set()
@@ -172,7 +236,9 @@ def capture_source_scope(request: CaptureRequest, reader, metadata, *, budget=DE
     route_frames = {}
     membership_counts = {}
     for stream in streams:
-        for row in traversal.walk(stream, lambda row, name=stream.name: source_row(name, row)):
+        for row in traversal.walk(
+            stream, lambda row, name=stream.name: source_row(name, row)
+        ):
             if stream.name == "repertoires":
                 tables[stream.name].append(row)
                 repertoire_ids.add(row["id"])
@@ -180,23 +246,40 @@ def capture_source_scope(request: CaptureRequest, reader, metadata, *, budget=DE
                 try:
                     route_moves = json.loads(row["moves_json"])
                     route_board = chess.Board(row["start_fen"])
-                    if (not route_board.is_valid() or row["trained_color"] not in {"white", "black"}
-                            or not isinstance(route_moves, list) or len(route_moves) > 1000
-                            or any(not isinstance(move, str) for move in route_moves)
-                            or row["repertoire_id"] not in repertoire_ids):
+                    if (
+                        not route_board.is_valid()
+                        or row["trained_color"] not in {"white", "black"}
+                        or not isinstance(route_moves, list)
+                        or len(route_moves) > 1000
+                        or any(not isinstance(move, str) for move in route_moves)
+                        or row["repertoire_id"] not in repertoire_ids
+                    ):
                         raise ValueError("unknown route")
-                    compatible = (row["trained_color"] == scope.learner_color and
-                        canonical_fen_key(route_board.fen(en_passant="legal")) == root)
+                    compatible = (
+                        row["trained_color"] == scope.learner_color
+                        and canonical_fen_key(route_board.fen(en_passant="legal"))
+                        == root
+                    )
                     common = 0
-                    while compatible and common < min(len(moves), len(route_moves)) and moves[common] == route_moves[common]:
+                    while (
+                        compatible
+                        and common < min(len(moves), len(route_moves))
+                        and moves[common] == route_moves[common]
+                    ):
                         common += 1
-                    retain = compatible and any(ply <= common and ply < len(route_moves) for ply in scope.decision_plies)
+                    retain = compatible and any(
+                        ply <= common and ply < len(route_moves)
+                        for ply in scope.decision_plies
+                    )
                     frames = [comparison_key(route_board)] if retain else None
                     for move in route_moves:
                         route_board.push_uci(move)
-                        if frames is not None: frames.append(comparison_key(route_board))
+                        if frames is not None:
+                            frames.append(comparison_key(route_board))
                 except (ValueError, TypeError, KeyError, AttributeError) as error:
-                    raise RemediationError("stale_revision", "legacy_catalogue_uncertain_source") from error
+                    raise RemediationError(
+                        "stale_revision", "legacy_catalogue_uncertain_source"
+                    ) from error
                 if not compatible:
                     continue
                 for ply in range(min(common, len(prefixes) - 1) + 1):
@@ -209,14 +292,20 @@ def capture_source_scope(request: CaptureRequest, reader, metadata, *, budget=DE
                     candidate_ids.add(row["id"])
                     if len(candidate_ids) > budget.max_candidates:
                         traversal.fail("legacy_capture_candidate_budget")
-                    tables[stream.name].append(row)  # Includes foreign/unbound/unsupported candidates.
+                    tables[stream.name].append(
+                        row
+                    )  # Includes foreign/unbound/unsupported candidates.
                     route_frames[row["id"]] = (route_moves, frames)
             elif stream.name == "graphs":
                 if row["line_id"] in candidate_ids:
                     route_moves, frames = route_frames[row["line_id"]]
                     try:
                         executable = json.loads(row["moves_json"])
-                        if not isinstance(executable, list) or not 1 <= len(executable) <= 1000 or any(not isinstance(move, str) for move in executable):
+                        if (
+                            not isinstance(executable, list)
+                            or not 1 <= len(executable) <= 1000
+                            or any(not isinstance(move, str) for move in executable)
+                        ):
                             raise ValueError("uncertain graph executable")
                         graph_board = chess.Board(row["starting_fen"])
                         if not graph_board.is_valid():
@@ -224,10 +313,20 @@ def capture_source_scope(request: CaptureRequest, reader, metadata, *, budget=DE
                         graph_position = comparison_key(graph_board)
                         # Execution equivalence is separate from the raw source
                         # bytes retained and hashed by the traversal owner.
-                        roots = [index for index, position in enumerate(frames)
-                            if position == graph_position and route_moves[index:index + len(executable)] == executable]
-                        relevant = any(ply <= len(route_moves) and route_moves[:ply] == moves[:ply]
-                            and root <= ply < root + len(executable) for root in roots for ply in scope.decision_plies)
+                        roots = [
+                            index
+                            for index, position in enumerate(frames)
+                            if position == graph_position
+                            and route_moves[index : index + len(executable)]
+                            == executable
+                        ]
+                        relevant = any(
+                            ply <= len(route_moves)
+                            and route_moves[:ply] == moves[:ply]
+                            and root <= ply < root + len(executable)
+                            for root in roots
+                            for ply in scope.decision_plies
+                        )
                     except (ValueError, TypeError, KeyError):
                         # A malformed potentially relevant binding cannot prove
                         # non-overlap. Fail closed rather than discard it.
@@ -236,14 +335,21 @@ def capture_source_scope(request: CaptureRequest, reader, metadata, *, budget=DE
                         continue
                     graphs.append(row)
                     card_ids.add(row["card_id"])
-                    if len(graphs) > budget.max_graphs or len(card_ids) > budget.max_cards:
+                    if (
+                        len(graphs) > budget.max_graphs
+                        or len(card_ids) > budget.max_cards
+                    ):
                         traversal.fail("legacy_capture_physical_candidate_budget")
             elif stream.name == "cards":
                 if row["id"] in card_ids:
-                    row["introduced_before_game"] = introduced_before_game(row.get("introduced_at"), occurred_at)
+                    row["introduced_before_game"] = introduced_before_game(
+                        row.get("introduced_at"), occurred_at
+                    )
                     tables[stream.name].append(row)
             elif row["card_id"] in card_ids:
-                membership_counts[row["card_id"]] = membership_counts.get(row["card_id"], 0) + 1
+                membership_counts[row["card_id"]] = (
+                    membership_counts.get(row["card_id"], 0) + 1
+                )
                 if membership_counts[row["card_id"]] > 100:
                     traversal.fail("legacy_capture_membership_budget")
                 tables[stream.name].append(row)
@@ -252,13 +358,28 @@ def capture_source_scope(request: CaptureRequest, reader, metadata, *, budget=DE
             traversal.fail("legacy_source_changed_during_capture")
     if sum(map(len, prefixes)) > 10000:
         traversal.fail("legacy_capture_policy_context_budget")
-    provisional = LegacyScopedCatalogueProof(schema_version=1, digest_algorithm="legacy-row-stream-v2",
-        authority_id="legacy-graph:" + "0" * 64, catalogue_generation=before["catalogue_generation"],
+    provisional = LegacyScopedCatalogueProof(
+        schema_version=1,
+        digest_algorithm="legacy-row-stream-v2",
+        authority_id="legacy-graph:" + "0" * 64,
+        catalogue_generation=before["catalogue_generation"],
         integrity_certificate=before["integrity_certificate"],
-        scope=scope, streams=manifests, candidate_route_ids=[row["id"] for row in tables["repertoire_lines"]],
-        prefix_policies=[sorted(items) for items in prefixes])
-    captured = Capture(identities[0]["target_id"], before, tables, graphs, game,
-        provisional, provisional.source_identity_digests())
+        scope=scope,
+        streams=manifests,
+        candidate_route_ids=[row["id"] for row in tables["repertoire_lines"]],
+        prefix_policies=[sorted(items) for items in prefixes],
+    )
+    captured = Capture(
+        identities[0]["target_id"],
+        before,
+        tables,
+        graphs,
+        game,
+        provisional,
+        provisional.source_identity_digests(),
+    )
     token = current_token(captured, repertoire_id)
     proof = provisional.model_copy(update={"authority_id": token.storage_identity()[0]})
-    return Capture(captured.target_id, before, tables, graphs, game, proof, captured.digests)
+    return Capture(
+        captured.target_id, before, tables, graphs, game, proof, captured.digests
+    )

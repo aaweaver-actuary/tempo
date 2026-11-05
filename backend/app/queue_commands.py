@@ -13,7 +13,9 @@ from .services.queue_ordering import PRESENTATION_VERSION
 from .command_gateway import register_command
 from app.contracts.review_conflicts import ReviewConflict
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
-from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
+from tempo_legacy_database.adapters.queue_position_lock import (
+    lock_queue_date_for_position,
+)
 from .services.durable_tasks import enqueue_task_in_transaction
 from .study.queue_order import capture_daily_queue_order, preserve_daily_queue_order
 
@@ -35,38 +37,58 @@ from tempo_legacy_database.adapters.commands.queue import _lock_attempt_card
 
 _AVAILABLE_ATTEMPT_SQL = queue_application._AVAILABLE_ATTEMPT_SQL
 
+
 def available_attempt_sql() -> str:
     return queue_application.available_attempt_sql()
 
 
-def validate_available_attempt(database, entry_id: int, card_id=None, expected_revision=None) -> None:
+def validate_available_attempt(
+    database, entry_id: int, card_id=None, expected_revision=None
+) -> None:
     """A retained, identified attempt remains operable after queue promotion."""
     identified = card_id is not None and expected_revision is not None
     read_available = queue_storage.prepare_available_attempt(
-        database, identified, entry_id, queue_application.MISS_REASON,
+        database,
+        identified,
+        entry_id,
+        queue_application.MISS_REASON,
     )
     # A genuine issued board remains operable over rollover. Its exact retained
     # identity, not a bare queue ID or old prefetch, supplies the original day.
-    day = (queue_storage.issued_origin_day(database, entry_id, card_id, expected_revision)
-           if identified else None) or current_study_day(database)
+    day = (
+        queue_storage.issued_origin_day(database, entry_id, card_id, expected_revision)
+        if identified
+        else None
+    ) or current_study_day(database)
     available = read_available(day)
     if not available or available["id"] != entry_id:
-        raise ReviewConflict("queue_attempt_inactive", "This queue attempt is no longer active")
+        raise ReviewConflict(
+            "queue_attempt_inactive", "This queue attempt is no longer active"
+        )
     from .queue_attempt_origins import validate_failure_marker
+
     validate_failure_marker(database, entry_id, card_id, expected_revision)
     if identified:
-        read_head = queue_storage.prepare_queue_head(database, queue_application.MISS_REASON)
+        read_head = queue_storage.prepare_queue_head(
+            database, queue_application.MISS_REASON
+        )
         head = read_head(day)
-        issued_origin = queue_storage.issued_origin(database, entry_id, card_id, expected_revision)
+        issued_origin = queue_storage.issued_origin(
+            database, entry_id, card_id, expected_revision
+        )
         if (not head or head["id"] != entry_id) and not issued_origin:
-            raise ReviewConflict("queue_attempt_inactive", "This queue attempt was never issued as the active attempt")
+            raise ReviewConflict(
+                "queue_attempt_inactive",
+                "This queue attempt was never issued as the active attempt",
+            )
 
 
 def current_study_day(database, *, now=None):
     from tempo_learning_review import review_day_at
+
     timezone_name = queue_storage.study_timezone(database)
     if timezone_name is None:
-        raise HTTPException(503, 'Current Study policy is unavailable')
+        raise HTTPException(503, "Current Study policy is unavailable")
     return review_day_at(now or datetime.now(timezone.utc), timezone_name).isoformat()
 
 
@@ -74,134 +96,237 @@ def issue_queue_head(database, payload: dict[str, Any]) -> dict[str, Any]:
     """Commit one head's issuance before returning it; never stamp prefetch."""
     from .services.queue_next_card import PreparedQueueHead
     from .services.background_runtime import training_timing_stage
-    prepared = payload if isinstance(payload, PreparedQueueHead) else PreparedQueueHead(payload, 'legacy')
+
+    prepared = (
+        payload
+        if isinstance(payload, PreparedQueueHead)
+        else PreparedQueueHead(payload, "legacy")
+    )
     payload = prepared.payload
     entry_id = int(payload["entry_id"])
     if payload["queue_date"] != current_study_day(database):
         return {"issued": False}
     position_plan = None
-    if prepared.mode == 'hold':
-        return {'issued': False, 'position_study_mode': 'position',
-                'position_presentation': None, 'position_study_hold': prepared.reason}
-    if prepared.mode == 'position':
+    if prepared.mode == "hold":
+        return {
+            "issued": False,
+            "position_study_mode": "position",
+            "position_presentation": None,
+            "position_study_hold": prepared.reason,
+        }
+    if prepared.mode == "position":
         # G2's source fence is repeated internally after card locks. Acquire it
         # here first so the source/owner ordering precedes all Study locks.
         from tempo_evidence_math.position_learning import Hold
-        from tempo_legacy_database.adapters.authored_repertoires.position_study_source import fence_position_source
-        from tempo_legacy_database.adapters.study.position_issued_plans import issue_in_borrowed_transaction
-        with training_timing_stage('position_source_fence'):
+        from tempo_legacy_database.adapters.authored_repertoires.position_study_source import (
+            fence_position_source,
+        )
+        from tempo_legacy_database.adapters.study.position_issued_plans import (
+            issue_in_borrowed_transaction,
+        )
+
+        with training_timing_stage("position_source_fence"):
             held = fence_position_source(database, prepared.proposal.source)
         if held is not None:
-            return {'issued': False, 'position_study_mode': 'position',
-                    'position_presentation': None, 'position_study_hold': held.reason}
-        with training_timing_stage('position_issue_apply'):
+            return {
+                "issued": False,
+                "position_study_mode": "position",
+                "position_presentation": None,
+                "position_study_hold": held.reason,
+            }
+        with training_timing_stage("position_issue_apply"):
             position_plan = issue_in_borrowed_transaction(database, prepared.proposal)
         if isinstance(position_plan, Hold):
-            return {'issued': False, 'position_study_mode': 'position',
-                    'position_presentation': None, 'position_study_hold': position_plan.reason}
-    elif prepared.mode == 'replay':
+            return {
+                "issued": False,
+                "position_study_mode": "position",
+                "position_presentation": None,
+                "position_study_hold": position_plan.reason,
+            }
+    elif prepared.mode == "replay":
         position_plan = prepared.proposal
     elif queue_storage.is_postgres_connection(database):
         # Hold the same owner advisory fences used by activation, even for a
         # missing/inactive owner, before any card or queue lock.
         from tempo_legacy_database.adapters.study.position_owner_epoch import owner_mode
+
         owners = queue_storage.issuance_owner_repertoires(
-            database, entry_id, payload['card_id'], payload['expected_revision'],
+            database,
+            entry_id,
+            payload["card_id"],
+            payload["expected_revision"],
         )
         for row in owners:
-            decision = owner_mode(database, row['repertoire_id'], None)
-            if decision.disposition != 'legacy':
-                return {'issued': False, 'position_study_mode': 'position',
-                        'position_presentation': None, 'position_study_hold': decision.reason}
+            decision = owner_mode(database, row["repertoire_id"], None)
+            if decision.disposition != "legacy":
+                return {
+                    "issued": False,
+                    "position_study_mode": "position",
+                    "position_presentation": None,
+                    "position_study_hold": decision.reason,
+                }
     _lock_attempt_card(database, entry_id)
     if queue_storage.is_postgres_connection(database):
         lock_queue_date_for_position(database, payload["queue_date"])
     # Revalidate after the card/day fences. A prepared position plan may
     # already have been written; raise so its transaction rolls back.
-    if (queue_storage.retired_issuance_target(database, entry_id, payload['card_id'], payload['expected_revision'])
-            and not queue_storage.issued_origin(database, entry_id, payload['card_id'], payload['expected_revision'])):
+    if queue_storage.retired_issuance_target(
+        database, entry_id, payload["card_id"], payload["expected_revision"]
+    ) and not queue_storage.issued_origin(
+        database, entry_id, payload["card_id"], payload["expected_revision"]
+    ):
         if position_plan is not None:
-            raise ReviewConflict('position_head_changed', 'Position head changed during issuance', retryable=True)
-        return {'issued': False, 'reason': 'retired_queue_target'}
+            raise ReviewConflict(
+                "position_head_changed",
+                "Position head changed during issuance",
+                retryable=True,
+            )
+        return {"issued": False, "reason": "retired_queue_target"}
     # A newly authorized ordinary successor cannot get ahead of already durable
     # local urgent work. The completed review stays committed; the explicit
     # next-card command performs preparation outside this writer transaction.
     from .services.queue_next_card import pending_next_card_preparation
-    if (not queue_storage.issued_origin(database, entry_id, payload['card_id'], payload['expected_revision'])
-            and pending_next_card_preparation(database, payload['queue_date'],candidate_card_id=payload['card_id'])):
+
+    if not queue_storage.issued_origin(
+        database, entry_id, payload["card_id"], payload["expected_revision"]
+    ) and pending_next_card_preparation(
+        database, payload["queue_date"], candidate_card_id=payload["card_id"]
+    ):
         if position_plan is not None:
-            raise ReviewConflict('position_head_changed', 'Position head changed during issuance', retryable=True)
-        return {'issued': False, 'reason': 'study_feedback_preparation_pending'}
-    read_head = queue_storage.prepare_queue_head(database, queue_application.MISS_REASON)
+            raise ReviewConflict(
+                "position_head_changed",
+                "Position head changed during issuance",
+                retryable=True,
+            )
+        return {"issued": False, "reason": "study_feedback_preparation_pending"}
+    read_head = queue_storage.prepare_queue_head(
+        database, queue_application.MISS_REASON
+    )
     head = read_head(payload["queue_date"])
     if not head or head["id"] != entry_id:
         if position_plan is not None:
-            raise ReviewConflict('position_head_changed', 'Position head changed during issuance', retryable=True)
+            raise ReviewConflict(
+                "position_head_changed",
+                "Position head changed during issuance",
+                retryable=True,
+            )
         return {"issued": False}
     try:
-        validate_available_attempt(database, entry_id, payload["card_id"], payload["expected_revision"])
+        validate_available_attempt(
+            database, entry_id, payload["card_id"], payload["expected_revision"]
+        )
     except ReviewConflict:
         if position_plan is not None:
-            raise ReviewConflict('position_head_changed', 'Position head changed during issuance', retryable=True)
+            raise ReviewConflict(
+                "position_head_changed",
+                "Position head changed during issuance",
+                retryable=True,
+            )
         return {"issued": False}
     if prepared.urgency is not None:
         from tempo_evidence_math.position_learning import Hold
         from tempo_legacy_database.adapters.study import game_feedback
-        reader = getattr(game_feedback, 'read_position_urgency', None)
-        actual = (reader(database, card_id=payload['card_id'], revision=payload['expected_revision'],
-                         repertoire_id=prepared.urgency.definition.key.repertoire_id, lock=True)
-                  if reader else None)
+
+        reader = getattr(game_feedback, "read_position_urgency", None)
+        actual = (
+            reader(
+                database,
+                card_id=payload["card_id"],
+                revision=payload["expected_revision"],
+                repertoire_id=prepared.urgency.definition.key.repertoire_id,
+                lock=True,
+            )
+            if reader
+            else None
+        )
         if isinstance(actual, Hold) or actual != prepared.urgency:
             # G2 may already have inserted a plan; the command savepoint must
             # roll back rather than committing an unauthorized urgent head.
-            raise HTTPException(409, 'Position urgency changed during issuance')
+            raise HTTPException(409, "Position urgency changed during issuance")
     from .services.legacy_study_remediation import bind_first_issuance
-    bind_first_issuance(database, entry_id, payload["card_id"], payload["expected_revision"])
-    changed = queue_storage.stamp_issued_head(database, entry_id, payload["card_id"], payload["expected_revision"])
+
+    bind_first_issuance(
+        database, entry_id, payload["card_id"], payload["expected_revision"]
+    )
+    changed = queue_storage.stamp_issued_head(
+        database, entry_id, payload["card_id"], payload["expected_revision"]
+    )
     if changed:
         from tempo_legacy_database.adapters.study.game_feedback import installed
+
         if installed(database):
-            from tempo_legacy_database.adapters.study.game_feedback import record_feedback_issuance
-            record_feedback_issuance(database, entry_id, payload['card_id'], payload['expected_revision'])
+            from tempo_legacy_database.adapters.study.game_feedback import (
+                record_feedback_issuance,
+            )
+
+            record_feedback_issuance(
+                database, entry_id, payload["card_id"], payload["expected_revision"]
+            )
     if not changed and position_plan is not None:
-        raise ReviewConflict('position_head_changed', 'Position head changed during issuance', retryable=True)
+        raise ReviewConflict(
+            "position_head_changed",
+            "Position head changed during issuance",
+            retryable=True,
+        )
     if position_plan is not None:
-        return {'issued': bool(changed), 'position_study_mode': 'position',
-                'position_presentation': position_plan.to_wire(), 'position_study_hold': None}
+        return {
+            "issued": bool(changed),
+            "position_study_mode": "position",
+            "position_presentation": position_plan.to_wire(),
+            "position_study_hold": None,
+        }
     return {"issued": bool(changed)}
 
 
-def mark_attempt_failed(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, bool]:
+def mark_attempt_failed(
+    database: PostgresConnection, payload: dict[str, Any]
+) -> dict[str, bool]:
     entry_id = int(payload["entry_id"])
     _lock_attempt_card(database, entry_id)
-    validate_available_attempt(database, entry_id, payload.get("card_id"), payload.get("expected_revision"))
+    validate_available_attempt(
+        database, entry_id, payload.get("card_id"), payload.get("expected_revision")
+    )
     changed = queue_storage.mark_attempt_failed(database, entry_id)
     if not changed:
-        raise ReviewConflict("queue_attempt_inactive", "This queue attempt is no longer active")
+        raise ReviewConflict(
+            "queue_attempt_inactive", "This queue attempt is no longer active"
+        )
     return {"attempt_failed": True}
 
 
-def bury_queue_entry(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+def bury_queue_entry(
+    database: PostgresConnection, payload: dict[str, Any]
+) -> dict[str, Any]:
     entry_id = int(payload["entry_id"])
     queue_date = current_study_day(database)
     _lock_attempt_card(database, entry_id)
-    original_day = (queue_storage.issued_origin_day(database,entry_id,payload['card_id'],payload['expected_revision'])
-                    if payload.get('card_id') is not None and payload.get('expected_revision') is not None else None)
+    original_day = (
+        queue_storage.issued_origin_day(
+            database, entry_id, payload["card_id"], payload["expected_revision"]
+        )
+        if payload.get("card_id") is not None
+        and payload.get("expected_revision") is not None
+        else None
+    )
     if queue_storage.is_postgres_connection(database):
         for day in sorted({queue_date, original_day or queue_date}):
             lock_queue_date_for_position(database, day)
-    validate_available_attempt(database, entry_id, payload.get("card_id"), payload.get("expected_revision"))
+    validate_available_attempt(
+        database, entry_id, payload.get("card_id"), payload.get("expected_revision")
+    )
     previous_order = capture_daily_queue_order(database, queue_date)
     # Keep today's rows as durable exclusion markers. Tomorrow's queue is
     # admitted normally, without changing the card's scheduling or reviews.
     queue_storage.bury_attempt_card(database, queue_date, entry_id)
     preserve_daily_queue_order(database, queue_date, previous=previous_order)
     if original_day and original_day != queue_date:
-        preserve_daily_queue_order(database,original_day)
+        preserve_daily_queue_order(database, original_day)
     return {"buried": True, "queue_entry_id": entry_id}
 
 
-def ensure_current_queue(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+def ensure_current_queue(
+    database: PostgresConnection, payload: dict[str, Any]
+) -> dict[str, Any]:
     """Request one durable queue refresh from the foreground Celery worker."""
 
     try:
@@ -213,30 +338,59 @@ def ensure_current_queue(database: PostgresConnection, payload: dict[str, Any]) 
     # An absent task cannot be locked: let refresh enqueue it before locking the
     # projection. A ready projection still needs no new task.
     projection = queue_storage.current_projection(database, queue_date, active_task)
-    if (projection and projection["state"] == "ready" and not projection["refresh_pending"]
-            and (not projection["has_queued_entries"]
-                 or (projection["presentation_membership_hash"] or "").startswith(PRESENTATION_VERSION + ":"))):
+    if (
+        projection
+        and projection["state"] == "ready"
+        and not projection["refresh_pending"]
+        and (
+            not projection["has_queued_entries"]
+            or (projection["presentation_membership_hash"] or "").startswith(
+                PRESENTATION_VERSION + ":"
+            )
+        )
+    ):
         return {"queue_date": queue_date, "refresh_pending": False}
-    if (active_task and active_task["state"] in {"queued", "leased", "retrying"}
-            and json.loads(active_task["payload_json"]).get("queue_date") == queue_date):
-        queue_storage.mark_active_refresh(database, queue_date, active_task["last_error"])
-        return {"queue_date": queue_date, "refresh_pending": True,
-                "task_id": active_task["id"]}
+    if (
+        active_task
+        and active_task["state"] in {"queued", "leased", "retrying"}
+        and json.loads(active_task["payload_json"]).get("queue_date") == queue_date
+    ):
+        queue_storage.mark_active_refresh(
+            database, queue_date, active_task["last_error"]
+        )
+        return {
+            "queue_date": queue_date,
+            "refresh_pending": True,
+            "task_id": active_task["id"],
+        }
     task = request_queue_refresh_in_transaction(database, queue_date)
     return {"queue_date": queue_date, "refresh_pending": True, "task_id": task["id"]}
 
 
-def request_queue_refresh_in_transaction(database: PostgresConnection,
-                                         queue_date: str, *, preserve_through_entry_id: int | None = None) -> dict[str, Any]:
+def request_queue_refresh_in_transaction(
+    database: PostgresConnection,
+    queue_date: str,
+    *,
+    preserve_through_entry_id: int | None = None,
+) -> dict[str, Any]:
     return queue_application.request_queue_refresh_in_transaction(
-        database, queue_date, preserve_through_entry_id=preserve_through_entry_id,
+        database,
+        queue_date,
+        preserve_through_entry_id=preserve_through_entry_id,
     )
 
 
 from .services.queue_next_card import prepare_queue_head
+
 register_command("queue.issue_head", issue_queue_head, prepare=prepare_queue_head)
-from .services.queue_next_card import prepare_next_card_command, prepared_next_card_result
-register_command('queue.prepare_next', prepared_next_card_result, prepare=prepare_next_card_command)
+from .services.queue_next_card import (
+    prepare_next_card_command,
+    prepared_next_card_result,
+)
+
+register_command(
+    "queue.prepare_next", prepared_next_card_result, prepare=prepare_next_card_command
+)
 register_command("queue.attempt_failed", mark_attempt_failed)
 register_command("queue.bury", bury_queue_entry)
 register_command("queue.ensure_current", ensure_current_queue)

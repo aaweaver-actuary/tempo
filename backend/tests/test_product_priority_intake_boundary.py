@@ -3,6 +3,7 @@
 No queue, canonical admission, scheduling, database or concrete Study owner is
 available to this producer check. Receiving persistence/refresh is #487-owned.
 """
+
 import pytest
 
 from app.contracts.product_v02.learning import EncounterReceipt
@@ -12,6 +13,7 @@ from test_product_feedback_jobs import encounter_harness, spec
 
 class AcceptedPriorityIntake:
     """Public port fake: durable acceptance, deliberately no availability work."""
+
     __slots__ = ("commands", "receipts", "lose_ack", "calls", "status_reads")
 
     def __init__(self, *, lose_ack=False):
@@ -25,14 +27,24 @@ class AcceptedPriorityIntake:
             assert command == self.commands[key]
             return self.receipts[key].model_copy(update={"outcome": "duplicate"})
         self.commands[key] = command
-        receipt = EncounterReceipt(key=command.key,
+        receipt = EncounterReceipt(
+            key=command.key,
             source_revision=command.source.source_revision,
-            status="pending", outcome="accepted", owner_receipt_id="accepted-priority:" + key,
-            admitted_at=None, available_by=None, applied_at=None,
-            reason="priority_refresh_pending", detected_at=command.detected_at,
-            source_digest=command.source.source_digest, observation=command.observation,
-            observation_recorded=True, disposition=None,
-            admission_status="pending", deferred_reason=None)
+            status="pending",
+            outcome="accepted",
+            owner_receipt_id="accepted-priority:" + key,
+            admitted_at=None,
+            available_by=None,
+            applied_at=None,
+            reason="priority_refresh_pending",
+            detected_at=command.detected_at,
+            source_digest=command.source.source_digest,
+            observation=command.observation,
+            observation_recorded=True,
+            disposition=None,
+            admission_status="pending",
+            deferred_reason=None,
+        )
         self.receipts[key] = receipt
         if self.lose_ack:
             self.lose_ack = False
@@ -59,7 +71,7 @@ def test_games_acknowledges_accepted_pending_without_queue_or_availability_poll(
     h.coordinator.learning = intake
     h.store.enqueue(spec())
     assert h.runner.run_once() == "page"
-    original, = h.store.deliveries.values()
+    (original,) = h.store.deliveries.values()
     assert original.encounter is not None and original.lapse is None
     command_json = original.encounter.model_dump_json()
     assert h.runner.run_once() == "delivery"
@@ -83,7 +95,7 @@ def test_lost_acceptance_ack_replays_exact_immutable_evidence_without_refresh():
     h.coordinator.learning = intake
     h.store.enqueue(spec())
     assert h.runner.run_once() == "page"
-    original, = h.store.deliveries.values()
+    (original,) = h.store.deliveries.values()
     assert h.runner.run_once() == "delivery"
     assert h.store.delivery(original.operation_id).state == "pending"
     assert len(intake.commands) == 1
@@ -100,13 +112,15 @@ def test_lost_acceptance_ack_replays_exact_immutable_evidence_without_refresh():
 
 def test_unavailable_priority_intake_keeps_original_outbox_retryable():
     h = encounter_harness(observation="missed")
+
     class UnavailableIntake:
         def accept_encounter(self, command):
             raise ConnectionError("priority intake unavailable")
+
     h.coordinator.learning = UnavailableIntake()
     h.store.enqueue(spec())
     assert h.runner.run_once() == "page"
-    original, = h.store.deliveries.values()
+    (original,) = h.store.deliveries.values()
     command_json = original.encounter.model_dump_json()
     assert h.runner.run_once() == "delivery"
     pending = h.store.delivery(original.operation_id)
@@ -130,12 +144,19 @@ def test_matched_new_capture_commits_source_checkpoint_without_study_effect():
     h.coordinator.learning = intake
     h.store.enqueue(spec())
     assert h.runner.run_once() == "page"
-    source, = h.store.sources.values()
-    capture, = h.store.captures.values()
+    (source,) = h.store.sources.values()
+    (capture,) = h.store.captures.values()
     checkpoint = h.store.jobs["job"]
     assert source.normalized is not None and source.first_departure.status == "covered"
-    assert capture.normalized == source.normalized and capture.first_departure == source.first_departure
-    assert checkpoint.status == "complete" and checkpoint.window_complete and checkpoint.pages_committed == 1
+    assert (
+        capture.normalized == source.normalized
+        and capture.first_departure == source.first_departure
+    )
+    assert (
+        checkpoint.status == "complete"
+        and checkpoint.window_complete
+        and checkpoint.pages_committed == 1
+    )
     assert source.effects == source.encounters == () and h.store.deliveries == {}
     assert FeedbackRunner(h.coordinator).run_once() == "idle"
     assert intake.calls == [] and intake.receipts == {} and intake.status_reads == 0

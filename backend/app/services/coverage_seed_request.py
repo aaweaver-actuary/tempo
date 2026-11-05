@@ -1,4 +1,5 @@
 """Borrowed-transaction admission of a durable coverage seed request."""
+
 from datetime import datetime, timezone
 import json
 import uuid
@@ -18,12 +19,19 @@ def _now() -> str:
 def _source_fingerprint(database: PostgresConnection, repertoire_id: str) -> str:
     row = storage.source_hash(database, (repertoire_id,))
     prefix = read_prefix(database, repertoire_id)
-    scope_fingerprint = f":{prefix['source_revision']}:{prefix['preview_id']}" if prefix['moves'] else ''
+    scope_fingerprint = (
+        f":{prefix['source_revision']}:{prefix['preview_id']}"
+        if prefix["moves"]
+        else ""
+    )
     return f"{row[0]}:{prefix['revision']}{scope_fingerprint}"
 
 
 def request_coverage_seed_in_transaction(
-    database: PostgresConnection, repertoire_id: str, *, automatic: bool = False,
+    database: PostgresConnection,
+    repertoire_id: str,
+    *,
+    automatic: bool = False,
     supersede_active: bool = False,
 ) -> dict[str, str]:
     """Admit one coverage build and its durable task without traversing lines."""
@@ -33,10 +41,21 @@ def request_coverage_seed_in_transaction(
     if exists is None:
         raise KeyError("Repertoire not found")
     active = storage.active_run(database, (repertoire_id,))
-    if active and not supersede_active and coverage_run_is_current(database, active, repertoire_id):
+    if (
+        active
+        and not supersede_active
+        and coverage_run_is_current(database, active, repertoire_id)
+    ):
         return {"run_id": str(active["id"]), "status": "queued"}
     if active:
-        storage.fail_run(database, ("Repertoire lines changed; a new coverage run was queued", _now(), active["id"]))
+        storage.fail_run(
+            database,
+            (
+                "Repertoire lines changed; a new coverage run was queued",
+                _now(),
+                active["id"],
+            ),
+        )
     settings = dict(storage.settings_row(database))
     cohort = recent_player_cohort(database, int(settings["coverage_maia_elo"]))
     settings_payload = {
@@ -55,14 +74,21 @@ def request_coverage_seed_in_transaction(
     run_id = str(uuid.uuid4())
     now = _now()
     source_fingerprint = _source_fingerprint(database, repertoire_id)
-    storage.insert_run(database, (run_id, repertoire_id, json.dumps(settings_payload), now, now))
+    storage.insert_run(
+        database, (run_id, repertoire_id, json.dumps(settings_payload), now, now)
+    )
     enqueue_task_in_transaction(
-        database, "coverage_seed", repertoire_id,
-        {"run_id": run_id, "repertoire_id": repertoire_id,
-         "horizon_fullmoves": int(settings_payload["horizon_fullmoves"]),
-         "source_fingerprint": source_fingerprint,
-         "after_line_id": "", "position_index": 0},
+        database,
+        "coverage_seed",
+        repertoire_id,
+        {
+            "run_id": run_id,
+            "repertoire_id": repertoire_id,
+            "horizon_fullmoves": int(settings_payload["horizon_fullmoves"]),
+            "source_fingerprint": source_fingerprint,
+            "after_line_id": "",
+            "position_index": 0,
+        },
         priority=75,
     )
     return {"run_id": run_id, "status": "queued"}
-

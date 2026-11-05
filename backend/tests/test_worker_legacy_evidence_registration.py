@@ -1,20 +1,26 @@
 """Retained legacy evidence commands select only their own worker registration."""
+
 import os
 import subprocess
 import sys
 
 
 def run_fresh(script):
-    guard = '''
+    guard = """
 import socket
 def no_network(*args, **kwargs): raise AssertionError('unexpected network')
 socket.socket.connect = no_network
 socket.create_connection = no_network
-'''
-    subprocess.run([sys.executable, '-c', guard + script], env=os.environ.copy(), check=True, timeout=20)
+"""
+    subprocess.run(
+        [sys.executable, "-c", guard + script],
+        env=os.environ.copy(),
+        check=True,
+        timeout=20,
+    )
 
 
-SETUP = '''
+SETUP = """
 from contextlib import nullcontext
 from app import tasks, command_gateway
 tasks.activity_gate.foreground = lambda: nullcontext()
@@ -26,17 +32,20 @@ tasks.study_only_enabled = lambda: False
 from app.services import background_runtime
 background_runtime.measure_training_timing = lambda *_: nullcontext(None)
 tasks.measure_handler = lambda *_a, **_kw: nullcontext()
-'''
+"""
 
 
 def test_cold_worker_and_essential_queue_do_not_import_legacy_evidence():
-    run_fresh('''
+    run_fresh(
+        """
 import importlib.abc, sys
 class Deny(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
         if fullname == 'app.game_evidence_commands': raise AssertionError(fullname)
 sys.meta_path.insert(0, Deny())
-''' + SETUP + '''
+"""
+        + SETUP
+        + """
 tasks.activity_gate.essential_study_progress = lambda *_: nullcontext()
 tasks.defer_paused_defensive_task = lambda _: False
 tasks.current_delivery = lambda _: True
@@ -45,11 +54,14 @@ tasks.claim_task = lambda kind: claimed
 tasks.execute_postgres_queue_refresh_slice = lambda value: False if value is claimed else (_ for _ in ()).throw(AssertionError('changed task'))
 assert tasks.progress_study_queue.run() is False
 assert 'app.game_evidence_commands' not in sys.modules
-''')
+"""
+    )
 
 
 def test_retained_commands_register_only_selected_owner_after_attempt():
-    run_fresh(SETUP + '''
+    run_fresh(
+        SETUP
+        + """
 from app.product_composition import worker_legacy_evidence as resolver
 seen = []
 def attempt(op, name, payload, **kw):
@@ -69,11 +81,13 @@ assert tasks.execute_foreground_command.run('admit-id','game_evidence.admit_lega
 assert [(x[0],x[1],x[2],x[3]) for x in seen] == [('attempt','receive-id','game_evidence.receive_legacy',receive),('execute','receive-id','game_evidence.receive_legacy',receive),('attempt','admit-id','game_evidence.admit_legacy',admit),('execute','admit-id','game_evidence.admit_legacy',admit)]
 assert seen[1][4] == {'background':True,'attempt_token':'original-token'}
 assert seen[3][4] == {'attempt_token':'original-token'}
-''')
+"""
+    )
 
 
 def test_failed_import_retries_selected_registration_once_without_blocking_study():
-    run_fresh('''
+    run_fresh(
+        """
 import importlib.abc, sys, threading
 from concurrent.futures import ThreadPoolExecutor
 class DenyOnce(importlib.abc.MetaPathFinder):
@@ -82,7 +96,9 @@ class DenyOnce(importlib.abc.MetaPathFinder):
         if fullname == 'app.game_evidence_commands' and self.fail:
             self.fail = False; raise ImportError('temporary unavailable')
 sys.meta_path.insert(0, DenyOnce())
-''' + SETUP + '''
+"""
+        + SETUP
+        + """
 from app.product_composition import worker_legacy_evidence as resolver
 name = 'game_evidence.receive_legacy'
 try: resolver.resolve_worker_legacy_evidence(name)
@@ -99,11 +115,14 @@ with resolver._lock:
     worker = threading.Thread(target=lambda: (resolver.resolve_worker_legacy_evidence('queue.issue_head'), completed.set()))
     worker.start(); assert completed.wait(2)
 worker.join(2); assert not worker.is_alive()
-''')
+"""
+    )
 
 
 def test_finished_conflict_and_import_failure_keep_original_fence():
-    run_fresh(SETUP + '''
+    run_fresh(
+        SETUP
+        + """
 name = 'game_evidence.receive_legacy'
 tasks.record_operation_attempt = lambda *_a, **_kw: (False, {}, None, 1)
 tasks.resolve_worker_legacy_evidence = lambda *_: (_ for _ in ()).throw(AssertionError('unexpected resolve'))
@@ -121,11 +140,14 @@ try: tasks.execute_background_command.run('retained', name, {'original':1})
 except ImportError: pass
 else: raise AssertionError('failure hidden')
 assert events == [('retained','token','unavailable',{'retryable':False,'background':True})]
-''')
+"""
+    )
 
 
 def test_factory_failure_does_not_register_either_command():
-    run_fresh(SETUP + '''
+    run_fresh(
+        SETUP
+        + """
 from app import game_evidence_commands as owner
 from app.product_composition import worker_legacy_evidence as resolver
 name = 'game_evidence.admit_legacy'
@@ -139,11 +161,14 @@ assert not command_gateway.is_command_registered('game_evidence.receive_legacy')
 owner.legacy_evidence_registration = original
 resolver.resolve_worker_legacy_evidence(name)
 assert command_gateway._handlers[name] is owner.admit_legacy_card
-''')
+"""
+    )
 
 
 def test_preexisting_registration_conflicts_without_replacing_handler_or_fence():
-    run_fresh(SETUP + '''
+    run_fresh(
+        SETUP
+        + """
 from app.product_composition import worker_legacy_evidence as resolver
 name = 'game_evidence.receive_legacy'
 original_handler = lambda *_: None
@@ -160,4 +185,5 @@ assert events == [('retained','token','Duplicate command: ' + name,{'retryable':
 assert command_gateway._handlers[name] is original_handler
 assert command_gateway._preparers[name] is original_prepare
 assert name not in resolver._loaded
-''')
+"""
+    )

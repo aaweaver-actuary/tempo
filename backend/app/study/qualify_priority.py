@@ -5,6 +5,7 @@ The joined #618–#624 source owns the explicit finite selection below. Missing
 required files/cases fail pytest collection; there are no optional fallbacks.
 Packaged/browser proof remains the separate explicit games-collection-release suite.
 """
+
 from pathlib import Path
 import fcntl
 import hashlib
@@ -68,20 +69,37 @@ QUEUE_PROOF = "backend/tests/test_study_encounter_intake_boundary.py::test_appli
 def queue_proof_passed(report):
     """Require the exact case to have passed, not merely a nonempty suite."""
     executed = list(ET.parse(report).getroot().iter("testcase"))
-    if not executed or any(case.find(tag) is not None for case in executed for tag in ("skipped", "failure", "error")):
-        raise ValueError("Required queue presentation native case is missing, skipped or failed")
-    cases = [case for case in executed
-             if case.get("classname", "").endswith("test_study_encounter_intake_boundary")
-             and case.get("name") == QUEUE_PROOF.split("::")[1]]
-    if len(cases) != 1 or any(cases[0].find(tag) is not None for tag in ("skipped", "failure", "error")):
-        raise ValueError("Required queue presentation native case is missing, skipped or failed")
+    if not executed or any(
+        case.find(tag) is not None
+        for case in executed
+        for tag in ("skipped", "failure", "error")
+    ):
+        raise ValueError(
+            "Required queue presentation native case is missing, skipped or failed"
+        )
+    cases = [
+        case
+        for case in executed
+        if case.get("classname", "").endswith("test_study_encounter_intake_boundary")
+        and case.get("name") == QUEUE_PROOF.split("::")[1]
+    ]
+    if len(cases) != 1 or any(
+        cases[0].find(tag) is not None for tag in ("skipped", "failure", "error")
+    ):
+        raise ValueError(
+            "Required queue presentation native case is missing, skipped or failed"
+        )
     return QUEUE_PROOF
 
 
 def source_binding(root=ROOT, base="origin/main", suite_id="study-game-priority"):
     """Bind the existing declared suite inputs to actual source bytes and git endpoints."""
+
     def git(*args):
-        return subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True).stdout
+        return subprocess.run(
+            ["git", "-C", str(root), *args], check=True, capture_output=True
+        ).stdout
+
     head = git("rev-parse", "--verify", "HEAD^{commit}").decode().strip()
     resolved_base = git("rev-parse", "--verify", base + "^{commit}").decode().strip()
     merge_base = git("merge-base", head, resolved_base).decode().strip()
@@ -94,7 +112,10 @@ def source_binding(root=ROOT, base="origin/main", suite_id="study-game-priority"
     if not files:
         raise ValueError("Priority proof has no declared source inputs")
     for selected in inputs:
-        if not any(path == selected or path.startswith(selected.rstrip("/") + "/") for path in files):
+        if not any(
+            path == selected or path.startswith(selected.rstrip("/") + "/")
+            for path in files
+        ):
             raise ValueError("Missing declared priority input: " + selected)
     hashes = {}
     for path in files:
@@ -102,9 +123,16 @@ def source_binding(root=ROOT, base="origin/main", suite_id="study-game-priority"
         if not file.is_file() or file.is_symlink():
             raise ValueError("Missing or unsupported priority input: " + path)
         hashes[path] = hashlib.sha256(file.read_bytes()).hexdigest()
-    return {"requestedBase": base, "resolvedBase": resolved_base, "resolvedHead": head,
-            "mergeBase": merge_base, "sourceInputs": hashes,
-            "worktreeStatus": git("status", "--porcelain", "--untracked-files=normal").decode().splitlines()}
+    return {
+        "requestedBase": base,
+        "resolvedBase": resolved_base,
+        "resolvedHead": head,
+        "mergeBase": merge_base,
+        "sourceInputs": hashes,
+        "worktreeStatus": git("status", "--porcelain", "--untracked-files=normal")
+        .decode()
+        .splitlines(),
+    }
 
 
 def junit_path(arguments, environment):
@@ -122,30 +150,58 @@ def main(arguments=()):
     # Reuse the receiving owner's existing source-overlay qualification inputs;
     # select the caller's already-installed Python, never install dependencies.
     sources = (
-        "backend", "database", "packages/repertoire-comparison/src",
-        "packages/game-classification/src", "packages/game-ingestion/src",
-        "packages/game-review-contracts/src", "packages/evidence-math/src",
-        "packages/scheduling/src", "packages/chess-core/src",
-        "services/learning/runtime/src", "services/learning/application/src",
-        "services/learning/remediation/src", "contracts/game-evidence/src",
-        "contracts/analysis-jobs/src", "packages/chess-line/src", "packages/board-ui/src",
-        "packages/game-actions/src", "packages/study-session/src", "services/intelligence/src",
-        "services/game-evidence/src", "services/content/src", "contracts/content-publication/src",
-        "contracts/intelligence/src", "contracts/learning/src", "contracts/consumer-examples/src",
+        "backend",
+        "database",
+        "packages/repertoire-comparison/src",
+        "packages/game-classification/src",
+        "packages/game-ingestion/src",
+        "packages/game-review-contracts/src",
+        "packages/evidence-math/src",
+        "packages/scheduling/src",
+        "packages/chess-core/src",
+        "services/learning/runtime/src",
+        "services/learning/application/src",
+        "services/learning/remediation/src",
+        "contracts/game-evidence/src",
+        "contracts/analysis-jobs/src",
+        "packages/chess-line/src",
+        "packages/board-ui/src",
+        "packages/game-actions/src",
+        "packages/study-session/src",
+        "services/intelligence/src",
+        "services/game-evidence/src",
+        "services/content/src",
+        "contracts/content-publication/src",
+        "contracts/intelligence/src",
+        "contracts/learning/src",
+        "contracts/consumer-examples/src",
     )
     paths = [ROOT / source for source in sources]
-    environment = os.environ | {"PYTHONPATH": os.pathsep.join(map(str, paths)), "PYTHONDONTWRITEBYTECODE": "1"}
+    environment = os.environ | {
+        "PYTHONPATH": os.pathsep.join(map(str, paths)),
+        "PYTHONDONTWRITEBYTECODE": "1",
+    }
     queue_only = "--queue-presentation-only" in arguments
-    arguments = tuple(argument for argument in arguments if argument != "--queue-presentation-only")
+    arguments = tuple(
+        argument for argument in arguments if argument != "--queue-presentation-only"
+    )
     suite_id = "study-queue-presentation" if queue_only else "study-game-priority"
     selection = (QUEUE_PROOF,) if queue_only else REQUIRED
     command = [sys.executable, "-m", "pytest", "-q", *selection, *arguments]
     collecting = "--collect-only" in arguments
-    lock_path = Path(environment.get("TEMPO_VALIDATION_LOCK_PATH", "/tmp/tempo-mac-validation-20261025.lock"))
+    lock_path = Path(
+        environment.get(
+            "TEMPO_VALIDATION_LOCK_PATH", "/tmp/tempo-mac-validation-20261025.lock"
+        )
+    )
+
     def execute():
         if collecting:
             return subprocess.run(command, cwd=ROOT, env=environment).returncode
-        before = source_binding(base=environment.get("TEMPO_PRIORITY_PROOF_BASE", "origin/main"), suite_id=suite_id)
+        before = source_binding(
+            base=environment.get("TEMPO_PRIORITY_PROOF_BASE", "origin/main"),
+            suite_id=suite_id,
+        )
         with tempfile.TemporaryDirectory(prefix="tempo-priority-junit-") as temporary:
             report = junit_path(arguments, environment)
             effective_command = command
@@ -154,50 +210,103 @@ def main(arguments=()):
                 effective_command = [*command, "--junitxml=" + str(report)]
             elif not report.is_absolute():
                 report = ROOT / report
-            outcome = subprocess.run(effective_command, cwd=ROOT, env=environment).returncode
+            outcome = subprocess.run(
+                effective_command, cwd=ROOT, env=environment
+            ).returncode
             if outcome:
                 return outcome
             try:
                 identity = queue_proof_passed(report)
-                after = source_binding(base=environment.get("TEMPO_PRIORITY_PROOF_BASE", "origin/main"), suite_id=suite_id)
+                after = source_binding(
+                    base=environment.get("TEMPO_PRIORITY_PROOF_BASE", "origin/main"),
+                    suite_id=suite_id,
+                )
                 if before != after:
-                    raise ValueError("Priority proof inputs or candidate changed during execution")
-            except (OSError, ValueError, ET.ParseError, subprocess.CalledProcessError) as error:
+                    raise ValueError(
+                        "Priority proof inputs or candidate changed during execution"
+                    )
+            except (
+                OSError,
+                ValueError,
+                ET.ParseError,
+                subprocess.CalledProcessError,
+            ) as error:
                 print("Priority proof evidence invalid: " + str(error), file=sys.stderr)
                 return 1
-            evidence = {"suite": suite_id, "scope": "queue-presentation-native-case",
-                        "expectedIdentities": [QUEUE_PROOF], "executedIdentities": [identity],
-                        "passed": 1, "failed": 0, "skipped": 0,
-                        "python": sys.version, "platform": platform.platform(),
-                        "comparison": before, "comparisonAfter": after}
+            evidence = {
+                "suite": suite_id,
+                "scope": "queue-presentation-native-case",
+                "expectedIdentities": [QUEUE_PROOF],
+                "executedIdentities": [identity],
+                "passed": 1,
+                "failed": 0,
+                "skipped": 0,
+                "python": sys.version,
+                "platform": platform.platform(),
+                "comparison": before,
+                "comparisonAfter": after,
+            }
             destination = environment.get("TEMPO_PRIORITY_EVIDENCE")
             if destination:
                 try:
-                    owner_root = Path(environment["TEMPO_PRIORITY_EVIDENCE_ROOT"]).resolve(strict=True)
+                    owner_root = Path(
+                        environment["TEMPO_PRIORITY_EVIDENCE_ROOT"]
+                    ).resolve(strict=True)
                     target = Path(destination).resolve()
-                    fixture_root = Path(environment["TEMPO_GAME_FEEDBACK_EVIDENCE_ROOT"]).resolve(strict=True)
-                    if target.parent != owner_root or fixture_root != owner_root / "fixtures" or target.exists():
-                        raise ValueError("Priority evidence requires a fresh owned root")
+                    fixture_root = Path(
+                        environment["TEMPO_GAME_FEEDBACK_EVIDENCE_ROOT"]
+                    ).resolve(strict=True)
+                    if (
+                        target.parent != owner_root
+                        or fixture_root != owner_root / "fixtures"
+                        or target.exists()
+                    ):
+                        raise ValueError(
+                            "Priority evidence requires a fresh owned root"
+                        )
                     reports = list(fixture_root.glob("*/fixture.json"))
                     if len(reports) != 1:
                         raise ValueError("Expected one owned PostgreSQL fixture report")
                     fixture = json.loads(reports[0].read_text())
-                    if (fixture.get("cleanup_verified") is not True or fixture.get("owner") != reports[0].parent.name
-                            or not fixture.get("container_id") or not fixture.get("image_id")):
+                    if (
+                        fixture.get("cleanup_verified") is not True
+                        or fixture.get("owner") != reports[0].parent.name
+                        or not fixture.get("container_id")
+                        or not fixture.get("image_id")
+                    ):
                         raise ValueError("Missing owned PostgreSQL identity or cleanup")
-                    evidence["fixture"] = {key: fixture[key] for key in
-                        ("owner", "container_id", "image_id", "profile", "storage", "memory_bytes", "pids_limit", "cleanup_verified")}
-                    with tempfile.NamedTemporaryFile(mode="w", dir=owner_root, prefix="evidence-", delete=False) as output:
+                    evidence["fixture"] = {
+                        key: fixture[key]
+                        for key in (
+                            "owner",
+                            "container_id",
+                            "image_id",
+                            "profile",
+                            "storage",
+                            "memory_bytes",
+                            "pids_limit",
+                            "cleanup_verified",
+                        )
+                    }
+                    with tempfile.NamedTemporaryFile(
+                        mode="w", dir=owner_root, prefix="evidence-", delete=False
+                    ) as output:
                         temporary = output.name
                         json.dump(evidence, output, sort_keys=True)
                     os.replace(temporary, target)
                 except (KeyError, OSError, ValueError, json.JSONDecodeError) as error:
-                    print("Priority fixture evidence invalid: " + str(error), file=sys.stderr)
+                    print(
+                        "Priority fixture evidence invalid: " + str(error),
+                        file=sys.stderr,
+                    )
                     return 1
             else:
-                evidence["fixture"] = "owned postgres:18.6-trixie; actual image and cleanup recorded by fixture"
+                evidence["fixture"] = (
+                    "owned postgres:18.6-trixie; actual image and cleanup recorded by fixture"
+                )
             print(json.dumps(evidence, sort_keys=True))
             return 0
+
     if not collecting and lock_path.exists():
         # Never truncate or unlink the shared advisory lock.
         with lock_path.open("r+") as lock:

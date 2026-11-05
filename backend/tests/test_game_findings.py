@@ -34,7 +34,9 @@ def test_recurring_motif_recommends_but_does_not_activate_a_tactics_pack(
                                 'missed',0.95,?,'[]','{}',?,?)""",
                     (f"event-{index}", game_id, 180 + index, played_at, played_at),
                 )
-        recommendation = client.get("/api/game-insights/motifs").json()["recommendations"][0]
+        recommendation = client.get("/api/game-insights/motifs").json()[
+            "recommendations"
+        ][0]
         assert recommendation["motif"] == "fork"
         assert recommendation["miss_count"] == 3
         assert recommendation["opportunity_count"] == 3
@@ -42,9 +44,12 @@ def test_recurring_motif_recommends_but_does_not_activate_a_tactics_pack(
         assert recommendation["window_days"] == 30
         assert recommendation["recommended_pack_id"].startswith("fork-")
         with database.connection() as db:
-            assert db.execute(
-                "SELECT COUNT(*) FROM tactic_pack_activation WHERE active=1"
-            ).fetchone()[0] == 0
+            assert (
+                db.execute(
+                    "SELECT COUNT(*) FROM tactic_pack_activation WHERE active=1"
+                ).fetchone()[0]
+                == 0
+            )
 
 
 def test_tactics_suggestions_use_thirty_days_and_explicit_opportunity_denominator(
@@ -55,7 +60,13 @@ def test_tactics_suggestions_use_thirty_days_and_explicit_opportunity_denominato
     with TestClient(app) as client:
         with database.connection() as db:
             for index, (age_days, outcome) in enumerate(
-                [(1, "missed"), (2, "missed"), (3, "missed"), (4, "found"), (31, "missed")]
+                [
+                    (1, "missed"),
+                    (2, "missed"),
+                    (3, "missed"),
+                    (4, "found"),
+                    (31, "missed"),
+                ]
             ):
                 game_id = f"lichess:window-{index}"
                 played_at = (now - timedelta(days=age_days)).isoformat()
@@ -73,7 +84,9 @@ def test_tactics_suggestions_use_thirty_days_and_explicit_opportunity_denominato
                                 ?,0.95,180,'[]','{}',?,?)""",
                     (f"window-event-{index}", game_id, outcome, played_at, played_at),
                 )
-        recommendation = client.get("/api/game-insights/motifs").json()["recommendations"][0]
+        recommendation = client.get("/api/game-insights/motifs").json()[
+            "recommendations"
+        ][0]
         assert recommendation["miss_count"] == 3
         assert recommendation["opportunity_count"] == 4
         assert recommendation["miss_rate"] == 0.75

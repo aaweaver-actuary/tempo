@@ -28,19 +28,26 @@ def graph_input(line_count: int) -> GraphInput:
             board.push(move)
             if board.is_game_over():
                 break
-        lines.append({
-            "id": f"line-{line_index}",
-            "start_fen": chess.STARTING_FEN,
-            "moves_json": json.dumps(moves),
-            "trained_color": "white" if line_index % 2 == 0 else "black",
-            "learner_decision_count": 3,
-        })
+        lines.append(
+            {
+                "id": f"line-{line_index}",
+                "start_fen": chess.STARTING_FEN,
+                "moves_json": json.dumps(moves),
+                "trained_color": "white" if line_index % 2 == 0 else "black",
+                "learner_decision_count": 3,
+            }
+        )
     return GraphInput("graph-benchmark", tuple(lines), 3)
 
 
 def main() -> None:
     cases = []
-    for name, line_count in (("small", 10), ("typical", 100), ("large", 500), ("stress", 2_000)):
+    for name, line_count in (
+        ("small", 10),
+        ("typical", 100),
+        ("large", 500),
+        ("stress", 2_000),
+    ):
         fixture = graph_input(line_count)
         build_graph(fixture)
         samples_ms = []
@@ -48,21 +55,30 @@ def main() -> None:
             started_at = time.perf_counter()
             steps = build_graph(fixture)
             samples_ms.append((time.perf_counter() - started_at) * 1000)
-        cases.append({
-            "name": name,
-            "lines": line_count,
-            "source_plies": sum(len(json.loads(line["moves_json"])) for line in fixture.lines),
-            "graph_steps": len(steps),
-            "samples_ms": samples_ms,
-            "p50_ms": statistics.median(samples_ms),
-            "p95_ms": max(samples_ms),
-        })
+        cases.append(
+            {
+                "name": name,
+                "lines": line_count,
+                "source_plies": sum(
+                    len(json.loads(line["moves_json"])) for line in fixture.lines
+                ),
+                "graph_steps": len(steps),
+                "samples_ms": samples_ms,
+                "p50_ms": statistics.median(samples_ms),
+                "p95_ms": max(samples_ms),
+            }
+        )
     report = {
         "schema_version": 1,
-        "commit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+        "commit": subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], text=True
+        ).strip(),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "fixture": "deterministic-16-ply-three-decision-v1",
-        "environment": {"python": sys.version.split()[0], "platform": platform.platform()},
+        "environment": {
+            "python": sys.version.split()[0],
+            "platform": platform.platform(),
+        },
         "cases": cases,
     }
     output_path = Path("test-results/performance/opening-graph-benchmark.json")

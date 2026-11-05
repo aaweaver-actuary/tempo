@@ -1,4 +1,5 @@
 """Study-owned facts/effects on the current caller's transaction."""
+
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
@@ -45,8 +46,11 @@ class IntroductionOwner(Protocol):
     in the same borrowed transaction; it only appends, preserving issued work.
     It must not commit independently. Unknown eligibility is closed.
     """
+
     def facts(self, day: str) -> OwnerFacts: ...
-    def introduce(self, day: str, candidate: Candidate) -> Literal["introduced", "already_introduced", "stale"]: ...
+    def introduce(
+        self, day: str, candidate: Candidate
+    ) -> Literal["introduced", "already_introduced", "stale"]: ...
 
 
 class IntroductionConflicts(Protocol):
@@ -57,6 +61,7 @@ class IntroductionConflicts(Protocol):
     serializes it with the conflict owner's synchronize command. The conflict
     owner retains scoped hold identity, persistence and restoration semantics.
     """
+
     def blocked(self, repertoire_id: str, card_id: str, revision: int) -> bool: ...
 
 
@@ -66,7 +71,9 @@ class IntroductionStore(Protocol):
     def save_ranking(self, context: RankingContext, ranking: RankingOutput) -> None: ...
     def lock_allocation(self) -> None: ...
     def receipt(self, presentation_id: str) -> Receipt | None: ...
-    def record_introduction(self, receipt: Receipt, *, period_rotation_after: str | None) -> None: ...
+    def record_introduction(
+        self, receipt: Receipt, *, period_rotation_after: str | None
+    ) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -79,11 +86,19 @@ class IntroductionSettings:
 
     def __post_init__(self):
         from .policy import validated_weights
-        object.__setattr__(self, 'weights', tuple(tuple(pair) for pair in self.weights))
+
+        object.__setattr__(self, "weights", tuple(tuple(pair) for pair in self.weights))
         validated_weights(self.weights)
-        if (not self.revision or type(self.global_budget) is not int or self.global_budget < 0
-                or type(self.enabled) is not bool or type(self.paused) is not bool):
-            raise ValueError("explicit settings revision and nonnegative global budget required")
+        if (
+            not self.revision
+            or type(self.global_budget) is not int
+            or self.global_budget < 0
+            or type(self.enabled) is not bool
+            or type(self.paused) is not bool
+        ):
+            raise ValueError(
+                "explicit settings revision and nonnegative global budget required"
+            )
 
 
 @dataclass(frozen=True)
@@ -93,32 +108,54 @@ class IntroductionSource:
     Outer wiring supplies these existing factual values, not new eligibility
     callbacks. Current Study rechecks actual source/card/route rows itself.
     """
+
     snapshot: RepertoireSnapshot
     authority: LegacyAuthorityToken
 
     def __post_init__(self):
-        object.__setattr__(self, 'authority', LegacyAuthorityToken.model_validate_json(self.authority.model_dump_json()))
-        object.__setattr__(self, 'snapshot', RepertoireSnapshot.model_validate_json(self.snapshot.model_dump_json()))
+        object.__setattr__(
+            self,
+            "authority",
+            LegacyAuthorityToken.model_validate_json(self.authority.model_dump_json()),
+        )
+        object.__setattr__(
+            self,
+            "snapshot",
+            RepertoireSnapshot.model_validate_json(self.snapshot.model_dump_json()),
+        )
         token, membership = self.authority, self.snapshot.membership
-        if (self.snapshot.variant != "standard" or token.repertoire_id not in membership.scope_repertoire_ids
-                or membership.revision != token.graph_generation
-                or membership.source_revision != fingerprint(token.model_dump(mode="json"))):
+        if (
+            self.snapshot.variant != "standard"
+            or token.repertoire_id not in membership.scope_repertoire_ids
+            or membership.revision != token.graph_generation
+            or membership.source_revision != fingerprint(token.model_dump(mode="json"))
+        ):
             raise ValueError("retained source and snapshot bindings disagree")
 
 
 @dataclass(frozen=True)
 class RepertoireIntroductionSource:
     """Actual repertoire-only shared snapshot; no game/capture authority token."""
+
     snapshot: RepertoireSnapshot
 
     def __post_init__(self):
-        object.__setattr__(self, 'snapshot', RepertoireSnapshot.model_validate_json(self.snapshot.model_dump_json()))
+        object.__setattr__(
+            self,
+            "snapshot",
+            RepertoireSnapshot.model_validate_json(self.snapshot.model_dump_json()),
+        )
         membership = self.snapshot.membership
-        if (self.snapshot.variant != 'standard' or len(membership.scope_repertoire_ids) != 1
-                or not membership.complete or not membership.available or membership.unavailable_reason is not None
-                or membership.scope_id != 'repertoire:' + membership.scope_repertoire_ids[0]
-                or membership.source_revision != membership.digest):
-            raise ValueError('complete current repertoire source required')
+        if (
+            self.snapshot.variant != "standard"
+            or len(membership.scope_repertoire_ids) != 1
+            or not membership.complete
+            or not membership.available
+            or membership.unavailable_reason is not None
+            or membership.scope_id != "repertoire:" + membership.scope_repertoire_ids[0]
+            or membership.source_revision != membership.digest
+        ):
+            raise ValueError("complete current repertoire source required")
 
     @property
     def repertoire_id(self):

@@ -20,12 +20,27 @@ KEY = PositionKey("rep-1", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -
 DEFINITION = PositionDefinition(KEY, "e2e4", "policy-v1")
 
 
-def make(due=True, *, actual="e2e4", assistance=False, disposition=None,
-         terminal=True, aggregate=True, saved=True, owner_epoch="epoch-1",
-         definition=DEFINITION, source_digest="original-source-digest",
-         accepted_at=ISSUED_AT + timedelta(minutes=2), manual_failure=False,
-         attempt_id="attempt-1", index=0, event_id="event-1", policy_day=DAY,
-         accepted_study_day=DAY, issued_at=ISSUED_AT):
+def make(
+    due=True,
+    *,
+    actual="e2e4",
+    assistance=False,
+    disposition=None,
+    terminal=True,
+    aggregate=True,
+    saved=True,
+    owner_epoch="epoch-1",
+    definition=DEFINITION,
+    source_digest="original-source-digest",
+    accepted_at=ISSUED_AT + timedelta(minutes=2),
+    manual_failure=False,
+    attempt_id="attempt-1",
+    index=0,
+    event_id="event-1",
+    policy_day=DAY,
+    accepted_study_day=DAY,
+    issued_at=ISSUED_AT,
+):
     response = FirstResponse(
         attempt_id=attempt_id,
         index=index,
@@ -39,8 +54,14 @@ def make(due=True, *, actual="e2e4", assistance=False, disposition=None,
     evidence = AcceptedEvidence(
         first_response=response,
         saved=saved,
-        disposition=disposition or ("manual_failure" if manual_failure else
-                                    "expected" if actual == definition.expected_uci else "wrong"),
+        disposition=disposition
+        or (
+            "manual_failure"
+            if manual_failure
+            else "expected"
+            if actual == definition.expected_uci
+            else "wrong"
+        ),
         terminal_complete=terminal,
         aggregate_review_saved=aggregate,
         owner_epoch=owner_epoch,
@@ -71,20 +92,31 @@ def test_due_correct_complete_saved_response_proposes_good():
 def test_nondue_correct_is_observation_only():
     evidence, due = make(due=False)
     proposal = propose_grade(evidence, due)
-    assert (proposal.grade, proposal.reason) == ("observe", "nondue_correct_no_schedule")
+    assert (proposal.grade, proposal.reason) == (
+        "observe",
+        "nondue_correct_no_schedule",
+    )
 
 
 def test_nondue_correct_is_observation_even_before_terminal_completion():
     evidence, due = make(due=False, terminal=False, aggregate=False)
     proposal = propose_grade(evidence, due)
-    assert (proposal.grade, proposal.reason) == ("observe", "nondue_correct_no_schedule")
+    assert (proposal.grade, proposal.reason) == (
+        "observe",
+        "nondue_correct_no_schedule",
+    )
 
 
 def test_late_day_good_is_observation_and_never_backdated():
-    evidence, due = make(accepted_at=ISSUED_AT + timedelta(days=1, minutes=1),
-                         accepted_study_day=DAY + timedelta(days=1))
+    evidence, due = make(
+        accepted_at=ISSUED_AT + timedelta(days=1, minutes=1),
+        accepted_study_day=DAY + timedelta(days=1),
+    )
     proposal = propose_grade(evidence, due)
-    assert (proposal.grade, proposal.reason) == ("observe", "accepted_after_issued_study_day")
+    assert (proposal.grade, proposal.reason) == (
+        "observe",
+        "accepted_after_issued_study_day",
+    )
     assert proposal.study_day == DAY
 
 
@@ -99,7 +131,10 @@ def test_unassisted_wrong_proposes_again_even_if_incomplete_or_nondue(due):
 def test_assisted_wrong_is_not_a_new_independent_again():
     evidence, due = make(actual="d2d4", assistance=True)
     proposal = propose_grade(evidence, due)
-    assert (proposal.grade, proposal.reason) == ("observe", "assisted_first_response_no_new_grade")
+    assert (proposal.grade, proposal.reason) == (
+        "observe",
+        "assisted_first_response_no_new_grade",
+    )
 
 
 def test_correct_assisted_response_is_observation():
@@ -110,9 +145,13 @@ def test_correct_assisted_response_is_observation():
 
 def test_first_wrong_survives_abandoned_attempt_and_uses_acceptance_day():
     accepted_at = ISSUED_AT + timedelta(days=1, minutes=3)
-    evidence, due = make(actual="d2d4", terminal=False, aggregate=False,
-                         accepted_at=accepted_at,
-                         accepted_study_day=DAY + timedelta(days=1))
+    evidence, due = make(
+        actual="d2d4",
+        terminal=False,
+        aggregate=False,
+        accepted_at=accepted_at,
+        accepted_study_day=DAY + timedelta(days=1),
+    )
     proposal = propose_grade(evidence, due)
     assert proposal.grade == "again"
     assert proposal.study_day == DAY + timedelta(days=1)
@@ -130,10 +169,16 @@ def test_authoritative_owner_day_wins_when_utc_date_differs_from_local_day():
 def test_owner_midnight_changes_good_to_observation_using_supplied_day():
     issued_at = datetime(2026, 11, 2, 23, 55, tzinfo=STUDY_TZ)
     accepted_at = datetime(2026, 11, 3, 0, 5, tzinfo=STUDY_TZ)
-    evidence, due = make(issued_at=issued_at, accepted_at=accepted_at,
-                         accepted_study_day=DAY + timedelta(days=1))
+    evidence, due = make(
+        issued_at=issued_at,
+        accepted_at=accepted_at,
+        accepted_study_day=DAY + timedelta(days=1),
+    )
     proposal = propose_grade(evidence, due)
-    assert (proposal.grade, proposal.reason) == ("observe", "accepted_after_issued_study_day")
+    assert (proposal.grade, proposal.reason) == (
+        "observe",
+        "accepted_after_issued_study_day",
+    )
 
 
 def test_dst_offset_mismatch_does_not_reconstruct_authoritative_acceptance_day():
@@ -141,9 +186,12 @@ def test_dst_offset_mismatch_does_not_reconstruct_authoritative_acceptance_day()
     # owner has resolved this instant to March 9 after the spring transition.
     issued_at = datetime(2026, 3, 8, 23, 55, tzinfo=STUDY_TZ)
     accepted_at = datetime(2026, 3, 9, 5, 30, tzinfo=timezone.utc)
-    evidence, due = make(issued_at=issued_at, accepted_at=accepted_at,
-                         policy_day=date(2026, 3, 8),
-                         accepted_study_day=date(2026, 3, 9))
+    evidence, due = make(
+        issued_at=issued_at,
+        accepted_at=accepted_at,
+        policy_day=date(2026, 3, 8),
+        accepted_study_day=date(2026, 3, 9),
+    )
     proposal = propose_grade(evidence, due)
     assert proposal.grade == "observe"
     assert proposal.study_day == date(2026, 3, 8)
@@ -157,8 +205,9 @@ def test_replay_uses_persisted_accepted_study_day_not_recomputed_timestamp():
 
 
 def test_manual_failure_is_again_without_a_move():
-    evidence, due = make(actual=None, manual_failure=True, terminal=False,
-                         aggregate=False)
+    evidence, due = make(
+        actual=None, manual_failure=True, terminal=False, aggregate=False
+    )
     proposal = propose_grade(evidence, due)
     assert proposal.grade == "again"
 
@@ -167,7 +216,9 @@ def test_correct_without_saved_terminal_aggregate_remains_pending():
     evidence, due = make(terminal=True, aggregate=False)
     proposal = propose_grade(evidence, due)
     assert (proposal.grade, proposal.reason) == (
-        "pending", "correct_waits_for_completed_saved_review")
+        "pending",
+        "correct_waits_for_completed_saved_review",
+    )
 
 
 @pytest.mark.parametrize("disposition", ["alternate", "unverified"])

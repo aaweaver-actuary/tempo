@@ -11,7 +11,9 @@ from .command_gateway import register_command
 from tempo_legacy_database.adapters.foreground_controls import prefix_splits as storage
 from app.contracts.transport.content import PrefixSplitRequest
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
-from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
+from tempo_legacy_database.adapters.queue_position_lock import (
+    lock_queue_date_for_position,
+)
 from .services.postgres_integrity import invalidate_integrity_in_transaction
 from .services.postgres_opening_graph import request_graph_rebuild_in_transaction
 from .services.prefix_split import apply_prefix_split, preview_prefix_split
@@ -30,15 +32,24 @@ def _shared_usage(database: PostgresConnection, card_id: str) -> dict[str, int]:
     }
 
 
-def accept_prefix_split(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+def accept_prefix_split(
+    database: PostgresConnection, payload: dict[str, Any]
+) -> dict[str, Any]:
     card_id = str(payload["card_id"])
     request = PrefixSplitRequest.model_validate(payload["request"])
     _lock_prefix_card(database, card_id)
     lock_queue_date_for_position(database, date.today().isoformat())
     try:
-        from tempo_legacy_database.adapters.study.recombination import accept_current_split
-        regrouped = accept_current_split(database, card_id, request.expected_revision,
-            confirmed_queue_entry_id=request.queue_entry_id)
+        from tempo_legacy_database.adapters.study.recombination import (
+            accept_current_split,
+        )
+
+        regrouped = accept_current_split(
+            database,
+            card_id,
+            request.expected_revision,
+            confirmed_queue_entry_id=request.queue_entry_id,
+        )
         if regrouped is not None:
             return {**regrouped, **_shared_usage(database, card_id)}
         result = apply_prefix_split(database, card_id, request.expected_revision)
@@ -50,22 +61,31 @@ def accept_prefix_split(database: PostgresConnection, payload: dict[str, Any]) -
         raise HTTPException(409, str(error)) from error
     if not result["idempotent"]:
         linked_repertoire_ids = {
-            str(row[0]) for row in storage.linked_repertoire_rows(
-                database, result["parent"]["card_id"], result["continuation"]["card_id"],
+            str(row[0])
+            for row in storage.linked_repertoire_rows(
+                database,
+                result["parent"]["card_id"],
+                result["continuation"]["card_id"],
             )
         }
         storage.mark_split_pending_validation(
-            database, result["parent"]["card_id"], result["continuation"]["card_id"],
+            database,
+            result["parent"]["card_id"],
+            result["continuation"]["card_id"],
         )
         for repertoire_id in sorted(linked_repertoire_ids):
             invalidate_integrity_in_transaction(database, repertoire_id)
             request_graph_rebuild_in_transaction(
-                database, repertoire_id, date.today().isoformat(),
+                database,
+                repertoire_id,
+                date.today().isoformat(),
             )
     return {**result, **_shared_usage(database, card_id)}
 
 
-def reject_prefix_split(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, int]:
+def reject_prefix_split(
+    database: PostgresConnection, payload: dict[str, Any]
+) -> dict[str, int]:
     card_id = str(payload["card_id"])
     request = PrefixSplitRequest.model_validate(payload["request"])
     _lock_prefix_card(database, card_id)

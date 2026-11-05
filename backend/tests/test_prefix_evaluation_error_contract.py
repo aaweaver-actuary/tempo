@@ -1,4 +1,5 @@
 """Foreground deferral is public without importing the prefix HTTP API."""
+
 import os
 from pathlib import Path
 import subprocess
@@ -9,15 +10,21 @@ from app.contracts.prefix_errors import PrefixEvaluationForegroundDeferred
 
 
 def test_public_foreground_defer_alias_and_http_contract():
-    assert prefix_evaluation_api.PrefixEvaluationForegroundDeferred is PrefixEvaluationForegroundDeferred
+    assert (
+        prefix_evaluation_api.PrefixEvaluationForegroundDeferred
+        is PrefixEvaluationForegroundDeferred
+    )
     error = PrefixEvaluationForegroundDeferred()
     assert error.status_code == 503
-    assert error.detail == {'code': 'evaluation_busy', 'message': 'Study work is active. Retry the diagnostic when study is idle.'}
-    assert error.headers == {'Retry-After': '1'}
+    assert error.detail == {
+        "code": "evaluation_busy",
+        "message": "Study work is active. Retry the diagnostic when study is idle.",
+    }
+    assert error.headers == {"Retry-After": "1"}
 
 
 def test_gateway_defer_does_not_import_prefix_http_api_or_open_writer():
-    code = '''
+    code = """
 import builtins
 original = builtins.__import__
 def guarded(name, *args, **kwargs):
@@ -39,6 +46,10 @@ except gateway.BackgroundAdmissionDeferred:
     pass
 else:
     raise AssertionError('expected foreground deferral')
-'''
-    subprocess.run([sys.executable, '-c', code], cwd=Path(__file__).resolve().parents[2],
-                   env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'}, check=True)
+"""
+    subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).resolve().parents[2],
+        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        check=True,
+    )

@@ -19,8 +19,11 @@ def retained_time_precision(game) -> str:
         if moment.utcoffset() is None:
             return "unknown"
         moment = moment.astimezone(timezone.utc)
-        return "second" if (moment.hour, moment.minute, moment.second, moment.microsecond) != (0, 0, 0, 0) else "unknown"
+        return (
+            "second"
+            if (moment.hour, moment.minute, moment.second, moment.microsecond)
+            != (0, 0, 0, 0)
+            else "unknown"
+        )
     except ValueError:
         return "unknown"
-
-

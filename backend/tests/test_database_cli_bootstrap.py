@@ -1,4 +1,5 @@
 """Direct CLI source discovery, without importing the application or opening storage."""
+
 from pathlib import Path
 import subprocess
 import sys
@@ -17,7 +18,7 @@ ENTRYPOINTS = (
 
 
 def test_database_snapshot_cli_help_needs_no_pythonpath_or_storage(tmp_path):
-    probe = r'''
+    probe = r"""
 import runpy
 import sys
 def prohibit_effects(event, arguments):
@@ -31,18 +32,29 @@ except SystemExit as result:
     assert result.code == 0
 else:
     raise AssertionError('CLI help did not exit')
-'''
+"""
     result = subprocess.run(
-        [sys.executable, '-I', '-c', probe, str(ROOT / 'database/tooling/create_sqlite_cutover_snapshot.py')],
-        cwd=tmp_path, capture_output=True, text=True, timeout=10,
+        [
+            sys.executable,
+            "-I",
+            "-c",
+            probe,
+            str(ROOT / "database/tooling/create_sqlite_cutover_snapshot.py"),
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=10,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert 'usage:' in result.stdout
+    assert "usage:" in result.stdout
 
 
 @pytest.mark.parametrize("entrypoint", ENTRYPOINTS)
-def test_database_relocation_direct_cli_resolves_owner_without_pythonpath(entrypoint, tmp_path):
-    probe = r'''
+def test_database_relocation_direct_cli_resolves_owner_without_pythonpath(
+    entrypoint, tmp_path
+):
+    probe = r"""
 from importlib.abc import MetaPathFinder
 from importlib.machinery import PathFinder
 from pathlib import Path
@@ -84,7 +96,7 @@ except ApplicationBoundaryReached:
 check_source_roots()
 assert "app" not in sys.modules and "tempo_legacy_database" not in sys.modules
 print("isolated direct CLI database discovery passed")
-'''
+"""
     result = subprocess.run(
         [sys.executable, "-I", "-c", probe, str(ROOT), entrypoint],
         cwd=tmp_path,
@@ -95,8 +107,10 @@ print("isolated direct CLI database discovery passed")
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_learning_study_launcher_discovers_relocated_runner_before_native_effects(tmp_path):
-    probe = r'''
+def test_learning_study_launcher_discovers_relocated_runner_before_native_effects(
+    tmp_path,
+):
+    probe = r"""
 from importlib.abc import MetaPathFinder
 from importlib.machinery import PathFinder
 from pathlib import Path
@@ -138,7 +152,12 @@ else:
 assert sys.modules["tempo_learning_database"] is package
 assert "tempo_learning_database.tooling.run_postgres" not in sys.modules
 assert "run_postgres" not in sys.modules
-'''
-    result = subprocess.run([sys.executable, "-I", "-c", probe, str(ROOT)], cwd=tmp_path,
-                            capture_output=True, text=True, timeout=10)
+"""
+    result = subprocess.run(
+        [sys.executable, "-I", "-c", probe, str(ROOT)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
     assert result.returncode == 0, result.stdout + result.stderr

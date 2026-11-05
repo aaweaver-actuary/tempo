@@ -52,9 +52,14 @@ def option(label: str, *, learner_color: str = "white") -> RouteOption:
     )
 
 
-def clean_proof(route: RouteOption, *, moves: tuple[str, ...] | None = None,
-                source_digest: str = "digest-1", attempt_id: str = "attempt-1",
-                duplicate_response: bool = False) -> CleanPresentationProof:
+def clean_proof(
+    route: RouteOption,
+    *,
+    moves: tuple[str, ...] | None = None,
+    source_digest: str = "digest-1",
+    attempt_id: str = "attempt-1",
+    duplicate_response: bool = False,
+) -> CleanPresentationProof:
     played = route.moves_uci if moves is None else moves
     decisions = tuple(d for d in route.decisions if d.ply < len(played))
     responses = tuple(
@@ -82,7 +87,9 @@ def clean_proof(route: RouteOption, *, moves: tuple[str, ...] | None = None,
 
 
 def target_after(route: RouteOption, ply: int) -> PositionKey:
-    return route.decisions[next(i for i, d in enumerate(route.decisions) if d.ply == ply)].definition.key
+    return route.decisions[
+        next(i for i, d in enumerate(route.decisions) if d.ply == ply)
+    ].definition.key
 
 
 def plan(target: PositionKey, routes: tuple[RouteOption, ...], proofs=()):
@@ -109,9 +116,10 @@ def test_italian_ng5_branch_chooses_one_stable_authored_route():
     assert selected.route_id == "italian-knight-attack"
     assert selected.moves_uci == attack.moves_uci
     assert selected.target_ply == 6
-    assert next(d for d in selected.decision_occurrences if d.ply == 6).fen == next(
-        d for d in attack.decisions if d.ply == 6
-    ).fen
+    assert (
+        next(d for d in selected.decision_occurrences if d.ply == 6).fen
+        == next(d for d in attack.decisions if d.ply == 6).fen
+    )
 
 
 def test_london_transposition_selection_is_stable_and_fen_exact():
@@ -159,18 +167,31 @@ def test_longest_clean_prefix_starts_with_opponent_cue_and_retains_occurrences()
     assert tuple(d.ply for d in result.decision_occurrences) == tuple(
         d.ply for d in route.decisions if d.ply >= 6
     )
-    assert all(result.decision_occurrences[i].fen == route.decisions[
-        next(j for j, original in enumerate(route.decisions)
-             if original.ply == result.decision_occurrences[i].ply)
-    ].fen for i in range(len(result.decision_occurrences)))
+    assert all(
+        result.decision_occurrences[i].fen
+        == route.decisions[
+            next(
+                j
+                for j, original in enumerate(route.decisions)
+                if original.ply == result.decision_occurrences[i].ply
+            )
+        ].fen
+        for i in range(len(result.decision_occurrences))
+    )
 
 
 def test_source_mismatch_and_malformed_whole_clean_proof_fall_back_to_full_route():
     route = option("italian-knight-attack")
     target = target_after(route, 6)
-    wrong_source = clean_proof(route, moves=route.moves_uci[:6], source_digest="old-digest")
-    malformed = clean_proof(route, moves=route.moves_uci[:6], duplicate_response=True,
-                            attempt_id="duplicate")
+    wrong_source = clean_proof(
+        route, moves=route.moves_uci[:6], source_digest="old-digest"
+    )
+    malformed = clean_proof(
+        route,
+        moves=route.moves_uci[:6],
+        duplicate_response=True,
+        attempt_id="duplicate",
+    )
 
     for proof in (wrong_source, malformed):
         result = plan(target, (route,), (proof,))
