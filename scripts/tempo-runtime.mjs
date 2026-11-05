@@ -200,6 +200,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   let managedCompletionPending = false;
   let managedCompletionAuthenticated = false;
   let managedSettlementAuthenticated = false;
+  let managedSettlementLock = null;
   let managedPreIsolationPending = false;
   let managedPreIsolationAuthenticated = false;
   let managedImageReceipt = null;
@@ -292,6 +293,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   }
 
   async function ensureImages() {
+    if (managedSettlementAuthenticated) assertManagedTargetLock(stateDirectory, managedSettlementLock);
     await config();
     let desiredFingerprint = configurationFingerprint(configuration);
     const pendingManagedImages = !managedSettlementAuthenticated && (migrationGuard?.state === 'pending' || (migrationGuard?.state === 'verified' &&
@@ -561,6 +563,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   }
 
   async function ensureDatabase({ allowRecreation = false } = {}) {
+    if (managedSettlementAuthenticated) assertManagedTargetLock(stateDirectory, managedSettlementLock);
     if (allowRecreation && migrationGuard?.defense_binding && !managedSettlementAuthenticated &&
         !managedCompletionAuthenticated && !managedPreIsolationAuthenticated)
       throw new Error('Original managed PostgreSQL identity has not been authenticated; keep writers stopped.');
@@ -711,6 +714,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     // Read under the maintenance lock, including the backup path whose runtime
     // was created during the earlier read-only inspection.
     managedSettlementAuthenticated = false;
+    managedSettlementLock = null;
     managedCompletionAuthenticated = false;
     managedIsolationRetry = false;
     managedCompletionPending = false;
@@ -723,8 +727,10 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     if (migrationGuard?.state === 'verified' && migrationGuard?.managed_image_receipt && !migrationGuard.managed_image_settlement)
       settleManagedDeployment();
     if (migrationGuard?.managed_image_settlement) {
+      managedSettlementLock = captureManagedTargetLock(stateDirectory);
       authenticateManagedSettlement(stateDirectory, migrationGuard);
       syncManagedIsolationEvidence({ guardPath, guard: migrationGuard });
+      assertManagedTargetLock(stateDirectory, managedSettlementLock);
       managedSettlementAuthenticated = true;
     }
     if (!managedSettlementAuthenticated && (migrationGuard?.defense_binding || migrationGuard?.isolation)) {

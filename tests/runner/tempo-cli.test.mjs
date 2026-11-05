@@ -1272,6 +1272,8 @@ test('managed deployment settlement recovers publication and permits a later can
   const settled = JSON.parse(readFileSync(join(root, 'migration-guard.json')));
   assert.equal(authenticateManagedSettlement(root, settled), true);
   await assert.rejects(runtime.ensureImages(), /new candidate build/); assert.equal(builds, 1);
+  atomicJson(join(root, 'maintenance.lock'), {pid:process.pid, token:randomUUID()});
+  await assert.rejects(runtime.ensureImages(), /lock/i); assert.equal(builds, 1);
   const altered = structuredClone(settled); altered.managed_image_settlement.payload.deployment_sha256 = '0'.repeat(64);
   atomicJson(join(root, 'migration-guard.json'), altered);
   assert.throws(() => runtime.checkMigrationRetry(), /settlement authentication failed/);
