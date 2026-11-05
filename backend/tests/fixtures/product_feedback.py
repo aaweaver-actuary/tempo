@@ -9,6 +9,13 @@ import chess
 from fsrs import Card
 import psycopg
 from tempo_game_evidence_contracts.legacy import decision_identity
+from tempo_learning_review import review_day_at
+
+
+def test_study_day_uses_configured_timezone_at_utc_midnight():
+    instant = datetime(2026, 11, 5, 0, 30, tzinfo=timezone.utc)
+    assert review_day_at(instant, 'America/New_York').isoformat() == '2026-11-04'
+    assert review_day_at(instant, 'UTC').isoformat() == '2026-11-05'
 
 
 def main():
@@ -35,6 +42,10 @@ def main():
             return
         if action != "seed":
             raise ValueError("seed or readback required")
+        timezone_row = database.execute('SELECT timezone FROM settings WHERE id=1').fetchone()
+        if not timezone_row or not timezone_row[0]:
+            raise RuntimeError('Study timezone is unavailable')
+        study_day = review_day_at(now, timezone_row[0]).isoformat()
         for rep, card_id, fen, move, title in (
             (repertoire,target,target_fen,"e2e4","Feedback target"),
             (protected_rep,protected,chess.STARTING_FEN,"d2d4","Protected unrelated"),
@@ -67,11 +78,11 @@ def main():
         database.execute("""INSERT INTO imported_games(id,provider,provider_game_id,username,played_at,speed,rated,
             color,result,start_fen,moves_json,content_hash) VALUES(%s,'lichess',%s,'synthetic',%s,'rapid',0,'white','draw',%s,'["d2d4"]',%s)""",
             (game,identity,(now-timedelta(days=1)).isoformat(),target_fen,"a"*64))
-        database.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind) VALUES(%s,%s,0,'review')", (now.date().isoformat(),protected))
+        database.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind) VALUES(%s,%s,0,'review')", (study_day,protected))
         database.execute("""INSERT INTO queue_projections(queue_date,state,generation,refresh_pending)
-            VALUES(%s,'ready',1,0) ON CONFLICT(queue_date) DO UPDATE SET state='ready',refresh_pending=0""", (now.date().isoformat(),))
+            VALUES(%s,'ready',1,0) ON CONFLICT(queue_date) DO UPDATE SET state='ready',refresh_pending=0""", (study_day,))
     print(json.dumps(dict(game_id=game,repertoire_id=repertoire,target_id=target,protected_id=protected,
-        decision_id=decision_identity(target,0,[]),target_fen=target_fen,expected="e2e4",played="d2d4")))
+        study_day=study_day,decision_id=decision_identity(target,0,[]),target_fen=target_fen,expected="e2e4",played="d2d4")))
 
 
 if __name__ == "__main__":
