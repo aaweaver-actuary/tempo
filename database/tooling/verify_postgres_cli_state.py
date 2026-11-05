@@ -275,6 +275,202 @@ def _cut62_table(database, table, primary_key, secret):
 
 
 
+def load_cut62_defense_selection(path):
+    """Read the private, owner-approved selection without disclosing its keys."""
+    import hashlib
+    import re
+    import stat
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+    with os.fdopen(descriptor, 'rb') as stream:
+        metadata = os.fstat(stream.fileno())
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_mode & 0o077:
+            raise RuntimeError('Defense selection must be a private regular file')
+        raw = stream.read()
+    selection = json.loads(raw)
+    if not isinstance(selection, dict) or set(selection) != {'version','target','cohort','keys','expected'} or type(selection['version']) is not int or selection['version'] != 1 or selection['cohort'] != 'defense-no-activity':
+        raise RuntimeError('unsupported Defense selection')
+    if not isinstance(selection['target'], str) or not selection['target'] or not isinstance(selection['keys'], list) or len(selection['keys']) > 11:
+        raise RuntimeError('invalid Defense selection')
+    previous = None
+    for pair in selection['keys']:
+        if not isinstance(pair, list) or len(pair) != 2 or any(not isinstance(v, str) or not v for v in pair):
+            raise RuntimeError('invalid Defense selection key')
+        key = tuple(pair)
+        if previous is not None and key <= previous:
+            raise RuntimeError('Defense selection keys are not unique and sorted')
+        previous = key
+    expected = selection['expected']
+    if not isinstance(expected, dict) or set(expected) != {'count','reference_digest'} or type(expected['count']) is not int or expected['count'] != len(selection['keys']) or not isinstance(expected['reference_digest'], str) or re.fullmatch('[0-9a-f]{64}', expected['reference_digest']) is None:
+        raise RuntimeError('invalid Defense selection reference evidence')
+    return selection, hashlib.sha256(raw).hexdigest()
+
+
+def load_cut62_attempt_binding(path, selection, selection_sha256):
+    import re
+    import stat
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+    with os.fdopen(descriptor, 'rb') as stream:
+        metadata = os.fstat(stream.fileno())
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_mode & 0o077:
+            raise RuntimeError('cut62 binding must be a private regular file')
+        binding = json.load(stream)
+    if not isinstance(binding, dict) or set(binding) != {'version','target','attempt_id','backup_filename','backup_sha256','selection_sha256'} or type(binding['version']) is not int or binding['version'] != 1:
+        raise RuntimeError('invalid cut62 attempt binding')
+    if not isinstance(binding['target'], str) or not binding['target'] or (selection is not None and binding['target'] != selection['target']) or binding['selection_sha256'] != selection_sha256:
+        raise RuntimeError('cut62 selection binding changed')
+    if any(not isinstance(binding[k], str) or not binding[k] for k in ('attempt_id','backup_filename')) or not isinstance(binding['backup_sha256'], str) or re.fullmatch('[0-9a-f]{64}', binding['backup_sha256']) is None:
+        raise RuntimeError('invalid cut62 attempt binding')
+    return binding
+
+
+# Draft only: static typed ownership predicates need catalog and owner review.
+CUT62_DRAFT_DEFENSE_SELECTOR = '''
+WITH typed_receipts AS MATERIALIZED (
+ SELECT CASE WHEN pg_input_is_valid(payload_json,'jsonb') THEN payload_json::jsonb END AS payload,
+        CASE WHEN pg_input_is_valid(response_json,'jsonb') THEN response_json::jsonb END AS response
+ FROM public.operation_receipts WHERE command_name IN
+ ('cards.review','cards.review.reconcile','queue.attempt_failed','queue.bury','queue.issue_head','opening_evidence.checkpoint')
+)
+SELECT c.id AS card_id, t.id AS candidate_id, c.repertoire_id
+FROM public.cards c JOIN public.threat_training_candidates t ON t.card_id=c.id
+WHERE c.content_type='defense'
+AND c.repertoire_id IS NOT NULL
+AND EXISTS (SELECT 1 FROM public.priority_repertoire_source_epochs e WHERE e.repertoire_id=c.repertoire_id)
+AND NOT EXISTS (SELECT 1 FROM public.threat_training_candidates other WHERE other.card_id=c.id AND other.id<>t.id)
+AND EXISTS (SELECT 1 FROM public.daily_queue q WHERE q.card_id=c.id)
+AND EXISTS (SELECT 1 FROM public.queue_attempt_origins o WHERE o.card_id=c.id AND o.content_type='defense')
+AND NOT EXISTS (SELECT 1 FROM public.defense_attempts a WHERE a.card_id=c.id OR a.candidate_id=t.id)
+AND NOT EXISTS (SELECT 1 FROM public.defense_recognition_submissions r WHERE r.candidate_id=t.id)
+AND NOT EXISTS (SELECT 1 FROM public.daily_queue q WHERE q.card_id=c.id AND (q.status NOT IN ('queued','blocked') OR q.review_result_json IS NOT NULL))
+AND NOT EXISTS (SELECT 1 FROM public.queue_attempt_origins o WHERE o.card_id=c.id AND o.review_result_json IS NOT NULL)
+AND NOT EXISTS (SELECT 1 FROM typed_receipts r WHERE
+ r.payload->>'card_id'=c.id OR r.payload#>>'{review,prepared_next,card_id}'=c.id OR r.response->>'card_id'=c.id OR
+ EXISTS (SELECT 1 FROM public.daily_queue q WHERE q.card_id=c.id AND q.id::text IN
+ (r.payload->>'entry_id',r.payload->>'queue_entry_id',r.payload#>>'{review,queue_entry_id}',r.payload#>>'{review,prepared_next,queue_entry_id}',r.response->>'entry_id',r.response->>'queue_entry_id')))
+AND NOT EXISTS (SELECT 1 FROM public.queue_attempt_origins o WHERE o.card_id=c.id AND o.issuance_sequence IS NOT NULL)
+AND NOT EXISTS (SELECT 1 FROM public.daily_queue q WHERE q.card_id=c.id AND ((q.admission_source IS NOT NULL AND q.admission_source<>'defense:' || t.id) OR NOT EXISTS (SELECT 1 FROM public.queue_attempt_origins o WHERE o.queue_entry_id=q.id AND o.card_id=c.id AND o.revision=c.revision AND o.queue_date=q.queue_date AND o.cycle=q.cycle AND o.content_type='defense' AND o.start_fen=c.start_fen AND o.moves_json=c.moves_json)))
+AND NOT EXISTS (SELECT 1 FROM public.queue_attempt_origins o WHERE o.card_id=c.id AND (o.revision<>c.revision OR o.content_type<>'defense' OR o.start_fen<>c.start_fen OR o.moves_json<>c.moves_json OR NOT EXISTS (SELECT 1 FROM public.daily_queue q WHERE q.id=o.queue_entry_id AND q.card_id=c.id AND q.queue_date=o.queue_date AND q.cycle=o.cycle)))
+AND NOT EXISTS (SELECT 1 FROM public.cards r WHERE r.unlock_after_card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.cards r WHERE r.superseded_by=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.gameplay_card_priorities r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.opening_card_schedule_seeds r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.opening_card_schedule_seeds r WHERE r.source_card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.opening_graph_legacy_mappings r WHERE r.decision_card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.opening_graph_legacy_mappings r WHERE r.legacy_card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.prefix_splits r WHERE r.continuation_card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.prefix_splits r WHERE r.shortened_card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.prefix_splits r WHERE r.source_card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.repertoire_card_introduction_priorities r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.repertoire_card_priority_generations r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.repertoire_cards r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.repertoire_decision_events_legacy r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.repertoire_decision_events_staged r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.repertoire_integrity_card_blocks r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.repertoire_opportunities r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.repertoire_priority_prepared_rows r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.reviews r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.study_attempts r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.tactic_captures r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.teaching_states r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.card_revisions r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.queue_projection_diagnostics r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.endgame_templates r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.tactic_progress r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.game_findings r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.game_repertoire_matches_legacy r WHERE r.deviation_card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.opening_graph_steps r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.opening_graph_steps r WHERE r.parent_card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.repertoire_opportunities r WHERE r.admitted_card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.discovery_admission_intents r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.game_repertoire_matches_staged r WHERE r.deviation_card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.review_attempt_receipts r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.opening_segmentation_occurrences r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.opening_segmentation_sources r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.opening_evidence_presentations r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.opening_evidence_attempts r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.deleted_cards r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.prefix_transition_card_fences r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.frozen_opening_ranks r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.frozen_opening_queue_changes r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.remediation_cards r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.remediation_incident_versions r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.remediation_contributions r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.remediation_obligation_heads r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.remediation_attempts r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.remediation_settlements r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.study_game_feedback r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.study_conflict_holds r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.study_conflict_queue_holds r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.study_position_states r WHERE r.donor_card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.study_position_seed_outcomes r WHERE r.donor_card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.study_position_issued_plans r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.queue_attempt_abandonments r WHERE r.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.daily_queue q JOIN public.defense_attempts r ON r.queue_entry_id=q.id WHERE q.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.daily_queue q JOIN public.defense_recognition_submissions r ON r.queue_entry_id=q.id WHERE q.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.daily_queue q JOIN public.frozen_opening_queue_changes r ON r.queue_id=q.id WHERE q.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.daily_queue q JOIN public.opening_evidence_attempts r ON r.queue_entry_id=q.id WHERE q.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.daily_queue q JOIN public.opening_evidence_queue_contexts r ON r.queue_entry_id=q.id WHERE q.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.daily_queue q JOIN public.queue_attempt_abandonments r ON r.queue_entry_id=q.id WHERE q.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.daily_queue q JOIN public.remediation_cards r ON r.queue_entry_id=q.id WHERE q.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.daily_queue q JOIN public.review_attempt_receipts r ON r.queue_entry_id=q.id WHERE q.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.daily_queue q JOIN public.study_attempts r ON r.queue_entry_id=q.id WHERE q.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.daily_queue q JOIN public.study_conflict_queue_holds r ON r.queue_entry_id=q.id WHERE q.card_id=c.id)
+AND NOT EXISTS (SELECT 1 FROM public.daily_queue q JOIN public.study_position_issued_plans r ON r.queue_entry_id=q.id WHERE q.card_id=c.id)
+'''
+
+CUT62_DEFENSE_REFERENCE_SQL = """
+        WITH approved AS MATERIALIZED (
+          SELECT value->>0 AS card_id, value->>1 AS candidate_id
+          FROM jsonb_array_elements(%s::jsonb) value
+        ), eligible AS MATERIALIZED ({selector}), chosen AS MATERIALIZED (
+          SELECT e.* FROM eligible e JOIN approved a USING(card_id,candidate_id)
+        ), evidence AS (
+          SELECT jsonb_build_object(
+            'cards', COALESCE((SELECT jsonb_agg(to_jsonb(c) ORDER BY c.id) FROM public.cards c JOIN chosen s ON s.card_id=c.id),'[]'::jsonb),
+            'candidates', COALESCE((SELECT jsonb_agg(to_jsonb(t) ORDER BY t.id) FROM public.threat_training_candidates t JOIN chosen s ON s.candidate_id=t.id),'[]'::jsonb),
+            'queues', COALESCE((SELECT jsonb_agg(to_jsonb(q) ORDER BY q.id) FROM public.daily_queue q JOIN chosen s ON s.card_id=q.card_id),'[]'::jsonb),
+            'origins', COALESCE((SELECT jsonb_agg(to_jsonb(o) ORDER BY o.queue_entry_id,o.card_id,o.revision) FROM public.queue_attempt_origins o JOIN chosen s ON s.card_id=o.card_id),'[]'::jsonb),
+            'request_links', COALESCE((SELECT jsonb_agg(to_jsonb(r) ORDER BY r.candidate_id,r.request_id,r.role) FROM public.threat_candidate_requests r JOIN chosen s ON s.candidate_id=r.candidate_id),'[]'::jsonb),
+            'requests', COALESCE((SELECT jsonb_agg(to_jsonb(r) ORDER BY r.id) FROM public.threat_analysis_requests r WHERE EXISTS (SELECT 1 FROM public.threat_candidate_requests l JOIN chosen s ON s.candidate_id=l.candidate_id WHERE l.request_id=r.id)),'[]'::jsonb),
+            'games', COALESCE((SELECT jsonb_agg(to_jsonb(g) ORDER BY g.id) FROM public.imported_games g WHERE EXISTS (SELECT 1 FROM public.threat_training_candidates t JOIN chosen s ON s.candidate_id=t.id WHERE t.game_id=g.id)),'[]'::jsonb),
+            'findings', COALESCE((SELECT jsonb_agg(to_jsonb(f) ORDER BY f.id) FROM public.game_findings f WHERE EXISTS (SELECT 1 FROM public.threat_training_candidates t JOIN chosen s ON s.candidate_id=t.id WHERE t.finding_id=f.id)),'[]'::jsonb),
+            'epochs', COALESCE((SELECT jsonb_agg(to_jsonb(e) ORDER BY e.repertoire_id) FROM public.priority_repertoire_source_epochs e WHERE EXISTS (SELECT 1 FROM chosen s WHERE s.repertoire_id=e.repertoire_id)),'[]'::jsonb)
+          ) AS value
+        ) SELECT (SELECT count(*) FROM chosen), encode(sha256(convert_to(value::text,'UTF8')),'hex') FROM evidence
+    """
+
+
+def _cut62_defense_reference_digest(database, keys):
+    """Return only the count and digest of exact original approved references."""
+    from psycopg import sql
+    query = sql.SQL(CUT62_DEFENSE_REFERENCE_SQL).format(selector=sql.SQL(CUT62_DRAFT_DEFENSE_SELECTOR))
+    return database.execute(query, (json.dumps(keys, separators=(',', ':')),)).fetchone()
+
+
+CUT62_DEFENSE_PROJECTED_TABLES = frozenset(('cards', 'daily_queue', 'queue_attempt_origins', 'threat_training_candidates', 'priority_repertoire_source_epochs', 'frozen_opening_runs'))
+
+# Draft projection primitive; the reviewed fixed selector and migration wiring
+# are still required before this can be used for a cutover witness.
+def _cut62_projected_defense_table(database, table, primary_key, secret, cohort_sql, params=()):
+    from psycopg import sql
+    views = {
+        'cards': "SELECT t.* FROM public.cards t WHERE NOT EXISTS (SELECT 1 FROM cohort c WHERE c.card_id=t.id)",
+        'daily_queue': "SELECT t.* FROM public.daily_queue t WHERE NOT EXISTS (SELECT 1 FROM cohort c WHERE c.card_id=t.card_id)",
+        'queue_attempt_origins': "SELECT t.* FROM public.queue_attempt_origins t WHERE NOT EXISTS (SELECT 1 FROM cohort c WHERE c.card_id=t.card_id)",
+        'threat_training_candidates': "SELECT (json_populate_record(t, CASE WHEN EXISTS (SELECT 1 FROM cohort c WHERE c.candidate_id=t.id) THEN '{\"card_id\":null}'::json ELSE '{}'::json END)).* FROM public.threat_training_candidates t",
+        'priority_repertoire_source_epochs': "SELECT (json_populate_record(t, json_build_object('version',t.version+(SELECT count(*) FROM cohort c WHERE c.repertoire_id=t.repertoire_id)))).* FROM public.priority_repertoire_source_epochs t",
+        'frozen_opening_runs': "SELECT (json_populate_record(t, CASE WHEN EXISTS (SELECT 1 FROM cohort) AND EXISTS (SELECT 1 FROM public.frozen_opening_pending p WHERE p.run_id=t.run_id) AND t.invalidated=0 THEN '{\"invalidated\":1}'::json ELSE '{}'::json END)).* FROM public.frozen_opening_runs t",
+    }
+    if table not in views:
+        raise ValueError('unsupported Defense projection table')
+    query = sql.SQL('WITH cohort AS ({cohort}), projected AS ({projection}) SELECT row_to_json(t)::text FROM projected t ORDER BY {keys}').format(
+        cohort=sql.SQL(cohort_sql), projection=sql.SQL(views[table]),
+        keys=sql.SQL(',').join(sql.Identifier(key) for key in primary_key))
+    with database.cursor(name='cut62_projected_' + table) as cursor:
+        cursor.execute(query, params)
+        return _cut62_mac(secret, 'cut62:rows:' + table, (row[0] for row in cursor))
+
+
 def _cut62_catalog(database, secret):
     # Compare the remaining public catalog; exclude only explicitly retired
     # table-owned objects and the named migration-044 profile objects.
@@ -395,6 +591,47 @@ def capture_cut62(database, secret):
 
 
 
+
+def capture_cut62_v6(database, secret, selection, binding):
+    """Capture original and exact approved projected state in one read snapshot."""
+    database.execute('SET LOCAL join_collapse_limit=1')
+    database.execute('SET LOCAL jit=off')
+    database.execute("SET LOCAL statement_timeout='30s'")
+    migration = (Path(__file__).resolve().parents[1] / 'tempo_legacy_database/ddl/migrations/062_three_journey_retirement.sql').read_text()
+    selectors = [part.split('\n-- END CUT62 DEFENSE SELECTOR', 1)[0] for part in migration.split('-- BEGIN CUT62 DEFENSE SELECTOR\n')[1:]]
+    if len(selectors) != 2 or any(part != CUT62_DRAFT_DEFENSE_SELECTOR.strip() for part in selectors):
+        raise RuntimeError('cut62 Defense selector differs from migration')
+    reference = migration.split('-- BEGIN CUT62 REFERENCE DIGEST\n',1)[1].split('\n-- END CUT62 REFERENCE DIGEST',1)[0].strip()
+    expected_reference = CUT62_DEFENSE_REFERENCE_SQL.replace('{selector}', '\n-- BEGIN CUT62 DEFENSE SELECTOR\n'+CUT62_DRAFT_DEFENSE_SELECTOR.strip()+'\n-- END CUT62 DEFENSE SELECTOR\n').replace('%s::jsonb', "(current_setting('tempo.cut62_defense_manifest', true)::jsonb->'keys')").replace("SELECT (SELECT count(*) FROM chosen), encode(sha256(convert_to(value::text,'UTF8')),'hex') FROM evidence", "SELECT (SELECT count(*) FROM chosen) AS selected_count, encode(sha256(convert_to(value::text,'UTF8')),'hex') AS reference_digest FROM evidence").strip()
+    if reference != expected_reference:
+        raise RuntimeError('cut62 reference digest differs from migration')
+    count, digest = _cut62_defense_reference_digest(database, selection['keys'])
+    if count != selection['expected']['count'] or digest != selection['expected']['reference_digest']:
+        raise RuntimeError('approved Defense reference evidence changed')
+    original = capture_cut62(database, secret)
+    cohort_sql = CUT62_DRAFT_DEFENSE_SELECTOR + "\nAND EXISTS (SELECT 1 FROM jsonb_array_elements(%s::jsonb) k WHERE k->>0=c.id AND k->>1=t.id)"
+    params = (json.dumps(selection['keys'], separators=(',', ':')),)
+    projected = {name: _cut62_projected_defense_table(database, name, original['layout'][name][0], secret, cohort_sql, params) for name in CUT62_DEFENSE_PROJECTED_TABLES}
+    return {**original, 'version': 6, 'selection': selection, 'binding': binding, 'projected_rows': projected}
+
+
+def check_captured_cut62_v6(database, witness, secret):
+    if witness.get('version') != 6:
+        raise RuntimeError('unsupported cut62 witness')
+    if capture_cut62_v6(database, secret, witness['selection'], witness['binding']) != witness:
+        raise RuntimeError('cut62 source changed since original capture')
+    return {'version': 6, 'from': 61, 'to': 62, 'unchanged': True, 'witness_id': cut62_witness_id(witness, secret)}
+
+
+def verify_cut62_v6(database, witness, secret):
+    if witness.get('version') != 6 or set(witness.get('projected_rows', {})) != CUT62_DEFENSE_PROJECTED_TABLES:
+        raise RuntimeError('unsupported cut62 witness')
+    expected = dict(witness)
+    expected['version'] = CUT62_EVIDENCE_VERSION
+    expected['rows'] = {**witness['rows'], **witness['projected_rows']}
+    verify_cut62(database, expected, secret)
+    return {'version': 6, 'from': 61, 'to': 62, 'witness_id': cut62_witness_id(witness, secret)}
+
 def cut62_witness_id(witness, secret):
     canonical = json.dumps(witness, sort_keys=True, separators=(',', ':'))
     return _cut62_mac(secret, 'cut62:witness-id', [canonical])['digest']
@@ -443,11 +680,11 @@ def verify_cut62(database, witness, secret):
             'witness_id': cut62_witness_id(witness, secret)}
 
 
-def save_cut62_witness(path, database):
+def save_cut62_witness(path, database, selection=None, binding=None):
     """Create, never overwrite, a private witness and random secret on the caller's volume."""
     import secrets
     secret = secrets.token_bytes(32)
-    witness = capture_cut62(database, secret)
+    witness = capture_cut62(database, secret) if selection is None else capture_cut62_v6(database, secret, selection, binding)
     signature = _cut62_mac(secret, 'cut62:witness', [json.dumps(witness, sort_keys=True, separators=(',', ':'))])['digest']
     payload = {'secret': secret.hex(), 'witness': witness, 'signature': signature}
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -757,9 +994,25 @@ def main():
     group.add_argument('--cut62-capture', metavar='PRIVATE_WITNESS_PATH')
     group.add_argument('--cut62-verify', metavar='PRIVATE_WITNESS_PATH')
     group.add_argument('--cut62-check-captured', metavar='PRIVATE_WITNESS_PATH')
+    group.add_argument('--cut62-reference-digest', action='store_true', help='Read-only digest of selected original references')
+    selection_group = parser.add_mutually_exclusive_group()
+    selection_group.add_argument('--defense-selection', metavar='PRIVATE_SELECTION_PATH')
+    selection_group.add_argument('--defense-zero', action='store_true')
+    parser.add_argument('--cut62-binding', metavar='PRIVATE_BINDING_PATH')
     args = parser.parse_args()
     if (args.pre62_capture59 or args.pre62_verify59 or args.pre62_authenticate59 or args.cut62_capture or args.cut62_verify or args.cut62_check_captured) and args.expected:
         parser.error('--expected cannot be combined with a cut62 operation')
+    if args.cut62_reference_digest:
+        if not args.defense_selection or args.defense_zero or args.cut62_binding or args.expected:
+            parser.error('reference digest requires only a private Defense selection')
+        selection, _ = load_cut62_defense_selection(args.defense_selection)
+        with psycopg.connect(os.environ['TEMPO_POSTGRES_ADMIN_URL'], options='-c default_transaction_read_only=on') as database:
+            database.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+            _cut62_session(database)
+            _cut62_versions(database, 61)
+            count, digest = _cut62_defense_reference_digest(database, selection['keys'])
+        print(json.dumps({'count': count, 'reference_digest': digest}))
+        return
     if args.pre62_authenticate59:
         witness,secret=load_pre62_59(args.pre62_authenticate59)
         print(json.dumps({'domain':'pre62-source-59','version':PRE62_EVIDENCE_VERSION,'authenticated':True,'witness_id':authenticate_pre62_59(witness,secret)}))
@@ -775,17 +1028,36 @@ def main():
                 print(json.dumps(verify_pre62_59(database,witness,secret)))
         return
     if args.cut62_capture or args.cut62_verify or args.cut62_check_captured:
+        import hashlib
+        if not args.cut62_binding or not (args.defense_selection or args.defense_zero):
+            parser.error('cut62 requires a private binding and explicit Defense selection or zero')
+        if args.defense_selection:
+            selection, selection_sha256 = load_cut62_defense_selection(args.defense_selection)
+            binding = load_cut62_attempt_binding(args.cut62_binding, selection, selection_sha256)
+        else:
+            selection = None
+            selection_sha256 = hashlib.sha256(b'tempo-cut62-defense-zero-v1').hexdigest()
+            binding = load_cut62_attempt_binding(args.cut62_binding, None, selection_sha256)
         with psycopg.connect(os.environ['TEMPO_POSTGRES_ADMIN_URL'],
                              options='-c default_transaction_read_only=on') as database:
+            database.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
             if args.cut62_capture:
-                witness_id = save_cut62_witness(args.cut62_capture, database)
-                print(json.dumps({'version': CUT62_EVIDENCE_VERSION, 'from': 61, 'to': 62, 'captured': True, 'witness_id': witness_id}))
-            elif args.cut62_check_captured:
-                witness, secret = load_cut62_witness(args.cut62_check_captured)
-                print(json.dumps(check_captured_cut62(database, witness, secret)))
+                if selection is None:
+                    database.execute('SET LOCAL join_collapse_limit=1')
+                    database.execute('SET LOCAL jit=off')
+                    database.execute("SET LOCAL statement_timeout='30s'")
+                    count, digest = _cut62_defense_reference_digest(database, [])
+                    selection = {'version': 1, 'target': binding['target'], 'cohort': 'defense-no-activity', 'keys': [], 'expected': {'count': count, 'reference_digest': digest}}
+                witness_id = save_cut62_witness(args.cut62_capture, database, selection, binding)
+                print(json.dumps({'version': 6, 'from': 61, 'to': 62, 'captured': True, 'witness_id': witness_id}))
             else:
-                witness, secret = load_cut62_witness(args.cut62_verify)
-                print(json.dumps(verify_cut62(database, witness, secret)))
+                witness, secret = load_cut62_witness(args.cut62_check_captured or args.cut62_verify)
+                if witness.get('version') != 6 or witness.get('binding') != binding or (selection is not None and witness.get('selection') != selection) or (selection is None and witness.get('selection', {}).get('keys') != []):
+                    raise RuntimeError('cut62 original selection or binding changed')
+                if args.cut62_check_captured:
+                    print(json.dumps(check_captured_cut62_v6(database, witness, secret)))
+                else:
+                    print(json.dumps(verify_cut62_v6(database, witness, secret)))
         return
     expected = json.loads(args.expected) if args.expected else None
     with psycopg.connect(os.environ["TEMPO_POSTGRES_ADMIN_URL"],

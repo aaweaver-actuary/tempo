@@ -1,7 +1,7 @@
 // Bounded deployment stages. No work is scheduled from application startup.
 import { createHash, randomUUID } from "node:crypto";
 import { managedComposeBuild } from './development-budget.mjs';
-import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { isDeepStrictEqual } from 'node:util';
@@ -84,6 +84,49 @@ export function requirePrivateCut62Witness(path) {
   let info;
   try { info = lstatSync(path); } catch { throw new Error('Schema 62 original witness is missing; keep writers stopped. Preserve the guard and verified backup for manual recovery; never recapture after an interrupted attempt.'); }
   if (!info.isFile() || (info.mode & 0o077)) throw new Error('Schema 62 witness is not a private regular file; keep writers stopped.');
+}
+
+function privateBytes(path) {
+  if (!isAbsolute(path ?? "")) throw new Error("Approved Defense selection is required as an absolute private file.");
+  let parent;
+  try { parent = lstatSync(dirname(path)); } catch { throw new Error("Approved Defense selection is unavailable."); }
+  if (!parent.isDirectory() || parent.uid !== process.getuid() || (parent.mode & 0o777) !== 0o700)
+    throw new Error("Approved Defense selection parent must be owned and private.");
+  let fd;
+  try { fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW); } catch { throw new Error("Approved Defense selection is unavailable."); }
+  let bytes;
+  try {
+    const info = fstatSync(fd);
+    if (!info.isFile() || info.uid !== process.getuid() || (info.mode & 0o777) !== 0o600 || info.size > 1048576)
+      throw new Error("Approved Defense selection must be an owned private regular file.");
+    bytes = readFileSync(fd);
+  } finally { closeSync(fd); }
+  return bytes;
+}
+
+export function privateSelection(path, expectedTarget) {
+  const bytes = privateBytes(path);
+  let value;
+  try { value = JSON.parse(bytes); } catch { throw new Error("Approved Defense selection is invalid."); }
+  const keys = value?.keys;
+  if (Object.keys(value ?? {}).sort().join() !== "cohort,expected,keys,target,version" || value.version !== 1 ||
+      value.target !== expectedTarget || value.cohort !== "defense-no-activity" || !Array.isArray(keys) || keys.length > 11 ||
+      Object.keys(value.expected ?? {}).sort().join() !== "count,reference_digest" || value.expected.count !== keys.length ||
+      !/^[0-9a-f]{64}$/.test(value.expected.reference_digest ?? "") ||
+      keys.some(pair => !Array.isArray(pair) || pair.length !== 2 || pair.some(item => typeof item !== "string" || !item)) ||
+      keys.some((pair, index) => index && (Buffer.compare(Buffer.from(keys[index - 1][0]), Buffer.from(pair[0])) > 0 ||
+        (keys[index - 1][0] === pair[0] && Buffer.compare(Buffer.from(keys[index - 1][1]), Buffer.from(pair[1])) >= 0))))
+    throw new Error("Approved Defense selection is invalid for this target.");
+  return { bytes, digest: createHash("sha256").update(bytes).digest("hex") };
+}
+
+function writeExclusivePrivate(path, bytes) {
+  const fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+  try { writeFileSync(fd, bytes); fsyncSync(fd); } finally { closeSync(fd); }
+}
+function syncDirectory(path) {
+  const fd = openSync(path, "r");
+  try { fsyncSync(fd); } finally { closeSync(fd); }
 }
 
 // Read-only classification shared by diagnostics and lock-time preflight.
@@ -170,7 +213,7 @@ export function releaseComposeFiles(target, { fallback = false, previous = null 
 }
 
 export function createRuntime(target, { run, stateDirectory, revision, evidence, previous = null,
-  fallback = false, preparedImages = null, retry = false, log = console.log, fetcher = fetch, readinessMilliseconds = 180_000,
+  fallback = false, preparedImages = null, retry = false, defenseSelection = null, log = console.log, fetcher = fetch, readinessMilliseconds = 180_000,
   redisReadinessOptions = {}, readinessOptions = {}, buildImages = managedComposeBuild }) {
   let composeFiles = releaseComposeFiles(target, { fallback, previous });
   let imageOverride = fallback ? previous.imageOverride : null;
@@ -186,6 +229,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   const guardPath = join(stateDirectory, "migration-guard.json");
   let migrationGuard = existsSync(guardPath) ? JSON.parse(readFileSync(guardPath, "utf8")) : null;
   let originalHistoryVerified = false;
+  let approvedSelection;
   let verifiedPostgresImage;
   const operation = { id: randomUUID(), revision, started_at: new Date().toISOString(), phase: "checking", target: target.project };
   const docker = (args, options) => run("docker", ["--context", target.context, ...args], options);
@@ -528,7 +572,13 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
       validateContainers(after, target);
       assertColdPreflightContainers(after, target.project, { databaseStarted: true });
     }
-    return checkSchema();
+    const preflight = await checkSchema();
+    if (preflight.expected_version === 62 && preflight.applied_versions.at(-1) < 62) {
+      if (migrationGuard?.state === "pending") {
+        if (defenseSelection) throw new Error("A retry must use the original Defense selection.");
+      } else approvedSelection = privateSelection(defenseSelection, targetKey(target));
+    } else if (defenseSelection) throw new Error("Defense selection applies only to a schema 62 crossing.");
+    return preflight;
   }
 
   function checkMigrationRetry() {
@@ -602,6 +652,16 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     return backupRecord;
   }
 
+  async function verifiedBackupDigest(backup) {
+    if (!backup?.verified || !/^tempo-[0-9A-Za-z-]+\.dump$/.test(backup.filename ?? ""))
+      throw new Error("Original verified backup identity is invalid; keep writers stopped.");
+    const result = await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "--entrypoint", "sh",
+      "postgres-backup", "-ec", 'cd /backups; sha256sum -c "$1.sha256" >/dev/null; sha256sum "$1" | cut -d " " -f1', "sh", backup.filename]);
+    const digest = result.stdout.trim();
+    if (!/^[0-9a-f]{64}$/.test(digest)) throw new Error("Original backup checksum is invalid; keep writers stopped.");
+    return digest;
+  }
+
   async function migrate() {
     originalHistoryVerified = false;
     stage("applying_migrations");
@@ -634,6 +694,43 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     operation.backup = migrationGuard.backup;
     atomicJson(journalPath, operation);
     if (witnessName) {
+      const directory = lstatSync(stateDirectory);
+      if (!directory.isDirectory() || (directory.mode & 0o077))
+        throw new Error('Schema 62 migration state must be a private directory; keep writers stopped.');
+      const witnessDirectory = cut62MountDirectory(stateDirectory, witnessName);
+      const witnessPath = join(witnessDirectory, witnessName);
+      if (newGuard) {
+        if (existsSync(witnessDirectory)) throw new Error('Schema 62 witness directory already exists; refusing to recapture.');
+        const selection = privateSelection(defenseSelection, targetKey(target));
+        if (approvedSelection && selection.digest !== approvedSelection.digest)
+          throw new Error("Approved Defense selection changed after preflight; keep writers stopped.");
+        const backupDigest = await verifiedBackupDigest(migrationGuard.backup);
+        mkdirSync(witnessDirectory, { mode: 0o700 });
+        const binding = { version: 1, target: targetKey(target), attempt_id: migrationGuard.attempt_id,
+          backup_filename: migrationGuard.backup.filename, backup_sha256: backupDigest, selection_sha256: selection.digest };
+        writeExclusivePrivate(join(witnessDirectory, "defense-selection.json"), selection.bytes);
+        writeExclusivePrivate(join(witnessDirectory, "binding.json"), JSON.stringify(binding));
+        syncDirectory(witnessDirectory); syncDirectory(stateDirectory);
+        migrationGuard.defense_binding = binding;
+        atomicJson(guardPath, migrationGuard);
+      }
+      let witnessDirectoryStat;
+      try { witnessDirectoryStat = lstatSync(witnessDirectory); } catch {
+        throw new Error('Schema 62 witness directory is missing; keep writers stopped. Preserve the original guard and backup for manual recovery.');
+      }
+      if (!witnessDirectoryStat.isDirectory() || (witnessDirectoryStat.mode & 0o077))
+        throw new Error('Schema 62 witness directory must be private; keep writers stopped.');
+      const selectionPath = join(witnessDirectory, "defense-selection.json");
+      const bindingPath = join(witnessDirectory, "binding.json");
+      const storedSelection = privateSelection(selectionPath, targetKey(target));
+      let binding;
+      try { binding = JSON.parse(privateBytes(bindingPath)); } catch { throw new Error("Original Defense binding is invalid; keep writers stopped."); }
+      const backupDigest = await verifiedBackupDigest(migrationGuard.backup);
+      if (!isDeepStrictEqual(binding, migrationGuard.defense_binding) || binding.version !== 1 ||
+          binding.target !== targetKey(target) || binding.attempt_id !== migrationGuard.attempt_id ||
+          binding.backup_filename !== migrationGuard.backup.filename || binding.backup_sha256 !== backupDigest ||
+          binding.selection_sha256 !== storedSelection.digest)
+        throw new Error("Original Defense selection or backup binding differs; keep writers stopped.");
       if (migrationGuard.starting_schema === 59) {
         let current = status.applied_versions.at(-1);
         const pre62Name = `pre62-${migrationGuard.attempt_id}.json`;
@@ -693,29 +790,15 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
           throw new Error("Invalid schema 61 checkpoint evidence; keep writers stopped.");
         }
       }
-      const directory = lstatSync(stateDirectory);
-      if (!directory.isDirectory() || (directory.mode & 0o077))
-        throw new Error('Schema 62 migration state must be a private directory; keep writers stopped.');
-      const witnessDirectory = cut62MountDirectory(stateDirectory, witnessName);
-      const witnessPath = join(witnessDirectory, witnessName);
+      const defenseArgs = ["--defense-selection", "/cut62/defense-selection.json", "--cut62-binding", "/cut62/binding.json"];
       const firstCapture = newGuard || (migrationGuard.starting_schema === 59 &&
         status.applied_versions.at(-1) === 61 && migrationGuard.cut62_intermediate_verified?.schema === 61 &&
         !migrationGuard.cut62_capture_started);
       if (firstCapture) {
-        if (existsSync(witnessDirectory)) throw new Error('Schema 62 witness directory already exists; refusing to recapture.');
         migrationGuard.cut62_capture_started = true;
         atomicJson(guardPath, migrationGuard);
-        mkdirSync(witnessDirectory, { mode: 0o700 });
-      }
-      let witnessDirectoryStat;
-      try { witnessDirectoryStat = lstatSync(witnessDirectory); } catch {
-        throw new Error('Schema 62 witness directory is missing; keep writers stopped. Preserve the original guard and backup for manual recovery.');
-      }
-      if (!witnessDirectoryStat.isDirectory() || (witnessDirectoryStat.mode & 0o077))
-        throw new Error('Schema 62 witness directory must be private; keep writers stopped.');
-      if (firstCapture) {
         if (existsSync(witnessPath)) throw new Error('Schema 62 witness already exists; refusing to recapture.');
-        const capture = JSON.parse((await maintenance("database/tooling/verify_postgres_cli_state.py", ["--cut62-capture", `/cut62/${witnessName}`], { cut62Mount: witnessName })).stdout);
+        const capture = JSON.parse((await maintenance("database/tooling/verify_postgres_cli_state.py", ["--cut62-capture", `/cut62/${witnessName}`, ...defenseArgs], { cut62Mount: witnessName })).stdout);
         if (typeof capture.witness_id !== "string" || !capture.witness_id) throw new Error("Schema 62 witness identity is invalid; keep writers stopped.");
         const directoryFd = openSync(witnessDirectory, "r");
         try { fsyncSync(directoryFd); } finally { closeSync(directoryFd); }
@@ -732,15 +815,19 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
         throw new Error("Original schema 62 witness identity is missing; keep writers stopped.");
       if (status.applied_versions.at(-1) === 61) {
         const checked = JSON.parse((await maintenance("database/tooling/verify_postgres_cli_state.py",
-          ["--cut62-check-captured", `/cut62/${witnessName}`], { cut62Mount: witnessName })).stdout);
+          ["--cut62-check-captured", `/cut62/${witnessName}`, ...defenseArgs], { cut62Mount: witnessName })).stdout);
         if (checked.witness_id !== identity.witness_id) throw new Error("Original schema 62 witness identity differs; keep writers stopped.");
       }
     }
-    if (status.pending_versions.length) await maintenance("database/tooling/apply_postgres_migrations.py", [], { echo: true });
+    if (status.pending_versions.length) await maintenance("database/tooling/apply_postgres_migrations.py", witnessName ?
+      ["--defense-selection", "/cut62/defense-selection.json", "--cut62-binding", "/cut62/binding.json", "--cut62-witness", `/cut62/${witnessName}`,
+        "--expected-selection-sha256", migrationGuard.defense_binding.selection_sha256,
+        "--expected-witness-id", migrationGuard.cut62_identity.witness_id] : [],
+      { echo: true, ...(witnessName ? { cut62Mount: witnessName } : {}) });
     try {
       if (witnessName) {
         const verified = JSON.parse((await maintenance("database/tooling/verify_postgres_cli_state.py",
-          ["--cut62-verify", `/cut62/${witnessName}`], { cut62Mount: witnessName })).stdout);
+          ["--cut62-verify", `/cut62/${witnessName}`, "--defense-selection", "/cut62/defense-selection.json", "--cut62-binding", "/cut62/binding.json"], { cut62Mount: witnessName })).stdout);
         if (verified.witness_id !== migrationGuard.cut62_identity.witness_id)
           throw new Error("Original schema 62 witness identity differs; keep writers stopped.");
       } else await maintenance("database/tooling/verify_postgres_cli_state.py", ["--expected", JSON.stringify(migrationGuard.study_invariants)]);

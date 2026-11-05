@@ -116,7 +116,7 @@ def check_upgrade(boundary):
             assert witness['version'] == 5 and len(CUT62_RETIRED_TABLES) == 12
             assert 'defense_attempts' in CUT62_PROTECTED_TABLES and 'defense_attempts' in witness['rows']
         for _ in range(2):
-            apply_migrations(dsn)
+            apply_migrations(dsn, defense_zero=True)
             with psycopg.connect(dsn) as database:
                 assert [row[0] for row in database.execute(
                     "SELECT version FROM tempo_schema_migrations ORDER BY version")] == list(range(1, POSTGRES_SCHEMA_VERSION + 1))

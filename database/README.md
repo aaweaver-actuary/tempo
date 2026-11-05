@@ -80,18 +80,25 @@ shared-row deletion.
 The `pre62-source-59` witness is a separate, private stopped-writer check for
 original schema-59 rows, sequences and catalog through versions 60 and 61. It
 allows only the reviewed immutable-evidence objects and an empty new historical
-origin table. It does not replace a full verified backup, the separate version-5
+origin table. It does not replace a full verified backup, the separate version-6
 cutover witness, or any approval to change an installed database. A captured
 witness must persist unchanged across retries and must never be replaced after
 migration begins.
 
 The 062 review candidate includes `daily_chess_snapshots`, `daily_chess_insights`,
 `daily_statistics_jobs`, and `game_insight_recommendations` as exclusive
-retired stores. The version-5 cutover witness captures their exact original
-rows before migration and requires their absence afterward; version-4 evidence
+retired stores. The version-6 cutover witness captures their exact original
+rows before migration and requires their absence afterward; version-5 evidence
 is not accepted for this expanded cut. Retained tactic progress, pack identities,
 Games sources and authored/Study obligations remain protected. Browser snapshot
 mappings remain compatibility metadata and need their own owner review.
 
 Historical browser `syncMetadata` records and their generic backup/restore remain
 unchanged, including records from prior daily snapshot imports.
+
+The Defense no-activity cut uses an explicit private approved selection bound
+to the original target, attempt and verified backup. Its original reference
+digest and full retained rows are checked before mutation, and projected rows
+are checked afterward. Missing approval is not an empty selection. Fresh or
+historical rehearsals use an explicit zero selection; unrelated origins,
+Study and Tactics records, Game sources and shared request identities remain.

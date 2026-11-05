@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { schemaVersionFromSource, validateTarget, validateContainers, deploymentCanStart,
   acquireTargetLock, assessMainVerification, assessCandidate, qualityEvidence, atomicJson, selectCandidate, productVolumes, targetKey,
   CommandExecutionError, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, sourceFingerprint, sourceMatchesFingerprint } from "../../scripts/tempo-deployment.mjs";
-import { assessMigrationRecovery, cut62WitnessName, validateCut62Preflight, assertColdPreflightContainers, cut62MountDirectory, requirePrivateCut62Witness, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
+import { assessMigrationRecovery, cut62WitnessName, privateSelection, validateCut62Preflight, assertColdPreflightContainers, cut62MountDirectory, requirePrivateCut62Witness, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
 import { parseArguments, ensureDocker } from "../../scripts/tempo-cli.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
@@ -508,11 +508,17 @@ function imageRuntimeFixture(t, reference, actualMajor, fallback = false, respon
   config.services.postgres.image = reference;
   writeFileSync(fixture.target.composeFiles[0], JSON.stringify(config));
   const record = readFixtureJson(fixture, "deployment.json", true);
+  const selectionDirectory = join(fixture.directory, "private-selection");
+  mkdirSync(selectionDirectory, { mode: 0o700 });
+  const selection = join(selectionDirectory, "selection.json");
+  writeFileSync(selection, JSON.stringify({ version: 1, target: targetKey(fixture.target), cohort: "defense-no-activity",
+    keys: [], expected: { count: 0, reference_digest: "a".repeat(64) } }), { mode: 0o600 });
   const calls = [];
   const run = async (_command, args, options) => {
     calls.push(args);
     const response = responseForCommand(args, options);
     if (response !== undefined) return typeof response === "string" ? { stdout: response, stderr: "", code: 0 } : response;
+    if (args.some(arg => typeof arg === "string" && arg.includes('sha256sum -c'))) return { stdout: "b".repeat(64), stderr: "", code: 0 };
     let result = "";
     if (args.includes("config")) {
       const resolved = structuredClone(config);
@@ -526,7 +532,7 @@ function imageRuntimeFixture(t, reference, actualMajor, fallback = false, respon
     return { stdout: result, stderr: "", code: 0 };
   };
   const runtime = createRuntime(fixture.target, { run, stateDirectory: fixture.stateDirectory, revision: record.revision,
-    evidence: record.evidence, previous: record, fallback,
+    evidence: record.evidence, previous: record, fallback, defenseSelection: selection,
     buildImages: async prepare => prepare(),
     preparedImages: { revision: record.revision, images: record.images, configFingerprint: configurationFingerprint(config) }, log: () => {}, ...runtimeOptions });
   return { runtime, calls, fixture };
@@ -2578,6 +2584,27 @@ test("schema 62 bind source is absolute and cannot alter volume syntax", () => {
     assert.throws(() => cut62MountDirectory(path, name), /mount/);
 });
 
+test("Defense selection requires a private canonical target-bound file and retries reject replacements", t => {
+  const dir = directory(t); fs.chmodSync(dir, 0o700);
+  const file = join(dir, "approved.json");
+  const selection = { version: 1, target: "target", cohort: "defense-no-activity",
+    keys: [["card-a", "candidate-a"]], expected: { count: 1, reference_digest: "a".repeat(64) } };
+  const write = value => writeFileSync(file, JSON.stringify(value), { mode: 0o600 });
+  write(selection);
+  assert.match(privateSelection(file, "target").digest, /^[0-9a-f]{64}$/);
+  assert.throws(() => privateSelection(file, "other"), /invalid/);
+  write({ ...selection, keys: [["b", "x"], ["a", "y"]], expected: { ...selection.expected, count: 2 } });
+  assert.throws(() => privateSelection(file, "target"), /invalid/);
+  write({ ...selection, expected: { ...selection.expected, count: 0 } });
+  assert.throws(() => privateSelection(file, "target"), /invalid/);
+  write(selection); fs.chmodSync(file, 0o644);
+  assert.throws(() => privateSelection(file, "target"), /private/);
+  fs.chmodSync(file, 0o600); fs.symlinkSync(file, join(dir, "link"));
+  assert.throws(() => privateSelection(join(dir, "link"), "target"), /unavailable/);
+  assert.throws(() => parseArguments(["start", "--retry", "--defense-selection", file]), /Invalid options/);
+  assert.equal(parseArguments(["start", "--defense-selection", file]).defenseSelection, file);
+});
+
 test("schema 62 runtime preserves original witness across failed verification and retry", async t => {
   let schema = 61, shouldFail = true, captures = 0;
   const events = [], paths = new Map();
@@ -2596,7 +2623,7 @@ test("schema 62 runtime preserves original witness across failed verification an
       captures += 1;
       events.push(["capture"]);
       const directory = args[args.indexOf("--volume") + 1].slice(0, -":/cut62".length);
-      writeFileSync(join(directory, args.at(-1).split("/").at(-1)), "original", { mode: 0o600 });
+      writeFileSync(join(directory, args[args.indexOf("--cut62-capture") + 1].split("/").at(-1)), "original", { mode: 0o600 });
       return JSON.stringify({ witness_id: "cut-id" });
     }
     if (args.includes("--cut62-verify")) {
@@ -2640,7 +2667,7 @@ test("schema 62 rejects a different valid witness before migration and after mig
     if (args.includes("--cut62-capture")) {
       captures += 1;
       const directory = args[args.indexOf("--volume") + 1].slice(0, -":/cut62".length);
-      writeFileSync(join(directory, args.at(-1).split("/").at(-1)), "original", { mode: 0o600 });
+      writeFileSync(join(directory, args[args.indexOf("--cut62-capture") + 1].split("/").at(-1)), "original", { mode: 0o600 });
       return JSON.stringify({ witness_id: "original" });
     }
     if (args.includes("--cut62-check-captured") || args.includes("--cut62-verify"))
@@ -2729,7 +2756,7 @@ for (const failure of ["intermediate_verification", "capture", "witness_check", 
         captures += 1; order.push("capture");
         if (failure === "capture" && !failed) { failed = true; throw new Error("injected capture failure"); }
         const directory = args[args.indexOf("--volume") + 1].slice(0, -":/cut62".length);
-        writeFileSync(join(directory, args.at(-1).split("/").at(-1)), "original", { mode: 0o600 });
+        writeFileSync(join(directory, args[args.indexOf("--cut62-capture") + 1].split("/").at(-1)), "original", { mode: 0o600 });
         return JSON.stringify({ witness_id: "cut-id" });
       }
       if (args.includes("--cut62-check-captured")) {
@@ -2770,8 +2797,9 @@ for (const failure of ["intermediate_verification", "capture", "witness_check", 
 }
 
 test("schema 59 cutover resumes interrupted schema 60 using the original backup", async t => {
-  let schema = 59, interrupted = false, captures = 0, preCaptures = 0, tampered = false;
+  let schema = 59, interrupted = false, captures = 0, preCaptures = 0, tampered = false, backupChanged = false;
   const { runtime, calls, fixture } = imageRuntimeFixture(t, "postgres:18.6-trixie", 18, false, args => {
+    if (backupChanged && args.some(arg => typeof arg === "string" && arg.includes('sha256sum -c'))) return "c".repeat(64);
     if (args.includes("database/tooling/apply_postgres_migrations.py")) {
       if (args.includes("--check")) return JSON.stringify({ initialized: true, roles_ready: true, credentials_ready: true,
         expected_version: 62, applied_versions: Array.from({ length: schema }, (_, index) => index + 1),
@@ -2795,7 +2823,7 @@ test("schema 59 cutover resumes interrupted schema 60 using the original backup"
     if (args.includes("--cut62-capture")) {
       captures += 1;
       const directory = args[args.indexOf("--volume") + 1].slice(0, -":/cut62".length);
-      writeFileSync(join(directory, args.at(-1).split("/").at(-1)), "original", { mode: 0o600 });
+      writeFileSync(join(directory, args[args.indexOf("--cut62-capture") + 1].split("/").at(-1)), "original", { mode: 0o600 });
       return JSON.stringify({ witness_id: "cut-id" });
     }
     if (args.includes("--cut62-check-captured") || args.includes("--cut62-verify")) return JSON.stringify({ witness_id: "cut-id" });
@@ -2807,6 +2835,14 @@ test("schema 59 cutover resumes interrupted schema 60 using the original backup"
   const guardPath = join(fixture.stateDirectory, "migration-guard.json");
   const original = JSON.parse(readFileSync(guardPath, "utf8"));
   assert.equal(schema, 60); assert.equal(original.starting_schema, 59);
+  const storedSelection = join(cut62MountDirectory(fixture.stateDirectory, original.cut62_witness), "defense-selection.json");
+  const originalSelection = readFileSync(storedSelection);
+  writeFileSync(storedSelection, "{}", { mode: 0o600 });
+  await runtime.checkSchema(); await assert.rejects(runtime.migrate(), /selection is invalid/);
+  writeFileSync(storedSelection, originalSelection, { mode: 0o600 });
+  backupChanged = true;
+  await assert.rejects(runtime.migrate(), /backup binding differs/);
+  backupChanged = false;
   const prePath = join(cut62MountDirectory(fixture.stateDirectory, original.pre62_witness), original.pre62_witness);
   rmSync(prePath);
   await runtime.checkSchema(); await assert.rejects(runtime.migrate(), /witness is missing/);
@@ -2821,6 +2857,75 @@ test("schema 59 cutover resumes interrupted schema 60 using the original backup"
   assert.equal(schema, 62); assert.equal(captures, 1); assert.equal(preCaptures, 1);
   assert.equal(final.attempt_id, original.attempt_id); assert.deepEqual(final.backup, original.backup);
   assert.equal(calls.filter(args => args.some(arg => arg.includes("pg_dump"))).length, 1);
+});
+
+test("schema 62 migrator requires explicit policy and sets validated selection inside its migration transaction", () => {
+  const proof = String.raw`
+import contextlib, importlib.util, json, pathlib, sys, tempfile, types
+state = {'version':61, 'in_tx':False, 'events':[]}
+selection={'version':1,'target':'target','cohort':'defense-no-activity','keys':[['card','candidate']],'expected':{'count':1,'reference_digest':'a'*64}}
+binding={'version':1}
+witness={'version':6,'selection':selection,'binding':binding}
+class Result:
+ def __init__(self, rows): self.rows=rows
+ def fetchone(self): return self.rows[0]
+ def fetchall(self): return self.rows
+class Database:
+ def __enter__(self): return self
+ def __exit__(self,*args): pass
+ @contextlib.contextmanager
+ def transaction(self):
+  state['in_tx']=True
+  try: yield
+  finally: state['in_tx']=False
+ def commit(self): pass
+ def execute(self, sql, params=None, **kwargs):
+  if "to_regclass" in sql: return Result([(True,)])
+  if "SELECT version FROM" in sql: return Result([(i,) for i in range(1,state['version']+1)])
+  if "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ" in sql:
+   assert state['in_tx']; return Result([])
+  if "set_config" in sql:
+   assert state['in_tx'] and '%s' in sql and len(params)==1
+   state['events'].append(('setting',json.loads(params[0])))
+   return Result([])
+  if "SELECT COALESCE" in sql: return Result([(state['version'],)])
+  assert sql=='migration 62' and state['in_tx'] and state['events'][-1][0]=='setting'
+  state['events'].append(('ddl',None)); state['version']=62
+  return Result([])
+module_stub=types.ModuleType('database.tooling.verify_postgres_cli_state')
+module_stub._cut62_defense_reference_digest=lambda db,keys:(0,'0'*64)
+module_stub.load_cut62_defense_selection=lambda path:(selection,'b'*64)
+module_stub.load_cut62_attempt_binding=lambda path,s,d:binding
+module_stub.load_cut62_witness=lambda path:(witness,'secret')
+module_stub.cut62_witness_id=lambda w,s:'c'*64
+module_stub.check_captured_cut62_v6=lambda db,w,s:state['events'].append(('verify',None)) if state['in_tx'] else (_ for _ in ()).throw(AssertionError())
+sys.modules['database.tooling.verify_postgres_cli_state']=module_stub
+sys.modules['psycopg']=types.SimpleNamespace(connect=lambda *a,**k:Database())
+spec=importlib.util.spec_from_file_location('migration_owner','database/tooling/apply_postgres_migrations.py')
+module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+with tempfile.TemporaryDirectory() as tmp:
+ root=pathlib.Path(tmp)
+ for i in range(1,63): (root / f'{i:03d}_test.sql').write_text(f'migration {i}')
+ module.MIGRATIONS=root; module.POSTGRES_SCHEMA_VERSION=62
+ try: module.apply_migrations('fixture')
+ except RuntimeError as e: assert 'explicit approved' in str(e)
+ else: raise AssertionError('missing policy accepted')
+ assert state['version']==61 and state['events']==[]
+ try: module.apply_migrations('fixture', defense_selection='s',cut62_binding='b',cut62_witness='w',expected_selection_sha256='wrong',expected_witness_id='c'*64)
+ except RuntimeError as e: assert 'selection identity differs' in str(e)
+ else: raise AssertionError('wrong digest accepted')
+ assert state['version']==61 and state['events']==[]
+ module.apply_migrations('fixture', defense_selection='s',cut62_binding='b',cut62_witness='w',expected_selection_sha256='b'*64,expected_witness_id='c'*64)
+ assert [x[0] for x in state['events']]==['verify','setting','ddl'] and state['events'][1][1]==selection
+ state.update(version=61,events=[])
+ module.apply_migrations('fixture',defense_zero=True)
+ assert [x[0] for x in state['events']]==['setting','ddl'] and state['events'][0][1]['keys']==[]
+ state.update(version=62,events=[])
+ module.apply_migrations('fixture')
+ assert state['events']==[]
+`;
+  const result = fsSpawnSync("python3", ["-c", proof], { cwd: process.cwd(), encoding: "utf8" });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
 });
 
 test("bounded migrator resolves all sources and permits only 59 or interrupted 60 through 61", () => {
