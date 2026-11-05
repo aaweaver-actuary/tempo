@@ -1,13 +1,7 @@
-"""Read-only one-game export for the installable observation/producer tools.
+"""Capture read-only game and repertoire facts for Game Review and Study feedback."""
 
-This owner supplies canonical source facts; it imports no Game Evidence runtime
-or A bridge implementation and performs no admission, issuance or review.
-"""
-
-import argparse
 from datetime import datetime, timezone
 import json
-from pathlib import Path
 
 import chess
 from tempo_game_evidence_contracts.legacy import fingerprint
@@ -74,29 +68,3 @@ def capture_game(
         catalogue_scope=captured.catalogue_proof.model_dump(mode="json"),
     )
     return {**result, "export_digest": fingerprint(result)}
-
-
-def main(arguments=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repertoire-id", required=True)
-    parser.add_argument("--game-id", required=True)
-    parser.add_argument("--decision-ply", type=int, action="append")
-    parser.add_argument("--output", required=True, type=Path)
-    options = parser.parse_args(arguments)
-    result = capture_game(options.repertoire_id, options.game_id, options.decision_ply)
-    with options.output.open("x") as output:
-        json.dump(result, output, indent=2)
-    print(
-        json.dumps(
-            dict(
-                output=str(options.output),
-                export_digest=result["export_digest"],
-                read_only=True,
-            )
-        )
-    )
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

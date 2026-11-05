@@ -85,8 +85,7 @@
       "public_namespace": "tempo_game_evidence_contracts.v3",
       "authoritative_owner": "Game Evidence observations / Learning obligations",
       "consumers": [
-        "learning",
-        "intelligence"
+        "learning"
       ],
       "models": [
         "EvidenceDelivery",
@@ -115,31 +114,6 @@
       ]
     },
     {
-      "root": "intelligence",
-      "distribution": "tempo-intelligence-contracts",
-      "artifact_version": "1.0.0",
-      "wire_version": 1,
-      "public_namespace": "tempo_intelligence_contracts.v1",
-      "authoritative_owner": "Intelligence advisory only",
-      "consumers": [
-        "learning"
-      ],
-      "models": [
-        "AdvisoryPublication",
-        "IntelligenceAvailability"
-      ],
-      "schema_exports": [
-        "schemas/v1/AdvisoryPublication.schema.json",
-        "schemas/v1/IntelligenceAvailability.schema.json"
-      ],
-      "test_command": "python -m pytest contracts/intelligence/tests",
-      "runtime_dependencies": [
-        "pydantic==2.12.5"
-      ],
-      "data_ownership": "OWNERSHIP.md",
-      "protocol_semantics": "README.md"
-    },
-    {
       "root": "analysis-jobs",
       "distribution": "tempo-analysis-jobs-contracts",
       "artifact_version": "1.0.0",
@@ -149,7 +123,6 @@
       "consumers": [
         "content",
         "game-evidence",
-        "intelligence",
         "stockfish",
         "maia"
       ],

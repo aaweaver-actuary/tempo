@@ -117,10 +117,10 @@ are a call argument only and never part of data, cache or diagnostic text.
 ## Reuse and focused proof
 
 [explorer.py](explorer.py) adapts the small donor
-[ExplorerClient/validate_evidence](../../../../services/intelligence/src/tempo_intelligence/provider.py)
+[ExplorerClient/validate_evidence](https://github.com/aaweaver-actuary/tempo/blob/eb4f5b29fdb73857549f8a598af85838acc75b49/services/intelligence/src/tempo_intelligence/provider.py)
 acquisition logic: bounded streaming, no redirects/trust-env, strict native
 outcomes, outcome-wise subtotal checks, duplicate-field detection and safe
-HTTP/Retry-After errors. Donor callers are unchanged. Its descriptor/runtime
+HTTP/Retry-After errors. Its descriptor/runtime
 orchestration is not imported or copied. Empirical frequencies, counts, legal
 inventory and unknown distributions use public `tempo_evidence_math` exports.
 

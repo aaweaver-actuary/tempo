@@ -188,10 +188,16 @@ class NativeBackend:
 
     def preview(self):
         capture = self.directory / 'capture.json'
-        source = ('import runpy;sys.argv=["legacy-capture","--repertoire-id",' + repr(self.identities['ruy']) +
-            ',"--game-id",' + repr(self.identities['game']) + ',"--output",' + repr(str(capture)) +
-            '];runpy.run_module("app.legacy_game_observation",run_name="__main__")')
-        result = subprocess.run(self.bootstrap(source), env=self.environment('tempo_reader'), cwd=self.directory,
+        source = """
+import json
+from app.legacy_game_observation import capture_game
+document = capture_game(sys.argv[1], sys.argv[2])
+with open(sys.argv[3], "x") as output:
+    json.dump(document, output, indent=2)
+print(json.dumps(dict(output=sys.argv[3], export_digest=document["export_digest"], read_only=True)))
+"""
+        result = subprocess.run([*self.bootstrap(source), self.identities['ruy'], self.identities['game'], str(capture)],
+            env=self.environment('tempo_reader'), cwd=self.directory,
             capture_output=True, text=True, timeout=25)
         (self.directory / 'capture.log').write_text(result.stdout + result.stderr)
         assert result.returncode == 0, 'Real backend read capture failed; see capture.log'

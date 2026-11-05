@@ -293,98 +293,6 @@
       "testInventory": "REGRESSIONS.md"
     },
     {
-      "id": "intelligence",
-      "type": "service",
-      "maintainer": "Tempo / #109",
-      "status": "implemented",
-      "root": "services/intelligence",
-      "publicExports": [
-        "Configuration",
-        "create_app",
-        "analysis_v1",
-        "run_analysis_work"
-      ],
-      "dependencies": [
-        "chess",
-        "tempo_chess_core",
-        "tempo_analysis_jobs_contracts",
-        "fastapi",
-        "starlette",
-        "uvicorn",
-        "httpx",
-        "psycopg",
-        "psycopg_pool",
-        "pydantic"
-      ],
-      "buildInputs": [
-        "../../database/tempo_intelligence_database",
-        "hatch_build.py",
-        "pyproject.toml",
-        "uv.lock",
-        "src",
-        "tests",
-        "integration",
-        "fixtures",
-        "README.md",
-        "REGRESSIONS.md",
-        "INTERFACES.md"
-      ],
-      "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
-      "artifact": {
-        "name": "tempo-intelligence",
-        "version": "0.1.0",
-        "format": "wheel + sdist"
-      },
-      "tests": [
-        {
-          "owner": "intelligence",
-          "kind": "python",
-          "cwd": "services/intelligence",
-          "command": "python -m pytest tests --import-mode=importlib -q",
-          "inputs": [
-            "tests",
-            "fixtures",
-            "src",
-            "pyproject.toml",
-            "uv.lock"
-          ]
-        },
-        {
-          "owner": "intelligence",
-          "kind": "postgres",
-          "cwd": ".",
-          "command": "python database/tempo_intelligence_database/tooling/run_postgres.py",
-          "inputs": [
-            "services/intelligence/integration",
-            "services/intelligence/src",
-            "services/intelligence/fixtures",
-            "services/intelligence/pyproject.toml",
-            "services/intelligence/uv.lock",
-            "database/tempo_intelligence_database"
-          ]
-        }
-      ],
-      "toolchain": {
-        "python": ">=3.12,<3.15",
-        "qualificationPython": [
-          "3.12",
-          "3.14"
-        ],
-        "postgresql": "18"
-      },
-      "dataOwnership": {
-        "authority": "#109",
-        "databases": [
-          "dedicated workspace Intelligence database"
-        ],
-        "migrations": [
-          "../../database/tempo_intelligence_database/ddl/migrations/manifest.json"
-        ],
-        "productionAdoption": false
-      },
-      "testInventory": "REGRESSIONS.md"
-    },
-    {
       "id": "tempo-cli",
       "type": "tool",
       "maintainer": "Tempo",
@@ -638,65 +546,6 @@
           "owner": "game-evidence-contracts",
           "kind": "python",
           "cwd": "contracts/game-evidence",
-          "command": "python -m pytest tests --import-mode=importlib -q",
-          "inputs": [
-            "tests"
-          ]
-        }
-      ],
-      "toolchain": {
-        "python": ">=3.12,<3.15",
-        "qualificationPython": [
-          "3.12",
-          "3.14"
-        ]
-      },
-      "dataOwnership": {
-        "authority": "#264",
-        "databases": [],
-        "migrations": [],
-        "documents": [
-          "contracts/OWNERSHIP.md"
-        ],
-        "productionAdoption": false
-      },
-      "catalog": "contracts/catalog.json",
-      "testInventory": "REGRESSIONS.md"
-    },
-    {
-      "id": "intelligence-contracts",
-      "type": "contract",
-      "maintainer": "Tempo / #264",
-      "status": "implemented",
-      "root": "contracts/intelligence",
-      "publicExports": [
-        "tempo_intelligence_contracts.v1",
-        "schemas/v1/*.json"
-      ],
-      "dependencies": [
-        "pydantic"
-      ],
-      "buildInputs": [
-        "pyproject.toml",
-        "src",
-        "schemas",
-        "fixtures",
-        "examples",
-        "tests",
-        "README.md",
-        "REGRESSIONS.md"
-      ],
-      "buildCommand": "python -m build --no-isolation",
-      "artifact": {
-        "name": "tempo-intelligence-contracts",
-        "version": "1.0.0",
-        "format": "wheel + sdist + packaged JSON schema"
-      },
-      "tests": [
-        {
-          "owner": "intelligence-contracts",
-          "kind": "python",
-          "cwd": "contracts/intelligence",
           "command": "python -m pytest tests --import-mode=importlib -q",
           "inputs": [
             "tests"
@@ -1863,14 +1712,12 @@
         "packages/game-ingestion/src",
         "packages/study-session/src",
         "packages/evidence-math/src",
-        "services/intelligence/src",
         "services/game-evidence/src",
         "services/learning/runtime/src",
         "services/learning/application/src",
         "services/learning/remediation/src",
         "services/content/src",
         "contracts/content-publication/src",
-        "contracts/intelligence/src",
         "contracts/game-evidence/src",
         "contracts/learning/src",
         "contracts/consumer-examples/src",

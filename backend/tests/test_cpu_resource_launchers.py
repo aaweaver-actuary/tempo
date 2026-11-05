@@ -22,7 +22,6 @@ ROOT = Path(__file__).resolve().parents[2]
             "384m",
             "256",
         ),
-        ("database/tempo_intelligence_database/tooling/run_postgres.py", "384m", "256"),
         (
             "database/tempo_legacy_database/tooling/learning_review/run_postgres.py",
             "384m",

@@ -13,7 +13,6 @@ PACKAGES = [
     "learning-transfer",
     "content-publication",
     "game-evidence",
-    "intelligence",
     "analysis-jobs",
 ]
 
@@ -48,9 +47,6 @@ def test_python_v1_producers_exchange_with_independent_python_v1_consumers(packa
         assert decisions["delivery"] == "submit_obligations_without_queue_write"
         assert decisions["ack-accepted_pending"] == "keep_delivery_pending_or_failed"
         assert decisions["ack-completed"] == "acknowledge_completion"
-    elif package == "intelligence":
-        assert decisions["unavailable"] == "deterministic_fallback"
-        assert decisions["advice-probabilities"] == "preserve_unknown_probability"
     else:
         assert decisions["cancel-requested"] == "termination_unconfirmed"
         assert decisions["cancel-terminated"] == "computation_stopped"

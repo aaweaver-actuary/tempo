@@ -29,18 +29,6 @@ function timestampMicroseconds(value: string): bigint {
   return BigInt(seconds) * 1_000_000n + fraction - offset;
 }
 
-function assertAdvisoryPublicationSemantics(publication: ObjectValue): void {
-  if (publication.valid_until !== null) assert.ok(timestampMicroseconds(publication.valid_until as string) > timestampMicroseconds(publication.produced_at as string), "expiry must follow publication");
-  const advisory = object(publication.advisory);
-  if (advisory.kind === "probabilities") {
-    const moves = items(advisory.moves);
-    unique(moves.map(move => move.move));
-    mass([sum(moves.filter(move => move.probability !== null).map(move => move.probability as number)), advisory.unknown_mass as number]);
-    if (moves.some(move => move.probability === null)) assert.ok((advisory.unknown_mass as number) > 0);
-  } else if (advisory.kind === "ranking") unique(items(advisory.cards).map(card => card.card_id));
-  else if (advisory.kind === "coverage_recommendation") mass([advisory.known_covered_mass, advisory.known_uncovered_mass, advisory.unknown_mass] as number[]);
-}
-
 function nestedChecks(value:unknown):void {
   if(Array.isArray(value)) value.forEach(nestedChecks);
   else if(value && typeof value === "object") {
@@ -95,14 +83,6 @@ export function assertSemantics(model:string,payload:ObjectValue):void {
     }
     case "EvidenceAcknowledgement":assert.equal(payload.status==="completed",payload.learning_revision!==null);unique(payload.accepted_obligation_ids as string[]);
       if(["retryable_failure","terminal_failure","conflict","stale_revision"].includes(payload.status as string)) assert.notEqual(payload.reason,null);break;
-    case "AdvisoryPublication": assertAdvisoryPublicationSemantics(payload); break;
-    case "IntelligenceAvailability":
-      assert.equal(payload.status==="available",payload.publication!==null);
-      if(payload.publication!==null) {
-        assert.equal(payload.workspace_id,object(payload.publication).workspace_id);
-        assertAdvisoryPublicationSemantics(object(payload.publication));
-      }
-      else assert.notEqual(payload.reason,null);break;
     case "JobStatus":if(payload.retryable) assert.equal(payload.status,"failed");if(payload.status==="failed") assert.notEqual(payload.reason,null);break;
     case "StockfishResult": {
       const variations=items(payload.variations);

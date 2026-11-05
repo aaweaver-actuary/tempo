@@ -267,7 +267,7 @@ def copy_artifact_source(source_root, restricted):
     for package in SOURCE_PACKAGES:
         target = restricted / package
         target.mkdir(parents=True)
-        owner_databases = {"services/learning/runtime": "tempo_learning_database", "services/learning/remediation": "tempo_remediation_database", "services/content": "tempo_content_database", "services/intelligence": "tempo_intelligence_database", "services/game-evidence": "tempo_game_evidence_database"}
+        owner_databases = {"services/learning/runtime": "tempo_learning_database", "services/learning/remediation": "tempo_remediation_database", "services/content": "tempo_content_database", "services/game-evidence": "tempo_game_evidence_database"}
         if package in owner_databases:
             name = owner_databases[package]
             shutil.copytree(source_root / "database" / name, target / "database" / name, ignore=shutil.ignore_patterns("__pycache__"))

@@ -34,12 +34,6 @@ function setField(payload: Payload, fields: string[], value: string): void {
   for (const field of fields.slice(0, -1)) target = target[field] as Payload;
   target[fields.at(-1)!] = value;
 }
-function adviceForm(publication: Payload, wrapped: boolean): {model: string, payload: Payload} {
-  if (!wrapped) return {model: "AdvisoryPublication", payload: publication};
-  const payload = fixture("intelligence", "available");
-  payload.publication = publication;
-  return {model: "IntelligenceAvailability", payload};
-}
 let examples = 0;
 for (const [contract, cases] of Object.entries(expectations)) {
   const producerRecords = JSON.parse(readFileSync(path.join(producerRoot, contract+".json"), "utf8")) as Array<{case:string, model:string, payload:Record<string, unknown>}>;
@@ -123,14 +117,12 @@ const timestampEnvelopes: Array<[string, string, string, string[]]> = [
   ["learning", "attempt-issued-choice", "AttemptIssuance", ["attempt", "issued_at"]],
   ["content-publication", "publication", "Publication", ["built_at"]],
   ["game-evidence", "imported-game", "ImportedGame", ["provenance", "imported_at"]],
-  ["intelligence", "advice-ranking", "AdvisoryPublication", ["produced_at"]],
   ["analysis-jobs", "cancel-requested", "CancellationAcknowledgement", ["acknowledged_at"]],
 ];
 for (const [contract, name, model, fieldPath] of timestampEnvelopes) {
   for (const [caseName, timestamp, accepted] of timestampCases) {
     test(`repair: ${contract} timestamp validity and wire spelling / ${caseName}`, () => {
       const payload = fixture(contract, name);
-      if (contract === "intelligence") payload.valid_until = null;
       setField(payload, fieldPath, timestamp);
       const originalWire = JSON.stringify(payload);
       const validate = schemaValidator(contract, model);
@@ -144,34 +136,6 @@ for (const [contract, name, model, fieldPath] of timestampEnvelopes) {
         });
       }
       assert.equal(JSON.stringify(payload), originalWire, "timestamp wire spelling was rewritten");
-    });
-  }
-}
-for (const wrapped of [false, true]) {
-  for (const kind of ["ranking", "probabilities", "readiness", "coverage"]) {
-    test(`repair: ${wrapped ? "wrapped" : "standalone"} advisory valid control / ${kind}`, () => {
-      const {model, payload} = adviceForm(fixture("intelligence", "advice-"+kind), wrapped);
-      assert.ok(schemaValidator("intelligence", model)(payload));
-      assertSemantics(model, payload);
-    });
-  }
-  const expiryCases: Array<[string, string, boolean]> = [
-    ["one_microsecond_later", "2026-10-14T12:00:00.000002Z", true],
-    ["same_instant", "2026-10-14T12:00:00.000001Z", false],
-    ["one_microsecond_earlier", "2026-10-14T12:00:00.000000Z", false],
-    ["offset_equivalent_instant", "2026-10-14T14:00:00.000001+02:00", false],
-  ];
-  for (const [caseName, expiry, accepted] of expiryCases) {
-    test(`repair: ${wrapped ? "wrapped" : "standalone"} advisory microsecond expiry / ${caseName}`, () => {
-      const publication = fixture("intelligence", "advice-ranking");
-      publication.produced_at = "2026-10-14T12:00:00.000001Z";
-      publication.valid_until = expiry;
-      const {model, payload} = adviceForm(publication, wrapped);
-      const originalWire = JSON.stringify(payload);
-      assert.ok(schemaValidator("intelligence", model)(payload));
-      if (accepted) assertSemantics(model, payload);
-      else assert.throws(() => assertSemantics(model, payload));
-      assert.equal(JSON.stringify(payload), originalWire);
     });
   }
 }
@@ -195,34 +159,5 @@ for (const worker of ["stockfish", "maia"]) {
       else assert.throws(() => assertSemantics(model, payload));
       assert.equal(JSON.stringify(payload), originalWire);
     });
-  }
-}
-test("repair: equivalent timestamp spelling remains distinct serialized advice", () => {
-  const first = fixture("intelligence", "advice-ranking");
-  const second = fixture("intelligence", "advice-ranking");
-  first.produced_at = "2026-10-14T12:00:00.000001Z";
-  second.produced_at = "2026-10-14T14:00:00.000001+02:00";
-  assertSemantics("AdvisoryPublication", first);
-  assertSemantics("AdvisoryPublication", second);
-  assert.notEqual(JSON.stringify(first), JSON.stringify(second));
-});
-
-for (const wrapped of [false, true]) {
-  for (const kind of ["probabilities", "coverage"]) {
-    const massCases: Array<[string, number, boolean]> = [["within_positive_tolerance", 0.5e-9, true], ["within_negative_tolerance", -0.5e-9, true], ["outside_tolerance", 2e-9, false]];
-    for (const [caseName, deviation, accepted] of massCases) {
-      test(`repair: ${wrapped ? "wrapped" : "standalone"} ${kind} normalization tolerance / ${caseName}`, () => {
-        const publication = fixture("intelligence", "advice-"+kind);
-        const advisory = publication.advisory as Payload;
-        if (kind === "probabilities") {
-          advisory.moves = [{move: "e2e4", probability: 0.2}];
-          advisory.unknown_mass = 0.8 + deviation;
-        } else advisory.unknown_mass = 0.5 + deviation;
-        const {model, payload} = adviceForm(publication, wrapped);
-        assert.ok(schemaValidator("intelligence", model)(payload));
-        if (accepted) assertSemantics(model, payload);
-        else assert.throws(() => assertSemantics(model, payload));
-      });
-    }
   }
 }

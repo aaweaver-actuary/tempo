@@ -404,7 +404,7 @@ def test_runtime_migration_and_foreign_database_access_are_denied(service):
     with pytest.raises(Exception):
         migrate(os.environ["TEMPO_CONTENT_DATABASE_URL"], os.environ["TEMPO_CONTENT_WORKSPACE"], os.environ["TEMPO_CONTENT_RUNTIME_ROLE"])
     foreign = json.loads(os.environ["TEMPO_CONTENT_TEST_FOREIGN_DATABASES"])
-    assert set(foreign) == {"learning", "game_evidence", "intelligence"}
+    assert set(foreign) == {"learning", "game_evidence"}
     for name, connection_string in foreign.items():
         with pytest.raises(psycopg.OperationalError, match="permission denied"):
             psycopg.connect(connection_string, connect_timeout=2)

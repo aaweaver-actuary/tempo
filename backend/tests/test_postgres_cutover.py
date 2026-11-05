@@ -51,7 +51,6 @@ def unscoped_canonical_prefix(monkeypatch):
     Scope validation and version races have real-store coverage in
     test_canonical_repertoire_prefix.py and the PostgreSQL browser/durability gate.
     """
-    from app import coverage_maia_commands
     from app.services import (
         canonical_prefix,
         canonical_scope_freshness,
@@ -73,7 +72,6 @@ def unscoped_canonical_prefix(monkeypatch):
         coverage_seed_request,
         postgres_coverage_explorer,
         repertoire_coverage,
-        coverage_maia_commands,
     ):
         if hasattr(module, "read_prefix"):
             monkeypatch.setattr(
@@ -7938,49 +7936,6 @@ def test_postgres_accepted_activity_control_handler_remains_available(monkeypatc
     assert controlled == [(database, "durable", "task-one", "prioritize")]
 
 
-def test_postgres_coverage_refresh_dispatches_durable_seed(monkeypatch):
-    from fastapi.testclient import TestClient
-    from app import coverage_commands, main
-
-    dispatched = []
-    requested = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-    monkeypatch.setattr(
-        command_dispatch,
-        "dispatch_command",
-        lambda name, payload, *, idempotency_key: (
-            dispatched.append((name, payload, idempotency_key))
-            or {"run_id": "run-one", "status": "queued"}
-        ),
-    )
-    response = TestClient(main.app).post(
-        "/api/repertoires/rep/coverage/refresh",
-        headers={"Idempotency-Key": "coverage-one"},
-    )
-    assert response.status_code == 202, response.text
-    assert response.json() == {"run_id": "run-one", "status": "queued"}
-    assert dispatched == [
-        ("coverage.refresh.request", {"repertoire_id": "rep"}, "coverage-one")
-    ]
-    monkeypatch.setattr(
-        coverage_commands,
-        "request_coverage_seed_in_transaction",
-        lambda database, repertoire_id, *, automatic: (
-            requested.append((database, repertoire_id, automatic))
-            or {"run_id": "run-one", "status": "queued"}
-        ),
-    )
-    database = object()
-    assert coverage_commands.request_coverage_refresh(
-        database,
-        {
-            "repertoire_id": "rep",
-        },
-    ) == {"run_id": "run-one", "status": "queued"}
-    assert requested == [(database, "rep", False)]
-
-
 def test_postgres_explorer_session_token_reaches_separate_worker(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main
@@ -8049,59 +8004,7 @@ def test_postgres_migration_snapshot_binds_automatic_coverage_filter(monkeypatch
     )
 
 
-def test_postgres_maia_callbacks_dispatch_to_background_celery_with_receipts(
-    monkeypatch,
-):
-    from fastapi.testclient import TestClient
-    from app import main, tasks
-
-    dispatched = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "background_request", lambda: nullcontext())
-    monkeypatch.setattr(
-        command_dispatch,
-        "dispatch_command",
-        lambda name, payload, *, idempotency_key, background: (
-            dispatched.append((name, payload, idempotency_key, background))
-            or {"status": "accepted"}
-        ),
-    )
-    client = TestClient(main.app)
-    headers = {"Idempotency-Key": "maia-one", "X-Tempo-Work-Class": "background"}
-    for action, body in (
-        ("claim", None),
-        ("heartbeat", {"node_id": "node", "lease_id": "lease"}),
-        (
-            "submit",
-            {
-                "node_id": "node",
-                "lease_id": "lease",
-                "moves": [{"move_uci": "e2e4", "probability": 1.0}],
-            },
-        ),
-        ("release", {"node_id": "node", "lease_id": "lease"}),
-        ("failure", {"node_id": "node", "lease_id": "lease", "error": "model failed"}),
-    ):
-        response = client.post(
-            f"/api/repertoire-coverage/maia/{action}", headers=headers, json=body
-        )
-        assert response.status_code == 200, response.text
-    assert [item[0] for item in dispatched] == [
-        "coverage.maia.claim",
-        "coverage.maia.heartbeat",
-        "coverage.maia.submit",
-        "coverage.maia.release",
-        "coverage.maia.failure",
-    ]
-    assert all(item[2:] == ("maia-one", True) for item in dispatched)
-    assert tasks.celery_app.conf.task_routes[
-        "app.tasks.execute_background_command"
-    ] == {
-        "queue": "background",
-    }
-
-
-def test_postgres_maia_dispatch_reads_receipt_behind_background_gate(monkeypatch):
+def test_postgres_game_refresh_dispatch_reads_receipt_behind_background_gate(monkeypatch):
     sent = []
     observed_reads = []
 
@@ -8125,9 +8028,9 @@ def test_postgres_maia_dispatch_reads_receipt_behind_background_gate(monkeypatch
         ),
     )
     result = command_dispatch.dispatch_command(
-        "coverage.maia.release",
-        {"node_id": "missing", "lease_id": "missing"},
-        idempotency_key="maia-release-one",
+        "product_games.refresh",
+        {},
+        idempotency_key="refresh-one",
         background=True,
     )
     assert result == {"status": "stale"}
@@ -8136,7 +8039,7 @@ def test_postgres_maia_dispatch_reads_receipt_behind_background_gate(monkeypatch
     assert observed_reads[0][1]["background"] is True
 
 
-def test_postgres_maia_background_contention_retries_same_operation(monkeypatch):
+def test_postgres_game_refresh_background_contention_retries_same_operation(monkeypatch):
     from psycopg.errors import TransactionTimeout
     from app import tasks
 
@@ -8170,44 +8073,19 @@ def test_postgres_maia_background_contention_retries_same_operation(monkeypatch)
     monkeypatch.setattr(tasks, "execute_command", timed_out)
     assert (
         tasks.execute_background_command.run(
-            "maia-one",
-            "coverage.maia.submit",
-            {"node_id": "node"},
+            "refresh-one",
+            "product_games.refresh",
+            {},
         )
         is None
     )
     assert attempted == [
-        ("maia-one", "coverage.maia.submit", {"node_id": "node"}, True, "claimed-token")
+        ("refresh-one", "product_games.refresh", {}, True, "claimed-token")
     ]
     assert retried == [{"retryable": True, "background": True}]
 
 
-def test_postgres_maia_idle_poll_reads_availability_without_receipt(monkeypatch):
-    from fastapi.testclient import TestClient
-    from app import main
-
-    statements = []
-
-    class Database:
-        def execute_native(self, statement, parameters=()):
-            statements.append(statement)
-            return SimpleNamespace(fetchone=lambda: (False,))
-
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(
-        main, "background_read_connection", lambda: nullcontext(Database())
-    )
-    response = TestClient(main.app).get(
-        "/api/repertoire-coverage/maia/available",
-        headers={"X-Tempo-Work-Class": "background"},
-    )
-    assert response.status_code == 200, response.text
-    assert response.json() == {"available": False}
-    assert "SELECT EXISTS" in statements[0]
-    assert "COALESCE(control.paused,0)=0" in statements[0]
-
-
-def test_postgres_maia_receipt_poll_uses_background_read_admission(monkeypatch):
+def test_postgres_game_refresh_receipt_poll_uses_background_read_admission(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main
 
@@ -8227,11 +8105,11 @@ def test_postgres_maia_receipt_poll_uses_background_read_admission(monkeypatch):
         ),
     )
     response = TestClient(main.app).get(
-        "/api/operations/maia-one",
+        "/api/operations/refresh-one",
         headers={"X-Tempo-Work-Class": "background"},
     )
     assert response.status_code == 200, response.text
-    assert observed == [("maia-one", True)]
+    assert observed == [("refresh-one", True)]
 
 
 def test_blocked_operation_retry_reuses_durable_identity_and_payload(monkeypatch):
@@ -8272,159 +8150,6 @@ def test_blocked_operation_retry_reuses_durable_identity_and_payload(monkeypatch
             },
         )
     ]
-
-
-def test_postgres_maia_claim_respects_pause_and_uses_row_lease(
-    monkeypatch, unscoped_canonical_prefix
-):
-    from app import coverage_maia_commands
-
-    statements = []
-
-    class Database:
-        def execute_native(self, statement, parameters=()):
-            statements.append((statement, parameters))
-            if statement.startswith("SELECT n.id,n.run_id"):
-                return SimpleNamespace(
-                    fetchone=lambda: {
-                        "id": "node",
-                        "run_id": "run",
-                        "repertoire_id": "rep",
-                        "fen": chess.STARTING_FEN,
-                        "settings_json": '{"maia_elo":1500}',
-                    }
-                )
-            if "SELECT maia_status,lease_expires_at" in statement:
-                return SimpleNamespace(
-                    fetchone=lambda: {"maia_status": "queued", "lease_expires_at": None}
-                )
-            return SimpleNamespace(fetchone=lambda: None)
-
-    monkeypatch.setattr(coverage_maia_commands.uuid, "uuid4", lambda: "lease-one")
-    result = coverage_maia_commands.claim_maia_node(Database(), {})
-    assert result["job"]["lease_id"] == "lease-one"
-    assert "COALESCE(control.paused,0)=0" in statements[0][0]
-    assert any("FOR UPDATE SKIP LOCKED" in statement for statement, _ in statements)
-    assert any("maia_status='leased'" in statement for statement, _ in statements)
-
-
-@pytest.mark.parametrize("remaining_nodes", [True, False])
-def test_postgres_maia_submit_publishes_candidates_in_bounded_sets(
-    remaining_nodes, monkeypatch
-):
-    from app import coverage_maia_commands
-    from tempo_legacy_database.adapters import postgres_store
-
-    monkeypatch.setattr(postgres_store, "configured", lambda: True)
-
-    def unavailable_priority(*_args, **_kwargs):
-        raise AssertionError(
-            "Coverage completion must not require optional adaptive priority"
-        )
-
-    monkeypatch.setattr(
-        coverage_maia_commands,
-        "enqueue_priority_refresh_in_transaction",
-        unavailable_priority,
-        raising=False,
-    )
-
-    statements = []
-    node = {
-        "id": "node",
-        "run_id": "run",
-        "maia_status": "leased",
-        "repertoire_id": "rep",
-        "lease_id": "lease",
-        "run_status": "running",
-        "covered_replies_json": '["e2e4"]',
-        "explorer_games": 100,
-        "settings_json": '{"reply_denominator":2,"cumulative_target":0.8}',
-    }
-
-    class Database:
-        def execute_native(self, statement, parameters=()):
-            statements.append((statement, parameters))
-            if statement.startswith("SELECT n.*"):
-                return SimpleNamespace(fetchone=lambda: node)
-            if statement.startswith("SELECT move_uci,explorer_probability"):
-                return SimpleNamespace(
-                    fetchall=lambda: [
-                        {
-                            "move_uci": "e2e4",
-                            "explorer_probability": 0.6,
-                            "maia_probability": 1.0,
-                        },
-                        {
-                            "move_uci": "d2d4",
-                            "explorer_probability": 0.4,
-                            "maia_probability": None,
-                        },
-                    ]
-                )
-            if statement.startswith("SELECT 1 FROM repertoire_coverage_nodes"):
-                return SimpleNamespace(
-                    fetchone=lambda: (1,) if remaining_nodes else None
-                )
-            return SimpleNamespace(fetchone=lambda: None)
-
-        def execute(self, statement, parameters=()):
-            if statement.startswith("SELECT * FROM background_tasks"):
-                return SimpleNamespace(
-                    fetchone=lambda: {
-                        "id": "priority-task",
-                        "kind": "repertoire_priority",
-                        "state": "complete",
-                        "replaced_pending_generation": 0,
-                    }
-                )
-            statements.append((statement, parameters))
-            if statement.startswith("SELECT generation FROM repertoire_priority_jobs"):
-                return SimpleNamespace(fetchone=lambda: (3,))
-            return SimpleNamespace(fetchone=lambda: None)
-
-    result = coverage_maia_commands.submit_maia_node(
-        Database(),
-        {
-            "node_id": "node",
-            "lease_id": "lease",
-            "moves": [
-                {"move_uci": "e2e4", "probability": 0.5},
-                {"move_uci": "e2e4", "probability": 1.0},
-            ],
-        },
-    )
-    assert result == {"status": "complete"}
-    assert sum("jsonb_to_recordset" in statement for statement, _ in statements) == 2
-    assert json.loads(
-        next(
-            parameters[2]
-            for statement, parameters in statements
-            if statement.startswith("INSERT INTO repertoire_coverage_candidates")
-        )
-    ) == [
-        {"move_uci": "e2e4", "probability": 1.0},
-    ]
-    assert any(
-        statement.startswith(
-            "UPDATE repertoire_coverage_nodes SET maia_status='complete'"
-        )
-        for statement, _ in statements
-    )
-    assert (
-        json.loads(
-            next(
-                parameters[0]
-                for statement, parameters in statements
-                if statement.startswith("UPDATE repertoire_coverage_candidates")
-            )
-        )[0]["source_state"]
-        == "blended"
-    )
-    assert not any("repertoire_priority" in statement for statement, _ in statements)
-    assert not any(
-        statement.startswith("WITH queued AS") for statement, _ in statements
-    )
 
 
 def test_postgres_coverage_seed_supersedes_active_generation_after_branch_edit(

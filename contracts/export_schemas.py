@@ -11,7 +11,6 @@ PACKAGES = (
     "learning-transfer",
     "content-publication",
     "game-evidence",
-    "intelligence",
     "analysis-jobs",
 )
 

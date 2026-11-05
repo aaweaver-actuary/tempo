@@ -12,7 +12,6 @@ Physical colocation does not grant a component access to another owner's data an
 | --- | --- | ---: | --- |
 | [Legacy backend](tempo_legacy_database/README.md) | `public (existing shared legacy database)` | 171 | [Schema index](tempo_legacy_database/schema/README.md) |
 | [Content](tempo_content_database/README.md) | `content` | 20 | [Schema index](tempo_content_database/schema/README.md) |
-| [Intelligence](tempo_intelligence_database/README.md) | `intelligence` | 25 | [Schema index](tempo_intelligence_database/schema/README.md) |
 | [Game Evidence](tempo_game_evidence_database/README.md) | `public in dedicated Game Evidence database` | 14 | [Schema index](tempo_game_evidence_database/schema/README.md) |
 | [Learning runtime](tempo_learning_database/README.md) | `learning` | 70 | [Schema index](tempo_learning_database/schema/README.md) |
 | [Learning remediation](tempo_remediation_database/README.md) | `learning or public, chosen by including owner` | 12 | [Schema index](tempo_remediation_database/schema/README.md) |
