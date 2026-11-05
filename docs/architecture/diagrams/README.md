@@ -48,7 +48,7 @@ No deployment, live schema or effective host resource isolation is implied.
 | --- | --- |
 | **MAIN** | Implemented source at the stated baseline or a specifically dated owner view; independent installation, consumer adoption and live deployment are separate claims. |
 | **LEGACY / GAP** | Actual shared source, persistence or lifecycle coupling. A scoped observation, not acceptance of that coupling for new paths. |
-| **MERGED PR322** | [Games-only viewing PR322](https://github.com/aaweaver-actuary/tempo/pull/322), implementation [`653a85bb5f5b3e520c0eda0c36234d3b416708b4`](https://github.com/aaweaver-actuary/tempo/commit/653a85bb5f5b3e520c0eda0c36234d3b416708b4), is now included in the MAIN baseline above. Source availability does not establish deployment or exact live read grants. |
+| **MERGED PR322** | [Games-only viewing PR322](https://github.com/aaweaver-actuary/tempo/pull/322), implementation [`653a85bb5f5b3e520c0eda0c36234d3b416708b4`](https://github.com/aaweaver-actuary/tempo/commit/653a85bb5f5b3e520c0eda0c36234d3b416708b4), is historical; its standalone Workbench reader has since been retired. |
 | **MERGED PR324** | [Physical Study composition PR324](https://github.com/aaweaver-actuary/tempo/pull/324) at [`30191b9c026f27f3d816304c47e5b72e0ec390b0`](https://github.com/aaweaver-actuary/tempo/commit/30191b9c026f27f3d816304c47e5b72e0ec390b0). Historical reviewed feature input, now included in the MAIN baseline; exact merge recorded in the integration receipt. Deployment unverified. |
 | **MERGED PR325** | [HostActivity memory/publication isolation PR325](https://github.com/aaweaver-actuary/tempo/pull/325) at [`118389f1d933410ef377a47861001c4d6cf37060`](https://github.com/aaweaver-actuary/tempo/commit/118389f1d933410ef377a47861001c4d6cf37060). Historical reviewed feature input, now included in the MAIN baseline; exact merge recorded in the integration receipt. Deployment unverified. |
 | **MERGED PR326** | [Optional endgame worker and pool ownership PR326](https://github.com/aaweaver-actuary/tempo/pull/326) at [`72d5d9c7ab964d5fbbb10528d67ce6cb28e77a18`](https://github.com/aaweaver-actuary/tempo/commit/72d5d9c7ab964d5fbbb10528d67ce6cb28e77a18). Historical reviewed feature input, now included in the MAIN baseline; exact merge recorded in the integration receipt. Deployment unverified. |
@@ -145,8 +145,7 @@ At source [`f5bdbeee`](https://github.com/aaweaver-actuary/tempo/commit/f5bdbeee
 these selected changes supplement the dated October 26 views; they do not
 requalify the other rows or establish an installation:
 
-- [Intelligence public imports](../../../services/intelligence/README.md#public-import-boundary)
-  resolve `create_app` lazily while preserving its supported root export.
+- Intelligence public-import behavior was recorded at the [dated source snapshot](https://github.com/aaweaver-actuary/tempo/blob/aec931f9820b8cd6b219074ae0c32d6686c21684/services/intelligence/README.md#public-import-boundary); it is not a current product dependency.
 - [Study queue order](../../../backend/app/study/queue_order.py) owns capture and
   preservation of the queue receipt; the existing placement function and
   compatibility imports still have separate callers.
@@ -210,8 +209,6 @@ flowchart TB
   GE["Game Evidence<br/>Sources / comparisons / outbox"] -->|"R/W"| GDB[("Game Evidence PostgreSQL")]
   Bridge -.->|"explicit snapshot load"| GE
   GE -->|"EvidenceDelivery HTTP"| Learning
-  WB["Workbench<br/>Analysis / selected games"] -->|"reads / explicit commands"| Intel["Intelligence<br/>Inputs / reports / jobs"]
-  Intel -->|"R/W"| IDB[("Intelligence PostgreSQL")]
 ```
 
 The bridge is an explicit operator tool, not an automatically invoked Learning
@@ -220,14 +217,10 @@ Learning receipt read before recording a result; see the
 [publication sequence](../../../services/content/README.md#content-publication-and-serving-activation-main).
 The former external A-export pilot is retired from maintained source; its
 [last source snapshot](https://github.com/aaweaver-actuary/tempo/tree/b39dd3a9ac2e846f1d2a9242a9d8a2eda682f9a8/tools/analysis-restoration/c_pilot)
-is historical reference, not an active edge in this view. Intelligence also
-implements Explorer source work and Maia job/result APIs, omitted here to bound the graph: its
-[provider worker](../../../services/intelligence/src/tempo_intelligence/worker.py)
-owns HTTP source calls, [Maia validation](../../../services/intelligence/src/tempo_intelligence/maia.py)
-binds registered jobs/results, and the [Maia inference core](../../../workers/maia/README.md#retained-inference-boundary)
-owns model computation. Its unused standalone supervisor/CLI is retired; the root
-coverage scripts and Dockerfile.maia retain their separate execution path. These APIs do not grant Learning admission authority or
-establish a deployed worker connection.
+is historical reference, not an active edge in this view. Standalone Workbench,
+Intelligence analysis, Explorer compute, Stockfish and Maia are retired from the
+current product. Their earlier source boundaries remain available in the
+[pre-retirement drawing](https://github.com/aaweaver-actuary/tempo/blob/aec931f9820b8cd6b219074ae0c32d6686c21684/docs/architecture/diagrams/README.md#implemented-component-increments).
 
 | Edge / boundary | Concrete source and interface |
 | --- | --- |
@@ -235,8 +228,6 @@ establish a deployed worker connection.
 | Learning HTTP, transaction and install closure | [`create_app`](../../../services/learning/runtime/src/tempo_learning_runtime/api.py), [`Database`](../../../database/tempo_learning_database/connections.py), [installed dependencies](../../../services/learning/runtime/pyproject.toml). Game Evidence **contracts**, not its service implementation, are installed. |
 | Content/bridge and activation | [Content `Store`](../../../database/tempo_content_database/adapters/store.py), [bridge domain](../../../services/content/src/tempo_content/bridge/__init__.py), [operator](../../../tools/analysis-restoration/a_bridge/src/tempo_a_bridge/cli.py), [Learning publication bridge](../../../services/learning/runtime/src/tempo_learning_runtime/publication_bridge.py). See [activation flow](../../../services/content/README.md#content-publication-and-serving-activation-main). |
 | Game Evidence output and delivery | [`Store`](../../../database/tempo_game_evidence_database/adapters/store.py), [`deliver_one`](../../../services/game-evidence/src/tempo_game_evidence/delivery.py), [analysis export](../../../services/game-evidence/src/tempo_game_evidence/analysis_export.py), [Learning receiver](../../../services/learning/runtime/src/tempo_learning_runtime/receivers.py). |
-| Workbench / Intelligence | [`IntelligenceClient`](../../../apps/workbench-web/src/client.ts), [`PendingCommands`](../../../apps/workbench-web/src/commands.ts), [HTTP composition](../../../services/intelligence/src/tempo_intelligence/api.py), [Analysis routes](../../../services/intelligence/src/tempo_intelligence/analysis/api.py), [`AnalysisStore`](../../../database/tempo_intelligence_database/adapters/analysis_store.py). |
-| Engine dispatch | [bounded Intelligence dispatcher](../../../services/intelligence/src/tempo_intelligence/analysis/worker.py), injected client interface (no concrete worker dependency), [job/result contracts](../../../contracts/analysis-jobs/README.md). The standalone Stockfish worker/client is retired; see its [pre-removal snapshot](https://github.com/aaweaver-actuary/tempo/tree/cb0ed5910e6bd05894919fd8d49f5dc7bc236975/workers/stockfish). Maia and native/browser engine paths remain. The external A-export pilot is retired; see its [historical source snapshot](https://github.com/aaweaver-actuary/tempo/tree/b39dd3a9ac2e846f1d2a9242a9d8a2eda682f9a8/tools/analysis-restoration/c_pilot). |
 | Shared libraries | [scheduling](../../../packages/scheduling/README.md), [chess identity](../../../packages/chess-core/README.md), [browser intents](../../../database/browser-intents/README.md), [Study session](../../../packages/study-session/README.md), [board renderer](../../../packages/board-ui/README.md), [contract index](../../../contracts/README.md). Package existence is not proof of every consumer's adoption. |
 
 ## Views and maintenance owners
@@ -256,20 +247,20 @@ ownership; its status alone does not prove adoption.
 
 | View / canonical README section | Level / question | Maintenance owner and source entry |
 | --- | --- | --- |
-| [Extracted component map](#implemented-component-increments) | System: what can run separately, and who owns each database? | Composition/affected service owners; [Learning](../../../services/learning/runtime/README.md), [Content](../../../services/content/README.md), [Game Evidence](../../../services/game-evidence/README.md), [Intelligence](../../../services/intelligence/README.md). |
+| [Extracted component map](#implemented-component-increments) | System: what can run separately, and who owns each database? | Composition/affected service owners; [Learning](../../../services/learning/runtime/README.md), [Content](../../../services/content/README.md), [Game Evidence](../../../services/game-evidence/README.md). |
 | [Legacy assembly](../../../backend/README.md#legacy-assembly-and-existing-coupling) | System: where do current full-app dependencies cross those target boundaries? | Legacy app/backend owners; [Home](../../../app/views/home_view.tsx), [backend root](../../../backend/app/main.py), [Compose](../../../docker-compose.yml). |
 | [Data, resource and lifecycle ownership](system.md#data-resource-and-lifecycle-owners) | Component: migrations, pools, shutdown and shared failure domains | Each state/resource owner; source links in the table. |
 | [Managed builder allocation](../../../scripts/README.md#managed-builder-allocation) | Development resource boundary: how do unrestricted/default or explicit CPU limits, memory admission, Study quiet control and verified cleanup compose? | Shared builder guard owner; [development-budget](../../../scripts/development-budget.mjs). Ordinary CPU quotas and fixed internal fanout removed in source; memory/Study/ownership controls retained. Installed Study responsiveness and a real builder workload remain unproved. |
 | [Study dependency detail](../../../app/README.md#main-study-path-and-source-gap) | Component: which adapters and semantic ports serve Study, and how is optional workspace ownership excluded from Study? | Study browser/session and Learning owners (merged MAIN source); [connection](../../../app/lib/study-connection.ts), [ReviewStore](../../../services/learning/application/src/tempo_learning_review/ports.py). |
 | [Conditional Study build/offline assets](../../../static/README.md#conditional-study-build-and-offline-assets-main) | Build/data flow: can emitted optional chunks enter the required offline shell without executing? | Study build and offline-shell owners; [inventory plugin](../../../scripts/offline-shell-assets.ts), [service worker](../../../public/sw.js), [readiness client](../../../app/lib/offline-shell.ts). PR324 retains actual emitted-artifact and synthetic offline evidence; combined deployment unverified. |
 | [Shared Learning request execution gaps](../../../services/learning/runtime/README.md#shared-learning-request-execution-gaps-main) | Runtime/failure boundary: where can host publication and optional endgame work delay essential Study progress? | Learning HTTP, HostActivity and endgame adapter owners; [API](../../../services/learning/runtime/src/tempo_learning_runtime/api.py), [host publisher](../../../services/learning/runtime/src/tempo_learning_runtime/host_activity.py). Host ownership remains; the merged endgame calculation removal retires its worker/pools and preserves saved receipt/practice boundaries. The receipt remains historical evidence for its dated assembly, not removal qualification. |
-| [Games reader](../../../apps/workbench-web/README.md#merged-pr322-games-reader) | Component: UI capability, read projection, grants, lifecycle and resource budget | Workbench and Intelligence read owner; PR322 source links in the view. |
+| [Historical Games reader](https://github.com/aaweaver-actuary/tempo/blob/aec931f9820b8cd6b219074ae0c32d6686c21684/apps/workbench-web/README.md#merged-pr322-games-reader) | Dated standalone Workbench read projection | Retired; PR322 evidence is historical. |
 | [Game Review commands and Settings recovery](../../../backend/app/product_composition/README.md#durable-game-review-commands-and-settings-recovery-590) | Sequence: original browser intent, reader API dispatch, borrowed writer and durable receipt | Games command/API owner #590; current-main extraction untested, provider activation and Study settlement separate. |
 | [Game-bound repertoire preparation](../../../backend/app/repertoire/README.md#game-bound-first-boundary-preparation) | Component/authority: complete authored route proof, complete candidate bindings and independent Study selection/fencing | Repertoire pure owner, authored database adapter and Study receiving owner; recovery candidate source, assembled timing and installation unverified. |
 | [Review and lost-response recovery](../../../services/learning/runtime/README.md#review-commit-and-recovery-main) | Sequence: durable browser intent, transaction owner, logical settlement, next load | Study session, Learning review and queue owners. |
 | [Evidence and asynchronous admission](../../../services/game-evidence/README.md#observed-game-evidence-to-learning-main) | Sequence/data flow: independent producer, immutable delivery, receipts, lease fencing and queue effects | Game Evidence delivery, Learning receiver/remediation/admission owners. |
 | [Publication and activation](../../../services/content/README.md#content-publication-and-serving-activation-main) | Data flow: immutable definitions versus serving authority | Content, bridge operator and Learning publication owners. |
-| [Games read and failure](../../../apps/workbench-web/README.md#games-read-failure-and-disposal-main-merged-pr322) | Sequence: accepted snapshot read, unavailable state, cleanup | Workbench Games reader and Intelligence transaction/lifespan owners; merged PR322 source, deployment unverified. |
+| [Historical Games read and failure](https://github.com/aaweaver-actuary/tempo/blob/aec931f9820b8cd6b219074ae0c32d6686c21684/apps/workbench-web/README.md#games-read-failure-and-disposal-main-merged-pr322) | Dated standalone Workbench sequence | Retired; PR322 evidence is historical. |
 | [Standalone Explorer evidence](../../../backend/app/analysis/probability/README.md) | Component/sequence: bounded optional acquisition, explicit population, unknown mass and cancellation | #493 provider adapter; injected HTTP/cache resource owners. Proposed source integration; product/deployment isolation unverified. |
 
 ## Drawing conventions

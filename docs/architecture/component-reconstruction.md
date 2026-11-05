@@ -6,25 +6,26 @@
 
 ## Target component map
 
+This October 2026 target is historical. Standalone Workbench, Intelligence-only
+features, Stockfish and Maia are retired under current SPEC. Their historical
+component map is available at [aec931f9](https://github.com/aaweaver-actuary/tempo/blob/aec931f9820b8cd6b219074ae0c32d6686c21684/docs/architecture/component-reconstruction.md#target-component-map);
+it is not a current delivery target.
+
 | Packaged component | Authority and responsibility |
 | --- | --- |
 | Study Web | Training, phone/offline UI, and study session; uses Learning for essential study operations. |
-| Workbench Web | Builder, authoring, games, diagnostics, settings, and recommendations; uses typed service clients and does not import Study Web state. |
 | Learning | Reviews, history, FSRS, attempts, quotas, queue issuance, accepted executable definitions, and receipts. It owns the atomic review/history/schedule/required-evidence/receipt/queue effects. |
 | Content | Authored sources, imports, catalogs, graphs, integrity, segmentation, and structural edits. It publishes validated immutable definitions; Learning explicitly accepts and activates serving versions. |
 | Game Evidence | Source games, indexes, comparisons, observed encounters and misses; publishes observed facts and explicit idempotent obligations to Learning. |
-| Intelligence | Providers, caches, rankings, recommendations, and derived analytics; publications are optional and advisory and carry no admission authority. |
-| Stockfish worker | Versioned analysis job/result protocol, engine execution, cancellation, and provenance. |
-| Maia worker | Versioned inference job/result protocol, supported inputs, and model/runtime provenance. |
 
 Scheduling, eligibility, ordering, admission, chess logic, and evidence mathematics belong in libraries/modules where appropriate; they are not additional network services. Keep CLI/installer and integration tooling separate.
 
 ## Boundaries and failure behavior
 
-- Ordinary studying and deterministic introductions must continue when optional services are unavailable. Intelligence may recommend; it cannot decide eligibility or admit work.
+- Ordinary studying and deterministic introductions must continue when optional services are unavailable. Optional producers cannot decide Study eligibility or admit work.
 - Content publication does not activate a serving version. Learning explicitly accepts and activates it. Retirement and stale-attempt protection must fence outdated work; an advisory cache refresh is insufficient.
 - Learning keeps effects that must commit together inside its transaction. Do not split the review transaction across network services.
-- For an explicitly selected migration, the target has four logical domain databases—Learning, Content, Game Evidence, and Intelligence—with separately owned credentials, migrations, and pools. A feature does not require creating these services/databases. Initial use of one PostgreSQL server remains a shared resource and failure boundary.
+- For an explicitly selected migration, the target has the historical logical domain databases—Learning, Content, Game Evidence, and Intelligence—with separately owned credentials, migrations, and pools in the historical proposal. A feature does not require creating these services/databases. Initial use of one PostgreSQL server remains a shared resource and failure boundary.
 - A service implementation must not import another service's internals, HTTP composition roots, or an all-domain task registry. Cross-domain communication uses explicit contracts.
 - A queue requests capacity, ordering suggests preference, eligibility evaluates current state, and one admission writer rechecks versions, quota, and deduplication at commit.
 - Game observations remain distinct from controlled study evidence. Failed Intelligence must not manufacture zero probabilities, eligibility, or FSRS events.
@@ -77,10 +78,7 @@ its planned registry entry reflects deferred shared registration. It supplies
 presentation, geometry, supplied shapes, focus and typed input-event seams. It
 does not install application keyboard policy or compute engine/repertoire data.
 The [legacy board wrappers](../../app/components/README.md) still own interaction
-composition for existing app consumers. Workbench still constructs Chessground
-directly in its [game browser](../../apps/workbench-web/src/game-browser.ts) and
-[finding view](../../apps/workbench-web/src/workbench.ts); package delivery alone
-does not complete their adoption.
+composition for existing app consumers. The retired Workbench used Chessground directly in its [historical game browser](https://github.com/aaweaver-actuary/tempo/blob/aec931f9820b8cd6b219074ae0c32d6686c21684/apps/workbench-web/src/game-browser.ts) and [finding view](https://github.com/aaweaver-actuary/tempo/blob/aec931f9820b8cd6b219074ae0c32d6686c21684/apps/workbench-web/src/workbench.ts).
 
 For an explicitly assigned adoption task, reuse the renderer's public API and
 identify the needed interaction adapter. Screens supply position-scoped replay,
