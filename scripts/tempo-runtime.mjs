@@ -41,10 +41,36 @@ export function configurationFingerprint(configured) {
 export function cut62WitnessName(guard) {
   const crossing = guard.starting_schema < 62 && guard.intended_schema >= 62;
   if (!crossing) return null;
-  if (guard.starting_schema !== 61 || guard.intended_schema !== 62 ||
+  if (![59, 61].includes(guard.starting_schema) || guard.intended_schema !== 62 ||
       !/^[0-9a-f-]{36}$/i.test(guard.attempt_id ?? ''))
     throw new Error('Unsupported schema 62 crossing; preserve the original backup and fix forward.');
   return `cut62-${guard.attempt_id}.json`;
+}
+
+// Validate the installed ledger before any application shutdown. A schema-60
+// continuation is valid only under the original pending schema-59 guard.
+export function validateCut62Preflight(status, guard) {
+  const current = status.applied_versions.at(-1), expected = status.expected_version;
+  if (expected < 62) return;
+  if (expected === 62 && current === 62) return;
+  const guarded60 = current === 60 && guard?.state === "pending" && guard.starting_schema === 59 && guard.intended_schema === 62;
+  if (expected !== 62 || (![59, 61].includes(current) && !guarded60))
+    throw new Error(`Unsupported schema ${current}-to-${expected} crossing; applications have not been stopped. Use a supported intermediate release.`);
+}
+
+// Cold startup may bring up only the registered dependencies while no
+// application process can write. Unknown or restarting project containers
+// are treated as possible writers rather than assumed safe.
+export function assertColdPreflightContainers(containers, project, { databaseStarted = false } = {}) {
+  const allowed = new Set(databaseStarted ? ["postgres", "redis"] : ["redis"]);
+  for (const container of containers) {
+    const labels = container.Config?.Labels ?? {};
+    if (labels["com.docker.compose.project"] !== project ||
+        !(container.State?.Running || container.State?.Restarting)) continue;
+    const service = labels["com.docker.compose.service"];
+    if (!allowed.has(service))
+      throw new Error(`Registered ${service || "unknown"} container may be active while PostgreSQL is unavailable; applications were not stopped. Inspect the registered target before retrying.`);
+  }
 }
 
 export function cut62MountDirectory(stateDirectory, witnessName) {
@@ -93,6 +119,7 @@ export async function executeLifecycle(plan, actions) {
   let interruptedApplications = false;
   try {
     const imagePreparation = await actions.ensureImages();
+    await actions.preflightSchema?.();
     const allowDependencyRecreation = Boolean(plan.recreate || imagePreparation?.dependenciesMayChange);
     if (!allowDependencyRecreation && actions.recordedApplicationsMatch) {
       // An identity probe failure must also leave unconfirmed writers stopped.
@@ -485,7 +512,23 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
         || migrationGuard.starting_versions.some((version, index) => status.applied_versions[index] !== version))
         throw new Error(`Candidate schema/ledger cannot safely continue the original migration. Preserve backup ${migrationGuard.backup.filename} and fix forward with compatible code.`);
     }
+    validateCut62Preflight(status, migrationGuard);
     return status;
+  }
+
+  async function preflightSchema() {
+    if (!(await runningServices()).includes("postgres")) {
+      const before = await inspectContainerInventory();
+      validateContainers(before, target);
+      assertColdPreflightContainers(before, target.project);
+      // Existing cluster identity is checked read-only by ensureDatabase. It
+      // starts only PostgreSQL/Redis with --no-recreate, never application workers.
+      await ensureDatabase({ allowRecreation: false });
+      const after = await inspectContainerInventory();
+      validateContainers(after, target);
+      assertColdPreflightContainers(after, target.project, { databaseStarted: true });
+    }
+    return checkSchema();
   }
 
   function checkMigrationRetry() {
@@ -591,25 +634,54 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     operation.backup = migrationGuard.backup;
     atomicJson(journalPath, operation);
     if (witnessName) {
+      if (migrationGuard.starting_schema === 59) {
+        let current = status.applied_versions.at(-1);
+        if (current < 61) {
+          if (migrationGuard.cut62_intermediate_verified) throw new Error("Schema 61 checkpoint regressed; keep writers stopped.");
+          await maintenance("database/tooling/apply_postgres_migrations.py", ["--target-version", "61"], { echo: true });
+          const intermediate = await checkSchema();
+          current = intermediate.applied_versions.at(-1);
+          if (current !== 61) throw new Error("Intermediate migrations did not reach exact schema 61; keep writers stopped.");
+        }
+        if (!migrationGuard.cut62_intermediate_verified) {
+          if (current !== 61) throw new Error("Original schema 61 checkpoint evidence is missing; keep writers stopped.");
+          await maintenance("database/tooling/verify_postgres_cli_state.py", ["--expected", JSON.stringify(migrationGuard.study_invariants)]);
+          migrationGuard.cut62_intermediate_verified = { schema: 61, verified_at: new Date().toISOString() };
+          atomicJson(guardPath, migrationGuard);
+        } else if (migrationGuard.cut62_intermediate_verified.schema !== 61) {
+          throw new Error("Invalid schema 61 checkpoint evidence; keep writers stopped.");
+        }
+      }
       const directory = lstatSync(stateDirectory);
       if (!directory.isDirectory() || (directory.mode & 0o077))
         throw new Error('Schema 62 migration state must be a private directory; keep writers stopped.');
       const witnessDirectory = cut62MountDirectory(stateDirectory, witnessName);
-      if (newGuard) mkdirSync(witnessDirectory, { mode: 0o700 });
+      const witnessPath = join(witnessDirectory, witnessName);
+      const firstCapture = newGuard || (migrationGuard.starting_schema === 59 &&
+        status.applied_versions.at(-1) === 61 && migrationGuard.cut62_intermediate_verified?.schema === 61 &&
+        !migrationGuard.cut62_capture_started);
+      if (firstCapture) {
+        if (existsSync(witnessDirectory)) throw new Error('Schema 62 witness directory already exists; refusing to recapture.');
+        migrationGuard.cut62_capture_started = true;
+        atomicJson(guardPath, migrationGuard);
+        mkdirSync(witnessDirectory, { mode: 0o700 });
+      }
       let witnessDirectoryStat;
       try { witnessDirectoryStat = lstatSync(witnessDirectory); } catch {
-        throw new Error('Schema 62 witness directory is missing; keep writers stopped.');
+        throw new Error('Schema 62 witness directory is missing; keep writers stopped. Preserve the original guard and backup for manual recovery.');
       }
       if (!witnessDirectoryStat.isDirectory() || (witnessDirectoryStat.mode & 0o077))
         throw new Error('Schema 62 witness directory must be private; keep writers stopped.');
-      const witnessPath = join(witnessDirectory, witnessName);
-      if (newGuard) {
+      if (firstCapture) {
         if (existsSync(witnessPath)) throw new Error('Schema 62 witness already exists; refusing to recapture.');
         await maintenance("database/tooling/verify_postgres_cli_state.py", ["--cut62-capture", `/cut62/${witnessName}`], { cut62Mount: witnessName });
         const directoryFd = openSync(witnessDirectory, "r");
         try { fsyncSync(directoryFd); } finally { closeSync(directoryFd); }
       }
       requirePrivateCut62Witness(witnessPath);
+      if (status.applied_versions.at(-1) === 61)
+        await maintenance("database/tooling/verify_postgres_cli_state.py",
+          ["--cut62-check-captured", `/cut62/${witnessName}`], { cut62Mount: witnessName });
     }
     if (status.pending_versions.length) await maintenance("database/tooling/apply_postgres_migrations.py", [], { echo: true });
     try {
@@ -741,7 +813,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   }
 
   return { config, inspectTarget, compose, docker, runningServices, inspectRunningRevision, ensureImages, recordedApplicationsMatch, ensureDatabase,
-    checkSchema, checkMigrationRetry, resolveMigrationGuard, stopApplications, backup, migrate, startServices, verifyReady, commitDeployment,
+    checkSchema, preflightSchema, checkMigrationRetry, resolveMigrationGuard, stopApplications, backup, migrate, startServices, verifyReady, commitDeployment,
     recordFailure, stopAll, backupOnly, secretValues, get configuration() { return configuration; } };
 }
 

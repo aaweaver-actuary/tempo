@@ -9,6 +9,8 @@ import { join } from "node:path";
 import { atomicJson, commandExecutor, portsFromConfig, productVolumes, redact, schemaVersionFromSource, targetKey, validateTarget } from "./tempo-deployment.mjs";
 import { applicationServices, configurationFingerprint, createRuntime, executeLifecycle, releaseComposeFiles } from "./tempo-runtime.mjs";
 import { postgresCommandTiming } from "./test-scenario-timings.mjs";
+import { studyDurabilityPgn } from "../database/tests/postgres-test-fixture.mjs";
+import { Chess } from "chess.js";
 import { verifyPersistedRedisReadiness } from "../database/tests/redis/check-redis-readiness.mjs";
 import { forgetMigrationSuffix, markHistoryIncorrect, markHistoryCorrect, readLatestMigration } from "../database/tests/cli/lifecycle-storage.mjs";
 
@@ -126,11 +128,12 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
   }
   // A distinct immutable schema-61 set is mandatory: a schema-62 maintenance
   // image cannot safely jump the populated historical fixture across this cut.
-  const schema61Revision = "4aa0ad1b731402365c1b866a6ba7bed484d2b6ac";
-  const imageFile = environment.TEMPO_LIFECYCLE_SCHEMA61_IMAGES;
-  if (!imageFile) throw new Error("Provide the task-owned schema-61 image manifest before lifecycle mutation.");
+  const schema59Only = environment.TEMPO_LIFECYCLE_P0_59_ONLY === "1";
+  const schema61Revision = schema59Only ? "5d879ffce599af7a2eaf9627e9e1c7ea82e9af5a" : "4aa0ad1b731402365c1b866a6ba7bed484d2b6ac";
+  const imageFile = schema59Only ? environment.TEMPO_LIFECYCLE_SCHEMA59_IMAGES : environment.TEMPO_LIFECYCLE_SCHEMA61_IMAGES;
+  if (!imageFile) throw new Error("Provide the task-owned historical image manifest before lifecycle mutation.");
   const schema61 = JSON.parse(readFileSync(imageFile, "utf8"));
-  if (schema61.revision !== schema61Revision) throw new Error("Unexpected schema-61 image revision.");
+  if (schema61.revision !== schema61Revision) throw new Error("Unexpected historical image revision.");
   const schema61Images = { ...images };
   for (const [name, service] of Object.entries(config.services)) {
     if (!service.build && name !== "game-feedback-worker" && name !== "migration") continue;
@@ -160,10 +163,107 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
         "--label", `com.docker.compose.volume=${key}`, volume.name]);
     }
     await compose(["up", "-d", "--no-build", "--no-deps", "--wait", "postgres", "redis"], { echo: true });
-    await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration", "database/tests/check_postgres_cli_lifecycle.py"], { echo: true });
+    await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration", "database/tests/check_postgres_cli_lifecycle.py", ...(schema59Only ? ["--seed59"] : [])], { echo: true });
     const readHistory = async () => JSON.parse((await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration",
       "database/tests/check_postgres_cli_lifecycle.py", "--history"])).stdout);
     const expected = await readHistory();
+    if (schema59Only) {
+      const oldOverlay = join(directory, "schema59-images.json");
+      atomicJson(oldOverlay, { services: Object.fromEntries(Object.entries(schema61Images).map(([name, image]) => [name, { image }])) });
+      await compose(["-f", oldOverlay, "up", "-d", "--no-build", "--no-deps", "--wait",
+        "foreground-worker", "background-worker", "background-scheduler", "api", "web", "postgres-backup"], { echo: true });
+      const preparedImages = { revision, images, configFingerprint: configurationFingerprint(config) };
+      let interrupted61 = false, interruptedCapture = false;
+      const inject = async (command, args, options) => {
+        const result = await run(command, args, options);
+        if (args.includes("--target-version") && !interrupted61) { interrupted61 = true; throw new Error("injected after schema61"); }
+        if (args.includes("--cut62-capture") && !interruptedCapture) { interruptedCapture = true; throw new Error("injected after cut62 capture"); }
+        return result;
+      };
+      const initial = makeRuntime(target, { run: inject, stateDirectory, revision, evidence, preparedImages });
+      await initial.inspectTarget();
+      await assert.rejects(lifecycle("p0_interrupted_61", { recreate: true }, initial), /injected after schema61/);
+      const originalGuard = JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8"));
+      assert.equal(originalGuard.starting_schema, 59); assert.equal(originalGuard.intended_schema, 62);
+      assert.equal(originalGuard.backup.verified, true);
+      assert.equal(Number((await readLatestMigration(compose)).stdout.trim()), 61);
+      const resumed = makeRuntime(target, { run: inject, stateDirectory, revision, evidence, preparedImages, retry: true });
+      await resumed.inspectTarget();
+      await assert.rejects(lifecycle("p0_interrupted_capture", { recreate: true }, resumed), /injected after cut62 capture/);
+      const captured = JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8"));
+      assert.equal(captured.attempt_id, originalGuard.attempt_id);
+      assert.deepEqual(captured.backup, originalGuard.backup);
+      assert.equal(captured.cut62_intermediate_verified.schema, 61);
+      const witness = join(stateDirectory, captured.cut62_witness.replace(/\.json$/, ""), captured.cut62_witness);
+      const witnessBytes = readFileSync(witness);
+      renameSync(witness, witness + ".held");
+      try {
+        const missing = makeRuntime(target, { run, stateDirectory, revision, evidence, preparedImages, retry: true });
+        await missing.inspectTarget();
+        await assert.rejects(lifecycle("p0_missing_witness", { recreate: true }, missing), /witness is missing/);
+      } finally { renameSync(witness + ".held", witness); }
+      const retryStart = commandLog.length;
+      const final = makeRuntime(target, { run, stateDirectory, revision, evidence, preparedImages, retry: true });
+      await final.inspectTarget(); await lifecycle("p0_resume_original", { recreate: true }, final);
+      assert(!commandLog.slice(retryStart).some(call => call.args.includes("--cut62-capture")));
+      assert.deepEqual(readFileSync(witness), witnessBytes);
+      assert.deepEqual(await readHistory(), expected, "schema59 original review, queue and receipt survive cutover");
+      assert.equal(JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8")).state, "verified");
+      assert.equal(Number((await readLatestMigration(compose)).stdout.trim()), 62);
+      const request = async (path, options = {}) => {
+        const response = await fetch(`${target.webUrl}/api/${path}`, options);
+        if (response.status !== 202) { if (!response.ok) throw new Error(`${path}: HTTP ${response.status} ${await response.text()}`); return response.json(); }
+        const pending = await response.json();
+        for (let attempt = 0; attempt < 120; attempt++) {
+          await new Promise(resolve => setTimeout(resolve, 250));
+          const receipt = await fetch(`${target.webUrl}/api/operations/${encodeURIComponent(pending.operation_id)}`).then(r => r.json());
+          if (receipt.state === "complete") return receipt.response;
+          if (receipt.state === "failed") throw new Error(`operation failed: ${JSON.stringify(receipt.error)}`);
+        }
+        throw new Error("Study operation did not settle");
+      };
+      const settings = await request("settings");
+      await request("settings", { method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...settings, new_cards_per_day: 100, study_new_per_day: 100 }) });
+      const form = new FormData(); form.set("file", new Blob([studyDurabilityPgn], { type: "application/x-chess-pgn" }), "p0-synthetic.pgn");
+      form.set("trained_color", "white"); form.set("initial_depth", "6");
+      const imported = await request("imports/pgn", { method: "POST", body: form });
+      let card;
+      for (let attempt = 0; attempt < 120; attempt++) {
+        try { const queue = await request("queue/today"); card = queue.cards.find(item => item.repertoire_id === imported.repertoire_id); if (card) break; } catch {}
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      assert(card && card.queue_entry_id && card.moves?.length, "A real imported Study card must be issued");
+      assert(new Chess(card.start_fen).move(card.moves[0]), "Issued first move must be legal");
+      const post = (path, payload, id) => request(path, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": id }, body: JSON.stringify(payload) });
+      await post(`cards/${card.id}/teaching`, { revision: card.revision, ply: 0 }, "p0-synthetic-teaching");
+      const saved = await post(`cards/${card.id}/review`, { outcome: "correct", queue_entry_id: card.queue_entry_id,
+        expected_revision: card.revision, attempt_id: "p0-synthetic-review-attempt" }, "p0-synthetic-review");
+      assert(saved, "Review must commit");
+      let next;
+      for (let attempt = 0; attempt < 120; attempt++) {
+        try { const queue = await request("queue/today"); next = queue.cards.find(item => item.queue_entry_id !== card.queue_entry_id); if (next) break; } catch {}
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      assert(next?.moves?.length && new Chess(next.start_fen).move(next.moves[0]), "Saved review must lead to another legal playable card");
+      const receiptBeforeStop = await request("operations/p0-synthetic-review");
+      assert.equal(receiptBeforeStop.state, "complete");
+      const cli = (label, command, ...args) => childProcess(label, process.execPath,
+        ["scripts/tempo-cli.mjs", command, ...args, "--config", registration],
+        { encoding: "utf8", env: { ...childEnvironment, TEMPO_CLI_STATE_DIR: stateRoot }, timeout: 180_000 });
+      const stopped = cli("p0_cli_stop", "stop");
+      assert.equal(stopped.status, 0, stopped.stdout + stopped.stderr);
+      assert(!(await final.runningServices()).some(name => ["postgres", "redis", "api", "foreground-worker", "background-worker"].includes(name)));
+      const started = cli("p0_cli_cold_start", "start", "--no-open", "--no-ci");
+      assert.equal(started.status, 0, started.stdout + started.stderr);
+      assert.deepEqual(await request("operations/p0-synthetic-review"), receiptBeforeStop, "cold start preserves the committed review receipt");
+      const afterStart = await request("queue/today");
+      const playable = afterStart.cards.find(item => item.moves?.length && item.start_fen);
+      assert(playable && new Chess(playable.start_fen).move(playable.moves[0]), "cold start returns an authoritative legal playable card");
+      assert.equal(Number((await readLatestMigration(compose)).stdout.trim()), 62);
+      console.log("PASS schema59 guarded cutover saved a review, reached a legal next card, and survived CLI stop/cold start");
+      return;
+    }
     const readNormalization = async () => JSON.parse((await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration",
       "database/tests/check_postgres_cli_lifecycle.py", "--normalization"])).stdout);
     const legacyTacticalRow = await readNormalization();
