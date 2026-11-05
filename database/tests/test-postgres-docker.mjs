@@ -19,7 +19,10 @@ import { verifyTempoCliLifecycle } from "../../scripts/check-tempo-cli.mjs";
 import { atomicJson, redact } from "../../scripts/tempo-deployment.mjs";
 
 const options = parsePostgresTestOptions(process.argv.slice(2));
-const stages = postgresTestStages(options);
+const staleOnly = process.env.TEMPO_PG_STALE_DELIVERY_ONLY === "1";
+const stages = staleOnly
+  ? ["compose_config", "image_build", "maintenance_cli", "startup", "service_health", "stale_delivery", "cleanup"]
+  : postgresTestStages(options);
 if (options.list) {
   console.log(JSON.stringify({ mode: options.mode, stages,
     browser_file: options.browserFile, browser_grep: options.browserGrep }, null, 2));
@@ -1124,9 +1127,33 @@ const actions = {
       await waitForReady();
     }
   },
+  stale_delivery: async () => {
+    // Broker witness runs against the owned foreground/background workers, then
+    // repeats identical logical deliveries after their scheduler and workers restart.
+    const staleWitness = phase => {
+      const result = run("docker", [...compose, "run", "--rm", "--no-deps",
+        "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
+        "/source/database/tests/check_postgres_background_workloads.py", "--stale-delivery", phase, project],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] });
+      const marker = result.stdout.split("\n").find(line => line.startsWith("STALE_DELIVERY_WITNESS "));
+      assert(marker, `Stale delivery ${phase} witness did not emit evidence`);
+      return JSON.parse(marker.slice("STALE_DELIVERY_WITNESS ".length));
+    };
+    const staleBefore = staleWitness("before");
+    run("docker", [...compose, "restart", "foreground-worker", "background-worker", "background-scheduler"]);
+    await waitForReady({ requireContainerHealthy: true });
+    const staleAfter = staleWitness("after");
+    assert.deepEqual(staleAfter.snapshot, staleBefore.snapshot, "original retired identities and state survive restart and replay");
+    assert.deepEqual(staleAfter.queue, staleBefore.queue, "retained queue completion survives worker restart");
+    atomicJson(`test-results/native/${project}-stale-delivery.json`, { revision: candidateRevision, project,
+      workers_restarted: ["foreground-worker", "background-worker", "background-scheduler"],
+      before: staleBefore, after: staleAfter });
+    console.log("PASS stale retired broker deliveries terminate without regrowth and Study queue completes across worker restart");
+  },
   background_workloads: async () => {
     await runAllocatedNativeProof("/source/database/tests/check_postgres_daily_study_dispatch.py",
       "test_postgres_daily_dispatch_uses_bounded_maintenance_allocation", ["-e", "TEMPO_REDIS_URL=redis://redis:6379/0"]);
+    await actions.stale_delivery();
     await executeIsolatedBackgroundWorkload({
       stopConsumers: () => {
         run("docker", [...compose, "stop", ...workloadConsumers]);
