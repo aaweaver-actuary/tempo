@@ -22,7 +22,6 @@ from app.chess.cards import card_id
 from .services.canonical_prefix import ensure_line_in_scope, certify_admitted_route
 from .services.postgres_opening_graph import request_graph_rebuild_in_transaction
 from .services.postgres_integrity import invalidate_integrity_in_transaction
-from .services.coverage_seed_request import request_coverage_seed_in_transaction
 from .services.repertoire_integrity import integrity_summary
 
 
@@ -77,10 +76,6 @@ def add_repertoire_branch(database: PostgresConnection, payload: dict[str, Any])
         certify_admitted_route(database, repertoire_id, validated_route)
     invalidate_integrity_in_transaction(database, repertoire_id)
     request_graph_rebuild_in_transaction(database, repertoire_id, date.today().isoformat())
-    if inserted is not None:
-        request_coverage_seed_in_transaction(
-            database, repertoire_id, automatic=True, supersede_active=True,
-        )
     return {"id": line_id, "duplicate": inserted is None, "moves": moves,
             "integrity": integrity_summary(database, repertoire_id)}
 
@@ -118,9 +113,6 @@ def remove_repertoire_branch(database: PostgresConnection, payload: dict[str, An
         storage.delete_matching_lines(database, matching_line_ids)
         invalidate_integrity_in_transaction(database, repertoire_id)
         request_graph_rebuild_in_transaction(database, repertoire_id, date.today().isoformat())
-        request_coverage_seed_in_transaction(
-            database, repertoire_id, automatic=True, supersede_active=True,
-        )
     return {
         "deleted_line_count": len(matching_line_ids),
         "deleted_card_count": 0,

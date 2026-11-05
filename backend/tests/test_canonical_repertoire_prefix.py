@@ -437,7 +437,7 @@ def test_canonical_prefix_discovery_admits_verified_new_gap_routes_and_rejects_s
 @pytest.fixture
 def quiet_prefix_writes(monkeypatch):
     from app import main
-    for name in ('enqueue_opening_graph_rebuild', 'enqueue_integrity_scans', 'enqueue_coverage_refresh'):
+    for name in ('enqueue_opening_graph_rebuild', 'enqueue_integrity_scans'):
         monkeypatch.setattr(main, name, lambda *args, **kwargs: None)
     monkeypatch.setattr(main.coordinator, 'wake', lambda: None)
 
@@ -1073,6 +1073,7 @@ def test_canonical_integrity_reconciliation_respects_specific_membership_provena
         assert bool(link) == bool(link_source)
         # An explicit generated owner membership must not become an authored fallback.
         assert connection.execute("SELECT archived FROM cards WHERE id='standalone'").fetchone()[0] == int(not link_source)
+        assert not connection.execute("SELECT 1 FROM background_tasks WHERE kind IN ('coverage_seed','coverage_refresh')").fetchone()
 
 
 def test_canonical_generated_graph_materialization_does_not_admit_global_game_refresh(prefix_database):
@@ -1846,3 +1847,23 @@ def test_canonical_publication_identities_advance_independently_through_product_
         assert (rechecked['revision'], rechecked['source_revision'], game_scope_generation(connection)) == (after['revision'], after['source_revision'], after_global)
     refresh_canonical_publications()
     assert_canonical_publication_visible(target_key)
+
+
+def test_prefix_save_route_keeps_preview_and_game_refresh_without_coverage_work(prefix_database, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from app import canonical_prefix_api as api
+    add_line([*ITALIAN, 'f8c5', 'c2c3'])
+    preview = prepare_prefix()
+    wakes = []
+    app = FastAPI()
+    app.include_router(api.create_canonical_prefix_router(lambda: wakes.append('wake')))
+    with TestClient(app) as client:
+        response = client.put('/api/repertoires/italian/canonical-prefix', json={
+            'preview_id': preview['preview_id'], 'expected_revision': preview['revision']})
+    assert response.status_code == 200 and response.json()['moves_uci'] == ITALIAN
+    assert wakes == ['wake']
+    with database.read_connection() as connection:
+        assert connection.execute("SELECT 1 FROM background_tasks WHERE kind='repertoire_game_refresh'").fetchone()
+        assert not connection.execute("SELECT 1 FROM background_tasks WHERE kind IN ('coverage_seed','coverage_refresh')").fetchone()
+        assert not connection.execute("SELECT 1 FROM repertoire_coverage_runs").fetchone()
