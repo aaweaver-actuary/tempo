@@ -1,7 +1,7 @@
 // Bounded deployment stages. No work is scheduled from application startup.
 import { createHash, randomUUID } from "node:crypto";
 import { managedComposeBuild } from './development-budget.mjs';
-import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { isDeepStrictEqual } from 'node:util';
@@ -12,7 +12,7 @@ import { TempoProblem, classifyRedisReply, phaseGuidance } from "./tempo-guidanc
 import { isTimingPublicationFailure } from "./test-scenario-timings.mjs";
 import { probeLifecycleRedis } from "../database/tooling/cli/probes.mjs";
 import { createBackupRestoreDatabase, createPostgresBackup, removeBackupRestoreDatabase, restorePostgresBackup } from "../database/tooling/cli/backup.mjs";
-import { advanceManagedIsolationMarker, assertManagedTargetLock, captureManagedTargetLock, inspectManagedCompletedTarget, inspectManagedFence, inspectManagedHistorySelectionBinding, inspectManagedPreIsolationTarget, persistManagedHistoryWitnessIdentity, privateDefenseHistorySelection, readOwnedPrivateBytes, startManagedStoppedDetachedTarget, syncManagedIsolationEvidence,
+import { advanceManagedIsolationMarker, assertManagedTargetLock, captureManagedTargetLock, inspectManagedCompletedTarget, inspectManagedFence, inspectManagedHistorySelectionBinding, inspectManagedPreIsolationTarget, persistManagedHistoryWitnessIdentity, privateDefenseHistorySelection, readOwnedPrivateBytes, startManagedStoppedDetachedTarget, syncDirectory, syncManagedIsolationEvidence,
   prepareManagedDetachedTarget, runManagedPinnedChild, restoreManagedCompletedTarget, requireManagedIsolationGate } from './tempo-managed-isolation.mjs';
 
 export const applicationServices = ["web", "api",
@@ -293,7 +293,9 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   async function ensureImages() {
     await config();
     let desiredFingerprint = configurationFingerprint(configuration);
-    if (migrationGuard?.state === 'pending' && (migrationGuard.defense_binding || migrationGuard.managed_image_receipt || migrationGuard.managed_selection_started)) {
+    const pendingManagedImages = migrationGuard?.state === 'pending' || (migrationGuard?.state === 'verified' &&
+      (!previous || previous.revision!==revision || previous.evidence?.commit!==revision || !previous.verified_at));
+    if (pendingManagedImages && (migrationGuard.defense_binding || migrationGuard.managed_image_receipt || migrationGuard.managed_selection_started)) {
       requireManagedIsolationGate();
       if (!migrationGuard.defense_binding || migrationGuard.managed_selection_started !== true)
         throw new Error('Original managed selection binding is incomplete; keep writers stopped.');
@@ -319,9 +321,10 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
       const paths = [...receipt.compose_files,receipt.image_override,...(receipt.mode_override ? [receipt.mode_override] : [])];
       if (new Set(paths).size !== paths.length || !isDeepStrictEqual(Object.keys(receipt.files).sort(),[...paths].sort()))
         throw new Error('Original managed image inputs differ; keep writers stopped.');
+      syncManagedIsolationEvidence({guardPath,guard:migrationGuard,receiptPath:path,receipt});
       for (const file of paths) {
         if (resolve(file)!==file || !file.startsWith(join(stateDirectory,'releases') + '/') ||
-            createHash('sha256').update(readOwnedPrivateBytes(file)).digest('hex') !== receipt.files[file])
+            syncManagedImageInput(file) !== receipt.files[file])
           throw new Error('Original managed image input changed; keep writers stopped.');
       }
       for (const [name, id] of Object.entries(receipt.images)) {
@@ -425,7 +428,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     if (new Set(paths).size!==paths.length) throw new Error('Managed image input identity is ambiguous.');
     for(const file of paths) {
       if(!file.startsWith(join(stateDirectory,'releases')+'/')) throw new Error('Managed image input is outside the original release.');
-      files[file]=createHash('sha256').update(readOwnedPrivateBytes(file)).digest('hex');
+      files[file]=syncManagedImageInput(file);
     }
     const imageRevisions={};
     for(const [name,id] of Object.entries(images)) {
@@ -452,6 +455,22 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     assertManagedTargetLock(stateDirectory,lock);
     managedImageReceipt={name,sha256:createHash('sha256').update(bytes).digest('hex'),attempt_id:operation.id};
     operation.managed_image_receipt=managedImageReceipt; atomicJson(journalPath,operation);
+  }
+
+  function syncManagedImageInput(file) {
+    const before=readOwnedPrivateBytes(file), fd=openSync(file,constants.O_RDONLY|constants.O_NOFOLLOW);
+    try {
+      const info=fstatSync(fd);
+      if(!info.isFile()||info.uid!==process.getuid()||(info.mode&0o777)!==0o600||!readFileSync(fd).equals(before))
+        throw new Error('Original managed image input changed during synchronization.');
+      fsyncSync(fd);
+    } finally { closeSync(fd); }
+    syncDirectory(dirname(file));
+    syncDirectory(join(stateDirectory,'releases'));
+    syncDirectory(stateDirectory);
+    const after=readOwnedPrivateBytes(file);
+    if(!before.equals(after))throw new Error('Original managed image input changed during synchronization.');
+    return createHash('sha256').update(after).digest('hex');
   }
 
   async function verifySelectedPostgresImage() {
