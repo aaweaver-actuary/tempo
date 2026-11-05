@@ -544,3 +544,37 @@ it("pr285_rejected_answer_failed_receipt_preserves_structured_validation_detail_
   expect(await (await studyIntentStore()).get(`${repairScope}:detailed-rejection`)).toMatchObject({ state: "discarded", receipt: { details: { detail, code: "invalid_answer", retryable: false } } });
   vi.unstubAllGlobals();
 });
+
+it("retired exercise journals remain held outside reconnect recovery while a saved review succeeds", async () => {
+  const { enqueuePendingReview, flushPendingReviews } = await import("../../app/lib/review-outbox");
+  const store = await studyIntentStore();
+  const originals = [];
+  for (let index = 0; index < 24; index++) {
+    const kind = index % 2 ? "endgame-command" : "defense-command";
+    const id = `retired-${index}`;
+    originals.push(await store.put({ key: `retired:${id}`, kind, requestId: id, attemptId: `attempt-${id}`,
+      endpoint: kind === "endgame-command" ? "/api/endgames/templates/original/attempt" : "/api/defense/attempt",
+      revision: 1, createdAt: "2026-10-15T16:00:00Z", payload: { scope: `retired:${id}`,
+        body: { original: id }, headers: { "Idempotency-Key": id } } }, { started: false }));
+  }
+  const retained = recoveryCommand("kept-command");
+  await store.put(retained, { started: true });
+  await enqueuePendingReview({ backendId: "kept-card", queueEntryId: 41, attemptId: "kept-review", outcome: "correct", guided: false });
+  closeStudyIntentStorage();
+  const reopened = await initializeStudyIntentStorage();
+  const fetcher = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/api/operations/kept-command")) return Response.json(completedRecoveryReceipt(retained));
+    if (url.includes("/api/cards/kept-card/review") && options?.method === "POST") return Response.json({ persisted: true });
+    throw new Error(`Unexpected request ${url}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  try {
+    await recoverStudyRequests();
+    expect(await reopened.get(retained.key)).toMatchObject({ state: "committed" });
+    expect((await flushPendingReviews()).persistedAttemptIds).toContain("kept-review");
+    for (const original of originals) expect(await reopened.get(original.key)).toEqual(original);
+    expect(fetcher.mock.calls.some(([input]) => /endgames|defense/.test(String(input)))).toBe(false);
+    expect(notifications().filter(notice => notice.key?.startsWith("study-command:retired:"))).toHaveLength(0);
+  } finally { vi.unstubAllGlobals(); }
+});

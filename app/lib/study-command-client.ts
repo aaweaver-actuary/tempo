@@ -4,12 +4,18 @@ import { notifications, publishNotification, resolveNotification } from "./notif
 import type { IntentRecord, IntentStore } from "@tempo/browser-intents";
 import { confirmOperationResponse, FailedOperationError, PendingOperationError, readOperationResponse } from "./operation-status";
 import { isStudyIntentStoreCurrent, studyIntentStore } from "../../database/browser/study-intent-storage";
-import { endgameAttemptSchema } from "../domain/schemas";
 import { studySettingsSchema } from "./study-connection";
 import { z } from "zod";
 
 type StudyCommandKind = "study-command" | "defense-command" | "tactic-command" | "endgame-command" | "burial-command" | "settings-command";
 const commandKinds: StudyCommandKind[] = ["study-command", "defense-command", "tactic-command", "endgame-command", "burial-command", "settings-command"];
+const retiredCommandKinds = new Set<StudyCommandKind>(["defense-command", "endgame-command"]);
+function isRetiredCommand(kind: string): boolean {
+  return retiredCommandKinds.has(kind as StudyCommandKind);
+}
+function requireRetainedCommand(kind: string): void {
+  if (isRetiredCommand(kind)) throw new Error("This retired exercise is held on this device; its original request is preserved.");
+}
 
 type FrozenStudyRequest = { body: Record<string, unknown>; headers: Record<string, string>; scope: string };
 type RejectionReceipt = { type: "rejected"; requestId: string; attemptId: string; status: number; message: string; details?: unknown };
@@ -43,6 +49,7 @@ function bindAuthority(client: StudyClient) {
 
 export function createStudyCommandDelivery(client: StudyClient, getStore: () => Promise<IntentStore>) {
   async function deliver(record: IntentRecord, signal: AbortSignal) {
+    requireRetainedCommand(record.kind);
     const requireAuthority = bindAuthority(client);
     const request = record.payload as FrozenStudyRequest;
     const store = await getStore();
@@ -83,9 +90,6 @@ export function createStudyCommandDelivery(client: StudyClient, getStore: () => 
   }
   function assessResponse(record: IntentRecord, body: Record<string, unknown>) {
     if (record.kind === "study-command" && body.attempt_id !== record.attemptId) throw new Error("The service did not confirm the original study attempt.");
-    if (record.kind === "defense-command" && !["correct", "incorrect", "needs_analysis", "ambiguous", "illegal", "ready_for_move"].includes(String(body.status)))
-      throw new Error("The service did not return a recognized defense assessment.");
-    if (record.kind === "endgame-command") endgameAttemptSchema.parse(body);
     if (record.kind === "tactic-command") z.strictObject({ card_id: z.string().min(1), mode: z.enum(["normal", "light", "hard"]), next_due: z.string().min(1) }).parse(body);
     if (record.kind === "settings-command") studySettingsSchema.parse(body);
     if (record.kind === "burial-command" && (body.buried !== true || body.queue_entry_id !== Number(/entries\/(\d+)\//.exec(record.endpoint)?.[1])))
@@ -93,6 +97,7 @@ export function createStudyCommandDelivery(client: StudyClient, getStore: () => 
     return { state: body.status === "needs_analysis" ? "pending" as const : "committed" as const, receipt: body };
   }
   async function checkReceipt(record: IntentRecord, signal: AbortSignal) {
+    requireRetainedCommand(record.kind);
     const requireAuthority = bindAuthority(client);
     try {
       const response = await readOperationResponse(record.requestId, { allowMissing: true, signal, client });
@@ -115,6 +120,7 @@ export async function studyPracticeBoundary(scope: string) {
   return (await (await studyIntentStore()).boundary(boundaryKey(scope), scopeSelector(scope))).value;
 }
 export async function executeStudyRequest(input: { scope: string; endpoint: string; body: Record<string, unknown>; requestId: string; attemptId?: string; revision?: number; kind?: StudyCommandKind; practiceBoundary?: number }): Promise<Response> {
+  requireRetainedCommand(input.kind ?? "study-command");
   const store = await studyIntentStore();
   const key = `${input.scope}:${input.requestId}`;
   const previous = await store.get(key);
@@ -154,7 +160,7 @@ export async function recoverStudyRequests(signal?: AbortSignal): Promise<void> 
   if (recovery?.store === store && recovery.signal === signal) return recovery.promise;
   const promise = (async () => {
     const coordinator = await studySession();
-    const pending = (await store.list(undefined, true)).filter(record => commandKinds.includes(record.kind as StudyCommandKind));
+    const pending = (await store.list(undefined, true)).filter(record => commandKinds.includes(record.kind as StudyCommandKind) && !isRetiredCommand(record.kind));
     const cursorKey = "study-command-recovery:cursor";
     let cursor = await store.checkpoint(cursorKey);
     let cursorOwned = true;
