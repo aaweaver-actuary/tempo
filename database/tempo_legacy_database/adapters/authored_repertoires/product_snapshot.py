@@ -48,7 +48,6 @@ WITH limits AS (
            g.starting_fen,g.moves_json,g.trained_color
     FROM opening_graph_steps g JOIN repertoire r
       ON r.id=g.repertoire_id AND r.graph_generation=g.generation AND r.graph_state='ready'
-    ORDER BY g.line_id,g.decision_index
 ), sizes AS (
     SELECT 'repertoire' kind,octet_length(concat_ws('',id,name,scope_source_revision,
         canonical_prefix_revision,canonical_prefix_moves_json,graph_generation,graph_state,workspace_id)) bytes
@@ -77,21 +76,27 @@ WITH limits AS (
 )
 """
 
-# These are wire documents, not stored JSONB. Text JSON aggregation avoids
-# retaining a binary value tree for every row and rebuilding it at each outer
-# level; psycopg still returns the same decoded mapping. Keep every source row.
-STATEMENT = _SOURCE_CTES + """SELECT json_build_object(
-    'exists',repertoire_count=1,'bounded',bounded,'estimated_bytes',estimated_bytes,
-    'line_count',line_count,'card_count',card_count,'membership_count',membership_count,
-    'graph_count',graph_count,'largest_row',largest_row,
-    'facts',CASE WHEN bounded AND repertoire_count=1 THEN json_build_object(
-        'repertoire',(SELECT row_to_json(r) FROM repertoire r),
-        'lines',coalesce((SELECT json_agg(row_to_json(s) ORDER BY id) FROM lines s),'[]'::json),
-        'cards',coalesce((SELECT json_agg(row_to_json(c) ORDER BY id) FROM cards c),'[]'::json),
-        'memberships',coalesce((SELECT json_agg(row_to_json(m) ORDER BY card_id) FROM memberships m),'[]'::json),
-        'graphs',coalesce((SELECT json_agg(row_to_json(g) ORDER BY line_id,decision_index) FROM graphs g),'[]'::json)
-    ) ELSE NULL END
-) snapshot FROM allowed
+# Return graph rows separately so PostgreSQL does not build and copy an
+# aggregate proportional to the entire publication. The budget and every row
+# still share one statement snapshot. An unqualified source emits only its header.
+STATEMENT = _SOURCE_CTES + """SELECT snapshot FROM (
+    SELECT 0 section, NULL::text line_id, NULL::bigint decision_index,
+        json_build_object(
+            'exists',repertoire_count=1,'bounded',bounded,'estimated_bytes',estimated_bytes,
+            'line_count',line_count,'card_count',card_count,'membership_count',membership_count,
+            'graph_count',graph_count,'largest_row',largest_row,
+            'facts',CASE WHEN bounded AND repertoire_count=1 THEN json_build_object(
+                'repertoire',(SELECT row_to_json(r) FROM repertoire r),
+                'lines',coalesce((SELECT json_agg(row_to_json(s) ORDER BY id) FROM lines s),'[]'::json),
+                'cards',coalesce((SELECT json_agg(row_to_json(c) ORDER BY id) FROM cards c),'[]'::json),
+                'memberships',coalesce((SELECT json_agg(row_to_json(m) ORDER BY card_id) FROM memberships m),'[]'::json)
+            ) ELSE NULL END
+        ) snapshot FROM allowed
+    UNION ALL
+    SELECT 1,g.line_id,g.decision_index,row_to_json(g)
+    FROM graphs g CROSS JOIN allowed
+    WHERE bounded AND repertoire_count=1
+) snapshot_rows ORDER BY section,line_id,decision_index
 """
 
 
@@ -121,19 +126,25 @@ def read_repertoire(database, repertoire_id: str) -> dict:
     if not isinstance(repertoire_id, str) or not repertoire_id or len(repertoire_id) > 200:
         raise ValueError("invalid_repertoire_scope")
     execute = getattr(database, "execute_native", None) or database.execute
-    row = execute(STATEMENT, (repertoire_id, MAX_SOURCE_ROWS, MAX_ROW_BYTES)).fetchone()
-    try:
-        document = row["snapshot"]
-    except TypeError:
-        document = row[0]
-    if isinstance(document, str):
-        document = json.loads(document)
+    header, *graphs = execute(
+        STATEMENT, (repertoire_id, MAX_SOURCE_ROWS, MAX_ROW_BYTES)
+    ).fetchall()
+    document = _snapshot_value(header)
     if not document["exists"]:
         raise ValueError("repertoire_not_found")
     if not document["bounded"]:
         _refuse_unbounded_source(document)
     facts = document["facts"]
+    facts["graphs"] = [_snapshot_value(row) for row in graphs]
     return facts
+
+
+def _snapshot_value(row):
+    try:
+        value = row["snapshot"]
+    except TypeError:
+        value = row[0]
+    return json.loads(value) if isinstance(value, str) else value
 
 
 def current_snapshot(database, repertoire_id: str):
@@ -204,13 +215,7 @@ SELECT json_build_object(
 
 def _read_game_bound_document(database, statement, parameters):
     execute = getattr(database, 'execute_native', None) or database.execute
-    row = execute(statement, parameters).fetchone()
-    try:
-        document = row['snapshot']
-    except TypeError:
-        document = row[0]
-    if isinstance(document, str):
-        document = json.loads(document)
+    document = _snapshot_value(execute(statement, parameters).fetchone())
     if not document['exists']:
         raise ValueError('repertoire_not_found')
     if not document['bounded']:
