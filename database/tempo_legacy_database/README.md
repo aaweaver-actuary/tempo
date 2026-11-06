@@ -17,7 +17,7 @@ Fields such as `source_ref`, publication generation, JSON payload identities and
 
 The dictionaries distinguish nullable fields, primary/composite keys, enforced FKs and uniqueness. Defaults/checks/triggers/partial or expression indexes remain authoritative in the linked DDL; they are not restated as extra relationships.
 
-[Native bridge proofs](tests/legacy_bridge/README.md),[Discovery acceptance proofs](tests/discovery_acceptance/README.md),[queue admission proofs](tests/queue_admission/README.md) and their [finite qualification/resource tooling](tooling/legacy_bridge/README.md) now live under this owner. Source paths and discovery change; native execution remains unverified and is not triggered by navigation or ordinary application tests.
+[Serving feedback tests](../../backend/tests/test_real_game_feedback_native.py) exercise PostgreSQL transaction rollback, card/day locks and the repertoire scope of accepted evidence. [Discovery acceptance](tests/discovery_acceptance/README.md) and [queue admission](tests/queue_admission/README.md) have their own native proofs.
 
 ## Supplied database infrastructure (D1)
 

@@ -1,5 +1,4 @@
 # Use with docker-compose.yml during a stopped-writer maintenance window.
-# SQLite import alone needs an explicit read-only snapshot mount at `docker compose run`.
 services:
   migration:
     profiles: ["maintenance"]

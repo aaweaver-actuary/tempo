@@ -599,16 +599,15 @@ reviewed Chromium visual cases remain separate from PostgreSQL and real
 offline/service-worker proof. Local discovery is authoritative; central registration
 must match it and delegates execution to the dedicated controlled runner.
 
+The original bridge and three-database ownership proofs were retired with their producers. The [serving feedback tests](../backend/tests/test_real_game_feedback_native.py) cover rollback, lock lifetime and accepted repertoire scope. Older bridge entries below refer to the [pre-retirement tree](https://github.com/aaweaver-actuary/tempo/tree/d0f1ecf03778f165ba29bbb09120fceabfc65e46).
+
 ## Component contract foundation (#264, M02-B)
 
 The [contract-local registry](../contracts/REGRESSIONS.md) owns named wire,
 producer/consumer, replay, activation/retirement, duplicate-evidence, advisory,
-worker-cancellation, dependency and PostgreSQL-role regressions. Its executable
-suite is `contracts/.venv/bin/python contracts/run_tests.py --typescript`;
-`contracts/.venv/bin/python database/ownership/run.py` selects the
-separate native PostgreSQL proof. These are reference contract tests, not
-verified conformance of existing production services. Component manifest and
-general discovery integration remain owned by #263/#201.
+worker-cancellation and dependency regressions. Run them with
+`contracts/.venv/bin/python contracts/run_tests.py --typescript`.
+
 ## PR #270 — current package artifacts and actual Node cases (#263, #201)
 
 Regular owner: `tools/component-build/tests/boundaries.test.mjs`, also invoked by
@@ -1653,9 +1652,7 @@ Issue 12 acceptance coverage (persistence only; issue 14 owns recurrence promoti
 - A queued graph rebuild publishes after its repertoire is deleted and fails on a foreign key: `backend/tests/test_postgres_cutover.py::test_postgres_repertoire_delete_cancels_stale_graph_before_parent_removal`.
 - A confirmed PostgreSQL repertoire deletion remains visible while the training queue refreshes: `tests/browser/workspace-flows.spec.ts::sample deletion uses repertoire identity and does not delete its same-filename sibling`.
 - Removed legacy template generation still dispatches new calculation: `backend/tests/test_postgres_cutover.py::test_removed_endgame_template_generation_rejects_before_dispatch`.
-- Endgame template admission looks complete while its write is pending or retries with a new operation ID: `tests/unit/endgame-template-pending-regressions.test.ts::endgame admission remains pending and reuses its operation ID`.
 - Saved legacy attempt recovery must retain its original immutable payload instead of regenerating: `backend/tests/test_postgres_cutover.py::test_saved_endgame_pending_receipt_recovers_without_preparation`. Former provider/cache/generation cases are retired because calculation is removed.
-- A pending endgame attempt creates a second position or loses its operation ID: `tests/unit/endgame-attempt-pending-regressions.test.ts::a pending endgame attempt keeps its operation ID and does not create another position`.
 - PostgreSQL migration 002 is applied but the API rejects its own current schema at startup: `backend/tests/test_postgres_cutover.py::test_postgres_startup_accepts_latest_checked_in_schema`.
 - Opening-graph traversal holds a PostgreSQL read transaction or per-line slicing changes graph identity: `backend/tests/test_postgres_opening_graph.py::test_postgres_graph_line_slices_match_whole_graph_and_close_read_before_traversal`.
 - Opening-graph staging writes an unbounded line or loses its cursor on replay: `backend/tests/test_postgres_opening_graph.py::test_postgres_graph_stage_checkpoints_eight_steps_and_replays_by_cursor`.

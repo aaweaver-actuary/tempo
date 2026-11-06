@@ -5,7 +5,6 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 import threading
-import sys
 from pathlib import Path
 
 import pytest
@@ -336,20 +335,11 @@ def test_postgres_analysis_followup_checkpoints_derivation_before_index_admissio
 
 
 def test_postgres_game_position_import_keeps_legacy_view_until_generation_switch():
-    scripts = Path(__file__).resolve().parents[2] / "scripts"
-    sys.path.insert(0, str(scripts))
-    try:
-        from database.tooling.migrate_sqlite_to_postgres import COPY_TARGETS
-    finally:
-        sys.path.pop(0)
     migration = (
         Path(__file__).resolve().parents[2]
         / "database/tempo_legacy_database/ddl/migrations"
         / "011_versioned_game_positions.sql"
     ).read_text()
-    assert (
-        COPY_TARGETS["game_position_occurrences"] == "game_position_occurrences_legacy"
-    )
     assert "COALESCE(job.published_position_version,0)=0" in migration
     assert "job.published_position_version=staged.derivation_version" in migration
 

@@ -1,5 +1,8 @@
 # Focused database reorganization validation
 
+Historical commands below refer to their recorded revisions. The standalone Content, Game Evidence, bridge and three-database qualification tools are available in the [pre-retirement tree](https://github.com/aaweaver-actuary/tempo/tree/d0f1ecf03778f165ba29bbb09120fceabfc65e46).
+
+
 Baseline: main `14ad5754`, October 20, 2026. Checks ran against this PR's candidate source. Local tools: Python 3.13.5, Node 26.10.0, TypeScript 5.9.3, Vitest 5.0.1. This is focused file/import/package/documentation evidence, not full-system or live-schema qualification.
 
 ## Passing evidence

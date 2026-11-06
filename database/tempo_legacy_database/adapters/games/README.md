@@ -41,7 +41,7 @@ Focused tests retain the existing game exclusion/sync admission, finding/card, m
 [Authority, finite capture and acceptance storage](authority/README.md) owns the existing reader/tuple writer, column metadata, bounded stream SQL and receipt/acceptance operations. Application scope/budget/digest/chess/lineage and command outcome decisions remain outside database.
 
 
-[Analysis-worker position storage](analysis_worker/README.md) and [legacy finding projections](finding_projections/README.md) own the existing report/lease, threshold/candidate and finding/opportunity/priority operations. Scoring/chess/evidence/recommendation, time/attempt/lease decisions and callback order remain in the original worker/application files.
+[Legacy finding projections](finding_projections/README.md) supply existing derivation jobs.
 
 
 The unsupported correction-first Games guided-review server and its exclusive adapter are retired in source. [Last implementation](https://github.com/aaweaver-actuary/tempo/tree/1a0fd5c582c13f9d0de428d2f66d7e7cb358c4bf/database/tempo_legacy_database/adapters/games/guided_review/README.md) records its former session/finding/attempt behavior. Stored tables and [their schema description](../../schema/study-queue-review-1/README.md) remain unchanged; the existing snapshot reader remains. Ordinary Study scheduling and graph/repertoire ownership are separate and retained. No live data was removed.

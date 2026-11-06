@@ -333,60 +333,12 @@ class OwnerFixture(PostgresConnection):
 
 
 @pytest.fixture
-def vertical(tmp_path, monkeypatch, request):
+def vertical(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "synthetic-study.db")
     database.initialize()
     value, source = source_fixture()
-    generated_preview = None
-    if getattr(request, "param", None) == "producer":
-        # Opt-in cross-component source integration only. Backend unit tests and
-        # production modules do not depend on GE/A bridge implementation imports.
-        from app.legacy_game_observation import capture_game
-        from app import game_evidence_commands as commands
-        from app.services import legacy_game_authority as owner
-        from tempo_a_bridge.legacy_observation import observe_capture
-        from tempo_game_evidence import preview_legacy_observation
-
-        def reader(statement, parameters=()):
-            if (
-                "FROM remediation_game_heads" in statement
-                or "FROM remediation_deliveries" in statement
-            ):
-                return []
-            return source.read(statement, parameters)
-
-        exported = capture_game(
-            "ruy",
-            value.game_id,
-            reader=reader,
-            metadata=source.metadata,
-            now=datetime(2026, 10, 18, tzinfo=timezone.utc),
-        )
-        observation = observe_capture(exported)
-        generated_preview = preview_legacy_observation(observation)
-        for filename, document in [
-            ("capture", exported),
-            ("observation", observation),
-            ("preview", generated_preview),
-        ]:
-            (tmp_path / ("one-game." + filename + ".json")).write_text(
-                json.dumps(document, indent=2)
-            )
-        assert generated_preview["result"] == "miss_obligation"
-        monkeypatch.setattr(owner, "read_rows", reader)
-        monkeypatch.setattr(owner, "metadata", source.metadata)
-        preparation = commands.prepare_legacy_delivery(
-            {"delivery": generated_preview["delivery"]}
-        )
-        assert preparation.error is None
-        value, captured = preparation.delivery, preparation.captured
-        assert exported["catalogue_scope"]["scope"]["decision_plies"] == [1, 3, 5]
-        assert captured.catalogue_proof.scope.decision_plies == [
-            5
-        ]  # Receiver independently recaptures exact encounters.
-    else:
-        value, captured = captured_scope(value, source)
-        preparation = prepared(value, captured)
+    value, captured = captured_scope(value, source)
+    preparation = prepared(value, captured)
     accepted = semantic_check(preparation)[0]
     module = ModuleScript()
     context = ReceiveContext(
@@ -399,17 +351,16 @@ def vertical(tmp_path, monkeypatch, request):
         CurrentLegacyAuthority(preparation),
     )
     owned = PostgresRepository(module, "legacy")
-    if generated_preview is None:
-        first = owned.receive(value, context)
-        assert first.status == "completed" and owned.receive(value, context) == first
-        assert (
-            module.sequence
-            == module.workspace_revision
-            == len(module.contributions)
-            == len(module.deliveries)
-            == 1
-        )
-        assert next(iter(module.contributions.values())) == accepted.payload_json
+    first = owned.receive(value, context)
+    assert first.status == "completed" and owned.receive(value, context) == first
+    assert (
+        module.sequence
+        == module.workspace_revision
+        == len(module.contributions)
+        == len(module.deliveries)
+        == 1
+    )
+    assert next(iter(module.contributions.values())) == accepted.payload_json
     monkeypatch.setattr(
         bridge, "repository", lambda _database: PostgresRepository(module, "legacy")
     )
@@ -451,10 +402,10 @@ def vertical(tmp_path, monkeypatch, request):
         sqlite.execute("CREATE TABLE opening_evidence_attempts(queue_entry_id INTEGER)")
 
         def sqlite_to_regclass(name):
-            if name != "study_recombination_presentations":
+            if name not in {"study_recombination_presentations", "public.queue_attempt_abandonments"}:
                 raise AssertionError("Unexpected catalog probe: " + str(name))
             row = sqlite.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (name,)
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (name.removeprefix("public."),)
             ).fetchone()
             return row[0] if row else None
 
@@ -516,7 +467,6 @@ def vertical(tmp_path, monkeypatch, request):
         monkeypatch.setattr(
             queue_placement, "presentation_rows", fixture_presentation_rows
         )
-        fixture.generated_preview, fixture.receive_context = generated_preview, context
         yield fixture, value, accepted, module
 
 
@@ -793,31 +743,12 @@ def test_reconciled_persisted_review_consumes_the_same_existing_binding(vertical
     )
 
 
-def test_status_endpoint_is_read_only_and_separates_acceptance_queue_and_settlement(
-    vertical, monkeypatch
-):
+def test_card_status_is_read_only_and_separates_acceptance_queue_and_settlement(vertical):
     db, value, _accepted, module = vertical
-    from app import game_evidence_routes as routes
-
-    monkeypatch.setattr(
-        routes, "postgres_store", SimpleNamespace(configured=lambda: True)
-    )
-    monkeypatch.setattr(routes, "read_connection", lambda: nullcontext(db))
-    assert (
-        len(
-            [
-                route
-                for route in routes.router.routes
-                if "GET" in route.methods
-                and route.endpoint is routes.legacy_card_status
-            ]
-        )
-        == 1
-    )
     entry = bridge.admit_card(db, {"card_id": "physical-black"})["queue_entry_id"]
     before = db.sqlite.total_changes
     db.read_only = True
-    status = routes.legacy_card_status("physical-black")
+    status = bridge.card_status(db, "physical-black")
     assert (
         status["target_id"] == value.authority.target_id
         and status["workspace_id"] == "legacy"
@@ -831,7 +762,7 @@ def test_status_endpoint_is_read_only_and_separates_acceptance_queue_and_settlem
         and status["admission"]["waiting_behind_protected_head"]
     )
     db.current = False
-    stale = routes.legacy_card_status("physical-black")
+    stale = bridge.card_status(db, "physical-black")
     assert (
         stale["accepted"]
         and not stale["current"]
@@ -877,63 +808,11 @@ def test_old_legacy_review_clearing_cannot_remove_a_current_bridge_priority(vert
     assert module.outstanding and not module.receipts
 
 
-def test_local_http_commands_only_dispatch_original_immutable_payloads(
-    vertical, monkeypatch
-):
-    _db, value, _accepted, module = vertical
-    from app import game_evidence_routes as routes
-
-    monkeypatch.setattr(
-        routes, "postgres_store", SimpleNamespace(configured=lambda: True)
-    )
-    sent = []
-    monkeypatch.setattr(
-        routes,
-        "dispatch_command",
-        lambda name, payload, **options: (
-            sent.append((name, payload, options)) or {"state": "pending"}
-        ),
-    )
-    assert routes.receive_legacy_evidence(value, "delivery-operation") == {
-        "state": "pending"
-    }
-    assert routes.queue_legacy_evidence_card(
-        "physical-black", "admission-operation"
-    ) == {"state": "pending"}
-    assert sent == [
-        (
-            "game_evidence.receive_legacy",
-            {"delivery": value.model_dump(mode="json")},
-            dict(idempotency_key="delivery-operation", background=True),
-        ),
-        (
-            "game_evidence.admit_legacy",
-            {"card_id": "physical-black"},
-            dict(idempotency_key="admission-operation"),
-        ),
-    ]
-    assert not module.attempts and not module.receipts
-
-
 @pytest.mark.parametrize(
     "method,path,work_class,status",
     [
-        ("POST", "/api/game-evidence/legacy/deliveries", "background", 200),
         ("POST", "/api/game-evidence/product/feedback", "background", 200),
         ("GET", "/api/game-evidence/product/effect", "background", 200),
-        (
-            "POST",
-            "/api/game-evidence/legacy/cards/physical-black/queue",
-            "foreground",
-            200,
-        ),
-        ("GET", "/api/game-evidence/legacy/cards/physical-black", "foreground", 200),
-        (
-            "POST",
-            "/api/game-evidence/legacy/cards/physical-black/unimplemented",
-            None,
-            503,
-        ),
     ],
 )
 def test_http_cutover_matching_background_admission_and_query_only_guard_are_preserved(

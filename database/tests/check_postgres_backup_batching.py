@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "database"))
 
-from database.tooling import migrate_sqlite_to_postgres as fingerprints
+from database.tooling import postgres_fingerprint as fingerprints
 from database.tooling.verify_postgres_backup import compare_backup
 
 
@@ -293,8 +293,8 @@ def main():
         require_owned(container, fixture, container_id)
         verify_limits(container)
         with ExitStack() as connections:
-            source = connections.enter_context(fixture.admin("learning"))
-            restored = connections.enter_context(fixture.admin("content"))
+            source = connections.enter_context(fixture.admin("source"))
+            restored = connections.enter_context(fixture.admin("restored"))
             version = source.execute("SHOW server_version_num").fetchone()[0]
             if version != "180006":
                 raise RuntimeError(f"Expected PostgreSQL 18.6, got server_version_num={version}")

@@ -1,9 +1,8 @@
-// Named source boundaries for graph -> fresh Learning -> Study preparation.
+// Named source boundaries for Study cutover preparation.
 // No plugin framework, service probe, history migration or cutover qualification.
 import ts from "typescript";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, resolve, relative } from "node:path";
-import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { imports, checkConsumer } from "./check-components.mjs";
 
@@ -15,8 +14,7 @@ const rules = {
   "scripts/tempo-cutover-transition.mjs": { builtins: ["node:crypto", "node:fs", "node:path", "node:url", "node:util"], public: ["acquireTargetLock", "atomicJson"] },
   "scripts/tempo-cutover-readiness.mjs": { builtins: ["node:crypto"], public: [] },
 };
-const pythonSources = ["database/tooling/opening_graph_transfer.py", "database/tooling/opening_graph_fresh_learning.py"];
-export const graphPreparationSources = [...pythonSources, ...Object.keys(rules)];
+export const graphPreparationSources = Object.keys(rules);
 
 export function checkJavaScriptSource(path, source) {
   const rule = rules[path];
@@ -43,31 +41,19 @@ export function checkJavaScriptSource(path, source) {
   visit(syntax);
 }
 
-export function checkPythonSources(sources, python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3") {
-  const result = spawnSync(python, [resolve(directory, "check-graph-preparation.py")], {
-    input: JSON.stringify(sources), encoding: "utf8", timeout: 10_000,
-    env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" },
-  });
-  if (result.error || result.status !== 0) throw new Error(result.error?.message ?? result.stdout + result.stderr);
-}
-
 export function checkGraphPreparation(root = repository, selected) {
   root = realpathSync(root);
   const present = selected ?? graphPreparationSources.filter(path => existsSync(resolve(root, path)));
   if (selected?.length === 0) throw new Error("Empty graph preparation selection");
-  const python = {}, dependencies = new Set();
+  const dependencies = new Set();
   for (const path of present) {
     if (!graphPreparationSources.includes(path)) throw new Error("Unknown graph preparation source: " + path);
     const file = resolve(root, path);
     if (!existsSync(file) || realpathSync(file) !== file) throw new Error("Missing or symlinked graph preparation source: " + path);
     const source = readFileSync(file, "utf8");
-    if (path.endsWith(".py")) python[path] = source;
-    else {
-      checkJavaScriptSource(path, source);
-      if (imports(source, path).includes(deployment)) dependencies.add("scripts/tempo-deployment.mjs");
-    }
+    checkJavaScriptSource(path, source);
+    if (imports(source, path).includes(deployment)) dependencies.add("scripts/tempo-deployment.mjs");
   }
-  if (Object.keys(python).length) checkPythonSources(python);
   // Follow only the already permitted public adapter closure. A new helper may
   // never become a dependency of that adapter, directly or through a bridge.
   const visited = new Set(), active = new Set();

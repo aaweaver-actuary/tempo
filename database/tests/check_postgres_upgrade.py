@@ -15,7 +15,6 @@ from pathlib import Path
 import sys
 import uuid
 import json
-import sqlite3
 from datetime import date, datetime, timezone
 from unittest.mock import patch
 
@@ -56,36 +55,6 @@ def _seed_saved_opportunity(store, *, repertoire_id, kind, fen_key, target, card
 
 
 DISCOVERY_FEN_KEY = "4k3/8/8/8/8/8/8/4K3 w - -"
-
-
-def test_postgres_sqlite_queue_import_preserves_origins_without_trigger_duplicates(dsn: str) -> None:
-    from database.tooling.migrate_sqlite_to_postgres import copy_table
-
-    with psycopg.connect(dsn, autocommit=True) as destination:
-        destination.execute("DELETE FROM daily_queue")
-        destination.execute("DELETE FROM queue_attempt_origins")
-        source = sqlite3.connect(":memory:")
-        try:
-            source.execute("CREATE TABLE daily_queue(id INTEGER PRIMARY KEY,queue_date TEXT,card_id TEXT,position INTEGER)")
-            source.execute("INSERT INTO daily_queue VALUES(99001,'2026-01-01','known-plural',0)")
-            copy_table(source, destination, "daily_queue", ["id", "queue_date", "card_id", "position"], ["id"])
-            legacy = destination.execute("SELECT * FROM queue_attempt_origins WHERE queue_entry_id=99001").fetchone()
-            origin_columns = [column.name for column in destination.execute("SELECT * FROM queue_attempt_origins LIMIT 0").description]
-            assert dict(zip(origin_columns, legacy))["legacy"] == 1
-            destination.execute("DELETE FROM daily_queue")
-            destination.execute("DELETE FROM queue_attempt_origins")
-            destination.execute("DELETE FROM tempo_migration_progress WHERE table_name='daily_queue'")
-            source.execute(f"CREATE TABLE queue_attempt_origins({','.join(origin_columns)},PRIMARY KEY(queue_entry_id,card_id,revision))")
-            source.execute(f"INSERT INTO queue_attempt_origins VALUES({','.join('?' for _ in legacy)})", legacy)
-            destination.execute("UPDATE cards SET revision=revision+1 WHERE id='known-plural'")
-            copy_table(source, destination, "daily_queue", ["id", "queue_date", "card_id", "position"], ["id"])
-            assert destination.execute("SELECT COUNT(*) FROM queue_attempt_origins").fetchone()[0] == 0
-            copy_table(source, destination, "queue_attempt_origins", origin_columns, ["queue_entry_id", "card_id", "revision"])
-            assert destination.execute("SELECT * FROM queue_attempt_origins").fetchall() == [legacy]
-            assert destination.execute("SELECT tgenabled FROM pg_trigger WHERE tgname='queue_attempt_origin_insert'").fetchone()[0] == "O"
-        finally:
-            source.close()
-    print("PASS test_postgres_sqlite_queue_import_preserves_origins_without_trigger_duplicates")
 
 
 def test_postgres_handled_upgrade_requires_matching_queued_revision_and_card(dsn: str) -> None:
@@ -377,7 +346,6 @@ def main() -> None:
             assert database.execute("SELECT COUNT(*) FROM discovery_admission_intents WHERE selected_move_uci='e1d2'").fetchone()[0] == 7
         test_postgres_handled_upgrade_requires_matching_queued_revision_and_card(rehearsal_dsn)
         test_postgres_stale_admission_and_revisioned_same_move_replay(rehearsal_dsn)
-        test_postgres_sqlite_queue_import_preserves_origins_without_trigger_duplicates(rehearsal_dsn)
     finally:
         with psycopg.connect(admin_dsn, autocommit=True) as admin:
             admin.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(

@@ -2,22 +2,6 @@
   "schemaVersion": 1,
   "components": [
     {
-      "id": "analysis-a-bridge",
-      "type": "tool",
-      "maintainer": "Tempo / #193 A",
-      "status": "implemented",
-      "root": "tools/analysis-restoration/a_bridge",
-      "publicExports": ["main"],
-      "dependencies": ["chess", "tempo_game_evidence_contracts"],
-      "buildInputs": ["pyproject.toml", "uv.lock", "src", "tests", "fixtures", "REGRESSIONS.md", "qualify.py"],
-      "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
-      "artifact": {"name": "tempo-a-bridge", "version": "0.1.0", "format": "wheel + sdist"},
-      "tests": [{"owner": "analysis-a-bridge", "kind": "python", "cwd": "tools/analysis-restoration/a_bridge", "command": "python -m pytest tests --import-mode=importlib -q", "inputs": ["tests", "src", "fixtures", "pyproject.toml", "uv.lock"]}],
-      "toolchain": {"python": ">=3.12,<3.15", "qualificationPython": ["3.12", "3.14"]},
-      "dataOwnership": {"authority": "#193 A external integration tooling", "databases": [], "migrations": []},
-      "testInventory": "REGRESSIONS.md"
-    },
-    {
       "id": "study-web",
       "type": "app",
       "maintainer": "Tempo",
@@ -118,9 +102,6 @@
             "app/domain",
             "app/const.ts",
             "services/learning/remediation",
-            "services/game-evidence",
-            "services/content",
-            "tools/analysis-restoration/a_bridge",
             "database/tempo_learning_database"
           ]
         }
@@ -142,151 +123,6 @@
         ],
         "migrations": [
           "../../../database/tempo_learning_database/ddl/migrations/manifest.json"
-        ],
-        "productionAdoption": false
-      },
-      "testInventory": "REGRESSIONS.md"
-    },
-    {
-      "id": "content",
-      "type": "service",
-      "maintainer": "Tempo / #108",
-      "status": "implemented",
-      "root": "services/content",
-      "publicExports": ["SourceSnapshot", "ContentService", "ContentError", "stable_id", "canonical_source", "canonical_position", "inventory_segment", "validate_exercise_step", "build_publication", "generation_envelope", "final_generation"],
-      "dependencies": ["chess", "tempo_chess_core", "tempo_content_publication_contracts", "pydantic", "psycopg", "psycopg_pool"],
-      "buildInputs": [
-        "../../database/tempo_content_database",
-        "hatch_build.py","pyproject.toml", "uv.lock", "src", "fixtures", "tests", "integration", "run_suite.py", "README.md", "INTERFACES.md", "REGRESSIONS.md", "VALIDATION.md"],
-      "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
-      "artifact": {"name": "tempo-content", "version": "0.1.0", "format": "wheel + sdist"},
-      "tests": [
-        {
-          "owner": "content",
-          "kind": "python",
-          "cwd": ".",
-          "command": "python services/content/run_suite.py pure",
-          "inputs": ["services/content/tests", "services/content/fixtures", "services/content/src", "services/content/run_suite.py", "services/content/pyproject.toml", "services/content/uv.lock", "database/tempo_content_database/tests/unit"]
-        },
-        {
-          "owner": "content",
-          "kind": "postgres",
-          "cwd": ".",
-          "command": "python database/tempo_content_database/tooling/run_postgres.py",
-          "inputs": ["database/tempo_content_database/tooling/run_postgres.py", "database/tempo_content_database/tests/test_postgres.py", "database/tempo_content_database/tooling/benchmark.py", "services/content/run_suite.py", "services/content/src", "services/content/fixtures", "services/content/pyproject.toml", "services/content/uv.lock"]
-        }
-      ],
-      "toolchain": {"python": ">=3.12,<3.15", "qualificationPython": ["3.12", "3.14"], "postgresql": "18"},
-      "dataOwnership": {
-        "authority": "#108 / #264",
-        "databases": ["dedicated workspace Content database"],
-        "migrations": ["../../database/tempo_content_database/ddl/migrations/manifest.json"],
-        "documents": ["contracts/OWNERSHIP.md", "services/content/INTERFACES.md"],
-        "productionAdoption": false
-      },
-      "testInventory": "REGRESSIONS.md"
-    },
-    {
-      "id": "game-evidence",
-      "type": "service",
-      "maintainer": "Tempo / #41",
-      "status": "implemented",
-      "root": "services/game-evidence",
-      "publicExports": [
-        "normalize_pgn",
-        "replay_positions",
-        "ComparisonSnapshot",
-        "compare_game",
-        "EvidenceStore",
-        "LegacyAuthorityToken",
-        "LegacyComparisonSnapshot",
-        "LegacyScopedComparisonSnapshot",
-        "PhysicalCard",
-        "preview_legacy_observation"
-      ],
-      "dependencies": [
-        "tempo_repertoire_comparison",
-        "tempo_game_ingestion",
-        "tempo_game_review_contracts",
-        "chess",
-        "tempo_chess_core",
-        "tempo_content_publication_contracts",
-        "tempo_game_evidence_contracts",
-        "fastapi",
-        "uvicorn",
-        "httpx",
-        "psycopg",
-        "pydantic"
-      ],
-      "buildInputs": [
-        "../../database/tempo_game_evidence_database",
-        "hatch_build.py",
-        "pyproject.toml",
-        "uv.lock",
-        "src",
-        "fixtures",
-        "tests",
-        "integration",
-        "README.md",
-        "REGRESSIONS.md"
-      ],
-      "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
-      "artifact": {
-        "name": "tempo-game-evidence",
-        "version": "0.1.0",
-        "format": "wheel + sdist"
-      },
-      "tests": [
-        {
-          "owner": "game-evidence",
-          "kind": "python",
-          "cwd": "services/game-evidence",
-          "command": "python -m pytest tests --import-mode=importlib -q",
-          "inputs": [
-            "tests",
-            "fixtures",
-            "src",
-            "pyproject.toml",
-            "uv.lock"
-          ]
-        },
-        {
-          "owner": "game-evidence",
-          "kind": "postgres",
-          "cwd": ".",
-          "command": "python database/tempo_game_evidence_database/tooling/run_postgres.py",
-          "inputs": [
-            "database/tempo_game_evidence_database/tooling/run_postgres.py",
-            "database/tempo_game_evidence_database/tests/native/test_postgres.py",
-            "database/tempo_game_evidence_database/tests/test_source_fingerprints.py",
-            "services/game-evidence/src",
-            "services/game-evidence/fixtures",
-            "services/game-evidence/pyproject.toml",
-            "services/game-evidence/uv.lock",
-            "services/learning/remediation/src",
-            "database/tempo_remediation_database/ddl/migrations",
-            "services/learning/remediation/pyproject.toml"
-          ]
-        }
-      ],
-      "toolchain": {
-        "python": ">=3.12,<3.15",
-        "qualificationPython": [
-          "3.12",
-          "3.14"
-        ]
-      },
-      "dataOwnership": {
-        "authority": "#41",
-        "databases": [
-          "game_evidence"
-        ],
-        "migrations": [
-          "../../database/tempo_game_evidence_database/ddl/migrations"
-        ],
-        "documents": [
-          "contracts/OWNERSHIP.md",
-          "services/game-evidence/README.md"
         ],
         "productionAdoption": false
       },
@@ -1562,9 +1398,6 @@
         "app/domain",
         "app/const.ts",
         "services/learning/remediation",
-        "services/game-evidence",
-        "services/content",
-        "tools/analysis-restoration/a_bridge",
         "database/tempo_learning_database"
       ]
     },
@@ -1583,28 +1416,12 @@
       ]
     },
     {
-      "id": "contract-ownership",
-      "owner": "#264",
-      "kind": "postgres",
-      "cwd": "database",
-      "command": "python ownership/run.py",
-      "inputs": [
-        "ownership/run.py",
-        "ownership/fixture.py",
-        "ownership/tests",
-        "ownership/requirements-test.txt"
-      ]
-    },
-    {
       "id": "learning-full-study",
       "owner": "learning",
       "kind": "postgres",
       "cwd": ".",
       "command": "python services/learning/runtime/integration/run_study.py",
       "inputs": [
-        "services/content",
-        "services/game-evidence",
-        "tools/analysis-restoration/a_bridge",
         "services/learning/runtime",
         "services/learning/application/qualification.py",
         "app",
@@ -1712,11 +1529,9 @@
         "packages/game-ingestion/src",
         "packages/study-session/src",
         "packages/evidence-math/src",
-        "services/game-evidence/src",
         "services/learning/runtime/src",
         "services/learning/application/src",
         "services/learning/remediation/src",
-        "services/content/src",
         "contracts/content-publication/src",
         "contracts/game-evidence/src",
         "contracts/learning/src",

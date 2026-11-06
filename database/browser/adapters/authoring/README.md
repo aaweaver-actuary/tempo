@@ -1,6 +1,6 @@
 # Durable authoring request storage
 
-These fixed WebStorage operations persist existing authoring and Discovery request
+These fixed WebStorage operations persist existing authoring request
 journals. They are durable mutation/recovery records, not SQL tables, IndexedDB
 stores or ordinary UI preferences. Application validation, request construction,
 receipt replay, migration choices, retry policy, notifications and clocks remain
@@ -10,14 +10,14 @@ failure behavior; similar outboxes have not been consolidated.
 The chart and dictionary describe the **current source format**. No live browser
 values or server schema were inspected. `localStorage` enforces one string value
 per exact string key. Fields such as `operationId`, `cardId`, `repertoireId`,
-`opportunityId`, task IDs and intent IDs are application identities; there are
+task IDs and intent IDs are application identities; there are
 **no foreign-key constraints** between these browser records or to server data.
 
 ```mermaid
 flowchart LR
-  app[Authoring and Discovery application decisions]
+  app[Authoring application decisions]
   fixed[Fixed-key pending request records]
-  scoped[Repertoire or opportunity scoped records]
+  scoped[Repertoire-scoped records]
   repairs[Integrity v3 per-operation records]
   legacy[Integrity v1 and v2 journals]
   receipts[Server operation receipts]
@@ -42,12 +42,9 @@ new request schema. Request/replay rules remain with the linked owner.
 | [canonical-prefix.ts](canonical-prefix.ts), `tempo-canonical-prefix-${action}-v1:${repertoireId}`, `action = preview \| save` | JSON `{ operationId: string, body: Record<string, string \| number> }` | [Canonical prefix command/recovery](../../../../app/lib/canonical-prefix-command.ts); separate preview/save records per repertoire. |
 | [card-delete.ts](card-delete.ts), `tempo-pending-card-delete-v1` | JSON `{ operationId: string, cardId: string, expectedRevision: number }` | [Permanent card deletion](../../../../app/lib/card-delete-command.ts); original card identity/revision. Existing edit-conflict reads inspect revision/split keys without decoding them. |
 | [card-revision.ts](card-revision.ts), `tempo-pending-card-revision-v1` | JSON `{ operationId: string, request: string }` | [Card revision](../../../../app/lib/card-revision-command.ts); request preserves original card/revision/history-mode choices. |
-| [coverage-refresh.ts](coverage-refresh.ts), `tempo-pending-coverage-refresh-v1:${repertoireId}` | Raw operation identity `string`, **not JSON** | [Coverage refresh](../../../../app/lib/coverage-refresh-command.ts). |
 | [integrity-repair.ts](integrity-repair.ts), `tempo-pending-integrity-repairs-v3:${operationId}` | JSON [PendingIntegrityRepair and schema](../../../../app/lib/integrity-repair-outbox.ts): `repertoireId`, `issueId`, `signature`, `selectedMoveUci`, `operationId`: string; `queuedAt`, `attempts`, `nextAttemptAt`, `pollOrder`: number; `phase`: queued/saving/validating/failed/blocked/stale; optional `taskId`, `retryOperationId`, `error`: string; `taskGeneration?`: number; `retryTaskId?`: string/null; `terminalOperationFailure?`: boolean; `retry?`: tagged record described below | [Integrity repair application/migration](../../../../app/lib/integrity-repair-outbox.ts); key must match the parsed operation ID. Task/generation and issue signature are logical progress/source facts. |
 | [integrity-repair.ts](integrity-repair.ts), legacy `tempo-pending-integrity-repairs-v2` | JSON array of the existing repair records, with application schema defaults for omitted counters/times | Same integrity owner. Application validates all recovered choices/progress and writes v3 records before removing either legacy journal. |
 | [integrity-repair.ts](integrity-repair.ts), legacy `tempo-pending-integrity-repair-v1` | JSON `{ operationId: string, fingerprint: string }`; fingerprint is a JSON tuple `[repertoireId: string, issueId: string, body: string]`, whose request body contains `signature: string`, `selected_move_uci: string` | Same integrity owner; decoding and choice reconciliation retain their original order and error scope. |
-| [opportunity.ts](opportunity.ts), `tempo-pending-opportunity-v1:${opportunityId}` | JSON `{ operationId: string, repertoireId: string, action: dismiss/acknowledge/snooze/train, evidenceFingerprint?: string }` | [Opportunity actions](../../../../app/lib/opportunity-command.ts); training evidence validation remains application-owned. |
-| [opportunity-refresh.ts](opportunity-refresh.ts), `tempo-pending-opportunity-refresh-v1:${repertoireId}` | Raw operation identity `string`, **not JSON** | [Opportunity refresh](../../../../app/lib/opportunity-refresh-command.ts). |
 | [pgn-import.ts](pgn-import.ts), `tempo-pending-pgn-import-v1` | JSON `{ operationId: string, fingerprint: string }` | [PGN repertoire import/recovery/discard](../../../../app/lib/pgn-import-command.ts); fingerprint binds original file bytes/name/color/depth. The file itself is not stored here. |
 | [prefix-split.ts](prefix-split.ts), `tempo-pending-prefix-split-v1` | JSON `{ operationId: string, decision: accept/reject, cardId: string, revision: number }` | [Prefix split decision](../../../../app/lib/prefix-split-command.ts); original card/revision and chosen decision. |
 | [repertoire-delete.ts](repertoire-delete.ts), `tempo-pending-repertoire-delete-v1` | JSON `{ operationId: string, repertoireId: string, learnedCards: keep/delete }`; legacy missing `learnedCards` is interpreted as delete by the application | [Repertoire deletion](../../../../app/lib/repertoire-delete-command.ts). |

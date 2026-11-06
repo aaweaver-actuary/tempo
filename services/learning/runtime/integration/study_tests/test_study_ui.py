@@ -9,7 +9,32 @@ import pytest
 from test_restart import server
 from test_runtime import activate, bundle
 from test_families import SPECIFICATIONS
-from test_endgames import endgame_bundle
+
+
+def saved_endgame_bundle():
+    payload = bundle(
+        [
+            (
+                "endgame",
+                {
+                    "type": "move_line",
+                    "accepted_lines": [["e2e4"]],
+                    "mode": "single",
+                    "grading_policy": "reference",
+                },
+            )
+        ]
+    )
+    payload["facts"][0].update(
+        source_ref="template-a",
+        endgame={
+            "name": "Rook ending",
+            "white_material": "KR",
+            "black_material": "K",
+            "goal_mix": "both",
+        },
+    )
+    return payload
 
 
 def publication_for(scenario):
@@ -19,7 +44,7 @@ def publication_for(scenario):
         return bundle([("study_exercise", specification)])
     if scenario in ["tactic-review", "middlegame"]:
         return bundle([("tactic" if scenario == "tactic-review" else "middlegame", SPECIFICATIONS[0][0])])
-    return endgame_bundle() if scenario.startswith("endgame") else bundle()
+    return saved_endgame_bundle() if scenario.startswith("endgame") else bundle()
 
 
 
@@ -117,10 +142,10 @@ def test_production_study_learning_native(case, tmp_path, scenario):
 
 
 @pytest.mark.parametrize("late", [False, True], ids=["producer-stopped-before-study", "late-after-issued-attempt"])
-def test_production_study_settles_real_issuance_bound_remediation(case, producer, tmp_path, late):
-    from test_game_evidence_runtime import activate_without_queue_work
-    payload, activation_id, receipt = activate_without_queue_work(case)
-    producer.load(payload, activation_id, receipt)
+def test_production_study_settles_real_issuance_bound_remediation(case, tmp_path, late):
+    from test_evidence_revisions import send
+    from test_remediation import activate_without_queue_work, evidence
+    payload, _, _ = activate_without_queue_work(case)
     case.query("UPDATE learning.cards SET first_correct_at='2026-01-01T12:00:00Z'")
     fixture_key = uuid.uuid4().hex
     endpoint = None
@@ -130,9 +155,9 @@ def test_production_study_settles_real_issuance_bound_remediation(case, producer
         nonlocal delivered
         if path == "/__fixture/deliver-evidence":
             assert not delivered
-            producer.work(endpoint + "/internal/evidence")
+            response = send(case, evidence(payload["publication"]["definitions"][0]), client)
+            assert response.status_code == 200 and response.json()["status"] == "completed"
             delivered = True
-            assert producer.query("SELECT status FROM outbox")[0][0] == "completed"
             return {"producer_stopped": True}
         if path == "/__fixture/assert-late-pending":
             assert case.query("SELECT COUNT(*) FROM learning.remediation_review_receipts WHERE settled")[0][0] == 0

@@ -1057,10 +1057,10 @@ const actions = {
   maintenance_cli: async () => {
     maintenanceImageCleanupRequired = true;
     await managedBuild(builder => run("docker", ['buildx', "build", '--builder', builder, '--load', "-f", "Dockerfile.postgres-maintenance", "--label", `org.opencontainers.image.revision=${candidateRevision}`, "-t", maintenanceImage, "."]));
-    for (const script of ["apply_postgres_migrations.py", "migrate_sqlite_to_postgres.py", "repair_verified_game_tactics.py"]) {
+    for (const script of ["apply_postgres_migrations.py", "verify_postgres_backup.py", "verify_postgres_cli_state.py"]) {
       run("docker", ["run", "--rm", "--name", maintenanceHelpContainer, "--memory", "256m", "--label", "tempo.resource-class=development", "--label", `tempo.resource-owner=${process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN}`, "--label", `com.docker.compose.project=${project}`, "--label", "com.docker.compose.service=maintenance-help", maintenanceImage, `database/tooling/${script}`, "--help"]);
     }
-    console.log("PASS PostgreSQL maintenance image starts migration and import commands");
+    console.log("PASS PostgreSQL maintenance image starts migration and verification commands");
   },
   startup: async () => {
     await waitForStudyQuiet();

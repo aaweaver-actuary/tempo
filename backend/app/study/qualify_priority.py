@@ -168,8 +168,6 @@ def main(arguments=()):
         "packages/board-ui/src",
         "packages/game-actions/src",
         "packages/study-session/src",
-        "services/game-evidence/src",
-        "services/content/src",
         "contracts/content-publication/src",
         "contracts/learning/src",
         "contracts/consumer-examples/src",

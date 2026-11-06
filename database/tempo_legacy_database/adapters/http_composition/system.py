@@ -17,9 +17,3 @@ def recent_queue_projections(database):
     yield from database.execute(
         "SELECT * FROM queue_projections ORDER BY queue_date DESC LIMIT 7",
     )
-
-
-def analysis_threshold(database):
-    return database.execute(
-        "SELECT major_mistake_cp FROM settings WHERE id=1",
-    ).fetchone()

@@ -212,7 +212,7 @@ test("complete verification always requires deployment lifecycle", () => {
 
 test("migration and schema changes cannot omit deployment lifecycle", () => {
   for (const path of ["database/tempo_legacy_database/ddl/migrations/036_new.sql", "database/tempo_legacy_database/ddl/schema_version.py",
-    "database/tempo_legacy_database/adapters/postgres_readiness.py", "database/tooling/apply_postgres_migrations.py", "database/tooling/generate_postgres_schema.py",
+    "database/tempo_legacy_database/adapters/postgres_readiness.py", "database/tooling/apply_postgres_migrations.py", "database/tooling/postgres_fingerprint.py",
     "backend/tests/test_postgres_upgrade_regressions.py", "backend/app/new_schema_policy.py"]) {
     assert.equal(plan({ paths: [path] }).jobs.lifecycle?.required, true, path);
   }

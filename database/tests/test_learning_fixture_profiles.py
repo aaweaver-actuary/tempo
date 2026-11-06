@@ -30,22 +30,11 @@ CORE_ROOTS = {
     "content-publication-contracts": "contracts/content-publication",
     "game-evidence-contracts": "contracts/game-evidence",
 }
-OPTIONAL_ROOTS = {
-    "game-evidence": "services/game-evidence",
-    "content": "services/content",
-    "analysis-a-bridge": "tools/analysis-restoration/a_bridge",
-}
 FULL_ROOTS = {
-    **CORE_ROOTS, **OPTIONAL_ROOTS,
-    "browser-intents": "contracts/browser-intents",
+    **CORE_ROOTS,
+    "browser-intents": "database/browser-intents",
     "study-session": "packages/study-session",
 }
-OPTIONAL_VARIABLES = (
-    "TEMPO_LEARNING_TEST_GAME_EVIDENCE_PYTHON",
-    "TEMPO_LEARNING_TEST_CONTENT_CLI",
-    "TEMPO_LEARNING_TEST_BRIDGE_CLI",
-    "TEMPO_LEARNING_TEST_BRIDGE_EVIDENCE",
-)
 NODE_ID = "services/learning/runtime/tests/test_runtime.py::test_core"
 
 
@@ -72,9 +61,6 @@ class LearningFixtureProfilesTests(unittest.TestCase):
         ]}))
         self.commands = []
         self.docker_commands = []
-        self.source_reads = []
-        self.traversals = []
-        self.protect_optional = False
         self.container_present = False
         self.volume_present = False
         self.wrong_owner = False
@@ -108,27 +94,6 @@ class LearningFixtureProfilesTests(unittest.TestCase):
         conninfo = ModuleType("psycopg.conninfo")
         conninfo.make_conninfo = lambda **kwargs: "disposable-test-admin"
         self.stack.enter_context(patch.dict(sys.modules, {"psycopg": psycopg, "psycopg.conninfo": conninfo}))
-        original_read = Path.read_bytes
-        original_rglob = Path.rglob
-
-        def record(path, destinations):
-            destinations.append(path)
-            if self.protect_optional and any(
-                path.is_relative_to(self.root / root) for root in OPTIONAL_ROOTS.values()
-            ):
-                raise AssertionError("Optional private source touched: " + str(path))
-
-        def read_bytes(path):
-            record(path, self.source_reads)
-            return original_read(path)
-
-        def rglob(path, pattern):
-            record(path, self.traversals)
-            return original_rglob(path, pattern)
-
-        self.stack.enter_context(patch.object(Path, "read_bytes", read_bytes))
-        self.stack.enter_context(patch.object(Path, "rglob", rglob))
-
     def docker(self, *arguments):
         self.docker_commands.append(arguments)
         if arguments[:2] == ("volume", "create"):
@@ -188,29 +153,24 @@ class LearningFixtureProfilesTests(unittest.TestCase):
             RUNNER.main(**kwargs)
         return json.loads((self.evidence / "native.json").read_text())
 
-    def test_essential_omits_optional_installs_sources_and_environment(self):
-        self.protect_optional = True
-        os.environ.update({name: "ambient-optional" for name in OPTIONAL_VARIABLES})
+    def test_essential_uses_only_learning_and_its_dependencies(self):
         report = self.invoke(fixture_profile="essential")
         installs = [command for command, _ in self.commands if command[0] == "uv"]
         self.assertEqual([command[-1] for command in installs], ["tempo-learning-runtime"])
-        for _, environment in self.commands:
-            self.assertFalse(set(OPTIONAL_VARIABLES) & environment.keys())
+        self.assertNotIn("TEMPO_LEARNING_TEST_BRIDGE_EVIDENCE", self.commands[-1][1])
         expected = {root + "/private/input.py" for root in CORE_ROOTS.values()} | {"components.json"}
         self.assertEqual(set(report["dependency_inputs"]), expected)
         self.assertEqual(report["fixture_components"], ["learning"])
 
-    def test_default_full_preserves_prior_installs_sources_and_cli_variables(self):
+    def test_default_full_includes_browser_inputs_and_evidence_directory(self):
         report = self.invoke()
         installs = [command for command, _ in self.commands if command[0] == "uv"]
-        self.assertEqual([command[-1] for command in installs], [
-            "tempo-game-evidence", "tempo-learning-runtime", "tempo-content", "tempo-a-bridge"
-        ])
+        self.assertEqual([command[-1] for command in installs], ["tempo-learning-runtime"])
         expected = {root + "/private/input.py" for root in FULL_ROOTS.values()} | {
             "components.json", "app/lib/input.ts", "app/domain/input.ts", "app/const.ts"
         }
         self.assertEqual(set(report["dependency_inputs"]), expected)
-        self.assertTrue(set(OPTIONAL_VARIABLES) <= self.commands[-1][1].keys())
+        self.assertIn("TEMPO_LEARNING_TEST_BRIDGE_EVIDENCE", self.commands[-1][1])
         self.assertEqual(report["fixture_profile"], "full")
 
     def test_invalid_profile_and_unbounded_selection_reject_before_resources(self):
@@ -225,17 +185,6 @@ class LearningFixtureProfilesTests(unittest.TestCase):
         self.assertFalse(self.evidence.exists())
         self.assertEqual(self.docker_commands, [])
         self.assertEqual(self.commands, [])
-
-    def test_essential_rejects_optional_source_and_cli_overrides_before_resources(self):
-        for arguments in [
-            {"extra_sources": [self.root / "services/content"]},
-            {"extra_sources": [self.root]},
-            {"additional_environment": {OPTIONAL_VARIABLES[0]: "producer-python"}},
-        ]:
-            with self.subTest(arguments=arguments), self.assertRaises(ValueError):
-                self.invoke(fixture_profile="essential", **arguments)
-        self.assertFalse(self.evidence.exists())
-        self.assertEqual(self.docker_commands, [])
 
     def test_path_node_selection_counts_junit_and_owned_cleanup_are_retained(self):
         external_junit = self.root / "external/native.xml"
@@ -291,12 +240,12 @@ class LearningFixtureProfilesTests(unittest.TestCase):
                 self.assertTrue(report["container_absent"])
                 self.assertTrue(report["volume_absent"])
 
-    def test_failed_optional_test_is_actionable_without_fallback_or_skip(self):
+    def test_failed_test_reports_failure_without_fallback_or_skip(self):
         self.execution_failure = True
         with self.assertRaises(SystemExit):
             self.invoke(fixture_profile="essential")
         report = json.loads((self.evidence / "native.json").read_text())
-        self.assertIn("use fixture_profile='full'", report["error"])
+        self.assertIn("Runtime executed failed", report["error"])
         self.assertEqual(len([command for command, _ in self.commands if command[0] == "uv"]), 1)
         self.assertTrue(report["container_absent"])
         self.assertTrue(report["volume_absent"])

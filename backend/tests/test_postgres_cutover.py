@@ -392,24 +392,11 @@ def test_postgres_threat_scan_publishes_one_seed_per_restartable_slice(monkeypat
 
 
 def test_postgres_versioned_game_analysis_import_targets_preserve_published_views():
-    import sys
-
-    scripts = Path(__file__).resolve().parents[2] / "scripts"
-    sys.path.insert(0, str(scripts))
-    try:
-        from database.tooling.migrate_sqlite_to_postgres import COPY_TARGETS
-    finally:
-        sys.path.pop(0)
     migration = (
         Path(__file__).resolve().parents[2]
         / "database/tempo_legacy_database/ddl/migrations"
         / "009_versioned_game_analysis.sql"
     ).read_text()
-    assert COPY_TARGETS["game_move_analysis"] == "game_move_analysis_legacy"
-    assert (
-        COPY_TARGETS["game_move_analysis_candidates"]
-        == "game_move_analysis_candidates_legacy"
-    )
     assert "game.published_analysis_generation=0" in migration
     assert (
         "game.published_analysis_generation=staged.publication_generation" in migration
@@ -4801,38 +4788,11 @@ def test_postgres_queue_ensure_command_coalesces_active_refresh(monkeypatch):
     assert len(enqueued) == 1
 
 
-def test_postgres_cutover_schema_keeps_json_array_length_available(tmp_path):
-    import sys
-
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
-    from database.tooling.generate_postgres_schema import generate_schema
-
-    source = tmp_path / "source.db"
-    with sqlite3.connect(source) as database:
-        database.execute(
-            "CREATE TABLE example(id INTEGER PRIMARY KEY, value TEXT NOT NULL)"
-        )
-    schema = generate_schema(source)
+def test_postgres_initial_schema_keeps_json_array_length_available():
+    migrations = Path(__file__).resolve().parents[2] / "database/tempo_legacy_database/ddl/migrations"
+    schema = next(migrations.glob("001_*.sql")).read_text()
     assert "CREATE FUNCTION json_array_length(document TEXT)" in schema
     assert "jsonb_array_length(document::jsonb)" in schema
-
-
-def test_postgres_cutover_inventory_includes_native_postgres_queries():
-    import sys
-
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
-    from database.tooling.audit_storage_cutover import inspect_python_file
-
-    source = (
-        Path(__file__).resolve().parents[2]
-        / "database"
-        / "tempo_legacy_database"
-        / "adapters"
-        / "queue_refresh"
-        / "presentation.py"
-    )
-    report = inspect_python_file(source)
-    assert any(site["operation"] == "execute_native" for site in report["access_sites"])
 
 
 def test_postgres_cutover_study_chapter_routes_dispatch_named_commands(monkeypatch):

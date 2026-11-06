@@ -230,7 +230,7 @@ def test_existing_donor_physical_card_keeps_interior_decision_identity():
     root = Path(__file__).resolve().parents[2]
     donor = json.loads(
         (
-            root / "services/game-evidence/fixtures/legacy-authority-input.json"
+            root / "backend/tests/fixtures/legacy-authority-input.json"
         ).read_text()
     )
     source = capture()

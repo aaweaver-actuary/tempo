@@ -3,7 +3,6 @@
 import ast
 import hashlib
 import importlib
-import os
 from pathlib import Path
 import subprocess
 import sys
@@ -12,12 +11,6 @@ from types import ModuleType
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-EXTRA_SOURCE_ROOTS = (
-    ROOT / "services/game-evidence/src",
-    ROOT / "contracts/content-publication/src",
-)
-for directory in EXTRA_SOURCE_ROOTS:
-    sys.path.insert(0, str(directory))
 
 SURFACES = {
     "tempo_game_ingestion.interfaces": {
@@ -66,21 +59,6 @@ SURFACES = {
             "SyncConfiguration",
         ),
     },
-    "tempo_game_evidence.interfaces": {
-        "tempo_game_evidence.snapshot": (
-            "ComparisonSnapshot",
-            "ComparisonSnapshotV2",
-            "parse_snapshot",
-        ),
-        "tempo_game_evidence.legacy_authority": (
-            "LegacyComparisonSnapshot",
-            "PhysicalCard",
-        ),
-        "tempo_game_evidence.legacy_scoped_authority": (
-            "LegacyScopedComparisonSnapshot",
-        ),
-        "tempo_game_evidence.legacy_payloads": ("preview_legacy_observation",),
-    },
 }
 
 
@@ -110,15 +88,9 @@ print("ok")
         .replace("ALLOWED", repr(tuple(allowed)))
         .replace("MODULE", repr(module))
     )
-    environment = dict(os.environ)
-    environment["PYTHONPATH"] = os.pathsep.join(
-        [str(directory) for directory in EXTRA_SOURCE_ROOTS]
-        + [environment.get("PYTHONPATH", "")]
-    )
     result = subprocess.run(
         [sys.executable, "-B", "-c", code],
         cwd=ROOT,
-        env=environment,
         capture_output=True,
         text=True,
         timeout=10,
@@ -237,11 +209,3 @@ def test_retained_ingestion_public_operations_are_not_stubs_or_effects():
     assert serialize_job(row)["result"] is None
     row.update(status="complete", result_json='{"imported":1}')
     assert serialize_job(row)["result"] == {"imported": 1}
-
-
-def test_game_evidence_surface_does_not_hide_foreign_storage_or_ingestion_exports():
-    from tempo_game_evidence import interfaces
-
-    assert not hasattr(interfaces, "EvidenceStore")
-    assert not hasattr(interfaces, "normalize_pgn")
-    assert not hasattr(interfaces, "LegacyAuthorityToken")
