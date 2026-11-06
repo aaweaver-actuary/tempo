@@ -1431,6 +1431,100 @@ def test_current_snapshot_projection_begins_after_connection_exit(monkeypatch, f
     assert events == ["enter", "exit", "projection"]
 
 
+@pytest.fixture
+def current_projections(monkeypatch):
+    from contextlib import contextmanager
+    from app.product_composition import game_sync_current as composition
+    from app.repertoire import project_published_repertoire
+    from test_product_snapshot import repertoire_facts
+
+    facts = repertoire_facts()
+    events = []
+
+    @contextmanager
+    def connections(*, repertoire_snapshot):
+        assert repertoire_snapshot
+        events.append("read")
+        try:
+            yield facts
+        finally:
+            events.append("exit")
+
+    def project(value):
+        assert events[-1] == "exit"
+        events.append("project")
+        return project_published_repertoire(value, captured_at="2026-01-01T00:00:00Z")
+
+    monkeypatch.setattr(composition, "read_repertoire", lambda database, _rep: database)
+    monkeypatch.setattr(composition, "project_published_repertoire", project)
+    return composition.CurrentRepertoireSnapshots(connections, reuse_projections=True), facts, events
+
+
+@pytest.mark.parametrize("table,field,value", [
+    ("repertoire", "workspace_id", "other"),
+    ("lines", "name", "updated"),
+    ("cards", "archived", 1),
+    ("memberships", "canonical_route_source", 9),
+    ("graphs", "card_id", "superseded"),
+])
+def test_current_projection_reuses_only_exact_facts(current_projections, table, field, value):
+    worker, facts, events = current_projections
+    first = worker.snapshot("rep")
+    cached = worker.snapshot("rep")
+    assert events == ["read", "exit", "project", "read", "exit"]
+    assert cached.membership is not first.membership
+    assert cached.decision_presentations[0] is not first.decision_presentations[0]
+    assert cached.membership.captured_at != first.membership.captured_at
+    assert cached.membership.digest == first.membership.digest
+    assert cached == first.model_copy(update={"membership": first.membership.model_copy(
+        update={"captured_at": cached.membership.captured_at}
+    )})
+    row = facts[table] if table == "repertoire" else facts[table][0]
+    row[field] = value
+    assert worker.snapshot("rep").membership.digest != first.membership.digest
+    assert events[-3:] == ["read", "exit", "project"]
+
+
+def test_current_projection_rechecks_reads_and_does_not_cache_failed_projection(current_projections, monkeypatch):
+    from app.product_composition import game_sync_current as composition
+
+    worker, facts, events = current_projections
+    first = worker.snapshot("rep")
+    def unavailable(*args):
+        raise RuntimeError("unavailable")
+    with monkeypatch.context() as patch:
+        patch.setattr(composition, "read_repertoire", unavailable)
+        with pytest.raises(RuntimeError, match="unavailable"):
+            worker.snapshot("rep")
+    facts["repertoire"]["graph_state"] = "failed"
+    for _ in range(2):
+        with pytest.raises(ValueError, match="repertoire_publication_unavailable"):
+            worker.snapshot("rep")
+    facts["repertoire"]["graph_state"] = "ready"
+    assert worker.snapshot("rep").membership.digest == first.membership.digest
+    assert events.count("project") == 4
+
+
+@pytest.mark.parametrize("bound", ["entries", "bytes", "oversize"])
+def test_current_projection_cache_limits_only_reuse(current_projections, bound):
+    worker, _, events = current_projections
+    expected = worker.snapshot("rep").membership.digest
+    size = sum(map(len, worker._projections["rep"]))
+    if bound == "entries":
+        worker._max_entries = 1
+    else:
+        worker._max_bytes = size if bound == "bytes" else size - 1
+    # Both synthetic read scopes deliberately return identical content.
+    assert worker.snapshot("other").membership.digest == expected
+    if bound == "oversize":
+        assert "other" not in worker._projections
+        assert worker.snapshot("other").membership.digest == expected
+    else:
+        assert list(worker._projections) == ["other"]
+        assert worker.snapshot("rep").membership.digest == expected
+    assert events.count("project") == 3
+
+
 @pytest.mark.parametrize(
     "fault",
     ["none", "missing", "ambiguous", "changed_logical", "too_many", "incomplete"],
