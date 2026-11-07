@@ -459,6 +459,15 @@ test("failed application identity inspection stops unconfirmed writers before da
   assert(calls.includes("recordFailure"));
 });
 
+test("fallback ledger probe failure shuts down recorded writers when the older image exits before returning JSON", async () => {
+  const { calls, handlers } = actions();
+  handlers.fallback = true;
+  handlers.recordedApplicationsMatch = async () => true;
+  handlers.checkSchema = async () => { throw new Error("PostgreSQL schema is newer than this image"); };
+  await assert.rejects(executeLifecycle({ recreate: false }, handlers), /newer than this image/);
+  assert.deepEqual(calls, ["ensureImages", "ensureDatabase", "stopApplications", "recordFailure"]);
+});
+
 function commandFixture(t, mode) {
   const fixture = cliFixture(mode);
   t.after(() => rmSync(fixture.directory, { recursive: true, force: true }));
@@ -1107,6 +1116,25 @@ test("actual CLI interrupted fallback rejects incompatible schema cleanly with n
   const fixture = interruptedApplicationRollout(t);
   editFixtureJson(fixture, "machine.json", machine => { machine.running = ["postgres", "redis"]; });
   assertIncompatibleRecovery(fixture, false);
+});
+
+for (const drift of [false, true]) test(`incompatible fallback stops recorded writers with ${drift ? "changed" : "matching"} dependencies`, t => {
+  const fixture = commandFixture(t, "ci-fail");
+  const receiptPath = join(fixture.stateDirectory, "deployment.json");
+  const receipt = { ...readFixtureJson(fixture, "deployment.json", true), schema: 28 };
+  writeFileSync(receiptPath, JSON.stringify(receipt));
+  if (drift) editFixtureJson(fixture, "machine.json", machine => {
+    machine.containers.find(container => container.Id === "container-redis").Image = "sha256:drifted";
+  });
+  const result = fixture.command("start", "--no-open");
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /previous deployment is incompatible with the current database/);
+  const after = readFixtureJson(fixture, "machine.json");
+  assert.deepEqual(after.running.sort(), ["postgres", "redis"]);
+  assert.equal(after.schema, 29);
+  assert.equal(after.migrations, 0);
+  assert.equal(readFileSync(receiptPath, "utf8"), JSON.stringify(receipt));
+  assert(!fixture.calls().some(call => call.args.includes("up") && (call.args.includes("api") || call.args.includes("--force-recreate"))));
 });
 
 test("actual CLI compatible fallback keeps committed applications running despite a stale rollout journal", t => {

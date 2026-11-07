@@ -78,6 +78,31 @@ def _snapshot_key(snapshot: RepertoireSnapshot) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
 
 
+def _ordered_snapshots(snapshots, workspace_id):
+    by_boundaries = defaultdict(list)
+    for item in snapshots:
+        snapshot = RepertoireSnapshot.model_validate(item.model_dump(mode="python"))
+        if snapshot.membership.workspace_id != workspace_id:
+            raise ValueError("first_boundary_workspace_mismatch")
+        # The first field of the sorted snapshot JSON is the full boundaries
+        # array. Different arrays already determine the exact ordering.
+        rows = [boundary.model_dump(mode="json") for boundary in snapshot.boundaries]
+        rows.sort(key=lambda row: json.dumps(row, sort_keys=True))
+        by_boundaries[json.dumps(rows, sort_keys=True, separators=(",", ":"))].append(snapshot)
+
+    ordered = []
+    for _, group in sorted(by_boundaries.items()):
+        if len(group) == 1:
+            ordered.extend(group)
+        else:
+            # Equal boundary arrays still require all original authority facts
+            # for ordering and deduplication. Keep the last duplicate as before.
+            distinct = {_snapshot_key(snapshot): snapshot for snapshot in group}
+            ordered.extend(distinct[key] for key in sorted(distinct))
+            del distinct
+    return tuple(ordered)
+
+
 def select_first_boundary(
     game: CanonicalGame,
     *,
@@ -109,13 +134,7 @@ def select_first_boundary(
     if canonical_provider is not None and canonical_provider != source.provider:
         raise ValueError("first_boundary_provider_mismatch")
     positions = replay_line(game.starting_fen, game.moves)
-    supplied = {}
-    for item in snapshots:
-        snapshot = RepertoireSnapshot.model_validate(item.model_dump(mode="python"))
-        if snapshot.membership.workspace_id != game.workspace_id:
-            raise ValueError("first_boundary_workspace_mismatch")
-        supplied[_snapshot_key(snapshot)] = snapshot
-    snapshots = tuple(supplied[key] for key in sorted(supplied))
+    snapshots = _ordered_snapshots(snapshots, game.workspace_id)
     prepared = {}
     for value in prepared_repertoires:
         if type(value) is not PreparedFirstBoundaryRepertoire or not value.for_game(

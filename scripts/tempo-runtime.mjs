@@ -134,6 +134,7 @@ export async function executeLifecycle(plan, actions) {
   // evidence, especially an older failed attempt without a durable guard.
   let migrationVerificationRequired = await actions.checkMigrationRetry?.();
   let interruptedApplications = false;
+  let checkingFallbackSchema = false;
   try {
     await actions.authenticateManagedSettlement?.();
     const imagePreparation = await actions.ensureImages();
@@ -154,8 +155,13 @@ export async function executeLifecycle(plan, actions) {
       interruptedApplications = true;
       await actions.stopApplications();
     }
+    // Validate the saved release against the current ledger before replacing dependencies.
+    if (actions.fallback && allowDependencyRecreation) await actions.checkSchema();
     await actions.ensureDatabase({ allowRecreation: allowDependencyRecreation });
+    // An older maintenance image can reject the ledger before returning JSON.
+    checkingFallbackSchema = actions.fallback;
     const status = await actions.checkSchema();
+    checkingFallbackSchema = false;
     if (status.pending_versions.length || migrationVerificationRequired) {
       if (!interruptedApplications) {
         interruptedApplications = true;
@@ -172,8 +178,8 @@ export async function executeLifecycle(plan, actions) {
     await actions.verifyReady();
     await actions.commitDeployment();
   } catch (error) {
-    if (interruptedApplications) {
-      try { await actions.stopApplications({ preservePhase: true }); }
+    if (interruptedApplications || checkingFallbackSchema) {
+      try { await actions.stopApplications({ preservePhase: true, onlyIfRunning: !interruptedApplications }); }
       catch (stopError) { error = new AggregateError([error, stopError], "Deployment failed and application shutdown also failed."); }
     }
     await actions.recordFailure(error);
@@ -692,7 +698,9 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
       validateContainers(after, target);
       assertColdPreflightContainers(after, target.project, { databaseStarted: true });
     }
-    return checkSchema();
+    // A fallback checks the ledger after the saved-image identity check has
+    // quiesced any uncommitted writers and the database is ready.
+    if (!fallback) return checkSchema();
   }
 
   async function settleManagedDeployment() {
@@ -811,9 +819,11 @@ print(json.dumps(result))`;
     return rows.filter(row => row.State === "running").map(row => row.Service);
   }
 
-  async function stopApplications({ preservePhase = false } = {}) {
+  async function stopApplications({ preservePhase = false, onlyIfRunning = false } = {}) {
     if (!preservePhase) stage("stopping_application_services");
     if (!stoppedServices.length) stoppedServices = await runningServices();
+    const services = [...applicationServices, "postgres-backup", "game-feedback-worker"].filter(name => configuration.services[name]);
+    if (onlyIfRunning && !services.some(name => stoppedServices.includes(name))) return;
     if (previous?.schema >= 56 && configuration.services['game-feedback-worker']) {
       try {
         const result = JSON.parse((await compose(modeStatusArgs('legacy'), {timeout: 5000})).stdout);
@@ -839,7 +849,6 @@ print(json.dumps(result))`;
     }
     // An explicitly enabled collector must not write through release maintenance.
     // It stays off afterward; startServices never starts this optional profile.
-    const services = [...applicationServices, "postgres-backup", "game-feedback-worker"].filter(name => configuration.services[name]);
     await compose(["stop", "--timeout", "60", ...services], { echo: true });
   }
 
@@ -1381,7 +1390,7 @@ print(json.dumps({'witness_id':witness_id}))`;
     operation.phase = "backup_verified"; atomicJson(journalPath, operation);
   }
 
-  return { config, inspectTarget, compose, docker, runningServices, inspectRunningRevision, ensureImages, persistManagedImageReceipt, recordedApplicationsMatch, ensureDatabase, resumeManagedIsolation, authenticateManagedPreIsolation,
+  return { fallback, config, inspectTarget, compose, docker, runningServices, inspectRunningRevision, ensureImages, persistManagedImageReceipt, recordedApplicationsMatch, ensureDatabase, resumeManagedIsolation, authenticateManagedPreIsolation,
     checkSchema, preflightSchema, checkMigrationRetry, authenticateManagedSettlement: authenticateSettlementBeforeImages, resolveMigrationGuard, stopApplications, backup, migrate, startServices, verifyReady, commitDeployment,
     recordFailure, stopAll, backupOnly, secretValues, get configuration() { return configuration; } };
 }

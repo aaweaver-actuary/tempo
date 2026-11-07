@@ -392,6 +392,47 @@ def test_unknown_introduction_chronology_does_not_block_exact_miss(introduction)
     )
 
 
+@pytest.mark.parametrize("reverse", [False, True])
+def test_boundary_partition_preserves_whole_snapshot_order_and_last_duplicate(monkeypatch, reverse):
+    from app.games.feedback import first_boundary as selector
+
+    primary = snapshot(route_id='a"b,é')
+    extra = snapshot(route_id="a\\b:z")
+    empty = primary.model_copy(update={
+        "membership": primary.membership.model_copy(update={"routes": ()}),
+        "boundaries": (), "decision_presentations": (),
+    })
+    combined = primary.model_copy(update={
+        "membership": primary.membership.model_copy(update={
+            "routes": (*primary.membership.routes, *extra.membership.routes),
+        }),
+        "boundaries": (*extra.boundaries, *primary.boundaries),
+        "decision_presentations": (*primary.decision_presentations, *extra.decision_presentations),
+    })
+    newer = combined.model_copy(update={
+        "membership": combined.membership.model_copy(update={"captured_at": "2026-11-01T00:00:00Z"}),
+        "boundaries": tuple(reversed(combined.boundaries)),
+    })
+    # Same boundaries, distinct authority payload. Changing capture time alone
+    # still deduplicates, with the last supplied representative surviving.
+    changed = primary.model_copy(update={"decision_presentations": ()})
+    inputs = [changed, empty, combined, primary, extra, newer]
+    if reverse:
+        inputs.reverse()
+    full_key = selector._snapshot_key
+    assert full_key(primary).startswith('{"boundaries":')
+    reference = {full_key(value): value for value in inputs}
+    calls = []
+    def observed(value):
+        calls.append(value)
+        return full_key(value)
+    monkeypatch.setattr(selector, "_snapshot_key", observed)
+    assert selector._ordered_snapshots(inputs, "fixture") == tuple(
+        reference[key] for key in sorted(reference)
+    )
+    assert len(calls) == 4  # Both pairs of collisions, no complete keys for singletons.
+
+
 def test_selection_is_stable_under_scope_order_aliases_and_reimport(monkeypatch):
     from test_product_game_findings import equivalent_routes, record, normalize_record
 
