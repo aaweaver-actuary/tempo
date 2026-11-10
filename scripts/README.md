@@ -273,6 +273,83 @@ measured cold/warm pair. The checked-in runtime calls this wrapper; a separately
 owned release wrapper must call it before claiming it benefits. Build preparation
 precedes application shutdown, so faster builds do not directly shorten that outage.
 
+## Release verification artifact ownership
+
+The existing PostgreSQL parent runner supports opt-in reuse within one release
+attempt. Set `TEMPO_RELEASE_CANDIDATE_MODE=produce`, a unique lowercase
+`TEMPO_RELEASE_CANDIDATE_OWNER` (12–80 letters, digits or hyphens), and an absolute
+`TEMPO_RELEASE_CANDIDATE_RECEIPT` in an existing private directory, then run the
+normal `--mode lifecycle` invocation. A later compatible invocation uses the
+same owner and receipt with mode `borrow`. Normal invocations without these
+settings keep their existing construction path.
+
+The producer requires clean exact source, captures resolved Bake recipes and
+actual Buildx immutable base materials/output identities, runs maintenance
+command checks, and publishes a complete receipt exclusively. Only known
+project output aliases and the matching Compose project label are normalized.
+Platform, selected named context/daemon, source/tree, build arguments and other
+resolved recipe fields remain binding. Dynamic or unsupported `FROM` recipes
+fail closed. A borrower inspects the immutable image set again, verifies its
+current source/recipes/runtime dependencies, and creates fresh suite aliases.
+The existing `configurationFingerprint()` still binds each runtime target's
+own project, ports, secrets and volumes; it is never shared across suites.
+
+Suites remove their own aliases and disposable containers, volumes, networks
+and secrets. Release-owned aliases retain the images between suites. Once all
+consumers finish, their owner runs:
+
+```sh
+node scripts/release-candidate-artifacts.mjs --cleanup /absolute/private/candidate.json unique-release-owner
+```
+
+Cleanup verifies the receipt, selected daemon and all present alias identities
+before removing only that owner's aliases and receipt. A mismatch preserves
+them for diagnosis. Do not use global image pruning or remove historical
+fixtures. No receipt authorizes deployment or cross-revision final-image reuse.
+
+The schema-61 lifecycle path automatically prepares the reviewed
+[`schema61-linux-arm64` lock](../config/lifecycle-images/schema61-linux-arm64.json)
+inside the existing cleanup-controlled image stage, after Study quiet admission
+and before candidate construction. The three historical roles retain exact
+revision `4aa0ad1b731402365c1b866a6ba7bed484d2b6ac`. A valid local immutable hit
+requires no registry request or build. Only an absent registry-backed image
+permits a digest-qualified pull, followed by local identity/platform/revision
+validation. The generated manifest is published only after every role passes.
+Registry manifest and Docker local image IDs are recorded separately from true
+image configuration digests in the producer provenance; their equality must
+not be assumed across Docker storage implementations.
+
+`TEMPO_LIFECYCLE_IMAGE_LOCK` selects an explicit alternative reviewed lock.
+An explicit `TEMPO_LIFECYCLE_SCHEMA61_IMAGES` manifest retains the existing
+caller-controlled path. Schema-59 uses its separate explicit fixture contract.
+Automatic preparation and candidate reuse require a named Docker context and
+refuse inherited host/TLS overrides instead of redirecting the target. Registry
+reacquisition requires access to the private GHCR packages. An explicitly
+selected local-seed lock never pulls or silently rebuilds a missing image.
+
+```mermaid
+flowchart TD
+    Runner["Existing selected PostgreSQL suite invocation"] --> Inputs["Cheap source and selected-input checks"]
+    Inputs --> Budget["Existing resource admission and Study quiet boundary"]
+    Budget -->|"selected schema-61 lifecycle"| Historical["Historical lock: verify local IDs or pull exact registry artifact"]
+    Historical --> Manifest["Run-owned complete historical manifest"]
+    Budget -->|"produce"| Producer["Release producer: exact recipe build and maintenance checks"]
+    Producer --> Artifacts["Release-owned immutable images and complete build receipt"]
+    Budget -->|"borrow"| Borrower["Compatible borrower: verify source, recipe, daemon and image availability"]
+    Borrower -->|"read receipt and inspect images"| Artifacts
+    Borrower --> Runtime["Fresh suite aliases and original per-target runtime fingerprint"]
+    Producer --> Runtime
+    Manifest -.->|"verified manifest transfer"| Runtime
+    Runtime --> SuiteCleanup["Suite-owned containers, volumes, network, secrets and aliases cleanup"]
+    ReleaseCleanup["Release owner after all consumers finish"] -->|"remove verified retained aliases"| Artifacts
+```
+
+This view describes verification tooling ownership; application persistence and
+Study authority do not change. Component tests establish refusal/ownership
+contracts. Actual two-suite borrowing, cache hits, historical acquisition,
+playable-card behavior and cleanup need separately source-bound real evidence.
+The progress/evidence ledger is [#980](https://github.com/aaweaver-actuary/tempo/issues/980).
+
 ## General qualification CPU allocation
 
 The [qualification window](qualification-window.mjs) composes the existing
