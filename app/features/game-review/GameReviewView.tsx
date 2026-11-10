@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Board } from "@tempo/board-ui";
 import { Chess } from "chess.js";
 import "@tempo/board-ui/styles.css";
@@ -20,40 +20,59 @@ export function GameReviewView() {
   const [ply, setPly] = useState(0);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [initialError, setInitialError] = useState("");
+  const [initialAttempt, setInitialAttempt] = useState(0);
+  const reviewRequest = useRef(0);
+  useEffect(() => () => { reviewRequest.current += 1; }, []);
   useEffect(() => {
     const abort = new AbortController();
     Promise.all([
-      learningFetch(`${API_URL}/api/product/game-review/games`, { signal: abort.signal }).then(response => response.json()),
-      learningFetch(`${API_URL}/api/repertoires`, { signal: abort.signal }).then(response => response.json()),
-    ]).then(([saved, authored]) => {
+      `${API_URL}/api/product/game-review/games`, `${API_URL}/api/repertoires`,
+    ].map(async url => {
+      const response = await learningFetch(url, { signal: abort.signal });
+      if (!response.ok) throw new Error(`Game Review request failed (HTTP ${response.status})`);
+      return response.json();
+    })).then(([saved, authored]) => {
+      if (abort.signal.aborted) return;
       setGames(saved.games ?? []);
       const items = Array.isArray(authored) ? authored : authored.repertoires ?? [];
       setRepertoires(items); setRepertoire(items[0]?.id ?? "");
-    }).catch(error => { if (!abort.signal.aborted) setError(String(error)); });
+    }).catch(error => { if (!abort.signal.aborted) setInitialError(String(error)); });
     return () => abort.abort();
-  }, []);
+  }, [initialAttempt]);
+  function invalidateReview() {
+    reviewRequest.current += 1;
+    setDetail(null); setError(""); setBusy(false);
+  }
   async function load(game?: SavedGame) {
-    setBusy(true); setError("");
+    const request = ++reviewRequest.current;
+    setBusy(true); setError(""); setDetail(null);
     try {
       const base = `${API_URL}/api/product/game-review`;
       const response = await learningFetch(game ? `${base}/games/${encodeURIComponent(game.id)}?repertoire_id=${encodeURIComponent(repertoire)}` : `${base}/compare`, game ? {} : {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pgn, color, repertoire_id: repertoire }),
       });
       const data = await response.json();
+      if (request !== reviewRequest.current) return;
       if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : `Review failed (${response.status})`);
       setDetail(data); setPly(Math.max(0, (data.comparison.ply ?? 1) - 1));
       if (game) setColor(data.color === "black" ? "black" : "white");
-    } catch (error) { setError(String(error)); } finally { setBusy(false); }
+    } catch (error) {
+      if (request === reviewRequest.current) setError(String(error));
+    } finally {
+      if (request === reviewRequest.current) setBusy(false);
+    }
   }
   const position = detail ? new Chess(detail.positions[ply]) : null;
   return <section aria-label="Game Review" className="p-4 space-y-4">
     <h2>Game Review</h2>
-    <label>Repertoire <select value={repertoire} onChange={event => { setRepertoire(event.target.value); setDetail(null); }}>
+    <label>Repertoire <select value={repertoire} onChange={event => { setRepertoire(event.target.value); invalidateReview(); }}>
       {repertoires.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
     </select></label>
-    <label>Your color <select value={color} onChange={event => setColor(event.target.value)}><option value="white">White</option><option value="black">Black</option></select></label>
-    <label className="block">Paste PGN<textarea className="block w-full" rows={7} value={pgn} onChange={event => setPgn(event.target.value)} /></label>
+    <label>Your color <select value={color} onChange={event => { setColor(event.target.value); invalidateReview(); }}><option value="white">White</option><option value="black">Black</option></select></label>
+    <label className="block">Paste PGN<textarea className="block w-full" rows={7} value={pgn} onChange={event => { setPgn(event.target.value); invalidateReview(); }} /></label>
     <button disabled={busy || !repertoire || !pgn.trim()} onClick={() => void load()}>Review PGN</button>
+    {initialError && <div><p role="alert">{initialError}</p><button onClick={() => { setInitialError(""); setInitialAttempt(value => value + 1); }}>Retry</button></div>}
     {error && <p role="alert">{error}</p>}
     {detail && <div>
       <div style={{ maxWidth: 540 }}><Board fen={detail.positions[ply]} positionIdentity={detail.positions[ply]} positionRevision={ply} orientation={color === "black" ? "black" : "white"} turn={position?.turn() === "b" ? "black" : "white"} check={position?.isCheck() ? (position.turn() === "b" ? "black" : "white") : false} mode="select" readOnly /></div>
