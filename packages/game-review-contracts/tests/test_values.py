@@ -156,3 +156,18 @@ def test_replay_session_bound_falls_back_without_changing_results(monkeypatch):
     assert session._node_count == 2
     assert session.replay_line(chess.STARTING_FEN, moves) == replay_line(chess.STARTING_FEN, moves)
     assert session._node_count == 2
+
+
+def test_replay_session_preserves_promoted_marker_legality():
+    from tempo_game_review_contracts import ReplaySession
+
+    session = ReplaySession()
+    start = "4r2k/8/8/8/8/8/P7/4K~3 w - - 0 1"
+    moves = ("a2a3",)
+    assert session.replay_line(start, moves) == replay_line(start, moves)
+    assert len(session.replay_line(start, moves)) == 2
+    # A promotion introduced during this call also retains its provenance on
+    # subsequent plies instead of reconstructing from ordinary FEN.
+    start = "4k3/P7/8/8/8/8/8/4K3 w - - 3 7"
+    moves = ("a7a8q", "e8d7", "a8a7")
+    assert session.replay_line(start, moves) == replay_line(start, moves)

@@ -96,5 +96,6 @@ must not weaken them. Frozen accepted reports and live Study remain untouched.
 `ReplaySession` is an invocation-local legal replay helper for consumers with
 multiple authored routes. It shares exact starting-FEN and move prefixes, emits
 fresh frame dictionaries with the same facts and errors as `replay_line`, and
-falls back to ordinary replay after 16,384 cached nodes. It holds no durable
+falls back to ordinary replay after 16,384 cached nodes and for promoted-piece
+markers or promotion moves, preserving their legality semantics. It holds no durable
 state or authority; callers retain their existing input bounds and validation.

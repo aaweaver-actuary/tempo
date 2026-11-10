@@ -52,7 +52,11 @@ class ReplaySession:
                 "white" if board.turn else "black", {})
 
     def replay_line(self, starting_fen, moves):
-        if not isinstance(starting_fen, str) or any(not isinstance(move, str) for move in moves):
+        # Standard FEN serialization omits promoted-piece provenance, which
+        # python-chess can use for legality and castling. Keep the original
+        # replay for inputs that contain or can create that provenance.
+        if (not isinstance(starting_fen, str) or "~" in starting_fen
+            or any(not isinstance(move, str) or len(move) == 5 for move in moves)):
             return replay_line(starting_fen, moves)
         node = self._roots.get(starting_fen)
         if node is None:
