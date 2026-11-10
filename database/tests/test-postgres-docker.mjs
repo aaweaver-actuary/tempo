@@ -7,7 +7,7 @@ import { randomBytes } from "node:crypto";
 import { spawnSync, execFileSync } from "node:child_process";
 import { createServer } from "node:net";
 import { accessSync, chmodSync, constants, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { createIsolatedTestEnvironment } from "../../scripts/test-environment.mjs";
 import { resolvePython } from "../../scripts/resolve-python.mjs";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "./postgres-test-options.mjs";
@@ -1042,8 +1042,11 @@ function candidateInspect(id) {
 }
 function candidateSource() {
   const revision = candidateCommand("git", ["rev-parse", "HEAD"]), tree = candidateCommand("git", ["rev-parse", "HEAD^{tree}"]);
-  const changes = candidateCommand("git", ["--no-optional-locks", "status", "--porcelain", "--untracked-files=all"]);
-  if (revision !== candidateRevision || changes) throw new Error("Candidate release source is not exact and clean");
+  const ownedSecrets = relative(process.cwd(), secretsDirectory);
+  if (!/^\.tempo-pg-test-secrets-[^/]+$/.test(ownedSecrets)) throw new Error("Candidate secret directory is outside its owned source boundary");
+  const trackedChanges = candidateCommand("git", ["--no-optional-locks", "status", "--porcelain", "--untracked-files=no"]);
+  const changes = candidateCommand("git", ["--no-optional-locks", "status", "--porcelain", "--untracked-files=all", "--", ".", `:(top,exclude,literal)${ownedSecrets}`]);
+  if (revision !== candidateRevision || trackedChanges || changes) throw new Error("Candidate release source is not exact and clean");
   return { revision, tree, clean: true };
 }
 function candidateTarget() {

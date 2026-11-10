@@ -86,3 +86,61 @@ test("release owner cleanup removes only validated owned aliases and refuses mis
   assert.equal(removed.length, 0);
   await cleanupCandidateTags(args); assert.equal(removed.length, 7);
 });
+
+test("candidate real Git source check permits only its owned untracked secrets and rejects all source drift", async t => {
+  const { execFileSync } = await import("node:child_process");
+  const { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join, relative } = await import("node:path");
+  const { runInNewContext } = await import("node:vm");
+  const root = mkdtempSync(join(tmpdir(), "tempo-candidate-source-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const git = args => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
+  git(["init", "--quiet"]);
+  writeFileSync(join(root, "source"), "original");
+  const secretsDirectory = join(root, ".tempo-pg-test-secrets-owned");
+  mkdirSync(secretsDirectory);
+  writeFileSync(join(secretsDirectory, "tracked"), "original");
+  git(["add", "."]);
+  git(["-c", "user.name=Tempo fixture", "-c", "user.email=tempo-fixture@example.invalid", "commit", "--quiet", "-m", "fixture"]);
+  const source = readFileSync(new URL("../../database/tests/test-postgres-docker.mjs", import.meta.url), "utf8");
+  const start = source.indexOf("function candidateSource() {");
+  const end = source.indexOf("\nfunction candidateTarget()", start);
+  const check = runInNewContext(`(${source.slice(start, end)})`, {
+    relative, secretsDirectory, process: { cwd: () => root }, candidateRevision: git(["rev-parse", "HEAD"]),
+    candidateCommand: (_command, args) => git(args),
+  });
+  writeFileSync(join(secretsDirectory, "untracked"), "owned-secret");
+  assert.equal(check().clean, true);
+  for (const path of ["source", ".tempo-pg-test-secrets-owned/tracked"]) {
+    writeFileSync(join(root, path), "dirty");
+    assert.throws(check, /not exact and clean/);
+    writeFileSync(join(root, path), "original");
+  }
+  for (const path of ["foreign-source", ".tempo-pg-test-secrets-foreign"]) {
+    writeFileSync(join(root, path), "foreign");
+    assert.throws(check, /not exact and clean/);
+    rmSync(join(root, path));
+  }
+});
+
+test("parent borrowed maintenance retains all three command checks without constructing an image", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { runInNewContext } = await import("node:vm");
+  const source = readFileSync(new URL("../../database/tests/test-postgres-docker.mjs", import.meta.url), "utf8");
+  const start = source.indexOf("  maintenance_cli: async () => {");
+  const end = source.indexOf("  startup: async () => {", start);
+  const calls = [], context = {
+    candidateMode: "borrow", borrowedCandidate: images(), maintenanceImageCleanupRequired: false,
+    maintenanceImage: "own-maintenance", maintenanceHelpContainer: "own-help", project: "own-project",
+    process: { env: { TEMPO_DEVELOPMENT_BUDGET_TOKEN: "own-token" } }, console: { log() {} },
+    managedBuild: () => { throw new Error("Borrowed maintenance must not build"); },
+    run: (command, args) => calls.push([command, ...args]),
+  };
+  await runInNewContext(`({${source.slice(start, end)}})`, context).maintenance_cli();
+  assert.equal(context.maintenanceImageCleanupRequired, true);
+  assert.deepEqual(calls.map(args => args.at(-2)), [
+    "database/tooling/apply_postgres_migrations.py", "database/tooling/verify_postgres_backup.py", "database/tooling/verify_postgres_cli_state.py",
+  ]);
+  assert(calls.every(args => args[0] === "docker" && args[1] === "run" && args.at(-1) === "--help"));
+});
