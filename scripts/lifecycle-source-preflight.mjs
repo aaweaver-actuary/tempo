@@ -31,6 +31,8 @@ export const schema62BridgeRevision = "0765a54e4a404d187f044dde2f902075b4a5e038"
 export const schema62BridgeTree = "5a48d33a64180be6cfe67e6bdd4996ddeed4bfe0";
 const schema62Roles = ["schema", "api", "foreground-worker", "background-worker", "background-scheduler", "web", "migration", "game-feedback-worker"];
 export function readSchema62Bridge(environment = process.env, { runGit = spawnSync } = {}) {
+  if (["DOCKER_HOST", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH"].some(name => environment[name]))
+    throw new Error("Schema-62 bridge requires a named Docker context without host or TLS overrides.");
   const root = environment.TEMPO_LIFECYCLE_SCHEMA62_ROOT, file = environment.TEMPO_LIFECYCLE_SCHEMA62_IMAGES;
   if (!root || !isAbsolute(root) || resolve(root) !== root || !file || !isAbsolute(file))
     throw new Error("Schema-63 lifecycle requires an absolute schema-62 source root and image manifest.");

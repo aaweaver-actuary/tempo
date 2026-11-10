@@ -29,6 +29,20 @@ export function assertDependencyCorrectionOrder(calls) {
   assert(shutdown >= 0 && recreation > shutdown);
 }
 
+// Revalidate the old owner immediately before releasing its disposable
+// containers. Volumes and the committed migration evidence remain authoritative.
+export async function handoffOwnedSchema62({ oldRuntime, snapshotVolumes, readEvidence, down, listContainers }) {
+  const evidence = readEvidence();
+  await oldRuntime.inspectTarget();
+  const volumes = await snapshotVolumes();
+  await oldRuntime.stopApplications();
+  await down();
+  const remaining = await listContainers();
+  assert(Array.isArray(remaining) && remaining.length === 0, "Old owned project containers must be removed before root handoff");
+  assert.deepEqual(await snapshotVolumes(), volumes, "Every owned volume identity must survive the root handoff");
+  assert.deepEqual(readEvidence(), evidence, "Schema-62 deployment and guard evidence must remain unchanged");
+}
+
 export async function verifyTempoCliLifecycle({ project, environment, composeFiles, revision: currentRevision, measure = null }) {
   const currentRoot = process.cwd();
   const currentSchema = schemaVersionFromSource(readFileSync(join(currentRoot, "database/tempo_legacy_database/ddl/schema_version.py"), "utf8"));
@@ -318,6 +332,33 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
         preparedImages: currentPrepared,
         redisReadinessOptions: measure ? { wait: measure.wait, poll: measure.poll } : {},
         readinessOptions: measure ? { wait: measure.wait, poll: measure.poll } : {} });
+      const oldRuntime = makeRuntime(target, { run, stateDirectory, revision, evidence, previous,
+        preparedImages: { revision, images, configFingerprint: configurationFingerprint(config) } });
+      const snapshotVolumes = async () => {
+        const entries = Object.entries(target.volumes);
+        for (const [key, volume] of entries)
+          assert(!volume.external && volume.name === `${childProject}_${key}`, "Only the owned disposable volumes may be handed off");
+        const inspected = JSON.parse((await docker(["volume", "inspect", ...entries.map(([, volume]) => volume.name)])).stdout);
+        assert(Array.isArray(inspected) && inspected.length === entries.length, "Every owned volume must be inspected");
+        const result = entries.map(([key, volume]) => {
+          const matches = inspected.filter(item => item?.Name === volume.name);
+          assert.equal(matches.length, 1, `Owned volume identity must be unique: ${key}`);
+          const item = matches[0];
+          assert.equal(item.Labels?.["com.docker.compose.project"], childProject);
+          assert.equal(item.Labels?.["com.docker.compose.volume"], key);
+          assert(item.Driver && item.Mountpoint && item.CreatedAt, `Owned volume identity is incomplete: ${key}`);
+          return { Name: item.Name, Driver: item.Driver, Mountpoint: item.Mountpoint,
+            CreatedAt: item.CreatedAt, Scope: item.Scope, Labels: item.Labels, Options: item.Options };
+        });
+        return result.sort((a, b) => a.Name.localeCompare(b.Name));
+      };
+      await handoffOwnedSchema62({ oldRuntime, snapshotVolumes,
+        readEvidence: () => ({ deployment: readFileSync(join(stateDirectory, "deployment.json")),
+          guard: readFileSync(join(stateDirectory, "migration-guard.json")) }),
+        // No volume or image removal; the current target adopts these exact volumes.
+        down: () => compose(["--profile", "maintenance", "down"]),
+        listContainers: async () => (await docker(["ps", "-aq", "--filter", `label=com.docker.compose.project=${childProject}`])).stdout.trim().split(/\s+/).filter(Boolean),
+      });
       await current.inspectTarget();
       await measured("schema63_from_62", "scenario", () => currentExecuteLifecycle({ recreate: true }, current));
       const record = JSON.parse(readFileSync(join(stateDirectory, "deployment.json"), "utf8"));

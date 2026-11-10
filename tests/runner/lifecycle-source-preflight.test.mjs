@@ -3,6 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, realpathSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { runInNewContext } from "node:vm";
 import { assertBridgePreparedBinding, assertBridgeTargetIdentity, checkLifecycleSource, readSchema62Bridge, schema62BridgeRevision, schema62BridgeTree, renderInterruptedLifecycle } from "../../scripts/lifecycle-source-preflight.mjs";
 
 const revision = "4aa0ad1b731402365c1b866a6ba7bed484d2b6ac";
@@ -109,4 +110,35 @@ test("schema63 compatible repeat constructs a new runtime from the committed rec
   assert.match(repeat, /call\.args\.includes\("stop"\)/);
   assert.match(repeat, /!call\.args\.includes\("--check"\)/);
   assert.match(repeat, /operations\/schema63-bridge-review/);
+});
+
+
+test("schema62 bridge refuses Docker host or TLS overrides before Git", () => {
+  for (const name of ["DOCKER_HOST", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH"]) {
+    let called = false;
+    assert.throws(() => readSchema62Bridge({ [name]: "override", TEMPO_LIFECYCLE_SCHEMA61_IMAGES: "/explicit" },
+      { runGit: () => { called = true; throw new Error("Git must not run"); } }), /without host or TLS overrides/);
+    assert.equal(called, false);
+  }
+});
+
+test("schema62 owned handoff stops and removes containers but preserves volume and guard identities", async () => {
+  const source = readFileSync(new URL("../../scripts/check-tempo-cli.mjs", import.meta.url), "utf8");
+  const start = source.indexOf("export async function handoffOwnedSchema62(");
+  const end = source.indexOf("\nexport async function verifyTempoCliLifecycle(", start);
+  assert(start >= 0 && end > start);
+  const handoff = runInNewContext(`(${source.slice(start, end).replace("export async function", "async function")})`, { assert });
+  const run = async ({ changedVolume = false, changedGuard = false, remaining = false } = {}) => {
+    const events = []; let reads = 0, volumeReads = 0;
+    const options = { oldRuntime: { inspectTarget: async () => events.push("inspect"), stopApplications: async () => events.push("stop") },
+      readEvidence: () => ({ deployment: "same", guard: changedGuard && reads++ ? "changed" : "same" }),
+      snapshotVolumes: async () => { events.push("volumes"); return [{ Name: changedVolume && volumeReads++ ? "foreign" : "owned", Driver: "local" }]; },
+      down: async () => events.push("down"), listContainers: async () => { events.push("containers"); return remaining ? ["owned-container"] : []; } };
+    return { events, result: handoff(options) };
+  };
+  const passing = await run(); await passing.result;
+  assert.deepEqual(passing.events, ["inspect", "volumes", "stop", "down", "containers", "volumes"]);
+  for (const change of [{ changedVolume: true }, { changedGuard: true }, { remaining: true }]) {
+    const failing = await run(change); await assert.rejects(failing.result);
+  }
 });
