@@ -118,8 +118,16 @@ export async function verifyPersistedRedisReadiness({ target, runtime, run, comp
       const journal = JSON.parse(readFileSync(join(loadingStateDirectory, "operation.json"), "utf8"));
       assert.equal(journal.phase, "checking_redis");
       assert(!(await loadingRuntime.runningServices()).some(service => [...applicationServices, "postgres-backup"].includes(service)));
-      assert(!commandLog.slice(firstCommand).some(call => call.args.includes("database/tooling/apply_postgres_migrations.py")
-        || (call.args.includes("up") && call.args.includes("foreground-worker"))), "no schema or application work before PONG");
+      const calls = commandLog.slice(firstCommand);
+      const redisRecreation = calls.findIndex(({ args }) => args.includes("up")
+        && args.includes("--force-recreate") && args.at(-1) === "redis");
+      assert(redisRecreation >= 0, "Redis recreation must have started");
+      assert(!calls.some(({ args }, index) => {
+        const schema = args.includes("database/tooling/apply_postgres_migrations.py");
+        // The existing cluster gets a read-only schema preflight before dependency recreation.
+        return (schema && (index >= redisRecreation || !args.includes("--check")))
+          || (args.includes("up") && [...applicationServices, "postgres-backup"].some(service => args.includes(service)));
+      }), "no schema or application work during Redis loading before PONG");
     } catch (error) { fixtureFailure = error; }
     finally {
       try { await redis(["CONFIG", "SET", "key-load-delay", "0"]); }
