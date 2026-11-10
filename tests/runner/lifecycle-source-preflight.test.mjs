@@ -125,7 +125,7 @@ test("schema62 bridge refuses Docker host or TLS overrides before Git", () => {
 test("schema62 owned handoff stops and removes containers but preserves volume and guard identities", async () => {
   const source = readFileSync(new URL("../../scripts/check-tempo-cli.mjs", import.meta.url), "utf8");
   const start = source.indexOf("export async function handoffOwnedSchema62(");
-  const end = source.indexOf("\nexport async function verifyTempoCliLifecycle(", start);
+  const end = source.indexOf("\nexport function validateLifecycleProfile(", start);
   assert(start >= 0 && end > start);
   const handoff = runInNewContext(`(${source.slice(start, end).replace("export async function", "async function")})`, { assert });
   const run = async ({ changedVolume = false, changedGuard = false, remaining = false } = {}) => {

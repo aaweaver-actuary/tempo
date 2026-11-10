@@ -77,10 +77,15 @@ export function assertBridgePreparedBinding(binding, revision, images, fingerpri
     throw new Error("Schema-63 candidate image or configuration binding differs.");
 }
 
-export function checkLifecycleSource({ root = process.cwd(), environment = process.env, render = renderInterruptedLifecycle } = {}) {
+export function checkLifecycleSource({ root = process.cwd(), environment = process.env, render = renderInterruptedLifecycle, profile = "full" } = {}) {
+  if (!["full", "current63"].includes(profile)) throw new Error("Unknown lifecycle source profile");
+  const schemaFile = join(root, "database/tempo_legacy_database/ddl/schema_version.py");
+  if (profile === "current63" && (!existsSync(schemaFile)
+      || !/^POSTGRES_SCHEMA_VERSION\s*=\s*63\s*$/m.test(readFileSync(schemaFile, "utf8"))
+      || environment.TEMPO_LIFECYCLE_P0_59_ONLY === "1" || environment.TEMPO_PG_STALE_DELIVERY_ONLY === "1"))
+    throw new Error("Current lifecycle profile requires schema 63 and the schema-61 predecessor fixture without other scenario overrides");
   const syntax = spawnSync(process.execPath, ["--check", "--input-type=module"], { input: render(root), encoding: "utf8" });
   if (syntax.status !== 0) throw new Error(`Invalid generated interruption harness: ${syntax.stderr || syntax.error?.message}`);
-  const schemaFile = join(root, "database/tempo_legacy_database/ddl/schema_version.py");
   const schema63 = existsSync(schemaFile) && /^POSTGRES_SCHEMA_VERSION\s*=\s*63\s*$/m.test(readFileSync(schemaFile, "utf8"));
   if (schema63 && environment.TEMPO_LIFECYCLE_P0_59_ONLY === "1" &&
       (environment.TEMPO_LIFECYCLE_MANAGED_REHEARSAL === "1" || environment.TEMPO_LIFECYCLE_SHIPPING_REHEARSAL === "1"))
@@ -105,6 +110,8 @@ export function checkLifecycleSource({ root = process.cwd(), environment = proce
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  checkLifecycleSource();
+  if (process.argv.slice(2).some(argument => argument !== "--current63") || process.argv.length > 3)
+    throw new Error("Unknown lifecycle source option");
+  checkLifecycleSource({ profile: process.argv[2] === "--current63" ? "current63" : "full" });
   console.log("PASS lifecycle source preflight");
 }

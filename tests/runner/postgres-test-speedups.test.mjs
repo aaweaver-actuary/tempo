@@ -260,12 +260,50 @@ test("standalone lifecycle mode requires the complete rehearsal without parent s
   assert.throws(() => parse(["--mode", "lifecycle", "--browser-file", "studies.spec.ts"]), /cannot be combined/);
 });
 
+test("current lifecycle has its own complete plan and cannot qualify the full historical gate", () => {
+  const current = parse(["--mode", "lifecycle-current"]);
+  assert.equal(current.skipBrowser, true);
+  const planned = postgresTestStages(current);
+  assert.deepEqual(planned, ["compose_config", "image_build", "maintenance_cli", "deployment_lifecycle_current", "cleanup"]);
+  const full = postgresTestStages({ mode: "lifecycle" });
+  const plan = { commit: "candidate", hash: "plan", jobs: { lifecycle: { mode: "lifecycle", planned_stages: full } } };
+  const report = { runner: "postgres", mode: "lifecycle-current", commit: "candidate", plan_hash: "plan", planned_stages: planned,
+    stages: Object.fromEntries(planned.map(stage => [stage, { exit_code: 0, duration_seconds: 1 }])) };
+  assert.throws(() => validatePostgresScenarios("lifecycle", plan, report), /missing, failed or mismatched/);
+});
+
+test("current lifecycle invokes the explicitly bounded current63 checker profile", async () => {
+  const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
+  const start = source.indexOf("  deployment_lifecycle_current: async () => {");
+  const end = source.indexOf("  deployment_lifecycle: async () => {", start);
+  const calls = [];
+  const action = runInNewContext(`({${source.slice(start, end)}})`, {
+    project: "owned", environment: {}, candidateRevision: "candidate", resourceLimits: "limits", buildLabels: "labels", join,
+    process: { cwd: () => root }, measureScenario: {}, verifyTempoCliLifecycle: async args => calls.push(args),
+  });
+  await action.deployment_lifecycle_current();
+  assert.equal(calls.length, 1); assert.equal(calls[0].profile, "current63");
+});
+
+test("current lifecycle rejects unsupported source and fixture overrides before admission", () => {
+  const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
+  const start = source.indexOf('if (options.mode === "lifecycle-current") {');
+  const end = source.indexOf('if (process.env.TEMPO_RELEASE_CANDIDATE_MODE)', start);
+  assert(start >= 0 && end < source.indexOf("process.exit(await runWithDevelopmentBudget"));
+  for (const [version, environment, staleOnly] of [[62, {}, false], [64, {}, false], [63, { TEMPO_LIFECYCLE_P0_59_ONLY: "1" }, false], [63, {}, true]]) {
+    assert.throws(() => runInNewContext(source.slice(start, end), {
+      options: { mode: "lifecycle-current" }, process: { env: environment }, staleOnly,
+      readFileSync: () => "source", schemaVersionFromSource: () => version,
+    }), /requires schema 63/);
+  }
+});
+
 test("standalone lifecycle prepares only missing dependency images on cold and warm Docker daemons", async () => {
   const runnerSource = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
   const imageBuildStartIndex = runnerSource.indexOf("  image_build: async () => {");
   const maintenanceCliStartIndex = runnerSource.indexOf("  maintenance_cli: async () => {", imageBuildStartIndex);
   assert(imageBuildStartIndex >= 0 && maintenanceCliStartIndex > imageBuildStartIndex);
-  for (const mode of ["lifecycle", "durability", "full", "browser"]) {
+  for (const mode of ["lifecycle", "lifecycle-current", "durability", "full", "browser"]) {
     for (const cachedServices of [[], ["postgres"], ["postgres", "redis"]]) {
       const servicesWithAvailableImages = new Set(cachedServices);
       const imagePreparationCommands = [];
@@ -290,7 +328,7 @@ test("standalone lifecycle prepares only missing dependency images on cold and w
       await runInNewContext(`({${runnerSource.slice(imageBuildStartIndex, maintenanceCliStartIndex)}})`, imagePreparationContext).image_build();
       assert(imagePreparationContext.resourcesCreated, "Owned image cleanup is armed before preparation");
       assert(servicesWithAvailableImages.has("application"));
-      if (mode === "lifecycle") {
+      if (["lifecycle", "lifecycle-current"].includes(mode)) {
         assert.equal(imagePreparationCommands.filter(args => args.includes("pull")).length, 1);
         assert.deepEqual(registryAcquisitions, ["postgres", "redis"].filter(service => !cachedServices.includes(service)),
           "Only uncached dependencies may require registry access");
@@ -489,7 +527,7 @@ test("full browser coverage creates a fresh durability database before study com
 });
 
 test("full and durability modes cannot silently narrow their browser coverage", () => {
-  for (const mode of ["full", "durability", "lifecycle"]) {
+  for (const mode of ["full", "durability", "lifecycle", "lifecycle-current"]) {
     assert.throws(() => parse(["--mode", mode, "--browser-grep", "Builder"]), /cannot be combined/);
   }
   assert.throws(() => parse(["--skip-browser", "--mode", "full"]), /cannot be combined/);
@@ -518,7 +556,7 @@ test("file focus is explicit, discrete, and restricted to an existing browser ba
   }
 });
 
-for (const mode of ["full", "browser", "durability", "lifecycle"]) {
+for (const mode of ["full", "browser", "durability", "lifecycle", "lifecycle-current"]) {
   test(`${mode} --list exposes the executable plan without Docker, ports, secrets, or timing files`, (context) => {
     const directory = temporaryDirectory(context);
     const result = spawnSync(process.execPath, [resolve(root, "database/tests/test-postgres-docker.mjs"), "--list", "--mode", mode], {

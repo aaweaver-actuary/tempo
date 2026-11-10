@@ -43,9 +43,22 @@ export async function handoffOwnedSchema62({ oldRuntime, snapshotVolumes, readEv
   assert.deepEqual(readEvidence(), evidence, "Schema-62 deployment and guard evidence must remain unchanged");
 }
 
-export async function verifyTempoCliLifecycle({ project, environment, composeFiles, revision: currentRevision, measure = null }) {
+export function validateLifecycleProfile(profile, schema, environment) {
+  if (!["full", "current63"].includes(profile)) throw new Error("Unknown lifecycle profile");
+  if (profile === "current63" && (schema !== 63 || environment.TEMPO_LIFECYCLE_P0_59_ONLY === "1" ||
+      environment.TEMPO_PG_STALE_DELIVERY_ONLY === "1"))
+    throw new Error("Current lifecycle profile requires schema 63 and the schema-61 predecessor fixture without other scenario overrides");
+}
+
+export function assertCurrent63Guard(guard) {
+  assert.equal(guard.state, "verified"); assert.equal(guard.starting_schema, 62);
+  assert.equal(guard.intended_schema, 63); assert.equal(guard.backup?.verified, true);
+}
+
+export async function verifyTempoCliLifecycle({ project, environment, composeFiles, revision: currentRevision, measure = null, profile = "full" }) {
   const currentRoot = process.cwd();
   const currentSchema = schemaVersionFromSource(readFileSync(join(currentRoot, "database/tempo_legacy_database/ddl/schema_version.py"), "utf8"));
+  validateLifecycleProfile(profile, currentSchema, environment);
   const bridge = currentSchema === 63 ? readSchema62Bridge(environment) : null;
   const root = bridge?.root ?? currentRoot;
   const revision = bridge?.manifest.revision ?? currentRevision;
@@ -363,6 +376,10 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
       await measured("schema63_from_62", "scenario", () => currentExecuteLifecycle({ recreate: true }, current));
       const record = JSON.parse(readFileSync(join(stateDirectory, "deployment.json"), "utf8"));
       assert.equal(record.revision, currentRevision); assert.equal(record.schema, 63); assert.equal(record.backup?.verified, true);
+      if (profile === "current63") {
+        const currentGuard = JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8"));
+        assertCurrent63Guard(currentGuard);
+      }
       assert.equal(Number((await readLatestMigration(compose)).stdout.trim()), 63);
       assert.deepEqual(await readHistory(), expected, "Schema-63 transition preserves original historical Study history");
       assert.deepEqual(await request("operations/schema63-bridge-review"), before, "Schema-63 transition preserves exact committed review receipt");
@@ -389,6 +406,37 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
       assert.deepEqual(await request("operations/schema63-bridge-review"), before);
       console.log("PASS schema-62 to schema-63 preserves the exact review and yields a playable next card");
     };
+    if (profile === "current63") {
+      // This explicitly selected short path retains the real populated upgrade
+      // and cutover; the full profile owns the deeper historical fault matrix.
+      const prepared61 = { revision: schema61Revision, images: schema61Images, configFingerprint: configurationFingerprint(config) };
+      const historical = makeRuntime(target, { run, stateDirectory, revision: schema61Revision,
+        evidence: { commit: schema61Revision, disposable_runner: childProject }, preparedImages: prepared61 });
+      await historical.inspectTarget();
+      await lifecycle("current63_schema16_to_61", { recreate: true }, historical);
+      const historyGuard = JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8"));
+      const historicalRecord = JSON.parse(readFileSync(join(stateDirectory, "deployment.json"), "utf8"));
+      assert.equal(Number((await readLatestMigration(compose)).stdout.trim()), 61);
+      assert.equal(historicalRecord.revision, schema61Revision); assert.equal(historicalRecord.schema, 61);
+      assert.equal(historyGuard.state, "verified"); assert.equal(historyGuard.starting_schema, 16); assert.equal(historyGuard.intended_schema, 61);
+      assert.equal(historyGuard.backup?.verified, true); assert.equal(historicalRecord.backup?.verified, true);
+      assert.deepEqual(await readHistory(), expected, "Schema-61 upgrade preserves the original populated history");
+      const prepared62 = { revision, images, configFingerprint: configurationFingerprint(config) };
+      const cut = makeRuntime(target, { run, stateDirectory, revision, evidence, preparedImages: prepared62, previous: historicalRecord });
+      await cut.inspectTarget();
+      await lifecycle("current63_schema61_to_62", { recreate: true }, cut);
+      const guard = JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8"));
+      const record = JSON.parse(readFileSync(join(stateDirectory, "deployment.json"), "utf8"));
+      assert.equal(guard.state, "verified"); assert.equal(guard.starting_schema, 61); assert.equal(guard.intended_schema, 62);
+      assert.equal(guard.backup?.verified, true); assert(guard.cut62_identity?.witness_id && guard.cut62_witness);
+      const witness = join(stateDirectory, guard.cut62_witness.replace(/\.json$/, ""), guard.cut62_witness);
+      assert(existsSync(witness), "Schema-62 cutover retains its original witness");
+      assert.equal(record.revision, revision); assert.equal(record.schema, 62); assert.equal(record.backup?.verified, true);
+      assert.equal(Number((await readLatestMigration(compose)).stdout.trim()), 62);
+      assert.deepEqual(await readHistory(), expected, "Schema-62 cutover preserves the original populated history");
+      await finishCurrentSchema();
+      return;
+    }
     if (schema59Only) {
       let managedManifest = (environment.TEMPO_LIFECYCLE_MANAGED_REHEARSAL === '1' || environment.TEMPO_LIFECYCLE_SHIPPING_REHEARSAL === '1')
         ? JSON.parse((await compose(['--profile','maintenance','run','--rm','--no-deps','-T',

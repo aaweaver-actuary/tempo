@@ -103,17 +103,17 @@ test("normal lifecycle parent acquires before candidate construction and never c
 });
 test("automatic historical path refuses inherited host overrides before resources while explicit fixtures keep compatibility", () => {
   const source = readFileSync(new URL("../../database/tests/test-postgres-docker.mjs", import.meta.url), "utf8");
-  const start = source.indexOf('if (stages.includes("deployment_lifecycle")) {');
+  const start = source.indexOf('if (stages.includes("deployment_lifecycle")');
   const end = source.indexOf('// Docker Desktop', start);
   assert(start >= 0 && end < source.indexOf('const secretsDirectory ='));
   for (const name of ["DOCKER_HOST", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH"]) {
     const env = { [name]: "inherited-override" };
     assert.throws(() => runInNewContext(source.slice(start, end), {
-      stages: ["deployment_lifecycle"], process: { env }, resolve, checkLifecycleSource: () => {},
+      stages: ["deployment_lifecycle"], options: { mode: "lifecycle" }, process: { env }, resolve, checkLifecycleSource: () => {},
     }), /does not support inherited Docker host or TLS overrides/);
     for (const bypass of [{ TEMPO_LIFECYCLE_SCHEMA61_IMAGES: "/explicit/images.json" }, { TEMPO_LIFECYCLE_P0_59_ONLY: "1" }]) {
       assert.doesNotThrow(() => runInNewContext(source.slice(start, end), {
-        stages: ["deployment_lifecycle"], process: { env: { ...env, ...bypass } }, resolve, checkLifecycleSource: () => {},
+        stages: ["deployment_lifecycle"], options: { mode: "lifecycle" }, process: { env: { ...env, ...bypass } }, resolve, checkLifecycleSource: () => {},
       }));
     }
   }

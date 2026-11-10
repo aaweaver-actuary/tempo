@@ -19,7 +19,7 @@ import { checkLifecycleSource, readSchema62Bridge } from "../../scripts/lifecycl
 import { buildMaterials, normalizeCandidateBake, writeCandidateReceipt, verifyCandidateReceipt } from "../../scripts/release-candidate-artifacts.mjs";
 import { inspectImmutableImageSet } from "../../scripts/tempo-runtime.mjs";
 import { verifyTempoCliLifecycle } from "../../scripts/check-tempo-cli.mjs";
-import { atomicJson, redact } from "../../scripts/tempo-deployment.mjs";
+import { atomicJson, redact, schemaVersionFromSource } from "../../scripts/tempo-deployment.mjs";
 import { prepareLifecycleImages } from "../../scripts/prepare-lifecycle-images.mjs";
 
 const options = parsePostgresTestOptions(process.argv.slice(2));
@@ -34,10 +34,15 @@ if (options.list) {
 }
 
 // Reject invalid opt-in inputs before budget admission or temporary secrets.
+if (options.mode === "lifecycle-current") {
+  if (staleOnly || process.env.TEMPO_LIFECYCLE_P0_59_ONLY === "1"
+      || schemaVersionFromSource(readFileSync("database/tempo_legacy_database/ddl/schema_version.py", "utf8")) !== 63)
+    throw new Error("Current lifecycle profile requires schema 63 and the schema-61 predecessor fixture without other scenario overrides");
+}
 if (process.env.TEMPO_RELEASE_CANDIDATE_MODE) {
   const mode = process.env.TEMPO_RELEASE_CANDIDATE_MODE, owner = process.env.TEMPO_RELEASE_CANDIDATE_OWNER;
   const path = process.env.TEMPO_RELEASE_CANDIDATE_RECEIPT;
-  if (!["produce", "borrow"].includes(mode) || (mode === "produce" && options.mode !== "lifecycle")
+  if (!["produce", "borrow"].includes(mode) || (mode === "produce" && !["lifecycle", "lifecycle-current"].includes(options.mode))
       || !/^[-a-z0-9]{12,80}$/.test(owner ?? "") || !path || resolve(path) !== path)
     throw new Error("Candidate reuse requires produce or borrow, an absolute receipt path and unique owner");
   if (["DOCKER_HOST", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH"].some(name => process.env[name]))
@@ -54,12 +59,12 @@ if (process.env.TEMPO_RELEASE_CANDIDATE_MODE) {
   }
 }
 
-if (stages.includes("deployment_lifecycle")) {
+if (stages.includes("deployment_lifecycle") || stages.includes("deployment_lifecycle_current")) {
   process.env.TEMPO_LIFECYCLE_SCHEMA62_IMAGES ??= resolve("config/lifecycle-images/schema62-linux-arm64.json");
   if (process.env.TEMPO_LIFECYCLE_P0_59_ONLY !== "1" && !process.env.TEMPO_LIFECYCLE_SCHEMA61_IMAGES
       && ["DOCKER_HOST", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH"].some(name => process.env[name]))
     throw new Error("Automatic historical image preparation does not support inherited Docker host or TLS overrides; supply an explicit historical manifest or use a named context.");
-  checkLifecycleSource();
+  checkLifecycleSource({ profile: options.mode === "lifecycle-current" ? "current63" : "full" });
 }
 
 // Docker Desktop only shares the project checkout, so the short-lived secret
@@ -908,7 +913,7 @@ function candidateTarget() {
   return { context, daemon_id, platform };
 }
 function candidatePrepareIdentity() {
-  if (!["produce", "borrow"].includes(candidateMode) || (candidateMode === "produce" && options.mode !== "lifecycle")
+  if (!["produce", "borrow"].includes(candidateMode) || (candidateMode === "produce" && !["lifecycle", "lifecycle-current"].includes(options.mode))
       || !/^[-a-z0-9]{12,80}$/.test(candidateOwner ?? "")
       || !candidateReceiptPath || resolve(candidateReceiptPath) !== candidateReceiptPath)
     throw new Error("Candidate reuse requires produce or borrow, an absolute receipt path and unique owner");
@@ -984,7 +989,7 @@ const actions = {
   },
   image_build: async () => {
     await waitForStudyQuiet();
-    if (stages.includes("deployment_lifecycle") && environment.TEMPO_LIFECYCLE_SCHEMA62_ROOT) {
+    if ((stages.includes("deployment_lifecycle") || stages.includes("deployment_lifecycle_current")) && environment.TEMPO_LIFECYCLE_SCHEMA62_ROOT) {
       const context = spawnSync("docker", ["context", "show"], { encoding: "utf8", env: environment, timeout: 15_000 });
       assert.equal(context.status, 0, "Cannot select schema-62 fixture Docker context");
       environment.DOCKER_CONTEXT = context.stdout.trim();
@@ -1005,7 +1010,7 @@ const actions = {
         context: environment.DOCKER_CONTEXT, images: bridge.images, acquisition: "borrowed-local", builds: 0, pulls: 0,
       });
     }
-    if (stages.includes("deployment_lifecycle") && environment.TEMPO_LIFECYCLE_P0_59_ONLY !== "1"
+    if ((stages.includes("deployment_lifecycle") || stages.includes("deployment_lifecycle_current")) && environment.TEMPO_LIFECYCLE_P0_59_ONLY !== "1"
       && !environment.TEMPO_LIFECYCLE_SCHEMA61_IMAGES) {
       const context = spawnSync("docker", ["context", "show"], { encoding: "utf8", env: environment, timeout: 15_000 });
       assert.equal(context.status, 0, "Cannot select historical image Docker context");
@@ -1055,7 +1060,7 @@ const actions = {
     }
     // The rehearsal records dependency images before starting its child stack.
     // Standalone mode has no parent startup to pull these images first.
-    if (options.mode === "lifecycle") run("docker", [...compose, "pull", "--policy", "missing", "postgres", "redis"]);
+    if (["lifecycle", "lifecycle-current"].includes(options.mode)) run("docker", [...compose, "pull", "--policy", "missing", "postgres", "redis"]);
   },
   maintenance_cli: async () => {
     maintenanceImageCleanupRequired = true;
@@ -1140,6 +1145,10 @@ const actions = {
   background_diagnostics: async () => {
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
       "/source/database/tests/check_postgres_background_diagnostics.py"]);
+  },
+  deployment_lifecycle_current: async () => {
+    await verifyTempoCliLifecycle({ project, environment, revision: candidateRevision, profile: "current63",
+      composeFiles: [join(process.cwd(), "docker-compose.postgres.test.yml"), resourceLimits, buildLabels], measure: measureScenario });
   },
   deployment_lifecycle: async () => {
     const verifyLifecycle = () => verifyTempoCliLifecycle({ project, environment, revision: candidateRevision,
