@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "kind": "registry",
+  "revision": "4aa0ad1b731402365c1b866a6ba7bed484d2b6ac",
+  "platform": "linux/arm64",
+  "provenance": {
+    "kind": "promoted",
+    "source_revision": "4aa0ad1b731402365c1b866a6ba7bed484d2b6ac",
+    "source_tree": "9d83400aca5ee8314aaf8d80d945893a0a757028",
+    "receipt": "https://github.com/aaweaver-actuary/tempo/issues/980#issuecomment-6769132371",
+    "identity_kind": "docker-local-image-id",
+    "docker_engine": "29.9.2",
+    "containerd": "v2.4.2",
+    "limitations": [
+      "Original complete structured build/environment attestation is unavailable.",
+      "Promoted exact qualified Mac artifacts; no cloud build claimed."
+    ]
+  },
+  "images": {
+    "api": {
+      "expected_local_image_id": "sha256:04f4bde90b47c1e8c49f9d75f07200da38f72582de83e1a99bc7df7197800efc",
+      "reference": "ghcr.io/aaweaver-actuary/tempo-lifecycle-api@sha256:04f4bde90b47c1e8c49f9d75f07200da38f72582de83e1a99bc7df7197800efc"
+    },
+    "web": {
+      "expected_local_image_id": "sha256:202ca05b1f68b728f94a22247ca7014e254eebe4367bacae431e3af1ce70a0ae",
+      "reference": "ghcr.io/aaweaver-actuary/tempo-lifecycle-web@sha256:202ca05b1f68b728f94a22247ca7014e254eebe4367bacae431e3af1ce70a0ae"
+    },
+    "migration": {
+      "expected_local_image_id": "sha256:951f0c49c761d356c97f7b98bd3fb947c6d69e683611ef3e7b055ca7358d0293",
+      "reference": "ghcr.io/aaweaver-actuary/tempo-lifecycle-migration@sha256:951f0c49c761d356c97f7b98bd3fb947c6d69e683611ef3e7b055ca7358d0293"
+    }
+  }
+}

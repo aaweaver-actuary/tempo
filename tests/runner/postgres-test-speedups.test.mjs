@@ -260,17 +260,55 @@ test("standalone lifecycle mode requires the complete rehearsal without parent s
   assert.throws(() => parse(["--mode", "lifecycle", "--browser-file", "studies.spec.ts"]), /cannot be combined/);
 });
 
+test("current lifecycle has its own complete plan and cannot qualify the full historical gate", () => {
+  const current = parse(["--mode", "lifecycle-current"]);
+  assert.equal(current.skipBrowser, true);
+  const planned = postgresTestStages(current);
+  assert.deepEqual(planned, ["compose_config", "image_build", "maintenance_cli", "deployment_lifecycle_current", "cleanup"]);
+  const full = postgresTestStages({ mode: "lifecycle" });
+  const plan = { commit: "candidate", hash: "plan", jobs: { lifecycle: { mode: "lifecycle", planned_stages: full } } };
+  const report = { runner: "postgres", mode: "lifecycle-current", commit: "candidate", plan_hash: "plan", planned_stages: planned,
+    stages: Object.fromEntries(planned.map(stage => [stage, { exit_code: 0, duration_seconds: 1 }])) };
+  assert.throws(() => validatePostgresScenarios("lifecycle", plan, report), /missing, failed or mismatched/);
+});
+
+test("current lifecycle invokes the explicitly bounded current63 checker profile", async () => {
+  const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
+  const start = source.indexOf("  deployment_lifecycle_current: async () => {");
+  const end = source.indexOf("  deployment_lifecycle: async () => {", start);
+  const calls = [];
+  const action = runInNewContext(`({${source.slice(start, end)}})`, {
+    project: "owned", environment: {}, candidateRevision: "candidate", resourceLimits: "limits", buildLabels: "labels", join,
+    process: { cwd: () => root }, measureScenario: {}, verifyTempoCliLifecycle: async args => calls.push(args),
+  });
+  await action.deployment_lifecycle_current();
+  assert.equal(calls.length, 1); assert.equal(calls[0].profile, "current63");
+});
+
+test("current lifecycle rejects unsupported source and fixture overrides before admission", () => {
+  const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
+  const start = source.indexOf('if (options.mode === "lifecycle-current") {');
+  const end = source.indexOf('if (process.env.TEMPO_RELEASE_CANDIDATE_MODE)', start);
+  assert(start >= 0 && end < source.indexOf("process.exit(await runWithDevelopmentBudget"));
+  for (const [version, environment, staleOnly] of [[62, {}, false], [64, {}, false], [63, { TEMPO_LIFECYCLE_P0_59_ONLY: "1" }, false], [63, {}, true]]) {
+    assert.throws(() => runInNewContext(source.slice(start, end), {
+      options: { mode: "lifecycle-current" }, process: { env: environment }, staleOnly,
+      readFileSync: () => "source", schemaVersionFromSource: () => version,
+    }), /requires schema 63/);
+  }
+});
+
 test("standalone lifecycle prepares only missing dependency images on cold and warm Docker daemons", async () => {
   const runnerSource = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
   const imageBuildStartIndex = runnerSource.indexOf("  image_build: async () => {");
   const maintenanceCliStartIndex = runnerSource.indexOf("  maintenance_cli: async () => {", imageBuildStartIndex);
   assert(imageBuildStartIndex >= 0 && maintenanceCliStartIndex > imageBuildStartIndex);
-  for (const mode of ["lifecycle", "durability", "full", "browser"]) {
+  for (const mode of ["lifecycle", "lifecycle-current", "durability", "full", "browser"]) {
     for (const cachedServices of [[], ["postgres"], ["postgres", "redis"]]) {
       const servicesWithAvailableImages = new Set(cachedServices);
       const imagePreparationCommands = [];
       const registryAcquisitions = [];
-      const imagePreparationContext = { waitForStudyQuiet:async()=>{},recordBudgetResource:async()=>{},project:'owned-project',
+      const imagePreparationContext = { candidateMode: undefined, borrowedCandidate: null, candidateMetadataPath: null, stages: [], environment: {}, waitForStudyQuiet:async()=>{},recordBudgetResource:async()=>{},project:'owned-project',
         managedComposeBuild:async (_prepare,execute)=>execute(['compose','build']), options: { mode }, compose: ["compose"], resourcesCreated: false,
         run: (command, args) => {
           assert.equal(command, "docker");
@@ -290,7 +328,7 @@ test("standalone lifecycle prepares only missing dependency images on cold and w
       await runInNewContext(`({${runnerSource.slice(imageBuildStartIndex, maintenanceCliStartIndex)}})`, imagePreparationContext).image_build();
       assert(imagePreparationContext.resourcesCreated, "Owned image cleanup is armed before preparation");
       assert(servicesWithAvailableImages.has("application"));
-      if (mode === "lifecycle") {
+      if (["lifecycle", "lifecycle-current"].includes(mode)) {
         assert.equal(imagePreparationCommands.filter(args => args.includes("pull")).length, 1);
         assert.deepEqual(registryAcquisitions, ["postgres", "redis"].filter(service => !cachedServices.includes(service)),
           "Only uncached dependencies may require registry access");
@@ -310,7 +348,7 @@ test("standalone lifecycle propagates missing dependency acquisition failures wi
   const maintenanceCliStartIndex = runnerSource.indexOf("  maintenance_cli: async () => {", imageBuildStartIndex);
   assert(imageBuildStartIndex >= 0 && maintenanceCliStartIndex > imageBuildStartIndex);
   const acquisitionFailure = new Error("Missing Redis image could not be acquired");
-  const imagePreparationContext = { waitForStudyQuiet:async()=>{},recordBudgetResource:async()=>{},project:'owned-project',
+  const imagePreparationContext = { candidateMode: undefined, borrowedCandidate: null, candidateMetadataPath: null, stages: [], environment: {}, waitForStudyQuiet:async()=>{},recordBudgetResource:async()=>{},project:'owned-project',
         managedComposeBuild:async (_prepare,execute)=>execute(['compose','build']), options: { mode: "lifecycle" }, compose: ["compose"], resourcesCreated: false,
     run: (_command, args) => {
       if (args.includes("pull")) throw acquisitionFailure;
@@ -325,7 +363,7 @@ test("maintenance image cleanup is armed before build timing publication can fai
   const start = source.indexOf("  maintenance_cli: async () => {");
   const end = source.indexOf("  startup: async () => {", start);
   const publicationFailure = new Error("Timing publication failed after the image was built");
-  const context = { managedBuild:async build=>build("fixture-builder"), buildResourceArguments:()=>[], maintenanceImageCleanupRequired: false,
+  const context = { candidateMode: undefined, borrowedCandidate: null, managedBuild:async build=>build("fixture-builder"), buildResourceArguments:()=>[], maintenanceImageCleanupRequired: false,
     candidateRevision: "candidate", maintenanceImage: "owned-maintenance", run: () => { throw publicationFailure; } };
   const actions = runInNewContext(`({${source.slice(start, end)}})`, context);
   await assert.rejects(actions.maintenance_cli(), error => error === publicationFailure);
@@ -348,7 +386,7 @@ test("maintenance cleanup accepts only an absent owned image and preserves other
     [{ error: new Error("Docker unavailable"), status: null }, false],
   ]) {
     const calls = [];
-    const context = { recordBudgetResource:async()=>{},reconcileDevelopmentStartup:()=>{},removeOwnedMaintenanceHelpContainer:()=>{},project:"owned-project",executeDiagnosticCleanup, isMissingMaintenanceImage, resourcesCreated: false, maintenanceImageCleanupRequired: true,
+    const context = { candidateSuiteTags: [], retainedCandidateTags: [], candidateMode: null, candidatePublished: false, recordBudgetResource:async()=>{},reconcileDevelopmentStartup:()=>{},removeOwnedMaintenanceHelpContainer:()=>{},project:"owned-project",executeDiagnosticCleanup, isMissingMaintenanceImage, resourcesCreated: false, maintenanceImageCleanupRequired: true,
       maintenanceImage: "owned-maintenance", environment: {}, secretsDirectory: "owned-secrets", process: { env: {} },
       spawnSync: (command, args) => { calls.push([command, Array.from(args)]); return removal; },
       rmSync: path => calls.push(["secrets", path]) };
@@ -489,7 +527,7 @@ test("full browser coverage creates a fresh durability database before study com
 });
 
 test("full and durability modes cannot silently narrow their browser coverage", () => {
-  for (const mode of ["full", "durability", "lifecycle"]) {
+  for (const mode of ["full", "durability", "lifecycle", "lifecycle-current"]) {
     assert.throws(() => parse(["--mode", mode, "--browser-grep", "Builder"]), /cannot be combined/);
   }
   assert.throws(() => parse(["--skip-browser", "--mode", "full"]), /cannot be combined/);
@@ -518,7 +556,7 @@ test("file focus is explicit, discrete, and restricted to an existing browser ba
   }
 });
 
-for (const mode of ["full", "browser", "durability", "lifecycle"]) {
+for (const mode of ["full", "browser", "durability", "lifecycle", "lifecycle-current"]) {
   test(`${mode} --list exposes the executable plan without Docker, ports, secrets, or timing files`, (context) => {
     const directory = temporaryDirectory(context);
     const result = spawnSync(process.execPath, [resolve(root, "database/tests/test-postgres-docker.mjs"), "--list", "--mode", mode], {
@@ -742,6 +780,11 @@ test("nested timing write failures propagate and cleanup executes even when its 
 
 test("PostgreSQL command timings classify fixed operations without retaining arguments or credentials", () => {
   for (const [args, expected] of [
+    [["image", "inspect", "secret-canary"], { label: "image_inspection", category: "inspection" }],
+    [["compose", "-p", "secret-canary", "config"], { label: "compose_configuration", category: "inspection" }],
+    [["volume", "ls", "secret-canary"], { label: "volume_inspection", category: "inspection" }],
+    [["context", "inspect", "secret-canary"], { label: "daemon_context", category: "inspection" }],
+    [["compose", "-p", "secret-canary", "ps"], { label: "container_inventory", category: "inspection" }],
     [["compose", "build", "secret-canary"], { label: "image_build", category: "build" }],
     [["compose", "stop", "maia-worker"], { label: "compose_shutdown", category: "restart" }],
     [["compose", "up", "--force-recreate"], { label: "compose_recreation", category: "startup" }],
@@ -1276,7 +1319,7 @@ test('native_startup_rejects_inherited_lease_mismatch_before_any_external_effect
 test('native_actual_standalone_help_partial_start_has_owned_identity_and_verified_cleanup_before_reconciliation',()=>nativeStartupFixture(async({budget,state,container,options,paths,project,existsSync})=>{
   const source=readFileSync(join(root,'database/tests/test-postgres-docker.mjs'),'utf8'),name=project+'-maintenance-help',commands=[];
   const begin=source.indexOf('  maintenance_cli: async () => {'),end=source.indexOf('  startup: async () => {',begin);
-  const action=runInNewContext(`({${source.slice(begin,end)}})`,{maintenanceImageCleanupRequired:false,maintenanceImage:'owned-maintenance',maintenanceHelpContainer:name,project,
+  const action=runInNewContext(`({${source.slice(begin,end)}})`,{candidateMode:null,borrowedCandidate:null,maintenanceImageCleanupRequired:false,maintenanceImage:'owned-maintenance',maintenanceHelpContainer:name,project,
     candidateRevision:'test-revision',process:{env:{TEMPO_DEVELOPMENT_BUDGET_TOKEN:options.token}},console:{log(){}},managedBuild:async build=>build('owned-builder'),run:(_command,args)=>commands.push(Array.from(args))});
   await action.maintenance_cli();const args=commands.find(args=>args[0]==='run');assert(args,'Exercise actual standalone maintenance start arguments');
   assert.equal(args[args.indexOf('--name')+1],name);

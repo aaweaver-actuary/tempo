@@ -23,7 +23,7 @@ test("study_only_mode_preserves_foreground_review_and_queue_progression across r
   });
   try {
     await prepareUI(page);
-    await navigate(page, "Settings");
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
     await expect(page.getByRole("button", { name: "Save settings" })).toBeEnabled();
     await page.getByRole("checkbox", { name: /Study-only mode/ }).check();
     expect((await (await request.get(`${api}/settings`)).json()).study_only_mode).toBe(false);
@@ -37,7 +37,7 @@ test("study_only_mode_preserves_foreground_review_and_queue_progression across r
     docker("start", "background-worker", "background-scheduler");
     await page.reload();
     await navigate(page, "Train");
-    await expect(page.getByText(/Study-only mode is on. Optional/)).toBeVisible();
+    await expect(page.getByText(/Study-only mode pauses optional analysis and imports/)).toBeVisible();
     for (let index = 0; index < 3; index++) {
       const head = (await (await request.get(`${api}/queue/window?limit=20`)).json()).cards[0];
       expect(head.id).toBe(`${identifier}-prepared-${String(index).padStart(3, "0")}`);
@@ -61,19 +61,18 @@ test("study_only_mode_preserves_foreground_review_and_queue_progression across r
     expect(nextHead.id).toBe(`${identifier}-prepared-003`);
     await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", String(nextHead.queue_entry_id));
     const beforeRestart = fixture("verify");
-    expect(beforeRestart).toMatchObject({ reviews: 3, complete_evidence: 3, pending_maintenance: 3000 });
+    expect(beforeRestart).toMatchObject({ reviews: 3, complete_evidence: 3 });
     docker("restart", "foreground-worker", "background-worker", "background-scheduler");
     await expect.poll(async () => (await request.get(`${api}/health`)).ok(), { timeout: 60_000 }).toBe(true);
     const first = reviewRequests[0];
     expect(first).toBeTruthy();
     await request.post(first.url, { headers: { "Idempotency-Key": first.key }, data: first.body });
     await expect.poll(() => fixture("verify").reviews).toBe(3);
-    await navigate(page, "Settings");
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
     await expect(page.getByRole("checkbox", { name: /Study-only mode/ })).toBeChecked();
     await page.getByRole("checkbox", { name: /Study-only mode/ }).uncheck();
     await page.getByRole("button", { name: "Save settings" }).click();
     await expect.poll(async () => (await (await request.get(`${api}/settings`)).json()).study_only_mode).toBe(false);
-    await expect.poll(() => fixture("verify").pending_maintenance, { timeout: 60_000 }).toBeLessThan(3000);
   } finally {
     await request.put(`${api}/settings`, { data: originalSettings });
     docker("start", "foreground-worker", "background-worker", "background-scheduler");

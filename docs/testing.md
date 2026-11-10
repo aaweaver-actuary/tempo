@@ -313,6 +313,18 @@ Schema version 2 adds start-ordered `details` beneath the unchanged required sta
 
 ## Deployment lifecycle selection
 
+For the explicit schema-63 current-upgrade profile, use
+`make docker-lifecycle-current` / `--mode lifecycle-current`, with the pinned
+schema-62 source/artifact prerequisites below. Its distinct
+`deployment_lifecycle_current` stage performs a real historical upgrade to 61,
+the destructive cut to 62 with history/backup/witness checks, then the supported
+62-to-63 upgrade with an exact saved receipt, legal next card and compatible
+repeat. It excludes the deep historical fault matrix; reuse of its separately
+source-bound evidence must be stated. `--mode lifecycle` retains that full
+matrix. A current-profile report cannot qualify the full historical mode or
+replace an existing complete CI plan. No 30-transition recovery assertions,
+workload, timeout or resource limits change.
+
 `schema_migrations`, `priority_recovery` and `background_diagnostics` run in ordinary durability and full mode. `deployment_lifecycle` invokes the unchanged complete `verifyTempoCliLifecycle()` rehearsal in full mode and independent `--mode lifecycle` / `make docker-lifecycle`. Full mode still quiesces and restores its parent applications around the child rehearsal. The ordinary durability mode and legacy `--skip-browser` alias omit this deployment rehearsal; they retain every direct database proof. Historical timing reports may still use the former combined `schema_upgrade` name.
 
 Within that existing child lifetime, `test_tempo_cli_abandon_orphan_exact_plan_apply_retry_preserves_history` uses the registered Node abandonment command after the real upgrade reaches readiness. When executed, its fixed synthetic orphan checks default plan, checked apply, exact retry and specific stale-hash, revision, target-registration and changed-payload refusals, while retaining origin/receipt bytes, FSRS, reviews and snapshots with zero grades. Only the disposable historical fixture seeds the orphan; normal whole-stack teardown removes its retained data. This synthetic case does not authorize abandonment of a user attempt or replace native owner and visual qualification.
@@ -327,15 +339,58 @@ The hashed plan captures the expected PostgreSQL mode and ordered scenario inven
 
 ## Cache behavior and isolation
 
+Lifecycle selection first runs the source-only
+[`lifecycle-source-preflight`](../scripts/lifecycle-source-preflight.mjs): it
+parses the exact rendered interruption harness and validates an explicitly
+selected historical manifest before admission, temporary secrets or image
+construction. `make docker-lifecycle` runs it before Docker capability checks.
+This does not replace later host, image, schema or history validation.
+
 The PostgreSQL runner invokes the Compose image build once; startup, recovery recreation, and the full-mode fresh study stack explicitly use `--no-build` to reuse those images within the run. Every run still owns fresh project-scoped containers, volumes, network, credentials, and a loopback port. Cleanup remains project-scoped and no production database is reused.
+
+For an explicitly coordinated release attempt, the same parent can produce and
+borrow one exact candidate artifact set across compatible invocations. See
+[release artifact ownership](../scripts/README.md#release-verification-artifact-ownership)
+for the opt-in receipt/owner contract and final scoped cleanup. Borrowing skips
+construction, not applicable maintenance checks or suite scenarios. Every suite
+retains fresh mutable state and its original runtime configuration fingerprint.
+Run the complete selected lifecycle with the explicit historical manifest unset
+to establish automatic lock adoption; an explicit override bypasses that hook.
+Schema 63 additionally requires the pinned detached schema-62 source and local
+artifact lock described there. The selected historical/current profile precedes
+a real 62-to-63 transition and fresh compatible repeat on the same owned target;
+history and exact committed review receipts remain asserted. The optional
+schema-59 managed/shipping continuation to 63 is explicitly unqualified and
+refuses before acquisition; its existing 62-only cases are not removed.
 
 Docker's build context excludes `.tempo-pg-test-secrets-*`, `.dev-copies`, Python bytecode/cache files, and test output. In particular, generated credentials must never enter a `COPY . .` image layer or invalidate an otherwise reusable frontend build layer. Existing local BuildKit cache remains available; this change does not add persistent remote Docker-layer caching.
 
 CI retains npm caching and adds pip downloads plus Rust compiler/dependency caches after toolchain setup. Workflow cancellation is scoped to the same PR or ref, and only superseded PR runs are cancelled. Workflows verify source only; they do not publish GitHub Pages. All full-gate stages and pinned visual/performance settings remain required and unchanged. Vitest worker counts and test isolation are intentionally unchanged pending measurements.
 
+`Dockerfile.web.dockerignore` defines the web context independently of the root
+ignore file. Explicit consumed copies retain the three npm workspaces,
+Rust/Wasm inputs, fixtures, browser sources and public assets; final nested
+exclusions keep credentials, dependencies, generated output and documentation
+outside that context. A context-contract test is not evidence of a real cache
+hit: qualify compilation reuse and representative consumed-input invalidation
+with the managed builder. Retain cache export and cleanup in whole-run costs.
+
+Timing details use fixed command-family labels such as `image_inspection`,
+`compose_configuration` and `container_inventory`, without command arguments.
+The remaining `resource_inspection` label is a catch-all. Nested durations may
+overlap and must not be added to enclosing stages or treated as exclusive
+critical-path savings. Immutable-image batches apply within one existing
+checkpoint; later checkpoints inspect availability again and mutable runtime
+checks remain fresh.
+
 ## Runner regression coverage
 
 `tests/unit/postgres-test-speedups-regressions.test.ts` runs the dependency-free Node suite in `tests/runner/postgres-test-speedups.test.mjs` as part of the regular frontend gate. The same cases can be run directly with `node --test tests/runner/postgres-test-speedups.test.mjs` while editing the harness. The suite checks executable mode selection, read-only plans, failure/cleanup propagation, timings, fail-fast fixtures, and the Make/CI entry points. These harness tests do not replace live PostgreSQL or browser verification.
+
+That wrapper also discovers source-preflight, web-context, historical-acquisition
+and release-candidate contract cases. Immutable checkpoint batching is covered
+by the regular CLI contracts wrapper and runner lane. These cases do not turn
+injected command counts into real Docker performance or assembled acceptance.
 
 ## Historical CI reliability and validation evidence
 

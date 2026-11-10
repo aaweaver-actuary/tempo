@@ -118,6 +118,12 @@ export function postgresCommandTiming(argumentsList) {
         : label === "verify_postgres_backup" ? "backup" : "scenario";
     return { label, category };
   }
+  if (argumentsList[0] === "image" && argumentsList[1] === "inspect") return { label: "image_inspection", category: "inspection" };
+  if (argumentsList[0] === "volume" && ["inspect", "ls"].includes(argumentsList[1])) return { label: "volume_inspection", category: "inspection" };
+  if (argumentsList[0] === "context" || ["info", "version"].includes(argumentsList[0])) return { label: "daemon_context", category: "inspection" };
+  if (argumentsList[0] === "ps" || (argumentsList[0] === "container" && ["ls", "inspect"].includes(argumentsList[1]))) return { label: "container_inventory", category: "inspection" };
+  if (argumentsList[0] === "compose" && argumentsList.includes("config")) return { label: "compose_configuration", category: "inspection" };
+  if (argumentsList[0] === "compose" && argumentsList.includes("ps")) return { label: "container_inventory", category: "inspection" };
   if (argumentsList.includes("build")) return { label: "image_build", category: "build" };
   if (argumentsList.includes("pull")) return { label: "dependency_images", category: "build" };
   if (argumentsList.includes("down")) return { label: "compose_teardown", category: "cleanup" };

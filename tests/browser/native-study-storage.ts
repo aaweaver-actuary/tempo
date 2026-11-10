@@ -1,4 +1,5 @@
 import type { Page } from "@playwright/test";
+import type { IntentRecord } from "@tempo/browser-intents";
 
 /** Assert the new owner's durable settlement; retained legacy sources are not a pending-work projection. */
 export function connectedReviewState(page: Page, attemptId: string): Promise<string> {
@@ -19,7 +20,7 @@ export function connectedReviewState(page: Page, attemptId: string): Promise<str
   }), attemptId);
 }
 
-export function nativeStudyRecords(page: Page): Promise<Array<{ key: string; kind: string; state: string; requestId: string; payload: unknown; receipt?: unknown }>> {
+export function nativeStudyRecords(page: Page): Promise<IntentRecord[]> {
   return page.evaluate(() => new Promise((resolve, reject) => {
     const opening = indexedDB.open("tempo-study-intents", 1);
     let absent = false;

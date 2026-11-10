@@ -45,3 +45,9 @@ it("Retired Learning registrations fail before runtime selection", () => {
   expect(result.stdout).toMatch(/# cancelled 0\b/);
   expect(result.stdout).toMatch(/# skipped 0\b/);
 }, 60_000);
+
+it("Immutable lifecycle image checkpoints retain complete fresh identity checks", () => {
+  const result = spawnSync(process.execPath, ["--test", "tests/runner/tempo-runtime-image-inspection.test.mjs"], { encoding: "utf8" });
+  expect(result.status, result.stdout + result.stderr).toBe(0);
+  expect(result.stdout).toMatch(/# fail 0\b|fail 0\b/);
+}, 60_000);
