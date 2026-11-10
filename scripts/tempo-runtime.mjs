@@ -39,6 +39,27 @@ export function configurationFingerprint(configured) {
   return createHash("sha256").update(JSON.stringify(stable)).digest("hex");
 }
 
+// Reuse an immutable inspection only inside one authority checkpoint. Later
+// checkpoints call this again because an image can disappear from the daemon.
+export async function inspectImmutableImageSet(docker, ids) {
+  const distinct = [...new Set(ids)];
+  if (distinct.some(id => !/^sha256:[0-9a-f]{64}$/.test(id)))
+    throw new Error("Immutable image identity is invalid.");
+  if (!distinct.length) return new Map();
+  const result = await docker(["image", "inspect", ...distinct]);
+  if (result.code !== undefined && result.code !== 0 || result.status !== undefined && result.status !== 0)
+    throw new Error("Immutable image inspection failed.");
+  let values;
+  try { values = JSON.parse(result.stdout); } catch { throw new Error("Immutable image inspection is malformed."); }
+  if (!Array.isArray(values) || values.length !== distinct.length) throw new Error("Immutable image inspection is incomplete.");
+  const found = new Map();
+  for (const value of values) {
+    if (!value || !distinct.includes(value.Id) || found.has(value.Id)) throw new Error("Immutable image inspection has unexpected or duplicate identity.");
+    found.set(value.Id, value);
+  }
+  return found;
+}
+
 // Only the exact migration with a version-scoped comparator may cross this cut.
 export function cut62WitnessName(guard) {
   const crossing = guard.starting_schema < 62 && guard.intended_schema >= 62;
@@ -348,12 +369,11 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
             syncManagedImageInput(file) !== receipt.files[file])
           throw new Error('Original managed image input changed; keep writers stopped.');
       }
+      const inspectedImages = await inspectImmutableImageSet(docker, Object.values(receipt.images));
       for (const [name, id] of Object.entries(receipt.images)) {
-        if (!/^sha256:[0-9a-f]{64}$/.test(id)) throw new Error('Original managed image identity is invalid.');
-        const inspected = JSON.parse((await docker(['image','inspect',id])).stdout);
-        if (!Array.isArray(inspected) || inspected.length!==1 || inspected[0].Id!==id ||
-            (inspected[0].Config?.Labels?.['org.opencontainers.image.revision'] ?? null)!==receipt.image_revisions[name] ||
-            (configuration.services[name].build && inspected[0].Config?.Labels?.['org.opencontainers.image.revision']!==revision))
+        const inspected = inspectedImages.get(id);
+        if ((inspected.Config?.Labels?.['org.opencontainers.image.revision'] ?? null)!==receipt.image_revisions[name] ||
+            (configuration.services[name].build && inspected.Config?.Labels?.['org.opencontainers.image.revision']!==revision))
           throw new Error('Original managed image is unavailable or changed; keep writers stopped.');
       }
       assertManagedTargetLock(stateDirectory,lock);
@@ -460,12 +480,10 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
       files[file]=syncManagedImageInput(file);
     }
     const imageRevisions={};
+    const inspectedImages=await inspectImmutableImageSet(docker,Object.values(images));
     for(const [name,id] of Object.entries(images)) {
-      if(!/^sha256:[0-9a-f]{64}$/.test(id))throw new Error('Managed image identity is invalid.');
-      const inspected=JSON.parse((await docker(['image','inspect',id])).stdout);
-      if(!Array.isArray(inspected)||inspected.length!==1||inspected[0].Id!==id)
-        throw new Error('Managed image identity is unavailable.');
-      imageRevisions[name]=inspected[0].Config?.Labels?.['org.opencontainers.image.revision']??null;
+      const inspected=inspectedImages.get(id);
+      imageRevisions[name]=inspected.Config?.Labels?.['org.opencontainers.image.revision']??null;
       if(configuration.services[name].build&&imageRevisions[name]!==revision)
         throw new Error('Managed image revision differs.');
     }
