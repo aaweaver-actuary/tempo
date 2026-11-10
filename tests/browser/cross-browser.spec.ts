@@ -59,7 +59,7 @@ test("Repertoire import dialog restores focus across browser engines", async ({
 test("tablet menu Escape restores the visible navigation trigger", async ({page}) => {
   await page.setViewportSize({width:768,height:1024}); await prepareVisualUI(page);
   const menu=page.locator(".tablet-navigation"); await menu.click();
-  await page.locator("#workspace-menu").getByRole("button",{name:"Settings",exact:true}).focus();
+  await page.locator("#workspace-menu").getByRole("button",{name:"Train",exact:true}).focus();
   await page.keyboard.press("Escape");
   await expect(menu).toBeFocused();
   await expect(page.locator("#workspace-menu")).toHaveCount(0);
