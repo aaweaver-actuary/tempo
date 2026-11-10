@@ -327,12 +327,46 @@ refuse inherited host/TLS overrides instead of redirecting the target. Registry
 reacquisition requires access to the private GHCR packages. An explicitly
 selected local-seed lock never pulls or silently rebuilds a missing image.
 
+Schema 63 requires the supported intermediate schema-62 release; it cannot
+cross the destructive schema-62 cut directly from 59/61. Provide a clean,
+registered **detached task worktree** at
+`0765a54e4a404d187f044dde2f902075b4a5e038` through
+`TEMPO_LIFECYCLE_SCHEMA62_ROOT`, plus the absolute
+`TEMPO_LIFECYCLE_SCHEMA62_IMAGES` path to the reviewed
+[`schema62-linux-arm64` local lock](../config/lifecycle-images/schema62-linux-arm64.json).
+For example, after creating that task-owned worktree and satisfying its existing
+module prerequisites:
+
+```sh
+TEMPO_LIFECYCLE_SCHEMA62_ROOT=/absolute/task-owned/schema62 \
+TEMPO_LIFECYCLE_SCHEMA62_IMAGES="$PWD/config/lifecycle-images/schema62-linux-arm64.json" \
+make docker-lifecycle
+```
+
+The parent supplies the default image-lock path for direct Node invocations;
+the standalone Make source check requires both explicit paths. Main/branch
+checkouts, dirty or wrong source, missing images and changed target identities
+fail closed. These schema-62 images are borrowed and never deleted by the test.
+The current runtime runs the original historical-to-62 rehearsal against that
+source/artifact binding; real historical CLI children retain their source pin.
+Only afterward does a fresh current target binding perform the supported
+62-to-63 upgrade and compatible repeat on the same owned data identity. The
+original history, committed review identity and exact receipt must survive,
+and the resulting queue must contain a legal playable successor. Original
+guards and receipts are not rewritten to escape holds.
+
+The optional schema-59 managed/shipping continuation to schema 63 remains
+unqualified and refuses before acquisition. Its original schema-62 cases and
+guards remain; this is a disclosed compatibility limit, not a passing check or
+waiver. No schema-62 registry publication is implied by the local bridge lock.
+
 ```mermaid
 flowchart TD
     Runner["Existing selected PostgreSQL suite invocation"] --> Inputs["Cheap source and selected-input checks"]
     Inputs --> Budget["Existing resource admission and Study quiet boundary"]
     Budget -->|"selected schema-61 lifecycle"| Historical["Historical lock: verify local IDs or pull exact registry artifact"]
     Historical --> Manifest["Run-owned complete historical manifest"]
+    Budget -->|"schema 63"| Bridge["Borrow pinned detached schema-62 source and immutable role images"]
     Budget -->|"produce"| Producer["Release producer: exact recipe build and maintenance checks"]
     Producer --> Artifacts["Release-owned immutable images and complete build receipt"]
     Budget -->|"borrow"| Borrower["Compatible borrower: verify source, recipe, daemon and image availability"]
@@ -340,6 +374,7 @@ flowchart TD
     Borrower --> Runtime["Fresh suite aliases and original per-target runtime fingerprint"]
     Producer --> Runtime
     Manifest -.->|"verified manifest transfer"| Runtime
+    Bridge -.->|"historical rehearsal then fresh same-target 62-to-63 binding"| Runtime
     Runtime --> SuiteCleanup["Suite-owned containers, volumes, network, secrets and aliases cleanup"]
     ReleaseCleanup["Release owner after all consumers finish"] -->|"remove verified retained aliases"| Artifacts
 ```

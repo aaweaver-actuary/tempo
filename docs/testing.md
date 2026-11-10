@@ -344,6 +344,12 @@ construction, not applicable maintenance checks or suite scenarios. Every suite
 retains fresh mutable state and its original runtime configuration fingerprint.
 Run the complete selected lifecycle with the explicit historical manifest unset
 to establish automatic lock adoption; an explicit override bypasses that hook.
+Schema 63 additionally requires the pinned detached schema-62 source and local
+artifact lock described there. The original historical rehearsal precedes a
+real 62-to-63 transition and fresh compatible repeat on the same owned target;
+history and exact committed review receipts remain asserted. The optional
+schema-59 managed/shipping continuation to 63 is explicitly unqualified and
+refuses before acquisition; its existing 62-only cases are not removed.
 
 Docker's build context excludes `.tempo-pg-test-secrets-*`, `.dev-copies`, Python bytecode/cache files, and test output. In particular, generated credentials must never enter a `COPY . .` image layer or invalidate an otherwise reusable frontend build layer. Existing local BuildKit cache remains available; this change does not add persistent remote Docker-layer caching.
 
