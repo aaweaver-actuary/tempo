@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "kind": "local-seed",
+  "revision": "0765a54e4a404d187f044dde2f902075b4a5e038",
+  "tree": "5a48d33a64180be6cfe67e6bdd4996ddeed4bfe0",
+  "platform": "linux/arm64",
+  "provenance": {
+    "receipt": "https://github.com/aaweaver-actuary/tempo/issues/980#issuecomment-6769693285",
+    "schema_alias": "API and test schema use the same backend Dockerfile and no distinct target or build args; schema supplies its original command and read-only source.",
+    "limitations": [
+      "Borrowed immutable artifacts; preserve all shared source tags and images.",
+      "Source tree equivalence is not immutable image identity equivalence.",
+      "No schema-62 registry publication claimed."
+    ]
+  },
+  "images": {
+    "api": "sha256:5ab4bad33ec49f6254a4c14faa463bbec681e2fc7d5b716b539290f55f5ab3d6",
+    "web": "sha256:91038857ea25affc3d1c5d4a9ba14a8245876734243e9404c99d5c9fcc0de70a",
+    "migration": "sha256:08da91f3850a98a402ce00c4a8e80133bc1c1c5cf41bb921b3ab15ff6c679268",
+    "foreground-worker": "sha256:ad1a759d027ea3fc1b4df4f49ca26b92b2fd724c5c693a42835f6deafb05585e",
+    "background-worker": "sha256:39aed421a1dfeff71b2752558bbf79e2919c6e9dbddb664ae24afeaace002211",
+    "background-scheduler": "sha256:45d3b078db5bbd2ce522bf21aa8b1bbf9b58eb6cd2b8828cc404fccf705c2860",
+    "game-feedback-worker": "sha256:743e4c9eb219b46e4a4dda1398083a1aab147f31837e4500a7f401bb69238454",
+    "schema": "sha256:5ab4bad33ec49f6254a4c14faa463bbec681e2fc7d5b716b539290f55f5ab3d6"
+  }
+}

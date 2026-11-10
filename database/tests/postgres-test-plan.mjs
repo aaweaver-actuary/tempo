@@ -3,10 +3,13 @@ export function postgresTestStages({ mode, nativeChecks = [] }) {
   if (!Array.isArray(nativeChecks) || new Set(nativeChecks).size !== nativeChecks.length
     || nativeChecks.some(check => !['redis-fixture-isolation'].includes(check))
     || nativeChecks.length && !['study','browser'].includes(mode)) throw new Error('Invalid native PostgreSQL selection');
-  if (!["full", "browser", "study", "durability", "lifecycle"].includes(mode)) throw new Error(`Unknown PostgreSQL test mode: ${mode}`);
+  if (!["full", "browser", "study", "durability", "lifecycle", "lifecycle-current"].includes(mode)) throw new Error(`Unknown PostgreSQL test mode: ${mode}`);
   if (mode === "study") return ["compose_config", "image_build", "startup", "service_health", "study_queue_receipts", "study_only", "study_durability", "study_isolation", ...nativeChecks, "browser", "cleanup"];
   if (mode === "lifecycle") {
     return ["compose_config", "image_build", "maintenance_cli", "deployment_lifecycle", "cleanup"];
+  }
+  if (mode === "lifecycle-current") {
+    return ["compose_config", "image_build", "maintenance_cli", "deployment_lifecycle_current", "cleanup"];
   }
   const durabilityStages = [
     "background_budget", "operation_recovery", "schema_migrations", "background_diagnostics",

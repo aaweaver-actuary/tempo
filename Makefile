@@ -5,7 +5,7 @@
 # Full order, with permissions checked before any test family:
 #  0 Docker + loopback + checkout bind-mount preflight
 #  1 unit                         7 lint
-#  2 defense-engine smoke         8 typecheck
+#  2 backend checks         8 typecheck
 #  3 Python backend tests         9 WASM build
 #  4 Rust format                 10 local frontend build
 #  5 Rust lint                   11 PostgreSQL durability + regular browser matrix
@@ -15,9 +15,9 @@
 
 .DEFAULT_GOAL := help
 .NOTPARALLEL:
-.PHONY: help plan preflight slow-tests fast python backend rust integration ui browser visual perf full docker-durability docker-lifecycle unit-file python-file ui-file view rust-case
+.PHONY: help plan preflight slow-tests fast python backend rust integration ui browser visual perf full docker-durability docker-lifecycle docker-lifecycle-current unit-file python-file ui-file view rust-case
 
-VERIFY_TARGETS := preflight fast python backend rust integration ui browser visual perf full docker-durability docker-lifecycle unit-file python-file ui-file view rust-case
+VERIFY_TARGETS := preflight fast python backend rust integration ui browser visual perf full docker-durability docker-lifecycle docker-lifecycle-current unit-file python-file ui-file view rust-case
 SELECTED_VERIFY_TARGETS := $(filter $(VERIFY_TARGETS),$(MAKECMDGOALS))
 ifneq ($(words $(SELECTED_VERIFY_TARGETS)),0)
 ifneq ($(words $(SELECTED_VERIFY_TARGETS)),1)
@@ -39,6 +39,7 @@ help:
 	@printf '%s\n' 'Browser scopes exclude recovery/backup checks; make full still requires them all.'
 	@printf '%s\n' 'Docker recovery: make docker-durability (ordinary PostgreSQL durability without browser/lifecycle)'
 	@printf '%s\n' 'Deployment rehearsal: make docker-lifecycle (complete CLI recovery/deployment lifecycle)'
+	@printf '%s\n' 'Historical schema 63 upgrade: make docker-lifecycle-current (schema 63 source only)'
 	@printf '%s\n' 'Focused files: make unit-file FILE=tests/unit/example.test.ts'
 	@printf '%s\n' '               make python-file FILE=backend/tests/test_services.py'
 	@printf '%s\n' '               make ui-file FILE=games-board-context.spec.ts'
@@ -92,8 +93,14 @@ docker-durability:
 	node database/tests/test-postgres-docker.mjs --mode durability
 
 docker-lifecycle:
+	node scripts/lifecycle-source-preflight.mjs
 	node scripts/check-test-capabilities.mjs --docker --loopback --workspace-mount
 	node database/tests/test-postgres-docker.mjs --mode lifecycle
+
+docker-lifecycle-current:
+	node scripts/lifecycle-source-preflight.mjs --current63
+	node scripts/check-test-capabilities.mjs --docker --loopback --workspace-mount
+	node database/tests/test-postgres-docker.mjs --mode lifecycle-current
 
 unit-file:
 	@test -n "$(FILE)" || { echo 'Set FILE=tests/unit/<name>.test.ts'; exit 2; }
