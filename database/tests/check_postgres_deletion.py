@@ -64,7 +64,6 @@ def main_check():
     operation_ids = []
     queue_snapshot = None
     main_ids = []
-    game_task_snapshot = None
     retained_existed = False
 
     def command(name, payload):
@@ -315,8 +314,6 @@ def main_check():
             queue_snapshot = snapshot_queue_environment(database, (today, tomorrow))
             main_ids = [row[0] for row in database.execute("SELECT id FROM repertoires WHERE is_main=1")]
             retained_existed = database.execute("SELECT 1 FROM repertoires WHERE id=?", (RETAINED_REPERTOIRE_ID,)).fetchone() is not None
-            game_task = database.execute("SELECT * FROM background_tasks WHERE kind='repertoire_game_refresh' AND deduplication_key='all'").fetchone()
-            game_task_snapshot = (dict(game_task), [dict(row) for row in database.execute("SELECT * FROM background_task_events WHERE task_id=? ORDER BY id", (game_task["id"],))]) if game_task else None
             for repertoire_id in repertoire_ids:
                 database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,?,?)", (repertoire_id, repertoire_id, "synthetic deletion proof", today))
             database.execute("UPDATE repertoires SET is_main=CASE WHEN id=? THEN 1 ELSE 0 END", (other,))
@@ -485,11 +482,6 @@ def main_check():
             if not retained_existed:
                 database.execute("DELETE FROM repertoires WHERE id=?", (RETAINED_REPERTOIRE_ID,))
             database.execute_native("UPDATE repertoires SET is_main=CASE WHEN id=ANY(%s) THEN 1 ELSE 0 END", (main_ids,))
-            database.execute("DELETE FROM background_tasks WHERE kind='repertoire_game_refresh' AND deduplication_key='all'")
-            if game_task_snapshot:
-                for table, rows in (("background_tasks", [game_task_snapshot[0]]), ("background_task_events", game_task_snapshot[1])):
-                    for row in rows:
-                        database.execute(f"INSERT INTO {table}({','.join(row)}) VALUES({','.join('?' for _ in row)})", tuple(row.values()))
             if queue_snapshot:
                 restore_queue_environment(database, queue_snapshot)
 

@@ -256,7 +256,7 @@ def test_italian_http_uses_authoritative_plan_or_preserves_genuine_conflict(
     monkeypatch.setattr(
         main.queue_projection_storage, "issued_head", lambda *args: None
     )
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+
     monkeypatch.setattr(
         command_dispatch, "dispatch_command", lambda *args, **options: result
     )

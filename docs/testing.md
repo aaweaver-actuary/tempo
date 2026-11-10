@@ -289,7 +289,7 @@ The focused SQLite snapshot, validation, import-fidelity, source-nonmutation, de
 | SQLite runtime service/browser specifics | `make legacy-sqlite` |
 | SQLite snapshot integrity, import fidelity, and safety guards | Focused SQLite unit/backend regressions remain in `make full` |
 
-Use `node database/tests/test-postgres-docker.mjs --list` or `node scripts/test-docker.mjs --list` to inspect runner stages without starting a stack. The full gate always includes the PostgreSQL browser matrix.
+Use `node database/tests/test-postgres-docker.mjs --list` to inspect runner stages without starting a stack. The full gate always includes the PostgreSQL browser matrix.
 
 ## PostgreSQL execution modes and timings
 

@@ -15,9 +15,9 @@
 
 .DEFAULT_GOAL := help
 .NOTPARALLEL:
-.PHONY: help plan preflight slow-tests fast python backend rust integration ui browser visual perf full docker-durability docker-lifecycle legacy-sqlite unit-file python-file ui-file view rust-case
+.PHONY: help plan preflight slow-tests fast python backend rust integration ui browser visual perf full docker-durability docker-lifecycle unit-file python-file ui-file view rust-case
 
-VERIFY_TARGETS := preflight fast python backend rust integration ui browser visual perf full docker-durability docker-lifecycle legacy-sqlite unit-file python-file ui-file view rust-case
+VERIFY_TARGETS := preflight fast python backend rust integration ui browser visual perf full docker-durability docker-lifecycle unit-file python-file ui-file view rust-case
 SELECTED_VERIFY_TARGETS := $(filter $(VERIFY_TARGETS),$(MAKECMDGOALS))
 ifneq ($(words $(SELECTED_VERIFY_TARGETS)),0)
 ifneq ($(words $(SELECTED_VERIFY_TARGETS)),1)
@@ -39,7 +39,6 @@ help:
 	@printf '%s\n' 'Browser scopes exclude recovery/backup checks; make full still requires them all.'
 	@printf '%s\n' 'Docker recovery: make docker-durability (ordinary PostgreSQL durability without browser/lifecycle)'
 	@printf '%s\n' 'Deployment rehearsal: make docker-lifecycle (complete CLI recovery/deployment lifecycle)'
-	@printf '%s\n' 'Optional compatibility: make legacy-sqlite (full SQLite runtime/browser runner)'
 	@printf '%s\n' 'Focused files: make unit-file FILE=tests/unit/example.test.ts'
 	@printf '%s\n' '               make python-file FILE=backend/tests/test_services.py'
 	@printf '%s\n' '               make ui-file FILE=games-board-context.spec.ts'
@@ -96,10 +95,6 @@ docker-lifecycle:
 	node scripts/lifecycle-source-preflight.mjs
 	node scripts/check-test-capabilities.mjs --docker --loopback --workspace-mount
 	node database/tests/test-postgres-docker.mjs --mode lifecycle
-
-legacy-sqlite:
-	node scripts/check-test-capabilities.mjs --docker --loopback --workspace-mount
-	node scripts/test-docker.mjs
 
 unit-file:
 	@test -n "$(FILE)" || { echo 'Set FILE=tests/unit/<name>.test.ts'; exit 2; }

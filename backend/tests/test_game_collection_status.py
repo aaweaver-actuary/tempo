@@ -28,7 +28,6 @@ for source in (
     "contracts/game-evidence/src",
     "contracts/analysis-jobs/src",
     "services/learning/application/src",
-    "services/learning/runtime/src",
     "services/learning/remediation/src",
 ):
     sys.path.insert(0, str(ROOT / source))

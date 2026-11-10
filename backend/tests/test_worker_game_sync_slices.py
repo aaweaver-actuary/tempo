@@ -3,7 +3,6 @@
 import os
 import subprocess
 import sys
-import pytest
 
 
 def run_fresh(body):
@@ -111,82 +110,5 @@ except ImportError as error:
     assert str(error) == 'synthetic missing slice'
 else: raise AssertionError('missing slice was hidden')
 assert events == [('fence', claimed), ('failed', 'retained', 9, 'original-lease', 'synthetic missing slice')]
-"""
-    )
-
-
-SLICES = [
-    ("game_derivation_positions", "postgres_game_derivation"),
-    ("game_derivation_compare", "postgres_game_repertoire"),
-    ("game_derivation_findings", "postgres_game_findings"),
-    ("game_derivation_misses", "postgres_game_misses"),
-    ("game_derivation_events", "postgres_game_events"),
-    ("game_derivation_features", "postgres_game_features"),
-    ("game_derivation_priorities", "postgres_game_priorities"),
-]
-
-
-@pytest.mark.parametrize("kind,module", SLICES)
-def test_derivation_retained_slice_preserves_fence_and_owner_task(kind, module):
-    run_fresh(
-        SETUP
-        + f"""
-import importlib
-owner = importlib.import_module('app.services.{module}')
-observed = []
-owner.connection = lambda **_: nullcontext(object())
-owner.background_lease = lambda: nullcontext()
-owner.background_read_connection = lambda: nullcontext(object())
-owner.lock_current_slice = lambda db, task: observed.append(task) or False
-if '{module}' == 'postgres_game_derivation': owner.storage.game_moves = lambda *_: None
-if '{module}' == 'postgres_game_repertoire':
-    owner.game_scope_generation = lambda *_a, **_kw: 1
-    owner._prepared_comparison = lambda *_: (None, None, [])
-if '{module}' == 'postgres_game_findings':
-    owner.game_scope_generation = lambda *_a, **_kw: 1
-    owner.storage.comparison_generation = lambda *_: 1
-    owner.storage.prepared_item = lambda *_: None
-    owner._prepared_items = lambda *_: (None, [])
-if '{module}' == 'postgres_game_misses': owner.storage.next_miss_event = lambda *_: None
-if '{module}' == 'postgres_game_events': owner.refresh_gameplay_events = lambda *_a, **_kw: []
-if '{module}' == 'postgres_game_features': owner.refresh_game_features = lambda *_a, **_kw: None
-if '{module}' == 'postgres_game_priorities': owner.storage.game_color = lambda *_: None
-claimed = {{'kind':'{kind}', 'id':'retained', 'generation':9, 'lease_token':'lease',
-           'payload':{{'game_id':'game', 'derivation_version':3, 'account':'alice'}}}}
-fences = []
-tasks.current_delivery = lambda value: fences.append(value) or True
-assert tasks._execute_claimed_background_slice(claimed, None) is False
-assert fences == [claimed] and fences[0] is claimed
-assert observed == [claimed] and observed[0] is claimed
-"""
-    )
-
-
-@pytest.mark.parametrize("kind,module", SLICES)
-def test_derivation_stale_or_missing_slice_retains_failure_identity(kind, module):
-    run_fresh(
-        f"""
-import importlib.abc, sys
-class Deny(importlib.abc.MetaPathFinder):
-    def find_spec(self, fullname, path=None, target=None):
-        if fullname == 'app.services.{module}': raise ImportError('missing slice')
-sys.meta_path.insert(0, Deny())
-"""
-        + SETUP
-        + f"""
-claimed = {{'kind':'{kind}', 'id':'retained', 'generation':9, 'lease_token':'lease', 'payload':{{}}}}
-events = []
-tasks.current_delivery = lambda value: events.append(('fence', value)) or False
-tasks.record_stale_delivery = lambda value: events.append(('stale', value))
-assert tasks._execute_claimed_background_slice(claimed, None) is False
-assert [event[0] for event in events] == ['fence', 'stale']
-assert 'app.services.{module}' not in sys.modules
-events.clear()
-tasks.current_delivery = lambda value: events.append(('fence', value)) or True
-tasks.fail_task = lambda ident, generation, token, error: events.append(('failed', ident, generation, token, str(error)))
-try: tasks._execute_claimed_background_slice(claimed, None)
-except ImportError as error: assert str(error) == 'missing slice'
-else: raise AssertionError('missing slice was hidden')
-assert events == [('fence', claimed), ('failed', 'retained', 9, 'lease', 'missing slice')]
 """
     )

@@ -409,31 +409,28 @@ try:
         print(json.dumps({"task_id": queued["id"], "generation": queued["generation"]}))
     elif sys.argv[1] == "step-integrity":
         from tempo_legacy_database.adapters import postgres_store
-        from app.services.opening_graph_recovery import claim_exact_task
+        from app.services.durable_tasks import claim_task
+        from tempo_legacy_database.adapters.durable_tasks import storage as task_storage
         from app.services.postgres_integrity import execute_postgres_integrity_slice
         from app.services.redis_admission_gate import background_lease
 
         postgres_store.prepare_authoritative_background_pool()
         complete, phases = False, []
-        # A pinned fixture maintenance unit uses the actual integrity handler;
+        # The owned fixture uses the ordinary durable claim and integrity handler;
         # it never writes completion/certificate flags or changes global mode.
         for _ in range(16):
-            with (
-                background_lease(),
-                postgres_store.connection(background=True) as database,
-            ):
-                task = claim_exact_task(
-                    database,
-                    sys.argv[2],
-                    "integrity_scan",
-                    sys.argv[3],
-                    int(sys.argv[4]),
-                    day=sys.argv[5],
-                    graph_generation=int(sys.argv[6]),
-                )
+            with background_lease():
+                task = claim_task("integrity_scan")
             if task is None:
+                with postgres_store.connection(read_only=True, background=True) as database:
+                    retained = task_storage.task_by_id(database, (sys.argv[3],))
+                assert retained is not None and retained["state"] == "complete"
                 complete = True
                 break
+            assert task["id"] == sys.argv[3] and task["generation"] == int(sys.argv[4])
+            assert task["payload"]["repertoire_id"] == sys.argv[2]
+            assert task["payload"]["local_day"] == sys.argv[5]
+            assert task["payload"]["graph_generation"] == int(sys.argv[6])
             phases.append(task["phase"])
             execute_postgres_integrity_slice(task)
         print(json.dumps({"complete": complete, "phases": phases}))

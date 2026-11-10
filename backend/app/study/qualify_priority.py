@@ -159,7 +159,6 @@ def main(arguments=()):
         "packages/evidence-math/src",
         "packages/scheduling/src",
         "packages/chess-core/src",
-        "services/learning/runtime/src",
         "services/learning/application/src",
         "services/learning/remediation/src",
         "contracts/game-evidence/src",
@@ -168,8 +167,6 @@ def main(arguments=()):
         "packages/board-ui/src",
         "packages/game-actions/src",
         "packages/study-session/src",
-        "contracts/content-publication/src",
-        "contracts/learning/src",
         "contracts/consumer-examples/src",
     )
     paths = [ROOT / source for source in sources]

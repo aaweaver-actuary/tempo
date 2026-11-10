@@ -12,7 +12,7 @@ export function parsePostgresTestOptions(argumentsList, environment = process.en
     if (argument === "--list") options.list = true;
     else if (argument === '--native-check') {
       const check = argumentsList[++argumentIndex];
-      if (!['redis-fixture-isolation', 'defensive-pause'].includes(check) || options.nativeChecks?.includes(check)) throw new Error('Unknown or duplicate native check');
+      if (!['redis-fixture-isolation'].includes(check) || options.nativeChecks?.includes(check)) throw new Error('Unknown or duplicate native check');
       (options.nativeChecks ??= []).push(check);
     }
     else if (argument === "--skip-browser") options.skipBrowser = true;

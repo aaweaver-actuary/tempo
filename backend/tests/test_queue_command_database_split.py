@@ -211,7 +211,6 @@ def test_internal_readiness_queries_return_day_receipt_and_queued_presence(
     queued, receipt
 ):
     import sqlite3
-    from tempo_learning_database.adapters import queue_commands as learning_storage
     from tempo_legacy_database.adapters.lifecycle import refresh_requests
 
     with sqlite3.connect(":memory:") as database:
@@ -235,7 +234,6 @@ def test_internal_readiness_queries_return_day_receipt_and_queued_presence(
             )
         projections = [
             storage.current_projection(database, "2026-10-21", False),
-            learning_storage.refresh_projection(database, "2026-10-21", False),
             refresh_requests.daily_queue_projection(database, "2026-10-21"),
         ]
         for projection in projections:
@@ -296,6 +294,7 @@ def test_legacy_issuance_owner_facts_are_fenced_before_card_locks(
         "lock_queue_date_for_position",
         lambda db, day: events.append("day"),
     )
+    monkeypatch.setattr(queue_commands.queue_storage, "retired_issuance_target", lambda *args: False)
     monkeypatch.setattr(storage, "issued_origin", lambda *args: True)
     monkeypatch.setattr(storage, "prepare_queue_head", lambda *args: lambda day: None)
     result = queue_commands.issue_queue_head(database, payload)

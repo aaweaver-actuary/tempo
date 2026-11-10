@@ -5,15 +5,11 @@ COPY backend/requirements.txt .
 COPY packages/scheduling /packages/scheduling
 COPY packages/chess-core /packages/chess-core
 COPY packages/evidence-math /packages/evidence-math
-COPY contracts/learning-transfer /contracts/learning-transfer
 COPY services/learning/application /services/learning/application
-COPY services/learning/runtime /services/learning/runtime
 COPY services/learning/remediation /services/learning/remediation
-COPY contracts/content-publication /contracts/content-publication
 COPY contracts/game-evidence /contracts/game-evidence
-COPY database/tempo_learning_database /database/tempo_learning_database
 COPY database/tempo_remediation_database /database/tempo_remediation_database
-RUN pip install --no-cache-dir -r requirements.txt /packages/scheduling /packages/chess-core /packages/evidence-math /contracts/learning-transfer /services/learning/application /services/learning/remediation /services/learning/runtime /contracts/content-publication /contracts/game-evidence
+RUN pip install --no-cache-dir -r requirements.txt /packages/scheduling /packages/chess-core /packages/evidence-math /services/learning/application /services/learning/remediation /contracts/game-evidence
 # These pure source libraries share already-pinned chess/Pydantic dependencies.
 # Keep their bounded adoption after the existing dependency layer so a feedback
 # source change does not reinstall dependencies or rebuild optional runtimes.

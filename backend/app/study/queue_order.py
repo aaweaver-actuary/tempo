@@ -5,7 +5,7 @@ import hashlib
 
 from tempo_legacy_database.adapters.study.review import storage
 from tempo_legacy_database.adapters.frozen_order import activation
-from tempo_learning_runtime.queue_ordering import (
+from app.study.policy.queue_ordering import (
     queue_order_provenance,
     preserved_queue_fingerprint,
 )

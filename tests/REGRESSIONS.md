@@ -6908,7 +6908,7 @@ scoped preparation/output bound does not qualify the unchanged shared
 Sound cues and repeated puzzle setup (November 10, 2026):
 
 - `tests/unit/chess-sound-regressions.test.ts::selects exactly one cue from real move metadata and actor` covers cue selection for move metadata and actor; its existing loading, expiry, mute and settings cases preserve nonfatal playback behavior. `tests/unit/board-move-feedback-regressions.test.tsx::distinguishes an illegal board attempt from a legal move rejected by its consumer` covers the board rejection seam.
-- `backend/tests/test_puzzle_setup_position.py::test_repeated_setup_move_keeps_first_position_and_complete_solution` exercises both active validators with string and list input and replays the complete solution. Its incomplete and later-illegal cases preserve rejection.
+- `backend/tests/test_puzzle_setup_position.py::test_repeated_setup_move_keeps_first_position_and_complete_solution` exercises the retained backend validator with string and list input and replays the complete solution. Its incomplete and later-illegal cases preserve rejection. The duplicate Learning runtime validator is retired with that runtime.
 
 Packaged Games fixture scheduler (November 10, 2026):
 

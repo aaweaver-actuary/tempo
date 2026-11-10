@@ -194,16 +194,6 @@ async function runAllocatedNativeProof(scriptPath, proofName, containerOptions =
       "run", "--rm", "--no-deps", ...containerOptions, "schema", "python", "-c", proof]));
 }
 
-function runAllocatedDiagnosticProof(scriptPath, proofName, containerOptions = []) {
-  // Keep the deployed reader and foreground writer for the unchanged proof.
-  // Background consumers must yield their allocation first.
-  verifyWorkloadConsumers('exited');
-  const limit=resourceBudgets.diagnosticRehearsalServices.schema;
-  const proof=allocatedNativeProofSource(scriptPath,proofName,limit);
-  return run('docker',[...compose,'-f',diagnosticResourceLimits,'run','--rm','--no-deps',
-    ...containerOptions,'schema','python','-c',proof]);
-}
-
 async function verifyStudyPriorityMaintenance() {
   await withPriorityMaintenanceAllocation(async () => {
     await measureScenario.detail('study_priority_read_only_source_evidence', 'scenario', async () => {
@@ -293,11 +283,6 @@ function run(command, argumentsList, options = {}) {
 }
 
 const workloadConsumers = backgroundWorkloadConsumers;
-
-function runPrefixApplicationProof(...argumentsList) {
-  run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0",
-    "schema", "python", "/source/database/tests/check_postgres_prefix_transition_application.py", ...argumentsList]);
-}
 
 function verifyWorkloadConsumers(expectedState) {
   const result = spawnSync("docker", [...compose, "ps", "--all", "--format", "json", ...workloadConsumers],
@@ -700,18 +685,6 @@ async function verifyForegroundAndStudyDurability() {
   run("docker", [...compose, "exec", "-T", "postgres", "psql", "-U", "postgres", "-d", "tempo",
     "-Atqc", "SELECT count(*) FROM reviews; SELECT count(*) FROM queue_projections;"]);
   console.log(`PostgreSQL direct SQL probe: ${Math.round((performance.now() - sqlStartedAt) * 10) / 10}ms (review and queue-projection counts)`);
-  const prefixPreview = await postCommand(`repertoires/${importedStudy.repertoire_id}/canonical-prefix/preview`, {
-    movetext: "e4",
-  }, { operationId: `pg-study-prefix-preview-${randomBytes(10).toString("hex")}` });
-  assert.equal(prefixPreview.state, "checking");
-  const repeatedPrefixPreview = await postCommand(`repertoires/${importedStudy.repertoire_id}/canonical-prefix/preview`, {
-    movetext: "1. e4",
-  }, { operationId: `pg-study-prefix-preview-repeat-${randomBytes(10).toString("hex")}` });
-  assert.equal(repeatedPrefixPreview.preview_id, prefixPreview.preview_id,
-    "Equivalent independent preview commands reuse the stopped worker's original scan");
-  assert((await get("system/tasks")).tasks.some(task => task.kind === "canonical_prefix_preview"
-    && task.deduplication_key === prefixPreview.preview_id && ["queued", "retrying"].includes(task.state)),
-  "Prefix compatibility remains durable while its worker is stopped");
   run("docker", [...compose, "start", "background-worker"]);
   const persistedCheckpoint = await postCommand("opening-evidence/checkpoints", backgroundCheckpoint,
     { operationId: checkpointOperationId });
@@ -738,22 +711,6 @@ async function verifyForegroundAndStudyDurability() {
   const reinforcement = reinforcementQueue.cards.find((card) => card.id === reviewCard.id);
   assert.equal(reinforcement?.attempt_state, "reinforcement");
 
-  const prefixDeadline = performance.now() + 30_000;
-  let compatibility;
-  do {
-    compatibility = await get(`repertoires/${importedStudy.repertoire_id}/canonical-prefix/preview/${prefixPreview.preview_id}`);
-    if (compatibility.state === "ready") break;
-    assert.equal(compatibility.state, "checking", JSON.stringify(compatibility));
-    assert(performance.now() < prefixDeadline, "Prefix compatibility completes after worker restart");
-    await measureScenario.wait(100);
-  } while (true);
-  const prefixBody = { preview_id: prefixPreview.preview_id, expected_revision: 0 };
-  const prefixOperationId = `pg-study-prefix-save-${randomBytes(10).toString("hex")}`;
-  const beforePrefixStudy = stableStudyState(await get("migration/snapshot"), importedStudy.repertoire_id);
-  const savedPrefix = await postCommand(`repertoires/${importedStudy.repertoire_id}/canonical-prefix`, prefixBody,
-    { method: "PUT", operationId: prefixOperationId });
-  assert.deepEqual(savedPrefix.moves_uci, ["e2e4"]);
-  assert.equal(savedPrefix.revision, 1);
   const beforeBuryQueue = await get("queue/today");
   const buriedCard = beforeBuryQueue.cards[0];
   assert(buriedCard, "Durability fixture includes an active card to bury");
@@ -769,9 +726,6 @@ async function verifyForegroundAndStudyDurability() {
     "Bury excludes all active occurrences and preserves other cards' order");
 
   const studySnapshot = await get("migration/snapshot");
-  const afterPrefixStudy = stableStudyState(studySnapshot, importedStudy.repertoire_id);
-  for (const field of ["cards", "reviews", "teaching", "annotations", "prefixSplits"])
-    assert.deepEqual(afterPrefixStudy[field], beforePrefixStudy[field], `Prefix save preserves ${field}`);
   assert.equal(studySnapshot.source, "tempo-postgres");
   assert(studySnapshot.counts.reviews > 0 && studySnapshot.counts.teaching_states > 0
     && studySnapshot.counts.position_annotations > 0 && studySnapshot.counts.prefix_splits > 0);
@@ -804,14 +758,6 @@ async function verifyForegroundAndStudyDurability() {
   const afterReplaySnapshot = await get("migration/snapshot");
   assert.equal(stableStudyState(afterReplaySnapshot, importedStudy.repertoire_id).reviews.length,
     savedReviewCount, "Confirmed review replay does not create a duplicate business effect");
-  assert.deepEqual(await get(`repertoires/${importedStudy.repertoire_id}/canonical-prefix`), savedPrefix,
-    "Canonical prefix persists across service recreation");
-  const replayedPrefix = await postCommand(`repertoires/${importedStudy.repertoire_id}/canonical-prefix`, prefixBody,
-    { method: "PUT", operationId: prefixOperationId });
-  assert.deepEqual(replayedPrefix, savedPrefix, "Lost prefix-save acknowledgement replays the original receipt");
-  assert.equal((await get(`repertoires/${importedStudy.repertoire_id}/canonical-prefix`)).revision, 1);
-  assert((await get("migration/snapshot")).tables.canonical_prefix_positions.some(row => row.preview_id === prefixPreview.preview_id),
-    "Verified anchors persist across restart");
   assert.deepEqual(afterRestartSnapshot.tables.daily_queue.find(row => row.id === buriedCard.queue_entry_id),
     savedBuriedEntry, "Buried queue entry survives service recreation");
   const afterRestartQueue = await get("queue/today");
@@ -824,9 +770,7 @@ async function verifyForegroundAndStudyDurability() {
     afterRestartQueue.cards.map(card => card.queue_entry_id), "Burial replay cannot bury the next card");
   console.log("PASS PostgreSQL bury until tomorrow survives recreation and idempotent replay without grading");
   console.log("PASS PostgreSQL study state, queue order, guided failure, and command identity survive service recreation");
-  // These fixtures have completed their restart/replay proof. Independent Maia
-  // results can keep arriving after Explorer fails; release their owned work
-  // before the next scenario measures compatibility retention.
+  // Release the fixtures after their restart/replay proof completes.
   const completedFixtureIds = [importedStudy.repertoire_id, importedBackground.repertoire_id];
   for (const repertoireId of completedFixtureIds) {
     await postCommand(`repertoires/${repertoireId}`, {}, { method: "DELETE" });
@@ -922,104 +866,6 @@ async function verifyBlockedBurialRecovery() {
   assert.deepEqual((await get("queue/today")).cards.map(card => card.queue_entry_id),
     after.cards.map(card => card.queue_entry_id), "Recovered receipt replay never buries the next card");
   console.log("PASS PostgreSQL blocked burial resumes original payload through retry endpoint without duplicate effects");
-}
-
-async function verifyCurrentCanonicalRouteAdmission() {
-  const imported = await importFixture("current-canonical-routes.pgn",
-    '[Event "Current route"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. c3 *');
-  const repertoireId = imported.repertoire_id;
-  await waitForStudyableImport(repertoireId);
-  const checkCurrentPrefix = async () => {
-    const admitted = await postCommand(`repertoires/${repertoireId}/canonical-prefix/preview`,
-      { movetext: "e4 e5 Nf3 Nc6 Bc4" });
-    const deadline = performance.now() + 30_000;
-    while (true) {
-      const preview = await get(`repertoires/${repertoireId}/canonical-prefix/preview/${admitted.preview_id}`);
-      if (preview.state === "ready") return preview;
-      assert.equal(preview.state, "checking", JSON.stringify(preview));
-      assert(performance.now() < deadline, "Current-source compatibility finishes");
-      await measureScenario.wait(100);
-    }
-  };
-  const preview = await checkCurrentPrefix();
-  await postCommand(`repertoires/${repertoireId}/canonical-prefix`,
-    { preview_id: preview.preview_id, expected_revision: preview.revision }, { method: "PUT" });
-  const startingFen = "r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/2P2N2/PP1P1PPP/RNBQK2R b KQkq - 0 4";
-  const continuation = { repertoire_id: repertoireId, name: "Anchored continuation",
-    trained_color: "white", starting_fen: startingFen, moves: ["g8f6", "d2d3"] };
-  await postCommand("repertoire/branches", continuation);
-  await postCommand("repertoire/branches/remove", { repertoire_id: repertoireId,
-    starting_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-    moves: ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5", "c2c3"] });
-  await assert.rejects(() => postCommand("repertoire/branches",
-    { ...continuation, moves: ["d7d6", "d2d3"] }), /outside the repertoire.*canonical prefix/);
-  await postCommand("repertoire/branches", { ...continuation, name: "Restored current route",
-    starting_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-    moves: ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5", "c2c3"] });
-  await waitForStudyableImport(repertoireId);
-  const current = await checkCurrentPrefix();
-  assert.notEqual(current.preview_id, preview.preview_id,
-    "Changed source state requires a fresh computation");
-  await postCommand("repertoire/branches", { ...continuation, moves: ["d7d6", "d2d3"] });
-  await waitForStudyableImport(repertoireId);
-  const candidates = ["", "e4", "e4 e5", "e4 e5 Nf3", "e4 e5 Nf3 Nc6",
-    "e4 e5 Nf3 Nc6 Bc4", "e4 e5 Nf3 Nc6 Bc4 Bc5", "e4 e5 Nf3 Nc6 Bc4 Bc5 c3",
-    "e4 e5 Nf3 Nc6 Bc4 Bc5 c3 Nf6", "e4 e5 Nf3 Nc6 Bc4 Bc5 c3 Nf6 d3"];
-  const requestedPreviewIds = new Set();
-  const previewRequestLatencies = [];
-  for (const movetext of candidates) {
-    const requestStartedAt = performance.now();
-    const admitted = await postCommand(`repertoires/${repertoireId}/canonical-prefix/preview`, { movetext });
-    previewRequestLatencies.push(performance.now() - requestStartedAt);
-    requestedPreviewIds.add(admitted.preview_id);
-  }
-  const retentionDeadline = performance.now() + 30_000;
-  await measureScenario.detail("preview_retention", "readiness", async () => {
-    while (true) {
-      measureScenario.poll();
-      // This is a passive idle-work measurement. Whole-product HTTP exports
-      // create foreground leases and preempt the very slices being measured.
-      // Use the exclusively runner-owned database, bounded read-only SQL and
-      // exactly the same scoped publication/task conditions and deadline.
-      assert.match(repertoireId, /^[0-9a-f-]{36}$/i);
-      for (const previewId of requestedPreviewIds) assert.match(previewId, /^[0-9a-f-]{36}$/i);
-      const summary = readScopedPostgresRows(`SET default_transaction_read_only=on;
-        SET statement_timeout='250ms';
-        SELECT json_build_object(
-          'preview_ids', (SELECT COALESCE(json_agg(id),'[]'::json) FROM canonical_prefix_previews WHERE repertoire_id='${repertoireId}'),
-          'active_preview_id', (SELECT canonical_prefix_preview_id FROM repertoires WHERE id='${repertoireId}'),
-          'pending', EXISTS(SELECT 1 FROM background_tasks WHERE kind='canonical_prefix_preview'
-            AND deduplication_key IN ('${[...requestedPreviewIds].join("','")}')
-            AND state IN ('queued','leased','retrying')))`);
-      if (summary.preview_ids.length <= 9 && !summary.pending) {
-        assert(summary.preview_ids.includes(summary.active_preview_id),
-          "Retention preserves the active current certificate");
-        break;
-      }
-      if (performance.now() >= retentionDeadline) {
-        const tasks = readScopedPostgresRows(`SET default_transaction_read_only=on;
-          SET statement_timeout='250ms';
-          SELECT COALESCE(json_agg(checkpoint),'[]'::json) FROM (
-            SELECT task.state,task.phase,task.attempt_count,task.transaction_timeout_count,
-              task.next_attempt_at,task.lease_expires_at,preview.state AS preview_state,
-              (SELECT COUNT(*) FROM background_task_events WHERE task_id=task.id) AS event_count
-            FROM background_tasks task JOIN canonical_prefix_previews preview
-              ON preview.id=task.deduplication_key
-            WHERE task.kind='canonical_prefix_preview' AND preview.repertoire_id='${repertoireId}'
-            ORDER BY preview.created_at,preview.id LIMIT 12) checkpoint`);
-        assert.fail("Bounded preview retention finishes and removes abandoned scans; "
-          + JSON.stringify({ preview_count: summary.preview_ids.length, pending: summary.pending, tasks }));
-      }
-      await measureScenario.wait(100);
-    }
-  });
-  console.log("PASS PostgreSQL deleted-route admission rejects stale proof and accepts a recertified current route");
-  console.log("PASS PostgreSQL compatibility retention bounds previews, children, and scan tasks");
-  console.log(`CANONICAL_RETENTION_INTEGRATION_EVIDENCE ${JSON.stringify({
-    convergenceMs: performance.now() - (retentionDeadline - 30_000),
-    previewRequestLatenciesMs: previewRequestLatencies,
-  })}`);
-  console.log("PASS test_postgres_canonical_retention_scoped_readonly_poll_preserves_idle_worker_admission");
 }
 
 // Optional release-owned candidate reuse. Direct invocations retain their usual path.
@@ -1344,22 +1190,10 @@ const actions = {
           "/source/database/tests/check_postgres_tactic_capture.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
           "/source/database/tests/check_postgres_background_workloads.py"]);
-        run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
-          "/source/database/tests/check_postgres_defensive_pause.py"]);
         run("docker", [...compose, "exec", "-T", "api", "python", "-c",
-          "import os; assert os.environ.get('TEMPO_DATABASE_READ_URL'); assert 'TEMPO_DATABASE_WRITE_URL' not in os.environ; print('PASS deployed prefix API has reader URL and no writer credentials')"]);
-        runAllocatedDiagnosticProof("/source/database/tests/check_postgres_opening_segmentation.py",
-          "test_postgres_opening_segmentation_uses_bounded_diagnostic_allocation",
-          ["-e", "TEMPO_REDIS_URL=redis://redis:6379/0"]);
+          "import os; assert os.environ.get('TEMPO_DATABASE_READ_URL'); assert 'TEMPO_DATABASE_WRITE_URL' not in os.environ; print('PASS deployed API has reader URL and no writer credentials')"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
           "/source/database/tests/check_postgres_opening_evidence.py"]);
-        run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
-          "/source/database/tests/check_postgres_canonical_freshness.py"]);
-        run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
-          "/source/database/tests/check_postgres_opening_graph_recovery.py"]);
-        runAllocatedDiagnosticProof("/source/database/tests/check_postgres_prefix_transition_application.py",
-          "test_postgres_large_transition_planning_uses_bounded_diagnostic_allocation",
-          ["-e", "TEMPO_REDIS_URL=redis://redis:6379/0"]);
       },
       restoreConsumers: () => restoreBackgroundWorkloadConsumers({
         startConsumers: (services) => run("docker", [...compose, "start", ...services]),
@@ -1367,10 +1201,6 @@ const actions = {
         verifyConsumers: verifyWorkloadConsumers,
       }),
     });
-  },
-  threat_candidate_upsert: async () => {
-    run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
-      "/source/database/tests/check_postgres_threat_candidate_upsert.py"]);
   },
   command_recreation: async () => {
     const settings = await get("settings");
@@ -1404,8 +1234,6 @@ const actions = {
       await measureScenario.wait(100);
     }
     assert(settingsCommitted, "Settings business effect commits after its response is discarded");
-    run("docker", [...compose, "stop", ...workloadConsumers, "foreground-worker"]);
-    runPrefixApplicationProof("--seed-retained");
     run("docker", [...compose, "down"]);
     run("docker", [...compose, "up", "--no-build", "-d"]);
     await waitForReady();
@@ -1424,16 +1252,11 @@ const actions = {
       before.cards.map(card => card.queue_entry_id));
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
       "/source/database/tests/check_postgres_opening_evidence.py", "--verify-persisted"]);
-    runPrefixApplicationProof("--verify-retained");
-    run("docker", [...compose, "stop", ...workloadConsumers, "foreground-worker"]);
-    runPrefixApplicationProof("--recover-retained", "--cleanup-retained");
-    run("docker", [...compose, "start", ...workloadConsumers, "foreground-worker"]);
     console.log("PASS PostgreSQL lost-response receipt replay, settings, and queue order survive container recreation");
   },
   backup_restore: async () => {
     run("docker", [...compose, "stop", "api", "foreground-worker", "background-worker",
       "background-scheduler", "web"]);
-    runPrefixApplicationProof("--seed-retained");
     run("docker", [...compose, "exec", "-T", "postgres", "sh", "-ec",
       "pg_dump -U postgres -d tempo -Fc -f /tmp/tempo-test.dump && " +
       "pg_restore -l /tmp/tempo-test.dump >/dev/null && " +
@@ -1443,10 +1266,6 @@ const actions = {
       "/source/database/tooling/verify_postgres_backup.py",
       "postgresql://postgres@postgres:5432/tempo",
       "postgresql://postgres@postgres:5432/tempo_restore_check"]);
-    run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0",
-      "-e", "TEMPO_PREFIX_APPLICATION_PROOF_URL=postgresql://postgres@postgres:5432/tempo_restore_check",
-      "schema", "python", "/source/database/tests/check_postgres_prefix_transition_application.py", "--recover-retained"]);
-    runPrefixApplicationProof("--recover-retained", "--cleanup-retained");
     run("docker", [...compose, "exec", "-T", "postgres", "sh", "-ec",
       "dropdb -U postgres tempo_restore_check && rm /tmp/tempo-test.dump"]);
     console.log("PASS every PostgreSQL table matches after backup restoration");
@@ -1494,20 +1313,6 @@ const actions = {
       }),
     });
   },
-  'defensive-pause': async () => {
-    await executeIsolatedBackgroundWorkload({
-      stopConsumers: () => {
-        run("docker", [...compose, "stop", ...workloadConsumers]);
-        verifyWorkloadConsumers("exited");
-      },
-      measureWorkload: () => run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
-        "/source/database/tests/check_postgres_defensive_pause.py"]),
-      restoreConsumers: () => restoreBackgroundWorkloadConsumers({
-        startConsumers: services => run("docker", [...compose, "up", "--no-build", "-d", "--no-deps", ...services]),
-        waitForReady: () => waitForReady({ requireContainerHealthy: true }), verifyConsumers: verifyWorkloadConsumers,
-      }),
-    });
-  },
   'redis-fixture-isolation': async () => {
     let evidence;
     await executeIsolatedBackgroundWorkload({
@@ -1534,7 +1339,6 @@ const actions = {
   },
   study_durability: async () => {
     await measureScenario.detail("foreground_study", "scenario", verifyForegroundAndStudyDurability);
-    await measureScenario.detail("canonical_route_admission", "scenario", verifyCurrentCanonicalRouteAdmission);
     await measureScenario.detail("study_burial_quota", "scenario", verifyStudyBurialRetainsQuota);
     await measureScenario.detail("blocked_burial_recovery", "scenario", verifyBlockedBurialRecovery);
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",

@@ -59,7 +59,7 @@ base = types.ModuleType('hatchling.builders.hooks.plugin.interface')
 base.BuildHookInterface = object
 sys.modules['hatchling.builders.hooks.plugin.interface'] = base
 repository = Path(sys.argv[1])
-for owner, name in [('services/learning/runtime', 'tempo_learning_database'), ('services/learning/remediation', 'tempo_remediation_database')]:
+for owner, name in [('services/learning/remediation', 'tempo_remediation_database')]:
     hook = runpy.run_path(str(repository / owner / 'hatch_build.py'))['CustomBuildHook']
     with TemporaryDirectory() as directory:
         root = Path(directory) / owner

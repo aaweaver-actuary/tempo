@@ -13,7 +13,6 @@ from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from app.contracts.transport.authored_repertoire import RepertoireSettingsRequest
 from .repertoire_settings import repertoire_settings_response
 from .queue_commands import request_queue_refresh_in_transaction
-from .services.durable_tasks import enqueue_task_in_transaction
 
 
 from .card_deletion import SYSTEM_REPERTOIRE_IDS as _SYSTEM_REPERTOIRES
@@ -27,9 +26,6 @@ def select_main_repertoire(
     if repertoire_id not in repertoire_ids:
         raise HTTPException(404, "Repertoire not found")
     storage.store_main_selection(database, repertoire_id, _SYSTEM_REPERTOIRES)
-    enqueue_task_in_transaction(
-        database, "repertoire_game_refresh", "all", {"after_game_id": ""}, priority=90
-    )
     return {"id": repertoire_id, "is_main": True}
 
 

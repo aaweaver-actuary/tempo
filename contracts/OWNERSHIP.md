@@ -4,10 +4,7 @@ Study owns accepted attempts, reviews, schedules and queue issuance. Game Review
 
 The [game review contracts](../packages/game-review-contracts/README.md) define game and repertoire inputs, comparison reports and injectable protocols. The [disposable fixtures](../database/ownership/README.md) exercise PostgreSQL backup comparison and remediation.
 
-## Retained-history transfer values
 
-The [Learning transfer contracts](learning-transfer/README.md) hold pure versioned
-identity, capture, receipt, fence and recovery records shared by runtime and
-database owners. This package owns no database or lifecycle and imports neither
-owner's implementation. Original source authority is retained in every fact; a
-wire evidence reference is not a verified migration or operational authorization.
+The independent Learning API, transfer and Content publication protocols are retired
+with their alternative service consumers. Current serving records and accepted
+obligations remain owned by the backend and its existing remediation library.

@@ -9,9 +9,7 @@ from psycopg.errors import LockNotAvailable, TransactionTimeout
 
 from app import tasks
 from app.services import durable_tasks
-from tempo_legacy_database.ddl.background_metrics_schema import (
-    SCHEMA as BACKGROUND_METRIC_SCHEMA,
-)
+from background_metric_fixture import BACKGROUND_METRIC_SCHEMA
 
 
 @pytest.fixture
@@ -30,21 +28,7 @@ def timeout_database(normal_study_mode, monkeypatch):
             generation INTEGER,event TEXT,phase TEXT,detail TEXT,created_at TEXT);
     """)
     monkeypatch.setattr(durable_tasks.postgres_store, "configured", lambda: True)
-    # This timeout harness models tasks without an application. Real PostgreSQL
-    # linked-receipt failure/recovery is covered by the issue80 durability proofs.
-    from app.services import prefix_transition_application
-
-    monkeypatch.setattr(
-        prefix_transition_application, "lock_linked_receipts", lambda *_args: None
-    )
-    monkeypatch.setattr(
-        prefix_transition_application, "record_linked_failure", lambda *_args: None
-    )
-    monkeypatch.setattr(
-        durable_tasks,
-        "submit_background_write",
-        lambda operation, *, label: operation(database),
-    )
+    monkeypatch.setattr(durable_tasks, "connection", lambda **_options: nullcontext(database))
     monkeypatch.setattr(
         durable_tasks, "_now", lambda: datetime(2026, 10, 4, tzinfo=timezone.utc)
     )

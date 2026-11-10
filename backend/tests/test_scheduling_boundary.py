@@ -21,7 +21,7 @@ APPLICATION = METADATA["implementation_module"]
 CONTRACTS = METADATA["shared_contract_module"]
 BACKEND_APPLICATION = METADATA["backend_facade_module"]
 BACKEND_CONTRACTS = METADATA["backend_contract_facade_module"]
-SCHEDULER = "tempo_learning_runtime.scheduler"
+SCHEDULER = "app.services.scheduler"
 CERTIFIED_MODULES = tuple(METADATA["source_paths"])
 PUBLIC_TYPES = (
     "CardState",
@@ -80,8 +80,6 @@ def synthetic_package(tmp_path, additions):
         "app.study.encounter_feedback": "",
         "tempo_legacy_database.connections": "",
         "tempo_legacy_database.adapters.scheduling_review_store": "",
-        "tempo_learning_database.adapters.scheduling_review_store": "",
-        "tempo_learning_runtime.review_service": "",
     }
     for module, source_path in METADATA["source_paths"].items():
         sources[module] = (REPOSITORY / source_path).read_text()
@@ -131,7 +129,7 @@ def test_scheduling_boundary_rejects_forbidden_direct_and_deferred_imports(
     assert expected_contract + " BROKEN" in completed.stdout
 
 
-@pytest.mark.parametrize("scheduler_module", [SCHEDULER, "app.services.scheduler"])
+@pytest.mark.parametrize("scheduler_module", [SCHEDULER])
 def test_scheduling_boundary_rejects_transitive_infrastructure_imports(
     tmp_path, scheduler_module
 ):
@@ -165,10 +163,10 @@ def test_scheduling_boundary_rejects_unowned_consumers(tmp_path, protected_modul
 
 def test_scheduling_boundary_preserves_allowed_edges_and_public_type_identity():
     from app.services import scheduling_review_application, scheduling_review_contracts
-    from tempo_learning_runtime import (
+    from app.study.policy import (
         scheduling_review_application as owned_application,
     )
-    from tempo_learning_runtime import scheduling_review_contracts as owned_contracts
+    from app.study.policy import scheduling_review_contracts as owned_contracts
 
     completed = lint_imports(REPOSITORY / "backend")
     assert completed.returncode == 0, completed.stdout + completed.stderr
@@ -195,7 +193,7 @@ def test_scheduling_boundary_preserves_allowed_edges_and_public_type_identity():
     }
     # The installed implementation checked by Grimp must match the tracked owner.
     for module in CERTIFIED_MODULES:
-        if module.startswith("tempo_learning_runtime."):
+        if module.startswith("app.study.policy."):
             installed = Path(importlib.import_module(module).__file__).read_text()
             tracked = (REPOSITORY / METADATA["source_paths"][module]).read_text()
             assert ast.dump(ast.parse(installed)) == ast.dump(ast.parse(tracked)), (
@@ -209,8 +207,8 @@ def test_scheduling_boundary_has_no_unrelated_transitive_dependencies(dependency
             dependency_graph.find_modules_directly_imported_by(module)
         ) == sorted(expected_imports), module
     for application_module, expected_app in (
-        (APPLICATION, set()),
-        (BACKEND_APPLICATION, {BACKEND_CONTRACTS, "app.services.scheduler"}),
+        (APPLICATION, {CONTRACTS, "app.study.policy.clock", "app.services.scheduler"}),
+        (BACKEND_APPLICATION, {APPLICATION, CONTRACTS, BACKEND_CONTRACTS, "app.study.policy.clock", "app.services.scheduler"}),
     ):
         reachable = dependency_graph.find_upstream_modules(application_module)
         assert {
@@ -253,7 +251,9 @@ class RejectInfrastructure(MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
         if fullname.startswith('app.') and fullname not in {
             'app.services', 'app.services.scheduler',
-            'app.services.scheduling_review_application', 'app.services.scheduling_review_contracts'}:
+            'app.services.scheduling_review_application', 'app.services.scheduling_review_contracts',
+            'app.study', 'app.study.policy', 'app.study.policy.clock',
+            'app.study.policy.scheduling_review_application', 'app.study.policy.scheduling_review_contracts'}:
             raise AssertionError('Unexpected application dependency: ' + fullname)
         if fullname.split('.')[0] in {'psycopg','psycopg_pool','redis','celery','fastapi','httpx','sqlite3'}:
             raise AssertionError('Infrastructure dependency: ' + fullname)

@@ -9,7 +9,7 @@ ROOT = HERE.parents[2]
 
 
 def run_check(fixture):
-    paths = ['backend', 'database', 'services/learning/runtime/src', 'packages/scheduling/src']
+    paths = ['backend', 'database', 'packages/scheduling/src']
     env = {**os.environ, 'PYTHONPATH': os.pathsep.join(str(ROOT / path) for path in paths)}
     return subprocess.run([sys.executable, str(HERE / 'generate.py'), '--check', '--fixture', str(fixture)],
                           cwd=ROOT, env=env, capture_output=True, text=True)

@@ -6,7 +6,6 @@ import { fileURLToPath } from "node:url";
 import { TempoProblem, classifyRedisReply, phaseGuidance, assertInstallationUnchanged, inspectMaintenance, installationFingerprint, recoveryAssessment, verificationProblem, waitForVerification } from "./tempo-guidance.mjs";
 import { acquireTargetLock, assessCandidate, assessMainVerification, atomicJson, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, portsFromConfig, productVolumes,
   redact, schemaVersionFromSource, selectCandidate, sourceFingerprint, sourceMatchesFingerprint, targetKey, validateTarget } from "./tempo-deployment.mjs";
-import { runRegisteredStudyCommand } from "./tempo-study-launcher.mjs";
 
 const help = `Tempo — manage the existing Docker/PostgreSQL installation
 
@@ -263,7 +262,7 @@ async function reportDiagnostics({ options, target, run, runtime, previous, stat
   if (options.flags.has("--verbose")) for (const message of evidence) emit(message);
 }
 
-export async function main(argumentsList = process.argv.slice(2), log = console.log, { verificationWaitOptions = {}, studyLauncher, studyAssemblyDependencies } = {}) {
+export async function main(argumentsList = process.argv.slice(2), log = console.log, { verificationWaitOptions = {} } = {}) {
   const options = parseArguments(argumentsList);
   if (options.command === "help") { log(help); return 0; }
   const sourceRoot = realpathSync(fileURLToPath(new URL("../", import.meta.url)));
@@ -275,21 +274,12 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
     throw new Error('Defense selection requires an existing registered PostgreSQL target.');
   if (target && process.env.TEMPO_UPGRADE_EXPECTED_PROJECT && process.env.TEMPO_UPGRADE_EXPECTED_PROJECT !== target.project)
     throw new Error("Registered target differs from TEMPO_UPGRADE_EXPECTED_PROJECT; maintenance was not started.");
-  // Select the public Study boundary before loading any legacy runtime, schema,
-  // backup or Redis adapter. A blocked v2 target never falls back to v1.
+  // Experimental Learning registrations cannot select the retained installation.
+  // Reject them before loading a runtime or touching Docker, storage, or source.
   if (target?.version === 2) {
-    let installed = studyLauncher;
-    if (installed === undefined) {
-      try {
-        const { createDefaultStudyLauncher } = await import("./tempo-study-assembly.mjs");
-        installed = createDefaultStudyLauncher({ registration: target, configPath: options.configPath, log }, studyAssemblyDependencies);
-      } catch (error) {
-        // A partial source installation remains a blocked v2 route. The legacy
-        // runtime is never a replacement for an absent installed Study module.
-        if (error.code !== "ERR_MODULE_NOT_FOUND" || error.url !== new URL("./tempo-study-assembly.mjs", import.meta.url).href) throw error;
-      }
-    }
-    return runRegisteredStudyCommand({ options, registration: target, log }, installed);
+    throw new TempoProblem("retired_learning_registration", "This registration targets the retired standalone Learning service.", {
+      action: "Select the existing PostgreSQL installation registration with --config. Its registration and data have not been changed.",
+    });
   }
   if (!target || target.version !== 1) throw new Error("Tempo is not registered. Run ./tempo install from the main checkout once.");
   if (!existsSync(target.root) || !target.context || !target.daemonId || !target.project || !target.composeFiles?.length || !target.postgresVolumeKey)

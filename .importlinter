@@ -1,9 +1,7 @@
 [importlinter]
 root_packages =
     app
-    tempo_learning_runtime
     tempo_legacy_database
-    tempo_learning_database
 include_external_packages = True
 
 [importlinter:contract:scheduling-outward]
@@ -13,27 +11,22 @@ source_modules =
     app.services.scheduling_review_application
     app.services.scheduling_review_contracts
     app.services.scheduler
-    tempo_learning_runtime.scheduling_review_application
-    tempo_learning_runtime.scheduling_review_contracts
-    tempo_learning_runtime.scheduler
-    tempo_learning_runtime.clock
+    app.study.policy.scheduling_review_application
+    app.study.policy.scheduling_review_contracts
+    app.study.policy.clock
 forbidden_modules =
     app.**
-    tempo_learning_runtime
-    tempo_learning_runtime.**
     tempo_legacy_database
     tempo_legacy_database.**
-    tempo_learning_database
-    tempo_learning_database.**
 as_packages = False
 ignore_imports =
     app.services.scheduling_review_application -> app.services.scheduling_review_contracts
     app.services.scheduling_review_application -> app.services.scheduler
-    app.services.scheduling_review_application -> tempo_learning_runtime.scheduling_review_application
-    app.services.scheduling_review_contracts -> tempo_learning_runtime.scheduling_review_contracts
-    tempo_learning_runtime.scheduling_review_application -> tempo_learning_runtime.scheduling_review_contracts
-    tempo_learning_runtime.scheduling_review_application -> tempo_learning_runtime.scheduler
-    tempo_learning_runtime.scheduling_review_application -> tempo_learning_runtime.clock
+    app.services.scheduling_review_application -> app.study.policy.scheduling_review_application
+    app.services.scheduling_review_contracts -> app.study.policy.scheduling_review_contracts
+    app.study.policy.scheduling_review_application -> app.study.policy.scheduling_review_contracts
+    app.study.policy.scheduling_review_application -> app.services.scheduler
+    app.study.policy.scheduling_review_application -> app.study.policy.clock
 unmatched_ignore_imports_alerting = error
 
 [importlinter:contract:scheduling-application-owner]
@@ -58,24 +51,22 @@ allowed_importers =
     app.study.game_feedback
 
 [importlinter:contract:scheduling-packaged-application-owner]
-name = Learning and its public backend facade own scheduling application calls
+name = Study policy and its backend facade own scheduling application calls
 type = protected
 protected_modules =
-    tempo_learning_runtime.scheduling_review_application
+    app.study.policy.scheduling_review_application
 allowed_importers =
-    tempo_learning_runtime
-    tempo_learning_runtime.review_service
+    app.services.review_service
     app.services.scheduling_review_application
 
 [importlinter:contract:scheduling-packaged-contract-owners]
-name = Learning scheduling records belong to its application and borrowed store
+name = Study scheduling records belong to its application and borrowed store
 type = protected
 protected_modules =
-    tempo_learning_runtime.scheduling_review_contracts
+    app.study.policy.scheduling_review_contracts
 allowed_importers =
-    tempo_learning_runtime
-    tempo_learning_runtime.scheduling_review_application
-    tempo_learning_database.adapters.scheduling_review_store
+    app.study.policy.scheduling_review_application
+    tempo_legacy_database.adapters.scheduling_review_store
     app.services.scheduling_review_contracts
 
 [importlinter:contract:scheduling-no-infrastructure]
@@ -85,10 +76,9 @@ source_modules =
     app.services.scheduling_review_application
     app.services.scheduling_review_contracts
     app.services.scheduler
-    tempo_learning_runtime.scheduling_review_application
-    tempo_learning_runtime.scheduling_review_contracts
-    tempo_learning_runtime.scheduler
-    tempo_learning_runtime.clock
+    app.study.policy.scheduling_review_application
+    app.study.policy.scheduling_review_contracts
+    app.study.policy.clock
 forbidden_modules =
     fastapi
     celery

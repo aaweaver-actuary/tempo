@@ -8,7 +8,6 @@ import sqlite3
 
 import chess
 
-from .repertoire_game_refresh import refresh_game_publications_after_mutation
 from tempo_legacy_database.connections import card_columns
 from tempo_legacy_database.adapters.authored_repertoires.opening_mutations import (
     prefix_splits as storage,
@@ -160,7 +159,6 @@ def _queue_split_followups(
     preserve_daily_queue_order(database, today, previous=previous_order)
 
 
-@refresh_game_publications_after_mutation
 def apply_prefix_split(
     database: sqlite3.Connection,
     source_card_id: str,

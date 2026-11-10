@@ -12,7 +12,7 @@ from tempo_legacy_database.adapters.repertoire_scope.move_verification import (
     _SourceDigest,
     _source_token,
 )
-from .repertoire_comparison import canonical_fen
+from app.chess.position_identity import position_key as canonical_fen
 
 SOURCE_PAGE_SIZE = 64
 SOURCE_REPLAY_SECONDS = 0.15

@@ -9,7 +9,6 @@ from typing import Any
 import chess
 from fastapi import HTTPException
 
-from .services.repertoire_game_refresh import refresh_game_publications_after_mutation
 from .command_gateway import register_command
 from app.repertoire.changes.application import validate_source_rows
 from app.repertoire.changes.ports import ChangeError
@@ -77,7 +76,6 @@ def _request_current_integrity_scan(
             request_graph_rebuild_in_transaction(database, repertoire_id, local_day)
 
 
-@refresh_game_publications_after_mutation
 def revise_card(
     database: PostgresConnection, payload: dict[str, Any]
 ) -> dict[str, Any]:
@@ -235,7 +233,6 @@ def revise_card(
     }
 
 
-@refresh_game_publications_after_mutation
 def archive_card(
     database: PostgresConnection, payload: dict[str, Any]
 ) -> dict[str, Any]:
@@ -265,7 +262,6 @@ register_command("cards.revise", revise_card)
 register_command("cards.archive", archive_card)
 
 
-@refresh_game_publications_after_mutation
 def delete_card(
     database: PostgresConnection, payload: dict[str, Any]
 ) -> dict[str, Any]:

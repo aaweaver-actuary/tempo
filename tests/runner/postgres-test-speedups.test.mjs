@@ -169,7 +169,7 @@ test("study_import_pending_issuance_remains_bounded_and_preserves_integrity_fail
 const fullStages = [
   "compose_config", "image_build", "maintenance_cli", "startup", "service_health", "game_review_reader",
   "background_budget", "operation_recovery", "schema_migrations", "background_diagnostics", "deployment_lifecycle", "background_workloads",
-  "threat_candidate_upsert", "command_recreation", "backup_restore", "browser",
+  "command_recreation", "backup_restore", "browser",
   "study_isolation", "study_durability", "cleanup",
 ];
 const browserStages = ["compose_config", "image_build", "startup", "service_health", "browser", "cleanup"];
@@ -224,54 +224,6 @@ test("queue publication polling propagates service failures instead of reporting
   for (const [status, body] of [[500, { detail: "database unavailable" }],
     [503, { detail: "database unavailable" }], [503, { detail: "other pending work" }], [503, "invalid JSON"]]) {
     await assert.rejects(readStudyQueuePublication(new Response(JSON.stringify(body), { status })), /queue\/today: HTTP/);
-  }
-});
-
-test("preview retention timing succeeds promptly and reports scoped checkpoints at the unchanged deadline", async () => {
-  const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
-  const start = source.indexOf("  const retentionDeadline =");
-  const finish = source.indexOf('  console.log("PASS PostgreSQL deleted-route', start);
-  const retention = source.slice(start, finish);
-  for (const pending of [false, true]) {
-    let elapsed = 0, polls = 0, waits = 0;
-    const queries = [];
-    const context = {
-      assert, performance: { now: () => elapsed },
-      repertoireId: "a1111111-1111-1111-1111-111111111111",
-      requestedPreviewIds: new Set(["b2222222-2222-2222-2222-222222222222"]),
-      measureScenario: {
-        detail: async (label, category, action) => {
-          assert.equal(label, "preview_retention"); assert.equal(category, "readiness"); return action();
-        },
-        poll: () => { polls += 1; },
-        wait: async interval => { assert.equal(interval, 100); elapsed += interval; waits += 1; },
-      },
-      readScopedPostgresRows: statement => {
-        queries.push(statement);
-        if (statement.includes("json_build_object")) return {
-          preview_ids: ["active"], active_preview_id: "active", pending,
-        };
-        return [{ state: "retrying", phase: "retention", event_count: 42 }];
-      },
-    };
-    const result = runInNewContext(`(async () => {${retention}})()`, context);
-    if (pending) {
-      await assert.rejects(result, error => {
-        assert.match(error.message, /"preview_count":1,"pending":true/);
-        assert.match(error.message, /"state":"retrying","phase":"retention","event_count":42/);
-        return true;
-      });
-      assert.equal(elapsed, 30_000); assert.equal(waits, 300); assert.equal(polls, 301);
-      assert.match(queries.at(-1), /LIMIT 12/);
-      assert.doesNotMatch(queries.at(-1), /payload_json|last_error/);
-    } else {
-      await result; assert.equal(waits, 0); assert.equal(polls, 1); assert.equal(queries.length, 1);
-    }
-    for (const statement of queries) {
-      assert.match(statement, /SET default_transaction_read_only=on/);
-      assert.match(statement, /SET statement_timeout='250ms'/);
-      assert.match(statement, /repertoire_id='a1111111-1111-1111-1111-111111111111'/);
-    }
   }
 });
 
@@ -477,7 +429,6 @@ test("repertoire limit recreation fixture survives backup then leaves unrelated 
     measureScenario: { poll() {}, wait: async () => {} },
     assert, compose: ['compose'], randomBytes: () => Buffer.from('fixture'),
     workloadConsumers: ['background-worker','background-scheduler'],
-    runPrefixApplicationProof: () => {},
     repertoireLimitRecreationPgn, limitRecreationRepertoireId: null,
     console: { log() {} },
     importFixture: async () => {
@@ -984,27 +935,6 @@ test("timing write failure preserves the original scenario error and still permi
   assert.equal(cleaned, true);
 });
 
-test("defensive pause native stage isolates consumers and preserves cleanup after failure", async () => {
-  const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
-  const stage = source.slice(source.indexOf("  'defensive-pause': async () => {"),
-    source.indexOf("  'redis-fixture-isolation': async () => {"));
-  assert(stage.includes('executeIsolatedBackgroundWorkload'));
-  assert(stage.includes('verifyWorkloadConsumers("exited")'));
-  assert(stage.includes('/source/database/tests/check_postgres_defensive_pause.py'));
-  assert(stage.includes('restoreBackgroundWorkloadConsumers'));
-  const events = [];
-  const failure = new Error('native proof failed');
-  await assert.rejects(executePostgresTestPlan(['defensive-pause', 'browser', 'cleanup'], {
-    'defensive-pause': () => executeIsolatedBackgroundWorkload({
-      stopConsumers: () => events.push('stop and verify'),
-      measureWorkload: () => { events.push('proof'); throw failure; },
-      restoreConsumers: () => events.push('restore'),
-    }),
-    browser: () => events.push('browser'), cleanup: () => events.push('cleanup'),
-  }, async (_name, action) => action()), error => error === failure);
-  assert.deepEqual(events, ['stop and verify', 'proof', 'restore', 'cleanup']);
-});
-
 test("background workload prevents scheduler claims and restores dispatch after failure", async () => {
   const runningConsumers = new Set(["background-worker", "background-scheduler"]);
   const queuedFixture = { state: "queued" };
@@ -1073,19 +1003,6 @@ test("background workload preserves benchmark and consumer restoration failures"
     && error.errors[0] === benchmarkFailure && error.errors[1] === restorationFailure);
 });
 
-test("issue80 durable application proofs cover recreation and restored pre/post activation state", () => {
-  const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
-  const recreate = source.slice(source.indexOf('  command_recreation: async () => {'), source.indexOf('  backup_restore: async () => {'));
-  assert(recreate.indexOf('runPrefixApplicationProof("--seed-retained")') < recreate.indexOf('...compose, "down"'));
-  assert(recreate.indexOf('...compose, "up"') < recreate.indexOf('runPrefixApplicationProof("--verify-retained")'));
-  const backup = source.slice(source.indexOf('  backup_restore: async () => {'), source.indexOf('  browser: async () => {'));
-  assert(backup.indexOf('runPrefixApplicationProof("--seed-retained")') < backup.indexOf('pg_dump'));
-  assert(backup.indexOf('verify_postgres_backup.py') < backup.indexOf('TEMPO_PREFIX_APPLICATION_PROOF_URL='));
-  assert(backup.indexOf('TEMPO_PREFIX_APPLICATION_PROOF_URL=postgresql://postgres@postgres:5432/tempo_restore_check') < backup.indexOf('dropdb'));
-  assert.match(backup, /runPrefixApplicationProof\("--recover-retained", "--cleanup-retained"\)/);
-});
-
-
 test("pr102 background restoration recovers API health before confirming restored workers", async () => {
   let apiHealthy = false;
   const runningConsumers = new Set();
@@ -1111,8 +1028,8 @@ test("pr102 background restoration recovers API health before confirming restore
   assert.deepEqual(events, [["background-worker", "background-scheduler"], "original readiness passed",
     "verified all running"]);
   const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
-  // The retired priority benchmark no longer adds a restoration call site.
-  assert.equal(source.match(/restoreConsumers: \(\) => restoreBackgroundWorkloadConsumers\(/g)?.length, 4);
+  // The retired priority benchmark and Defense proof have no restoration call sites.
+  assert.equal(source.match(/restoreConsumers: \(\) => restoreBackgroundWorkloadConsumers\(/g)?.length, 3);
 });
 
 
@@ -1199,29 +1116,6 @@ test('study_priority_restoration_captures_output_and_checks_every_owned_consumer
   assert.throws(()=>verifyRestoredPostgresConsumers(execute(clients.slice(1)),['compose','-p','owned'],clients),/api was not restored/);
 });
 
-test('study_priority_diagnostic_native_allocation_retains_essential_clients_and_original_read_deadline', async () => {
-  const {resourceBudgets,assertDevelopmentCapacity}=await import('../../scripts/development-budget.mjs');
-  const diagnostic=resourceBudgets.diagnosticRehearsalServices;
-  assert(diagnostic?.schema,'The 50ms diagnostic proof needs an explicit bounded helper allocation');
-  assert.equal(diagnostic.schema.cpus,0.95);
-  assert.equal(diagnostic.schema.memoryMiB,1024);
-  const retained=['postgres','redis','api','foreground-worker','web'];
-  const rows=retained.map(service=>({Id:service,Config:{Labels:{'com.docker.compose.project':'owned','com.docker.compose.service':service}},
-    HostConfig:{NanoCpus:(resourceBudgets.developmentServices[service].cpus??0)*1e9,
-      Memory:resourceBudgets.developmentServices[service].memoryMiB*1024*1024}}));
-  const docker=args=>args[0]==='ps'?rows.map(row=>row.Id).join('\n'):JSON.stringify(rows);
-  assertDevelopmentCapacity(['schema'],'owned',docker,diagnostic);
-  assert.doesNotThrow(()=>assertDevelopmentCapacity(['schema'],'owned',docker,
-    {schema:{...diagnostic.schema,cpus:4}}));
-  assert.throws(()=>assertDevelopmentCapacity(['schema'],'owned',docker,
-    {schema:{...diagnostic.schema,memoryMiB:2048}}),/exceed the aggregate/);
-  const runner=readFileSync(join(root,'database/tests/test-postgres-docker.mjs'),'utf8');
-  assert.match(runner,/runAllocatedDiagnosticProof\("\/source\/database\/tests\/check_postgres_opening_segmentation\.py"/);
-  const original=readFileSync(join(root,'database/tests/check_postgres_opening_segmentation.py'),'utf8');
-  assert(original.includes("'50ms'"));
-  assert(original.includes('assert replay.status_code == 200, replay.text'));
-});
-
 test('study_priority_background_isolation_restores_consumers_after_api_readiness', async () => {
   assert.deepEqual(backgroundWorkloadConsumers, ['background-worker', 'background-scheduler']);
   for(const essential of ['api','foreground-worker','web'])assert(!backgroundWorkloadConsumers.includes(essential));
@@ -1244,26 +1138,8 @@ test('study_priority_profile_selection_cannot_understate_diagnostic_native_caps'
   assert.throws(()=>postgresProofAllocations(['-f',paths.priority,'-f',paths.diagnostic,'run','schema'],paths,budgets),/Conflicting/);
 });
 
-test('study_priority_large_transition_planning_uses_bounded_diagnostic_allocation_without_retrying_read_failures', () => {
-  const runner=readFileSync(join(root,'database/tests/test-postgres-docker.mjs'),'utf8');
-  const workload=runner.slice(runner.indexOf('  background_workloads: async () => {'),
-    runner.indexOf('  threat_candidate_upsert: async () => {'));
-  assert.match(workload,/runAllocatedDiagnosticProof\("\/source\/database\/tests\/check_postgres_prefix_transition_application\.py"/,
-    'The 128/512-line planning proof must not use the 0.2 CPU helper');
-  const proof=readFileSync(join(root,'database/tests/check_postgres_prefix_transition_application.py'),'utf8');
-  assert.match(proof,/for obsolete_count in \(128, 512\):/);
-  assert.match(proof,/len\(set\(obsolete_ids\)\) == obsolete_count/);
-  assert.match(proof,/len\(set\(created_ids\)\) == 2 \* obsolete_count/);
-  const idleCall=proof.slice(proof.indexOf('def idle_call('),proof.indexOf('\n\ndef execute('));
-  assert.match(idleCall,/Study work is active\. Retry the diagnostic when study is idle\./);
-  assert.doesNotMatch(idleCall,/temporarily unavailable|OperationalError|transaction_timeout/,
-    'A terminated read must remain a visible proof failure');
-});
-
-
 for (const [runnerName, functionEnd] of [
   ['test-postgres-docker.mjs', '\nconst workloadConsumers'],
-  ['test-docker.mjs', '\nfunction verifyTempoDataVolumeIsExternal'],
 ]) {
   for (const contention of ['reserved_builder', 'native_inventory_to_start_race']) {
     test(`study_priority_${runnerName.replaceAll('.', '_')}_${contention}_cannot_overcommit`, async () => {
@@ -1387,24 +1263,6 @@ test('native_startup_reconciliation_never_reclaims_changed_owner_or_missing_pid_
   writeFileSync(ownerPath,JSON.stringify({...owner,token:'foreign'}));assert.throws(()=>budget.reconcileDevelopmentStartup(project,options),/ownership mismatch/);assert(existsSync(paths.journal));
   writeFileSync(ownerPath,JSON.stringify(owner));budget.reconcileDevelopmentStartup(project,options);
 }));
-
-for(const foreign of [false,true]){
-  test(`sqlite_actual_cleanup_${foreign?'foreign_owner':'false_success'}_cannot_clear_uncertain_startup`,()=>nativeStartupFixture(async({budget,state,container,options,paths,project,existsSync})=>{
-    assert.throws(()=>budget.withDevelopmentStartup(['postgres'],project,()=>{state.containers=[container()];return{status:1};},options),/startup failed/);
-    const source=readFileSync(join(root,'scripts/test-docker.mjs'),'utf8'),begin=source.indexOf('async () => {',source.indexOf('await timeStage("container_stop"')),
-      end=source.indexOf('}).catch',begin)+1;assert(begin>=0&&end>begin);
-    let downCalls=0,remove=false;
-    const context={project,env:{},composeArgs:['compose','-p',project],cleanupVerified:false,
-      assertDevelopmentProjectOwned:()=>budget.assertDevelopmentProjectOwned(project,options),
-      reconcileDevelopmentStartup:()=>budget.reconcileDevelopmentStartup(project,options),
-      spawnSync:(_command,args)=>{assert(args.includes('down'));downCalls++;if(remove)state.containers=[];return{status:0};}};
-    const cleanup=runInNewContext(`(${source.slice(begin,end)})`,context);
-    if(foreign)state.containers[0].Config.Labels['tempo.resource-owner']='foreign';
-    await assert.rejects(cleanup(),foreign?/ownership mismatch/:/resources remain/);assert.equal(context.cleanupVerified,false);
-    assert(existsSync(paths.journal));assert(existsSync(paths.lane));assert.equal(downCalls,foreign?0:1);
-    state.containers[0].Config.Labels['tempo.resource-owner']=options.token;remove=true;await cleanup();assert.equal(context.cleanupVerified,true);assert(!existsSync(paths.journal));assert(!existsSync(paths.lane));
-  }));
-}
 
 test('native_startup_missing_lane_identity_and_changed_success_owner_keep_uncertainty_blocked',()=>nativeStartupFixture(async({budget,options,paths,project,existsSync})=>{
   assert.throws(()=>budget.withDevelopmentStartup(['postgres'],project,()=>{throw new Error('ambiguous');},options),/ambiguous/);

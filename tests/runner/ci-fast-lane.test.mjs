@@ -182,18 +182,9 @@ test('issue239_native_runner_option_is_allowlisted_bounded_and_before_browser', 
   assert.throws(()=>parsePostgresTestOptions(['--mode','browser','--native-check','redis-fixture-isolation','--native-check','redis-fixture-isolation'],{}));
 });
 
-test('defensive pause native selection is bounded and preserves Redis ordering', () => {
-  for (const mode of ['study', 'browser']) {
-    const options = parsePostgresTestOptions(['--mode', mode, '--browser-grep', 'position',
-      '--native-check', 'redis-fixture-isolation', '--native-check', 'defensive-pause'], {});
-    const stages = postgresTestStages(options);
-    assert(stages.indexOf('redis-fixture-isolation') < stages.indexOf('defensive-pause'));
-    assert(stages.indexOf('defensive-pause') < stages.indexOf('browser'));
-    assert.equal(stages.at(-1), 'cleanup');
-  }
-  assert.throws(() => parsePostgresTestOptions(['--mode', 'durability', '--native-check', 'defensive-pause'], {}));
-  assert.throws(() => parsePostgresTestOptions(['--mode', 'browser', '--native-check', 'defensive-pause', '--native-check', 'defensive-pause'], {}));
-  assert.throws(() => postgresTestStages({mode:'study', nativeChecks:['defensive-pause','defensive-pause']}));
+test('retired Defense proof cannot be selected as a retained native check', () => {
+  assert.throws(() => parsePostgresTestOptions(['--mode', 'study', '--native-check', 'defensive-pause'], {}), /Unknown or duplicate native check/);
+  assert.throws(() => postgresTestStages({mode:'study', nativeChecks:['defensive-pause']}), /Invalid native PostgreSQL selection/);
 });
 
 test('emergency_docs_only_changes_do_not_trigger_full_qualification', () => {
@@ -202,15 +193,15 @@ test('emergency_docs_only_changes_do_not_trigger_full_qualification', () => {
   assert.deepEqual(selection.frontend,[]); assert.deepEqual(selection.browser,[]);
 });
 test('emergency_isolated_frontend_change_selects_FAST', () => {
-  const selection = selectFastLane(['app/components/prefix-comparison-dialog.tsx']);
-  assert.equal(selection.tier,'FAST'); assert(selection.frontend.includes('tests/unit/prefix-comparison-regressions.test.tsx'));
+  const selection = selectFastLane(['app/components/debug-error-panel.tsx']);
+  assert.equal(selection.tier,'FAST'); assert(selection.frontend.includes('tests/unit/debug-reporting-regressions.test.tsx'));
   for (const key of ['backend','browser','nativeChecks']) assert.deepEqual(selection[key],[],key);
   assert.equal(selection.node,true); assert.equal(selection.python,false);
   assert.deepEqual(fastCommands(makeFastPlan(selection.paths,context)).map(([name])=>name),
     ['conflicts','migrations','diff','lint','typecheck','frontend_inventory','frontend']);
 });
 test('emergency_tactics_grading_change_selects_STUDY', () => {
-  assert.equal(selectFastLane(['backend/app/services/threat_grading.py']).tier,'STUDY');
+  assert.equal(selectFastLane(['backend/app/services/study_grading.py']).tier,'STUDY');
   assert.equal(selectFastLane(['app/views/tactics_view.tsx']).tier,'STUDY');
 });
 test('emergency_queue_persistence_change_selects_STUDY', () => assert.equal(selectFastLane(['backend/app/services/postgres_queue_refresh.py']).tier,'STUDY'));
@@ -237,7 +228,7 @@ test('emergency_stale_other_head_evidence_cannot_qualify', () => {
 test('emergency_rename_deletion_and_mixed_changes_preserve_highest_risk', () => {
   const paths = changedPathsFromNameStatus('R100\0database/tempo_legacy_database/ddl/migrations/999_old.sql\0docs/new.md\0D\0scripts/ci-quality.mjs\0');
   assert.equal(selectFastLane(paths).tier,'FULL');
-  assert.equal(selectFastLane(['app/components/prefix-comparison-dialog.tsx','app/lib/review-outbox.ts']).tier,'STUDY');
+  assert.equal(selectFastLane(['app/components/debug-error-panel.tsx','app/lib/review-outbox.ts']).tier,'STUDY');
 });
 test('emergency_zero_skipped_duplicate_and_cancelled_selected_evidence_fails', () => {
   for (const mutation of [evidence => evidence.report.frontend.tests = [],evidence => evidence.report.frontend.tests[0].status = 'skipped',
@@ -248,7 +239,7 @@ test('emergency_zero_skipped_duplicate_and_cancelled_selected_evidence_fails', (
   assert.throws(() => verifySelection([],[]),/empty/);
 });
 test('emergency_base_only_advancement_preserves_FAST_and_STUDY_head_evidence', () => {
-  for (const path of ['app/components/prefix-comparison-dialog.tsx','app/lib/review-outbox.ts']) {
+  for (const path of ['app/components/debug-error-panel.tsx','app/lib/review-outbox.ts']) {
     const evidence = fixture(path);
     assert.deepEqual(validateFastGate(evidence.plan,evidence.report,evidence.needs,{...pr,base:{...pr.base,sha:'c'.repeat(40)}},execution),[]);
   }
@@ -306,14 +297,14 @@ test('emergency_FULL_base_advancement_requires_fresh_integration', () => {
 });
 
 test('PR214_draft_candidates_never_qualify_FAST_or_STUDY', () => {
-  for (const path of ['app/components/prefix-comparison-dialog.tsx','app/lib/review-outbox.ts']) {
+  for (const path of ['app/components/debug-error-panel.tsx','app/lib/review-outbox.ts']) {
     const evidence = fixture(path);
     assert(validateFastGate(evidence.plan,evidence.report,evidence.needs,{...pr,draft:true},execution).length);
   }
 });
 
 test('PR214_draft_ready_transitions_require_fresh_ready_selection', () => {
-  for (const path of ['app/components/prefix-comparison-dialog.tsx','app/lib/review-outbox.ts','scripts/ci-quality.mjs']) {
+  for (const path of ['app/components/debug-error-panel.tsx','app/lib/review-outbox.ts','scripts/ci-quality.mjs']) {
     const evidence = fixture(path);
     evidence.needs.quality = {result:'success'};
     const full = completePlan();
@@ -560,7 +551,7 @@ test('component_boundary_unbridged_native_and_packaged_proofs_retain_FULL', () =
 });
 test('component_boundary_prose_and_UI_companions_cannot_downgrade_required_FULL', () => {
   for (const path of unbridgedComponentPaths) {
-    assert.equal(selectFastLane(['SPEC.md','app/components/prefix-comparison-dialog.tsx',path]).tier,'FULL',path);
+    assert.equal(selectFastLane(['SPEC.md','app/components/debug-error-panel.tsx',path]).tier,'FULL',path);
     for (const options of [{complete:true},{comparisonAvailable:false}]) {
       assert.equal(selectFastLane([path],options).tier,'FULL',path);
     }
@@ -568,160 +559,82 @@ test('component_boundary_prose_and_UI_companions_cannot_downgrade_required_FULL'
   for (const path of ['backend/app/study/interfaces/unknown.py',
     'database/tempo_legacy_database/ddl/migrations/999_component.sql',
     'backend/app/auth.py','scripts/ci-fast-run.mjs']) {
-    assert.equal(selectFastLane(['app/components/prefix-comparison-dialog.tsx',path]).tier,'FULL',path);
+    assert.equal(selectFastLane(['app/components/debug-error-panel.tsx',path]).tier,'FULL',path);
   }
 });
 
-const similaritySources = ['backend/app/analysis/similarity/features.py','backend/app/analysis/similarity/retrieval.py'];
-test('similarity_exact_sources_select_counted_owning_FAST_without_optional_runtime', () => {
-  for (const paths of similaritySources.map(path => [path]).concat([similaritySources])) {
+const retainedBackendOwner = {
+  paths: ['backend/app/games/providers/chesscom.py', 'backend/app/games/providers/lichess.py'],
+  tests: ['backend/tests/test_game_sync.py', 'backend/tests/test_postgres_game_sync_windows.py'],
+};
+test('retained_backend_sources_select_counted_owning_FAST_evidence', () => {
+  for (const paths of retainedBackendOwner.paths.map(path => [path]).concat([retainedBackendOwner.paths])) {
     const plan = makeFastPlan(paths, context);
-    assert.equal(plan.tier,'FAST'); assert.equal(plan.node,false); assert.equal(plan.python,true);
-    assert.deepEqual(plan.backend,['backend/tests/test_product_similarity.py']);
-    for (const key of ['frontend','browser','nativeChecks']) assert.deepEqual(plan[key],[],key);
+    assert.equal(plan.tier, 'FAST'); assert.equal(plan.node, false); assert.equal(plan.python, true);
+    assert.deepEqual(plan.backend, retainedBackendOwner.tests);
+    for (const key of ['frontend', 'browser', 'nativeChecks']) assert.deepEqual(plan[key], [], key);
     const commands = fastCommands(plan);
-    assert.deepEqual(commands.map(([name])=>name),['conflicts','migrations','diff','python_static','backend_inventory','backend']);
-    for (const [name, command, args] of commands.slice(3)) {
-      assert.equal(command,'env',name);
-      assert.deepEqual(args.slice(0,2),[
-        'PYTHONPATH=backend:database:packages/chess-core/src:packages/evidence-math/src:packages/game-review-contracts/src:contracts/game-evidence/src:contracts/analysis-jobs/src',
-        resolvePython(),
-      ],name);
-    }
+    assert.deepEqual(commands.map(([name]) => name), ['conflicts', 'migrations', 'diff', 'python_static', 'backend_inventory', 'backend']);
+    for (const [name, command] of commands.slice(3)) assert.equal(command, resolvePython(), name);
     assert(commands.at(-2)[2].includes('scripts/ci-collect-backend.py'));
     assert(commands.at(-1)[2].includes('--junitxml=test-results/fast-lane/backend.xml'));
   }
-  assert.equal(fastCommands(makeFastPlan(['backend/app/games/providers/lichess.py'],context))
-    .find(([name])=>name==='backend')[1],resolvePython());
+  const selection = selectFastLane([...retainedBackendOwner.paths, ...retainedBackendOwner.tests,
+    'tests/REGRESSIONS.md', 'backend/app/games/providers/README.md', 'docs/architecture/diagrams/README.md']);
+  assert.equal(selection.tier, 'FAST'); assert.deepEqual(selection.backend, retainedBackendOwner.tests);
 });
-test('similarity_backend_collection_results_and_bound_environment_are_mandatory', () => {
-  const baseline = fixture(similaritySources[0]);
-  assert.deepEqual(failures(baseline),[]);
+test('retained_backend_counting_runtime_and_current_PR_guards_remain_required', () => {
+  const source = retainedBackendOwner.paths[0];
+  const baseline = fixture(source);
+  assert.deepEqual(failures(baseline), []);
   for (const mutate of [
     value => delete value.report.backend,
-    value => value.report.backend.expected=[],
-    value => value.report.backend.tests=[],
-    value => value.report.backend.tests[0].status='skipped',
-    value => value.report.backend.tests[0].status='failed',
+    value => value.report.backend.expected = [],
+    value => value.report.backend.tests = [],
+    value => value.report.backend.tests[0].status = 'skipped',
+    value => value.report.backend.tests[0].status = 'failed',
     value => value.report.backend.tests.push(value.report.backend.tests[0]),
-    value => value.report.commands.at(-1).args=value.report.commands.at(-1).args.slice(1),
-    value => value.report.runtime.python='Python 0.0.0',
-    value => value.report.head='c'.repeat(40),
-  ]) { const evidence=fixture(similaritySources[0]); mutate(evidence); assert(failures(evidence).length); }
-  for (const current of [{...pr,draft:true},{...pr,head:{sha:'c'.repeat(40)}},
-    {...pr,labels:[{name:'ci:full'}]}]) {
-    assert(validateFastGate(baseline.plan,baseline.report,baseline.needs,current,execution).length);
+    value => value.report.commands.at(-1).args = value.report.commands.at(-1).args.slice(1),
+    value => value.report.commands.at(-1).command = 'different-python',
+    value => value.report.runtime.python = 'Python 0.0.0',
+    value => value.report.head = 'c'.repeat(40),
+  ]) { const evidence = fixture(source); mutate(evidence); assert(failures(evidence).length); }
+  for (const current of [{...pr, draft:true}, {...pr, head:{sha:'c'.repeat(40)}},
+    {...pr, labels:[{name:'ci:full'}]}]) {
+    assert(validateFastGate(baseline.plan, baseline.report, baseline.needs, current, execution).length);
   }
-  assert.deepEqual(validateFastGate(baseline.plan,baseline.report,baseline.needs,
-    {...pr,base:{...pr.base,sha:'c'.repeat(40)}},execution),[]);
+  assert.deepEqual(validateFastGate(baseline.plan, baseline.report, baseline.needs,
+    {...pr, base:{...pr.base, sha:'c'.repeat(40)}}, execution), []);
 });
-test('similarity_mapping_is_exact_and_mixed_or_complete_changes_stay_conservative', () => {
-  for (const path of ['backend/app/analysis/similarity/new_helper.py',
-    'backend/app/repertoire/position_index.py','packages/evidence-math/src/tempo_evidence_math/_identity.py',
-    'backend/app/auth.py','database/tempo_legacy_database/ddl/migrations/999_similarity.sql',
-    'scripts/ci-fast-commands.mjs','backend/pyproject.toml']) {
-    assert.equal(selectFastLane([...similaritySources,path]).tier,'FULL',path);
-  }
-  for (const options of [{complete:true},{comparisonAvailable:false}]) {
-    assert.equal(selectFastLane(similaritySources,options).tier,'FULL');
-  }
-  const renamed=changedPathsFromNameStatus('R100\0backend/app/auth.py\0backend/app/analysis/similarity/features.py\0');
-  assert.equal(selectFastLane(renamed).tier,'FULL');
-  const study=selectFastLane([...similaritySources,'app/lib/review-outbox.ts']);
-  assert.equal(study.tier,'STUDY'); assert(study.backend.includes('backend/tests/test_product_similarity.py'));
-  const inventory=structuredClone(fastInventory);
-  inventory.sources.push(inventory.sources.find(mapping=>mapping.paths.includes(similaritySources[0])));
-  assert.equal(selectFastLane(similaritySources,{inventory}).tier,'FULL');
-});
-
-const pureBacklogOwners = [
-  {paths:['backend/app/analysis/probability/explorer.py','backend/app/analysis/probability/ports.py',
-    'backend/app/analysis/probability/interfaces/__init__.py'], test:'backend/tests/test_product_explorer.py'},
-  {paths:['backend/app/analysis/proposals/acceptability.py','backend/app/analysis/proposals/blunders.py',
-    'backend/app/analysis/proposals/coordinator.py','backend/app/analysis/proposals/ports.py'],
-    test:'backend/tests/test_product_proposals.py'},
-];
-test('pure_backlog_exact_Explorer_and_proposal_sources_select_only_owning_FAST_evidence', () => {
-  for (const owner of pureBacklogOwners) for (const paths of owner.paths.map(path=>[path]).concat([owner.paths])) {
-    const plan=makeFastPlan(paths,context);
-    assert.equal(plan.tier,'FAST'); assert.equal(plan.node,false); assert.equal(plan.python,true);
-    assert.deepEqual(plan.backend,[owner.test]);
-    for (const key of ['frontend','browser','nativeChecks']) assert.deepEqual(plan[key],[],key);
-    const commands=fastCommands(plan);
-    assert.deepEqual(commands.map(([name])=>name),['conflicts','migrations','diff','python_static','backend_inventory','backend']);
-    for (const [name,command,args] of commands.slice(3)) {
-      assert.equal(command,'env',name);
-      assert.deepEqual(args.slice(0,2),[
-        'PYTHONPATH=backend:database:packages/chess-core/src:packages/evidence-math/src:packages/game-review-contracts/src:contracts/game-evidence/src:contracts/analysis-jobs/src',
-        resolvePython(),
-      ],name);
-    }
-  }
-  const selection=selectFastLane(pureBacklogOwners.flatMap(owner=>owner.paths));
-  assert.equal(selection.tier,'FAST');
-  assert.deepEqual(selection.backend,pureBacklogOwners.map(owner=>owner.test));
-  for (const [owner, prose] of [
-    [pureBacklogOwners[0],['backend/app/analysis/probability/EXPLORER.md',
-      'backend/app/analysis/probability/README.md','docs/architecture/diagrams/README.md']],
-    [pureBacklogOwners[1],['backend/app/analysis/proposals/README.md']],
-  ]) {
-    const actualChanges=selectFastLane([...owner.paths,owner.test,'tests/REGRESSIONS.md',...prose]);
-    assert.equal(actualChanges.tier,'FAST'); assert.deepEqual(actualChanges.backend,[owner.test]);
-  }
-});
-test('pure_backlog_exact_Explorer_document_uses_existing_static_prose_commands', () => {
-  const path='backend/app/analysis/probability/EXPLORER.md';
-  const plan=makeFastPlan([path],context);
-  assert.equal(plan.tier,'FAST'); assert.equal(plan.node,false); assert.equal(plan.python,false);
-  for (const key of ['frontend','backend','browser','nativeChecks']) assert.deepEqual(plan[key],[],key);
-  assert.deepEqual(fastCommands(plan).map(([name])=>name),['conflicts','migrations','diff']);
-  assert.deepEqual(selectFastLane([path,...pureBacklogOwners[0].paths]).backend,[pureBacklogOwners[0].test]);
-  assert.equal(selectFastLane([path,'backend/app/analysis/probability/OTHER.md']).tier,'FULL');
+test('retained_backend_document_uses_existing_static_prose_commands', () => {
+  const path = 'backend/app/games/providers/README.md';
+  const plan = makeFastPlan([path], context);
+  assert.equal(plan.tier, 'FAST'); assert.equal(plan.node, false); assert.equal(plan.python, false);
+  for (const key of ['frontend', 'backend', 'browser', 'nativeChecks']) assert.deepEqual(plan[key], [], key);
+  assert.deepEqual(fastCommands(plan).map(([name]) => name), ['conflicts', 'migrations', 'diff']);
+  assert.deepEqual(selectFastLane([path, ...retainedBackendOwner.paths]).backend, retainedBackendOwner.tests);
+  assert.equal(selectFastLane([path, 'backend/app/games/providers/OTHER.md']).tier, 'FULL');
   assert.equal(selectFastLane(changedPathsFromNameStatus(
-    'R100\0backend/app/auth.py\0backend/app/analysis/probability/EXPLORER.md\0')).tier,'FULL');
+    'R100\0backend/app/auth.py\0backend/app/games/providers/README.md\0')).tier, 'FULL');
 });
-test('pure_backlog_counting_environment_runtime_and_current_PR_guards_remain_required', () => {
-  for (const owner of pureBacklogOwners) {
-    const baseline=fixture(owner.paths[0]); assert.deepEqual(failures(baseline),[]);
-    for (const mutate of [
-      value=>delete value.report.backend,
-      value=>value.report.backend.expected=[], value=>value.report.backend.tests=[],
-      value=>value.report.backend.tests[0].status='skipped',
-      value=>value.report.backend.tests[0].status='failed',
-      value=>value.report.backend.tests.push(value.report.backend.tests[0]),
-      value=>value.report.commands.at(-1).args=value.report.commands.at(-1).args.slice(1),
-      value=>value.report.runtime.python='Python 0.0.0', value=>value.report.head='c'.repeat(40),
-    ]) {const evidence=fixture(owner.paths[0]);mutate(evidence);assert(failures(evidence).length);}
-    for (const current of [{...pr,draft:true},{...pr,head:{sha:'c'.repeat(40)}},
-      {...pr,labels:[{name:'ci:full'}]}]) {
-      assert(validateFastGate(baseline.plan,baseline.report,baseline.needs,current,execution).length);
-    }
-    assert.deepEqual(validateFastGate(baseline.plan,baseline.report,baseline.needs,
-      {...pr,base:{...pr.base,sha:'c'.repeat(40)}},execution),[]);
+test('retained_backend_unknown_sensitive_missing_owner_and_complete_changes_fail_closed', () => {
+  const paths = retainedBackendOwner.paths;
+  for (const path of ['backend/app/games/providers/unknown.py', 'backend/app/repertoire/position_index.py',
+    'packages/evidence-math/src/tempo_evidence_math/_identity.py', 'backend/app/auth.py',
+    'database/tempo_legacy_database/ddl/migrations/999_provider.sql',
+    'scripts/ci-fast-commands.mjs', 'backend/pyproject.toml']) {
+    assert.equal(selectFastLane([...paths, path]).tier, 'FULL', path);
   }
-});
-test('pure_backlog_unknown_sensitive_missing_owner_and_complete_changes_fail_closed', () => {
-  const paths=pureBacklogOwners.flatMap(owner=>owner.paths);
-  for (const path of ['backend/app/analysis/probability/unknown.py','backend/app/analysis/proposals/unknown.py',
-    'backend/app/analysis/probability/interfaces/private.py','backend/app/auth.py',
-    'database/tempo_legacy_database/ddl/migrations/999_pure.sql',
-    'scripts/ci-fast-commands.mjs','backend/pyproject.toml',
-    'packages/evidence-math/src/tempo_evidence_math/_identity.py']) {
-    assert.equal(selectFastLane([...paths,'backend/app/analysis/probability/EXPLORER.md',path]).tier,'FULL',path);
+  for (const options of [{complete:true}, {comparisonAvailable:false}]) {
+    assert.equal(selectFastLane(paths, options).tier, 'FULL');
+    assert.equal(selectFastLane(['backend/app/games/providers/README.md'], options).tier, 'FULL');
   }
-  for (const options of [{complete:true},{comparisonAvailable:false}]) {
-    assert.equal(selectFastLane(paths,options).tier,'FULL');
-    assert.equal(selectFastLane(['backend/app/analysis/probability/EXPLORER.md'],options).tier,'FULL');
-  }
-  for (const owner of pureBacklogOwners) {
-    const missing=structuredClone(fastInventory);
-    missing.sources.find(mapping=>mapping.paths.includes(owner.paths[0])).backend=['backend/tests/test_missing_owner.py'];
-    assert.equal(selectFastLane(owner.paths,{inventory:missing}).tier,'FULL');
-    const ambiguous=structuredClone(fastInventory);
-    ambiguous.sources.push(ambiguous.sources.find(mapping=>mapping.paths.includes(owner.paths[0])));
-    assert.equal(selectFastLane(owner.paths,{inventory:ambiguous}).tier,'FULL');
-  }
-  const study=selectFastLane([...paths,'app/lib/review-outbox.ts']);
-  assert.equal(study.tier,'STUDY');
-  assert.deepEqual(study.backend,pureBacklogOwners.map(owner=>owner.test));
+  const missing = structuredClone(fastInventory);
+  missing.sources.find(mapping => mapping.paths.includes(paths[0])).backend = ['backend/tests/test_missing_owner.py'];
+  assert.equal(selectFastLane(paths, {inventory:missing}).tier, 'FULL');
+  const ambiguous = structuredClone(fastInventory);
+  ambiguous.sources.push(ambiguous.sources.find(mapping => mapping.paths.includes(paths[0])));
+  assert.equal(selectFastLane(paths, {inventory:ambiguous}).tier, 'FULL');
+  const study = selectFastLane([...paths, 'app/lib/review-outbox.ts']);
+  assert.equal(study.tier, 'STUDY'); assert.deepEqual(study.backend, retainedBackendOwner.tests);
 });

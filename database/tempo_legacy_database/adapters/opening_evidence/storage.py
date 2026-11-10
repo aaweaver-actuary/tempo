@@ -3,7 +3,7 @@
 from psycopg.errors import SerializationFailure
 
 from .. import postgres_store
-from ..prefix_reads.diagnostics import postgres_is_configured
+from ..postgres_store import configured as postgres_is_configured
 
 
 def lock_card_edit(database, card_id):

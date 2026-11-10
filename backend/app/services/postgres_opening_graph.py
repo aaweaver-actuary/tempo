@@ -334,9 +334,9 @@ def classify_graph_cards_in_transaction(
             raise RuntimeError("Published graph card disappeared before classification")
         kind = "prefix" if classification[0] else "response"
         next_state = "new" if classification[1] else "locked"
-        if (
-            "maintenance_scope" in task or task.get("explicit_import_preparation")
-        ) and storage.protected_card(database, card_id, kind):
+        if task.get("explicit_import_preparation") and storage.protected_card(
+            database, card_id, kind
+        ):
             raise ValueError(
                 "Rebuild would reclassify a protected card; stop for diagnosis"
             )
@@ -503,14 +503,6 @@ def cleanup_graph_cards_in_transaction(
         raise ValueError(
             "Explicit import would retire existing graph cards; review content separately"
         )
-    if "maintenance_scope" in task and prepared.obsolete_card_ids:
-        protected = storage.protected_queue_entry(
-            database, (list(prepared.obsolete_card_ids), payload["local_day"])
-        )
-        if protected:
-            raise ValueError(
-                "Selected rebuild would retire a protected queue entry; stop for diagnosis"
-            )
     remove_obsolete_graph_memberships(
         database, repertoire_id, generation, prepared.obsolete_card_ids
     )

@@ -19,7 +19,7 @@ it("retired opportunity drilldown leaves retained repertoire import and paste ac
     onQueueChanged={async () => {}} />);
 
   expect(await screen.findByRole("heading", { name: "Repertoire" })).toBeTruthy();
-  expect(screen.getByText("Main")).toBeTruthy();
+  expect(await screen.findByText("Main")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Opportunities" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: /Import PGN/ }));
   fireEvent.click(screen.getByRole("button", { name: "Paste analysis" }));

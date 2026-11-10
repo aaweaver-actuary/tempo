@@ -50,31 +50,6 @@ function nestedChecks(value:unknown):void {
 export function assertSemantics(model:string,payload:ObjectValue):void {
   nestedChecks(payload);
   switch(model) {
-    case "ReviewSettlement": {
-      const settlement=object(payload.settlement);
-      if(settlement.status==="committed") assert.equal(object(settlement.receipt).submission_id,payload.submission_id,"unrelated receipt");
-      break;
-    }
-    case "QueueIssuance": {
-      const attempts=items(payload.attempts);
-      assert.equal(payload.status==="issued",attempts.length>0,"false queue issuance");
-      if(payload.status==="accepted_pending" || payload.status==="retryable_failure") assert.notEqual(payload.reason,null);
-      unique(attempts.map(attempt=>attempt.attempt_id));break;
-    }
-    case "Publication": {
-      const definitions=items(payload.definitions);
-      unique(definitions.map(definition=>definition.card_id));
-      for(const definition of definitions) same([definition.publication_id,definition.publication_generation,definition.source_revision],[payload.publication_id,payload.publication_generation,payload.source_revision]);
-      break;
-    }
-    case "PublicationValidation":assert.equal(payload.status==="validated",(payload.errors as string[]).length===0);break;
-    case "RetirementRequest":
-      assert.equal(payload.replacement_publication_id===null,payload.replacement_generation===null);
-      assert.ok(payload.replacement_publication_id!==payload.publication_id || payload.replacement_generation!==payload.publication_generation,"self replacement");break;
-    case "RetirementAcknowledgement":assert.equal(payload.status==="retired",payload.stale_attempts_fenced);
-      if(["rejected","retryable_failure","stale_generation"].includes(payload.status as string)) assert.notEqual(payload.reason,null);break;
-    case "PublicationAcceptance":if(payload.status!=="accepted_pending") assert.notEqual(payload.reason,null);break;
-    case "ActivationAcknowledgement":if(["rejected","retryable_failure","stale_generation"].includes(payload.status as string)) assert.notEqual(payload.reason,null);break;
     case "EvidenceDelivery": {
       const encounters=items(payload.encounters);const identities=encounters.map(encounter=>encounter.encounter_id);unique(identities);
       for(const observation of [...items(payload.comparisons),...items(payload.misses)]) assert.ok(identities.includes(observation.encounter_id),"unobserved encounter");

@@ -60,15 +60,15 @@
       "import sys",
       "import pytest",
       "specification = importlib.util.spec_from_file_location(",
-      "'redis_fixture', Path(__file__).resolve().parents[2] / 'database/tests/check_postgres_redis_admission.py')",
+      "/ \"database/tests/check_postgres_redis_admission.py\",",
       "specification.loader.exec_module(module)",
-      "monkeypatch.setattr(redis_fixture.psycopg, 'connect', lambda *args, **kwargs: Database())",
-      "monkeypatch.setattr(sys, 'argv', ['fixture', 'cleanup', snapshot['identity'],",
-      "monkeypatch.setattr(redis_fixture, 'configure', lambda: None)",
-      "monkeypatch.setattr(redis_fixture, 'seed_fixture', lambda *_: {'identity': 'owned'})",
-      "monkeypatch.setattr(redis_fixture.psycopg, 'connect', lambda *args, **kwargs: CommitFailure())",
-      "monkeypatch.setattr(sys, 'argv', ['fixture', 'seed', 'owned'])",
-      "monkeypatch.setattr(redis_fixture.psycopg, 'connect', lambda *_: pytest.fail('must reject before connecting'))"
+      "monkeypatch.setattr(",
+      "monkeypatch.setattr(",
+      "monkeypatch.setattr(redis_fixture, \"configure\", lambda: None)",
+      "monkeypatch.setattr(redis_fixture, \"seed_fixture\", lambda *_: {\"identity\": \"owned\"})",
+      "monkeypatch.setattr(",
+      "monkeypatch.setattr(sys, \"argv\", [\"fixture\", \"seed\", \"owned\"])",
+      "monkeypatch.setattr("
     ]
   },
   "consumers": {

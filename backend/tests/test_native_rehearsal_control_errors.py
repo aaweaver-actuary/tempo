@@ -15,9 +15,7 @@ from app.services import redis_admission_gate
 @pytest.mark.parametrize(
     "filename,function_name",
     [
-        ("check_postgres_opening_segmentation.py", "admitted_segmentation_call"),
         ("check_postgres_opening_evidence.py", "_wait_for_checkpoint_admission"),
-        ("check_postgres_prefix_transition_application.py", "idle_call"),
     ],
 )
 @pytest.mark.parametrize("with_cause", [False, True])

@@ -1,5 +1,10 @@
 # Supported producer/consumer combinations
 
+Current package scope is Game Evidence and Analysis Jobs. The independent
+Learning API, transfer and Content publication packages are retired. The dated
+foundation matrix below records historical evidence, including removed packages;
+it is not the current package inventory or a fresh qualification receipt.
+
 ## Game Evidence artifact 3.0.0 checkpoint
 
 Wire v3 explicitly represents observed legacy graph authority and exact physical

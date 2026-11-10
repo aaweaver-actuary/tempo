@@ -1,6 +1,6 @@
-"""Compatibility exports; executable semantics are Learning-owned."""
+"""Retained backend exports for Study policy."""
 
-from tempo_learning_runtime import study_grading as _owned
+from app.study.policy import study_grading as _owned
 
 ChoiceAnswer = _owned.ChoiceAnswer
 ChoiceExercise = _owned.ChoiceExercise

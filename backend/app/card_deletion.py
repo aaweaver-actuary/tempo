@@ -180,12 +180,8 @@ def delete_repertoire_data(
         if replacement:
             storage.select_main(database, replacement[0])
     from .queue_commands import request_queue_refresh_in_transaction
-    from .services.durable_tasks import enqueue_task_in_transaction
 
     request_queue_refresh_in_transaction(database, date.today().isoformat())
-    enqueue_task_in_transaction(
-        database, "repertoire_game_refresh", "all", {"after_game_id": ""}, priority=90
-    )
     return {"deleted": True, "id": repertoire_id}
 
 
