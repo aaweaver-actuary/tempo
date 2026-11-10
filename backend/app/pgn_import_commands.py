@@ -12,7 +12,6 @@ import uuid
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
-from .services.repertoire_game_refresh import refresh_game_publications_after_mutation
 from .command_gateway import register_command
 from .pgn_import_validation import validate_sources
 from tempo_legacy_database.adapters.authored_repertoires.pgn_import import storage
@@ -269,12 +268,10 @@ def _admit_pgn_import(
     }
 
 
-@refresh_game_publications_after_mutation
 def admit_pgn_import(database, raw_payload):
     return _admit_pgn_import(database, raw_payload)
 
 
-@refresh_game_publications_after_mutation
 def explicit_pgn_import(database, raw_payload):
     if "retained_import_preview" in raw_payload:
         from app.repertoire.changes.imports import validate_approved_import

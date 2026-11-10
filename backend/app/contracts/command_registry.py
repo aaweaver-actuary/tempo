@@ -4,25 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, ContextManager, Generic, Protocol, TypeVar, cast
+from typing import Any, Generic, TypeVar, cast
 
 Transaction = TypeVar("Transaction")
 Original = TypeVar("Original")
 Prepared = TypeVar("Prepared")
 Result = TypeVar("Result")
-TransactionContra = TypeVar("TransactionContra", contravariant=True)
-ResultContra = TypeVar("ResultContra", contravariant=True)
 
 
-class TransitionCommandLifecycle(Protocol[TransactionContra, ResultContra]):
-    """Exceptional prefix-transition lifecycle, at the gateway's existing boundaries."""
-
-    def writer_admission(self) -> ContextManager[Any]: ...
-    def delayed_preparation_error(self, error: Exception) -> Exception: ...
-    def reject_after_rollback(
-        self, database: TransactionContra, operation_id: str, error: Exception
-    ) -> bool: ...
-    def is_pending(self, result: ResultContra) -> bool: ...
 
 
 @dataclass(frozen=True)
@@ -34,7 +23,6 @@ class CommandDescriptor(Generic[Transaction, Original, Prepared, Result]):
     prepare: Callable[[Original], Prepared]
     apply: Callable[[Transaction, Prepared], Result]
     after_commit: Callable[[Result], None] | None = None
-    transition_lifecycle: TransitionCommandLifecycle[Transaction, Result] | None = None
 
 
 class CommandRegistry:
@@ -44,7 +32,6 @@ class CommandRegistry:
         self.handlers: dict[str, Callable[..., Any]] = {}
         self.preparers: dict[str, Callable[[dict[str, Any]], Any]] = {}
         self._after_commit: dict[str, Callable[[Any], None]] = {}
-        self.transition_lifecycles: dict[str, TransitionCommandLifecycle[Any, Any]] = {}
 
     def register(
         self, descriptor: CommandDescriptor[Transaction, Original, Prepared, Result]
@@ -62,12 +49,6 @@ class CommandRegistry:
 
         self.handlers[descriptor.name] = apply
         self.preparers[descriptor.name] = prepare
-        if descriptor.transition_lifecycle is not None:
-            self.transition_lifecycles[descriptor.name] = (
-                descriptor.transition_lifecycle
-            )
-        else:
-            self.transition_lifecycles.pop(descriptor.name, None)
         if descriptor.after_commit is not None:
             callback = descriptor.after_commit
 
@@ -91,6 +72,9 @@ class CommandRegistry:
 # receipt table. Unknown and mixed commands are deliberately not classified.
 RETIRED_COMMANDS = frozenset(
     {
+        "repertoire.canonical_prefix.preview",
+        "repertoire.canonical_prefix.save",
+        "repertoire.prefix_transition.apply",
         "defense.recognition.submit",
         "defense.attempt.submit",
         "defense.candidate.change",
@@ -136,6 +120,17 @@ RETIRED_COMMANDS = frozenset(
 )
 RETIRED_TASK_KINDS = frozenset(
     {
+        "prefix_transition_application",
+        "canonical_prefix_preview",
+        "opening_segmentation",
+        "game_derivation_compare",
+        "game_derivation_events",
+        "game_derivation_features",
+        "game_derivation_findings",
+        "game_derivation_misses",
+        "game_derivation_positions",
+        "game_derivation_priorities",
+        "repertoire_game_refresh",
         "defensive_rubric_audit",
         "defensive_admission",
         "defensive_threat_report_audit",

@@ -276,11 +276,3 @@ def complete_scan_state(database, values):
         "WHERE repertoire_id=%s AND scan_generation=%s",
         values,
     ).rowcount
-
-
-def active_prefix_transition(database, values):
-    return database.execute_native(
-        "SELECT 1 FROM prefix_transition_applications WHERE repertoire_id=%s AND graph_generation=%s "
-        "AND state IN ('publishing','recovery_required')",
-        values,
-    ).fetchone()

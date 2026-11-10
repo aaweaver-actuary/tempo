@@ -15,7 +15,9 @@ peer documents link to them instead of maintaining copies. See the
 ### Legacy assembly and existing coupling
 
 **MAIN / LEGACY:** the full app and legacy backend still combine domain concerns.
-This is a separate assembly from the independent Learning runtime. The declared
+The independent Learning runtime has been retired. Retained Study policy lives
+in [`app/study/policy`](app/study/policy/README.md), while the existing review
+application and remediation libraries borrow the serving transaction. The declared
 PostgreSQL Compose stack below is source configuration, **deployment unverified**.
 SQLite compatibility paths also exist; see [storage](../docs/STORAGE.md).
 
@@ -29,8 +31,6 @@ flowchart TB
   Policy -->|"same database: game<br/>projections and Study state"| DB[("Legacy tempo PostgreSQL<br/>database")]
   API -->|"SQLite prefix wake capability"| Compat["Compatibility coordinator"]
   API -->|"Games selection / source facts"| Facts["Public Games contracts and<br/>pure retained source facts"]
-  API -->|"on coverage request"| Coverage["Optional coverage owner"]
-  API -->|"on threat operation"| Threat["Optional threat producer"]
   API -->|"reader capabilities"| ReadStorage["Root database read adapters"]
   ReadStorage -->|"existing shared database"| DB
   Compose["docker-compose.yml"] -->|"declares startup health<br/>dependencies"| API
@@ -55,8 +55,8 @@ authority is introduced.
 
 The legacy [evidence command](app/game_evidence_commands.py)
 also borrows the existing [command gateway](app/command_gateway.py)
-transaction. This legacy-local bridge is not the independent Learning receiver
-and must not be mistaken for permission for another service to write these tables.
+transaction. It remains a local bridge over serving records; no independent
+Learning receiver or second transaction owner is installed.
 [legacy workspace](../app/views/legacy-workspace.tsx),
 [legacy root](app/main.py), [command dispatch](app/command_dispatch.py),
 [Celery root](app/celery_app.py) and

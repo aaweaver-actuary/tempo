@@ -147,20 +147,17 @@ def test_pure_contract_import_does_not_start_or_import_runtime():
     )
 
 
-def test_descriptor_retains_and_clears_both_callback_and_transition_lifecycle():
+def test_descriptor_retains_and_clears_after_commit_callback():
     registry = CommandRegistry()
     events = []
-    lifecycle = object()
     descriptor = CommandDescriptor(
         "both",
         lambda payload: payload,
         lambda value: value,
         lambda _tx, value: value,
         after_commit=events.append,
-        transition_lifecycle=lifecycle,
     )
     registry.register(descriptor)
-    assert registry.transition_lifecycles["both"] is lifecycle
     registry.after_commit("both", {"saved": True})
     assert events == [{"saved": True}]
     with pytest.raises(ValueError, match="Duplicate command: both"):
@@ -174,6 +171,5 @@ def test_descriptor_retains_and_clears_both_callback_and_transition_lifecycle():
             lambda _tx, value: value,
         )
     )
-    assert "both" not in registry.transition_lifecycles
     registry.after_commit("both", {"saved": False})
     assert events == [{"saved": True}]

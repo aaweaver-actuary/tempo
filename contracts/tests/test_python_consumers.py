@@ -9,9 +9,6 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGES = [
-    "learning",
-    "learning-transfer",
-    "content-publication",
     "game-evidence",
     "analysis-jobs",
 ]
@@ -33,17 +30,7 @@ def test_python_v1_producers_exchange_with_independent_python_v1_consumers(packa
     consumer = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(consumer)
     decisions = {record["case"]: consumer.consume(record) for record in records}
-    if package == "learning":
-        assert decisions["review-pending"] == "keep_unconfirmed"
-        assert decisions["review-committed"] == "confirm_review"
-    elif package == "learning-transfer":
-        assert decisions["example-position-representative"] == "stage_representative_only"
-        assert decisions["example-blocked-identity"] == "retain_blocked_identity"
-    elif package == "content-publication":
-        assert decisions["publication"] == "offer_to_learning"
-        assert decisions["acceptance-accepted_pending"] == "await_activation"
-        assert decisions["activation-activated"] == "observe_activation"
-    elif package == "game-evidence":
+    if package == "game-evidence":
         assert decisions["delivery"] == "submit_obligations_without_queue_write"
         assert decisions["ack-accepted_pending"] == "keep_delivery_pending_or_failed"
         assert decisions["ack-completed"] == "acknowledge_completion"

@@ -793,6 +793,7 @@ def test_new_position_issue_fences_source_before_existing_queue_locks_and_rolls_
     monkeypatch.setattr(
         queue_commands.queue_storage, "is_postgres_connection", lambda db: False
     )
+    monkeypatch.setattr(queue_commands.queue_storage, "retired_issuance_target", lambda *a: False)
     monkeypatch.setattr(queue_commands.queue_storage, "issued_origin", lambda *a: True)
     monkeypatch.setattr(
         queue_commands.queue_storage,
@@ -855,7 +856,7 @@ def test_http_issued_head_returns_original_plan_without_dispatch(monkeypatch):
     monkeypatch.setattr(
         main.queue_projection_storage, "issued_head", lambda *a: {"issued_as_head": 1}
     )
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+
     monkeypatch.setattr(
         queue_next_card,
         "prepare_queue_head",
@@ -1038,6 +1039,7 @@ def test_changed_urgency_rolls_back_inserted_position_plan(monkeypatch):
     monkeypatch.setattr(
         queue_commands.queue_storage, "is_postgres_connection", lambda *a: False
     )
+    monkeypatch.setattr(queue_commands.queue_storage, "retired_issuance_target", lambda *a: False)
     monkeypatch.setattr(queue_commands.queue_storage, "issued_origin", lambda *a: True)
     monkeypatch.setattr(
         queue_commands.queue_storage,

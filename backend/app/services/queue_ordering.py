@@ -1,6 +1,6 @@
-"""Compatibility exports; executable semantics are Learning-owned."""
+"""Retained backend exports for Study policy."""
 
-from tempo_learning_runtime import queue_ordering as _owned
+from app.study.policy import queue_ordering as _owned
 
 Sequence = _owned.Sequence
 TypedDict = _owned.TypedDict

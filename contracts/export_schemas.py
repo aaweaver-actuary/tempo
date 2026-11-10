@@ -7,9 +7,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PACKAGES = (
-    "learning",
-    "learning-transfer",
-    "content-publication",
     "game-evidence",
     "analysis-jobs",
 )

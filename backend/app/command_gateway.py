@@ -24,7 +24,6 @@ from tempo_legacy_database.adapters import postgres_store
 from .services.redis_admission_gate import BackgroundAdmissionDeferred
 from .contracts.command_identity import request_digest as _identity_digest
 from .contracts.command_registry import CommandDescriptor, CommandRegistry
-from .contracts.prefix_errors import PrefixEvaluationForegroundDeferred
 
 
 CommandHandler = Callable[[postgres_store.PostgresConnection, Any], Any]
@@ -68,7 +67,6 @@ def register_command(
     if name in _handlers:
         raise ValueError(f"Duplicate command: {name}")
     _registry.clear_after_commit(name)
-    _registry.transition_lifecycles.pop(name, None)
     _handlers[name] = handler
     if prepare is not None:
         _preparers[name] = prepare
@@ -361,19 +359,10 @@ def _execute_command(
         except (*storage.TRANSIENT_DATABASE_ERRORS, BackgroundAdmissionDeferred):
             raise
         except Exception as error:
-            if isinstance(error, PrefixEvaluationForegroundDeferred):
-                raise BackgroundAdmissionDeferred(
-                    "Waiting for foreground activity"
-                ) from error
             # Persist definitive preparation failures through the same receipt
             # envelope, after checking delivery identity and the attempt fence.
             preparation_error = error
-    command_connection = _writer_connection(background)
-    lifecycle = _registry.transition_lifecycles.get(command_name)
-    write_admission = (
-        lifecycle.writer_admission() if lifecycle is not None else nullcontext()
-    )
-    with write_admission, command_connection as database:
+    with _writer_connection(background) as database:
         receipt_writer = storage.receipt_writer(database)
         # Serialize two deliveries of one command across worker processes.
         storage.lock_operation(receipt_writer, operation_id)
@@ -392,10 +381,6 @@ def _execute_command(
         storage.begin_handler(receipt_writer)
         try:
             if preparation_error is not None:
-                if lifecycle is not None:
-                    transformed = lifecycle.delayed_preparation_error(preparation_error)
-                    if transformed is not preparation_error:
-                        raise transformed from preparation_error
                 raise preparation_error
             result = _handlers[command_name](database, prepared)
         except (*storage.TRANSIENT_DATABASE_ERRORS, BackgroundAdmissionDeferred):
@@ -404,19 +389,6 @@ def _execute_command(
             raise
         except Exception as error:
             storage.rollback_handler(receipt_writer)
-            if storage.is_transition_in_progress(error):
-                error = HTTPException(
-                    409,
-                    {
-                        "code": "prefix_transition_in_progress",
-                        "message": storage.primary_error_message(error),
-                    },
-                )
-            committed_transition = False
-            if lifecycle is not None:
-                committed_transition = lifecycle.reject_after_rollback(
-                    database, operation_id, error
-                )
             error_payload = {
                 "message": str(error),
                 "status_code": error.status_code
@@ -449,15 +421,9 @@ def _execute_command(
                     # Unsupported/cyclic detail retains the existing envelope.
                     pass
             error_json = json.dumps(error_payload)
-            if committed_transition:
-                storage.block_transition(receipt_writer, error_json, operation_id)
-                return None
             storage.fail_operation(receipt_writer, error_json, operation_id)
             return None
         storage.release_handler(receipt_writer)
-        if lifecycle is not None and lifecycle.is_pending(result):
-            storage.keep_transition_pending(receipt_writer, operation_id)
-            return result
         response_json = json.dumps(result, sort_keys=True, separators=(",", ":"))
         storage.complete_operation(receipt_writer, response_json, operation_id)
         return result
@@ -482,10 +448,6 @@ def read_operation(
         receipt_control = nullcontext()
     with receipt_control, receipt_connection as database:
         receipt = storage.operation_status(database, operation_id)
-        transition_progress = None
-        if receipt and receipt[0] == "repertoire.prefix_transition.apply":
-            progress = storage.transition_progress(database, operation_id)
-            transition_progress = dict(progress) if progress else None
     if receipt is None:
         return {
             "operation_id": operation_id,
@@ -516,15 +478,6 @@ def read_operation(
                 )
     state, response_json, error_json = receipt[2], receipt[3], receipt[4]
     response: dict[str, Any] = {"operation_id": operation_id, "state": state}
-    if transition_progress is not None:
-        response["transition"] = transition_progress
-        response["transition"]["recovery"] = (
-            "Retry this operation through its existing retry endpoint to resume the linked tasks; the activated graph remains committed."
-            if transition_progress["state"] == "recovery_required"
-            else "Approve a fresh plan with a new operation identity; activation did not occur."
-            if transition_progress["state"] == "rejected"
-            else None
-        )
     response["attempt_count"] = int(receipt[5])
     response["retry_cycle"] = int(receipt[10])
     response["cycle_attempt_count"] = int(receipt[11])

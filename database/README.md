@@ -8,25 +8,24 @@ Physical colocation does not grant a component access to another owner's data an
 
 ## Installed database
 
-The schema-62 three-journey release uses the PostgreSQL schema in `tempo_legacy_database` for Study, Tactics and Game Review. Its backend installs Learning runtime and remediation packages, including their database modules. The separate Content and Game Evidence databases were experimental services and are retired. [Installation receipt](https://github.com/aaweaver-actuary/tempo/issues/908#issuecomment-6660350033).
+The schema-62 three-journey release uses the PostgreSQL schema in `tempo_legacy_database` for Study, Tactics and Game Review. The backend retains the review application and remediation libraries. The independent Learning runtime and its separate database are removed from source, along with the earlier experimental Content and Game Evidence services. Retained scheduling/reconciliation SQL now lives in the serving database adapters; this source reduction performs no migration or live data change. [Installation receipt](https://github.com/aaweaver-actuary/tempo/issues/908#issuecomment-6660350033).
 
 ## Find stored data
 
 | Owner | Namespace / scope | Tables in source DDL | Charts and complete field/type dictionary |
 | --- | --- | ---: | --- |
 | [Legacy backend](tempo_legacy_database/README.md) | `public (existing shared legacy database)` | 171 | [Schema index](tempo_legacy_database/schema/README.md) |
-| [Learning runtime](tempo_learning_database/README.md) | `learning` | 70 | [Schema index](tempo_learning_database/schema/README.md) |
 | [Learning remediation](tempo_remediation_database/README.md) | `learning or public, chosen by including owner` | 12 | [Schema index](tempo_remediation_database/schema/README.md) |
 | [Browser](browser/README.md) | IndexedDB databases and local replay stores | object stores | [Browser storage chart/dictionary](browser/README.md) |
 | [Browser intent package](browser-intents/README.md) | Workspace-scoped IndexedDB intent/teaching facts | object stores | [Intent storage chart/dictionary](browser-intents/README.md) |
 
-Counts are separate installation schemas, **not a total of tables in one live database**. The legacy 171 already include 12 remediation tables; Learning runtime's 70 also include its 12 remediation tables. They are included by separate owners, not independent extra copies to add to those totals.
+Counts describe source DDL, **not a live database census**. The legacy 171 already include the 12 remediation tables; do not add the remediation count to that total. Removing the separate Learning package does not drop any table or row from an installation.
 
 Legacy Redis admission/policy key layouts, JSON fields, expiry and logical generation fences are documented in [Redis control storage](tempo_legacy_database/adapters/redis_control/README.md). They are control keys, not SQL tables or foreign-key constraints.
 
 ## Organization and packaging
 
-Each `tempo_*_database/` directory is an owner-specific Python package with `adapters/`, `ddl/` (including ordered SQL `migrations/`) and `schema/` README views. `tempo_legacy_database/connections.py` retains legacy PostgreSQL/SQLite routing; `tempo_learning_database/connections.py` retains Learning's own connection context. Root `database/` has no shared runtime initializer or connection authority.
+Each `tempo_*_database/` directory is an owner-specific Python package with `adapters/`, `ddl/` (including ordered SQL `migrations/`) and `schema/` README views. `tempo_legacy_database/connections.py` retains the serving PostgreSQL/SQLite routing. Root `database/` has no shared runtime initializer or connection authority.
 
 Service `hatch_build.py` hooks include only their corresponding database package in that service's wheel. Source distributions carry the same owner files under their own `database/` directory and rebuild without a repository checkout. Runtime dependency versions and public service exports remain unchanged. The backend image copies the serving database modules, adapters and DDL; the maintenance image copies its DDL plus the existing installed remediation artifact. Browser intent source still builds into the existing `@tempo/browser-intents` package's `dist` exports.
 

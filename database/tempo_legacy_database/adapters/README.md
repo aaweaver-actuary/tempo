@@ -59,7 +59,6 @@ This profile check does not establish the cause or speed of live queue refresh.
 [Authored repertoire commands](authored_repertoires/README.md) contains existing canonical-prefix/branch reads, locks and writes. Payload/chess/HTTP validation, revision/route/callback policy and responses remain in the original command compositions.
 
 
-[Game-feature storage](statistics/README.md) retains game, analysis, gameplay-event, primary-match and timezone input projections plus re-exports of the canonical Games feature writer. Player perspective, timezone/DST and chess/tactical feature calculation remain in `backend/app/services/statistics.py`; daily snapshot/insight materialization and job claims are retired.
 
 
 [Authored exercise attempts](study_attempts/README.md) holds existing attempt/replay/card/queue/exercise/review/burial operations. Grading, guided/self-assessed outcomes, dates, requeue and refresh composition stay outside database; legacy Studies content and Study practice boundaries remain distinct.

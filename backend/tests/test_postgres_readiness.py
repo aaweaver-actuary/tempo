@@ -99,7 +99,7 @@ def test_postgres_health_reports_missing_worker_and_failed_queue(monkeypatch):
         postgres_readiness.postgres_health()
 
 
-def test_postgres_startup_never_starts_sqlite_writer_or_coordinator(monkeypatch):
+def test_postgres_startup_checks_schema_and_requests_queue(monkeypatch):
     calls = []
     monkeypatch.setenv("TEMPO_DATABASE_READ_URL", "postgresql://reader@example/tempo")
     monkeypatch.delenv("TEMPO_DATABASE_WRITE_URL", raising=False)
@@ -110,15 +110,6 @@ def test_postgres_startup_never_starts_sqlite_writer_or_coordinator(monkeypatch)
         "dispatch_command",
         lambda *_args, **_kwargs: calls.append("queue") or {"ok": True},
     )
-    monkeypatch.setattr(
-        main.database_writer, "start", lambda: pytest.fail("SQLite writer started")
-    )
-
-    async def forbidden_coordinator():
-        pytest.fail("SQLite coordinator started")
-
-    monkeypatch.setattr(main.coordinator, "start", forbidden_coordinator)
-
     async def run_lifespan():
         async with main.lifespan(main.app):
             calls.append("serving")

@@ -124,8 +124,6 @@ def rollback_handler(writer: ReceiptWriter):
     _receipt_connection(writer).execute('ROLLBACK TO SAVEPOINT command_handler')
 
 
-def block_transition(writer: ReceiptWriter, error_json, operation_id):
-    _receipt_connection(writer).execute("UPDATE operation_receipts SET state='blocked',last_error_json=%s,attempt_token=NULL,lease_expires_at=NULL,updated_at=NOW() WHERE operation_id=%s", (error_json, operation_id))
 
 
 def fail_operation(writer: ReceiptWriter, error_json, operation_id):
@@ -136,8 +134,6 @@ def release_handler(writer: ReceiptWriter):
     _receipt_connection(writer).execute('RELEASE SAVEPOINT command_handler')
 
 
-def keep_transition_pending(writer: ReceiptWriter, operation_id):
-    _receipt_connection(writer).execute("UPDATE operation_receipts SET state='pending',attempt_token=NULL,lease_expires_at=NULL,next_retry_at=NULL,updated_at=NOW() WHERE operation_id=%s", (operation_id,))
 
 
 def complete_operation(writer: ReceiptWriter, response_json, operation_id):
@@ -148,16 +144,10 @@ def operation_status(database, operation_id):
     return database.raw.execute('SELECT command_name,request_hash,state,response_json,error_json,attempt_count,next_retry_at,last_error_json,lease_expires_at,payload_json,retry_cycle,cycle_attempt_count FROM operation_receipts WHERE operation_id=%s', (operation_id,)).fetchone()
 
 
-def transition_progress(database, operation_id):
-    return database.execute_native('SELECT state,graph_generation,staging_task_id,graph_task_id,integrity_task_id,integrity_generation,queue_task_id,queue_generation,queue_date,last_error FROM prefix_transition_applications WHERE operation_id=%s', (operation_id,)).fetchone()
 
 
-def is_transition_in_progress(error):
-    return isinstance(error, psycopg.Error) and error.sqlstate == 'P0080'
 
 
-def primary_error_message(error):
-    return error.diag.message_primary
 
 
 def is_deleted_card_content(error):

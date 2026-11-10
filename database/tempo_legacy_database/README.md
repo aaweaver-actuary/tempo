@@ -1,81 +1,45 @@
-# Legacy backend database
+# Legacy database persistence
 
-**Current source schema; live deployment/schema unverified.** This owner directory groups existing persistence files within the single repository-root database tree. It creates no shared database runtime and changes no SQL, transaction policy or ownership. SQL namespace: `public`.
+The serving database is PostgreSQL. This package still contains concrete
+adapters for retained Study, Tactics, repertoire authoring, Game Review and
+shared operational state. Its name remains historical; removing the name alone
+would not remove the shared storage and transaction dependencies.
 
-| Directory | Contents |
+| Source | Role |
 | --- | --- |
-| [adapters](adapters/README.md) | Concrete persistence implementations and read projections. |
-| [ddl](ddl/README.md) | Schema metadata, ordered migrations and explicit owner migration entry points. |
-| [schema](schema/README.md) | Rendered Mermaid relationships and complete field/type dictionaries. |
-| [connections.py](connections.py) | Existing component-owned connection/transaction routing. |
+| [adapters](adapters/README.md) | Persistence implementations and read projections. |
+| [ddl](ddl/README.md) | Required schema version and preserved PostgreSQL upgrade history. |
+| [schema](schema/README.md) | Historical schema diagrams and field dictionaries. |
+| [connections.py](connections.py) | PostgreSQL transaction contexts, admission and startup version validation. |
+| [capabilities.py](capabilities.py) | Borrowed row, reader and transaction protocols. |
 
-The original mixed-source checklist is closed: complete command/service SQL,builders,cursors,driver details and DDL now live in this tree. The [inventory](../INVENTORY.md) separately tracks native tooling/test placement and the subsequent application responsibility/composition work; file closure does not establish clean domain or resource independence. Frozen-order storage now lives here, with [pure Study decisions and legacy composition](../../backend/app/study/frozen_order/README.md) outside this tree. `connections.py` also retains SQLite compatibility startup DDL; [frozen-order SQLite fields and constraints](ddl/frozen-opening/README.md) are documented separately. The principal schema charts describe authoritative PostgreSQL migrations through 050, not a claim that SQLite has identical constraints/types. The legacy database co-locates Games and Study tables; this is existing coupling, not acceptance of a new cross-component dependency.
+The SQLite backend, startup DDL, local writer, compatibility coordinator and
+legacy compose/test launchers are deleted. Existing files and stored rows are
+not migrated or deleted by removing those implementations. The API opens reader
+contexts and dispatches retained mutations to workers. Worker contexts continue
+to own PostgreSQL commits and rollbacks.
 
-## Logical relationships (not SQL foreign keys)
+## Admission and transaction ownership
 
-Fields such as `source_ref`, publication generation, JSON payload identities and many `card_id`/game references are application facts unless an FK is explicitly listed in the schema dictionary. Legacy remediation identifies `remediation_cards.card_id` against the accepted owner’s card identity without a cross-store FK.
+[Application composition](../../backend/app/product_composition/database_infrastructure.py)
+binds the activity gate and measurement context to
+[infrastructure.py](infrastructure.py). Controlled background writes preserve the
+same admission, timing and transaction contexts. Foreground writes use their
+existing native context directly. Query-only requests select the reader;
+authoritative background reads and bounded queue-publication profiles retain
+their existing native options.
 
-The dictionaries distinguish nullable fields, primary/composite keys, enforced FKs and uniqueness. Defaults/checks/triggers/partial or expression indexes remain authoritative in the linked DDL; they are not restated as extra relationships.
+Reader and borrowed-transaction protocols expose no commit or close operation.
+`PostgresConnection.in_transaction` reports the exact PostgreSQL `INTRANS` state
+so retained repertoire publication can require the caller's active transaction.
+Concrete context owners retain commit, rollback and connection lifetime.
 
-[Serving feedback tests](../../backend/tests/test_real_game_feedback_native.py) exercise PostgreSQL transaction rollback, card/day locks and the repertoire scope of accepted evidence. [Discovery acceptance](tests/discovery_acceptance/README.md) and [queue admission](tests/queue_admission/README.md) have their own native proofs.
+## Remaining coupling
 
-## Supplied database infrastructure (D1)
-
-The connection router and SQLite writer consume the admission and measurement
-capabilities in [infrastructure.py](infrastructure.py). [Application composition](../../backend/app/product_composition/database_infrastructure.py) binds the
-existing activity gate singleton and `database_stage` before controlled access;
-missing binding fails explicitly. The gate, measurement context, compatibility
-lock and transaction ownership remain unchanged. API and task-worker composition bind before their controlled operations.
-
-```mermaid
-flowchart LR
-    C[Application composition] -->|supplies existing gate and stage| P[Database infrastructure port]
-    R[Legacy connection router and writer] -->|admission and measurement| P
-    P --> G[Existing activity gate and measurement context]
-    R --> S[(Legacy database)]
-```
-
-The direct tooling entrypoints `writer_latency` and
-`recover-opening-publication.py` bind explicitly. The recovery CLI binds after
-argument parsing and before either mode enters owner preflight or execution;
-importing it remains inert. The same binding is supplied by the standalone background workload, engine fairness,
-scheduling turns, prefix transition and study priority test harnesses. Backend
-pytest composes the same binding in its configuration. API and task worker entrypoints bind the same helper before their own setup.
-The frozen-order browser fixture binds before its first controlled connection;
-the diagnostic and defensive-pause standalone checks bind in `main`. The
-study-priority overlap runner calls the study-priority `main` before the callback
-that starts its maintenance thread, so that thread sees the same process
-binding. The associated native/packaged runs remain separate evidence.
-The SQLite diagnostic benchmark binds in `main`, canonical-retention's reusable
-proof binds on entry, and the threat-candidate standalone runner and its reusable
-three-anchor proof bind before controlled access. Background-admission imports
-the task composition before its connections; opening-evidence imports the task
-or API composition before its selected controlled routes. Direct read-only
-`read_connection` and direct concrete `postgres_store` scopes retain their
-existing paths; they do not require the controlled router's binding.
-
-## Connection capabilities and borrowed transactions
-
-[Capabilities](capabilities.py) describe the common row/cursor and connection
-operations supported by the SQLite compatibility connection and PostgreSQL
-wrapper. Reader and borrowed-transaction interfaces expose no commit or close;
-the context owner retains those operations. `connection()` can route a
-query-only request to the reader, so its return annotation includes both views.
-These are static interfaces: `execute` does not prove SQL is read-only, and the
-existing database roles and SQLite query-only setting enforce runtime access.
-
-`PostgresConnection.in_transaction` reports the existing exact `INTRANS` fact;
-retained Repertoire publication checks it before using the caller's transaction.
-No transaction is opened, committed or closed by this observation. SQLite's
-existing `in_transaction` reports its own transaction state; it does not imply
-PostgreSQL lock or isolation semantics. Native observation remains separately
-qualified against PostgreSQL.
-
-```mermaid
-flowchart LR
-  R[Read projection] --> RC[Read capability]
-  T[Retained publication] --> BT[Borrowed transaction capability]
-  C[Connection context owner] --> RC
-  C --> BT
-  BT --> P[PostgreSQL active transaction fact]
-```
+The retained SQL dialect translator and SQLite-shaped query strings still live
+in the PostgreSQL adapter. They translate queries sent to PostgreSQL; they do
+not start an alternate storage backend. Porting those queries and splitting
+shared persistence ownership are remaining work. Shared public-schema tables,
+queue state, accepted evidence and operation receipts continue to require
+coordinated transactions. Native PostgreSQL qualification is separate from
+source, import and injected-boundary test evidence.

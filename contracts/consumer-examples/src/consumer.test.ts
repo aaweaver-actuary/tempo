@@ -114,8 +114,6 @@ const timestampCases: Array<[string, string, boolean]> = [
   ["trailing_space", "2026-10-14T12:00:00Z ", false],
 ];
 const timestampEnvelopes: Array<[string, string, string, string[]]> = [
-  ["learning", "attempt-issued-choice", "AttemptIssuance", ["attempt", "issued_at"]],
-  ["content-publication", "publication", "Publication", ["built_at"]],
   ["game-evidence", "imported-game", "ImportedGame", ["provenance", "imported_at"]],
   ["analysis-jobs", "cancel-requested", "CancellationAcknowledgement", ["acknowledged_at"]],
 ];

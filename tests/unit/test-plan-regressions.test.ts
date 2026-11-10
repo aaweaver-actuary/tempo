@@ -191,7 +191,7 @@ it("focused browser and Docker Make targets preflight before launching tests", (
     const commands = planned.stdout.trim().split("\n");
     const capabilityCheckIndex = commands.indexOf(`node scripts/check-test-capabilities.mjs ${checks}`);
     const browserLaunchIndex = commands.findIndex((command) =>
-      command.startsWith("npm run test:") || command.startsWith("node scripts/test-docker.mjs")
+      command.startsWith("npm run test:")
       || command.startsWith("node database/tests/test-postgres-docker.mjs")
       || command.startsWith("node database/tests/run-focused-postgres-browser.mjs"));
     expect(capabilityCheckIndex, target).toBeGreaterThanOrEqual(0);
@@ -220,19 +220,6 @@ it("regular and pinned Playwright plans partition every browser spec without ove
     .sort();
   expect([...regularFiles].filter((file) => visualFiles.has(file))).toEqual([]);
   expect([...regularFiles, ...visualFiles].sort()).toEqual(everyBrowserSpec);
-});
-
-it("Docker durability recovery excludes only the already-run browser matrix", () => {
-  const listedStages = (argumentsToPass: string[]) => {
-    const run = spawnSync(process.execPath, ["scripts/test-docker.mjs", "--list", ...argumentsToPass], {
-      cwd: process.cwd(),
-      encoding: "utf8",
-    });
-    expect(run.status, run.stderr).toBe(0);
-    return (JSON.parse(run.stdout) as { stages: string[] }).stages;
-  };
-  expect(listedStages([])).toContain("browser");
-  expect(listedStages(["--skip-browser"])).not.toContain("browser");
 });
 
 it("test plan records per-file Vitest timings without a second unit run", () => {

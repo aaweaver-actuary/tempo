@@ -3,45 +3,15 @@
 from __future__ import annotations
 
 import json
-import re
-import sqlite3
 
 import chess
 from fastapi import HTTPException
-from app.contracts.transport.authored_repertoire import CanonicalPrefixSaveRequest
-from tempo_legacy_database.adapters.authored_repertoires import (
-    prefix_commands as command_storage,
-)
-from .durable_tasks import enqueue_task_in_transaction
 from ..chess.position_identity import position_key
 from tempo_legacy_database.adapters.authored_repertoires.canonical_prefix import (
     scope as storage,
 )
 
 
-def parse_prefix(movetext: str) -> list[str]:
-    """Parse one SAN sequence; variations, null moves, and headers are not prefixes."""
-    if any(character in movetext for character in "(){}[];"):
-        raise ValueError(
-            "Enter one sequence of SAN moves without variations or PGN headers"
-        )
-    tokens = re.sub(r"\d+\.(?:\.\.)?", " ", movetext).split()
-    if len(tokens) > 160:
-        raise ValueError("A canonical prefix can contain at most 160 moves")
-    board = chess.Board()
-    moves: list[str] = []
-    for token in tokens:
-        try:
-            move = board.parse_san(token)
-        except ValueError as error:
-            raise ValueError(
-                f"Invalid SAN move {token!r} after {prefix_projection(moves)['san'] or 'the starting position'}"
-            ) from error
-        if not move:
-            raise ValueError("A canonical prefix cannot contain a null move")
-        moves.append(move.uci())
-        board.push(move)
-    return moves
 
 
 def prefix_projection(moves: list[str], revision: int = 0) -> dict:
@@ -332,35 +302,8 @@ def ensure_batch_lines_in_scope(
     return [validated_routes[index] for index in range(len(candidates))]
 
 
-def scope_line(
-    database, repertoire_id: str, line: dict, prefix: dict | None = None
-) -> dict:
-    """Build an analysis route without changing the saved training start or moves."""
-    prefix = prefix if prefix is not None else read_prefix(database, repertoire_id)
-    if not prefix["moves"]:
-        return {**line, "scope_start_ply": 0}
-    origin = line_origin(database, prefix["preview_id"], line["start_fen"])
-    # Stored lines passed the write boundary. Reconstruct their verified origin so
-    # downstream opponent moves retain their probabilities and absolute horizon.
-    if origin is None:
-        return {
-            **line,
-            "scope_start_ply": len(json.loads(line["moves_json"])) + 1,
-            "scope_pending": True,
-        }
-    return {
-        **line,
-        "start_fen": chess.STARTING_FEN,
-        "moves_json": json.dumps([*origin, *json.loads(line["moves_json"])]),
-        "scope_start_ply": len(prefix["moves"]),
-    }
 
 
-def scope_lines(database, repertoire_id: str, lines: list[dict]) -> list[dict]:
-    prefix = read_prefix(database, repertoire_id)
-    if not prefix["moves"]:
-        return lines
-    return [scope_line(database, repertoire_id, line, prefix) for line in lines]
 
 
 def store_positions(
@@ -384,61 +327,3 @@ def store_positions(
     # Rank only within one verified source epoch. Old short routes must not
     # prevent recertification, and delayed old writes cannot renew stale proof.
     storage.write_positions(database, preview_id, positions, source_revision)
-
-
-def preview_command(database, payload: dict) -> dict:
-    from .canonical_prefix_preview import request_preview
-
-    try:
-        return request_preview(database, payload["repertoire_id"], payload["moves"])
-    except KeyError as error:
-        raise HTTPException(404, str(error)) from error
-    except ValueError as error:
-        raise HTTPException(422, str(error)) from error
-
-
-def save_prefix(database, payload: dict) -> dict:
-    repertoire_id = payload["repertoire_id"]
-    request = CanonicalPrefixSaveRequest.model_validate(payload["request"])
-    if not command_storage.repertoire_presence(database, repertoire_id):
-        raise HTTPException(404, "Repertoire not found")
-    current = read_prefix(database, repertoire_id, lock=True)
-    preview = command_storage.prefix_preview(
-        database, request.preview_id, repertoire_id
-    )
-    if (
-        not preview
-        or preview["state"] != "ready"
-        or current["revision"] != request.expected_revision
-        or preview["expected_revision"] != current["revision"]
-        or preview["source_revision"] != current["source_revision"]
-    ):
-        raise HTTPException(
-            409,
-            "Resolve conflicting lines and check the current prefix again before saving.",
-        )
-    moves = json.loads(preview["moves_json"])
-    if moves == current["moves"] and not moves:
-        command_storage.set_empty_prefix_preview(
-            database, request.preview_id, repertoire_id
-        )
-        return prefix_projection(moves, current["revision"])
-    revision = current["revision"] + int(moves != current["moves"])
-    command_storage.save_prefix_values(
-        database, json.dumps(moves), revision, request.preview_id, repertoire_id
-    )
-    if moves != current["moves"]:
-        enqueue_task_in_transaction(
-            database,
-            "repertoire_game_refresh",
-            "all",
-            {"after_game_id": ""},
-            priority=90,
-        )
-    if not command_storage.postgres_is_configured():
-        command_storage.fail_active_local_coverage(database, repertoire_id)
-    if command_storage.postgres_is_configured():
-        command_storage.advance_priority_source_epoch(database, repertoire_id)
-        command_storage.delete_priority_publication(database, repertoire_id)
-        command_storage.delete_introduction_priorities(database, repertoire_id)
-    return prefix_projection(moves, revision)

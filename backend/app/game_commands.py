@@ -1,8 +1,7 @@
-"""Foreground game mutations committed with their derived-work intents."""
+"""Foreground imported-game inclusion settings."""
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import HTTPException
@@ -10,7 +9,6 @@ from fastapi import HTTPException
 from .command_gateway import register_command
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection
 from tempo_legacy_database.adapters.games import mutations as storage
-from .services.durable_tasks import enqueue_task_in_transaction
 
 
 def set_game_exclusion(
@@ -22,23 +20,6 @@ def set_game_exclusion(
     if game is None:
         raise HTTPException(404, "Game not found")
     storage.set_adaptive_exclusion(database, game_id, excluded)
-    now = datetime.now(timezone.utc).isoformat()
-    if excluded:
-        storage.exclude_pending_findings(database, game_id, now)
-    else:
-        storage.restore_excluded_findings(database, game_id, now)
-    derivation = storage.restart_derivation(database, game_id, now)
-    enqueue_task_in_transaction(
-        database,
-        "game_derivation_positions",
-        game_id,
-        {
-            "game_id": game_id,
-            "derivation_version": derivation["derivation_version"],
-            "cursor": 0,
-        },
-        priority=125,
-    )
     return {"game_id": game_id, "excluded": excluded}
 
 

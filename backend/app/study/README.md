@@ -7,6 +7,7 @@ Study means daily practice. Authored/imported [Studies](../studies/README.md) is
 | [openings](openings/README.md) | Pure opening preparedness/reach, admission frontier and frozen-order mathematics. |
 | [review](review/README.md) | Semantic feedback facts/port and UTC normalization. |
 | [frozen_order](frozen_order/README.md) | Frozen-order application policy; database work stays at its root owner. |
+| [policy](policy/README.md) | Retained queue ordering, review reconciliation, authored-answer grading and opening evidence decisions. |
 
 These policies depend on their own modules, explicit contracts and neutral chess
 support. Existing legacy workflows retain the separate

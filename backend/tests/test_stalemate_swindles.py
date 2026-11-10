@@ -9,7 +9,6 @@ import io
 import json
 import os
 from pathlib import Path
-import sqlite3
 
 import chess
 import chess.pgn
@@ -17,9 +16,8 @@ import pytest
 
 from app.services import stalemate_swindles as swindles
 from app.services.study_grading import evaluate_answer
-from app.services.study_portable import import_bundle, validate_bundle
+from app.services.study_portable import validate_bundle
 from app.contracts.studies import MoveAnswer
-from tempo_legacy_database.ddl.study_migration import STUDY_TABLES
 
 
 TRAP_FEN = "8/4p3/8/3k4/7R/1q6/8/K7 w - - 0 1"
@@ -206,55 +204,6 @@ def test_stalemate_study_bundle_is_byte_stable_for_identical_candidates():
         b"Private white account" not in bundle_bytes
         and b"Private black account" not in bundle_bytes
     )
-
-
-def test_stalemate_study_bundle_imports_through_existing_study_contract():
-    bundle = swindles.build_bundle(mined()[0], "synthetic-v1")
-    validate_bundle(bundle)
-    with sqlite3.connect(":memory:") as database:
-        database.row_factory = sqlite3.Row
-        database.execute("PRAGMA foreign_keys=ON")
-        for statement in STUDY_TABLES[:7]:
-            database.execute(statement)
-        result = import_bundle(database, bundle)
-        assert (
-            database.execute(
-                "SELECT title FROM studies WHERE id=?", (result["study_id"],)
-            ).fetchone()[0]
-            == "Stalemate Swindles"
-        )
-        positions = list(
-            database.execute("SELECT * FROM study_positions ORDER BY length(node_path)")
-        )
-        assert [json.loads(position["history_json"]) for position in positions] == [
-            [],
-            ["h4d4"],
-            ["h4d4", "d5d4"],
-        ]
-        assert chess.Board(positions[-1]["fen"]).is_stalemate()
-        exercise = database.execute("SELECT * FROM study_exercises").fetchone()
-        assert (
-            exercise["status"] == "draft"
-            and exercise["current_revision"] == 1
-            and exercise["point_value"] is None
-        )
-        specification = json.loads(
-            database.execute(
-                "SELECT specification_json FROM study_exercise_revisions"
-            ).fetchone()[0]
-        )
-        assert (
-            specification["type"],
-            specification["mode"],
-            specification["grading_policy"],
-        ) == ("move_line", "single", "open_judgment")
-        assert specification["accepted_lines"] == [["h4d4"]]
-        assert all(
-            isinstance(value, str)
-            for value in json.loads(exercise["source_json"]).values()
-        )
-        assert not database.execute("PRAGMA foreign_key_check").fetchall()
-    assert set(bundle["tables"]) == set(swindles.TABLES)
 
 
 def test_stalemate_swindle_uses_existing_open_judgment_grading():

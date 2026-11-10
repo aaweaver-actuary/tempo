@@ -1,3 +1,0 @@
-"""Pure version-addressable retained-history contracts; import the v1 namespace."""
-
-__version__ = "1.0.0"

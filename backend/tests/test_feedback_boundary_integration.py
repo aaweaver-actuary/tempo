@@ -68,32 +68,3 @@ def test_combined_queue_root_keeps_caller_adapter_and_admission_arguments(monkey
         ("adapter", database),
         ("application", store, "day", {"rep": 2}, 9),
     ]
-
-
-def test_combined_discovery_command_wires_borrowed_store_and_semantic_identity(
-    monkeypatch,
-):
-    from app import discovery_commands as composition
-
-    database, store, calls = object(), object(), []
-    payload = dict(
-        opportunity_id="opportunity",
-        selected_move_uci="e2e4",
-        evidence_fingerprint="fingerprint",
-    )
-    identity = composition.admission_intent_id("opportunity", "e2e4", "fingerprint")
-
-    def factory(connection):
-        calls.append(("adapter", connection))
-        return store
-
-    def accept(borrowed, selected, *, intent_id):
-        calls.append(("application", borrowed, selected, intent_id))
-        return dict(status="preparing", intent_id=intent_id)
-
-    monkeypatch.setattr(composition, "PostgresDiscoveryAcceptanceStore", factory)
-    monkeypatch.setattr(composition, "apply_discovery_acceptance", accept)
-    assert composition.accept_discovery(database, payload) == dict(
-        status="preparing", intent_id=identity
-    )
-    assert calls == [("adapter", database), ("application", store, payload, identity)]

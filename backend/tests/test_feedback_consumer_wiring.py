@@ -3,7 +3,6 @@
 import ast
 import importlib.util
 import os
-from contextlib import contextmanager
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -44,16 +43,6 @@ def test_native_review_consumer_uses_canonical_writer_and_feedback_composition()
     )
     assert bound["MISS_REASON"] == ("app.services.real_game_feedback", "MISS_REASON")
     assert "real_game_feedback" not in bound
-
-
-def test_issuance_regression_imports_existing_real_game_fixture_helpers():
-    path = "backend/tests/test_queue_attempt_issuance.py"
-    bound = imports(path)
-    for name in ("_seed_game", "_seed_repertoire"):
-        module, imported = bound[name]
-        assert (
-            imported == name and (ROOT / "backend/tests" / (module + ".py")).is_file()
-        )
 
 
 @pytest.mark.parametrize(
@@ -113,61 +102,6 @@ def test_event_entry_supplies_admission_day_and_semantic_store(monkeypatch):
     assert calls == [(store, "event", "original-day")]
 
 
-def test_batch_composition_closes_snapshot_before_short_individual_transactions(
-    monkeypatch,
-):
-    from app.services import real_game_feedback_adapter as composition
-
-    calls, databases = [], []
-
-    @contextmanager
-    def connection(*, background):
-        value = object()
-        databases.append(value)
-        calls.append(("open", value, background))
-        try:
-            yield value
-        finally:
-            calls.append(("close", value))
-
-    class Store:
-        def __init__(self, database):
-            self.database = database
-
-        def missed_event_batches(self, game_id):
-            calls.append(("snapshot", self.database, game_id))
-            yield ("a",)
-            yield ("b",)
-
-    monkeypatch.setattr(composition, "connection", connection)
-    monkeypatch.setattr(composition, "BorrowedFeedbackStore", Store)
-    monkeypatch.setattr(
-        composition.activity_gate,
-        "wait_for_foreground",
-        lambda: calls.append(("yield",)),
-    )
-    monkeypatch.setattr(
-        composition,
-        "prioritize_real_game_miss",
-        lambda database, event: calls.append(("apply", database, event)),
-    )
-    composition.apply_real_game_misses("game", background=True)
-    read, first, second = databases
-    assert calls == [
-        ("open", read, True),
-        ("snapshot", read, "game"),
-        ("close", read),
-        ("yield",),
-        ("open", first, True),
-        ("apply", first, "a"),
-        ("close", first),
-        ("yield",),
-        ("open", second, True),
-        ("apply", second, "b"),
-        ("close", second),
-    ]
-
-
 def backend_policy_import_errors(relative, source):
     parts = Path(relative).parts
     if parts[0] == "backend":
@@ -217,7 +151,7 @@ def backend_policy_import_errors(relative, source):
             True,
         ),
         (
-            "services/learning/runtime/src/tempo_learning_runtime/admission.py",
+            "external_package/admission.py",
             "from .real_game_feedback import has_outstanding_real_game_miss",
             False,
         ),
@@ -231,7 +165,7 @@ def test_consumer_guard_resolves_backend_relative_imports_without_conflating_run
 
 def test_repository_connection_consumers_do_not_import_semantic_policy_operations():
     # Includes scripts/integration packages and resolves backend-relative imports;
-    # the independent runtime's same-named module remains a separate owner.
+    # a separate package's same-named module remains outside this backend guard.
     for directory in (
         "backend",
         "database",

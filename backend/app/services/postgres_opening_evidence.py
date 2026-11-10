@@ -1348,7 +1348,7 @@ def issued_position_manifest(plan, original_scope_manifest):
     issued plan. The physical presentation row is not changed.
     """
     import chess
-    from tempo_learning_runtime.opening_segmentation import (
+    from app.chess.opening_segments import (
         decision_identity,
         stable_key,
     )

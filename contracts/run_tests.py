@@ -11,8 +11,6 @@ import time
 
 ROOT = Path(__file__).resolve().parent
 PACKAGES = (
-    "learning",
-    "content-publication",
     "game-evidence",
     "analysis-jobs",
 )

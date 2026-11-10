@@ -6,10 +6,9 @@ from app.services import (
     queue_application,
     learning_review_adapter,
     prefix_split,
-    threat_training,
 )
 from app import queue_commands
-from tempo_learning_runtime import queue_ordering
+from app.study.policy import queue_ordering
 
 
 def test_capture_and_preserve_have_one_owner_at_actual_consumers():
@@ -18,8 +17,7 @@ def test_capture_and_preserve_have_one_owner_at_actual_consumers():
         queue_application,
         learning_review_adapter,
         prefix_split,
-        threat_training,
-        queue_commands,
+            queue_commands,
     ):
         assert (
             consumer.capture_daily_queue_order is queue_order.capture_daily_queue_order

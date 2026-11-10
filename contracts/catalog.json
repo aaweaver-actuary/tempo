@@ -2,82 +2,6 @@
   "schema_dialect": "https://json-schema.org/draft/2020-12/schema",
   "contracts": [
     {
-      "root": "learning",
-      "distribution": "tempo-learning-contracts",
-      "artifact_version": "1.0.0",
-      "wire_version": 1,
-      "public_namespace": "tempo_learning_contracts.v1",
-      "authoritative_owner": "Learning",
-      "consumers": [
-        "study-web",
-        "game-evidence",
-        "content"
-      ],
-      "models": [
-        "AttemptRequest",
-        "AttemptIssuance",
-        "ReviewSubmission",
-        "ReviewSettlement",
-        "ReceiptQuery",
-        "QueueRequest",
-        "QueueIssuance",
-        "LearningObligation",
-        "LearningState"
-      ],
-      "schema_exports": [
-        "schemas/v1/AttemptRequest.schema.json",
-        "schemas/v1/AttemptIssuance.schema.json",
-        "schemas/v1/ReviewSubmission.schema.json",
-        "schemas/v1/ReviewSettlement.schema.json",
-        "schemas/v1/ReceiptQuery.schema.json",
-        "schemas/v1/QueueRequest.schema.json",
-        "schemas/v1/QueueIssuance.schema.json",
-        "schemas/v1/LearningObligation.schema.json",
-        "schemas/v1/LearningState.schema.json"
-      ],
-      "test_command": "python -m pytest contracts/learning/tests",
-      "runtime_dependencies": [
-        "pydantic==2.12.5"
-      ],
-      "data_ownership": "OWNERSHIP.md",
-      "protocol_semantics": "README.md"
-    },
-    {
-      "root": "content-publication",
-      "distribution": "tempo-content-publication-contracts",
-      "artifact_version": "1.0.0",
-      "wire_version": 1,
-      "public_namespace": "tempo_content_publication_contracts.v1",
-      "authoritative_owner": "Content definitions / Learning activation",
-      "consumers": [
-        "learning"
-      ],
-      "models": [
-        "Publication",
-        "PublicationValidation",
-        "PublicationAcceptance",
-        "ActivationRequest",
-        "ActivationAcknowledgement",
-        "RetirementRequest",
-        "RetirementAcknowledgement"
-      ],
-      "schema_exports": [
-        "schemas/v1/Publication.schema.json",
-        "schemas/v1/PublicationValidation.schema.json",
-        "schemas/v1/PublicationAcceptance.schema.json",
-        "schemas/v1/ActivationRequest.schema.json",
-        "schemas/v1/ActivationAcknowledgement.schema.json",
-        "schemas/v1/RetirementRequest.schema.json",
-        "schemas/v1/RetirementAcknowledgement.schema.json"
-      ],
-      "test_command": "python -m pytest contracts/content-publication/tests",
-      "runtime_dependencies": [
-        "pydantic==2.12.5"
-      ],
-      "data_ownership": "OWNERSHIP.md",
-      "protocol_semantics": "README.md"
-    },
-    {
       "root": "game-evidence",
       "distribution": "tempo-game-evidence-contracts",
       "artifact_version": "3.0.0",
@@ -150,42 +74,6 @@
       ],
       "data_ownership": "OWNERSHIP.md",
       "protocol_semantics": "README.md"
-    },
-    {
-      "root": "learning-transfer",
-      "distribution": "tempo-learning-transfer-contracts",
-      "artifact_version": "1.0.0",
-      "wire_version": 1,
-      "public_namespace": "tempo_learning_transfer_contracts.v1",
-      "authoritative_owner": "Learning / #908 W01",
-      "consumers": [
-        "learning-runtime",
-        "learning-database"
-      ],
-      "models": [
-        "SourceManifest",
-        "TransferPlan",
-        "StageReceipt",
-        "VerificationReceipt",
-        "FencingProof",
-        "ActivationReceipt",
-        "RuntimeProof"
-      ],
-      "schema_exports": [
-        "schemas/v1/SourceManifest.schema.json",
-        "schemas/v1/TransferPlan.schema.json",
-        "schemas/v1/StageReceipt.schema.json",
-        "schemas/v1/VerificationReceipt.schema.json",
-        "schemas/v1/FencingProof.schema.json",
-        "schemas/v1/ActivationReceipt.schema.json",
-        "schemas/v1/RuntimeProof.schema.json"
-      ],
-      "test_command": "python -m pytest contracts/learning-transfer/tests",
-      "runtime_dependencies": [
-        "pydantic==2.12.5"
-      ],
-      "data_ownership": "OWNERSHIP.md",
-      "protocol_semantics": "learning-transfer/README.md"
     }
   ]
 }

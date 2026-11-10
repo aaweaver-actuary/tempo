@@ -1,15 +1,16 @@
-"""Embedded durable task queue and sanitized operational projections."""
+"""PostgreSQL durable task queue and sanitized operational projections."""
 
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 import json
 import random
-import sqlite3
+from tempo_legacy_database.capabilities import BorrowedTransaction
 import uuid
 from typing import Callable
 
 from tempo_legacy_database.connections import (
+    connection,
     read_connection,
     background_read_connection,
 )
@@ -21,15 +22,10 @@ from tempo_legacy_database.adapters.durable_tasks.storage import (
     _TASK_BY_KIND_SQL,
     _TASK_UPSERT_SQL,
     _TASK_BY_ID_SQL,
-    _SELECTED_REBUILD_UPSERT_FENCE,
     _COMPLETE_SLICE_SQL,
     _QUEUE_REFRESH_STATUS_SQL,
     _QUEUE_REFRESH_PROGRESS_SQL,
     warm_completion_sql,
-)
-from tempo_legacy_database.adapters.database_executor import (
-    submit_background_write,
-    submit_foreground_write,
 )
 from .background_activity import claimable, control_order
 from .defensive_analysis import (
@@ -59,7 +55,7 @@ def _iso(value: datetime | None = None) -> str:
 
 
 def _record_event(
-    database: sqlite3.Connection,
+    database: BorrowedTransaction,
     task_id: str,
     generation: int,
     event: str,
@@ -122,7 +118,7 @@ def enqueue_task(
 ) -> dict:
     """Coalesce active work and advance its input generation."""
 
-    def operation(database: sqlite3.Connection) -> dict:
+    def operation(database: BorrowedTransaction) -> dict:
         return enqueue_task_in_transaction(
             database,
             kind,
@@ -133,8 +129,8 @@ def enqueue_task(
             delay_seconds=delay_seconds,
         )
 
-    submit = submit_foreground_write if foreground else submit_background_write
-    return submit(operation, label=f"enqueue:{kind}:{deduplication_key}")
+    with connection(background=not foreground) as database:
+        return operation(database)
 
 
 def ensure_task_in_transaction(
@@ -158,7 +154,7 @@ def task_state(kind: str, deduplication_key: str) -> str | None:
 
 
 def enqueue_task_in_transaction(
-    database: sqlite3.Connection,
+    database: BorrowedTransaction,
     kind: str,
     deduplication_key: str,
     payload: dict,
@@ -181,15 +177,7 @@ def enqueue_task_in_transaction(
         )
 
     existing = storage.task_by_kind(database, (kind, deduplication_key))
-    handoff = getattr(database, "_selected_rebuild_handoff", None)
-    selected = isinstance(handoff, dict) and kind == handoff["kind"]
     write_task = storage.prepare_task_upsert()
-    if selected:
-        from .opening_graph_recovery import validate_selected_enqueue
-
-        validate_selected_enqueue(handoff, kind, deduplication_key, existing, payload)
-        prior = handoff["pin"]["prior"]
-        write_task = storage.prepare_task_upsert(prior, selected=True)
 
     now = _now()
     task_id = existing["id"] if existing else str(uuid.uuid4())
@@ -214,10 +202,6 @@ def enqueue_task_in_transaction(
             _iso(now),
         ),
     )
-    if selected:
-        validate_selected_enqueue(
-            handoff, kind, deduplication_key, authoritative, payload, after=True
-        )
     task_id = authoritative["id"]
     generation = authoritative["generation"]
     _record_event(database, task_id, generation, "enqueued", "queued", kind=kind)
@@ -403,7 +387,7 @@ def claim_task(
         else None
     )
 
-    def operation(database: sqlite3.Connection) -> dict | None:
+    def operation(database: BorrowedTransaction) -> dict | None:
         now = _iso()
         reclaim, read_candidate, kind_parameters = (
             prepared_import_claim
@@ -460,16 +444,14 @@ def claim_task(
         claimed["payload"] = json.loads(claimed.pop("payload_json"))
         return claimed
 
-    return submit_background_write(
-        operation,
-        label=f"claim:{kind or (','.join(allowed_kinds) if allowed_kinds else 'any')}",
-    )
+    with connection(background=True) as database:
+        return operation(database)
 
 
 def complete_task(
     task_id: str, generation: int, lease_token: str, *, kind: str | None = None
 ) -> bool:
-    def operation(database: sqlite3.Connection) -> bool:
+    def operation(database: BorrowedTransaction) -> bool:
         now = _iso()
         changed = storage.complete_task(
             database, (now, now, task_id, generation, lease_token)
@@ -483,7 +465,8 @@ def complete_task(
             _record_stale_result(database, task_id, generation, kind or "other")
         return bool(changed)
 
-    return submit_background_write(operation, label=f"complete:{task_id}")
+    with connection(background=True) as database:
+        return operation(database)
 
 
 def lock_current_slice(database, task: dict) -> bool:
@@ -502,12 +485,6 @@ def lock_current_slice(database, task: dict) -> bool:
         from .explicit_repertoire_import import require_delivery
 
         require_delivery(database, task)
-    elif "maintenance_scope" in task:
-        # Only explicit selected-rebuild deliveries carry this process-local pin.
-        # The check and source/policy locks belong inside the owner's transaction.
-        from .opening_graph_recovery import validate_selected_delivery
-
-        validate_selected_delivery(database, task)
     return current
 
 
@@ -564,12 +541,6 @@ def advance_task_slice_in_transaction(
             next_phase,
             kind=task.get("kind"),
         )
-        if "maintenance_scope" in task:
-            from .opening_graph_recovery import validate_selected_delivery
-
-            # Generated provenance is excluded by the existing source triggers.
-            # Any authoritative source increment must roll this whole slice back.
-            validate_selected_delivery(database, task, after_checkpoint=True)
     return bool(changed)
 
 
@@ -592,10 +563,6 @@ def complete_task_slice_in_transaction(database, task: dict) -> bool:
             "published",
             kind=task.get("kind"),
         )
-        if "maintenance_scope" in task:
-            from .opening_graph_recovery import validate_selected_delivery
-
-            validate_selected_delivery(database, task, after_checkpoint=True)
     else:
         _record_stale_result(
             database, task["id"], task["generation"], task.get("kind", "other")
@@ -608,11 +575,7 @@ def fail_task(
 ) -> dict:
     sanitized_error = str(error)[:500]
 
-    def operation(database: sqlite3.Connection) -> dict:
-        if storage.configured():
-            from .prefix_transition_application import lock_linked_receipts
-
-            lock_linked_receipts(database, task_id, generation)
+    def operation(database: BorrowedTransaction) -> dict:
         row = storage.failure_budget(database, (task_id, generation, lease_token))
         if not row:
             return {"state": "superseded"}
@@ -670,10 +633,6 @@ def fail_task(
                     f"{task_id}:{generation}",
                 ),
             )
-        if terminal and postgres_store.configured():
-            from .prefix_transition_application import record_linked_failure
-
-            record_linked_failure(database, task_id, generation, sanitized_error)
         _record_event(
             database,
             task_id,
@@ -686,7 +645,8 @@ def fail_task(
         return {"state": state, "next_attempt_at": _iso(now + timedelta(seconds=delay))}
 
     with activity_gate.background_control():
-        return submit_background_write(operation, label=f"fail:{task_id}")
+        with connection(background=True) as database:
+            return operation(database)
 
 
 def defer_task_for_foreground(task: dict) -> bool:
@@ -715,9 +675,8 @@ def defer_task_for_foreground(task: dict) -> bool:
         return bool(changed)
 
     with activity_gate.background_control():
-        return submit_background_write(
-            operation, label=f"foreground-defer:{task['id']}"
-        )
+        with connection(background=True) as database:
+            return operation(database)
 
 
 def defer_task_for_contention(
@@ -725,7 +684,7 @@ def defer_task_for_contention(
 ) -> bool:
     """Yield an expected PostgreSQL lock timeout without spending a retry."""
 
-    def operation(database: sqlite3.Connection) -> bool:
+    def operation(database: BorrowedTransaction) -> bool:
         next_attempt_at = _iso(_now() + timedelta(milliseconds=250))
         write_contention = storage.prepare_contention_defer()
         changed = write_contention(
@@ -738,7 +697,8 @@ def defer_task_for_contention(
         return bool(changed)
 
     with activity_gate.background_control():
-        return submit_background_write(operation, label=f"yield:{task_id}")
+        with connection(background=True) as database:
+            return operation(database)
 
 
 def defer_task_for_connection_failure(
@@ -771,9 +731,8 @@ def defer_task_for_connection_failure(
         return bool(changed)
 
     with activity_gate.background_control():
-        changed = submit_background_write(
-            operation, label=f"connection-recovery:{task['id']}"
-        )
+        with connection(background=True) as database:
+            changed = operation(database)
     if changed and wake is not None:
         wake(eligible_at)
     return changed
@@ -843,9 +802,8 @@ def defer_task_for_transaction_timeout(
         return next_attempt_at if changed else None
 
     with activity_gate.background_control():
-        committed_retry_at = submit_background_write(
-            operation, label=f"deadline:{task['id']}"
-        )
+        with connection(background=True) as database:
+            committed_retry_at = operation(database)
     # The write boundary has committed and released its PostgreSQL connection.
     # ETA is only a capacity hint; execution-time claims still enforce eligibility.
     if committed_retry_at is not None and task["kind"] == "daily_queue":
@@ -856,7 +814,7 @@ def defer_task_for_transaction_timeout(
 
 
 def retry_task(task_id: str) -> dict | None:
-    def operation(database: sqlite3.Connection) -> dict | None:
+    def operation(database: BorrowedTransaction) -> dict | None:
         row = storage.failed_task(database, (task_id,))
         if not row:
             return None
@@ -884,11 +842,12 @@ def retry_task(task_id: str) -> dict | None:
         )
         return serialize_task(storage.read_task(database, (task_id,)))
 
-    return submit_foreground_write(operation, label=f"retry:{task_id}")
+    with connection(background=False) as database:
+        return operation(database)
 
 
 def requeue_interrupted_tasks() -> None:
-    def operation(database: sqlite3.Connection) -> None:
+    def operation(database: BorrowedTransaction) -> None:
         now = _iso()
         from ..contracts.command_registry import RETIRED_TASK_KINDS
 
@@ -914,10 +873,11 @@ def requeue_interrupted_tasks() -> None:
                 kind=row["kind"],
             )
 
-    submit_foreground_write(operation, label="requeue-interrupted-tasks")
+    with connection(background=False) as database:
+        operation(database)
 
 
-def serialize_task(row: sqlite3.Row | dict) -> dict:
+def serialize_task(row) -> dict:
     try:
         created_at = datetime.fromisoformat(row["created_at"])
         if created_at.tzinfo is None:
@@ -1048,7 +1008,8 @@ def defer_paused_defensive_task(task: dict) -> bool:
         )
         return True
 
-    return submit_background_write(operation, label="pause:defensive-slice")
+    with connection(background=True) as database:
+        return operation(database)
 
 
 def current_delivery(task: dict) -> bool:
@@ -1078,7 +1039,8 @@ def record_stale_delivery(task: dict) -> None:
         else:
             increment(database, task["kind"], task["id"], stale_deliveries=1)
 
-    submit_background_write(operation, label="diagnostics:stale-delivery")
+    with connection(background=True) as database:
+        operation(database)
 
 
 def _record_stale_result(

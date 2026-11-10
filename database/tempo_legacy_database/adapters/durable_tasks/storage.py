@@ -35,11 +35,6 @@ _TASK_UPSERT_SQL = """INSERT INTO background_tasks(
 
 _TASK_BY_ID_SQL = "SELECT * FROM background_tasks WHERE id=?"
 
-_SELECTED_REBUILD_UPSERT_FENCE = (
-    " WHERE background_tasks.id=? AND background_tasks.generation=? AND background_tasks.state=? "
-    "AND background_tasks.phase=? AND background_tasks.lease_token IS NULL AND background_tasks.lease_expires_at IS NULL"
-)
-
 _COMPLETE_SLICE_SQL = """UPDATE background_tasks SET state='complete',phase='published',
                lease_token=NULL,lease_expires_at=NULL,last_error=NULL,
                transaction_timeout_count=0,transaction_timeout_checkpoint=NULL,
@@ -59,7 +54,6 @@ def warm_completion_sql() -> None:
 
     for statement in (
         _TASK_BY_KIND_SQL, _TASK_UPSERT_SQL, _TASK_BY_ID_SQL,
-        _TASK_UPSERT_SQL + _SELECTED_REBUILD_UPSERT_FENCE, _TASK_UPSERT_SQL + ' WHERE FALSE',
         _EVENT_INSERT_SQL, _EVENT_PRUNE_SQL, _COMPLETE_SLICE_SQL,
         _QUEUE_REFRESH_STATUS_SQL, _QUEUE_REFRESH_PROGRESS_SQL,
     ):
@@ -78,18 +72,11 @@ def failure_state_parameters(state):
     return (state,) if not postgres_store.configured() else ()
 
 
-def prepare_task_upsert(prior=None, *, selected=False):
-    fence, fence_parameters = ('', ())
-    if selected:
-        fence = _SELECTED_REBUILD_UPSERT_FENCE if prior else ' WHERE FALSE'
-        fence_parameters = tuple((prior[field] for field in ('id', 'generation', 'state', 'phase'))) if prior else ()
-
+def prepare_task_upsert():
     def write_task(database, values):
         return database.execute(
-            _TASK_UPSERT_SQL + fence + " RETURNING *",
-            (*values, *fence_parameters),
+            _TASK_UPSERT_SQL + ' RETURNING *', values,
         ).fetchone()
-
     return write_task
 
 

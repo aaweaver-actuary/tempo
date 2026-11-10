@@ -2953,7 +2953,7 @@ test("schema 62 interrupted capture leaves original guard fenced and never rebas
 });
 
 test("schema preflight refuses unsupported crossing before any writer stop", async () => {
-  for (const [current, expected] of [[58, 62], [60, 62], [59, 63], [62, 63]]) {
+  for (const [current, expected] of [[58, 62], [60, 62], [59, 63], [61, 63], [62, 64], [63, 64], [64, 63]]) {
     const status = { applied_versions: Array.from({ length: current }, (_, index) => index + 1), expected_version: expected };
     const { calls, handlers } = actions();
     handlers.preflightSchema = async () => { calls.push("preflight"); validateCut62Preflight(status, null); };
@@ -2964,6 +2964,54 @@ test("schema preflight refuses unsupported crossing before any writer stop", asy
     assert.doesNotThrow(() => validateCut62Preflight({ applied_versions: [current], expected_version: 62 }, null));
   assert.doesNotThrow(() => validateCut62Preflight({ applied_versions: [60], expected_version: 62 },
     { state: "pending", starting_schema: 59, intended_schema: 62 }));
+});
+
+test("schema 63 preflight allows the current retirement and its own retry without absorbing a pending schema 62 cut", () => {
+  for (const current of [62, 63]) {
+    const status = { applied_versions: [current], expected_version: 63 };
+    assert.doesNotThrow(() => validateCut62Preflight(status, null));
+    assert.doesNotThrow(() => validateCut62Preflight(status,
+      { state: "pending", starting_schema: 62, intended_schema: 63 }));
+    assert.throws(() => validateCut62Preflight(status,
+      { state: "pending", starting_schema: 61, intended_schema: 62 }), /Unsupported/);
+  }
+});
+
+test("schema 63 migration preserves the original history guard through a verification retry", async t => {
+  let schema = 62, failVerification = true, migrations = 0;
+  const history = { reviews: { count: 7, digest: "unchanged-study-history" } };
+  const { runtime, calls, fixture } = imageRuntimeFixture(t, "postgres:18.6-trixie", 18, false, args => {
+    if (args.includes("database/tooling/apply_postgres_migrations.py")) {
+      if (!args.includes("--check")) { schema = 63; migrations += 1; return ""; }
+      return JSON.stringify({ initialized: true, roles_ready: true, credentials_ready: true,
+        expected_version: 63, applied_versions: Array.from({ length: schema }, (_, index) => index + 1),
+        pending_versions: schema === 62 ? [63] : [] });
+    }
+    if (args.includes("database/tooling/verify_postgres_cli_state.py")) {
+      if (args.includes("--expected")) {
+        assert.deepEqual(JSON.parse(args[args.indexOf("--expected") + 1]), history);
+        if (failVerification) throw new Error("injected history verification interruption");
+      }
+      return JSON.stringify(history);
+    }
+  });
+  await runtime.config(); await runtime.checkSchema(); await runtime.backup();
+  await assert.rejects(runtime.migrate(), /Original migration history verification failed/);
+  const guardPath = join(fixture.stateDirectory, "migration-guard.json");
+  const original = JSON.parse(readFileSync(guardPath, "utf8"));
+  assert.equal(original.starting_schema, 62);
+  assert.equal(original.intended_schema, 63);
+  assert.equal(original.state, "pending");
+  assert.deepEqual(original.study_invariants, history);
+  assert.equal(original.cut62_witness, undefined);
+  failVerification = false;
+  await runtime.checkSchema(); await runtime.migrate();
+  const retry = JSON.parse(readFileSync(guardPath, "utf8"));
+  assert.equal(retry.attempt_id, original.attempt_id);
+  assert.deepEqual(retry.backup, original.backup);
+  assert.deepEqual(retry.study_invariants, history);
+  assert.equal(migrations, 1);
+  assert(!calls.some(args => args.some(value => String(value).startsWith("--cut62-"))));
 });
 
 test("schema preflight failure leaves writers untouched", async () => {

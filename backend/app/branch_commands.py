@@ -10,7 +10,6 @@ from typing import Any
 import chess
 from fastapi import HTTPException
 
-from .services.repertoire_game_refresh import refresh_game_publications_after_mutation
 from .command_gateway import register_command
 from app.repertoire.changes.application import validate_source_rows
 from app.repertoire.changes.ports import ChangeError
@@ -27,7 +26,6 @@ from .services.postgres_integrity import invalidate_integrity_in_transaction
 from .services.repertoire_integrity import integrity_summary
 
 
-@refresh_game_publications_after_mutation
 def add_repertoire_branch(
     database: PostgresConnection, payload: dict[str, Any]
 ) -> dict[str, Any]:
@@ -112,7 +110,6 @@ def add_repertoire_branch(
 register_command("repertoire.branch.add", add_repertoire_branch)
 
 
-@refresh_game_publications_after_mutation
 def remove_repertoire_branch(
     database: PostgresConnection, payload: dict[str, Any]
 ) -> dict[str, Any]:

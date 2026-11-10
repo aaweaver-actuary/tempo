@@ -252,42 +252,6 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 720 
   });
 }
 
-
-for (const width of [390, 1280]) {
-  test(`Canonical prefix dialog ${width}`, async ({ page }) => {
-    await page.setViewportSize({ width, height: 844 });
-    await prepareVisualUI(page);
-    const prefix = { moves_uci: ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4"],
-      san: "1. e4 e5 2. Nf3 Nc6 3. Bc4", revision: 0,
-      ending_fen: "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3" };
-    await page.route("**/api/repertoires/visual-repertoire/canonical-prefix**", route => {
-      const path = new URL(route.request().url()).pathname;
-      if (path.endsWith("/preview/visual-preview")) return route.fulfill({ json: {
-        ...prefix, preview_id: "visual-preview", state: "ready", suggestion: prefix,
-        conflicts: [], conflict_count: 0, next_cursor: null, error: null,
-      } });
-      if (path.endsWith("/preview")) return route.fulfill({ json: {
-        ...prefix, preview_id: "visual-preview", state: "checking",
-      } });
-      return route.fulfill({ json: prefix });
-    });
-    await navigate(page, "Repertoire");
-    await page.locator(".repertoire-card details.card-menu summary").click();
-    await page.getByRole("menuitem", { name: "Canonical prefix…" }).click();
-    const dialog = page.getByRole("dialog", { name: "Canonical prefix" });
-    await expect(dialog.getByText("Compatible. Discoveries start after this opening.")).toBeVisible();
-    await expect(dialog.locator(".board-frame")).toHaveAttribute("data-fen", prefix.ending_fen);
-    await expect(dialog.getByRole("button", { name: "Keyboard shortcuts" })).toHaveCount(0);
-    await expect(dialog.getByRole("button", { name: "Save prefix" })).toBeInViewport({ ratio: 1 });
-    const dialogBounds = (await dialog.boundingBox())!;
-    const nameBounds = (await dialog.locator(".dialog-header p").boundingBox())!;
-    const closeBounds = (await dialog.getByRole("button", { name: "Close window" }).boundingBox())!;
-    expect(closeBounds.x + closeBounds.width).toBeLessThanOrEqual(dialogBounds.x + dialogBounds.width);
-    expect(nameBounds.x + nameBounds.width).toBeLessThanOrEqual(closeBounds.x);
-    await expect(page).toHaveScreenshot(`canonical-prefix-${width}.png`, { animations: "disabled", fullPage: true });
-  });
-}
-
 for (const width of [390, 1280]) {
   test(`keyboard help and letter preference remain readable ${width}`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 }); await prepareVisualUI(page);
@@ -354,33 +318,3 @@ for (const width of [390, 1280]) {
     await expect(page).toHaveScreenshot(`review-conflicts-${width}.png`, { animations: "disabled", fullPage: true });
   });
 }
-
-for (const width of [390, 1280]) test(`Prefix comparison ${width}`, async ({ page }) => {
-  const fixture = JSON.parse(readFileSync("tests/fixtures/prefix-comparison/structural.json", "utf8"));
-  await page.setViewportSize({ width, height: 844 });
-  await prepareVisualUI(page);
-  await page.route("**/api/repertoires", route => route.fulfill({ json: { repertoires: [{
-    id: "rep", name: "Combined Black", source_name: "Combined Black.pgn", line_count: 4,
-    card_count: 5, active_prefix_count: 4, graph_updated_at: "2026-09-18T12:00:00Z", due_count: 0, trained_color: "black",
-  }] } }));
-  await page.route("**/api/system/foreground-active", route => route.fulfill({ json: { active: false } }));
-  await page.route("**/api/repertoires/rep/prefix-evaluation/**", route => {
-    if (route.request().method() === "GET") return route.fulfill({ json: fixture.source });
-    return route.fulfill({ json: fixture.comparisons["a,b:2"] });
-  });
-  await navigate(page, "Repertoire");
-  await page.locator("details.card-menu summary").click();
-  await page.getByRole("menuitem", { name: "Compare prefix depths", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: /Compare prefix depths/ });
-  await dialog.getByLabel("Starting position and trained color").selectOption(JSON.stringify([fixture.source.lines[0].start_fen, "black"]));
-  await dialog.getByRole("combobox", { name: "Move 1", exact: true }).selectOption("e2e4");
-  await dialog.getByRole("combobox", { name: "Move 2", exact: true }).selectOption("c7c6");
-  await dialog.getByRole("checkbox", { name: /^alias ·/ }).uncheck();
-  await dialog.getByLabel("Candidate learner-decision depths").fill("2");
-  await dialog.getByRole("button", { name: "Compare depths", exact: true }).click();
-  await expect(dialog.getByRole("region", { name: "Candidate depth 2", exact: true })).toBeVisible();
-  await dialog.getByRole("heading", { name: "Candidate depth 2", exact: true }).evaluate(heading => heading.scrollIntoView({ block: "start" }));
-  await expect(page).toHaveScreenshot(`prefix-comparison-${width}.png`, { animations: "disabled", fullPage: true });
-  await dialog.getByRole("region", { name: "Candidate depth 2", exact: true }).getByRole("heading", { name: "Whole repertoire", exact: true }).evaluate(heading => heading.scrollIntoView({ block: "start" }));
-  await expect(page).toHaveScreenshot(`prefix-comparison-whole-${width}.png`, { animations: "disabled", fullPage: true });
-});

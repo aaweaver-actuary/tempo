@@ -9,7 +9,6 @@ from typing import Any
 from fastapi import HTTPException
 from pydantic import BaseModel
 
-from .services.repertoire_game_refresh import refresh_game_publications_after_mutation
 from .command_gateway import register_command
 from app.repertoire.changes.application import validate_repair_source_rows
 from app.repertoire.changes.ports import ChangeError
@@ -40,7 +39,6 @@ class PreparedIntegrityRepair(BaseModel):
     unsupported_card_ids: list[str]
 
 
-@refresh_game_publications_after_mutation
 def resolve_integrity_issue(
     database: PostgresConnection,
     raw_payload: dict[str, Any],

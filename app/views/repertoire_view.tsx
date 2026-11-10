@@ -13,12 +13,7 @@ import {
   invalidateWorkspaceData,
 } from "../lib/workspace-data";
 import { reportDebugError } from "../lib/debug-reporting";
-import { PrefixDiagnostics } from "../components/prefix-diagnostics";
-import { PrefixComparisonDialog } from "../components/prefix-comparison-dialog";
-import { OpeningSegmentation } from "../components/opening-segmentation";
-import { CanonicalPrefixDialog } from "../components/canonical-prefix-dialog";
 import { canonicalPrefixSchema, type CanonicalPrefix } from "../domain/canonical-prefix";
-import type { BoardTheme, PieceSet } from "../components/chessboard";
 
 import { Notice } from "../components/task-tabs";
 
@@ -31,8 +26,6 @@ export default function RepertoireView({
   onDeleteLocal,
   onRenameLocal,
   onQueueChanged,
-  theme = "brown",
-  pieceSet = "cburnett",
 }: {
   imported: readonly LocalRepertoire[];
   refreshRevision?: number;
@@ -42,13 +35,7 @@ export default function RepertoireView({
   onDeleteLocal: (id: string) => void;
   onRenameLocal: (id: string, name: string) => void;
   onQueueChanged: () => Promise<void>;
-  theme?: BoardTheme;
-  pieceSet?: PieceSet;
 }) {
-  const [diagnosticsRepertoireId, setDiagnosticsRepertoireId] = useState<string | null>(null);
-  const [segmentationRepertoireId, setSegmentationRepertoireId] = useState<string | null>(null);
-  const [comparisonRepertoireId, setComparisonRepertoireId] = useState<string | null>(null);
-  const [prefixRepertoireId, setPrefixRepertoireId] = useState<string | null>(null);
   const [backendItems, setBackendItems] = useState<RepertoireItem[]>([]);
   const [loaded, setLoaded] = useState(!usesLocalApi());
   const [libraryPage, setLibraryPage] = useState(0);
@@ -226,32 +213,12 @@ export default function RepertoireView({
     link.click();
     URL.revokeObjectURL(url);
   }
-  const diagnosticsRepertoire = backendItems.find(item => item.id === diagnosticsRepertoireId);
-  if (diagnosticsRepertoire) return <PrefixDiagnostics key={diagnosticsRepertoire.id} repertoireId={diagnosticsRepertoire.id}
-    onBack={() => setDiagnosticsRepertoireId(null)} />;
-  const segmentationRepertoire = backendItems.find(item => item.id === segmentationRepertoireId);
-  if (segmentationRepertoire) return <div>
-    <Button onClick={() => setSegmentationRepertoireId(null)}>← Repertoires</Button>
-    <h2>{segmentationRepertoire.title}</h2>
-    <OpeningSegmentation repertoireId={segmentationRepertoire.id} theme={theme} pieceSet={pieceSet} initiallyOpened />
-  </div>;
   return (
     <section className="library-page" id="repertoire">
       {deleteTarget && <RepertoireDeleteDialog key={deleteTarget.id} name={deleteTarget.title}
         localDemo={!deleteTarget.backend}
         pendingPolicy={pendingDeletePolicy} busy={deleteBusy} error={deleteError}
         onClose={() => setDeleteTarget(null)} onConfirm={policy => remove(deleteTarget, policy)} />}
-      {backendItems.filter(item => item.id === comparisonRepertoireId).map(item => <PrefixComparisonDialog
-        key={`${item.id}:${refreshRevision}`} repertoireId={item.id} repertoireName={item.title}
-        onClose={() => setComparisonRepertoireId(null)} />)}
-      {backendItems.filter(item => item.id === prefixRepertoireId).map(item => <CanonicalPrefixDialog key={item.id}
-        repertoireId={item.id} repertoireName={item.title} side={item.side} theme={theme} pieceSet={pieceSet}
-        onClose={() => setPrefixRepertoireId(null)} onSaved={async () => {
-          invalidateWorkspaceData();
-          if (!await loadBackend()) throw new Error("Saved prefix metadata could not be reloaded.");
-          // The queue callback reports training failures independently of confirmed prefix metadata.
-          void onQueueChanged().catch(() => undefined);
-        }} />)}
       {error && (
         <Notice
           error
@@ -315,10 +282,6 @@ export default function RepertoireView({
                   <Button role="menuitem" onClick={() => void rename(item)}>
                     Rename
                   </Button>
-                  {item.backend && <Button role="menuitem" onClick={event => { event.currentTarget.closest("details")?.querySelector("summary")?.focus(); setComparisonRepertoireId(item.id); setOpenMenu(null); }}>Compare prefix depths</Button>}
-                  {item.backend && <Button role="menuitem" onClick={() => { setDiagnosticsRepertoireId(item.id); setOpenMenu(null); }}>Prefix difficulty</Button>}
-                  {item.backend && <Button role="menuitem" onClick={() => { setSegmentationRepertoireId(item.id); setOpenMenu(null); }}>Recommended segmentation</Button>}
-                  {item.backend && <Button role="menuitem" onClick={() => { setPrefixRepertoireId(item.id); setOpenMenu(null); }}>Canonical prefix…</Button>}
                   <Button role="menuitem" onClick={() => exportPgn(item)}>
                     ⇩ Export PGN
                   </Button>
@@ -342,7 +305,7 @@ export default function RepertoireView({
               </div>
               <p>{item.detail}</p>
               {Boolean(item.canonicalPrefix?.moves_uci.length) && <p className="canonical-prefix-summary">
-                <strong>Canonical prefix: {item.canonicalPrefix?.san}</strong><br />Discoveries start after this opening.
+                <strong>Opening prefix: {item.canonicalPrefix?.san}</strong>
               </p>}
               {item.integrityStatus === "needs_repair" && (
                 <>

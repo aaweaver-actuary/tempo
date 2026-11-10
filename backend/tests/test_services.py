@@ -2,12 +2,10 @@ import unittest
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-from app.services.analysis import MAIA_VERSION, STOCKFISH_VERSION, explorer_url
 from app.chess.cards import card_id
 from app.services.puzzles import load_packaged_decks, validate_puzzle_record
 from app.chess.pgn import parse_pgn, prefix_through_user_moves
 from app.services.scheduler import schedule_review, unlock_ready
-from app.chess.evaluation import classify_swings
 import chess
 
 
@@ -179,12 +177,6 @@ class PackagedContentTests(unittest.TestCase):
         ]
         self.assertEqual(len(puzzle_ids), len(set(puzzle_ids)))
 
-    def test_analysis_integrations_are_current_and_fen_safe(self) -> None:
-        self.assertEqual(STOCKFISH_VERSION, 19)
-        self.assertEqual(MAIA_VERSION, 3)
-        url = explorer_url("8/8/8/8/8/8/8/K6k w - - 0 1")
-        self.assertIn("explorer.lichess.org/lichess", url)
-        self.assertIn("fen=8%2F8%2F8", url)
 
     def test_six_move_prefix_ends_on_trained_side(self) -> None:
         moves = [
@@ -233,21 +225,6 @@ class PackagedContentTests(unittest.TestCase):
         )
         self.assertEqual(solution, ["a2e6", "d7d8", "f7f8"])
 
-    def test_game_analysis_finds_mistake_and_missed_punishment(self) -> None:
-        result = classify_swings(
-            [
-                {
-                    "ply": 0,
-                    "before_cp": 150,
-                    "after_cp": 20,
-                    "opponent_created_chance": True,
-                }
-            ],
-            "white",
-            100,
-        )
-        self.assertEqual(result["major_mistake_ply"], 0)
-        self.assertEqual(result["missed_punishment_ply"], 0)
 
 
 if __name__ == "__main__":

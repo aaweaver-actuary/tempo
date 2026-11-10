@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {createHash, randomUUID} from 'node:crypto';
 import {once} from 'node:events';
-import {createInterface} from 'node:readline';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import { readFileSync } from 'node:fs';
 import { mkdtemp, rm, readFile, readdir, writeFile, mkdir, lstat, realpath, symlink } from 'node:fs/promises';
@@ -90,8 +89,8 @@ test('rootless builder and one execution lane preserve individual limits and agg
 test('component PostgreSQL selection acquires the shared budget while lightweight and list checks remain available', async()=>{
   const {componentSelectionNeedsBudget}=await import('../../tools/component-build/component-tests.mjs');
   assert.equal(componentSelectionNeedsBudget(['--component','scheduling']),false);
-  assert.equal(componentSelectionNeedsBudget(['--component','learning','--list']),false);
-  assert.equal(componentSelectionNeedsBudget(['--component','learning']),true);
+  assert.equal(componentSelectionNeedsBudget(['--component','learning-remediation','--list']),false);
+  assert.equal(componentSelectionNeedsBudget(['--component','learning-remediation']),true);
 });
 
 test('managed component Docker preserves explicit caps and adds bounded defaults and owner labels',async()=>{
@@ -929,51 +928,6 @@ else if(args[0]==='run'){
   }finally{await lease.release();await rm(parent,{recursive:true,force:true});}
 });
 
-test('saturation qualification listing and invalid destinations remain lightweight during another owner',async()=>{
-  const directory=await mkdtemp(join(tmpdir(),'tempo-saturation-list-'));
-  try{
-    const {spawnSync}=await import('node:child_process');
-    const executable=join(directory,'docker'),calls=join(directory,'calls');
-    await writeFile(executable,`#!${process.execPath}\nimport{writeFileSync}from'node:fs';writeFileSync(${JSON.stringify(calls)},'unexpected external effect');process.exit(1);\n`,{mode:0o700});
-    const environment={...process.env,PATH:directory+':'+process.env.PATH};delete environment.TEMPO_DEVELOPMENT_BUDGET_TOKEN;
-    const entry=new URL('../../scripts/study-priority-qualification/index.mjs',import.meta.url);
-    const listed=spawnSync(process.execPath,[entry.pathname,'--list'],{env:environment,encoding:'utf8',timeout:3000});
-    assert.equal(listed.status,0,listed.stderr);assert.equal(JSON.parse(listed.stdout).scenarios.length,7);
-    const invalid=spawnSync(process.execPath,[entry.pathname,'--evidence','relative'],{env:environment,encoding:'utf8',timeout:3000});
-    assert.notEqual(invalid.status,0);assert.match(invalid.stderr,/absolute private evidence directory/);
-    await assert.rejects(readFile(calls),{code:'ENOENT'});
-  }finally{await rm(directory,{recursive:true,force:true});}
-});
-
-test('qualification cleanup reaps a recorded owned process and refuses a foreign replacement',async()=>{
-  const {reconcileRecordedHostProcesses}=await import('../../scripts/study-priority-qualification/process-lifecycle.mjs');
-  const {execFileSync}=await import('node:child_process');
-  const {randomUUID}=await import('node:crypto');
-  const directory=await mkdtemp(join(tmpdir(),'tempo-owned-process-proof-'));
-  const token=randomUUID();const children=[];
-  async function launch(owner,nonce){
-    const child=spawn(process.execPath,['-e',"process.on('SIGTERM',()=>{});console.log('ready');setInterval(()=>{},1000);"],{
-      cwd:directory,env:{...process.env,TEMPO_SATURATION_DIRECTORY:directory,TEMPO_DEVELOPMENT_BUDGET_TOKEN:owner,TEMPO_QUALIFICATION_PROCESS_NONCE:nonce},stdio:['ignore','pipe','pipe']});
-    children.push(child);child.completion=new Promise(resolve=>child.once('exit',resolve));
-    await new Promise((resolve,reject)=>{child.once('error',reject);child.stdout.once('data',()=>resolve());});
-    return {child,record:{pid:child.pid,nonce,token,directory,start_time:execFileSync('ps',['-p',String(child.pid),'-o','lstart='],{encoding:'utf8',env:{...process.env,TZ:'UTC',LC_ALL:'C'}}).trim()}};
-  }
-  try{
-    const nonce=randomUUID().replaceAll('-','');
-    const owned=await launch(token,nonce);
-    const result=await reconcileRecordedHostProcesses([owned.record],{directory,token},{graceMilliseconds:75,killMilliseconds:1000});
-    assert.deepEqual(result[0].signals,['SIGTERM','SIGKILL']);assert.equal(result[0].absent,true);await owned.child.completion;
-    const foreign=await launch('another-owner',randomUUID().replaceAll('-',''));
-    await assert.rejects(reconcileRecordedHostProcesses([{...foreign.record,nonce}],{directory,token},{graceMilliseconds:75,killMilliseconds:1000}),/ownership changed/);
-    await assert.rejects(reconcileRecordedHostProcesses([{...foreign.record,nonce,exited:true}],{directory,token}),/ownership changed/);
-    assert.doesNotThrow(()=>process.kill(foreign.child.pid,0),'A foreign process was signalled');
-    await assert.rejects(reconcileRecordedHostProcesses([{...owned.record,pid:null}],{directory,token}),/creation is unverified/);
-  }finally{
-    for(const child of children){if(child.exitCode===null&&child.signalCode===null)child.kill('SIGKILL');await child.completion;}
-    await rm(directory,{recursive:true,force:true});
-  }
-});
-
 test('failed startup journal reconciles only an explicitly removed absent container',async()=>{
   const {managedDockerEnvironment}=await import('../../scripts/development-docker.mjs');
   const {recordBudgetResource}=await import('../../scripts/development-budget.mjs');
@@ -1018,47 +972,6 @@ test('stalled or removed expected host publisher cannot turn stale evidence into
       pause:async () => { waits++; controller.abort(new Error('expected publisher unavailable')); }}), /expected publisher unavailable/);
     assert.equal(waits, 1);
   } finally { await rm(directory, {recursive:true, force:true}); }
-});
-
-
-test('healthy idle snapshot with stalled publisher allows a new essential request before the 15-second admission expiry', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'tempo-idle-stall-boundary-'));
-  const child = spawn(process.env.TEMPO_COMPONENT_PYTHON ?? 'python3',
-    [fileURLToPath(new URL('./host-activity-idle-stall.py', import.meta.url)), directory],
-    {stdio:['pipe', 'pipe', 'pipe']});
-  const exited = once(child, 'close').catch(error => [null, String(error)]);
-  const lines = createInterface({input:child.stdout});
-  let errors = '';
-  child.stderr.on('data', data => { errors += data; });
-  try {
-    const [line] = await once(lines, 'line', {signal:AbortSignal.timeout(3000)});
-    const status = JSON.parse(line);
-    assert.equal(status.essentialCompleted, true);
-    assert.equal(status.publisherBlocked, true);
-    const source = fileURLToPath(new URL('../../services/learning/runtime/src/tempo_learning_runtime/host_activity.py', import.meta.url));
-    assert.equal(status.sourcePath, source);
-    assert.equal(status.sourceSHA256, createHash('sha256').update(await readFile(source)).digest('hex'));
-    const now = BigInt(status.now);
-    const expectedSources = ['learning-idle-stall'];
-    const retained = JSON.parse(await readFile(join(directory, status.producer + '.json'), 'utf8'));
-    assert.equal(retained.pendingRequests, false, 'The completed essential request has not reached disk');
-    assert.deepEqual(retained.sessions, {});
-    assert.deepEqual(await readHostStudyActivity({directory, now, expectedSources}), {available:true, active:false});
-    assert.deepEqual(await readHostStudyActivity({directory, now:now + 15_000_000_000n - 1n, expectedSources}),
-      {available:true, active:false}, 'Async publication does not immediately exclude foreground overlap');
-    assert.equal((await readHostStudyActivity({directory, now:now + 15_000_000_000n, expectedSources})).available, false);
-    child.stdin.end('close\n');
-    const [code, signal] = await exited;
-    assert.equal(code, 0, errors || String(signal));
-    assert.equal((await readHostStudyActivity({directory, now, expectedSources})).available, false);
-    assert.deepEqual(await readHostStudyActivity({directory, now, expectedSources:[]}), {available:true, active:false},
-      'Absent-source protection requires configured expected identities; default empty identities allow absence');
-  } finally {
-    lines.close();
-    if (child.exitCode === null) child.kill('SIGKILL');
-    await exited;
-    await rm(directory, {recursive:true, force:true});
-  }
 });
 
 
