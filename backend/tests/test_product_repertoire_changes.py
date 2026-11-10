@@ -286,7 +286,7 @@ def test_explicit_import_retained_hook_validates_then_publishes_once(
     monkeypatch.setattr(imports, "validate_approved_import", validate)
     monkeypatch.setattr(command, "_admit_pgn_import", admit)
     # Invoke the command body; the existing refresh decorator surrounds it once.
-    assert command.explicit_pgn_import.__wrapped__(database, raw) == {
+    assert command.explicit_pgn_import(database, raw) == {
         "preparation_state": "pending"
     }
     assert calls == (["validate", "admit"] if approved else ["admit"])
@@ -972,7 +972,7 @@ def test_legacy_import_guard_stops_conflict_before_any_source_write(monkeypatch)
         lines=[dict(starting_fen=chess.STARTING_FEN, moves=["d2d4"], annotations=[])],
     )
     with pytest.raises(HTTPException) as error:
-        command.admit_pgn_import.__wrapped__(object(), payload)
+        command.admit_pgn_import(object(), payload)
     assert (
         error.value.status_code == 409
         and error.value.detail["code"] == "repertoire_conflict"
@@ -988,7 +988,7 @@ def test_legacy_branch_guard_stops_conflict_before_insert(monkeypatch):
         command.change_storage, "lock_sources", lambda *_: (source_row(),)
     )
     with pytest.raises(HTTPException) as error:
-        command.add_repertoire_branch.__wrapped__(
+        command.add_repertoire_branch(
             object(),
             dict(
                 repertoire_id="rep",
@@ -1024,7 +1024,7 @@ def test_legacy_card_edit_guard_keeps_shared_membership_before_writes(
 
     monkeypatch.setattr(command.change_storage, "lock_sources", locked_sources)
     with pytest.raises(HTTPException) as error:
-        command.revise_card.__wrapped__(
+        command.revise_card(
             object(),
             dict(
                 card_id="card",
@@ -1077,7 +1077,7 @@ def test_legacy_integrity_repair_cannot_introduce_new_response_conflict(
 
     monkeypatch.setattr(command.change_storage, "lock_sources", locked_sources)
     with pytest.raises(HTTPException) as error:
-        command.resolve_integrity_issue.__wrapped__(
+        command.resolve_integrity_issue(
             object(),
             dict(
                 repertoire_id="rep",

@@ -1,6 +1,7 @@
 """Contract-only AST boundary proof; not a repository-wide dependency planner."""
 
 import ast
+import json
 from pathlib import Path
 import sys
 
@@ -93,9 +94,10 @@ def check_package(source_root: Path):
 if __name__ == "__main__":
     root = Path(__file__).resolve().parent
     source_roots = [path.parent / "src" for path in root.glob("*/pyproject.toml")]
-    if len(source_roots) != 6:
-        raise SystemExit("expected exactly six contract package inputs")
+    expected = {entry["root"] for entry in json.loads((root / "catalog.json").read_text())["contracts"]}
+    if not expected or {path.parent.name for path in source_roots} != expected:
+        raise SystemExit("contract package inputs differ from the public catalog")
     errors = [error for directory in source_roots for error in check_package(directory)]
     if errors:
         raise SystemExit("\n".join(errors))
-    print("Six contract packages: declared imports only; no dynamic source loading")
+    print(f"{len(source_roots)} contract packages: declared imports only; no dynamic source loading")

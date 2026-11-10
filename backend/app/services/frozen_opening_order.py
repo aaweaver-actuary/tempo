@@ -67,7 +67,7 @@ def stage_run(database, plan, now):
 
 
 def queue_hash(membership_hash, token):
-    from tempo_learning_runtime.queue_ordering import queue_order_fingerprint
+    from app.study.policy.queue_ordering import queue_order_fingerprint
 
     return queue_order_fingerprint(membership_hash, token)
 

@@ -6,7 +6,6 @@ import threading
 import asyncio
 from datetime import date
 from contextlib import asynccontextmanager, contextmanager, nullcontext
-from dataclasses import dataclass
 import json
 import sqlite3
 import chess
@@ -21,13 +20,10 @@ import pytest
 
 from app import command_dispatch
 from app.services.activity_gate import activity_gate
-from test_card_deletion import workspace as deletion_workspace
 from app.command_gateway import CommandConflict, request_digest
 from tempo_legacy_database.adapters.postgres_store import TempoRow, postgres_sql
 from app.services import redis_admission_gate
-from tempo_legacy_database.ddl.background_metrics_schema import (
-    SCHEMA as BACKGROUND_METRIC_SCHEMA,
-)
+from background_metric_fixture import BACKGROUND_METRIC_SCHEMA
 
 
 @pytest.fixture(autouse=True)
@@ -54,11 +50,6 @@ def unscoped_canonical_prefix(monkeypatch):
     from app.services import (
         canonical_prefix,
         canonical_scope_freshness,
-        discovery_admission,
-        postgres_coverage_seed,
-        coverage_seed_request,
-        postgres_coverage_explorer,
-        repertoire_coverage,
     )
 
     monkeypatch.setattr(
@@ -67,11 +58,6 @@ def unscoped_canonical_prefix(monkeypatch):
     for module in (
         canonical_prefix,
         canonical_scope_freshness,
-        discovery_admission,
-        postgres_coverage_seed,
-        coverage_seed_request,
-        postgres_coverage_explorer,
-        repertoire_coverage,
     ):
         if hasattr(module, "read_prefix"):
             monkeypatch.setattr(
@@ -103,1200 +89,33 @@ def inactive_frozen_queue(monkeypatch):
     )
 
 
-def test_retired_exclusion_route_and_legacy_command_atomic_followup(monkeypatch):
+def test_retired_exclusion_route_and_legacy_command_updates_only_inclusion(monkeypatch):
     from fastapi.testclient import TestClient
     from app import game_commands, main
 
-    # The retired HTTP entry point is no longer mounted. The legacy command's
-    # atomic storage behavior remains covered below while its callers retire.
     response = TestClient(main.app).post(
         "/api/games/provider:one/exclusion",
         json={"excluded": True},
         headers={"Idempotency-Key": "exclude-one"},
     )
     assert response.status_code == 404
-
     statements = []
-    followups = []
 
     class Cursor:
-        def __init__(self, rows):
-            self.rows = rows
-
         def fetchone(self):
-            return self.rows[0] if self.rows else None
-
-        def __iter__(self):
-            return iter(self.rows)
+            return {"id": "provider:one"}
 
     class Database:
         def execute(self, statement, parameters):
             statements.append((statement, parameters))
-            if "SELECT id FROM imported_games" in statement:
-                return Cursor([{"id": "provider:one"}])
-            if "SELECT derivation_version FROM game_derivation_jobs" in statement:
-                return Cursor([{"derivation_version": 2}])
-            if "SELECT repertoire_id FROM current_game_repertoire_matches" in statement:
-                return Cursor([("repertoire-a",), ("repertoire-a",)])
-            return Cursor([])
-
-    monkeypatch.setattr(
-        game_commands,
-        "enqueue_task_in_transaction",
-        lambda _database, kind, key, payload, *, priority: followups.append(
-            (kind, key, payload, priority)
-        ),
-    )
-    assert game_commands.set_game_exclusion(
-        Database(),
-        {"game_id": "provider:one", "excluded": True},
-    ) == {"game_id": "provider:one", "excluded": True}
-    assert any("FOR UPDATE" in statement for statement, _ in statements)
-    assert any(
-        "INSERT INTO game_derivation_jobs" in statement for statement, _ in statements
-    )
-    assert followups == [
-        (
-            "game_derivation_positions",
-            "provider:one",
-            {"game_id": "provider:one", "derivation_version": 2, "cursor": 0},
-            125,
-        )
-    ]
-
-
-def test_postgres_manual_threat_refresh_admits_scan_through_foreground_receipt(
-    monkeypatch,
-):
-    from fastapi.testclient import TestClient
-    from app import command_dispatch, game_commands, main
-
-    dispatched = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(
-        command_dispatch,
-        "dispatch_command",
-        lambda name, payload, *, idempotency_key: (
-            dispatched.append((name, payload, idempotency_key))
-            or {"status": "queued", "analysis_version": 3}
-        ),
-    )
-    response = TestClient(main.app).post(
-        "/api/games/provider:one/defensive-threats/refresh",
-        headers={"Idempotency-Key": "threat-refresh-one"},
-    )
-    assert response.status_code == 200, response.text
-    assert dispatched == [
-        (
-            "games.defensive_threats.refresh",
-            {"game_id": "provider:one"},
-            "threat-refresh-one",
-        )
-    ]
-
-    enqueued = []
-
-    class Cursor:
-        def fetchone(self):
-            return {"analysis_version": 3}
-
-    class Database:
-        def execute(self, statement, parameters):
-            assert "analysis_state='ready'" in statement
-            assert parameters == ("provider:one",)
             return Cursor()
 
-    monkeypatch.setattr(
-        game_commands,
-        "enqueue_task_in_transaction",
-        lambda _database, kind, key, payload, *, priority: enqueued.append(
-            (kind, key, payload, priority)
-        ),
-    )
-    assert game_commands.request_defensive_threat_scan(
-        Database(),
-        {"game_id": "provider:one"},
-    ) == {"status": "queued", "analysis_version": 3}
-    assert enqueued == [
-        (
-            "defensive_threat_scan",
-            "provider:one",
-            {"game_id": "provider:one", "analysis_version": 3, "cursor": 0},
-            145,
-        )
-    ]
-
-
-def test_postgres_threat_scan_prepares_outside_transaction_and_rejects_stale_lease(
-    monkeypatch,
-):
-    from app import tasks
-    from app.services import threat_pipeline
-
-    assert "defensive_threat_scan" in tasks._SUPPORTED_BACKGROUND_KINDS
-    task = {
-        "id": "scan",
-        "generation": 2,
-        "lease_token": "old",
-        "payload": {
-            "game_id": "game",
-            "analysis_version": 1,
-            "cursor": 0,
-        },
-    }
-    state = {"in_write": False, "prepared": False, "locked": False}
-
-    class Cursor:
-        def __init__(self, row=None, rows=()):
-            self.row, self.rows = row, rows
-
-        def fetchone(self):
-            return self.row
-
-        def __iter__(self):
-            return iter(self.rows)
-
-    class ReadDatabase:
-        def execute(self, statement, _parameters):
-            if "FROM imported_games" in statement:
-                return Cursor(
-                    {
-                        "id": "game",
-                        "analysis_version": 1,
-                        "start_fen": chess.STARTING_FEN,
-                        "moves_json": '["e2e4"]',
-                        "color": "white",
-                    }
-                )
-            return Cursor(rows=())
-
-    @contextmanager
-    def read_database():
-        assert not state["in_write"]
-        yield ReadDatabase()
-
-    @contextmanager
-    def write_database(*, background):
-        assert background and state["prepared"]
-        state["in_write"] = True
-        try:
-            yield object()
-        finally:
-            state["in_write"] = False
-
-    def prepare_seed(_game, _seed):
-        assert not state["in_write"]
-        state["prepared"] = True
-        return (), (), {}
-
-    def stale_lease(_database, _task):
-        state["locked"] = True
-        return False
-
-    monkeypatch.setattr(threat_pipeline.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(
-        threat_pipeline.activity_gate, "wait_for_foreground", lambda: None
-    )
-    monkeypatch.setattr(threat_pipeline, "background_read_connection", read_database)
-    monkeypatch.setattr(threat_pipeline, "connection", write_database)
-    monkeypatch.setattr(
-        threat_pipeline,
-        "find_defensive_knight_forks",
-        lambda _game, _source: [object()],
-    )
-    monkeypatch.setattr(threat_pipeline, "_prepare_seed", prepare_seed)
-    monkeypatch.setattr(threat_pipeline, "lock_current_slice", stale_lease)
-
-    assert threat_pipeline.execute_threat_scan_slice(task) is True
-    assert state == {"in_write": False, "prepared": True, "locked": True}
-
-
-def test_postgres_threat_scan_publishes_one_seed_per_restartable_slice(monkeypatch):
-    from app.services import threat_pipeline
-
-    published = []
-    advanced = []
-    seed_ids = ["seed-one", "seed-two", "seed-three"]
-    task = {
-        "id": "scan",
-        "generation": 2,
-        "lease_token": "live",
-        "payload": {
-            "game_id": "game",
-            "analysis_version": 1,
-            "cursor": 0,
-        },
-    }
-
-    class Cursor:
-        def __init__(self, row=None, rows=()):
-            self.row, self.rows = row, rows
-
-        def fetchone(self):
-            return self.row
-
-        def __iter__(self):
-            return iter(self.rows)
-
-    class Database:
-        def execute(self, statement, _parameters):
-            if statement.startswith("SELECT analysis_version FROM imported_games"):
-                return Cursor((1,))
-            if "FROM imported_games" in statement:
-                return Cursor(
-                    {
-                        "id": "game",
-                        "analysis_version": 1,
-                        "start_fen": chess.STARTING_FEN,
-                        "moves_json": '["e2e4"]',
-                        "color": "white",
-                    }
-                )
-            return Cursor(rows=())
-
-    @contextmanager
-    def open_database(*, background=True):
-        yield Database()
-
-    monkeypatch.setattr(threat_pipeline.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(
-        threat_pipeline.activity_gate, "wait_for_foreground", lambda: None
-    )
-    monkeypatch.setattr(threat_pipeline, "background_read_connection", open_database)
-    monkeypatch.setattr(threat_pipeline, "connection", open_database)
-    monkeypatch.setattr(threat_pipeline, "lock_current_slice", lambda *_arguments: True)
-    monkeypatch.setattr(
-        threat_pipeline, "find_defensive_knight_forks", lambda _game, _source: seed_ids
-    )
-    monkeypatch.setattr(
-        threat_pipeline, "_prepare_seed", lambda *_arguments: ((), (), {})
-    )
-    monkeypatch.setattr(
-        threat_pipeline,
-        "_upsert_seed",
-        lambda _database, _game, seed, *, prepared: published.append(seed),
-    )
-    monkeypatch.setattr(
-        threat_pipeline,
-        "_advance_scan",
-        lambda _database, _task, cursor, *, seed_index=0: advanced.append(
-            (cursor, seed_index)
-        ),
-    )
-
-    for expected_seed_index in range(3):
-        task["payload"]["seed_index"] = expected_seed_index
-        assert threat_pipeline.execute_threat_scan_slice(task)
-    assert published == seed_ids
-    assert advanced == [(0, 1), (0, 2), (1, 0)]
-
-
-def test_postgres_versioned_game_analysis_import_targets_preserve_published_views():
-    migration = (
-        Path(__file__).resolve().parents[2]
-        / "database/tempo_legacy_database/ddl/migrations"
-        / "009_versioned_game_analysis.sql"
-    ).read_text()
-    assert "game.published_analysis_generation=0" in migration
-    assert (
-        "game.published_analysis_generation=staged.publication_generation" in migration
-    )
-    assert "CREATE VIEW game_move_analysis AS" in migration
-    assert "CREATE VIEW game_move_analysis_candidates AS" in migration
-
-
-def test_postgres_game_finalization_admits_durable_publication_via_background_celery(
-    monkeypatch,
-):
-    from fastapi.testclient import TestClient
-    from app import main
-
-    observed = []
-    row = {
-        "game_id": "game",
-        "analysis_version": 2,
-        "analysis_evidence_version": 1,
-        "lease_id": "parent-lease",
-        "color": "white",
-        "start_fen": chess.STARTING_FEN,
-        "moves_json": '["e2e4"]',
-        "divergence_ply": None,
-    }
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "background_request", lambda: nullcontext())
-    monkeypatch.setattr(
-        main,
-        "background_read_connection",
-        lambda: nullcontext(
-            SimpleNamespace(
-                execute=lambda *_args: SimpleNamespace(fetchone=lambda: row)
-            ),
-        ),
-    )
-    monkeypatch.setattr(main, "build_game_evaluations", lambda *_args: [])
-    monkeypatch.setattr(main, "_validated_analysis_evaluations", lambda *_args: [])
-    monkeypatch.setattr(main, "_game_analysis_threshold", lambda: 100)
-    monkeypatch.setattr(
-        command_dispatch,
-        "dispatch_command",
-        lambda name, payload, **options: (
-            observed.append((name, payload, options)) or {"status": "preparing"}
-        ),
-    )
-    response = TestClient(main.app).post(
-        "/api/games/analysis/position/finalize",
-        headers={
-            "X-Tempo-Engine-Worker": "docker",
-            "X-Tempo-Work-Class": "background",
-            "Idempotency-Key": "finalize-one",
-        },
-        json={"lease_id": "parent-lease"},
-    )
-    assert response.status_code == 200
-    assert observed[0][0] == "games.analysis.finalize.admit"
-    assert observed[0][1]["expected_evidence_version"] == 1
-    assert observed[0][1]["analysis_evidence_version"] == 3
-    assert observed[0][2] == {"idempotency_key": "finalize-one", "background": True}
-
-
-def test_postgres_game_publication_limits_each_slice_to_eight_moves():
-    from app.game_analysis_publication import PUBLICATION_SLICE_PLIES, _slice_rows
-
-    evaluations = [
-        {
-            "ply": ply,
-            "before_cp": 10,
-            "after_cp": 0,
-            "mover_color": "white",
-            "position_fen": chess.STARTING_FEN,
-            "candidate_lines": [
-                {"uci": "e2e4", "cp": 10, "pv": ["e2e4"]} for _ in range(5)
-            ],
-        }
-        for ply in range(229)
-    ]
-    prepared = {
-        "game_id": "game",
-        "analysis_version": 2,
-        "game": {"color": "white", "moves_json": json.dumps(["e2e4"] * 229)},
-        "request": {
-            "depth": 8,
-            "engine_version": "engine",
-            "network_version": "network",
-        },
-        "result": {"major_mistake_ply": None, "missed_punishment_ply": None},
-        "evaluations": evaluations,
-    }
-    analysis_rows, candidate_rows = _slice_rows(prepared, 0)
-    assert PUBLICATION_SLICE_PLIES == 8
-    assert len(analysis_rows) == 8 and len(candidate_rows) == 40
-    assert [row["ply"] for row in analysis_rows] == list(range(8))
-
-
-def test_postgres_game_publication_rejects_incomplete_stage_before_visibility_switch(
-    monkeypatch,
-):
-    from app import game_analysis_publication
-
-    statements = []
-    monkeypatch.setattr(
-        game_analysis_publication, "lock_current_slice", lambda *_args: True
-    )
-
-    class IncompleteDatabase:
-        def execute_native(self, statement, *_parameters):
-            statements.append(statement)
-            if "FROM game_analysis_publications" in statement:
-                result = {"next_ply": 1, "status": "publishing"}
-            elif "FROM game_analysis_jobs" in statement:
-                result = {"status": "publishing", "analysis_evidence_version": 1}
-            elif "COUNT(*) FROM game_move_analysis_staged" in statement:
-                result = (0,)
-            else:
-                raise AssertionError("An incomplete stage must not publish any data")
-            return SimpleNamespace(fetchone=lambda: result)
-
-    with pytest.raises(RuntimeError, match="incomplete move rows"):
-        game_analysis_publication._switch_published_generation(
-            IncompleteDatabase(),
-            {
-                "id": "task",
-                "generation": 1,
-                "lease_token": "lease",
-                "payload": {"game_id": "game", "analysis_version": 2},
-            },
-            {
-                "prepared": {"evaluations": [{}]},
-                "result_json": '{"major_mistake_ply":null,"missed_punishment_ply":null}',
-                "analysis_evidence_version": 3,
-            },
-        )
-    assert not any(
-        statement.startswith("UPDATE imported_games") for statement in statements
-    )
-
-
-def test_postgres_game_publication_admission_checkpoints_durable_task(monkeypatch):
-    from app import game_analysis_publication
-
-    statements = []
-    enqueued = []
-    monkeypatch.setattr(
-        game_analysis_publication,
-        "enqueue_compact_postgres_task_in_transaction",
-        lambda _database, *args, **kwargs: enqueued.append((args, kwargs)),
-    )
-
-    class AdmissionDatabase:
-        def execute_native(self, statement, *_parameters):
-            statements.append(statement)
-            if "FROM game_analysis_jobs" in statement:
-                result = {
-                    "status": "leased",
-                    "lease_id": "lease",
-                    "analysis_version": 2,
-                    "analysis_evidence_version": 1,
-                    "idempotency_key": None,
-                }
-            elif "FROM background_tasks" in statement:
-                result = {"id": "publish-task"}
-            else:
-                result = None
-            return SimpleNamespace(fetchone=lambda: result)
-
-    result = game_analysis_publication.admit_game_analysis_publication(
-        AdmissionDatabase(),
-        {
-            "game_id": "game",
-            "analysis_version": 2,
-            "expected_evidence_version": 1,
-            "analysis_evidence_version": 3,
-            "lease_id": "lease",
-            "idempotency_key": "save-one",
-            "result": {"major_mistake_ply": None, "missed_punishment_ply": None},
-            "prepared": {"evaluations": []},
-        },
-    )
-    assert result == {"status": "preparing", "task_id": "publish-task"}
-    assert enqueued[0][0][:2] == ("game_analysis_publish", "game")
-    assert any("SET status='publishing'" in statement for statement in statements)
-
-
-def test_postgres_game_analysis_idle_claim_avoids_receipt_and_active_claim_uses_background_worker(
-    monkeypatch,
-):
-    from fastapi.testclient import TestClient
-    from app import main
-
-    available = [None, (1,)]
-    observed = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "background_request", lambda: nullcontext())
-    monkeypatch.setattr(
-        main,
-        "background_read_connection",
-        lambda: nullcontext(
-            SimpleNamespace(
-                execute_native=lambda *_args: SimpleNamespace(
-                    fetchone=lambda: available.pop(0),
-                )
-            ),
-        ),
-    )
-    monkeypatch.setattr(
-        command_dispatch,
-        "dispatch_command",
-        lambda name, payload, **options: (
-            observed.append((name, payload, options)) or {"job": {"game_id": "game"}}
-        ),
-    )
-    client = TestClient(main.app)
-    headers = {
-        "X-Tempo-Engine-Worker": "docker",
-        "X-Tempo-Work-Class": "background",
-        "Idempotency-Key": "claim-one",
-    }
-    assert client.post("/api/games/analysis/claim", headers=headers).json() == {
-        "job": None
-    }
-    assert not observed
-    assert client.post("/api/games/analysis/claim", headers=headers).json() == {
-        "job": {"game_id": "game"}
-    }
-    assert observed == [
-        (
-            "games.analysis.claim",
-            {},
-            {"idempotency_key": "claim-one", "background": True},
-        )
-    ]
-
-
-def test_postgres_game_analysis_claim_uses_skip_locked_and_preserves_lease_shape():
-    from app.game_analysis_commands import claim_game_analysis
-
-    statements = []
-    job = {
-        "game_id": "game",
-        "analysis_version": 2,
-        "analysis_evidence_version": 3,
-        "provider": "lichess",
-        "username": "example",
-        "played_at": "2026-09-27",
-        "color": "white",
-        "start_fen": chess.STARTING_FEN,
-        "moves_json": '["e2e4"]',
-        "divergence_ply": None,
-    }
-
-    class ClaimDatabase:
-        def execute_native(self, statement, *_parameters):
-            statements.append(statement)
-            if statement.startswith("SELECT automated_streak"):
-                return SimpleNamespace(fetchone=lambda: (0,))
-            if statement.startswith("SELECT request.id"):
-                return SimpleNamespace(fetchone=lambda: None)
-            return SimpleNamespace(fetchone=lambda: job, rowcount=1)
-
-    result = claim_game_analysis(ClaimDatabase(), {})["job"]
-    assert result["game_id"] == "game" and result["moves"] == ["e2e4"]
-    assert result["lease_id"] and result["lease_expires_at"]
-    assert "FOR UPDATE SKIP LOCKED" in statements[0]
-    assert "WHERE role='attempt'" in statements[1]
-    assert "FOR UPDATE OF j,g SKIP LOCKED" in statements[2]
-    assert "COALESCE(control.paused,0)=0" in statements[2]
-    assert "COALESCE(control.promoted,0) DESC" in statements[2]
-    assert "UPDATE game_analysis_jobs" in statements[3]
-    assert "UPDATE imported_games" in statements[4]
-    assert "UPDATE engine_scheduling_state" in statements[5]
-
-
-def test_postgres_game_position_claim_dispatches_prepared_plan_to_background(
-    monkeypatch,
-):
-    from fastapi.testclient import TestClient
-    from app import main, game_analysis_commands
-
-    plan = {
-        "game_id": "game",
-        "analysis_version": 2,
-        "analysis_evidence_version": 3,
-        "kind": "search",
-        "scan_pass": "shallow",
-        "position_index": 0,
-        "request": {},
-    }
-    observed = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "background_request", lambda: nullcontext())
-    monkeypatch.setattr(
-        main, "read_operation", lambda *_args, **_options: {"state": "unknown"}
-    )
-    monkeypatch.setattr(game_analysis_commands, "prepare_position_claim", lambda: plan)
-    monkeypatch.setattr(
-        command_dispatch,
-        "dispatch_command",
-        lambda name, payload, **options: (
-            observed.append((name, payload, options)) or {"job": None}
-        ),
-    )
-    response = TestClient(main.app).post(
-        "/api/games/analysis/position/claim",
-        headers={
-            "X-Tempo-Engine-Worker": "docker",
-            "X-Tempo-Work-Class": "background",
-            "Idempotency-Key": "position-one",
-        },
-    )
-    assert response.status_code == 200
-    assert observed == [
-        (
-            "games.analysis.position.claim",
-            {**plan, "claim_request": {}},
-            {"idempotency_key": "position-one", "background": True},
-        )
-    ]
-
-
-@pytest.fixture
-def position_claim_receipt_route(monkeypatch):
-    from fastapi.testclient import TestClient
-    from tempo_legacy_database import connections as database
-    from app import game_analysis_commands, main
-
-    receipts = {}
-    deliveries = []
-    preparations = []
-    saved_response = {
-        "job": {"game_id": "game-a", "lease_id": "original-lease", "kind": "search"}
-    }
-
-    def read_receipt(statement, parameters):
-        assert statement.startswith("SELECT command_name,request_hash,state,")
-        receipt = receipts.get(parameters[0])
-        columns = statement.split(" FROM ", 1)[0].removeprefix("SELECT ").split(",")
-        return SimpleNamespace(
-            fetchone=lambda: (
-                tuple(receipt[column] for column in columns) if receipt else None
-            )
-        )
-
-    def prepare(preferred_game_id=None):
-        preparations.append(preferred_game_id)
-        return {"game_id": "game-a", "analysis_version": 1, "kind": "search"}
-
-    def send_task(_task_name, *, args, **_options):
-        operation_id, command_name, payload = args
-        deliveries.append((operation_id, command_name, payload))
-        receipts[operation_id] = {
-            "command_name": command_name,
-            "request_hash": request_digest(command_name, payload),
-            "state": "complete",
-            "response_json": json.dumps(saved_response),
-            "error_json": None,
-            "attempt_count": 1,
-            "next_retry_at": None,
-            "last_error_json": None,
-            "lease_expires_at": None,
-            "payload_json": json.dumps(payload),
-            "retry_cycle": 0,
-            "cycle_attempt_count": 1,
-        }
-        return SimpleNamespace(get=lambda **_options: saved_response)
-
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "background_request", lambda: nullcontext())
-    monkeypatch.setattr(
-        database,
-        "background_read_connection",
-        lambda: nullcontext(SimpleNamespace(raw=SimpleNamespace(execute=read_receipt))),
-    )
-    monkeypatch.setattr(game_analysis_commands, "prepare_position_claim", prepare)
-    monkeypatch.setattr(command_dispatch.celery_app, "send_task", send_task)
-    client = TestClient(main.app)
-
-    def post(payload):
-        return client.post(
-            "/api/games/analysis/position/claim",
-            json=payload,
-            headers={
-                "X-Tempo-Engine-Worker": "docker",
-                "X-Tempo-Work-Class": "background",
-                "Idempotency-Key": "position-identity",
-            },
-        )
-
-    return SimpleNamespace(
-        post=post,
-        receipts=receipts,
-        deliveries=deliveries,
-        preparations=preparations,
-        saved_response=saved_response,
-    )
-
-
-@pytest.mark.parametrize(
-    "receipt_state",
-    ["complete", "pending", "queued", "executing", "retrying", "blocked", "failed"],
-)
-@pytest.mark.parametrize(
-    "original_payload,replay_payload",
-    [
-        ({"preferred_game_id": "game-a"}, {"preferred_game_id": "game-b"}),
-        ({"preferred_game_id": "game-a"}, {}),
-        ({}, {"preferred_game_id": "game-a"}),
-    ],
-    ids=["game-a-then-game-b", "hinted-then-unhinted", "unhinted-then-hinted"],
-)
-def test_position_claim_receipt_rejects_changed_request_payload(
-    position_claim_receipt_route, receipt_state, original_payload, replay_payload
-):
-    route = position_claim_receipt_route
-    assert route.post(original_payload).status_code == 200
-    receipt = route.receipts["position-identity"]
-    receipt.update(
-        state=receipt_state,
-        error_json=json.dumps({"status_code": 503, "message": "saved failure"}),
-    )
-    original_receipt = dict(receipt)
-    response = route.post(replay_payload)
-    assert response.status_code == 409, response.text
-    assert response.json() == {
-        "detail": "Operation ID was already used for another request"
-    }
-    assert receipt == original_receipt
-    assert len(route.deliveries) == len(route.preparations) == 1
-
-
-@pytest.mark.parametrize(
-    "receipt_state",
-    ["complete", "pending", "queued", "executing", "retrying", "blocked", "failed"],
-)
-@pytest.mark.parametrize(
-    "payload", [{"preferred_game_id": "game-a"}, {}], ids=["hinted", "unhinted"]
-)
-def test_position_claim_identical_receipt_recovers_without_preparing_work(
-    position_claim_receipt_route, receipt_state, payload
-):
-    route = position_claim_receipt_route
-    assert route.post(payload).status_code == 200
-    receipt = route.receipts["position-identity"]
-    receipt.update(
-        state=receipt_state,
-        error_json=json.dumps({"status_code": 503, "message": "saved failure"}),
-    )
-    original_receipt = dict(receipt)
-    response = route.post(payload)
-    if receipt_state == "complete":
-        assert response.status_code == 200
-        assert response.json() == route.saved_response
-    elif receipt_state == "failed":
-        assert response.status_code == 503
-        assert response.json() == {"detail": "saved failure"}
-    else:
-        assert response.status_code == 202
-        assert response.json() == {
-            "operation_id": "position-identity",
-            "state": receipt_state,
-        }
-        assert response.headers["Location"] == "/api/operations/position-identity"
-    assert receipt == original_receipt
-    assert len(route.deliveries) == len(route.preparations) == 1
-
-
-@pytest.mark.parametrize("receipt_state", ["complete", "pending"])
-@pytest.mark.parametrize("saved_payload_available", [False, True])
-def test_position_claim_legacy_receipt_recovery_remains_available(
-    position_claim_receipt_route, receipt_state, saved_payload_available
-):
-    route = position_claim_receipt_route
-    assert route.post({"preferred_game_id": "game-a"}).status_code == 200
-    receipt = route.receipts["position-identity"]
-    legacy_payload = {"game_id": "game-a", "analysis_version": 1, "kind": "search"}
-    receipt.update(
-        state=receipt_state,
-        request_hash=request_digest(receipt["command_name"], legacy_payload),
-        payload_json=json.dumps(legacy_payload) if saved_payload_available else None,
-    )
-    response = route.post({"preferred_game_id": "deleted-game"})
-    assert response.status_code == (200 if receipt_state == "complete" else 202)
-    if receipt_state == "complete":
-        assert response.json() == route.saved_response
-    assert len(route.deliveries) == len(route.preparations) == 1
-
-
-def test_position_claim_receipt_preserves_command_identity_conflict(
-    position_claim_receipt_route,
-):
-    route = position_claim_receipt_route
-    assert route.post({}).status_code == 200
-    route.receipts["position-identity"]["command_name"] = "threat.analysis.claim"
-    assert route.post({}).status_code == 409
-    assert len(route.deliveries) == len(route.preparations) == 1
-
-
-def test_position_claim_receipt_recovery_preserves_explicit_hash_validation(
-    position_claim_receipt_route,
-):
-    from app.command_gateway import read_operation
-
-    route = position_claim_receipt_route
-    assert route.post({}).status_code == 200
-    with pytest.raises(
-        CommandConflict, match="Operation ID was already used for another request"
-    ):
-        read_operation(
-            "position-identity",
-            command_name="games.analysis.position.claim",
-            request_hash=request_digest(
-                "games.analysis.position.claim", {"different": "plan"}
-            ),
-            background=True,
-            position_claim_request_payload={},
-        )
-
-
-@pytest.mark.parametrize("replay_payload", [None, {}, {"preferred_game_id": None}])
-def test_position_claim_omitted_empty_and_null_requests_share_unhinted_identity(
-    position_claim_receipt_route, replay_payload
-):
-    route = position_claim_receipt_route
-    assert route.post({}).status_code == 200
-    response = route.post(replay_payload)
-    assert response.status_code == 200
-    assert response.json() == route.saved_response
-    assert len(route.deliveries) == len(route.preparations) == 1
-
-
-def test_postgres_game_position_preparation_closes_database_before_chess_traversal(
-    monkeypatch,
-):
-    from app import game_analysis_commands
-
-    active = False
-
-    @contextmanager
-    def read_section():
-        nonlocal active
-        active = True
-
-        class Database:
-            def execute_native(self, statement, *_parameters):
-                if "FROM game_analysis_jobs" in statement:
-                    return SimpleNamespace(
-                        fetchone=lambda: {
-                            "game_id": "game",
-                            "analysis_version": 1,
-                            "analysis_evidence_version": 3,
-                            "start_fen": chess.STARTING_FEN,
-                            "moves_json": '["e2e4"]',
-                            "divergence_ply": None,
-                        }
-                    )
-                return []
-
-        try:
-            yield Database()
-        finally:
-            active = False
-
-    original_positions = game_analysis_commands._positions
-
-    def traverse(*args):
-        assert not active
-        return original_positions(*args)
-
-    monkeypatch.setattr(
-        game_analysis_commands, "background_read_connection", read_section
-    )
-    monkeypatch.setattr(game_analysis_commands, "_positions", traverse)
-    plan = game_analysis_commands.prepare_position_claim()
-    assert plan["kind"] == "search" and plan["position_index"] == 0
-
-
-def test_postgres_game_position_claim_discards_stale_generation_before_write():
-    from app.game_analysis_commands import claim_game_analysis_position
-
-    statements = []
-
-    class StaleDatabase:
-        def execute_native(self, statement, *_parameters):
-            statements.append(statement)
-            if statement.startswith("SELECT automated_streak"):
-                return SimpleNamespace(fetchone=lambda: (3,))
-            if statement.startswith("SELECT request.id"):
-                return SimpleNamespace(fetchone=lambda: None)
-            return SimpleNamespace(
-                fetchone=lambda: {
-                    "analysis_version": 3,
-                    "analysis_evidence_version": 3,
-                    "status": "queued",
-                    "lease_expires_at": None,
-                    "rated": 1,
-                    "speed": "rapid",
-                }
-            )
-
-    assert claim_game_analysis_position(
-        StaleDatabase(),
-        {
-            "game_id": "game",
-            "analysis_version": 2,
-            "analysis_evidence_version": 3,
-            "kind": "search",
-            "scan_pass": "shallow",
-            "position_index": 0,
-            "request": {},
-        },
-    ) == {"job": None}
-    assert len(statements) == 3
-    assert not any(statement.startswith("UPDATE") for statement in statements)
-
-
-def test_postgres_game_position_callbacks_dispatch_with_receipts(monkeypatch):
-    from fastapi.testclient import TestClient
-    from app import main, game_analysis_commands
-
-    observed = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "background_request", lambda: nullcontext())
-    monkeypatch.setattr(
-        game_analysis_commands, "prepare_position_report", lambda *_args: "request-json"
-    )
-    monkeypatch.setattr(
-        command_dispatch,
-        "dispatch_command",
-        lambda name, payload, **options: (
-            observed.append((name, payload, options)) or {"status": "complete"}
-        ),
-    )
-    client = TestClient(main.app)
-    headers = {
-        "X-Tempo-Engine-Worker": "docker",
-        "X-Tempo-Work-Class": "background",
-        "Idempotency-Key": "position-callback",
-    }
-    report = client.post(
-        "/api/games/analysis/position/report-one/report",
-        headers=headers,
-        json={"lease_id": "lease", "report": {}},
-    )
-    released = client.post(
-        "/api/games/analysis/position/report-one/release",
-        headers=headers,
-        json={"lease_id": "lease"},
-    )
-    failed = client.post(
-        "/api/games/analysis/position/report-one/failure",
-        headers=headers,
-        json={"lease_id": "lease", "error": "engine unavailable"},
-    )
-    assert [response.status_code for response in (report, released, failed)] == [
-        200,
-        200,
-        200,
-    ]
-    assert [entry[0] for entry in observed] == [
-        "games.analysis.position.report",
-        "games.analysis.position.release",
-        "games.analysis.position.release",
-    ]
-    assert all(
-        entry[2] == {"idempotency_key": "position-callback", "background": True}
-        for entry in observed
-    )
-    assert observed[0][1]["request_json"] == "request-json"
-    assert observed[2][1]["error"] == "engine unavailable"
-
-
-def test_postgres_game_position_report_rejects_stale_lease_before_publication():
-    from app.game_analysis_commands import publish_position_report
-
-    statements = []
-
-    class StaleDatabase:
-        def execute_native(self, statement, *_parameters):
-            statements.append(statement)
-            return SimpleNamespace(
-                fetchone=lambda: {
-                    "game_id": "game",
-                    "request_json": "request-json",
-                    "report_json": None,
-                    "state": "leased",
-                    "lease_id": "new-lease",
-                    "parent_lease_id": "parent",
-                }
-            )
-
-    with pytest.raises(HTTPException) as error:
-        publish_position_report(
-            StaleDatabase(),
-            {
-                "report_id": "report",
-                "lease_id": "old-lease",
-                "request_json": "request-json",
-                "report": {},
-            },
-        )
-    assert error.value.status_code == 422
-    assert len(statements) == 1
-
-
-def test_postgres_game_position_exhausted_retry_fails_parent_instead_of_repolling():
-    from app.game_analysis_commands import claim_game_analysis_position
-
-    statements = []
-
-    class FailedPositionDatabase:
-        def execute_native(self, statement, *_parameters):
-            statements.append(statement)
-            if statement.startswith("SELECT automated_streak"):
-                row = (3,)
-            elif "FROM game_analysis_jobs j" in statement:
-                row = {
-                    "analysis_version": 2,
-                    "analysis_evidence_version": 3,
-                    "status": "queued",
-                    "lease_expires_at": None,
-                    "rated": 1,
-                    "speed": "rapid",
-                }
-            elif "FROM background_activity" in statement:
-                row = None
-            elif "FROM game_analysis_position_reports" in statement:
-                row = {"id": "position", "state": "failed"}
-            else:
-                row = None
-            return SimpleNamespace(fetchone=lambda: row)
-
-    assert claim_game_analysis_position(
-        FailedPositionDatabase(),
-        {
-            "game_id": "game",
-            "analysis_version": 2,
-            "analysis_evidence_version": 3,
-            "kind": "search",
-            "scan_pass": "shallow",
-            "position_index": 0,
-            "request": {},
-        },
-    ) == {"job": None}
-    assert any("SET status='failed'" in statement for statement in statements)
-    assert any("analysis_state='failed'" in statement for statement in statements)
-
-    assert not any(
-        "UPDATE engine_scheduling_state" in statement for statement in statements
-    )
-
-
-def test_postgres_game_parent_callbacks_dispatch_to_correct_celery_queue(monkeypatch):
-    from fastapi.testclient import TestClient
-    from app import main
-
-    observed = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "background_request", lambda: nullcontext())
-    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-    monkeypatch.setattr(
-        command_dispatch,
-        "dispatch_command",
-        lambda name, payload, **options: (
-            observed.append((name, payload, options)) or {"status": "queued"}
-        ),
-    )
-    client = TestClient(main.app)
-    headers = {"X-Tempo-Work-Class": "background", "Idempotency-Key": "parent-one"}
-    for action in ("failure", "heartbeat", "release"):
-        body = {
-            "lease_id": "lease",
-            **({"error": "engine stopped"} if action == "failure" else {}),
-        }
-        assert (
-            client.post(
-                f"/api/games/analysis/game-one/{action}", headers=headers, json=body
-            ).status_code
-            == 200
-        )
-    assert (
-        client.post(
-            "/api/games/analysis/game-one/retry",
-            headers={"Idempotency-Key": "retry-one"},
-        ).status_code
-        == 200
-    )
-    assert [entry[0] for entry in observed] == [
-        "games.analysis.failure",
-        "games.analysis.heartbeat",
-        "games.analysis.release",
-        "games.analysis.retry",
-    ]
-    assert all(entry[2].get("background") is True for entry in observed[:3])
-    assert observed[3][2] == {"idempotency_key": "retry-one"}
-
-
-def test_postgres_game_parent_retry_resets_failed_position_and_pause():
-    from app.game_analysis_commands import retry_parent_analysis
-
-    statements = []
-
-    class RetryDatabase:
-        def execute_native(self, statement, *_parameters):
-            statements.append(statement)
-            return SimpleNamespace(fetchone=lambda: {"analysis_version": 3})
-
-    assert retry_parent_analysis(RetryDatabase(), {"game_id": "game"}) == {
-        "status": "queued"
-    }
-    assert any(
-        "UPDATE game_analysis_position_reports SET state='queued',attempts=0"
-        in statement
-        for statement in statements
-    )
-    assert any("paused=0,phase='Queued'" in statement for statement in statements)
-
-
-def test_postgres_analysis_progress_and_task_retry_dispatch_out_of_api(monkeypatch):
-    from fastapi.testclient import TestClient
-    from app import main
-
-    observed = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-    monkeypatch.setattr(
-        command_dispatch,
-        "dispatch_command",
-        lambda name, payload, **options: (
-            observed.append((name, payload, options)) or {"ok": True}
-        ),
-    )
-    client = TestClient(main.app)
-    progress = client.post(
-        "/api/system/activity/progress",
-        headers={"Idempotency-Key": "progress-one"},
-        json={
-            "source": "game_analysis",
-            "id": "game",
-            "generation": "2:2",
-            "phase": "search",
-            "completed": 1,
-            "total": 3,
-            "lease_id": "lease",
-        },
-    )
-    retry = client.post(
-        "/api/system/tasks/task-one/retry",
-        headers={"Idempotency-Key": "retry-one"},
-    )
-    assert progress.status_code == retry.status_code == 200
-    assert observed[0] == (
-        "activity.progress",
-        {
-            "source": "game_analysis",
-            "id": "game",
-            "generation": "2:2",
-            "phase": "search",
-            "completed": 1,
-            "total": 3,
-            "lease_id": "lease",
-        },
-        {"idempotency_key": "progress-one", "background": True},
-    )
-    assert observed[1] == (
-        "activity.task.retry",
-        {"task_id": "task-one"},
-        {"idempotency_key": "retry-one"},
-    )
-
-
-def test_postgres_analysis_progress_rejects_stale_lease_before_write():
-    from app.activity_commands import report_analysis_progress
-
-    class StaleLeaseDatabase:
-        def execute_native(self, statement, *_parameters):
-            assert statement.startswith("SELECT analysis_version")
-            return SimpleNamespace(
-                fetchone=lambda: {
-                    "analysis_version": 2,
-                    "analysis_evidence_version": 2,
-                    "status": "leased",
-                    "lease_id": "new-lease",
-                }
-            )
-
-    with pytest.raises(HTTPException) as error:
-        report_analysis_progress(
-            StaleLeaseDatabase(),
-            {
-                "source": "game_analysis",
-                "id": "game",
-                "generation": "2:2",
-                "phase": "search",
-                "completed": 1,
-                "total": 3,
-                "lease_id": "old-lease",
-            },
-        )
-    assert error.value.status_code == 409
+    assert game_commands.set_game_exclusion(
+        Database(), {"game_id": "provider:one", "excluded": True}
+    ) == {"game_id": "provider:one", "excluded": True}
+    assert len(statements) == 2
+    assert "FOR UPDATE" in statements[0][0]
+    assert "UPDATE imported_games SET adaptive_excluded" in statements[1][0]
 
 
 def test_postgres_manual_retry_requeues_and_unpauses_failed_task():
@@ -1353,7 +172,6 @@ def test_postgres_pgn_import_dispatches_parsed_payload_with_idempotency(monkeypa
         def execute(self, *_args):
             return SimpleNamespace(fetchone=lambda: (6,))
 
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
     monkeypatch.setattr(
         main, "read_connection", lambda: nullcontext(SettingsDatabase())
@@ -1416,7 +234,6 @@ def test_postgres_integrity_repair_dispatches_prepared_plan_with_idempotency(
         "expected_card_moves": {},
         "unsupported_card_ids": [],
     }
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
     monkeypatch.setattr(
         repertoire_integrity, "prepare_issue_resolution", lambda *_args: prepared
@@ -1533,14 +350,6 @@ def test_postgres_repertoire_edit_invalidates_old_clean_integrity_in_same_transa
     assert "scan_status='idle'" in integrity_statements[0][0]
     assert "checked_at=NULL" in integrity_statements[0][0]
     assert integrity_statements[0][1] == ("opening-1",)
-    advisory_statements = [
-        item
-        for item in statements
-        if "INSERT INTO opening_segmentation_state" in item[0]
-    ]
-    assert len(advisory_statements) == 1
-    assert "state='stale'" in advisory_statements[0][0]
-    assert advisory_statements[0][1] == ("opening-1",)
 
 
 def test_postgres_integrity_source_closes_read_transaction_before_chess_scan(
@@ -1888,11 +697,7 @@ def test_postgres_integrity_failure_updates_visible_scan_state(monkeypatch):
             'opening-1','scan:3','running',NULL
         );
     """)
-    monkeypatch.setattr(
-        durable_tasks,
-        "submit_background_write",
-        lambda operation, *, label: operation(database),
-    )
+    monkeypatch.setattr(durable_tasks, "connection", lambda **_options: nullcontext(database))
     assert (
         durable_tasks.fail_task("scan", 3, "lease", RuntimeError("too many issues"))[
             "state"
@@ -1997,35 +802,6 @@ def test_postgres_startup_accepts_latest_checked_in_schema(monkeypatch):
     database.initialize()
 
 
-def test_postgres_game_accounts_update_dispatches_foreground_command(monkeypatch):
-    from fastapi.testclient import TestClient
-    from app import main
-
-    observed = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-    monkeypatch.setattr(
-        command_dispatch,
-        "dispatch_command",
-        lambda name, payload, *, idempotency_key: (
-            observed.append((name, payload, idempotency_key)) or payload
-        ),
-    )
-    response = TestClient(main.app).put(
-        "/api/games/accounts",
-        headers={"Idempotency-Key": "accounts-1"},
-        json={"lichess_username": "alice", "chesscom_username": "bob"},
-    )
-    assert response.status_code == 200, response.text
-    assert observed == [
-        (
-            "games.accounts.update",
-            {"lichess_username": "alice", "chesscom_username": "bob"},
-            "accounts-1",
-        )
-    ]
-
-
 def test_postgres_game_accounts_update_reconciles_provider_rows(monkeypatch):
     from app.account_commands import update_game_accounts
 
@@ -2046,21 +822,10 @@ def test_postgres_game_accounts_update_reconciles_provider_rows(monkeypatch):
     assert statements[2][1] == ("chess.com",)
 
 
-def test_removed_endgame_probe_rejects_without_provider_or_database(monkeypatch):
-    import asyncio
-    from fastapi import HTTPException
-    from app import main
-
-    with pytest.raises(HTTPException) as error:
-        asyncio.run(main.probe_endgame(object()))
-    assert error.value.status_code == 410
-
-
 def test_postgres_card_validation_remains_available_without_a_write_worker(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main
 
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
     response = TestClient(main.app).post(
         "/api/cards/validate",
@@ -2072,132 +837,6 @@ def test_postgres_card_validation_remains_available_without_a_write_worker(monke
     )
     assert response.status_code == 200, response.text
     assert response.json()["moves"] == ["e2e4"]
-
-
-def test_postgres_analysis_paste_preview_uses_query_only_reader_without_write_worker(
-    monkeypatch,
-):
-    from fastapi.testclient import TestClient
-    from app import main
-
-    observed = []
-
-    @contextmanager
-    def query_only_scope():
-        observed.append("query_only_entered")
-        yield
-
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-    monkeypatch.setattr(main, "query_only_request", query_only_scope)
-    monkeypatch.setattr(main, "read_connection", lambda: nullcontext(object()))
-    monkeypatch.setattr(
-        main,
-        "connection",
-        lambda **_kwargs: (_ for _ in ()).throw(
-            AssertionError("preview must not open a writer")
-        ),
-    )
-    monkeypatch.setattr(
-        main,
-        "build_paste_preview",
-        lambda database, text, starting_fen, source_gap_id: (
-            observed.append((text, starting_fen, source_gap_id)) or {"lines": []}
-        ),
-    )
-    response = TestClient(main.app).post(
-        "/api/repertoire/paste/preview",
-        json={"text": "1. e4"},
-    )
-    assert response.status_code == 200, response.text
-    assert response.json() == {"lines": []}
-    assert observed == ["query_only_entered", ("1. e4", None, None)]
-
-
-def test_postgres_study_import_preview_uses_query_only_reader_without_write_worker(
-    monkeypatch,
-):
-    from fastapi.testclient import TestClient
-    from app import main, study_routes
-
-    observed = []
-
-    @contextmanager
-    def query_only_scope():
-        observed.append("query_only_entered")
-        yield
-
-    class PreviewDatabase:
-        def execute(self, statement, parameters=()):
-            observed.append((statement, parameters))
-            return SimpleNamespace(
-                fetchone=lambda: {"id": "chapter-1", "study_id": "study-1"}
-            )
-
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-    monkeypatch.setattr(main, "query_only_request", query_only_scope)
-    monkeypatch.setattr(
-        study_routes, "read_connection", lambda: nullcontext(PreviewDatabase())
-    )
-    monkeypatch.setattr(
-        study_routes,
-        "connection",
-        lambda **_kwargs: (_ for _ in ()).throw(
-            AssertionError("preview must not open a writer")
-        ),
-    )
-    monkeypatch.setattr(
-        study_routes, "preview_pgn", lambda raw_pgn: {"digest": "digest", "records": []}
-    )
-    response = TestClient(main.app).post(
-        "/api/studies/study-1/import/preview",
-        json={"chapter_id": "chapter-1", "raw_pgn": "*"},
-    )
-    assert response.status_code == 200, response.text
-    assert response.json() == {
-        "digest": "digest",
-        "records": [],
-        "existing_versions": [],
-    }
-    assert observed[0] == "query_only_entered"
-    assert observed[1][1] == ("chapter-1",)
-
-
-def test_postgres_study_import_commit_dispatches_parsed_source_with_stable_receipt(
-    monkeypatch,
-):
-    from fastapi.testclient import TestClient
-    from app import main, study_routes
-
-    dispatched = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-    monkeypatch.setattr(
-        study_routes,
-        "dispatch_command",
-        lambda name, payload, *, idempotency_key: (
-            dispatched.append((name, payload, idempotency_key))
-            or {"created_source_ids": ["source-1"], "idempotent": False}
-        ),
-    )
-    response = TestClient(main.app).post(
-        "/api/studies/study-1/import/commit",
-        json={
-            "chapter_id": "chapter-1",
-            "raw_pgn": '[Event "Import"]\n\n1. e4 *',
-            "preview_digest": __import__("hashlib")
-            .sha256(b'[Event "Import"]\n\n1. e4 *')
-            .hexdigest(),
-            "selected_records": [0],
-        },
-        headers={"Idempotency-Key": "study-import-one"},
-    )
-    assert response.status_code == 200, response.text
-    assert dispatched[0][0] == "studies.import.commit"
-    assert dispatched[0][1]["study_id"] == "study-1"
-    assert dispatched[0][1]["records"][0]["nodes"][1]["move_uci"] == "e2e4"
-    assert dispatched[0][2] == "study-import-one"
 
 
 def test_postgres_study_import_worker_keeps_parent_links_and_duplicate_receipt():
@@ -2240,190 +879,6 @@ def test_postgres_study_import_worker_keeps_parent_links_and_duplicate_receipt()
     assert position_writes[1][2] == position_writes[0][0]
 
 
-def test_postgres_native_study_bundle_import_dispatches_celery_command(monkeypatch):
-    from fastapi.testclient import TestClient
-    from app import main, study_routes
-    from app.services.study_portable import TABLES
-
-    dispatched = []
-    bundle = {
-        "format": "tempo-study",
-        "schema_version": 1,
-        "tables": {
-            name: ([{"id": "study-1"}] if name == "studies" else []) for name in TABLES
-        },
-    }
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-    monkeypatch.setattr(
-        study_routes,
-        "connection",
-        lambda **_kwargs: (_ for _ in ()).throw(
-            AssertionError("API must not write a native study bundle")
-        ),
-    )
-    monkeypatch.setattr(
-        study_routes,
-        "dispatch_command",
-        lambda name, payload, *, idempotency_key: (
-            dispatched.append((name, payload, idempotency_key))
-            or {"study_id": "study-1", "idempotent": False}
-        ),
-    )
-    response = TestClient(main.app).post(
-        "/api/studies/import-bundle",
-        json={"bundle": bundle, "mode": "copy"},
-        headers={"Idempotency-Key": "bundle-one"},
-    )
-    assert response.status_code == 200, response.text
-    assert dispatched == [
-        ("studies.bundle.import", {"bundle": bundle, "mode": "copy"}, "bundle-one")
-    ]
-
-
-def test_postgres_analysis_paste_commit_dispatches_foreground_command_after_read_only_preview(
-    monkeypatch,
-):
-    from fastapi.testclient import TestClient
-    from app import command_gateway, main
-
-    dispatched = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-    monkeypatch.setattr(main, "read_connection", lambda: nullcontext(object()))
-    monkeypatch.setattr(
-        main,
-        "connection",
-        lambda **_kwargs: (_ for _ in ()).throw(
-            AssertionError("API must not open a writer")
-        ),
-    )
-    monkeypatch.setattr(
-        command_gateway,
-        "read_operation",
-        lambda *_args, **_kwargs: {"state": "pending"},
-    )
-    monkeypatch.setattr(
-        main,
-        "build_paste_preview",
-        lambda *_args: {"preview_token": "token", "lines": [{"moves": ["e2e4"]}]},
-    )
-    monkeypatch.setattr(
-        command_dispatch,
-        "dispatch_command",
-        lambda name, payload, *, idempotency_key: (
-            dispatched.append((name, payload, idempotency_key)) or {"saved": []}
-        ),
-    )
-    request = {
-        "text": "1. e4",
-        "preview_token": "token",
-        "selections": [{"index": 0, "repertoire_id": "white"}],
-    }
-    response = TestClient(main.app).post(
-        "/api/repertoire/paste/commit",
-        json=request,
-        headers={"Idempotency-Key": "paste-white-1"},
-    )
-    assert response.status_code == 200, response.text
-    assert dispatched == [
-        (
-            "analysis.paste.commit",
-            {
-                "request": {
-                    **request,
-                    "starting_fen": None,
-                    "source_gap_id": None,
-                    "selections": [
-                        {**request["selections"][0], "acknowledge_conflict": False}
-                    ],
-                },
-                "prepared_preview": {
-                    "preview_token": "token",
-                    "lines": [{"moves": ["e2e4"]}],
-                },
-            },
-            "paste-white-1",
-        )
-    ]
-
-
-def test_postgres_analysis_paste_replay_uses_stable_user_request_after_snapshot_changes():
-    from app.command_gateway import request_digest
-
-    request = {
-        "text": "1. e4",
-        "preview_token": "preview-1",
-        "selections": [{"index": 0, "repertoire_id": "white"}],
-    }
-    original = request_digest(
-        "analysis.paste.commit",
-        {
-            "request": request,
-            "prepared_preview": {"lines": [], "snapshot": "before"},
-        },
-    )
-    after_save = request_digest(
-        "analysis.paste.commit",
-        {
-            "request": request,
-            "prepared_preview": {"lines": ["new line"], "snapshot": "after"},
-        },
-    )
-    changed_request = request_digest(
-        "analysis.paste.commit",
-        {
-            "request": {**request, "text": "1. d4"},
-            "prepared_preview": {"lines": ["new line"], "snapshot": "after"},
-        },
-    )
-    assert original == after_save
-    assert original != changed_request
-
-
-def test_postgres_analysis_paste_completed_replay_returns_receipt_before_rebuilding_preview(
-    monkeypatch,
-):
-    from fastapi.testclient import TestClient
-    from app import command_gateway, main
-
-    completed = {
-        "saved": [
-            {
-                "index": 0,
-                "repertoire_id": "white",
-                "duplicate": False,
-                "conflict": False,
-            }
-        ],
-        "affected_repertoire_ids": ["white"],
-        "gap_resolved": False,
-    }
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-    monkeypatch.setattr(
-        command_gateway,
-        "read_operation",
-        lambda *_args, **_kwargs: {"state": "complete", "response": completed},
-    )
-    monkeypatch.setattr(
-        main,
-        "build_paste_preview",
-        lambda *_args: (_ for _ in ()).throw(AssertionError("replay rebuilt preview")),
-    )
-    response = TestClient(main.app).post(
-        "/api/repertoire/paste/commit",
-        json={
-            "text": "1. e4",
-            "preview_token": "old",
-            "selections": [{"index": 0, "repertoire_id": "white"}],
-        },
-        headers={"Idempotency-Key": "completed-paste"},
-    )
-    assert response.status_code == 200, response.text
-    assert response.json() == completed
-
-
 def test_postgres_branch_removal_dispatches_foreground_command_with_idempotency(
     monkeypatch,
 ):
@@ -2431,7 +886,6 @@ def test_postgres_branch_removal_dispatches_foreground_command_with_idempotency(
     from app import main
 
     dispatched = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
     monkeypatch.setattr(
         command_dispatch,
@@ -2514,13 +968,6 @@ def test_postgres_branch_removal_keeps_repairs_without_coverage(
         "request_graph_rebuild_in_transaction",
         lambda db, repertoire_id, day: scheduled.append(("graph", db, repertoire_id)),
     )
-    from app.services import coverage_seed_request
-
-    monkeypatch.setattr(
-        coverage_seed_request,
-        "request_coverage_seed_in_transaction",
-        lambda *_args, **_kwargs: pytest.fail("retired coverage enqueued"),
-    )
     monkeypatch.setattr(
         branch_commands,
         "integrity_summary",
@@ -2545,50 +992,6 @@ def test_postgres_branch_removal_keeps_repairs_without_coverage(
     assert all(event[1] is database and event[2] == "white" for event in scheduled)
 
 
-def test_postgres_prefix_split_decisions_dispatch_foreground_commands_with_idempotency(
-    monkeypatch,
-):
-    from fastapi.testclient import TestClient
-    from fastapi.responses import JSONResponse
-    from app import main
-
-    dispatched = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-    monkeypatch.setattr(
-        command_dispatch,
-        "dispatch_command",
-        lambda name, payload, *, idempotency_key: (
-            dispatched.append((name, payload, idempotency_key))
-            or JSONResponse(status_code=202, content={"operation_id": idempotency_key})
-        ),
-    )
-    client = TestClient(main.app)
-    for action, command in (
-        ("", "cards.prefix_split.accept"),
-        ("/reject", "cards.prefix_split.reject"),
-    ):
-        response = client.post(
-            f"/api/cards/prefix-card/prefix-split{action}",
-            json={"expected_revision": 3},
-            headers={"Idempotency-Key": f"prefix-card-3-{command}"},
-        )
-        assert response.status_code == 202, response.text
-        assert response.json() == {"operation_id": f"prefix-card-3-{command}"}
-    assert dispatched == [
-        (
-            "cards.prefix_split.accept",
-            {"card_id": "prefix-card", "request": {"expected_revision": 3}},
-            "prefix-card-3-cards.prefix_split.accept",
-        ),
-        (
-            "cards.prefix_split.reject",
-            {"card_id": "prefix-card", "request": {"expected_revision": 3}},
-            "prefix-card-3-cards.prefix_split.reject",
-        ),
-    ]
-
-
 def test_postgres_card_revision_dispatches_expected_revision_and_idempotency(
     monkeypatch,
 ):
@@ -2596,7 +999,6 @@ def test_postgres_card_revision_dispatches_expected_revision_and_idempotency(
     from app import main
 
     dispatched = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
     monkeypatch.setattr(
         command_dispatch,
@@ -2753,7 +1155,6 @@ def test_postgres_card_archive_dispatches_idempotent_foreground_command(monkeypa
     from app import main
 
     dispatched = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
     monkeypatch.setattr(
         command_dispatch,
@@ -2827,7 +1228,6 @@ def test_postgres_annotation_route_dispatches_idempotent_foreground_command(
     from app import main
 
     dispatched = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
     monkeypatch.setattr(
         command_dispatch,
@@ -2893,7 +1293,6 @@ def test_postgres_repertoire_rename_dispatches_idempotent_foreground_command(
     from app import main
 
     dispatched = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
     monkeypatch.setattr(
         command_dispatch,
@@ -2931,7 +1330,6 @@ def test_postgres_repertoire_delete_dispatches_idempotent_foreground_command(
     from app import main
 
     dispatched = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
     monkeypatch.setattr(
         command_dispatch,
@@ -2955,64 +1353,6 @@ def test_postgres_repertoire_delete_dispatches_idempotent_foreground_command(
     ]
 
 
-def test_postgres_repertoire_delete_preserves_shared_cards_and_queues_game_refresh(
-    deletion_workspace,
-):
-    # Shared business rules run on the real compatibility database here; native
-    # PostgreSQL persistence/replay is proved in check_postgres_deletion.py.
-    from tempo_legacy_database import connections as database
-    from app import repertoire_commands
-
-    with database.connection() as connection:
-        assert repertoire_commands.delete_repertoire(
-            connection, {"repertoire_id": "old"}
-        ) == {"deleted": True, "id": "old"}
-        assert (
-            connection.execute(
-                "SELECT repertoire_id FROM cards WHERE id='shared'"
-            ).fetchone()[0]
-            == "other"
-        )
-        assert (
-            connection.execute(
-                "SELECT COUNT(*) FROM reviews WHERE card_id='shared'"
-            ).fetchone()[0]
-            == 1
-        )
-        refresh = connection.execute(
-            "SELECT payload_json FROM background_tasks WHERE kind='repertoire_game_refresh' AND deduplication_key='all'"
-        ).fetchone()
-        assert json.loads(refresh[0]) == {"after_game_id": ""}
-
-
-def test_postgres_repertoire_delete_cancels_stale_graph_before_parent_removal(
-    deletion_workspace,
-):
-    from tempo_legacy_database import connections as database
-    from app import repertoire_commands
-    from app.services.durable_tasks import enqueue_task_in_transaction
-
-    with database.connection() as connection:
-        task = enqueue_task_in_transaction(
-            connection, "opening_graph_rebuild", "old", {"repertoire_id": "old"}
-        )
-        connection.execute(
-            "UPDATE background_tasks SET state='leased',lease_token='stale' WHERE id=?",
-            (task["id"],),
-        )
-        repertoire_commands.delete_repertoire(connection, {"repertoire_id": "old"})
-        assert tuple(
-            connection.execute(
-                "SELECT state,phase,lease_token FROM background_tasks WHERE id=?",
-                (task["id"],),
-            ).fetchone()
-        ) == ("complete", "cancelled", None)
-        assert (
-            connection.execute("SELECT 1 FROM repertoires WHERE id='old'").fetchone()
-            is None
-        )
-
-
 def test_postgres_branch_edit_dispatches_foreground_command_with_idempotency(
     monkeypatch,
 ):
@@ -3020,7 +1360,6 @@ def test_postgres_branch_edit_dispatches_foreground_command_with_idempotency(
     from app import main
 
     dispatched = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
     monkeypatch.setattr(
         command_dispatch,
@@ -3085,13 +1424,6 @@ def test_postgres_branch_edit_checkpoints_graph_without_coverage(
         "request_graph_rebuild_in_transaction",
         lambda *_args: events.append("graph"),
     )
-    from app.services import coverage_seed_request
-
-    monkeypatch.setattr(
-        coverage_seed_request,
-        "request_coverage_seed_in_transaction",
-        lambda *_args, **_kwargs: pytest.fail("retired coverage enqueued"),
-    )
     monkeypatch.setattr(
         branch_commands, "integrity_summary", lambda *_args: {"status": "unchecked"}
     )
@@ -3109,48 +1441,11 @@ def test_postgres_branch_edit_checkpoints_graph_without_coverage(
     assert events == ["line", "graph"]
 
 
-def test_removed_endgame_template_generation_rejects_before_dispatch(monkeypatch):
-    from fastapi import HTTPException
-    from app import main
-
-    with pytest.raises(HTTPException) as error:
-        main.create_endgame(object())
-    assert error.value.status_code == 410
-    assert not hasattr(main, "tablebase")
-    assert not hasattr(main, "generate_position")
-
-
-def test_saved_endgame_pending_receipt_recovers_without_preparation(monkeypatch):
-    import asyncio
-    from app import main
-
-    class Reader:
-        def execute(self, statement, parameters):
-            assert "payload_json FROM operation_receipts" in statement
-            return SimpleNamespace(
-                fetchone=lambda: {
-                    "payload_json": json.dumps({"template_id": "template"})
-                }
-            )
-
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(
-        main,
-        "read_operation",
-        lambda *args, **kwargs: {"operation_id": "saved", "state": "pending"},
-    )
-    monkeypatch.setattr(main, "read_connection", lambda: nullcontext(Reader()))
-    response = asyncio.run(main.create_endgame_attempt("template", "saved"))
-    assert response.status_code == 202
-    assert response.headers["location"] == "/api/operations/saved"
-
-
 def test_postgres_settings_update_dispatches_foreground_command(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main
 
     observed = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
     monkeypatch.setattr(
         command_dispatch,
@@ -3361,38 +1656,6 @@ def test_postgres_game_sync_admission_recovers_imported_active_job_without_windo
     )
 
 
-def test_postgres_game_sync_route_dispatches_celery_command(monkeypatch):
-    from fastapi.testclient import TestClient
-    from app import main
-
-    dispatched = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-    monkeypatch.setattr(
-        command_dispatch,
-        "dispatch_command",
-        lambda name, payload, *, idempotency_key: (
-            dispatched.append((name, payload, idempotency_key))
-            or {
-                "imported": 0,
-                "job_id": "sync-job",
-                "status": "queued",
-                "providers": {},
-            }
-        ),
-    )
-    response = TestClient(main.app).post(
-        "/api/games/sync",
-        headers={"Idempotency-Key": "sync-command-1"},
-        json={"lichess_username": " alice ", "chesscom_username": ""},
-    )
-    assert response.status_code == 202, response.text
-    assert response.json()["job_id"] == "sync-job"
-    assert dispatched[0][0] == "games.sync.enqueue"
-    assert dispatched[0][1]["lichess_username"] == "alice"
-    assert dispatched[0][2] == "sync-command-1"
-
-
 def test_postgres_game_sync_admission_preserves_provider_rate_limit(monkeypatch):
     from app import game_sync_commands
 
@@ -3558,7 +1821,6 @@ def test_postgres_api_startup_requests_todays_queue_through_foreground_command(
     from app import main
 
     calls = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
     monkeypatch.delenv("TEMPO_DATABASE_WRITE_URL", raising=False)
     monkeypatch.setattr(main, "initialize", lambda: calls.append("initialize"))
     monkeypatch.setattr(
@@ -3600,7 +1862,6 @@ def test_postgres_browser_activity_extends_cross_process_foreground_admission(
     async def foreground():
         yield
 
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(main.activity_gate, "async_foreground", foreground)
     monkeypatch.setattr(redis_admission_gate, "configured", lambda: True)
     monkeypatch.setattr(redis_admission_gate, "client", lambda: RecordingRedis())
@@ -4674,6 +2935,7 @@ def test_postgres_queue_projection_and_task_completion_commit_together(
 
 def test_postgres_queue_celery_dispatch_keeps_atomic_slice_receipt(monkeypatch):
     from app import tasks
+    from app.services import durable_tasks
 
     monkeypatch.setattr(tasks, "current_delivery", lambda _task: True)
 
@@ -4694,7 +2956,7 @@ def test_postgres_queue_celery_dispatch_keeps_atomic_slice_receipt(monkeypatch):
         lambda task: handled.append(task["id"]) or False,
     )
     monkeypatch.setattr(
-        tasks,
+        durable_tasks,
         "complete_task",
         lambda *_args: pytest.fail("Queue handler completed its own task atomically"),
     )
@@ -4795,87 +3057,6 @@ def test_postgres_initial_schema_keeps_json_array_length_available():
     assert "jsonb_array_length(document::jsonb)" in schema
 
 
-def test_postgres_cutover_study_chapter_routes_dispatch_named_commands(monkeypatch):
-    from fastapi.testclient import TestClient
-    from app import main, study_routes
-
-    dispatched: list[tuple[str, dict, str | None]] = []
-
-    def record_command(name, payload, *, idempotency_key):
-        dispatched.append((name, payload, idempotency_key))
-        return {"accepted": name}
-
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(study_routes, "dispatch_command", record_command)
-    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-    client = TestClient(main.app)
-    headers = {"Idempotency-Key": "study-command-1"}
-    requests = (
-        (
-            "post",
-            "/api/studies/study-1/chapters",
-            {"title": "Chapter"},
-            "studies.chapters.create",
-        ),
-        (
-            "put",
-            "/api/studies/study-1/chapters/order",
-            ["chapter-1"],
-            "studies.chapters.reorder",
-        ),
-        (
-            "patch",
-            "/api/studies/study-1/chapters/chapter-1",
-            {"title": "Renamed"},
-            "studies.chapters.rename",
-        ),
-        (
-            "post",
-            "/api/studies/study-1/links",
-            {
-                "source_position_id": "position-1",
-                "target_position_id": "position-2",
-                "relation": "illustrates",
-            },
-            "studies.links.create",
-        ),
-    )
-    for method, path, body, command_name in requests:
-        response = getattr(client, method)(path, json=body, headers=headers)
-        assert response.status_code == 200, response.text
-        assert response.json() == {"accepted": command_name}
-    assert [name for name, _, _ in dispatched] == [item[3] for item in requests]
-    assert all(key == "study-command-1" for _, _, key in dispatched)
-
-
-def test_postgres_study_archive_routes_dispatch_idempotent_commands(monkeypatch):
-    from fastapi.testclient import TestClient
-    from app import main, study_routes
-
-    dispatched = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-    monkeypatch.setattr(
-        study_routes,
-        "dispatch_command",
-        lambda name, payload, *, idempotency_key: (
-            dispatched.append((name, payload, idempotency_key)) or {"accepted": name}
-        ),
-    )
-    client = TestClient(main.app)
-    for action in ("archive", "unarchive"):
-        response = client.post(
-            f"/api/studies/study-1/{action}",
-            headers={"Idempotency-Key": f"study-1-{action}"},
-        )
-        assert response.status_code == 200, response.text
-        assert response.json() == {"accepted": f"studies.{action}"}
-    assert dispatched == [
-        ("studies.archive", {"study_id": "study-1"}, "study-1-archive"),
-        ("studies.unarchive", {"study_id": "study-1"}, "study-1-unarchive"),
-    ]
-
-
 def test_postgres_study_archive_queues_refresh_with_mutation(monkeypatch, tmp_path):
     from app import study_commands
 
@@ -4926,40 +3107,6 @@ def test_postgres_study_archive_queues_refresh_with_mutation(monkeypatch, tmp_pa
             == 1
         )
     assert refreshed == [date.today().isoformat()]
-
-
-def test_postgres_exercise_availability_routes_dispatch_idempotent_commands(
-    monkeypatch,
-):
-    from fastapi.testclient import TestClient
-    from app import main, study_routes
-
-    dispatched = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-    monkeypatch.setattr(
-        study_routes,
-        "dispatch_command",
-        lambda name, payload, *, idempotency_key: (
-            dispatched.append((name, payload, idempotency_key)) or {"accepted": name}
-        ),
-    )
-    client = TestClient(main.app)
-    for action in ("suspend", "resume", "archive"):
-        response = client.post(
-            f"/api/studies/study-1/exercises/exercise-1/{action}",
-            headers={"Idempotency-Key": f"exercise-1-{action}"},
-        )
-        assert response.status_code == 200, response.text
-        assert response.json() == {"accepted": f"studies.exercises.{action}"}
-    assert dispatched == [
-        (
-            f"studies.exercises.{action}",
-            {"study_id": "study-1", "exercise_id": "exercise-1"},
-            f"exercise-1-{action}",
-        )
-        for action in ("suspend", "resume", "archive")
-    ]
 
 
 def test_postgres_exercise_availability_mutates_cards_and_queue_in_one_command(
@@ -5017,72 +3164,6 @@ def test_postgres_exercise_availability_mutates_cards_and_queue_in_one_command(
         )
         assert database.execute("SELECT archived FROM cards").fetchone()[0] == 1
     assert refreshed == [date.today().isoformat()] * 3
-
-
-def test_postgres_exercise_create_and_enroll_routes_dispatch_idempotent_commands(
-    monkeypatch,
-):
-    from fastapi.testclient import TestClient
-    from app import main, study_routes
-
-    dispatched = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-    monkeypatch.setattr(
-        study_routes,
-        "dispatch_command",
-        lambda name, payload, *, idempotency_key: (
-            dispatched.append((name, payload, idempotency_key)) or {"accepted": name}
-        ),
-    )
-    client = TestClient(main.app)
-    exercise = {
-        "position_id": "position-1",
-        "specification": {
-            "type": "explanation",
-            "prompt": "Explain the idea",
-            "rubric": "Mention the threat",
-        },
-    }
-    created = client.post(
-        "/api/studies/study-1/exercises",
-        json=exercise,
-        headers={"Idempotency-Key": "create-1"},
-    )
-    enrolled = client.post(
-        "/api/studies/study-1/exercises/exercise-1/enroll",
-        headers={"Idempotency-Key": "enroll-1"},
-    )
-    assert created.status_code == 200, created.text
-    assert enrolled.status_code == 200, enrolled.text
-    assert dispatched == [
-        (
-            "studies.exercises.create",
-            {
-                "study_id": "study-1",
-                "exercise": {
-                    "position_id": "position-1",
-                    "specification": {
-                        "type": "explanation",
-                        "prompt": "Explain the idea",
-                        "rubric": "Mention the threat",
-                        "hint": "",
-                        "explanation": "",
-                        "further_analysis": "",
-                    },
-                    "source": {},
-                    "sibling_group": None,
-                    "point_value": None,
-                },
-            },
-            "create-1",
-        ),
-        (
-            "studies.exercises.enroll",
-            {"study_id": "study-1", "exercise_id": "exercise-1"},
-            "enroll-1",
-        ),
-    ]
 
 
 def test_postgres_exercise_enrollment_replay_creates_one_card_and_queues_once(
@@ -5166,85 +3247,6 @@ def test_postgres_exercise_enrollment_replay_creates_one_card_and_queues_once(
             == "published"
         )
     assert refreshed == [date.today().isoformat()]
-
-
-def test_postgres_exercise_train_now_dispatches_foreground_command(monkeypatch):
-    from fastapi.testclient import TestClient
-    from app import main, study_routes
-
-    dispatched = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-    monkeypatch.setattr(
-        study_routes,
-        "dispatch_command",
-        lambda name, payload, *, idempotency_key: (
-            dispatched.append((name, payload, idempotency_key)) or {"accepted": name}
-        ),
-    )
-    response = TestClient(main.app).post(
-        "/api/studies/study-1/exercises/exercise-1/train-now",
-        headers={"Idempotency-Key": "train-now-1"},
-    )
-    assert response.status_code == 200, response.text
-    assert dispatched == [
-        (
-            "studies.exercises.train_now",
-            {"study_id": "study-1", "exercise_id": "exercise-1"},
-            "train-now-1",
-        ),
-    ]
-
-
-def test_postgres_exercise_revision_dispatch_preserves_optional_field_presence(
-    monkeypatch,
-):
-    from fastapi.testclient import TestClient
-    from app import main, study_routes
-
-    dispatched = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-    monkeypatch.setattr(
-        study_routes,
-        "dispatch_command",
-        lambda name, payload, *, idempotency_key: (
-            dispatched.append((name, payload, idempotency_key)) or {"accepted": name}
-        ),
-    )
-    response = TestClient(main.app).put(
-        "/api/studies/study-1/exercises/exercise-1",
-        json={
-            "expected_revision": 1,
-            "specification": {
-                "type": "explanation",
-                "prompt": "Explain the idea",
-                "rubric": "Mention the threat",
-            },
-            "source": {},
-        },
-        headers={"Idempotency-Key": "revision-1"},
-    )
-    assert response.status_code == 200, response.text
-    assert dispatched == [
-        (
-            "studies.exercises.revise",
-            {
-                "study_id": "study-1",
-                "exercise_id": "exercise-1",
-                "revision": {
-                    "expected_revision": 1,
-                    "specification": {
-                        "type": "explanation",
-                        "prompt": "Explain the idea",
-                        "rubric": "Mention the threat",
-                    },
-                    "source": {},
-                },
-            },
-            "revision-1",
-        ),
-    ]
 
 
 def test_postgres_exercise_revision_keeps_metadata_schedule_and_resets_material_card(
@@ -5393,53 +3395,6 @@ def test_postgres_exercise_revision_keeps_metadata_schedule_and_resets_material_
             == "{}"
         )
     assert refreshed == [date.today().isoformat()]
-
-
-def test_postgres_study_attempt_routes_dispatch_idempotent_foreground_commands(
-    monkeypatch,
-):
-    from fastapi.testclient import TestClient
-    from app import main, study_routes
-
-    dispatched = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-    monkeypatch.setattr(
-        study_routes,
-        "dispatch_command",
-        lambda name, payload, *, idempotency_key: (
-            dispatched.append((name, payload, idempotency_key)) or {"accepted": name}
-        ),
-    )
-    client = TestClient(main.app)
-    submitted = client.post(
-        "/api/studies/study-1/exercises/exercise-1/attempts",
-        json={
-            "attempt_id": "attempt-1",
-            "revision": 1,
-            "answer": {"type": "explanation", "text": "My idea"},
-            "context": "practice",
-        },
-    )
-    assessed = client.post(
-        "/api/studies/study-1/exercises/exercise-1/attempts/attempt-1/self-assess",
-        json={"rating": "correct"},
-    )
-    assert submitted.status_code == 200, submitted.text
-    assert assessed.status_code == 200, assessed.text
-    assert dispatched[0][0] == "studies.attempts.submit"
-    assert dispatched[0][1]["attempt"]["attempt_id"] == "attempt-1"
-    assert dispatched[0][2] == "attempt-1"
-    assert dispatched[1] == (
-        "studies.attempts.self_assess",
-        {
-            "study_id": "study-1",
-            "exercise_id": "exercise-1",
-            "attempt_id": "attempt-1",
-            "assessment": {"rating": "correct"},
-        },
-        "attempt-1:self-assess",
-    )
 
 
 def test_postgres_study_practice_attempt_replays_and_self_assesses_once(
@@ -5725,12 +3680,13 @@ def test_postgres_queue_contention_yields_without_spending_retry_or_replaying_st
             "ALTER TABLE background_tasks ADD COLUMN kind TEXT DEFAULT 'daily_queue'"
         )
 
-    def write_background(operation, *, label):
+    @contextmanager
+    def borrowed_connection(**_options):
         with sqlite3.connect(database_path) as database:
             database.row_factory = sqlite3.Row
-            return operation(database)
+            yield database
 
-    monkeypatch.setattr(durable_tasks, "submit_background_write", write_background)
+    monkeypatch.setattr(durable_tasks, "connection", borrowed_connection)
     claimed = {
         "kind": "daily_queue",
         "id": "queue-job",
@@ -5857,7 +3813,6 @@ def test_postgres_cutover_queue_fail_and_bury_dispatch_foreground_commands(monke
         dispatched.append((name, payload, idempotency_key))
         return {"accepted": name}
 
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
     monkeypatch.setattr(command_dispatch, "dispatch_command", record_command)
     client = TestClient(main.app)
@@ -5887,7 +3842,6 @@ def test_postgres_cutover_review_route_dispatches_idempotent_command(monkeypatch
         dispatched.append((name, payload, idempotency_key))
         return {"review_id": 19, "persisted": True}
 
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
     monkeypatch.setattr(command_dispatch, "dispatch_command", record_command)
     response = TestClient(main.app).post(
@@ -5903,88 +3857,12 @@ def test_postgres_cutover_review_route_dispatches_idempotent_command(monkeypatch
     assert dispatched[0][2] == "review-card-1-42"
 
 
-def test_postgres_defense_answers_dispatch_atomic_foreground_commands(monkeypatch):
-    from fastapi.testclient import TestClient
-    from app import main
-
-    dispatched = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-    monkeypatch.setattr(
-        main, "get_settings", lambda: SimpleNamespace(light_first_interval_days=2)
-    )
-    monkeypatch.setattr(
-        command_dispatch,
-        "dispatch_command",
-        lambda name, payload, *, idempotency_key: (
-            dispatched.append((name, payload, idempotency_key)) or {"accepted": name}
-        ),
-    )
-    client = TestClient(main.app)
-    recognition = client.post(
-        "/api/defense-exercises/candidate-1/recognition",
-        json={
-            "attempt_id": "answer-1",
-            "exercise_revision": 2,
-            "rubric_version": 3,
-            "queue_entry_id": 42,
-            "no_concrete_threat": True,
-            "consequence": "none",
-        },
-    )
-    attempt = client.post(
-        "/api/defense-exercises/candidate-1/attempt",
-        json={
-            "attempt_id": "answer-1",
-            "exercise_revision": 2,
-            "queue_entry_id": 42,
-            "move_uci": "e2e4",
-            "recognition_attempt_id": "answer-1",
-        },
-    )
-    assert recognition.status_code == 200, recognition.text
-    assert attempt.status_code == 200, attempt.text
-    assert dispatched[0][0] == "defense.recognition.submit"
-    assert dispatched[0][2] == "defense-recognition:answer-1"
-    assert dispatched[1][0] == "defense.attempt.submit"
-    assert dispatched[1][1]["light_first_interval_days"] == 2
-    assert dispatched[1][2] == "defense-attempt:answer-1"
-
-
-def test_postgres_defense_stale_answer_preserves_conflict_status(monkeypatch):
-    from app import defense_commands
-
-    monkeypatch.setattr(
-        defense_commands,
-        "submit_defense_attempt",
-        lambda *args, **kwargs: (_ for _ in ()).throw(
-            ValueError("Exercise revision changed")
-        ),
-    )
-    with pytest.raises(HTTPException) as error:
-        defense_commands.submit_attempt(
-            None,
-            {
-                "candidate_id": "candidate-1",
-                "light_first_interval_days": 7,
-                "request": {
-                    "attempt_id": "answer-1",
-                    "exercise_revision": 2,
-                    "queue_entry_id": 42,
-                    "move_uci": "e2e4",
-                },
-            },
-        )
-    assert error.value.status_code == 409
-
-
 def test_postgres_tactic_attempt_dispatches_validated_foreground_command(monkeypatch):
     from fastapi.testclient import TestClient
     import chess
     from app import main
 
     dispatched = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
     monkeypatch.setattr(main, "puzzle_membership", lambda: {})
     monkeypatch.setattr(
@@ -6048,7 +3926,6 @@ def test_postgres_tactic_activation_dispatches_and_reads_committed_catalog(monke
     from app import main
 
     dispatched = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
     monkeypatch.setattr(
         command_dispatch,
@@ -6094,7 +3971,6 @@ def test_postgres_cutover_teaching_state_dispatches_and_replays_saved_timestamp(
             "taughtAt": "2026-09-27T12:00:00+00:00",
         }
 
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
     monkeypatch.setattr(command_dispatch, "dispatch_command", record_command)
     response = TestClient(main.app).post(
@@ -6159,7 +4035,6 @@ def test_postgres_cutover_main_repertoire_selection_uses_one_locked_command(
         dispatched.append((name, payload, idempotency_key))
         return {"id": payload["repertoire_id"], "is_main": True}
 
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
     monkeypatch.setattr(command_dispatch, "dispatch_command", record_command)
     response = TestClient(main.app).put(
@@ -6190,10 +4065,6 @@ def test_postgres_cutover_main_repertoire_selection_uses_one_locked_command(
             self.queries.append((statement, parameters))
             return QueryResult([("opening-1",), ("opening-2",)])
 
-    monkeypatch.setattr(
-        "app.repertoire_commands.enqueue_task_in_transaction",
-        lambda *_args, **_kwargs: None,
-    )
     database = LockedRepertoires()
     assert select_main_repertoire(database, {"repertoire_id": "opening-1"}) == {
         "id": "opening-1",
@@ -6295,12 +4166,6 @@ def test_postgres_cutover_conflict_target_does_not_include_null_ordering():
 
 def test_postgres_cutover_card_copy_uses_backend_column_catalog(monkeypatch):
     from tempo_legacy_database import connections as database_module
-
-    with sqlite3.connect(":memory:") as sqlite_database:
-        sqlite_database.execute(
-            "CREATE TABLE cards(id TEXT PRIMARY KEY, due_date TEXT)"
-        )
-        assert database_module.card_columns(sqlite_database) == ["id", "due_date"]
 
     class PgDatabase:
         def execute(self, statement, parameters):
@@ -6522,9 +4387,9 @@ def test_postgres_cutover_background_claim_fairly_orders_only_supported_kinds(
         """)
         priorities = (
             ("unported_analysis", 1),
-            ("priority_retention", 200),
-            ("repertoire_game_refresh", 90),
-            ("defensive_threat_report_audit", 135),
+            ("product_game_refresh", 200),
+            ("opening_graph_rebuild", 90),
+            ("game_sync_record", 135),
         )
         for task_kind, priority in priorities:
             durable_tasks.enqueue_task_in_transaction(
@@ -6534,194 +4399,27 @@ def test_postgres_cutover_background_claim_fairly_orders_only_supported_kinds(
                 {},
                 priority=priority,
             )
-        monkeypatch.setattr(
-            durable_tasks,
-            "submit_background_write",
-            lambda operation, *, label: operation(database),
-        )
+        monkeypatch.setattr(durable_tasks, "connection", lambda **_options: nullcontext(database))
         allowed_kinds = (
-            "priority_retention",
-            "repertoire_game_refresh",
-            "defensive_threat_report_audit",
+            "product_game_refresh",
+            "opening_graph_rebuild",
+            "game_sync_record",
         )
         claimed = [
             durable_tasks.claim_task(allowed_kinds=allowed_kinds) for _ in range(4)
         ]
         assert [task["kind"] if task else None for task in claimed] == [
-            "repertoire_game_refresh",
-            "priority_retention",
-            "defensive_threat_report_audit",
+            "opening_graph_rebuild",
+            "product_game_refresh",
+            "game_sync_record",
             None,
         ]
 
 
-def test_postgres_cutover_rubric_audit_uses_boolean_case_parameter():
-    from app.services.threat_training import _persist_audited_rubric_validation
-
-    @dataclass
-    class Validation:
-        state: str = "engine_supported"
-        diagnostic: str = "verified"
-
-    saved_parameters: list[tuple] = []
-
-    class Database:
-        def execute(self, statement, parameters):
-            assert "approved_at=CASE WHEN ?" in statement
-            saved_parameters.append(parameters)
-
-    database = Database()
-    _persist_audited_rubric_validation(database, "candidate-1", Validation(), True)
-    _persist_audited_rubric_validation(database, "candidate-2", Validation(), False)
-    assert saved_parameters[0][3] is True
-    assert saved_parameters[1][3] is False
-
-
-def test_postgres_cutover_rubric_audit_yields_and_discards_stale_replay(monkeypatch):
-    from types import SimpleNamespace
-    from app import tasks
-    from app.services import threat_training
-
-    foreground_finished = threading.Event()
-    read_opened = threading.Event()
-    published_candidates: list[str] = []
-    advanced_cursors: list[str] = []
-    current_lease = {"token": "active"}
-    claimed_task = {
-        "kind": "defensive_rubric_audit",
-        "id": "rubric-task",
-        "generation": 3,
-        "lease_token": "active",
-        "payload": {"cursor": ""},
-    }
-    candidate = {
-        "id": "candidate-1",
-        "evidence_json": '{"anchor":{},"seed":{}}',
-        "policy_json": "{}",
-        "source_fingerprint": "source-1",
-        "exercise_revision": 2,
-        "card_id": None,
-    }
-
-    class Cursor:
-        def __init__(self, row=None):
-            self.row = row
-
-        def fetchone(self):
-            return self.row
-
-        def __iter__(self):
-            return iter(())
-
-    class ReadDatabase:
-        def execute(self, statement, _parameters):
-            return Cursor(candidate if "SELECT candidate.*" in statement else None)
-
-    class WriteDatabase:
-        def execute(self, statement, parameters=()):
-            if "SELECT source_fingerprint" in statement:
-                return Cursor(candidate)
-            if "UPDATE threat_training_candidates SET validation_state" in statement:
-                assert parameters[3] is True
-                published_candidates.append(parameters[-1])
-            if statement.startswith("UPDATE background_tasks"):
-                advanced_cursors.append(parameters[0])
-                current_lease["token"] = "next-generation"
-            return Cursor()
-
-    @contextmanager
-    def test_read_connection():
-        read_opened.set()
-        yield ReadDatabase()
-
-    @contextmanager
-    def test_write_connection(*, background):
-        assert background
-        yield WriteDatabase()
-
-    anchor = SimpleNamespace(
-        position=SimpleNamespace(
-            start_fen="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-            prefix_uci=(),
-            learner_color="white",
-        )
-    )
-    seed = SimpleNamespace(
-        geometry=SimpleNamespace(
-            major=SimpleNamespace(square="a1", piece="rook"),
-        )
-    )
-
-    @dataclass
-    class Validation:
-        state: str = "engine_supported"
-        diagnostic: str = "verified"
-
-    monkeypatch.setattr(threat_training.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(
-        threat_training.activity_gate, "wait_for_foreground", foreground_finished.wait
-    )
-    monkeypatch.setattr(
-        threat_training, "background_read_connection", test_read_connection
-    )
-    monkeypatch.setattr(threat_training, "connection", test_write_connection)
-    monkeypatch.setattr(threat_training, "_anchor_from_json", lambda _raw: anchor)
-    monkeypatch.setattr(threat_training, "_seed_from_json", lambda _raw: seed)
-    monkeypatch.setattr(threat_training, "ThreatPolicy", lambda **_arguments: object())
-    monkeypatch.setattr(
-        threat_training, "make_validation_plan", lambda *_args, **_kwargs: object()
-    )
-    monkeypatch.setattr(
-        threat_training, "validate_threat_anchor", lambda *_args: Validation()
-    )
-    monkeypatch.setattr(
-        threat_training, "enqueue_defense_admission", lambda *, background: None
-    )
-    monkeypatch.setattr(
-        threat_training,
-        "lock_current_slice",
-        lambda _database, task: task["lease_token"] == current_lease["token"],
-    )
-
-    results: list[bool] = []
-    worker = threading.Thread(
-        target=lambda: results.append(
-            threat_training.execute_defense_rubric_audit_slice(claimed_task)
-        ),
-    )
-    worker.start()
-    assert not read_opened.wait(0.05)
-    foreground_finished.set()
-    worker.join(timeout=2)
-    assert not worker.is_alive()
-    assert results == [True]
-    assert published_candidates == ["candidate-1"]
-    assert advanced_cursors == ['{"cursor": "candidate-1"}']
-    assert threat_training.execute_defense_rubric_audit_slice(claimed_task) is True
-    assert published_candidates == ["candidate-1"]
-
-    claimed_filters: list[tuple[str, ...]] = []
-    monkeypatch.setattr(
-        tasks,
-        "claim_task",
-        lambda *, allowed_kinds: claimed_filters.append(allowed_kinds) or claimed_task,
-    )
-    monkeypatch.setattr(tasks.celery_app, "send_task", lambda *_args, **_kwargs: None)
-    directly_executed = []
-    with monkeypatch.context() as dispatch_patch:
-        dispatch_patch.setattr(
-            tasks,
-            "_execute_claimed_background_slice",
-            lambda task, submitted_at, *, queue_refresh_wake=False: (
-                directly_executed.append(task) or True
-            ),
-        )
-        assert tasks.poll_background_tasks.run() is True
-    assert directly_executed == [claimed_task]
-    assert "defensive_rubric_audit" in claimed_filters[0]
-
-
 def test_postgres_cutover_queue_repertoire_choices_scan_only_active_cards(monkeypatch):
+    from tempo_legacy_database.adapters import postgres_store
+
+    monkeypatch.setattr(postgres_store, "configured", lambda: True)
     from app import main
     from app import queue_commands
 
@@ -6754,7 +4452,6 @@ def test_postgres_cutover_queue_repertoire_choices_scan_only_active_cards(monkey
     monkeypatch.setattr(
         queue_commands, "current_study_day", lambda _database: date.today().isoformat()
     )
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
     assert main._queue_payload()["cards"] == []
     queue_statement = next(
         statement for statement in statements if "ranked_repertoires" in statement
@@ -7512,363 +5209,6 @@ def test_postgres_tactical_queue_foreground_contention_and_stale_replay(
     assert publications == ["one"]
 
 
-def test_postgres_cutover_game_refresh_waits_for_foreground_and_discards_stale_replay(
-    monkeypatch,
-):
-    from app import tasks
-
-    monkeypatch.setattr(tasks, "current_delivery", lambda _task: True)
-    from app.services import repertoire_game_refresh
-
-    foreground_finished = threading.Event()
-    connection_opened = threading.Event()
-    queued_games: list[str] = []
-    persisted_cursors: list[str] = []
-    current_lease = {"token": "active"}
-    claimed_task = {
-        "kind": "repertoire_game_refresh",
-        "id": "refresh-task",
-        "generation": 2,
-        "lease_token": "active",
-        "payload": {"after_game_id": ""},
-    }
-
-    class Cursor:
-        def __init__(self, row=None):
-            self.row = row
-
-        def fetchone(self):
-            return self.row
-
-    class Database:
-        def execute(self, statement, parameters):
-            if "FROM imported_games" in statement:
-                return Cursor({"id": "game-1"})
-            if "INSERT INTO game_derivation_jobs" in statement:
-                queued_games.append(parameters[0])
-            if "SELECT derivation_version FROM game_derivation_jobs" in statement:
-                return Cursor({"derivation_version": 3})
-            return Cursor()
-
-    @contextmanager
-    def test_connection(*, background):
-        assert background
-        connection_opened.set()
-        yield Database()
-
-    def enqueue_next_slice(_database, kind, _key, payload, **_options):
-        if kind == "game_derivation_positions":
-            assert payload == {
-                "game_id": "game-1",
-                "derivation_version": 3,
-                "cursor": 0,
-            }
-            return
-        persisted_cursors.append(payload["after_game_id"])
-        current_lease["token"] = "next-generation"
-
-    monkeypatch.setattr(
-        repertoire_game_refresh.postgres_store, "configured", lambda: True
-    )
-    monkeypatch.setattr(
-        repertoire_game_refresh.activity_gate,
-        "wait_for_foreground",
-        foreground_finished.wait,
-    )
-    monkeypatch.setattr(repertoire_game_refresh, "connection", test_connection)
-    monkeypatch.setattr(
-        repertoire_game_refresh,
-        "lock_current_slice",
-        lambda _database, task: task["lease_token"] == current_lease["token"],
-    )
-    monkeypatch.setattr(
-        repertoire_game_refresh,
-        "enqueue_compact_postgres_task_in_transaction",
-        enqueue_next_slice,
-    )
-
-    result: list[bool] = []
-    worker = threading.Thread(
-        target=lambda: result.append(
-            repertoire_game_refresh.execute_repertoire_game_refresh_slice(claimed_task)
-        ),
-    )
-    worker.start()
-    assert not connection_opened.wait(0.05)
-    foreground_finished.set()
-    worker.join(timeout=2)
-    assert not worker.is_alive()
-    assert result == [True]
-    assert queued_games == ["game-1"]
-    assert persisted_cursors == ["game-1"]
-    assert (
-        repertoire_game_refresh.execute_repertoire_game_refresh_slice(claimed_task)
-        is False
-    )
-    assert queued_games == ["game-1"]
-
-    claimed_filters: list[tuple[str, ...]] = []
-    sent_tasks: list[str] = []
-    monkeypatch.setattr(
-        tasks,
-        "claim_task",
-        lambda *, allowed_kinds: claimed_filters.append(allowed_kinds) or claimed_task,
-    )
-    monkeypatch.setattr(
-        tasks.celery_app,
-        "send_task",
-        lambda task_name, **_arguments: sent_tasks.append(task_name),
-    )
-    directly_executed = []
-    with monkeypatch.context() as dispatch_patch:
-        dispatch_patch.setattr(
-            tasks,
-            "_execute_claimed_background_slice",
-            lambda task, submitted_at, *, queue_refresh_wake=False: (
-                directly_executed.append(task) or True
-            ),
-        )
-        assert tasks.poll_background_tasks.run() is True
-    assert directly_executed == [claimed_task]
-    assert claimed_filters == [
-        tuple(
-            kind for kind in tasks._SUPPORTED_BACKGROUND_KINDS if kind != "daily_queue"
-        )
-    ]
-    assert sent_tasks == []
-    completed_tasks: list[str] = []
-    monkeypatch.setattr(
-        tasks, "execute_repertoire_game_refresh_slice", lambda _task: False
-    )
-    monkeypatch.setattr(
-        tasks,
-        "complete_task",
-        lambda task_id, _generation, _lease, *, kind: completed_tasks.append(task_id),
-    )
-    monkeypatch.setattr(
-        tasks.activity_gate,
-        "background_job",
-        lambda *_arguments, **_kwargs: nullcontext(),
-    )
-    assert tasks.execute_background_slice.run(claimed_task) is False
-    assert completed_tasks == ["refresh-task"]
-
-
-def test_postgres_cutover_threat_report_audit_yields_and_replays_once(monkeypatch):
-    from app import tasks
-    from app.services import threat_pipeline
-
-    foreground_finished = threading.Event()
-    read_opened = threading.Event()
-    advanced_cursors: list[str] = []
-    current_lease = {"token": "active"}
-    claimed_task = {
-        "kind": "defensive_threat_report_audit",
-        "id": "audit-task",
-        "generation": 4,
-        "lease_token": "active",
-        "payload": {"cursor": ""},
-    }
-
-    class Cursor:
-        def __init__(self, row=None):
-            self.row = row
-
-        def fetchone(self):
-            return self.row
-
-    class ReadDatabase:
-        def execute(self, statement, _parameters):
-            if "FROM threat_analysis_requests" in statement:
-                return Cursor(
-                    {"id": "report-1", "request_json": "{}", "report_json": "{}"}
-                )
-            return Cursor()
-
-    class WriteDatabase:
-        def execute(self, statement, parameters):
-            if statement.startswith("UPDATE background_tasks"):
-                advanced_cursors.append(parameters[0])
-            return Cursor()
-
-    @contextmanager
-    def test_read_connection():
-        read_opened.set()
-        yield ReadDatabase()
-
-    @contextmanager
-    def test_write_connection(*, background):
-        assert background
-        yield WriteDatabase()
-
-    monkeypatch.setattr(threat_pipeline.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(
-        threat_pipeline.activity_gate, "wait_for_foreground", foreground_finished.wait
-    )
-    monkeypatch.setattr(
-        threat_pipeline, "background_read_connection", test_read_connection
-    )
-    monkeypatch.setattr(threat_pipeline, "connection", test_write_connection)
-    monkeypatch.setattr(threat_pipeline, "_request_from_json", lambda _raw: object())
-    monkeypatch.setattr(threat_pipeline, "report_from_json", lambda _raw: object())
-    monkeypatch.setattr(
-        threat_pipeline, "validate_analysis_report", lambda *_arguments: None
-    )
-    monkeypatch.setattr(
-        threat_pipeline,
-        "lock_current_slice",
-        lambda _database, task: task["lease_token"] == current_lease["token"],
-    )
-
-    result: list[bool] = []
-    worker = threading.Thread(
-        target=lambda: result.append(
-            threat_pipeline.execute_threat_report_audit(claimed_task)
-        ),
-    )
-    worker.start()
-    assert not read_opened.wait(0.05)
-    foreground_finished.set()
-    worker.join(timeout=2)
-    assert not worker.is_alive()
-    assert result == [True]
-    assert advanced_cursors == ['{"cursor": "report-1"}']
-    current_lease["token"] = "next-generation"
-    assert threat_pipeline.execute_threat_report_audit(claimed_task) is True
-    assert advanced_cursors == ['{"cursor": "report-1"}']
-
-    polled_filters: list[tuple[str, ...]] = []
-    sent_tasks: list[str] = []
-    monkeypatch.setattr(
-        tasks,
-        "claim_task",
-        lambda *, allowed_kinds: polled_filters.append(allowed_kinds) or claimed_task,
-    )
-    monkeypatch.setattr(
-        tasks.celery_app,
-        "send_task",
-        lambda task_name, **_arguments: sent_tasks.append(task_name),
-    )
-    directly_executed = []
-    with monkeypatch.context() as dispatch_patch:
-        dispatch_patch.setattr(
-            tasks,
-            "_execute_claimed_background_slice",
-            lambda task, submitted_at, *, queue_refresh_wake=False: (
-                directly_executed.append(task) or True
-            ),
-        )
-        assert tasks.poll_background_tasks.run() is True
-    assert directly_executed == [claimed_task]
-    # #691 assigns daily queue leases to the foreground owner.
-    expected_kinds = tuple(
-        kind for kind in tasks._SUPPORTED_BACKGROUND_KINDS if kind != "daily_queue"
-    )
-    assert polled_filters == [expected_kinds]
-    assert "daily_queue" not in polled_filters[0]
-    assert sent_tasks == []
-
-
-def test_postgres_discovery_recommendation_yields_to_foreground_and_discards_restart_replay(
-    monkeypatch, unscoped_canonical_prefix
-):
-    from app import tasks
-    from app.services import discovery_admission
-
-    foreground_finished = threading.Event()
-    preparation_finished = threading.Event()
-    release_preparation = threading.Event()
-    first_read_opened = threading.Event()
-    writer_opened = threading.Event()
-    published_requests: list[str] = []
-    current_lease = {"token": "first-lease"}
-    task = {
-        "kind": "discovery_recommendation",
-        "id": "recommendation-task",
-        "generation": 2,
-        "lease_token": "first-lease",
-        "payload": {"opportunity_id": "opportunity-1"},
-    }
-
-    class Cursor:
-        def __init__(self, row=None):
-            self.row = row
-
-        def fetchone(self):
-            return self.row
-
-    class ReadDatabase:
-        def execute(self, statement, _parameters):
-            assert "FROM repertoire_opportunities" in statement
-            return Cursor({"id": "opportunity-1", "repertoire_id": "rep"})
-
-    class WriteDatabase:
-        def execute(self, statement, _parameters):
-            if "FROM repertoire_opportunities" in statement:
-                return Cursor(
-                    {"status": "active", "card_id": None, "repertoire_id": "rep"}
-                )
-            if statement.startswith("INSERT"):
-                published_requests.append(statement)
-            return Cursor()
-
-    @contextmanager
-    def bounded_read():
-        first_read_opened.set()
-        yield ReadDatabase()
-
-    @contextmanager
-    def bounded_write(*, background):
-        assert background
-        writer_opened.set()
-        yield WriteDatabase()
-
-    @dataclass(frozen=True)
-    class PreparedRequest:
-        request_id: str = "request-1"
-
-    def prepare_source(_opportunity):
-        preparation_finished.set()
-        assert release_preparation.wait(2)
-        return {"id": "game-1", "ply": 2}
-
-    monkeypatch.setattr(discovery_admission.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(
-        discovery_admission.activity_gate,
-        "wait_for_foreground",
-        foreground_finished.wait,
-    )
-    monkeypatch.setattr(discovery_admission, "background_read_connection", bounded_read)
-    monkeypatch.setattr(discovery_admission, "connection", bounded_write)
-    monkeypatch.setattr(discovery_admission, "_background_source_game", prepare_source)
-    monkeypatch.setattr(
-        discovery_admission,
-        "_full_history_request",
-        lambda _game: (None, PreparedRequest()),
-    )
-    monkeypatch.setattr(
-        discovery_admission,
-        "lock_current_slice",
-        lambda _database, claimed: claimed["lease_token"] == current_lease["token"],
-    )
-    worker = threading.Thread(
-        target=discovery_admission.execute_recommendation_request_slice, args=(task,)
-    )
-    worker.start()
-    assert not first_read_opened.wait(0.05)
-    foreground_finished.set()
-    assert preparation_finished.wait(2)
-    assert not writer_opened.is_set()
-    release_preparation.set()
-    worker.join(timeout=2)
-    assert not worker.is_alive()
-    assert len(published_requests) == 2
-    current_lease["token"] = "replacement-lease"
-    discovery_admission.execute_recommendation_request_slice(task)
-    assert len(published_requests) == 2
-    assert "discovery_recommendation" in tasks._SUPPORTED_BACKGROUND_KINDS
-
-
 def test_postgres_accepted_activity_control_handler_remains_available(monkeypatch):
     from fastapi.testclient import TestClient
     from app import activity_commands, main
@@ -7894,74 +5234,6 @@ def test_postgres_accepted_activity_control_handler_remains_available(monkeypatc
         },
     ) == {"ok": True}
     assert controlled == [(database, "durable", "task-one", "prioritize")]
-
-
-def test_postgres_explorer_session_token_reaches_separate_worker(monkeypatch):
-    from fastapi.testclient import TestClient
-    from app import main
-    from app.services import repertoire_coverage
-
-    values = {}
-
-    class TokenStore:
-        def setex(self, key, seconds, token):
-            assert seconds == 24 * 60 * 60
-            values[key] = token.encode()
-
-        def get(self, key):
-            return values.get(key)
-
-        def delete(self, key):
-            values.pop(key, None)
-
-    monkeypatch.delenv("TEMPO_LICHESS_EXPLORER_TOKEN", raising=False)
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-    monkeypatch.setattr(repertoire_coverage, "redis_client", lambda: TokenStore())
-    client = TestClient(main.app)
-    response = client.post(
-        "/api/repertoire-coverage/explorer-session",
-        headers={"Authorization": "Bearer rehearsal-token"},
-    )
-    assert response.status_code == 200, response.text
-    assert response.json() == {"registered": True}
-    repertoire_coverage._explorer_session_token = None
-    assert repertoire_coverage.get_explorer_session_token() == "rehearsal-token"
-    assert client.post("/api/repertoire-coverage/explorer-session").json() == {
-        "registered": False,
-    }
-    assert repertoire_coverage.get_explorer_session_token() is None
-
-
-def test_postgres_migration_snapshot_binds_automatic_coverage_filter(monkeypatch):
-    from fastapi.testclient import TestClient
-    from app import main
-
-    statements = []
-
-    class EmptyCursor:
-        def __iter__(self):
-            return iter(())
-
-        def fetchall(self):
-            return []
-
-    class Database:
-        def execute(self, statement, parameters=()):
-            statements.append((statement, parameters))
-            return EmptyCursor()
-
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
-    monkeypatch.setattr(main, "read_connection", lambda: nullcontext(Database()))
-    response = TestClient(main.app).get("/api/migration/snapshot")
-    assert response.status_code == 200, response.text
-    assert response.json()["source"] == "tempo-postgres"
-    assert any(
-        "settings_json LIKE ?" in statement
-        and parameters == ('%"automatic_priority": true%',)
-        for statement, parameters in statements
-    )
 
 
 def test_postgres_game_refresh_dispatch_reads_receipt_behind_background_gate(monkeypatch):
@@ -8050,7 +5322,6 @@ def test_postgres_game_refresh_receipt_poll_uses_background_read_admission(monke
     from app import main
 
     observed = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(main.activity_gate, "background_request", lambda: nullcontext())
     monkeypatch.setattr(
         main,
@@ -8077,13 +5348,12 @@ def test_blocked_operation_retry_reuses_durable_identity_and_payload(monkeypatch
     from app import main
 
     sent = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(
         main,
         "load_blocked_operation",
         lambda operation_id: {
             "operation_id": operation_id,
-            "command_name": "defensive.threat.claim",
+            "command_name": "queue.ensure_current",
             "payload": {"source": "saved"},
             "background": True,
             "retry_cycle": 0,
@@ -8100,7 +5370,7 @@ def test_blocked_operation_retry_reuses_durable_identity_and_payload(monkeypatch
             {
                 "args": [
                     "original-id",
-                    "defensive.threat.claim",
+                    "queue.ensure_current",
                     {"source": "saved"},
                     0,
                 ],
@@ -8110,787 +5380,6 @@ def test_blocked_operation_retry_reuses_durable_identity_and_payload(monkeypatch
             },
         )
     ]
-
-
-def test_postgres_coverage_seed_supersedes_active_generation_after_branch_edit(
-    monkeypatch, unscoped_canonical_prefix
-):
-    from app.services import coverage_seed_request
-
-    statements = []
-
-    class Database:
-        def execute_native(self, statement, parameters=()):
-            statements.append((statement, parameters))
-            if "SELECT 1 FROM repertoires" in statement:
-                return SimpleNamespace(fetchone=lambda: (1,))
-            if "SELECT * FROM repertoire_coverage_runs" in statement:
-                return SimpleNamespace(
-                    fetchone=lambda: {"id": "old-run", "settings_json": "{}"}
-                )
-            if "SELECT * FROM settings" in statement:
-                return SimpleNamespace(
-                    fetchone=lambda: {
-                        "coverage_maia_elo": 1500,
-                        "coverage_reply_denominator": 2,
-                        "coverage_cumulative_target": 80,
-                        "coverage_horizon_fullmoves": 4,
-                        "coverage_path_floor": 0.01,
-                    }
-                )
-            return SimpleNamespace(fetchone=lambda: None)
-
-    monkeypatch.setattr(
-        coverage_seed_request,
-        "recent_player_cohort",
-        lambda *_args: {
-            "maia_elo": 1500,
-            "explorer_rating": 1600,
-            "recent_median_rating": 1500,
-            "speed_weights": {"rapid": 1},
-            "games": 1,
-        },
-    )
-    monkeypatch.setattr(
-        coverage_seed_request, "_source_fingerprint", lambda *_args: "new-fingerprint"
-    )
-    enqueued = []
-    monkeypatch.setattr(
-        coverage_seed_request,
-        "enqueue_task_in_transaction",
-        lambda database, kind, key, payload, **kwargs: enqueued.append(
-            (kind, key, payload)
-        ),
-    )
-    result = coverage_seed_request.request_coverage_seed_in_transaction(
-        Database(),
-        "rep",
-        automatic=True,
-        supersede_active=True,
-    )
-    assert result["run_id"] != "old-run"
-    assert any(
-        "UPDATE repertoire_coverage_runs SET status='failed'" in sql
-        and parameters[-1] == "old-run"
-        for sql, parameters in statements
-    )
-    assert enqueued[0][2]["run_id"] == result["run_id"]
-    assert enqueued[0][2]["source_fingerprint"] == "new-fingerprint"
-
-
-def test_postgres_coverage_seed_yields_to_foreground_and_discards_restart_replay(
-    monkeypatch, unscoped_canonical_prefix
-):
-    from app import tasks
-    from app.services import postgres_coverage_seed
-
-    foreground_finished = threading.Event()
-    read_opened = threading.Event()
-    staged_positions: list[str] = []
-    current_lease = {"token": "first-lease"}
-    task = {
-        "kind": "coverage_seed",
-        "id": "seed-task",
-        "generation": 5,
-        "lease_token": "first-lease",
-        "payload": {
-            "run_id": "run-one",
-            "repertoire_id": "rep",
-            "horizon_fullmoves": 4,
-            "source_fingerprint": "fingerprint",
-            "after_line_id": "",
-            "position_index": 0,
-        },
-    }
-
-    class Cursor:
-        def fetchone(self):
-            return {
-                "id": "line-one",
-                "start_fen": chess.STARTING_FEN,
-                "moves_json": '["e2e4","e7e5"]',
-                "trained_color": "white",
-            }
-
-    class ReadDatabase:
-        def execute_native(self, statement, _parameters):
-            assert "FROM repertoire_lines" in statement
-            return Cursor()
-
-    @contextmanager
-    def bounded_read():
-        assert foreground_finished.wait(2)
-        read_opened.set()
-        yield ReadDatabase()
-
-    @contextmanager
-    def bounded_write(*, background):
-        assert background
-
-        class BuildingRun:
-            def execute(self, statement, _parameters):
-                return SimpleNamespace(
-                    fetchone=lambda: {
-                        "id": "run-one",
-                        "settings_json": "{}",
-                        "status": "building",
-                    }
-                )
-
-            def execute_native(self, statement, _parameters):
-                assert "FROM repertoire_coverage_runs" in statement
-                return SimpleNamespace(
-                    fetchone=lambda: {"status": "building", "settings_json": "{}"}
-                )
-
-        yield BuildingRun()
-
-    monkeypatch.setattr(
-        postgres_coverage_seed, "background_read_connection", bounded_read
-    )
-    monkeypatch.setattr(postgres_coverage_seed, "connection", bounded_write)
-    monkeypatch.setattr(
-        postgres_coverage_seed,
-        "discover_opponent_positions",
-        lambda _lines, _horizon: [{"fen_key": "position-one"}],
-    )
-    monkeypatch.setattr(
-        postgres_coverage_seed,
-        "lock_current_slice",
-        lambda _database, claimed: claimed["lease_token"] == current_lease["token"],
-    )
-    monkeypatch.setattr(
-        postgres_coverage_seed,
-        "_stage_position",
-        lambda _database, _task, position: staged_positions.append(position["fen_key"]),
-    )
-    monkeypatch.setattr(
-        postgres_coverage_seed,
-        "advance_task_slice_in_transaction",
-        lambda *_args, **_kwargs: True,
-    )
-    result: list[bool] = []
-    worker = threading.Thread(
-        target=lambda: result.append(
-            postgres_coverage_seed.execute_coverage_seed_slice(task)
-        )
-    )
-    worker.start()
-    assert not read_opened.wait(0.05)
-    foreground_finished.set()
-    worker.join(timeout=2)
-    assert not worker.is_alive()
-    assert result == [True]
-    assert staged_positions == ["position-one"]
-    current_lease["token"] = "replacement-lease"
-    assert postgres_coverage_seed.execute_coverage_seed_slice(task) is False
-    assert staged_positions == ["position-one"]
-    assert "coverage_seed" in tasks._SUPPORTED_BACKGROUND_KINDS
-
-
-def test_postgres_coverage_seed_rejects_source_change_before_activation(
-    monkeypatch, unscoped_canonical_prefix
-):
-    from app.services import postgres_coverage_seed
-
-    updates = []
-    task = {
-        "id": "seed-task",
-        "generation": 4,
-        "lease_token": "lease",
-        "payload": {
-            "run_id": "run",
-            "repertoire_id": "rep",
-            "horizon_fullmoves": 4,
-            "source_fingerprint": "original",
-            "after_line_id": "last-line",
-            "position_index": 0,
-        },
-    }
-
-    @contextmanager
-    def bounded_read():
-        yield object()
-
-    class WriteDatabase:
-        def execute(self, statement, parameters=()):
-            return SimpleNamespace(
-                fetchone=lambda: {
-                    "id": "run",
-                    "settings_json": "{}",
-                    "status": "building",
-                }
-            )
-
-        def execute_native(self, statement, parameters):
-            updates.append((statement, parameters))
-
-    @contextmanager
-    def bounded_write(*, background):
-        assert background
-        yield WriteDatabase()
-
-    monkeypatch.setattr(
-        postgres_coverage_seed, "prepare_next_coverage_line", lambda *_args: None
-    )
-    monkeypatch.setattr(
-        postgres_coverage_seed, "background_read_connection", bounded_read
-    )
-    monkeypatch.setattr(
-        postgres_coverage_seed, "_source_fingerprint", lambda _database, _rep: "changed"
-    )
-    monkeypatch.setattr(postgres_coverage_seed, "connection", bounded_write)
-    monkeypatch.setattr(
-        postgres_coverage_seed, "lock_current_slice", lambda *_args: True
-    )
-    monkeypatch.setattr(
-        postgres_coverage_seed,
-        "complete_task_slice_in_transaction",
-        lambda *_args: True,
-    )
-    assert postgres_coverage_seed.execute_coverage_seed_slice(task) is True
-    assert len(updates) == 1
-    assert "status='failed'" in updates[0][0]
-    assert updates[0][1][2] == "run"
-
-
-def test_postgres_coverage_seed_queues_explorer_after_verified_activation(
-    monkeypatch, unscoped_canonical_prefix
-):
-    from app.services import postgres_coverage_seed
-
-    queued = []
-    statements = []
-    task = {
-        "id": "seed-task",
-        "generation": 4,
-        "lease_token": "lease",
-        "payload": {
-            "run_id": "run",
-            "repertoire_id": "rep",
-            "phase": "activate",
-            "source_fingerprint": "same",
-            "after_node_id": "last-node",
-        },
-    }
-
-    class Database:
-        def execute(self, statement, parameters=()):
-            return SimpleNamespace(
-                fetchone=lambda: {
-                    "id": "run",
-                    "settings_json": "{}",
-                    "status": "building",
-                }
-            )
-
-        def execute_native(self, statement, parameters=()):
-            statements.append(statement)
-            if "SELECT id FROM repertoire_coverage_nodes" in statement:
-                return SimpleNamespace(fetchone=lambda: None)
-            if "SELECT COUNT(*) FROM repertoire_coverage_nodes" in statement:
-                return SimpleNamespace(fetchone=lambda: (3,))
-            return SimpleNamespace(fetchone=lambda: None)
-
-    monkeypatch.setattr(
-        postgres_coverage_seed,
-        "background_read_connection",
-        lambda: nullcontext(Database()),
-    )
-    monkeypatch.setattr(
-        postgres_coverage_seed,
-        "connection",
-        lambda *, background: nullcontext(Database()),
-    )
-    monkeypatch.setattr(
-        postgres_coverage_seed, "_source_fingerprint", lambda *_args: "same"
-    )
-    monkeypatch.setattr(
-        postgres_coverage_seed, "lock_current_slice", lambda *_args: True
-    )
-    monkeypatch.setattr(
-        postgres_coverage_seed,
-        "complete_task_slice_in_transaction",
-        lambda *_args: True,
-    )
-    monkeypatch.setattr(
-        postgres_coverage_seed,
-        "enqueue_compact_postgres_task_in_transaction",
-        lambda database, kind, key, payload, **kwargs: queued.append(
-            (kind, key, payload)
-        ),
-    )
-    assert postgres_coverage_seed.execute_coverage_seed_slice(task) is True
-    assert queued == [
-        (
-            "coverage_explorer",
-            "rep",
-            {
-                "run_id": "run",
-                "repertoire_id": "rep",
-                "after_node_id": "",
-            },
-        )
-    ]
-    assert any("status=%s" in statement for statement in statements)
-
-
-def test_postgres_explorer_closes_read_before_network_fetch(monkeypatch):
-    from app.services import postgres_coverage_explorer
-
-    open_read = False
-    fetched = []
-
-    class Database:
-        pass
-
-    @contextmanager
-    def bounded_read():
-        nonlocal open_read
-        open_read = True
-        try:
-            yield Database()
-        finally:
-            open_read = False
-
-    def fetch(fen, speeds, ratings, token):
-        assert not open_read
-        fetched.append((fen, speeds, ratings, token))
-        return {"moves": []}
-
-    monkeypatch.setattr(
-        postgres_coverage_explorer, "background_read_connection", bounded_read
-    )
-    monkeypatch.setattr(
-        postgres_coverage_explorer,
-        "_cached_explorer_payload",
-        lambda *_args: (None, "cache-key"),
-    )
-    monkeypatch.setattr(
-        postgres_coverage_explorer,
-        "get_explorer_session_token",
-        lambda: "registered-token",
-    )
-    monkeypatch.setattr(postgres_coverage_explorer, "_fetch_explorer", fetch)
-    result = postgres_coverage_explorer._cached_or_fetched_payload(
-        {
-            "fen": chess.STARTING_FEN,
-            "settings_json": '{"maia_elo":1500,"explorer_rating":1600,"speed_weights":{"rapid":1}}',
-        }
-    )
-    assert result[1:] == ("cache-key", "rapid:1.000000", "1600")
-    assert fetched[0][-1] == "registered-token"
-
-
-def test_postgres_explorer_yields_node_read_to_foreground(
-    monkeypatch, unscoped_canonical_prefix
-):
-    from app.services import postgres_coverage_explorer
-
-    foreground_finished = threading.Event()
-    read_started = threading.Event()
-    observed = []
-
-    class Database:
-        def execute_native(self, statement, parameters=()):
-            observed.append(statement)
-            if "FROM background_tasks" in statement:
-                return SimpleNamespace(
-                    fetchone=lambda: {
-                        "generation": 1,
-                        "lease_token": "lease",
-                        "state": "leased",
-                    }
-                )
-            return SimpleNamespace(
-                fetchone=lambda: {
-                    "id": "node",
-                    "run_id": "run",
-                    "repertoire_id": "rep",
-                    "fen": chess.STARTING_FEN,
-                    "settings_json": "{}",
-                }
-            )
-
-    @contextmanager
-    def gated_read():
-        assert foreground_finished.wait(2)
-        read_started.set()
-        yield Database()
-
-    monkeypatch.setattr(
-        postgres_coverage_explorer, "background_read_connection", gated_read
-    )
-    task = {
-        "id": "task",
-        "generation": 1,
-        "lease_token": "lease",
-        "payload": {"run_id": "run", "after_node_id": ""},
-    }
-    result = []
-    worker = threading.Thread(
-        target=lambda: result.append(
-            postgres_coverage_explorer._prepare_next_node(task)
-        )
-    )
-    worker.start()
-    assert not read_started.wait(0.05)
-    foreground_finished.set()
-    worker.join(timeout=2)
-    assert not worker.is_alive()
-    assert result[0]["id"] == "node"
-    assert len(observed) == 2
-    assert "COALESCE(control.paused,0)=0" in observed[1]
-
-
-def test_postgres_explorer_discards_stale_lease_before_publication(
-    monkeypatch, unscoped_canonical_prefix
-):
-    from app.services import postgres_coverage_explorer
-
-    writes = []
-
-    class Database:
-        def execute_native(self, statement, parameters=()):
-            writes.append(statement)
-            return SimpleNamespace(fetchone=lambda: None)
-
-    monkeypatch.setattr(
-        postgres_coverage_explorer, "lock_current_slice", lambda *_args: False
-    )
-    assert (
-        postgres_coverage_explorer._publish_node(
-            Database(),
-            {"id": "task", "generation": 2, "lease_token": "old"},
-            {"id": "node", "repertoire_id": "rep"},
-            {"moves": []},
-            "cache",
-            "rapid:1.000000",
-            "1600",
-        )
-        is False
-    )
-    assert writes == []
-
-
-def test_postgres_explorer_restart_skips_fetch_for_expired_lease(monkeypatch):
-    from app.services import postgres_coverage_explorer
-
-    statements = []
-
-    class Database:
-        def execute_native(self, statement, parameters=()):
-            statements.append(statement)
-            return SimpleNamespace(
-                fetchone=lambda: {
-                    "generation": 2,
-                    "lease_token": "replacement",
-                    "state": "leased",
-                }
-            )
-
-    monkeypatch.setattr(
-        postgres_coverage_explorer,
-        "background_read_connection",
-        lambda: nullcontext(Database()),
-    )
-    assert (
-        postgres_coverage_explorer._prepare_next_node(
-            {
-                "id": "task",
-                "generation": 2,
-                "lease_token": "expired",
-                "payload": {"run_id": "run", "after_node_id": ""},
-            }
-        )
-        is None
-    )
-    assert len(statements) == 1
-    assert "FROM background_tasks" in statements[0]
-
-
-def test_postgres_explorer_missing_token_fails_run_with_actionable_error(
-    monkeypatch, unscoped_canonical_prefix
-):
-    from app.services import postgres_coverage_explorer
-
-    statements = []
-    refreshes = []
-
-    class Database:
-        def execute_native(self, statement, parameters=()):
-            statements.append((statement, parameters))
-
-    monkeypatch.setattr(
-        postgres_coverage_explorer,
-        "connection",
-        lambda *, background: nullcontext(Database()),
-    )
-    monkeypatch.setattr(
-        postgres_coverage_explorer, "lock_current_slice", lambda *_args: True
-    )
-    monkeypatch.setattr(
-        postgres_coverage_explorer,
-        "complete_task_slice_in_transaction",
-        lambda *_args: True,
-    )
-    assert (
-        postgres_coverage_explorer._fail_for_missing_token(
-            {"id": "task", "generation": 1, "lease_token": "lease"},
-            {
-                "id": "node",
-                "run_id": "run",
-                "repertoire_id": "rep",
-                "settings_json": "{}",
-            },
-        )
-        is True
-    )
-    assert any(
-        "UPDATE repertoire_coverage_runs SET status='failed'" in statement
-        and "Explorer token" in parameters[0]
-        for statement, parameters in statements
-    )
-
-
-def test_postgres_explorer_terminal_failure_marks_run_failed(monkeypatch):
-    from app.services import durable_tasks
-
-    statements = []
-
-    class Database:
-        def execute(self, statement, parameters=()):
-            statements.append((statement, parameters))
-            if statement.startswith("SELECT attempt_count,max_attempts"):
-                return SimpleNamespace(
-                    fetchone=lambda: {
-                        "attempt_count": 5,
-                        "max_attempts": 5,
-                        "kind": "coverage_explorer",
-                        "payload_json": '{"run_id":"run-one"}',
-                    }
-                )
-            return SimpleNamespace(rowcount=1)
-
-    monkeypatch.setattr(
-        durable_tasks,
-        "submit_background_write",
-        lambda operation, *, label: operation(Database()),
-    )
-    monkeypatch.setattr(durable_tasks, "_record_event", lambda *_args, kind=None: None)
-    assert (
-        durable_tasks.fail_task(
-            "task", 1, "lease", RuntimeError("Explorer unavailable")
-        )["state"]
-        == "failed"
-    )
-    assert any(
-        "UPDATE repertoire_coverage_runs SET status='failed'" in statement
-        and parameters[2] == "run-one"
-        for statement, parameters in statements
-    )
-
-
-def test_postgres_explorer_recovers_imported_active_run_once(monkeypatch):
-    from app import tasks
-    from app.services import postgres_coverage_recovery
-
-    available = [{"id": "run", "repertoire_id": "rep"}, None]
-    statements = []
-    queued = []
-
-    class Database:
-        def execute_native(self, statement, parameters=()):
-            statements.append(statement)
-            return SimpleNamespace(fetchone=lambda: available.pop(0))
-
-    monkeypatch.setattr(
-        postgres_coverage_recovery.postgres_store, "configured", lambda: True
-    )
-    monkeypatch.setattr(
-        postgres_coverage_recovery,
-        "connection",
-        lambda *, background: nullcontext(Database()),
-    )
-    monkeypatch.setattr(
-        postgres_coverage_recovery,
-        "enqueue_compact_postgres_task_in_transaction",
-        lambda database, kind, key, payload, **kwargs: queued.append(
-            (kind, key, payload)
-        ),
-    )
-    assert postgres_coverage_recovery.recover_one_explorer_run() is True
-    assert postgres_coverage_recovery.recover_one_explorer_run() is False
-    assert queued == [
-        (
-            "coverage_explorer",
-            "rep",
-            {
-                "run_id": "run",
-                "repertoire_id": "rep",
-                "after_node_id": "",
-            },
-        )
-    ]
-    assert "task.state IN ('queued','leased','retrying')" in statements[0]
-    assert "COALESCE(control.paused,0)=0" in statements[0]
-    assert tasks.celery_app.conf.task_routes["app.tasks.recover_active_coverage"] == {
-        "queue": "background",
-    }
-
-
-def test_postgres_coverage_seed_terminal_failure_marks_run_failed(monkeypatch):
-    from app.services import durable_tasks
-
-    statements = []
-
-    class RecordingDatabase:
-        def execute(self, statement, parameters=()):
-            statements.append((statement, parameters))
-            if statement.startswith("SELECT attempt_count,max_attempts"):
-                return SimpleNamespace(
-                    fetchone=lambda: {
-                        "attempt_count": 5,
-                        "max_attempts": 5,
-                        "kind": "coverage_seed",
-                        "payload_json": '{"run_id":"run-one"}',
-                    }
-                )
-            return SimpleNamespace(rowcount=1)
-
-    monkeypatch.setattr(
-        durable_tasks,
-        "submit_background_write",
-        lambda operation, *, label: operation(RecordingDatabase()),
-    )
-    monkeypatch.setattr(durable_tasks, "_record_event", lambda *_args, kind=None: None)
-    assert (
-        durable_tasks.fail_task("task", 1, "lease", RuntimeError("bad position"))[
-            "state"
-        ]
-        == "failed"
-    )
-    assert any(
-        "UPDATE repertoire_coverage_runs SET status='failed'" in statement
-        and parameters[2] == "run-one"
-        for statement, parameters in statements
-    )
-
-
-def test_postgres_coverage_building_summary_remains_queued(
-    monkeypatch, unscoped_canonical_prefix
-):
-    from app.services import repertoire_coverage
-
-    class Cursor:
-        def __init__(self, row):
-            self.row = row
-
-        def fetchone(self):
-            return self.row
-
-    class ReadDatabase:
-        def execute(self, statement, _parameters):
-            if "FROM repertoire_coverage_runs" in statement:
-                return Cursor(
-                    {
-                        "id": "run-one",
-                        "status": "building",
-                        "settings_json": "{}",
-                        "last_error": None,
-                    }
-                )
-            if "FROM repertoire_coverage_candidates" in statement:
-                return Cursor(
-                    {
-                        "required_probability": 0,
-                        "covered_branches": 0,
-                        "required_branches": 0,
-                        "covered_probability": 0,
-                    }
-                )
-            return Cursor((0,))
-
-    @contextmanager
-    def read_connection():
-        yield ReadDatabase()
-
-    monkeypatch.setattr(repertoire_coverage, "connection", read_connection)
-    summary = repertoire_coverage.coverage_summary("rep")
-    assert summary["status"] == "queued"
-    assert summary["is_complete"] is False
-
-
-def test_postgres_coverage_unverified_canonical_route_fails_actionably_without_publication(
-    monkeypatch, unscoped_canonical_prefix
-):
-    from app.services import postgres_coverage_seed
-
-    statements = []
-    task = {
-        "id": "seed",
-        "generation": 1,
-        "lease_token": "lease",
-        "payload": {"repertoire_id": "rep", "run_id": "run", "horizon_fullmoves": 15},
-    }
-    monkeypatch.setattr(
-        postgres_coverage_seed,
-        "prepare_next_coverage_line",
-        lambda *args: postgres_coverage_seed.PreparedCoverageLine(
-            "line", (), scope_pending=True
-        ),
-    )
-
-    class WriteDatabase:
-        def execute(self, statement, parameters=()):
-            return SimpleNamespace(
-                fetchone=lambda: {
-                    "id": "run",
-                    "settings_json": "{}",
-                    "status": "building",
-                }
-            )
-
-        def execute_native(self, statement, parameters):
-            statements.append((statement, parameters))
-
-    @contextmanager
-    def bounded_write(*, background):
-        assert background
-        yield WriteDatabase()
-
-    monkeypatch.setattr(postgres_coverage_seed, "connection", bounded_write)
-    monkeypatch.setattr(
-        postgres_coverage_seed, "lock_current_slice", lambda *args: True
-    )
-    monkeypatch.setattr(
-        postgres_coverage_seed, "complete_task_slice_in_transaction", lambda *args: True
-    )
-    assert postgres_coverage_seed.execute_coverage_seed_slice(task)
-    assert len(statements) == 1
-    assert "status='failed'" in statements[0][0]
-    assert "Check the canonical prefix again" in statements[0][1][0]
-
-
-def test_postgres_coverage_fingerprint_tracks_route_certificates_only_for_scoped_repertoires(
-    monkeypatch,
-):
-    from app.services import coverage_seed_request
-
-    prefix = {"moves": [], "revision": 0, "source_revision": 1, "preview_id": None}
-    monkeypatch.setattr(coverage_seed_request, "read_prefix", lambda *args: prefix)
-
-    class Database:
-        def execute_native(self, *args):
-            return SimpleNamespace(fetchone=lambda: ("line-hash",))
-
-    original = coverage_seed_request._source_fingerprint(Database(), "rep")
-    prefix["source_revision"] += 1
-    assert coverage_seed_request._source_fingerprint(Database(), "rep") == original
-    prefix.update(moves=["e2e4"], revision=1, preview_id="current")
-    scoped = coverage_seed_request._source_fingerprint(Database(), "rep")
-    prefix["source_revision"] += 1
-    assert coverage_seed_request._source_fingerprint(Database(), "rep") != scoped
 
 
 def test_pgn_payload_diagnostic_counts_branches_moves_annotations_and_serializer_bytes():

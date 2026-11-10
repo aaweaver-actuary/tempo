@@ -1,7 +1,6 @@
 """Scoped settings/evidence/coverage composition and savepoint ownership checks."""
 
 import ast
-import json
 from pathlib import Path
 import sqlite3
 from types import SimpleNamespace
@@ -11,7 +10,7 @@ import pytest
 
 from app import repertoire_settings, review_commands
 from app.contracts.review_conflicts import ReviewConflict
-from app.services import postgres_coverage_candidates, study_mode
+from app.services import study_mode
 
 
 def test_six_control_compositions_delegate_all_sql_and_savepoints_to_database_owner():
@@ -80,57 +79,6 @@ def test_system_repertoire_settings_rejection_precedes_storage_read():
             NoRead(), next(iter(repertoire_settings.SYSTEM_REPERTOIRES))
         )
     assert error.value.status_code == 404
-
-
-@pytest.mark.parametrize(
-    "candidate_rows",
-    [
-        [],
-        [
-            {"move_uci": "e2e4", "explorer_probability": 0.6, "maia_probability": 0.4},
-            {"move_uci": "d2d4", "explorer_probability": None, "maia_probability": 0.5},
-            {"move_uci": "c2c4", "explorer_probability": 0.4, "maia_probability": None},
-            {
-                "move_uci": "g1f3",
-                "explorer_probability": None,
-                "maia_probability": None,
-            },
-        ],
-    ],
-)
-def test_coverage_math_stays_between_candidate_read_and_single_projection_write(
-    candidate_rows,
-):
-    operations = []
-
-    class Database:
-        def execute_native(self, statement, parameters=()):
-            operations.append((statement, parameters))
-            return SimpleNamespace(fetchall=lambda: candidate_rows)
-
-    postgres_coverage_candidates.recalculate_coverage_node(
-        Database(),
-        "node",
-        {"reply_denominator": 2, "cumulative_target": 0.9},
-        explorer_games=100,
-    )
-    assert operations[0][1] == ("node",)
-    if not candidate_rows:
-        assert len(operations) == 1
-        return
-    assert len(operations) == 2 and operations[1][1][1] == "node"
-    stored = json.loads(operations[1][1][0])
-    assert [row["move_uci"] for row in stored] == [
-        row["move_uci"] for row in candidate_rows
-    ]
-    assert [row["source_state"] for row in stored] == [
-        "blended",
-        "maia-only",
-        "explorer-only",
-        "unknown",
-    ]
-    assert sum(row["blended"] or 0 for row in stored) == pytest.approx(1)
-    assert stored[-1]["blended"] is None and stored[-1]["required"] == 0
 
 
 def test_handled_review_conflict_rolls_back_only_savepoint_and_keeps_outer_transaction(

@@ -455,10 +455,6 @@ class LearningReviewAdapter:
             request_queue_refresh_in_transaction(
                 self.database, day, preserve_through_entry_id=preserved
             )
-            if not storage.configured():
-                from .game_sync_coordinator import coordinator
-
-                coordinator.wake()
 
     def refresh_priority(self, repertoire_id, *, transactional_only=False):
         # Retired legacy advisory effect, including late original-review replay.
@@ -471,10 +467,6 @@ class LearningReviewAdapter:
         enqueue_task_in_transaction(
             self.database, "daily_queue", "current", {"queue_date": day}, priority=10
         )
-        if not storage.configured():
-            from .game_sync_coordinator import coordinator
-
-            self.deferred_effects.append(coordinator.wake)
 
     def finish_compatibility_effects(self):
         for effect in self.deferred_effects:

@@ -234,14 +234,9 @@ def test_repertoire_delete_keeps_shared_owner_retention_policy_and_refresh_after
         "shared",
     ) in parameters
     assert parameters[-2:] == [application.SYSTEM_REPERTOIRE_IDS, ("replacement-main",)]
-    assert events[-3:] == [
+    assert events[-2:] == [
         "day",
         ("queue", (database, "2026-10-20")),
-        (
-            "task",
-            (database, "repertoire_game_refresh", "all", {"after_game_id": ""}),
-            {"priority": 90},
-        ),
     ]
     assert result == dict(deleted=True, id="old")
 

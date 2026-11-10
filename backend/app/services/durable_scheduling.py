@@ -5,37 +5,13 @@ from tempo_legacy_database.adapters.scheduling import durable as storage
 from tempo_legacy_database.adapters.scheduling.durable import persist_scheduling_turn
 
 
-# Interleave the two larger pipelines instead of giving them consecutive bursts.
-SCHEDULING_TURNS = ("graph", "game", "graph", "game", "priority", "coverage", "sync")
+SCHEDULING_TURNS = ("graph", "sync")
 CLASS_KINDS = {
     "graph": ("opening_graph_rebuild", "integrity_scan"),
-    "game": (
-        "game_derivation_positions",
-        "game_derivation_compare",
-        "game_derivation_findings",
-        "game_derivation_misses",
-        "game_derivation_events",
-        "game_derivation_features",
-        "game_derivation_priorities",
-        "repertoire_game_refresh",
-        "game_analysis_followup",
-    ),
-    "priority": ("discovery_recommendation",),
-    "coverage": ("coverage_seed", "coverage_explorer", "opening_segmentation"),
-    "sync": (
-        "game_sync_record",
-        "game_sync_window",
-        "product_game_refresh",
-        *DEFENSIVE_TASK_KINDS,
-    ),
+    "sync": ("game_sync_record", "game_sync_window", "product_game_refresh"),
 }
-# User-dependent publications and controls get prompt, but finite, preference.
 CONTROL_KINDS = (
     "daily_queue",
-    "prefix_transition_application",
-    "canonical_prefix_preview",
-    "discovery_admission",
-    "game_analysis_publish",
 )
 
 

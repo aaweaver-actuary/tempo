@@ -1,5 +1,14 @@
-# learning
+# Study review and remediation libraries
 
-Status: planned independent artifact (M02). Existing implementation remains in the legacy assembly.
+The serving backend retains two small application libraries:
 
-Owner: Tempo / #264. No independent build, install, test or deployment is claimed.
+- [`application`](application/README.md) applies reviews through injected capabilities
+  within the caller's transaction.
+- [`remediation`](remediation/README.md) manages accepted remediation obligations and
+  their receipts through the existing database adapter.
+
+The independent Learning HTTP/CLI runtime, separate Learning database, transfer
+prototype and publication stack are retired. Current queue, grading, scheduling
+and opening-evidence helpers belong to
+[`backend/app/study/policy`](../../backend/app/study/policy/README.md).
+This directory no longer defines an independent service or deployment.

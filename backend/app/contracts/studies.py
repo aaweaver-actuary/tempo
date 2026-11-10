@@ -11,9 +11,9 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-# Executable exercise/answer identity belongs to the Learning grader. Keep the
+# Executable exercise/answer identity belongs to the Study grader. Keep the
 # legacy endpoint envelopes and their existing fields below this compatibility boundary.
-from tempo_learning_runtime import study_contracts as _exercise_contracts
+from . import study_exercises as _exercise_contracts
 
 ExerciseText = _exercise_contracts.ExerciseText
 MoveExercise = _exercise_contracts.MoveExercise

@@ -1,5 +1,6 @@
 """Compatibility and authoritative preparation seams in the regular suite."""
 
+from tempo_legacy_database.adapters import postgres_store
 from contextlib import asynccontextmanager, contextmanager
 import hashlib
 import json
@@ -58,15 +59,16 @@ def review_policy_settings(monkeypatch):
 def test_opening_checkpoint_http_dispatch_does_not_prepare_evidence_in_api(
     monkeypatch, checkpoint_http_envelope, background_header
 ):
+    monkeypatch.setattr(postgres_store, "configured", lambda: True)
     from fastapi.testclient import TestClient
     from app import main, command_dispatch
     from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
     from app.services.activity_gate import activity_gate
 
     monkeypatch.delenv("TEMPO_REDIS_URL", raising=False)
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+
     monkeypatch.setattr(
-        main.postgres_store,
+        postgres_store,
         "connection",
         lambda **options: pytest.fail(
             "Checkpoint HTTP dispatch performed an API-side evidence source read"
@@ -107,6 +109,7 @@ def test_opening_checkpoint_http_dispatch_does_not_prepare_evidence_in_api(
 
 @pytest.fixture
 def attempt_http_boundary(monkeypatch):
+    monkeypatch.setattr(postgres_store, "configured", lambda: True)
     from threading import Event
     from fastapi.testclient import TestClient
     from app import main
@@ -114,7 +117,7 @@ def attempt_http_boundary(monkeypatch):
 
     monkeypatch.delenv("TEMPO_REDIS_URL", raising=False)
     monkeypatch.delenv("TEMPO_FOREGROUND_ACTIVITY_URL", raising=False)
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+
     boundary = SimpleNamespace(
         reached=Event(),
         sql_started=Event(),
@@ -159,7 +162,7 @@ def attempt_http_boundary(monkeypatch):
         finally:
             boundary.active_connections -= 1
 
-    monkeypatch.setattr(main.postgres_store, "connection", connection)
+    monkeypatch.setattr(postgres_store, "connection", connection)
     boundary.client = TestClient(main.app)
     return boundary
 
@@ -237,59 +240,19 @@ def test_foreground_opening_attempt_http_read_does_not_self_deadlock(
     assert boundary.active_connections == 0
 
 
-@pytest.mark.parametrize("background_header", [True, False])
-def test_opening_evidence_http_unavailable_rejects_without_database_or_dispatch(
-    monkeypatch, checkpoint_http_envelope, background_header
-):
-    from fastapi.testclient import TestClient
-    from app import main, command_dispatch
-
-    monkeypatch.delenv("TEMPO_REDIS_URL", raising=False)
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: False)
-    monkeypatch.setattr(
-        main.postgres_store,
-        "connection",
-        lambda **options: pytest.fail("Unavailable evidence opened PostgreSQL"),
-    )
-    monkeypatch.setattr(
-        command_dispatch,
-        "dispatch_command",
-        lambda *args, **options: pytest.fail("Unavailable evidence reached the broker"),
-    )
-    client = TestClient(main.app)
-    headers = {"X-Tempo-Work-Class": "background"} if background_header else {}
-    rejected = client.post(
-        "/api/opening-evidence/checkpoints",
-        json=checkpoint_http_envelope,
-        headers=headers,
-    )
-    assert rejected.status_code == 409
-    assert rejected.json() == {
-        "detail": {
-            "code": "opening_evidence_unavailable",
-            "message": "Opening shadow evidence requires PostgreSQL",
-            "aggregate_review_allowed": True,
-        }
-    }
-    unavailable = client.get(
-        "/api/opening-evidence/attempts/http-attempt", headers=headers
-    )
-    assert unavailable.status_code == 503
-    assert unavailable.json() == {
-        "detail": "Opening shadow evidence requires PostgreSQL"
-    }
 
 
 def test_opening_checkpoint_http_schema_rejection_precedes_dispatch(
     monkeypatch, checkpoint_http_envelope
 ):
+    monkeypatch.setattr(postgres_store, "configured", lambda: True)
     from fastapi.testclient import TestClient
     from app import main, command_dispatch
 
     monkeypatch.delenv("TEMPO_REDIS_URL", raising=False)
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+
     monkeypatch.setattr(
-        main.postgres_store,
+        postgres_store,
         "connection",
         lambda **options: pytest.fail("Invalid schema opened PostgreSQL"),
     )
@@ -325,6 +288,10 @@ def test_opening_checkpoint_payload_identity_ignores_historical_preparation(
 def test_foreground_review_http_preparation_keeps_foreground_request_lease(
     monkeypatch, checkpoint_http_envelope, reconciling
 ):
+    from tempo_legacy_database.adapters.opening_evidence import storage
+
+    monkeypatch.setattr(storage, "postgres_is_configured", lambda: True)
+    monkeypatch.setattr(postgres_store, "configured", lambda: True)
     from fastapi.testclient import TestClient
     from app import main, command_dispatch
     from app.services.activity_gate import activity_gate
@@ -340,7 +307,7 @@ def test_foreground_review_http_preparation_keeps_foreground_request_lease(
         },
     }
     monkeypatch.delenv("TEMPO_REDIS_URL", raising=False)
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+
     monkeypatch.setattr(
         activity_gate,
         "wait_for_foreground",
@@ -374,7 +341,7 @@ def test_foreground_review_http_preparation_keeps_foreground_request_lease(
 
         yield SimpleNamespace(execute_native=source_row)
 
-    monkeypatch.setattr(main.postgres_store, "connection", source_read)
+    monkeypatch.setattr(postgres_store, "connection", source_read)
     submitted = []
 
     def dispatch(name, payload, **options):
@@ -432,6 +399,7 @@ def test_opening_attempt_http_closes_read_before_event_decoding(
 def test_opening_checkpoint_dispatches_as_background_without_changing_review_dispatch(
     monkeypatch,
 ):
+    monkeypatch.setattr(postgres_store, "configured", lambda: True)
     from app import main, command_dispatch, opening_evidence_api
     from app.contracts.transport.study import ReviewRequest
     from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
@@ -450,7 +418,7 @@ def test_opening_checkpoint_dispatches_as_background_without_changing_review_dis
         study_timezone="UTC",
     )
     dispatched = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+
     monkeypatch.setattr(
         command_dispatch,
         "dispatch_command",
@@ -480,6 +448,7 @@ def test_opening_checkpoint_dispatches_as_background_without_changing_review_dis
 def test_opening_checkpoint_request_is_background_without_a_client_work_class_header(
     monkeypatch,
 ):
+    monkeypatch.setattr(postgres_store, "configured", lambda: True)
     from fastapi.testclient import TestClient
     from app import main, command_dispatch, opening_evidence_api
 
@@ -508,7 +477,6 @@ def test_opening_checkpoint_request_is_background_without_a_client_work_class_he
         observed_scopes.append("foreground")
         yield
 
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(main.activity_gate, "async_foreground", foreground_scope)
     monkeypatch.setattr(
         main.activity_gate, "background_request", lambda: scope("background")
@@ -562,12 +530,13 @@ def test_shadow_manifest_fixture_matches_backend_producer_and_prescribed_revisio
 def test_legacy_review_dispatch_preserves_exact_payload_and_command_fingerprint(
     monkeypatch,
 ):
+    monkeypatch.setattr(postgres_store, "configured", lambda: True)
     from app import main, command_dispatch
     from app.contracts.transport.study import ReviewRequest
     from app.command_gateway import request_digest
 
     requests = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+
     monkeypatch.setattr(
         command_dispatch,
         "dispatch_command",
@@ -610,6 +579,9 @@ def test_legacy_review_dispatch_preserves_exact_payload_and_command_fingerprint(
 
 
 def test_shadow_chess_validation_closes_read_connection_before_traversal(monkeypatch):
+    from tempo_legacy_database.adapters.opening_evidence import storage
+
+    monkeypatch.setattr(storage, "postgres_is_configured", lambda: True)
     from app.services import postgres_opening_evidence as service
     from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
 
@@ -712,49 +684,6 @@ def test_queue_evidence_is_explicitly_negotiated_for_live_window_and_prepared_cl
     ]
 
 
-def test_sqlite_reports_unsupported_evidence_without_claiming_shadow_persistence(
-    monkeypatch,
-):
-    import pytest
-    from fastapi import HTTPException
-    from app import main
-    from app.contracts.transport.study import ReviewRequest
-
-    fixture = json.loads(
-        (
-            Path(__file__).resolve().parents[2]
-            / "tests/fixtures/opening-evidence-manifest.json"
-        ).read_text()
-    )
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: False)
-    monkeypatch.setattr(
-        main, "_apply_review", lambda *args, **kwargs: {"persisted": True}
-    )
-    assert main.review("shadow-card", ReviewRequest(outcome="correct")) == {
-        "persisted": True
-    }
-    request = ReviewRequest(
-        outcome="correct",
-        attempt_id="shadow-attempt",
-        queue_entry_id=101,
-        opening_evidence_completion={
-            "attempt_id": "shadow-attempt",
-            "manifest": fixture,
-            "origin_queue_entry_id": 101,
-            "queue_entry_id": 101,
-            "started_at": "2026-09-30T12:00:00Z",
-            "study_timezone": "UTC",
-            "terminal": {
-                "state": "complete",
-                "final_sequence": 0,
-                "ended_at": "2026-09-30T12:01:00Z",
-            },
-        },
-    )
-    with pytest.raises(HTTPException) as rejected:
-        main.review("shadow-card", request)
-    assert rejected.value.detail["code"] == "opening_evidence_unavailable"
-    assert rejected.value.detail["aggregate_review_allowed"] is True
 
 
 def test_review_completion_requires_a_resolved_actual_queue_binding(
@@ -1033,6 +962,7 @@ def test_review_requeue_context_correction_only_runs_for_fresh_review(
 def test_opening_checkpoint_receipt_read_uses_background_admission(
     monkeypatch, background
 ):
+    monkeypatch.setattr(postgres_store, "configured", lambda: True)
     from fastapi.testclient import TestClient
     from app import main
 
@@ -1049,7 +979,6 @@ def test_opening_checkpoint_receipt_read_uses_background_admission(
         observed_scopes.append("foreground")
         yield
 
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(main.activity_gate, "async_foreground", foreground_scope)
     monkeypatch.setattr(
         main.activity_gate, "background_request", lambda: scope("background")

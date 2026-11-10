@@ -7,7 +7,7 @@ import pytest
 
 from app.contracts import studies as legacy
 from app.services.study_portable import validate_bundle
-from tempo_learning_runtime import study_contracts as owned
+from app.contracts import study_exercises as owned
 
 
 EXECUTABLE_CONTRACTS = (

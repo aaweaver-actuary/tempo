@@ -5,11 +5,9 @@ import json
 from pathlib import Path
 import sqlite3
 
-from fastapi import HTTPException
 import pytest
 
 from app.annotation_commands import save_position_annotation
-from app.endgame_commands import create_endgame_attempt
 from app.teaching_commands import record_teaching_state
 
 
@@ -59,58 +57,6 @@ def test_remaining_command_handlers_delegate_all_sql_execution_to_database_owner
             and node.func.attr in {"execute", "execute_native", "executemany", "cursor"}
         ]
         assert not calls, f"{path.name} still performs SQL/cursor operations"
-
-
-def test_endgame_attempt_insert_is_owned_by_callers_transaction(command_database):
-    payload = {
-        "template_id": "enabled",
-        "fen": "saved-fen",
-        "target": "win",
-        "moves": ["a1a2"],
-    }
-    result = create_endgame_attempt(command_database, payload)
-    row = command_database.connection.execute(
-        "SELECT * FROM endgame_attempts"
-    ).fetchone()
-    assert (row["id"], row["template_id"], row["start_fen"], row["target"]) == (
-        result["id"],
-        "enabled",
-        "saved-fen",
-        "win",
-    )
-    assert result["moves"] == payload["moves"]
-    assert command_database.connection.in_transaction
-    command_database.connection.rollback()
-    assert (
-        command_database.connection.execute(
-            "SELECT COUNT(*) FROM endgame_attempts"
-        ).fetchone()[0]
-        == 0
-    )
-
-
-@pytest.mark.parametrize("template_id", ["disabled", "absent"])
-def test_endgame_attempt_missing_or_disabled_template_has_no_write(
-    command_database, template_id
-):
-    with pytest.raises(HTTPException) as error:
-        create_endgame_attempt(
-            command_database,
-            {
-                "template_id": template_id,
-                "fen": "saved-fen",
-                "target": "win",
-                "moves": [],
-            },
-        )
-    assert error.value.status_code == 404
-    assert not command_database.connection.in_transaction
-    assert (
-        command_database.connection.execute(
-            "SELECT COUNT(*) FROM endgame_attempts"
-        ).fetchone()[0]
-        == 0
-    )
 
 
 def test_teaching_replay_keeps_original_timestamp_and_caller_rollback(command_database):

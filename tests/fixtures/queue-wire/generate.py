@@ -2,7 +2,7 @@
 
 The AST extraction avoids importing the server composition root and starting its
 providers. All storage reads and issuance are replaced with disposable inputs.
-Run from the repository root with backend dependencies and Learning runtime on PYTHONPATH.
+Run from the repository root with backend dependencies on PYTHONPATH.
 """
 import argparse
 import ast
@@ -15,10 +15,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
-runtime = types.ModuleType("tempo_learning_runtime")
-runtime.__path__ = [str(Path(__file__).resolve().parents[3] / "services/learning/runtime/src/tempo_learning_runtime")]
-sys.modules[runtime.__name__] = runtime
-from tempo_learning_runtime.opening_decision_evidence import decision_manifest
+from starlette.responses import JSONResponse
+
+from app.study.policy.opening_decision_evidence import decision_manifest
 from app.study.queue_serving import (assemble_queue_cards, add_encounter_evidence,
                                      finalize_queue_cards, queue_payload, exercise_snapshot)
 
@@ -69,6 +68,7 @@ rows = [opening, row('tactic-1', 22, 'tactic'), row('exercise-card', 23, 'study_
 state = SimpleNamespace(rows=rows, available=True)
 storage = SimpleNamespace(
     evidence_timezone=lambda db: ['UTC'], queue_projection=lambda db, day: None,
+    position_pending_modes=lambda db, cards: {},
     queue_diagnostics=lambda db, day: [], queue_rows=lambda db, day, limit, **kw: state.rows,
     encounter_badges=lambda db, cards, cutoff: {} if state.available else (_ for _ in ()).throw(RuntimeError('unavailable')),
     exercise_revision=lambda db, exercise: {'current_revision': 3, 'specification_json': json.dumps({'type':'square_set', 'prompt':'Select e4', 'hint':'', 'explanation':'', 'required':['e4'], 'optional':[], 'candidate_region':None, 'criterion':'e4'})},
@@ -84,8 +84,9 @@ sys.modules[manifest_module.__name__] = manifest_module
 issued_heads = []
 def capture_head(day, card):
     issued_heads.append((day, card['queue_entry_id'], card['id'], card['revision']))
+    return {'issued': True}
 
-ns = dict(__name__='app.main', json=json, logging=logging, datetime=FixtureClock, timedelta=timedelta, timezone=timezone,
+ns = dict(__name__='app.main', JSONResponse=JSONResponse, json=json, logging=logging, datetime=FixtureClock, timedelta=timedelta, timezone=timezone,
           read_connection=lambda: nullcontext(None), queue_projection_storage=storage,
           postgres_store=SimpleNamespace(configured=lambda: True), MISS_REASON='miss',
           _issue_returned_queue_head=capture_head, assemble_queue_cards=assemble_queue_cards,

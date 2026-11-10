@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
+
 from contextlib import contextmanager
 import json
 import threading
@@ -253,11 +255,7 @@ def test_game_sync_terminal_task_failure_marks_job_failed(monkeypatch):
     from app.services import durable_tasks
 
     statements = []
-    monkeypatch.setattr(
-        durable_tasks,
-        "submit_background_write",
-        lambda operation, *, label: operation(Database()),
-    )
+    monkeypatch.setattr(durable_tasks, "connection", lambda **_options: nullcontext(Database()))
     monkeypatch.setattr(durable_tasks, "_record_event", lambda *args, kind=None: None)
 
     class Database:

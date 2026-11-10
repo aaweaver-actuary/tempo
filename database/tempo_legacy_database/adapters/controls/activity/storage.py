@@ -7,16 +7,13 @@ from ...defensive_analysis import task_admission_sql
 SOURCES = {
     "durable": ("background_tasks", "id"),
     "sync": ("game_sync_jobs", "id"),
-    "derivation": ("game_derivation_jobs", "game_id"),
     "integrity": ("repertoire_integrity_jobs", "repertoire_id"),
-    "coverage": ("repertoire_coverage_runs", "id"),
 }
 
 
 def prepare_progress_read(source):
     generation_columns = {
-        "durable": ("generation",), "derivation": ("derivation_version",),
-        "integrity": ("run_id",), "coverage": ("id",),
+        "durable": ("generation",), "integrity": ("run_id",),
     }
     table, id_column = SOURCES[source]
     columns = generation_columns.get(source)
@@ -79,26 +76,9 @@ def upsert_progress(database, values):
     )
 
 
-def unfinished_coverage(database, values):
-    return database.execute(
-        """SELECT 1 FROM repertoire_coverage_nodes WHERE run_id=?
-               AND (explorer_status!='complete' OR maia_status!='complete') LIMIT 1""",
-        values,
-    ).fetchone()
-
-
 def ensure_control(database, values):
     return database.execute(
         """INSERT INTO background_activity(source,work_id,updated_at)
            VALUES(?,?,?) ON CONFLICT(source,work_id) DO NOTHING""",
-        values,
-    )
-
-
-def release_maia_lease(database, values):
-    return database.execute(
-        """UPDATE repertoire_coverage_nodes SET maia_status='queued',
-               lease_id=NULL,lease_expires_at=NULL,updated_at=?
-               WHERE run_id=? AND maia_status='leased'""",
         values,
     )

@@ -2,7 +2,6 @@
 
 import ast
 from contextlib import contextmanager
-from datetime import date
 import importlib.util
 import json
 import os
@@ -13,13 +12,7 @@ import sys
 import pytest
 
 from tempo_legacy_database import connections as database
-from app.services import (
-    postgres_queue_refresh,
-    queue_application,
-    queue_ordering,
-    study_mode,
-)
-from test_queue_attempt_issuance import queued_attempts
+from app.services import postgres_queue_refresh, queue_ordering, study_mode
 
 APP_ROOT = Path(__file__).resolve().parents[1] / "app"
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -206,118 +199,6 @@ def test_queue_admission_application_has_no_sql_or_driver_dependencies():
                         "DELETE FROM ",
                     )
                 )
-
-
-@pytest.mark.parametrize("unmixed_append", [False, True])
-def test_burial_carries_only_a_verified_pre_mutation_presentation_receipt(
-    queued_attempts, unmixed_append
-):
-    from fastapi.testclient import TestClient
-    from app import main
-
-    day = date.today().isoformat()
-    with database.connection() as connection:
-        queue_application.randomize_daily_queue(connection, day)
-        saved = dict(
-            connection.execute(
-                "SELECT seed,membership_hash FROM daily_queue_days"
-            ).fetchone()
-        )
-    client = TestClient(main.app)
-    head = client.get("/api/queue/today").json()["cards"][0]
-    with database.connection() as connection:
-        if unmixed_append:
-            connection.execute(
-                "INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type) SELECT 'unmixed-append',repertoire_id,kind,start_fen,moves_json,state,due_date,content_type FROM cards LIMIT 1"
-            )
-            connection.execute(
-                "INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,'unmixed-append',99)",
-                (day,),
-            )
-        before = [
-            tuple(row)
-            for row in connection.execute(
-                "SELECT id,position FROM daily_queue WHERE status='queued' AND id!=? ORDER BY position,id",
-                (head["queue_entry_id"],),
-            )
-        ]
-    response = client.post(
-        f"/api/queue/entries/{head['queue_entry_id']}/bury",
-        json={"card_id": head["id"], "expected_revision": head["revision"]},
-    )
-    assert response.status_code == 200, response.text
-    with database.connection() as connection:
-        current = connection.execute(
-            "SELECT seed,membership_hash FROM daily_queue_days"
-        ).fetchone()
-        assert current["seed"] == saved["seed"]
-        assert current["membership_hash"].startswith("unmixed:") is unmixed_append
-        queue_application.randomize_daily_queue(connection, day)
-        assert (
-            connection.execute("SELECT membership_hash FROM daily_queue_days")
-            .fetchone()[0]
-            .startswith(queue_ordering.PRESENTATION_VERSION + ":")
-        )
-        if not unmixed_append:
-            assert [
-                tuple(row)
-                for row in connection.execute(
-                    "SELECT id,position FROM daily_queue WHERE status='queued' ORDER BY position,id"
-                )
-            ] == before
-
-
-@pytest.mark.parametrize(
-    "after,expected_cards",
-    [
-        (None, ["later-b", "active-a", "active-a"]),
-        (0, ["active-a", "later-b", "active-a"]),
-        (99, ["later-b", "active-a", "active-a"]),
-    ],
-)
-def test_queue_application_requeue_preserves_origin_cycle_and_issuance(
-    queued_attempts, after, expected_cards
-):
-    day = date.today().isoformat()
-    with database.connection() as owned_database:
-        owned_database.execute(
-            "DELETE FROM daily_queue WHERE id=?", (queued_attempts["active-a"],)
-        )
-        # Historical origin remains the cycle authority after projection deletion.
-        first_repeat = queue_application.requeue(
-            owned_database, day, "active-a", None, "failed"
-        )
-        repeated = queue_application.requeue(
-            owned_database, day, "active-a", after, "fresh"
-        )
-        row = owned_database.execute(
-            "SELECT cycle,admission_kind,attempt_state FROM daily_queue WHERE id=?",
-            (repeated,),
-        ).fetchone()
-        assert tuple(row) == (2, "review", "fresh")
-        assert (
-            owned_database.execute(
-                "SELECT issued_as_head FROM queue_attempt_origins WHERE queue_entry_id=?",
-                (repeated,),
-            ).fetchone()[0]
-            == 0
-        )
-        # Connection remains owned by the caller and changes roll back together.
-        owned_database.execute("SAVEPOINT rollback_repeat")
-        rolled_back = queue_application.requeue(
-            owned_database, day, "active-a", None, "fresh"
-        )
-        owned_database.execute("ROLLBACK TO SAVEPOINT rollback_repeat")
-        assert not owned_database.execute(
-            "SELECT 1 FROM daily_queue WHERE id=?", (rolled_back,)
-        ).fetchone()
-        assert first_repeat != repeated
-        assert [
-            row[0]
-            for row in owned_database.execute(
-                "SELECT card_id FROM daily_queue ORDER BY position,id"
-            )
-        ] == expected_cards
 
 
 @pytest.mark.parametrize(

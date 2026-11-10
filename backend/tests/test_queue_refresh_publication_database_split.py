@@ -25,7 +25,7 @@ def test_queue_refresh_composition_has_no_direct_database_driver_calls():
 
 
 def test_projection_publication_rolls_back_lost_receipt_and_commits_once(monkeypatch):
-    from app.services import prefix_transition_application, study_mode
+    from app.services import study_mode
 
     with sqlite3.connect(":memory:") as database:
         database.row_factory = sqlite3.Row
@@ -38,7 +38,6 @@ def test_projection_publication_rolls_back_lost_receipt_and_commits_once(monkeyp
                 published_refresh_epoch INTEGER NOT NULL DEFAULT 0);
             INSERT INTO queue_projections VALUES('2026-10-21','refreshing',5,1,NULL,0,'before',3,2);
         """)
-        callbacks = []
         lease = {"completed": False}
 
         class BorrowedDatabase:
@@ -68,11 +67,6 @@ def test_projection_publication_rolls_back_lost_receipt_and_commits_once(monkeyp
         monkeypatch.setattr(
             refresh, "complete_task_slice_in_transaction", lambda *_: lease["completed"]
         )
-        monkeypatch.setattr(
-            prefix_transition_application,
-            "enqueue_completion",
-            lambda *args: callbacks.append(args[1:]),
-        )
         task = {
             "id": "task",
             "generation": 7,
@@ -89,7 +83,6 @@ def test_projection_publication_rolls_back_lost_receipt_and_commits_once(monkeyp
                 "SELECT state,generation,refresh_pending,blocked_count,updated_at FROM queue_projections"
             ).fetchone()
         ) == ("refreshing", 5, 1, 0, "before")
-        assert callbacks == []
         assert tuple(
             database.execute(
                 "SELECT requested_refresh_epoch,published_refresh_epoch FROM queue_projections"
@@ -102,7 +95,6 @@ def test_projection_publication_rolls_back_lost_receipt_and_commits_once(monkeyp
                 "SELECT state,generation,refresh_pending,blocked_count FROM queue_projections"
             ).fetchone()
         ) == ("ready", 6, 0, 3)
-        assert callbacks == [("task", 7, "2026-10-21")]
         assert tuple(
             database.execute(
                 "SELECT requested_refresh_epoch,published_refresh_epoch FROM queue_projections"

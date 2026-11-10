@@ -1,6 +1,6 @@
-"""Compatibility exports; executable semantics are Learning-owned."""
+"""Retained backend exports for Study policy."""
 
-from tempo_learning_runtime import scheduling_review_contracts as _owned
+from app.study.policy import scheduling_review_contracts as _owned
 
 dataclass = _owned.dataclass
 datetime = _owned.datetime

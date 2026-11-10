@@ -282,7 +282,7 @@ assert not ({'app.services.queue_application','app.services.durable_tasks',
 
 def test_queue_placement_compatibility_alias_is_the_study_owner():
     from app.study.queue_placement import ensure_card_queued_after
-    from tempo_learning_runtime import queue_ordering
+    from app.study.policy import queue_ordering
 
     assert application.ensure_card_queued_after is ensure_card_queued_after
     assert queue_ordering._priority_queue_order is queue_ordering.priority_queue_order

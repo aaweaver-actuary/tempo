@@ -1,5 +1,6 @@
 """Failed command receipts preserve HTTP semantics across worker timing."""
 
+from tempo_legacy_database.adapters import postgres_store
 from contextlib import nullcontext
 import json
 from types import SimpleNamespace
@@ -335,6 +336,7 @@ def test_prepared_command_database_failure_remains_retryable_without_failed_rece
 def test_opening_checkpoint_http_semantic_rejection_preserves_terminal_receipt(
     receipt_transport, monkeypatch, deferred
 ):
+    monkeypatch.setattr(postgres_store, "configured", lambda: True)
     from pathlib import Path
     from app import main
 
@@ -369,9 +371,9 @@ def test_opening_checkpoint_http_semantic_rejection_preserves_terminal_receipt(
 
     monkeypatch.delenv("TEMPO_REDIS_URL", raising=False)
     monkeypatch.delenv("TEMPO_FOREGROUND_ACTIVITY_URL", raising=False)
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+
     monkeypatch.setattr(
-        main.postgres_store,
+        postgres_store,
         "connection",
         lambda **options: nullcontext(
             SimpleNamespace(raw=transport, execute_native=source_read)

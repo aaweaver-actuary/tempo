@@ -25,12 +25,12 @@ from .durable_tasks import (
     enqueue_task_in_transaction,
     lock_current_slice,
 )
-from .game_sync import USER_AGENT
 from .postgres_game_sync_completion import finish_game_sync_if_complete
 from app.games.providers.lichess import fetch_lichess_games_window
 from .redis_admission_gate import background_lease
 
 
+USER_AGENT = "Tempo local chess trainer/1.0 (game sync)"
 _MAX_LICHESS_GAMES_PER_WINDOW = 100
 _MAX_CHESSCOM_GAMES_PER_MONTH = 1000
 

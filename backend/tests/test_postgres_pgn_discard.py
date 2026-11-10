@@ -1,5 +1,6 @@
 """Portable command regressions; real locks/recreation are proved by Docker durability."""
 
+from tempo_legacy_database.adapters import postgres_store
 from contextlib import nullcontext
 import json
 import sqlite3
@@ -140,7 +141,7 @@ def test_pgn_discard_preserves_completed_import_and_rejects_other_command_types(
 
 def test_pgn_discard_route_uses_stable_foreground_command_identity(monkeypatch):
     dispatched = []
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+
     monkeypatch.setattr(main, "read_operation", lambda _identity: {"state": "unknown"})
     monkeypatch.setattr(
         command_dispatch,
@@ -160,13 +161,12 @@ def test_pgn_discard_route_uses_stable_foreground_command_identity(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "postgres_configured, operation_id, status_code",
-    [(False, "old-import", 404), (True, "x" * 129, 422)],
+    "operation_id, status_code",
+    [("x" * 129, 422)],
 )
 def test_pgn_discard_invalid_route_requests_do_not_dispatch(
-    monkeypatch, postgres_configured, operation_id, status_code
+    monkeypatch, operation_id, status_code
 ):
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: postgres_configured)
     monkeypatch.setattr(
         command_dispatch,
         "dispatch_command",

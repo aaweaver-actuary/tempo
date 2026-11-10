@@ -28,8 +28,7 @@ from app.services import durable_tasks
 from app.services.activity_gate import activity_gate, BackgroundAdmissionDeferred
 
 
-KINDS = ('opening_graph_rebuild', 'game_derivation_positions',
-         'discovery_recommendation', 'opening_segmentation', 'game_sync_record')
+KINDS = ('canonical_prefix_preview', 'opening_graph_rebuild', 'game_sync_record')
 
 
 def proof_scheduling_turns(parent_database_url):
@@ -58,19 +57,19 @@ def proof_scheduling_turns(parent_database_url):
                     durable_tasks.enqueue_task(kind, kind, {'cursor': 0},
                         priority=40 if kind == KINDS[0] else 130, foreground=False)
                 with psycopg.connect(database_url) as database:
-                    # Representative imported-game stage backlog with newer,
+                    # Representative provider-sync backlog with newer,
                     # numerically higher-priority requests in the same class.
-                    for kind, count in (('game_derivation_positions', 2143), ('game_derivation_compare', 2014)):
+                    for kind, count in (('game_sync_window', 2143), ('product_game_refresh', 2014)):
                         database.execute("INSERT INTO background_tasks(id,kind,deduplication_key,priority,"
                             "state,phase,payload_json,next_attempt_at,created_at,updated_at) "
                             "SELECT %s||number,%s,%s||number,1,'queued','indexed','{\"cursor\":0}',"
                             "'2026-10-09T00:00:00+00:00','2026-10-09T00:01:00+00:00',"
                             "'2026-10-09T00:01:00+00:00' FROM generate_series(1,%s) number",
                             (kind, kind, kind, count))
-                allowed = (*KINDS, 'game_derivation_compare')
+                allowed = (*KINDS, 'game_sync_window', 'product_game_refresh')
                 durations = []
                 observed = []
-                for index in range(14):
+                for index in range(12):
                     if index == 1:
                         with activity_gate.foreground():
                             try:
@@ -96,15 +95,15 @@ def proof_scheduling_turns(parent_database_url):
                             next_payload={'cursor': claimed['payload']['cursor']+1})
                     with background_connection() as database:
                         assert not durable_tasks.complete_task_slice_in_transaction(database, claimed)
-                expected = [KINDS[index] for index in (0, 1, 0, 1, 2, 3, 4)] * 2
+                expected = [KINDS[index] for index in (0, 0, 1, 0, 0, 2)] * 2
                 assert observed == expected, observed
                 with psycopg.connect(database_url) as database:
                     rows = database.execute("SELECT kind,payload_json FROM background_tasks WHERE deduplication_key=kind").fetchall()
                     cursors = {kind: json.loads(payload)['cursor'] for kind, payload in rows}
-                    assert cursors == dict(zip(KINDS, (4, 4, 2, 2, 2))), cursors
+                    assert cursors == dict(zip(KINDS, (8, 2, 2))), cursors
                 assert max(durations) < 0.25, durations
                 print('PASS test_postgres_persisted_scheduling_turns_advance_games_with_foreground_contention_restart_and_replay; '
-                      f'4157 queued game stages; max claim including pool reopen {max(durations):.4f}s')
+                      f'4157 queued provider-sync tasks; max claim including pool reopen {max(durations):.4f}s')
     finally:
         postgres_store.close_pools()
         if created:

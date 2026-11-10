@@ -57,7 +57,6 @@ def port(monkeypatch):
 def test_storage_import_does_not_load_application_services():
     code = (
         "import sys; import tempo_legacy_database.connections; "
-        "import tempo_legacy_database.adapters.database_executor; "
         "assert 'app.services.activity_gate' not in sys.modules; "
         "assert 'app.services.background_runtime' not in sys.modules"
     )
@@ -66,7 +65,6 @@ def test_storage_import_does_not_load_application_services():
 
 def test_bound_gate_denial_precedes_connection_open(monkeypatch, port):
     gate, events, _ = port
-    monkeypatch.setattr(connections.postgres_store, "configured", lambda: True)
 
     def deny(background):
         events.append(("admit", background))
@@ -84,7 +82,6 @@ def test_bound_gate_denial_precedes_connection_open(monkeypatch, port):
 
 def test_background_exception_unwinds_same_measurement_context(monkeypatch, port):
     _, events, context = port
-    monkeypatch.setattr(connections.postgres_store, "configured", lambda: True)
 
     @contextmanager
     def opened(**kwargs):
@@ -134,7 +131,7 @@ def test_missing_binding_fails_closed(monkeypatch):
         infrastructure.database_admission()
 
 
-def test_database_first_composition_reuses_real_gate_and_stage(tmp_path):
+def test_database_first_composition_reuses_real_gate_and_stage():
     code = """
 from pathlib import Path
 import sys
@@ -147,17 +144,9 @@ bind_database_infrastructure()
 bind_database_infrastructure()
 assert infrastructure.database_admission() is activity_gate
 assert infrastructure._measurement is database_stage
-connections.DB_PATH = Path(sys.argv[1])
-with connections.connection() as db:
-    db.execute('CREATE TABLE proof (value INTEGER)')
-with activity_gate.background_job('proof', 'one'):
-    with connections.background_connection() as db:
-        db.execute('INSERT INTO proof VALUES (1)')
-with connections.read_connection() as db:
-    assert db.execute('SELECT value FROM proof').fetchone()[0] == 1
 """
     subprocess.run(
-        [sys.executable, "-c", code, str(tmp_path / "proof.sqlite")],
+        [sys.executable, "-c", code],
         check=True,
         env=os.environ.copy(),
     )
@@ -175,7 +164,7 @@ def test_composition_helper_import_is_inert():
 
 @pytest.mark.parametrize("entrypoint", ["app.main", "app.tasks"])
 def test_application_entrypoint_binds_database_after_storage_first(
-    entrypoint, tmp_path
+    entrypoint
 ):
     code = """
 import importlib
@@ -188,12 +177,9 @@ from app.services.activity_gate import activity_gate
 from app.services.background_runtime import database_stage
 assert infrastructure.database_admission() is activity_gate
 assert infrastructure._measurement is database_stage
-connections.DB_PATH = Path(sys.argv[2])
-with connections.connection() as database:
-    database.execute('CREATE TABLE proof (value INTEGER)')
 """
     subprocess.run(
-        [sys.executable, "-c", code, entrypoint, str(tmp_path / "entry.sqlite")],
+        [sys.executable, "-c", code, entrypoint],
         check=True,
         env=os.environ.copy(),
     )
@@ -221,3 +207,77 @@ else:
     raise AssertionError('fixture did not reach controlled connection')
 """
     subprocess.run([sys.executable, "-c", code], check=True, env=os.environ.copy())
+
+
+@pytest.mark.parametrize("version_matches", [True, False])
+def test_startup_validates_existing_postgres_schema_through_reader(
+    monkeypatch, version_matches
+):
+    from types import SimpleNamespace
+
+    events = []
+    version = connections.POSTGRES_SCHEMA_VERSION if version_matches else 0
+
+    class Reader:
+        def execute(self, statement):
+            events.append(statement)
+            return SimpleNamespace(fetchone=lambda: (version,))
+
+    @contextmanager
+    def opened(**options):
+        events.append(options)
+        try:
+            yield Reader()
+        finally:
+            events.append("closed")
+
+    monkeypatch.setattr(connections.postgres_store, "connection", opened)
+    if version_matches:
+        connections.initialize()
+    else:
+        with pytest.raises(RuntimeError, match="Unsupported PostgreSQL schema version"):
+            connections.initialize()
+    assert events == [
+        {"read_only": True},
+        "SELECT MAX(version) FROM tempo_schema_migrations",
+        "closed",
+    ]
+
+
+def test_missing_postgres_configuration_cannot_fall_back_to_local_storage(
+    monkeypatch, tmp_path
+):
+    import sqlite3
+
+    database_file = tmp_path / "removed-backend.sqlite"
+    monkeypatch.setenv("TEMPO_DB_PATH", str(database_file))
+    monkeypatch.delenv("TEMPO_DATABASE_READ_URL", raising=False)
+    monkeypatch.delenv("TEMPO_DATABASE_WRITE_URL", raising=False)
+    monkeypatch.setattr(sqlite3, "connect", lambda *_args, **_kwargs: pytest.fail("SQLite opened"))
+    with pytest.raises(RuntimeError, match="TEMPO_DATABASE_READ_URL is missing"):
+        connections.initialize()
+    assert not database_file.exists()
+
+
+def test_postgres_context_profiles_preserve_publication_and_authoritative_reads(
+    monkeypatch, port
+):
+    opened_profiles = []
+
+    @contextmanager
+    def opened(**options):
+        opened_profiles.append(options)
+        yield object()
+
+    monkeypatch.setattr(connections.postgres_store, "connection", opened)
+    with connections.connection(background=True, queue_refresh_publication=True):
+        pass
+    with connections.background_read_connection(authoritative=True, pool_timeout_seconds=0.2):
+        pass
+    with connections.read_connection(repertoire_snapshot=True):
+        pass
+    assert opened_profiles == [
+        {"read_only": False, "background": True, "queue_refresh_publication": True},
+        {"read_only": True, "background": True, "authoritative": True, "pool_timeout_seconds": 0.2},
+        {"read_only": True, "repertoire_snapshot": True},
+    ]

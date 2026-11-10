@@ -109,7 +109,7 @@ test("lifecycle-sensitive changes require deployment lifecycle verification", ()
 test("unclassified root backend application modules require deployment lifecycle", () => {
   for (const path of ["backend/app/new_runtime.py", "backend/app/worker_bootstrap.py", "backend/app/storage_adapter.py",
     "backend/app/new_domain_commands.py", "backend/app/command_gateway.py", "backend/app/command_dispatch.py",
-    "backend/app/background_worker.py", "backend/app/tasks.py"]) {
+    "backend/app/tasks.py"]) {
     for (const paths of [[path], [path, "tests/REGRESSIONS.md", "backend/tests/test_new_runtime.py"]]) {
       const planned = plan({ paths });
       assert.equal(planned.jobs.lifecycle.applicable, true, paths.join(", "));
@@ -154,8 +154,8 @@ test("reviewed ordinary and sensitive service classifications survive ordinary c
   for (const [servicePath, lifecycleRequired] of [
     ["backend/app/services/study_grading.py", false],
     ["backend/app/chess/opening_segments.py", false],
-    ["backend/app/services/repertoire_statistics.py", false],
-    ["database/tempo_legacy_database/adapters/database_executor.py", true],
+    ["backend/app/services/opening_decision_evidence.py", false],
+    ["database/tempo_legacy_database/connections.py", true],
     ["backend/app/services/background_runtime.py", true],
   ]) {
     assert(existsSync(servicePath), servicePath);
@@ -170,7 +170,7 @@ test("reviewed ordinary and sensitive service classifications survive ordinary c
 
 test("reviewed backend domain changes with ordinary regressions omit deployment lifecycle", () => {
   for (const path of ["backend/app/services/study_grading.py", "backend/app/study_commands.py",
-    "backend/app/opening_segmentation_api.py", "backend/app/contracts/studies.py", "backend/app/models.py"]) {
+    "backend/app/opening_evidence_api.py", "backend/app/contracts/studies.py", "backend/app/models.py"]) {
     for (const paths of [[path], [path, "tests/REGRESSIONS.md", "backend/tests/test_study_grading.py",
       "tests/unit/study-regressions.test.tsx", "tests/browser/studies.spec.ts"]]) {
       const planned = plan({ paths });
@@ -183,10 +183,10 @@ test("reviewed backend domain changes with ordinary regressions omit deployment 
 test("ordinary product changes omit deployment lifecycle independently of browser breadth", () => {
   const ordinaryChangeGroups = [
     ...["app/components/chessboard.tsx", "backend/app/services/study_grading.py",
-      "app/domain/opening-segmentation.ts", "tests/browser/studies.spec.ts", "docs/testing.md",
+      "app/lib/opening-evidence-recovery-policy.ts", "tests/browser/studies.spec.ts", "docs/testing.md",
       ...inventory.lifecycle.ordinaryPaths].map(path => [path]),
-    ["app/domain/opening-segmentation.ts", "tests/unit/opening-segmentation-regressions.test.tsx",
-      "backend/tests/test_opening_segmentation.py", "tests/REGRESSIONS.md", "docs/testing.md"],
+    ["app/lib/opening-evidence-recovery-policy.ts", "tests/unit/opening-evidence-recovery-policy.test.tsx",
+      "tests/REGRESSIONS.md", "docs/testing.md"],
   ];
   for (const paths of ordinaryChangeGroups) {
     const planned = plan({ paths });
@@ -418,7 +418,7 @@ test("leaf source selection includes complete families and rendering selects pin
   const planned = plan({ paths: ["app/views/study_exercise_runner.tsx"] });
   assert.equal(planned.scope, "targeted"); assert(planned.jobs.visual.required);
   assert(planned.collection.filter(item => inventory.families.training.includes(item.file)).every(item => item.selected));
-  assert.equal(plan({ paths: ["app/domain/opening-segmentation.ts"] }).jobs.visual.applicable, false);
+  assert.equal(plan({ paths: ["app/lib/opening-evidence-recovery-policy.ts"] }).jobs.visual.applicable, false);
 });
 
 test("split complete coverage preserves every PostgreSQL product scenario", () => {
@@ -465,7 +465,7 @@ test("failed-layer rerun leaves successful unrelated jobs intact and diagnostic 
 
 test("actual browser collection grep selects exactly the planned tests", () => {
   const realCases = currentBrowserCases();
-  for (const paths of [["docs/testing.md"], ["app/domain/opening-segmentation.ts", "tests/REGRESSIONS.md"], ["app/domain/study-exercises.ts"]]) {
+  for (const paths of [["docs/testing.md"], ["app/lib/opening-evidence-recovery-policy.ts", "tests/REGRESSIONS.md"], ["app/domain/study-exercises.ts"]]) {
     const planned = plan({ paths, cases: realCases });
     assert.deepEqual(collectBrowserCases(planned.browserGrep).map(item => item.id).sort(), selectedIds(planned));
   }
@@ -604,12 +604,12 @@ test("ordinary prose and standalone core tests select only four global browser s
 
 test("mapped leaf changes retain critical plus their family with regression additions", () => {
   const realCases = currentBrowserCases();
-  const planned = plan({ cases: realCases, paths: ["app/domain/opening-segmentation.ts",
-    "tests/unit/opening-segmentation-regressions.test.tsx", "backend/tests/test_opening_segmentation.py", "tests/REGRESSIONS.md"] });
+  const planned = plan({ cases: realCases, paths: ["app/lib/opening-evidence-recovery-policy.ts",
+    "tests/unit/opening-evidence-recovery-policy.test.tsx", "tests/REGRESSIONS.md"] });
   assert.equal(planned.scope, "targeted");
-  assert.deepEqual(planned.families, ["repertoire"]);
+  assert.deepEqual(planned.families, ["training"]);
   assert.equal(planned.jobs.visual.applicable, false);
-  const expectedIds = planned.collection.filter(item => item.critical || inventory.families.repertoire.includes(item.file)).map(item => item.id).sort();
+  const expectedIds = planned.collection.filter(item => item.critical || inventory.families.training.includes(item.file)).map(item => item.id).sort();
   assert.deepEqual(selectedIds(planned), expectedIds);
 });
 
@@ -630,7 +630,7 @@ test("shared subsystem sources select complete consumer families without unrelat
     const requiredSpecs = new Set(expectedFamilies.flatMap(family => inventory.families[family]));
     assert.deepEqual(selectedIds(planned), planned.collection.filter(item => item.critical || requiredSpecs.has(item.file)).map(item => item.id).sort(), sourcePath);
   }
-  for (const [sourcePath, expectedFamilies] of [["app/views/studies_view.tsx", ["studies", "training"]]]) {
+  for (const [sourcePath, expectedFamilies] of [["app/views/study_exercise_runner.tsx", ["studies", "training"]]]) {
     const planned = plan({ paths: [sourcePath] });
     assert.deepEqual(planned.families, expectedFamilies);
     assert(planned.jobs.visual.required, "Narrow browser families must retain pinned rendering checks");
@@ -645,7 +645,7 @@ test("cross-cutting browser infrastructure and uncertain inputs require the comp
     "scripts/ci-verification-plan.mjs", "database/tests/test-postgres-docker.mjs", "tests/runner/ci-reliability.test.mjs",
     "package.json", "package-lock.json", ".github/workflows/pages.yml", "unclassified/new-source.ts", "unclassified/new-file.md"];
   for (const path of crossCuttingPaths) {
-    const planned = plan({ paths: ["app/domain/opening-segmentation.ts", path] });
+    const planned = plan({ paths: ["app/lib/opening-evidence-recovery-policy.ts", path] });
     assert.equal(planned.scope, planned.jobs.lifecycle.applicable ? "complete" : "targeted", path);
     assert.equal(selectedIds(planned).length, cases.length, path);
     assert(planned.jobs.visual.required, path);

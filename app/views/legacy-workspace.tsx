@@ -204,8 +204,6 @@ export default function LegacyWorkspace(props: LegacyWorkspaceProps) {
             else if (intent.kind === "settings") changeWorkspace("settings");
           }}>
           <RepertoireView
-            theme={boardTheme}
-            pieceSet={pieceSet}
             imported={importedRepertoires}
             refreshRevision={pasteRevision}
             onImport={() => setShowImport(true)}

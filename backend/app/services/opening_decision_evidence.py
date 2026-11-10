@@ -1,6 +1,6 @@
-"""Compatibility exports; executable semantics are Learning-owned."""
+"""Retained backend exports for Study policy."""
 
-from tempo_learning_runtime import opening_decision_evidence as _owned
+from app.study.policy import opening_decision_evidence as _owned
 
 datetime = _owned.datetime
 timedelta = _owned.timedelta

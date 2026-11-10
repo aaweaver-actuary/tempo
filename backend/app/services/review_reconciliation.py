@@ -1,6 +1,6 @@
-"""Legacy adapter exports; Learning owns the shared implementation."""
+"""Retained backend exports for Study review reconciliation."""
 
-from tempo_learning_runtime import review_reconciliation as _owned
+from app.study.policy import review_reconciliation as _owned
 
 SCHEDULE_COLUMNS = _owned.SCHEDULE_COLUMNS
 card_schedule_state = _owned.card_schedule_state

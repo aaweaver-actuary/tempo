@@ -16,7 +16,6 @@ for directory in [ROOT, ROOT / 'backend', ROOT / 'database', *ROOT.glob('package
                   *ROOT.glob('services/*/src'), *ROOT.glob('services/learning/*/src'),
                   *ROOT.glob('contracts/*/src')]:
     sys.path.insert(0, str(directory))
-sys.path.extend(str(path) for path in ROOT.glob('services/learning/runtime/.venv/lib/python*/site-packages'))
 from database.tests.position_study import acceptance
 from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
 

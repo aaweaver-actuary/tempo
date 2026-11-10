@@ -48,13 +48,10 @@ def test_empty_dependency_selection_is_not_success(tmp_path):
 def test_installed_imports_do_not_load_application_registry_or_model_runtimes(tmp_path):
     script = """
 import sys
-from tempo_learning_contracts import v1 as learning
-from tempo_content_publication_contracts import v1 as content
 from tempo_game_evidence_contracts import v1 as evidence
 from tempo_analysis_jobs_contracts import v1 as jobs
 for forbidden in ('backend', 'app', 'services', 'celery', 'psycopg', 'torch', 'numpy', 'onnxruntime', 'fastapi', 'chess'):
     assert not any(name == forbidden or name.startswith(forbidden+'.') for name in sys.modules), forbidden
-assert len(learning.PUBLIC_MODELS) == 9
 assert jobs.StockfishJob is not jobs.MaiaJob
 print('isolated public imports passed')
 """

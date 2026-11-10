@@ -19,10 +19,9 @@ from tempo_legacy_database.adapters.authored_repertoires import (
     analysis_paste as storage,
 )
 
-from .repertoire_game_refresh import refresh_game_publications_after_mutation
 from app.chess.cards import card_id
 from app.chess.pgn import ends_on_trained_move
-from .repertoire_comparison import canonical_fen
+from app.chess.position_identity import position_key as canonical_fen
 
 
 MAX_PASTE_BYTES = 65_536
@@ -321,7 +320,6 @@ def _resolves_gap(
     return False
 
 
-@refresh_game_publications_after_mutation
 def commit_pasted_lines(
     database: sqlite3.Connection,
     raw_text: str,

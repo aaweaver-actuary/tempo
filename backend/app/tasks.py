@@ -65,7 +65,6 @@ from . import review_commands  # noqa: F401 - registers foreground review comman
 from . import opening_evidence_commands  # noqa: F401 - registers shadow checkpoint command
 from . import teaching_commands  # noqa: F401 - registers foreground teaching command
 from . import repertoire_commands  # noqa: F401 - registers foreground repertoire command
-from . import canonical_prefix_commands  # noqa: F401 - registers canonical opening commands
 from . import account_commands  # noqa: F401 - registers foreground account command
 from . import settings_commands  # noqa: F401 - registers foreground settings command
 from .product_composition.repertoire_runtime import register_current_repertoire_commands
@@ -75,9 +74,6 @@ from . import annotation_commands  # noqa: F401 - registers foreground position 
 from . import branch_commands  # noqa: F401 - registers foreground branch edits
 from . import pgn_import_commands  # noqa: F401 - registers foreground PGN imports
 from . import analysis_paste_commands  # noqa: F401 - registers foreground pasted lines
-from .services import (
-    prefix_transition_application,
-)  # registers the foreground apply command
 from . import prefix_split_commands  # noqa: F401 - registers foreground prefix splits
 from . import card_commands  # noqa: F401 - registers foreground card revisions
 from . import activity_commands  # noqa: F401 - registers foreground activity controls
@@ -89,7 +85,6 @@ from .services.background_wakes import CoalescedWakeTask
 from .services.durable_tasks import current_delivery, record_stale_delivery
 from .services.durable_tasks import (
     claim_task,
-    complete_task,
     defer_task_for_contention,
     defer_task_for_transaction_timeout,
     fail_task,
@@ -102,11 +97,8 @@ from .services.queue_refresh_wakeup import (
 )
 from .services.queue_ordering import PRESENTATION_VERSION
 from .services.postgres_queue_refresh import execute_postgres_queue_refresh_slice
-from .services.repertoire_game_refresh import execute_repertoire_game_refresh_slice
 from .services.postgres_opening_graph import execute_postgres_opening_graph_slice
 from .services.postgres_integrity import execute_postgres_integrity_slice
-from .services.postgres_opening_segmentation import execute_segmentation_slice
-from .services.canonical_prefix_preview import execute_prefix_preview_slice
 
 
 _LOGGER = logging.getLogger("tempo.tasks")
@@ -125,54 +117,6 @@ def study_only_enabled(database=None):
         if database is None
         else study_mode.study_only_enabled(database)
     )
-
-
-def execute_game_position_index_slice(claimed_task):
-    from .services.postgres_game_derivation import (
-        execute_game_position_index_slice as execute,
-    )
-
-    return execute(claimed_task)
-
-
-def execute_game_repertoire_comparison_slice(claimed_task):
-    from .services.postgres_game_repertoire import (
-        execute_game_repertoire_comparison_slice as execute,
-    )
-
-    return execute(claimed_task)
-
-
-def execute_game_findings_slice(claimed_task):
-    from .services.postgres_game_findings import execute_game_findings_slice as execute
-
-    return execute(claimed_task)
-
-
-def execute_game_miss_slice(claimed_task):
-    from .services.postgres_game_misses import execute_game_miss_slice as execute
-
-    return execute(claimed_task)
-
-
-def execute_game_event_slice(claimed_task):
-    from .services.postgres_game_events import execute_game_event_slice as execute
-
-    return execute(claimed_task)
-
-
-def execute_game_feature_slice(claimed_task):
-    from .services.postgres_game_features import execute_game_feature_slice as execute
-
-    return execute(claimed_task)
-
-
-def execute_game_priority_handoff_slice(claimed_task):
-    from .services.postgres_game_priorities import (
-        execute_game_priority_handoff_slice as execute,
-    )
-
-    return execute(claimed_task)
 
 
 def execute_game_sync_record_slice(claimed_task):
@@ -197,21 +141,10 @@ _CONTROL_BACKGROUND_COMMANDS = frozenset()
 _SUPPORTED_BACKGROUND_KINDS = (
     "product_game_refresh",
     "daily_queue",
-    "repertoire_game_refresh",
     "game_sync_record",
     "game_sync_window",
     "opening_graph_rebuild",
-    "game_derivation_positions",
-    "game_derivation_compare",
-    "game_derivation_findings",
-    "game_derivation_misses",
-    "game_derivation_events",
-    "game_derivation_features",
-    "game_derivation_priorities",
-    prefix_transition_application.TASK_KIND,
     "integrity_scan",
-    "opening_segmentation",
-    "canonical_prefix_preview",
 )
 
 
@@ -300,31 +233,21 @@ def _execute_foreground_command(
     submitted_at = (self.request.headers or {}).get("submitted_at")
     queue_wait = max(0.0, time.time() - float(submitted_at)) if submitted_at else None
     started = time.perf_counter()
-    scope = (
-        nullcontext()
-        if command_name == prefix_transition_application.COMMAND
-        else activity_gate.foreground()
-    )
     with (
-        scope,
+        activity_gate.foreground(),
         _preparation_capacity(
             command_name == "queue.prepare_next"
         ) as preparation_admitted,
     ):
-        with (
-            activity_gate.foreground()
-            if command_name == prefix_transition_application.COMMAND
-            else nullcontext()
-        ):
-            should_execute, saved_payload, attempt_token, _attempt_number = (
-                record_operation_attempt(
-                    operation_id,
-                    command_name,
-                    payload,
-                    background=False,
-                    expected_retry_cycle=expected_retry_cycle,
-                )
+        should_execute, saved_payload, attempt_token, _attempt_number = (
+            record_operation_attempt(
+                operation_id,
+                command_name,
+                payload,
+                background=False,
+                expected_retry_cycle=expected_retry_cycle,
             )
+        )
         if not should_execute:
             return None
         if not preparation_admitted:
@@ -349,20 +272,7 @@ def _execute_foreground_command(
                 operation_id,
                 attempt_token,
                 error,
-                retryable=(
-                    command_name == prefix_transition_application.COMMAND
-                    and isinstance(
-                        error,
-                        (
-                            psycopg.OperationalError,
-                            psycopg.InterfaceError,
-                            DeadlockDetected,
-                            LockNotAvailable,
-                            SerializationFailure,
-                            TransactionTimeout,
-                        ),
-                    )
-                ),
+                retryable=False,
                 background=False,
             )
             raise
@@ -742,21 +652,10 @@ def _execute_claimed_background_slice(
     background_handlers = {
         "product_game_refresh": refresh_slice,
         "daily_queue": execute_postgres_queue_refresh_slice,
-        "repertoire_game_refresh": execute_repertoire_game_refresh_slice,
-        "game_derivation_positions": execute_game_position_index_slice,
-        "game_derivation_compare": execute_game_repertoire_comparison_slice,
-        "game_derivation_findings": execute_game_findings_slice,
-        "game_derivation_misses": execute_game_miss_slice,
-        "game_derivation_events": execute_game_event_slice,
-        "game_derivation_features": execute_game_feature_slice,
-        "game_derivation_priorities": execute_game_priority_handoff_slice,
         "game_sync_record": execute_game_sync_record_slice,
         "game_sync_window": execute_game_sync_window_slice,
         "opening_graph_rebuild": execute_postgres_opening_graph_slice,
-        prefix_transition_application.TASK_KIND: prefix_transition_application.execute_application_slice,
         "integrity_scan": execute_postgres_integrity_slice,
-        "opening_segmentation": execute_segmentation_slice,
-        "canonical_prefix_preview": execute_prefix_preview_slice,
     }
     if claimed_task["kind"] in RETIRED_TASK_KINDS:
         return False
@@ -787,37 +686,6 @@ def _execute_claimed_background_slice(
                 record_stale_delivery(claimed_task)
                 return False
             more_work = handler(claimed_task)
-            if claimed_task["kind"] not in {
-                "product_game_refresh",
-                "next_opponent_profile",
-                "daily_queue",
-                "game_sync_record",
-                "game_sync_window",
-                "game_derivation_positions",
-                "game_derivation_compare",
-                "game_derivation_findings",
-                "game_derivation_misses",
-                "game_derivation_events",
-                "game_derivation_features",
-                "game_derivation_priorities",
-                "opening_graph_rebuild",
-                prefix_transition_application.TASK_KIND,
-                "integrity_scan",
-                "opening_segmentation",
-                "coverage_seed",
-                "canonical_prefix_preview",
-                "coverage_explorer",
-                "game_analysis_publish",
-                "game_analysis_followup",
-                "defensive_threat_validate",
-                "defensive_threat_backfill",
-            }:
-                complete_task(
-                    claimed_task["id"],
-                    claimed_task["generation"],
-                    claimed_task["lease_token"],
-                    kind=claimed_task["kind"],
-                )
         except BackgroundAdmissionDeferred:
             deferred = defer_task_for_foreground(claimed_task)
             if deferred and queue_refresh_wake:
@@ -828,7 +696,6 @@ def _execute_claimed_background_slice(
                 more_work = defer_task_for_transaction_timeout(claimed_task, error)
             elif claimed_task["kind"] in {
                 "opening_graph_rebuild",
-                prefix_transition_application.TASK_KIND,
             }:
                 retry_result = fail_task(
                     claimed_task["id"],

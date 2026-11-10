@@ -21,114 +21,6 @@
       }
     },
     {
-      "id": "learning",
-      "type": "service",
-      "maintainer": "Tempo",
-      "status": "implemented",
-      "root": "services/learning/runtime",
-      "publicExports": [
-        "scheduling_review_application",
-        "scheduling_review_contracts",
-        "scheduling_review_store",
-        "study_grading",
-        "opening_decision_evidence",
-        "threat_models",
-        "threat_validation",
-        "threat_grading",
-        "queue_ordering",
-        "review_reconciliation",
-        "study_contracts",
-        "opening_evidence_contracts",
-        "Configuration",
-        "create_app",
-        "register_evidence_receiver",
-        "register_settlement",
-        "original_plan_mapping"
-      ],
-      "dependencies": [
-        "tempo_learning_review",
-        "tempo_evidence_math",
-        "tempo_scheduling",
-        "tempo_chess_core",
-        "tempo_content_publication_contracts",
-        "tempo_game_evidence_contracts",
-        "pydantic",
-        "starlette",
-        "fastapi",
-        "uvicorn",
-        "psycopg",
-        "psycopg_pool",
-        "sqlglot",
-        "chess",
-        "fsrs",
-        "httpx",
-        "tempo_learning_remediation",
-        "tempo_learning_transfer_contracts"
-      ],
-      "buildInputs": [
-        "../../../database/tempo_learning_database",
-        "hatch_build.py",
-        "pyproject.toml",
-        "uv.lock",
-        "src",
-        "fixtures",
-        "tests",
-        "../../../database/tempo_learning_database/tooling",
-        "browser",
-        "qualify.py",
-        "Dockerfile",
-        "Dockerfile.dockerignore",
-        "README.md",
-        "REGRESSIONS.md",
-        "INTERFACES.md",
-        "VALIDATION.md"
-      ],
-      "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
-      "artifact": {
-        "name": "tempo-learning-runtime",
-        "version": "0.1.0",
-        "format": "wheel + sdist + minimal service container"
-      },
-      "tests": [
-        {
-          "owner": "learning",
-          "kind": "postgres",
-          "cwd": ".",
-          "command": "python database/tempo_learning_database/tooling/run_postgres.py",
-          "inputs": [
-            "services/learning/runtime",
-            "services/learning/application/qualification.py",
-            "app/lib",
-            "app/domain",
-            "app/const.ts",
-            "services/learning/remediation",
-            "database/tempo_learning_database"
-          ]
-        }
-      ],
-      "toolchain": {
-        "python": ">=3.12,<3.15",
-        "qualificationPython": [
-          "3.12",
-          "3.14"
-        ],
-        "postgresql": "18",
-        "node": ">=22.13.0",
-        "playwright": "1.63.0"
-      },
-      "dataOwnership": {
-        "authority": "#224/#194",
-        "databases": [
-          "dedicated workspace Learning database"
-        ],
-        "migrations": [
-          "../../../database/tempo_learning_database/ddl/migrations/manifest.json"
-        ],
-        "productionAdoption": false
-      },
-      "testInventory": "REGRESSIONS.md"
-    },
-    {
       "id": "tempo-cli",
       "type": "tool",
       "maintainer": "Tempo",
@@ -165,183 +57,6 @@
         "databases": [],
         "migrations": []
       }
-    },
-    {
-      "id": "learning-contracts",
-      "type": "contract",
-      "maintainer": "Tempo / #264",
-      "status": "implemented",
-      "root": "contracts/learning",
-      "publicExports": [
-        "tempo_learning_contracts.v1",
-        "schemas/v1/*.json"
-      ],
-      "dependencies": [
-        "pydantic"
-      ],
-      "buildInputs": [
-        "pyproject.toml",
-        "src",
-        "schemas",
-        "fixtures",
-        "examples",
-        "tests",
-        "README.md",
-        "REGRESSIONS.md"
-      ],
-      "buildCommand": "python -m build --no-isolation",
-      "artifact": {
-        "name": "tempo-learning-contracts",
-        "version": "1.0.0",
-        "format": "wheel + sdist + packaged JSON schema"
-      },
-      "tests": [
-        {
-          "owner": "learning-contracts",
-          "kind": "python",
-          "cwd": "contracts/learning",
-          "command": "python -m pytest tests --import-mode=importlib -q",
-          "inputs": [
-            "tests"
-          ]
-        }
-      ],
-      "toolchain": {
-        "python": ">=3.12,<3.15",
-        "qualificationPython": [
-          "3.12",
-          "3.14"
-        ]
-      },
-      "dataOwnership": {
-        "authority": "#264",
-        "databases": [],
-        "migrations": [],
-        "documents": [
-          "contracts/OWNERSHIP.md"
-        ],
-        "productionAdoption": false
-      },
-      "catalog": "contracts/catalog.json",
-      "testInventory": "REGRESSIONS.md"
-    },
-    {
-      "id": "learning-transfer-contracts",
-      "type": "contract",
-      "maintainer": "Tempo / #908 W01",
-      "status": "implemented",
-      "root": "contracts/learning-transfer",
-      "publicExports": [
-        "tempo_learning_transfer_contracts.v1",
-        "schemas/v1/*.json"
-      ],
-      "dependencies": [
-        "pydantic"
-      ],
-      "buildInputs": [
-        "pyproject.toml",
-        "src",
-        "schemas",
-        "fixtures",
-        "examples",
-        "tests",
-        "README.md",
-        "REGRESSIONS.md"
-      ],
-      "buildCommand": "python -m build --no-isolation",
-      "artifact": {
-        "name": "tempo-learning-transfer-contracts",
-        "version": "1.0.0",
-        "format": "wheel + sdist + packaged JSON schema"
-      },
-      "tests": [
-        {
-          "owner": "learning-transfer-contracts",
-          "kind": "python",
-          "cwd": "contracts/learning-transfer",
-          "command": "python -m pytest tests --import-mode=importlib -q",
-          "inputs": [
-            "tests"
-          ]
-        }
-      ],
-      "toolchain": {
-        "python": ">=3.12,<3.15",
-        "qualificationPython": [
-          "3.13"
-        ]
-      },
-      "dataOwnership": {
-        "authority": "#908 W01",
-        "databases": [],
-        "migrations": [],
-        "documents": [
-          "contracts/OWNERSHIP.md",
-          "contracts/learning-transfer/README.md"
-        ],
-        "productionAdoption": false
-      },
-      "catalog": "contracts/catalog.json",
-      "testInventory": "REGRESSIONS.md"
-    },
-    {
-      "id": "content-publication-contracts",
-      "type": "contract",
-      "maintainer": "Tempo / #264",
-      "status": "implemented",
-      "root": "contracts/content-publication",
-      "publicExports": [
-        "tempo_content_publication_contracts.v1",
-        "schemas/v1/*.json"
-      ],
-      "dependencies": [
-        "pydantic"
-      ],
-      "buildInputs": [
-        "pyproject.toml",
-        "src",
-        "schemas",
-        "fixtures",
-        "examples",
-        "tests",
-        "README.md",
-        "REGRESSIONS.md"
-      ],
-      "buildCommand": "python -m build --no-isolation",
-      "artifact": {
-        "name": "tempo-content-publication-contracts",
-        "version": "1.0.0",
-        "format": "wheel + sdist + packaged JSON schema"
-      },
-      "tests": [
-        {
-          "owner": "content-publication-contracts",
-          "kind": "python",
-          "cwd": "contracts/content-publication",
-          "command": "python -m pytest tests --import-mode=importlib -q",
-          "inputs": [
-            "tests"
-          ]
-        }
-      ],
-      "toolchain": {
-        "python": ">=3.12,<3.15",
-        "qualificationPython": [
-          "3.12",
-          "3.14"
-        ]
-      },
-      "dataOwnership": {
-        "authority": "#264",
-        "databases": [],
-        "migrations": [],
-        "documents": [
-          "contracts/OWNERSHIP.md"
-        ],
-        "productionAdoption": false
-      },
-      "catalog": "contracts/catalog.json",
-      "testInventory": "REGRESSIONS.md"
     },
     {
       "id": "game-evidence-contracts",
@@ -819,7 +534,10 @@
       "root": "packages/evidence-math",
       "publicExports": [],
       "dependencies": [],
-      "buildInputs": ["pyproject.toml", "src"],
+      "buildInputs": [
+        "pyproject.toml",
+        "src"
+      ],
       "buildCommand": null,
       "artifact": null,
       "tests": [],
@@ -1387,22 +1105,6 @@
       ]
     },
     {
-      "id": "learning",
-      "owner": "learning",
-      "kind": "postgres",
-      "cwd": ".",
-      "command": "python database/tempo_learning_database/tooling/run_postgres.py",
-      "inputs": [
-        "services/learning/runtime",
-        "services/learning/application/qualification.py",
-        "app/lib",
-        "app/domain",
-        "app/const.ts",
-        "services/learning/remediation",
-        "database/tempo_learning_database"
-      ]
-    },
-    {
       "id": "contract-exchange",
       "owner": "#264",
       "kind": "contract-exchange",
@@ -1414,31 +1116,6 @@
         "consumer-examples/tsconfig.json",
         "consumer-examples/src",
         "tests"
-      ]
-    },
-    {
-      "id": "learning-full-study",
-      "owner": "learning",
-      "kind": "postgres",
-      "cwd": ".",
-      "command": "python services/learning/runtime/integration/run_study.py",
-      "inputs": [
-        "services/learning/runtime",
-        "services/learning/application/qualification.py",
-        "app",
-        "static",
-        "public",
-        "scripts/prove-study-learning.mjs",
-        "database/tests/browser",
-        "scripts/offline-shell-assets.ts",
-        "database/browser",
-        "vite.static.config.ts",
-        "module-resolution.ts",
-        "package.json",
-        "package-lock.json",
-        "database/browser-intents",
-        "packages/study-session",
-        "packages/chess-line"
       ]
     },
     {
@@ -1495,7 +1172,7 @@
         "backend/app/services/postgres_queue_refresh.py",
         "backend/app/services/queue_presentation.py",
         "backend/app/services/queue_ordering.py",
-        "services/learning/runtime/src/tempo_learning_runtime/queue_ordering.py",
+        "backend/app/study/policy/queue_ordering.py",
         "backend/tests/test_product_recombination_postgres.py",
         "backend/tests/test_study_attempt_issuance_postgres.py",
         "backend/tests/test_prepared_review_continuation.py",
@@ -1530,12 +1207,9 @@
         "packages/game-ingestion/src",
         "packages/study-session/src",
         "packages/evidence-math/src",
-        "services/learning/runtime/src",
         "services/learning/application/src",
         "services/learning/remediation/src",
-        "contracts/content-publication/src",
         "contracts/game-evidence/src",
-        "contracts/learning/src",
         "contracts/consumer-examples/src",
         "contracts/analysis-jobs/src"
       ]
@@ -1594,7 +1268,7 @@
         "backend/app/services/postgres_queue_refresh.py",
         "backend/app/services/queue_presentation.py",
         "backend/app/services/queue_ordering.py",
-        "services/learning/runtime/src/tempo_learning_runtime/queue_ordering.py",
+        "backend/app/study/policy/queue_ordering.py",
         "backend/tests/test_product_recombination_postgres.py",
         "backend/tests/test_study_attempt_issuance_postgres.py",
         "backend/tests/test_prepared_review_continuation.py",

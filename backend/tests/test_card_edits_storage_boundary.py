@@ -160,7 +160,7 @@ def test_revision_preserves_scope_sorted_locks_history_branch_certification_and_
         "_request_current_integrity_scan",
         lambda *args: events.append(("refresh", args)),
     )
-    result = application.revise_card.__wrapped__(
+    result = application.revise_card(
         database,
         dict(
             card_id="z-source",
@@ -310,7 +310,7 @@ def test_archive_keeps_lazy_membership_queue_completion_before_refresh_and_summa
         "integrity_summary",
         lambda *args: events.append("summary") or dict(status="unchecked"),
     )
-    result = application.archive_card.__wrapped__(database, dict(card_id="card"))
+    result = application.archive_card(database, dict(card_id="card"))
     assert database.native_calls[1][1] == ("tempo:card-edit:card",)
     assert events.index("iterate") < events.index(("native", 5))
     assert events[-4:] == [

@@ -68,12 +68,8 @@ def _run_actual_unseen_slice(case, monkeypatch):
     from app.services import durable_tasks, postgres_queue_refresh, study_mode
     from tempo_legacy_database.adapters.queue_refresh import reads
 
-    def write(operation, **kwargs):
-        with case.transaction() as database:
-            return operation(database)
-
     with monkeypatch.context() as owner:
-        owner.setattr(durable_tasks, "submit_background_write", write)
+        owner.setattr(durable_tasks, "connection", lambda **_options: case.transaction())
         owner.setattr(
             postgres_queue_refresh, "connection", lambda **kwargs: case.transaction()
         )
@@ -1074,19 +1070,6 @@ def test_retained_history_fixture_has_exact_current_mapping_and_protected_attemp
             "unintroduced" if state == "unintroduced" else "introduced"
         )
         assert mapping.introduced_before_game is (state == "introduced")
-        from app.product_composition.encounters import importance_from_encounters
-
-        (importance,) = importance_from_encounters(
-            workspace_id=command.key.workspace_id,
-            account="synthetic",
-            current_approved_decisions=(current,),
-            encounters=(command, command),
-        )
-        assert importance.facts.personal_encounters == 1
-        assert len(importance.differing_response_sources) == (
-            0 if played == "e2e4" else 1
-        )
-        assert len(importance.source_encounters) == 1
         assert captured["game"]["id"] == case.game_ids[0]
         assert captured["game"]["moves_json"] == '["' + played + '"]'
         assert case.readback() == before
@@ -1691,7 +1674,6 @@ def test_bounded_retained_history_shared_projection_reaches_study_and_keeps_orig
     from app.product_composition.encounters import (
         prepare_captured_encounters,
         receive_admitted_encounter,
-        importance_from_encounters,
     )
     from tempo_legacy_database.adapters import postgres_store
     from tempo_legacy_database.adapters.study.game_feedback_authority import (
@@ -1777,16 +1759,6 @@ def test_bounded_retained_history_shared_projection_reaches_study_and_keeps_orig
                 retained_owner_capture=prepared[0].capture,
                 snapshot=prepared[0].snapshot,
             ).current_encounter(commands[0])
-            (importance,) = importance_from_encounters(
-                workspace_id=commands[0].key.workspace_id,
-                account="synthetic",
-                current_approved_decisions=(current,),
-                encounters=commands + commands,
-            )
-            assert (
-                importance.facts.personal_encounters == 1
-                and len(importance.differing_response_sources) == 1
-            )
             assert (
                 database.execute_native(
                     "SELECT COUNT(*) FROM reviews WHERE card_id=%s", (case.card_id,)

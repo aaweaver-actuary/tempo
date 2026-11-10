@@ -51,10 +51,15 @@ export function cut62WitnessName(guard) {
 
 // Validate the installed ledger before any application shutdown. A schema-60
 // continuation is valid only under the original pending schema-59 guard.
+// The non-destructive 62-to-63 retirement must not skip or resume the older
+// destructive cut under a different comparator or candidate schema.
 export function validateCut62Preflight(status, guard) {
   const current = status.applied_versions.at(-1), expected = status.expected_version;
   if (expected < 62) return;
   if (expected === 62 && current === 62) return;
+  const continuing63 = guard?.state !== "pending" ||
+    ([62, 63].includes(guard.starting_schema) && guard.intended_schema === 63);
+  if (expected === 63 && [62, 63].includes(current) && continuing63) return;
   const guarded60 = current === 60 && guard?.state === "pending" && guard.starting_schema === 59 && guard.intended_schema === 62;
   if (expected !== 62 || (![59, 61].includes(current) && !guarded60))
     throw new Error(`Unsupported schema ${current}-to-${expected} crossing; applications have not been stopped. Use a supported intermediate release.`);

@@ -452,7 +452,7 @@ def test_import_keeps_clock_identity_lazy_reads_certification_and_callback_order
     handler = (
         application.explicit_pgn_import if explicit else application.admit_pgn_import
     )
-    result = handler.__wrapped__(database, payload)
+    result = handler(database, payload)
     assert events[:3] == ["clock", ("native", 1), ("native", 2)]
     assert events.count("uuid") == (0 if existing_repertoire else 1)
     assert database.native_calls[3][1] == (

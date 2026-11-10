@@ -62,7 +62,6 @@ tempo-core/                Rust/WASM deterministic chess and scheduling core
 database/browser/tempo-db.ts        Versioned browser persistence and SQLite transfer
 static/                    GitHub Pages entry point (base path /tempo/)
 docker-compose.yml         PostgreSQL API, web, and Celery workers
-docker-compose.sqlite.yml  Explicit legacy SQLite stack for regression tests
 ```
 
 The [component reconstruction guide](docs/architecture/component-reconstruction.md)

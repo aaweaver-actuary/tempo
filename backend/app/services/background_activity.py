@@ -129,10 +129,7 @@ def set_control_in_transaction(
     if not work_row or work_row[0] in {"failed", "superseded"}:
         return False
     if work_row[0] == "complete":
-        if source != "coverage" or not storage.unfinished_coverage(
-            database, (work_id,)
-        ):
-            return False
+        return False
     if action == "resume" and not allow_settings_blocked_resume and not work_row[1]:
         raise HTTPException(
             409,
@@ -144,6 +141,4 @@ def set_control_in_transaction(
     write_control = storage.prepare_control_update(action)
     value = int(action in {"pause", "prioritize"})
     write_control(database, (value, now, source, work_id))
-    if source == "coverage" and action == "pause":
-        storage.release_maia_lease(database, (now, work_id))
     return True

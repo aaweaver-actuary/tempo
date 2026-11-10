@@ -22,7 +22,7 @@ from .scheduling_review_contracts import (
 )
 
 
-from tempo_learning_runtime import scheduling_review_application as _owned
+from app.study.policy import scheduling_review_application as _owned
 
 
 def apply_scheduling_review(

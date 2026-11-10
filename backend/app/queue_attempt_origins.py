@@ -4,7 +4,6 @@ from tempo_legacy_database.adapters.lifecycle import queue_attempt_origins as st
 from tempo_legacy_database.adapters.lifecycle.queue_attempt_origins import (
     retain_recovered_completion,
 )
-from tempo_legacy_database.ddl.queue_attempt_origins import initialize_sqlite_origins
 
 
 def recover_queue_entry(database, card_id: str, request) -> dict:

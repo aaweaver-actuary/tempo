@@ -2,15 +2,13 @@
   "version": 1,
   "module": "scheduling-review",
   "selection_status": "ownership-contract-only; not wired into shared CI planner",
-  "implementation_module": "tempo_learning_runtime.scheduling_review_application",
-  "shared_contract_module": "tempo_learning_runtime.scheduling_review_contracts",
+  "implementation_module": "app.study.policy.scheduling_review_application",
+  "shared_contract_module": "app.study.policy.scheduling_review_contracts",
   "backend_facade_module": "app.services.scheduling_review_application",
   "backend_contract_facade_module": "app.services.scheduling_review_contracts",
   "graph_roots": [
     "app",
-    "tempo_learning_runtime",
-    "tempo_legacy_database",
-    "tempo_learning_database"
+    "tempo_legacy_database"
   ],
   "owning_tests": [
     "backend/tests/test_scheduling_boundary.py",
@@ -20,12 +18,6 @@
   "consumers": {
     "tempo_legacy_database.adapters.scheduling_review_store": [
       "backend/tests/test_scheduling_review_store.py"
-    ],
-    "tempo_learning_database.adapters.scheduling_review_store": [
-      "backend/tests/test_scheduling_review_store.py"
-    ],
-    "tempo_learning_runtime.review_service": [
-      "services/learning/runtime/tests/test_review_storage_separation.py"
     ],
     "app.services.scheduling_review_contracts": [
       "backend/tests/test_scheduling_review_application.py"
@@ -52,9 +44,9 @@
     ]
   },
   "unrelated": {
-    "module": "app.chess.motifs",
+    "module": "app.chess.position_identity",
     "tests": [
-      "backend/tests/test_motif_detectors.py"
+      "backend/tests/test_position_identity_contract.py"
     ]
   },
   "allowed_direct_dependencies": {
@@ -63,36 +55,31 @@
       "app.services.scheduler",
       "app.services.scheduling_review_contracts",
       "datetime",
-      "tempo_learning_runtime.scheduling_review_application"
+      "app.study.policy.scheduling_review_application"
     ],
     "app.services.scheduling_review_contracts": [
-      "tempo_learning_runtime.scheduling_review_contracts"
+      "app.study.policy.scheduling_review_contracts"
     ],
     "app.services.scheduler": [
       "datetime",
       "fsrs",
       "tempo_scheduling"
     ],
-    "tempo_learning_runtime.scheduling_review_application": [
+    "app.study.policy.scheduling_review_application": [
       "__future__",
       "datetime",
       "json",
-      "tempo_learning_runtime.clock",
-      "tempo_learning_runtime.scheduler",
-      "tempo_learning_runtime.scheduling_review_contracts"
+      "app.study.policy.clock",
+      "app.services.scheduler",
+      "app.study.policy.scheduling_review_contracts"
     ],
-    "tempo_learning_runtime.scheduling_review_contracts": [
+    "app.study.policy.scheduling_review_contracts": [
       "__future__",
       "dataclasses",
       "datetime",
       "typing"
     ],
-    "tempo_learning_runtime.scheduler": [
-      "datetime",
-      "fsrs",
-      "tempo_scheduling"
-    ],
-    "tempo_learning_runtime.clock": [
+    "app.study.policy.clock": [
       "contextvars",
       "datetime",
       "zoneinfo"
@@ -109,16 +96,15 @@
       "tests/browser/studies.spec.ts"
     ],
     "browser_reason": "Real server review or study-attempt calls exercise the wrapper. Mocked responses in these or other specs do not prove backend scheduling.",
-    "qualification_owner": "Learning owns native persistence proofs; #200 runs focused installed-package, adapter and producer seams without claiming PostgreSQL durability."
+    "qualification_owner": "The serving backend owns persistence and saved-review/next-card acceptance; pure policy checks do not prove PostgreSQL durability."
   },
   "source_paths": {
     "app.services.scheduling_review_application": "backend/app/services/scheduling_review_application.py",
     "app.services.scheduling_review_contracts": "backend/app/services/scheduling_review_contracts.py",
     "app.services.scheduler": "backend/app/services/scheduler.py",
-    "tempo_learning_runtime.scheduling_review_application": "services/learning/runtime/src/tempo_learning_runtime/scheduling_review_application.py",
-    "tempo_learning_runtime.scheduling_review_contracts": "services/learning/runtime/src/tempo_learning_runtime/scheduling_review_contracts.py",
-    "tempo_learning_runtime.scheduler": "services/learning/runtime/src/tempo_learning_runtime/scheduler.py",
-    "tempo_learning_runtime.clock": "services/learning/runtime/src/tempo_learning_runtime/clock.py"
+    "app.study.policy.scheduling_review_application": "backend/app/study/policy/scheduling_review_application.py",
+    "app.study.policy.scheduling_review_contracts": "backend/app/study/policy/scheduling_review_contracts.py",
+    "app.study.policy.clock": "backend/app/study/policy/clock.py"
   },
-  "packaged_owner": "tempo_learning_runtime.scheduling_review_application"
+  "packaged_owner": "app.study.policy.scheduling_review_application"
 }

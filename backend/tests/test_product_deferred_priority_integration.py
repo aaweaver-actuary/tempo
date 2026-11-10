@@ -82,12 +82,8 @@ def test_real_shape_history_intake_commits_pending_then_study_refresh_without_ga
                 )
 
         # Exercise the actual wake's discovery/claim and returned payload shape.
-        def background_write(operation, **kwargs):
-            with current_card.transaction() as database:
-                return operation(database)
-
         monkeypatch.setattr(durable_tasks, "_now", lambda: NOW)
-        monkeypatch.setattr(durable_tasks, "submit_background_write", background_write)
+        monkeypatch.setattr(durable_tasks, "connection", lambda **_options: current_card.transaction())
         monkeypatch.setattr(
             feedback_maintenance, "background_read_connection", current_card.transaction
         )

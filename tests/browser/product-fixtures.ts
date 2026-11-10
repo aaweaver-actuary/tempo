@@ -4,7 +4,6 @@ import { navigate } from "./ui-fixtures";
 import type { Page } from "@playwright/test";
 import { test as base, expect } from "./observability";
 import { Chess } from "chess.js";
-import { execFileSync } from "node:child_process";
 import { resetPostgresDeletedCards } from "./product-fixture-reset";
 
 const api = process.env.TEMPO_BROWSER_API_URL ?? (process.env.TEMPO_DOCKER_URL
@@ -97,15 +96,9 @@ const test = base.extend<{ disposableProduct: void }>({
       // Each case starts a new study workspace. Exclusions persist throughout a
       // case's reload/restart proofs, then only this runner's database is reset.
       const project = process.env.TEMPO_TEST_COMPOSE_PROJECT;
-      if (!project || !/^tempo-(?:pg-)?regressions-\d+-[a-f0-9]+$/.test(project))
+      if (!project || !/^tempo-pg-regressions-\d+-[a-f0-9]+$/.test(project))
         throw new Error("Product fixture reset requires its owning disposable runner");
-      if (project.startsWith("tempo-pg-")) {
-        await resetPostgresDeletedCards({ health: disposableHealth, apiUrl: api, project });
-      } else {
-        execFileSync("docker", ["compose", "-p", project, "-f", "docker-compose.test.yml", "exec", "-T", "api", "python", "-c",
-          "import sqlite3; db=sqlite3.connect('/data/tempo.db'); db.execute('DELETE FROM deleted_cards'); db.commit(); db.close()"],
-        { encoding: "utf8", timeout: 30_000 });
-      }
+      await resetPostgresDeletedCards({ health: disposableHealth, apiUrl: api, project });
       const queue = (await (await request.get(`${api}/queue/today`)).json())
         .cards;
       for (const card of queue)

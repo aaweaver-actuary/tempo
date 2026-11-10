@@ -22,6 +22,18 @@ Ship opening Study, Tactics, and repertoire-based Game Review on the existing Po
 
 Remove standalone Endgames, legacy Defense generation and practice, legacy Game analysis and findings, recommendation and discovery workflows, Analysis Workbench, Intelligence-only features, Stockfish including the standalone evaluator, Maia and Explorer compute, coverage and statistics dashboards, next-opponent profiles, unused chapter authoring, and obsolete Jobs and Saves. Remove their exclusive code, assets, registrations and storage. Delete retired Defense exercises and reviews, engine and recommendation jobs and their outstanding requests under #971. Use exact feature ownership in shared records and keep ambiguous rows until their ownership can be established. Preserve frozen introduction ranks and supported Study, Tactics and Game Review history and obligations.
 
+### November 10 aggressive source reduction
+
+For this reduction, the retained product is Study, Tactics, and basic Game Review that checks played moves against the repertoire. Existing imports or use by the current assembly do not exempt a legacy subsystem from removal. Delete the out-of-scope feature and its producers, handlers, packaging, and exclusive tests together; repair the retained operation directly when a shared dependency is cut. Temporary Study regressions and maintenance downtime are acceptable during this work. Earlier blanket instructions to preserve every serving dependency do not constrain this source reduction.
+
+This cut removes retired analysis/Coverage/Discovery/Defense code, the old multi-stage Games derivation workflow, and the unused standalone Learning service/database/cutover architecture. Required Study helpers are moved into the existing backend; duplicate implementations are reused. It also retires the alternative SQLite runtime, advanced prefix evaluation/transition/diagnostic workflows and UI, advisory segmentation publication, and the operator-only graph recovery workflow. Current PostgreSQL graph preparation, basic repertoire editing, and manual Study prefix splitting remain.
+
+The actual review application and remediation library remain because the retained backend calls them. Existing automatic product feedback and the mixed legacy persistence owner remain explicit subsequent simplification targets, not evidence that the intended minimum product has already been reached. Schema version 63 removes the obsolete prefix-transition scope guards so historical unfinished transitions cannot indefinitely block retained edits; it does not delete application, transition, or progress records. The source change requires that forward migration before deployment and makes no claim that it has been applied.
+
+This assignment does not reset repertoire content, position schedules, attempts, reviews, or Tactics progress. Source deletion and acceptance of downtime do not require a simultaneous destructive data migration. Keep their stored identities while simplifying the code that reads and writes them. Do not create a compatibility facade that preserves the retired package under a new name.
+
+The [source audit and reduction boundary](docs/architecture/runtime-reduction-20261110.md) records the concrete cut, remaining dependency knots, and finite retained-journey verification. No merged, installed, or activated state is implied by this specification.
+
 ## 2. Required outcomes
 
 | ID | Outcome |

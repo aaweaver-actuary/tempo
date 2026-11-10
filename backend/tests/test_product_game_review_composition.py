@@ -102,7 +102,7 @@ def test_mounted_game_review_reads_current_owner_without_a_writer_and_contains_f
     monkeypatch.setattr(root, "CurrentStudyFeedback", forbidden)
     # The real application middleware remains in the request path. Only its
     # external admission transport is absent, as in the existing HTTP fixtures.
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: False)
+
     from inspect import getclosurevars
 
     route = next(
@@ -152,7 +152,7 @@ def test_mounted_game_review_reads_current_owner_without_a_writer_and_contains_f
             assert failed.json() == {"detail": "game_review_read_unavailable"}
             # Adopted writes now dispatch; the API still acquires no writer.
             # Exercise the actual cutover allowlist as well as the lazy root.
-            monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+
             pending = await client.post(
                 "/api/product/game-review/sync",
                 json={"provider": "lichess", "operation_id": "synthetic-sync"},

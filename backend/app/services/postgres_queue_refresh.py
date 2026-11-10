@@ -1093,11 +1093,6 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
             )
             if not complete_task_slice_in_transaction(database, task):
                 raise RuntimeError("Queue projection publication lost its task lease")
-            from .prefix_transition_application import enqueue_completion
-
-            enqueue_completion(
-                database, task["id"], int(task["generation"]), queue_date
-            )
             if "study_opening_counts" in payload:
                 _logger.info(
                     "study_opening_admission %s",

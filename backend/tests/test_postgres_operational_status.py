@@ -20,7 +20,6 @@ def test_postgres_task_status_omits_inactive_sqlite_writer_health(monkeypatch):
     def read_database():
         yield Database()
 
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(main, "list_tasks", lambda: [])
     monkeypatch.setattr(main, "read_connection", read_database)
 

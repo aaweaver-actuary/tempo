@@ -1,5 +1,6 @@
 """Issue #225: real Redis I/O failure must refuse HTTP work before dispatch."""
 
+from tempo_legacy_database.adapters import postgres_store
 from contextlib import contextmanager
 import socket
 import threading
@@ -54,7 +55,7 @@ def owned_unavailable_peer(fault):
 
 @pytest.mark.parametrize("fault", ["refusal", "nonreply"])
 def test_issue225_foreground_redis_failure_refuses_before_dispatch(monkeypatch, fault):
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+
     monkeypatch.setattr(
         command_dispatch,
         "dispatch_command",
@@ -63,7 +64,7 @@ def test_issue225_foreground_redis_failure_refuses_before_dispatch(monkeypatch, 
         ),
     )
     monkeypatch.setattr(
-        main.postgres_store,
+        postgres_store,
         "connection",
         lambda *args, **kwargs: pytest.fail("Unavailable admission opened a database"),
     )
@@ -110,7 +111,7 @@ def test_issue225_admitted_http_response_is_preserved(monkeypatch, status):
     from fastapi.responses import JSONResponse
 
     monkeypatch.delenv("TEMPO_REDIS_URL", raising=False)
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: False)
+
     expected = JSONResponse(status_code=status, content={"state": str(status)})
 
     async def downstream(request):
@@ -140,7 +141,7 @@ def test_issue225_downstream_redis_error_is_not_reported_as_admission_rejection(
     from starlette.requests import Request
 
     monkeypatch.delenv("TEMPO_REDIS_URL", raising=False)
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: False)
+
 
     async def downstream(request):
         raise redis.ConnectionError("Publication may already have committed")
@@ -166,7 +167,7 @@ def observation_gate(monkeypatch):
     gate = gate_module.ApplicationActivityGate()
     monkeypatch.setattr(main, "activity_gate", gate)
     monkeypatch.setattr(gate_module, "activity_gate", gate)
-    monkeypatch.setattr(main.postgres_store, "configured", lambda: False)
+
     monkeypatch.setattr(redis_admission_gate, "configured", lambda: False)
     monkeypatch.setattr(study_priority, "_local_generation", 1)
     monkeypatch.setattr(

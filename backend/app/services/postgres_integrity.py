@@ -162,9 +162,6 @@ def request_integrity_scan_in_transaction(
     storage.set_scan_generation(
         database, (f"{queued_task['id']}:{queued_task['generation']}", repertoire_id)
     )
-    from .prefix_transition_application import record_integrity_target
-
-    record_integrity_target(database, repertoire_id, graph_generation, queued_task)
     return queued_task
 
 
@@ -208,10 +205,6 @@ def invalidate_integrity_in_transaction(
     repertoire_id: str,
 ) -> None:
     """Never expose an old clean scan as the result of newly written lines."""
-
-    from .postgres_opening_segmentation import invalidate_segmentation_in_transaction
-
-    invalidate_segmentation_in_transaction(database, repertoire_id)
 
     storage.invalidate_scan_state(database, (repertoire_id,))
 
@@ -632,24 +625,9 @@ def complete_integrity_scan_in_transaction(
         if not complete_task_slice_in_transaction(database, task):
             raise RuntimeError("Integrity lease changed before stale scan completion")
         return False
-    from .postgres_opening_segmentation import request_segmentation_in_transaction
-
-    request_segmentation_in_transaction(
-        database, repertoire_id, int(payload["graph_generation"])
-    )
-
     from ..queue_commands import request_queue_refresh_in_transaction
 
-    from .prefix_transition_application import record_queue_target
-
-    transitioning = storage.active_prefix_transition(
-        database, (repertoire_id, int(payload["graph_generation"]))
-    )
-    queue_day = date.today().isoformat() if transitioning else str(payload["local_day"])
-    queue_task = request_queue_refresh_in_transaction(database, queue_day)
-    record_queue_target(
-        database, repertoire_id, int(payload["graph_generation"]), queue_task, queue_day
-    )
+    request_queue_refresh_in_transaction(database, str(payload["local_day"]))
     if not complete_task_slice_in_transaction(database, task):
         raise RuntimeError("Integrity lease changed before publication")
     return False
