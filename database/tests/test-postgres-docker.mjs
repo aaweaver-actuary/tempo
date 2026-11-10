@@ -6,8 +6,8 @@ import { withDevelopmentStartup, reconcileDevelopmentStartup, assertDevelopmentP
 import { randomBytes } from "node:crypto";
 import { spawnSync, execFileSync } from "node:child_process";
 import { createServer } from "node:net";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { accessSync, chmodSync, constants, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { createIsolatedTestEnvironment } from "../../scripts/test-environment.mjs";
 import { resolvePython } from "../../scripts/resolve-python.mjs";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "./postgres-test-options.mjs";
@@ -16,8 +16,11 @@ import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   readStudyQueuePublication, repertoireLimitRecreationPgn, studyDurabilityPgn } from "./postgres-test-fixture.mjs";
 import { createScenarioTimer, isTimingPublicationFailure, postgresCommandTiming } from "../../scripts/test-scenario-timings.mjs";
 import { checkLifecycleSource } from "../../scripts/lifecycle-source-preflight.mjs";
+import { buildMaterials, normalizeCandidateBake, writeCandidateReceipt, verifyCandidateReceipt } from "../../scripts/release-candidate-artifacts.mjs";
+import { inspectImmutableImageSet } from "../../scripts/tempo-runtime.mjs";
 import { verifyTempoCliLifecycle } from "../../scripts/check-tempo-cli.mjs";
 import { atomicJson, redact } from "../../scripts/tempo-deployment.mjs";
+import { prepareLifecycleImages } from "../../scripts/prepare-lifecycle-images.mjs";
 
 const options = parsePostgresTestOptions(process.argv.slice(2));
 const staleOnly = process.env.TEMPO_PG_STALE_DELIVERY_ONLY === "1";
@@ -30,7 +33,33 @@ if (options.list) {
   process.exit(0);
 }
 
-if (stages.includes("deployment_lifecycle")) checkLifecycleSource();
+// Reject invalid opt-in inputs before budget admission or temporary secrets.
+if (process.env.TEMPO_RELEASE_CANDIDATE_MODE) {
+  const mode = process.env.TEMPO_RELEASE_CANDIDATE_MODE, owner = process.env.TEMPO_RELEASE_CANDIDATE_OWNER;
+  const path = process.env.TEMPO_RELEASE_CANDIDATE_RECEIPT;
+  if (!["produce", "borrow"].includes(mode) || (mode === "produce" && options.mode !== "lifecycle")
+      || !/^[-a-z0-9]{12,80}$/.test(owner ?? "") || !path || resolve(path) !== path)
+    throw new Error("Candidate reuse requires produce or borrow, an absolute receipt path and unique owner");
+  if (["DOCKER_HOST", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH"].some(name => process.env[name]))
+    throw new Error("Candidate reuse requires a named Docker context without host or TLS overrides");
+  const parent = dirname(path), stat = lstatSync(parent);
+  if (!stat.isDirectory() || stat.mode & 0o077) throw new Error("Candidate receipt parent must be a private existing directory");
+  accessSync(parent, constants.W_OK);
+  if (mode === "produce" ? existsSync(path) : !existsSync(path) || !lstatSync(path).isFile())
+    throw new Error("Candidate receipt destination is unavailable or already exists");
+  for (const args of [["rev-parse", "HEAD"], ["rev-parse", "HEAD^{tree}"], ["--no-optional-locks", "status", "--porcelain", "--untracked-files=all"]]) {
+    const result = spawnSync("git", args, { encoding: "utf8", timeout: 15_000 });
+    if (result.error || result.status !== 0 || (args.includes("status") && result.stdout.trim()))
+      throw new Error("Candidate release source must be clean and identifiable");
+  }
+}
+
+if (stages.includes("deployment_lifecycle")) {
+  if (process.env.TEMPO_LIFECYCLE_P0_59_ONLY !== "1" && !process.env.TEMPO_LIFECYCLE_SCHEMA61_IMAGES
+      && ["DOCKER_HOST", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH"].some(name => process.env[name]))
+    throw new Error("Automatic historical image preparation does not support inherited Docker host or TLS overrides; supply an explicit historical manifest or use a named context.");
+  checkLifecycleSource();
+}
 
 // Docker Desktop only shares the project checkout, so the short-lived secret
 if (!process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN)
@@ -993,6 +1022,62 @@ async function verifyCurrentCanonicalRouteAdmission() {
   console.log("PASS test_postgres_canonical_retention_scoped_readonly_poll_preserves_idle_worker_admission");
 }
 
+// Optional release-owned candidate reuse. Direct invocations retain their usual path.
+const candidateMode = process.env.TEMPO_RELEASE_CANDIDATE_MODE;
+const candidateReceiptPath = process.env.TEMPO_RELEASE_CANDIDATE_RECEIPT;
+const candidateOwner = process.env.TEMPO_RELEASE_CANDIDATE_OWNER;
+let candidateIdentity, candidateBake, candidateMetadataPath, borrowedCandidate, candidatePublished = false;
+const candidateRoles = ["schema", "api", "foreground-worker", "background-worker", "background-scheduler", "web"];
+const retainedCandidateTags = [];
+const candidateSuiteTags = [];
+function candidateCommand(command, args, env = environment) {
+  const result = spawnSync(command, args, { encoding: "utf8", env, timeout: 30_000 });
+  if (result.error || result.status !== 0) throw new Error(`Candidate ${command} inspection failed`);
+  return result.stdout.trim();
+}
+function candidateInspect(id) {
+  const values = JSON.parse(candidateCommand("docker", ["image", "inspect", id]));
+  if (!Array.isArray(values) || values.length !== 1) throw new Error("Candidate image inspection incomplete");
+  return values[0];
+}
+function candidateSource() {
+  const revision = candidateCommand("git", ["rev-parse", "HEAD"]), tree = candidateCommand("git", ["rev-parse", "HEAD^{tree}"]);
+  const changes = candidateCommand("git", ["--no-optional-locks", "status", "--porcelain", "--untracked-files=all"]);
+  if (revision !== candidateRevision || changes) throw new Error("Candidate release source is not exact and clean");
+  return { revision, tree, clean: true };
+}
+function candidateTarget() {
+  if (["DOCKER_HOST", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH"].some(name => environment[name]))
+    throw new Error("Candidate reuse requires a named Docker context without host or TLS overrides");
+  const context = candidateCommand("docker", ["context", "show"]);
+  if (!context) throw new Error("Candidate Docker context unavailable");
+  environment.DOCKER_CONTEXT = context;
+  const daemon_id = candidateCommand("docker", ["info", "--format", "{{.ID}}"]);
+  let platform = candidateCommand("docker", ["info", "--format", "{{.OSType}}/{{.Architecture}}"]);
+  platform = platform.replace("linux/aarch64", "linux/arm64").replace("linux/x86_64", "linux/amd64");
+  return { context, daemon_id, platform };
+}
+function candidatePrepareIdentity() {
+  if (!["produce", "borrow"].includes(candidateMode) || (candidateMode === "produce" && options.mode !== "lifecycle")
+      || !/^[-a-z0-9]{12,80}$/.test(candidateOwner ?? "")
+      || !candidateReceiptPath || resolve(candidateReceiptPath) !== candidateReceiptPath)
+    throw new Error("Candidate reuse requires produce or borrow, an absolute receipt path and unique owner");
+  const source = candidateSource(), target = candidateTarget();
+  candidateBake = JSON.parse(candidateCommand("docker", [...compose, "build", "--print"]));
+  const recipes = normalizeCandidateBake(candidateBake, project);
+  recipes.maintenance = { context: process.cwd(), dockerfile: "Dockerfile.postgres-maintenance", labels: { "org.opencontainers.image.revision": candidateRevision } };
+  return { source, ...target, recipes };
+}
+function candidateTag(role) { return `tempo-release-${candidateOwner}-${role}`; }
+function assertCandidateTagAbsent(tag) {
+  const result = spawnSync("docker", ["image", "inspect", tag], { encoding: "utf8", env: environment, timeout: 15_000 });
+  if (result.error || result.status !== 1 || !/no such image/i.test(result.stderr ?? ""))
+    throw new Error(`Candidate artifact tag already exists or absence is uncertain: ${tag}`);
+}
+function candidateRuntimeDependencies() {
+  return { postgres: candidateInspect("postgres:18.6-trixie").Id, redis: candidateInspect("redis:7-alpine").Id };
+}
+
 const actions = {
   compose_config: async () => {
     const config = spawnSync("docker", [...compose, "--profile", "maintenance", "config", "--format", "json"],
@@ -1049,19 +1134,90 @@ const actions = {
   },
   image_build: async () => {
     await waitForStudyQuiet();
+    if (stages.includes("deployment_lifecycle") && environment.TEMPO_LIFECYCLE_P0_59_ONLY !== "1"
+      && !environment.TEMPO_LIFECYCLE_SCHEMA61_IMAGES) {
+      const context = spawnSync("docker", ["context", "show"], { encoding: "utf8", env: environment, timeout: 15_000 });
+      assert.equal(context.status, 0, "Cannot select historical image Docker context");
+      environment.DOCKER_CONTEXT = context.stdout.trim();
+      const lockPath = environment.TEMPO_LIFECYCLE_IMAGE_LOCK ?? "config/lifecycle-images/schema61-linux-arm64.json";
+      const outputPath = join(secretsDirectory, "schema61-images.json");
+      const historicalEvidence = await prepareLifecycleImages({
+        lock: JSON.parse(readFileSync(lockPath, "utf8")), context: environment.DOCKER_CONTEXT, outputPath,
+      });
+      // Only a successful complete acquisition may become the lifecycle input.
+      environment.TEMPO_LIFECYCLE_SCHEMA61_IMAGES = outputPath;
+      atomicJson(`test-results/tempo-cli/${project}/historical-preparation.json`, historicalEvidence);
+    }
+    if (candidateMode) {
+      candidateIdentity = candidatePrepareIdentity();
+      for (const role of candidateRoles) assertCandidateTagAbsent(`${project}-${role}`);
+      if (candidateMode === "produce") {
+        if (existsSync(candidateReceiptPath)) throw new Error("Candidate receipt already exists");
+        assertCandidateTagAbsent(maintenanceImage);
+        for (const role of [...candidateRoles, "maintenance"]) assertCandidateTagAbsent(candidateTag(role));
+        candidateMetadataPath = join(secretsDirectory, "candidate-bake-metadata.json");
+      } else {
+        const receipt = JSON.parse(readFileSync(candidateReceiptPath, "utf8"));
+        candidateIdentity.build_dependencies = receipt.identity?.build_dependencies;
+        candidateIdentity.runtime_dependencies = candidateRuntimeDependencies();
+        const inspected = await inspectImmutableImageSet(async args => ({ code: 0, stdout: candidateCommand("docker", args) }),
+          Object.values(receipt.images ?? {}));
+        borrowedCandidate = await verifyCandidateReceipt({ receipt, owner: candidateOwner, observed: candidateIdentity,
+          inspect: async id => inspected.get(id) });
+      }
+    }
     await recordBudgetResource(`compose:${project}`, true);
     resourcesCreated = true;
-    await managedComposeBuild(() => execFileSync('docker',[...compose,'build','--print'],{encoding:'utf8',env:environment}),
-      args => run('docker',args));
+    if (borrowedCandidate) {
+      assertCandidateTagAbsent(maintenanceImage);
+      for (const role of candidateRoles) {
+        const tag = `${project}-${role}`; candidateSuiteTags.push(tag);
+        run("docker", ["tag", borrowedCandidate[role], tag]);
+      }
+      maintenanceImageCleanupRequired = true;
+      run("docker", ["tag", borrowedCandidate.maintenance, maintenanceImage]);
+    } else {
+      if (candidateMode === "produce") candidateSuiteTags.push(...candidateRoles.map(role => `${project}-${role}`));
+      await managedComposeBuild(() => execFileSync('docker',[...compose,'build','--print'],{encoding:'utf8',env:environment}),
+      args => run('docker', candidateMetadataPath ? [...args, "--metadata-file", candidateMetadataPath] : args,
+        candidateMetadataPath ? { env: { ...environment, BUILDX_METADATA_PROVENANCE: "min" } } : {}));
+    }
     // The rehearsal records dependency images before starting its child stack.
     // Standalone mode has no parent startup to pull these images first.
     if (options.mode === "lifecycle") run("docker", [...compose, "pull", "--policy", "missing", "postgres", "redis"]);
   },
   maintenance_cli: async () => {
     maintenanceImageCleanupRequired = true;
-    await managedBuild(builder => run("docker", ['buildx', "build", '--builder', builder, '--load', "-f", "Dockerfile.postgres-maintenance", "--label", `org.opencontainers.image.revision=${candidateRevision}`, "-t", maintenanceImage, "."]));
+    const maintenanceMetadata = candidateMode === "produce" ? join(secretsDirectory, "candidate-maintenance-metadata.json") : null;
+    if (!borrowedCandidate) await managedBuild(builder => run("docker", ['buildx', "build", '--builder', builder, '--load', "-f", "Dockerfile.postgres-maintenance", "--label", `org.opencontainers.image.revision=${candidateRevision}`, "-t", maintenanceImage, ...(maintenanceMetadata ? ["--metadata-file", maintenanceMetadata] : []), "."],
+      maintenanceMetadata ? { env: { ...environment, BUILDX_METADATA_PROVENANCE: "min" } } : {}));
     for (const script of ["apply_postgres_migrations.py", "verify_postgres_backup.py", "verify_postgres_cli_state.py"]) {
       run("docker", ["run", "--rm", "--name", maintenanceHelpContainer, "--memory", "256m", "--label", "tempo.resource-class=development", "--label", `tempo.resource-owner=${process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN}`, "--label", `com.docker.compose.project=${project}`, "--label", "com.docker.compose.service=maintenance-help", maintenanceImage, `database/tooling/${script}`, "--help"]);
+    }
+    if (candidateMode === "produce") {
+      const metadata = JSON.parse(readFileSync(candidateMetadataPath, "utf8"));
+      const maintenance = JSON.parse(readFileSync(maintenanceMetadata, "utf8"));
+      const imageIds = {}, materials = {};
+      for (const role of [...candidateRoles, "maintenance"]) {
+        const tag = role === "maintenance" ? maintenanceImage : `${project}-${role}`;
+        const inspected = candidateInspect(tag);
+        if (inspected.Config?.Labels?.["org.opencontainers.image.revision"] !== candidateRevision)
+          throw new Error(`Candidate ${role} revision mismatch`);
+        imageIds[role] = inspected.Id;
+        const path = role === "maintenance" ? "Dockerfile.postgres-maintenance" : candidateIdentity.recipes[role].dockerfile;
+        const roleMaterials = buildMaterials(role === "maintenance" ? maintenance : metadata[role], {
+          dockerfile: readFileSync(path, "utf8"), platform: candidateIdentity.platform, expectedImageId: inspected.Id });
+        for (const [name, digest] of Object.entries(roleMaterials)) materials[`${role}:${name}`] = digest;
+      }
+      candidateIdentity.build_dependencies = materials;
+      candidateIdentity.runtime_dependencies = candidateRuntimeDependencies();
+      candidateSource();
+      for (const role of [...candidateRoles, "maintenance"]) {
+        const tag = candidateTag(role); assertCandidateTagAbsent(tag);
+        retainedCandidateTags.push(tag); run("docker", ["tag", imageIds[role], tag]);
+      }
+      writeCandidateReceipt(candidateReceiptPath, { owner: candidateOwner, identity: candidateIdentity, images: imageIds });
+      candidatePublished = true;
     }
     console.log("PASS PostgreSQL maintenance image starts migration and verification commands");
   },
@@ -1431,6 +1587,16 @@ const actions = {
           cleanupErrors.push(new Error("Disposable maintenance image cleanup failed"));
       }
     } finally {
+      for (const tag of candidateSuiteTags) {
+        const removed = spawnSync("docker", ["image", "rm", tag], { encoding: "utf8", env: environment, timeout: 15_000 });
+        if (removed.error || (removed.status !== 0 && !/no such image/i.test(removed.stderr ?? "")))
+          cleanupErrors.push(new Error(`Candidate suite tag cleanup failed: ${tag}`));
+      }
+      if (!candidatePublished) for (const tag of retainedCandidateTags) {
+        const removed = spawnSync("docker", ["image", "rm", tag], { encoding: "utf8", env: environment, timeout: 15_000 });
+        if (removed.error || (removed.status !== 0 && !/no such image/i.test(removed.stderr ?? "")))
+          cleanupErrors.push(new Error(`Candidate tag cleanup failed: ${tag}`));
+      }
       rmSync(secretsDirectory, { recursive: true, force: true });
     }
     if (cleanupErrors.length) throw new AggregateError(cleanupErrors, "PostgreSQL resource cleanup failed");

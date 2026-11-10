@@ -318,7 +318,7 @@ test("standalone lifecycle prepares only missing dependency images on cold and w
       const servicesWithAvailableImages = new Set(cachedServices);
       const imagePreparationCommands = [];
       const registryAcquisitions = [];
-      const imagePreparationContext = { waitForStudyQuiet:async()=>{},recordBudgetResource:async()=>{},project:'owned-project',
+      const imagePreparationContext = { candidateMode: undefined, borrowedCandidate: null, candidateMetadataPath: null, stages: [], environment: {}, waitForStudyQuiet:async()=>{},recordBudgetResource:async()=>{},project:'owned-project',
         managedComposeBuild:async (_prepare,execute)=>execute(['compose','build']), options: { mode }, compose: ["compose"], resourcesCreated: false,
         run: (command, args) => {
           assert.equal(command, "docker");
@@ -358,7 +358,7 @@ test("standalone lifecycle propagates missing dependency acquisition failures wi
   const maintenanceCliStartIndex = runnerSource.indexOf("  maintenance_cli: async () => {", imageBuildStartIndex);
   assert(imageBuildStartIndex >= 0 && maintenanceCliStartIndex > imageBuildStartIndex);
   const acquisitionFailure = new Error("Missing Redis image could not be acquired");
-  const imagePreparationContext = { waitForStudyQuiet:async()=>{},recordBudgetResource:async()=>{},project:'owned-project',
+  const imagePreparationContext = { candidateMode: undefined, borrowedCandidate: null, candidateMetadataPath: null, stages: [], environment: {}, waitForStudyQuiet:async()=>{},recordBudgetResource:async()=>{},project:'owned-project',
         managedComposeBuild:async (_prepare,execute)=>execute(['compose','build']), options: { mode: "lifecycle" }, compose: ["compose"], resourcesCreated: false,
     run: (_command, args) => {
       if (args.includes("pull")) throw acquisitionFailure;
@@ -373,7 +373,7 @@ test("maintenance image cleanup is armed before build timing publication can fai
   const start = source.indexOf("  maintenance_cli: async () => {");
   const end = source.indexOf("  startup: async () => {", start);
   const publicationFailure = new Error("Timing publication failed after the image was built");
-  const context = { managedBuild:async build=>build("fixture-builder"), buildResourceArguments:()=>[], maintenanceImageCleanupRequired: false,
+  const context = { candidateMode: undefined, borrowedCandidate: null, managedBuild:async build=>build("fixture-builder"), buildResourceArguments:()=>[], maintenanceImageCleanupRequired: false,
     candidateRevision: "candidate", maintenanceImage: "owned-maintenance", run: () => { throw publicationFailure; } };
   const actions = runInNewContext(`({${source.slice(start, end)}})`, context);
   await assert.rejects(actions.maintenance_cli(), error => error === publicationFailure);
@@ -396,7 +396,7 @@ test("maintenance cleanup accepts only an absent owned image and preserves other
     [{ error: new Error("Docker unavailable"), status: null }, false],
   ]) {
     const calls = [];
-    const context = { recordBudgetResource:async()=>{},reconcileDevelopmentStartup:()=>{},removeOwnedMaintenanceHelpContainer:()=>{},project:"owned-project",executeDiagnosticCleanup, isMissingMaintenanceImage, resourcesCreated: false, maintenanceImageCleanupRequired: true,
+    const context = { candidateSuiteTags: [], retainedCandidateTags: [], candidateMode: null, candidatePublished: false, recordBudgetResource:async()=>{},reconcileDevelopmentStartup:()=>{},removeOwnedMaintenanceHelpContainer:()=>{},project:"owned-project",executeDiagnosticCleanup, isMissingMaintenanceImage, resourcesCreated: false, maintenanceImageCleanupRequired: true,
       maintenanceImage: "owned-maintenance", environment: {}, secretsDirectory: "owned-secrets", process: { env: {} },
       spawnSync: (command, args) => { calls.push([command, Array.from(args)]); return removal; },
       rmSync: path => calls.push(["secrets", path]) };
@@ -1423,7 +1423,7 @@ test('native_startup_rejects_inherited_lease_mismatch_before_any_external_effect
 test('native_actual_standalone_help_partial_start_has_owned_identity_and_verified_cleanup_before_reconciliation',()=>nativeStartupFixture(async({budget,state,container,options,paths,project,existsSync})=>{
   const source=readFileSync(join(root,'database/tests/test-postgres-docker.mjs'),'utf8'),name=project+'-maintenance-help',commands=[];
   const begin=source.indexOf('  maintenance_cli: async () => {'),end=source.indexOf('  startup: async () => {',begin);
-  const action=runInNewContext(`({${source.slice(begin,end)}})`,{maintenanceImageCleanupRequired:false,maintenanceImage:'owned-maintenance',maintenanceHelpContainer:name,project,
+  const action=runInNewContext(`({${source.slice(begin,end)}})`,{candidateMode:null,borrowedCandidate:null,maintenanceImageCleanupRequired:false,maintenanceImage:'owned-maintenance',maintenanceHelpContainer:name,project,
     candidateRevision:'test-revision',process:{env:{TEMPO_DEVELOPMENT_BUDGET_TOKEN:options.token}},console:{log(){}},managedBuild:async build=>build('owned-builder'),run:(_command,args)=>commands.push(Array.from(args))});
   await action.maintenance_cli();const args=commands.find(args=>args[0]==='run');assert(args,'Exercise actual standalone maintenance start arguments');
   assert.equal(args[args.indexOf('--name')+1],name);
