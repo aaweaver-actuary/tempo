@@ -28,4 +28,8 @@ test("web build context ends with exclusions for secrets, generated files and do
   for (const excluded of ["**/.env*", "**/.git", "**/.git/**", "**/node_modules", "**/node_modules/**", "**/.venv", "**/.venv/**", "**/.tempo-pg-test-secrets-*", "**/.tempo-pg-test-secrets-*/**", "**/dist", "**/dist/**", "**/target", "**/target/**", "public/tempo-core", "public/tempo-core/**", "**/*.md", "**/AGENTS.md"]) {
     assert(rules.indexOf(excluded) > lastInclude, `${excluded} must override all inclusions`);
   }
+  for (const name of ["test-results", "playwright-report", "local-dist", "pages-dist", ".next", ".wrangler", ".pytest_cache", "*.egg-info"]) {
+    assert(rules.indexOf(`**/${name}`) > lastInclude);
+    assert(rules.indexOf(`**/${name}/**`) > lastInclude);
+  }
 });

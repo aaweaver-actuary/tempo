@@ -13,7 +13,16 @@ COPY packages/chess-line/package.json ./packages/chess-line/package.json
 COPY database/browser-intents/package.json ./database/browser-intents/package.json
 COPY packages/study-session/package.json ./packages/study-session/package.json
 RUN npm ci
-COPY . .
+COPY static ./static
+COPY app ./app
+COPY database/browser ./database/browser
+COPY database/browser-intents ./database/browser-intents
+COPY packages/chess-line ./packages/chess-line
+COPY packages/study-session ./packages/study-session
+COPY packages/board-ui ./packages/board-ui
+COPY scripts/study-composition.ts scripts/offline-shell-assets.ts ./scripts/
+COPY tsconfig.json module-resolution.ts vite.static.config.ts ./
+COPY public ./public
 COPY --from=core /app/public/tempo-core ./public/tempo-core
 RUN npm run build:local
 
