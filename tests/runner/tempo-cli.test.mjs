@@ -1021,6 +1021,8 @@ test("actual CLI compatible fallback trusts immutable dependency IDs rather than
 
 function interruptedApplicationRollout(t, partial = false) {
   const fixture = commandFixture(t, "upgrade");
+  // Managed image preparation requires the target lock in a private state directory.
+  fs.chmodSync(fixture.stateDirectory, 0o700);
   const receiptPath = join(fixture.stateDirectory, "deployment.json");
   const receipt = readFixtureJson(fixture, "deployment.json", true);
   const configuration = readFixtureJson(fixture, "fixture.json").config;
