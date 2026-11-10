@@ -313,6 +313,18 @@ Schema version 2 adds start-ordered `details` beneath the unchanged required sta
 
 ## Deployment lifecycle selection
 
+For the explicit schema-63 current-upgrade profile, use
+`make docker-lifecycle-current` / `--mode lifecycle-current`, with the pinned
+schema-62 source/artifact prerequisites below. Its distinct
+`deployment_lifecycle_current` stage performs a real historical upgrade to 61,
+the destructive cut to 62 with history/backup/witness checks, then the supported
+62-to-63 upgrade with an exact saved receipt, legal next card and compatible
+repeat. It excludes the deep historical fault matrix; reuse of its separately
+source-bound evidence must be stated. `--mode lifecycle` retains that full
+matrix. A current-profile report cannot qualify the full historical mode or
+replace an existing complete CI plan. No 30-transition recovery assertions,
+workload, timeout or resource limits change.
+
 `schema_migrations`, `priority_recovery` and `background_diagnostics` run in ordinary durability and full mode. `deployment_lifecycle` invokes the unchanged complete `verifyTempoCliLifecycle()` rehearsal in full mode and independent `--mode lifecycle` / `make docker-lifecycle`. Full mode still quiesces and restores its parent applications around the child rehearsal. The ordinary durability mode and legacy `--skip-browser` alias omit this deployment rehearsal; they retain every direct database proof. Historical timing reports may still use the former combined `schema_upgrade` name.
 
 Within that existing child lifetime, `test_tempo_cli_abandon_orphan_exact_plan_apply_retry_preserves_history` uses the registered Node abandonment command after the real upgrade reaches readiness. When executed, its fixed synthetic orphan checks default plan, checked apply, exact retry and specific stale-hash, revision, target-registration and changed-payload refusals, while retaining origin/receipt bytes, FSRS, reviews and snapshots with zero grades. Only the disposable historical fixture seeds the orphan; normal whole-stack teardown removes its retained data. This synthetic case does not authorize abandonment of a user attempt or replace native owner and visual qualification.
@@ -345,8 +357,8 @@ retains fresh mutable state and its original runtime configuration fingerprint.
 Run the complete selected lifecycle with the explicit historical manifest unset
 to establish automatic lock adoption; an explicit override bypasses that hook.
 Schema 63 additionally requires the pinned detached schema-62 source and local
-artifact lock described there. The original historical rehearsal precedes a
-real 62-to-63 transition and fresh compatible repeat on the same owned target;
+artifact lock described there. The selected historical/current profile precedes
+a real 62-to-63 transition and fresh compatible repeat on the same owned target;
 history and exact committed review receipts remain asserted. The optional
 schema-59 managed/shipping continuation to 63 is explicitly unqualified and
 refuses before acquisition; its existing 62-only cases are not removed.

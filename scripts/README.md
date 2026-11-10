@@ -279,7 +279,8 @@ The existing PostgreSQL parent runner supports opt-in reuse within one release
 attempt. Set `TEMPO_RELEASE_CANDIDATE_MODE=produce`, a unique lowercase
 `TEMPO_RELEASE_CANDIDATE_OWNER` (12–80 letters, digits or hyphens), and an absolute
 `TEMPO_RELEASE_CANDIDATE_RECEIPT` in an existing private directory, then run the
-normal `--mode lifecycle` invocation. A later compatible invocation uses the
+selected `--mode lifecycle-current` (schema 63) or full `--mode lifecycle`
+invocation. A later compatible invocation uses the
 same owner and receipt with mode `borrow`. Normal invocations without these
 settings keep their existing construction path.
 
@@ -340,20 +341,34 @@ module prerequisites:
 ```sh
 TEMPO_LIFECYCLE_SCHEMA62_ROOT=/absolute/task-owned/schema62 \
 TEMPO_LIFECYCLE_SCHEMA62_IMAGES="$PWD/config/lifecycle-images/schema62-linux-arm64.json" \
-make docker-lifecycle
+make docker-lifecycle-current
 ```
 
 The parent supplies the default image-lock path for direct Node invocations;
 the standalone Make source check requires both explicit paths. Main/branch
 checkouts, dirty or wrong source, missing images and changed target identities
 fail closed. These schema-62 images are borrowed and never deleted by the test.
-The current runtime runs the original historical-to-62 rehearsal against that
-source/artifact binding; real historical CLI children retain their source pin.
-Only afterward does a fresh current target binding perform the supported
+The explicit `lifecycle-current` profile performs one real historical upgrade
+to 61 and the destructive cut to 62 against that source/artifact binding,
+asserting original history, verified backup and witness. A fresh current target
+binding then performs the supported
 62-to-63 upgrade and compatible repeat on the same owned data identity. The
 original history, committed review identity and exact receipt must survive,
 and the resulting queue must contain a legal playable successor. Original
 guards and receipts are not rewritten to escape holds.
+
+Before changing checkout ownership, the old runtime revalidates its disposable
+target and stops writers. Only owned containers and network are removed; all
+named volume identities and original deployment/guard bytes must remain. The
+current runtime then performs its normal ownership validation. The production
+foreign-checkout refusal is not relaxed.
+
+`make docker-lifecycle` retains the full historical fault rehearsal. The
+current profile has its own `lifecycle-current` report mode and
+`deployment_lifecycle_current` stage; it cannot qualify a required full
+historical/CI result. It reuses separately recorded deep historical fault
+evidence rather than repeating that matrix. Existing full/CI selection and
+the separate 30-transition recovery cases remain available and unchanged.
 
 The optional schema-59 managed/shipping continuation to schema 63 remains
 unqualified and refuses before acquisition. Its original schema-62 cases and
