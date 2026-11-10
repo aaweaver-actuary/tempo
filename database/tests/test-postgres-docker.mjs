@@ -15,7 +15,7 @@ import { assertDisposableVolumes, backgroundWorkloadConsumers, executeDiagnostic
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   readStudyQueuePublication, repertoireLimitRecreationPgn, studyDurabilityPgn } from "./postgres-test-fixture.mjs";
 import { createScenarioTimer, isTimingPublicationFailure, postgresCommandTiming } from "../../scripts/test-scenario-timings.mjs";
-import { checkLifecycleSource } from "../../scripts/lifecycle-source-preflight.mjs";
+import { checkLifecycleSource, readSchema62Bridge } from "../../scripts/lifecycle-source-preflight.mjs";
 import { buildMaterials, normalizeCandidateBake, writeCandidateReceipt, verifyCandidateReceipt } from "../../scripts/release-candidate-artifacts.mjs";
 import { inspectImmutableImageSet } from "../../scripts/tempo-runtime.mjs";
 import { verifyTempoCliLifecycle } from "../../scripts/check-tempo-cli.mjs";
@@ -55,6 +55,7 @@ if (process.env.TEMPO_RELEASE_CANDIDATE_MODE) {
 }
 
 if (stages.includes("deployment_lifecycle")) {
+  process.env.TEMPO_LIFECYCLE_SCHEMA62_IMAGES ??= resolve("config/lifecycle-images/schema62-linux-arm64.json");
   if (process.env.TEMPO_LIFECYCLE_P0_59_ONLY !== "1" && !process.env.TEMPO_LIFECYCLE_SCHEMA61_IMAGES
       && ["DOCKER_HOST", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH"].some(name => process.env[name]))
     throw new Error("Automatic historical image preparation does not support inherited Docker host or TLS overrides; supply an explicit historical manifest or use a named context.");
@@ -983,6 +984,27 @@ const actions = {
   },
   image_build: async () => {
     await waitForStudyQuiet();
+    if (stages.includes("deployment_lifecycle") && environment.TEMPO_LIFECYCLE_SCHEMA62_ROOT) {
+      const context = spawnSync("docker", ["context", "show"], { encoding: "utf8", env: environment, timeout: 15_000 });
+      assert.equal(context.status, 0, "Cannot select schema-62 fixture Docker context");
+      environment.DOCKER_CONTEXT = context.stdout.trim();
+      const { manifest: bridge } = readSchema62Bridge(environment);
+      const observed = await inspectImmutableImageSet(async args => {
+        const result = spawnSync("docker", ["--context", environment.DOCKER_CONTEXT, ...args], { encoding: "utf8", env: environment, timeout: 15_000 });
+        if (result.error) throw result.error;
+        return { code: result.status, stdout: result.stdout };
+      }, Object.values(bridge.images));
+      for (const [role, id] of Object.entries(bridge.images)) {
+        const image = observed.get(id);
+        assert(image?.Os === "linux" && image.Architecture === "arm64"
+          && image.Config?.Labels?.["org.opencontainers.image.revision"] === bridge.revision,
+        `Schema-62 fixture identity or platform mismatch for ${role}`);
+      }
+      atomicJson(`test-results/tempo-cli/${project}/schema62-preparation.json`, {
+        revision: bridge.revision, tree: bridge.tree, root: environment.TEMPO_LIFECYCLE_SCHEMA62_ROOT,
+        context: environment.DOCKER_CONTEXT, images: bridge.images, acquisition: "borrowed-local", builds: 0, pulls: 0,
+      });
+    }
     if (stages.includes("deployment_lifecycle") && environment.TEMPO_LIFECYCLE_P0_59_ONLY !== "1"
       && !environment.TEMPO_LIFECYCLE_SCHEMA61_IMAGES) {
       const context = spawnSync("docker", ["context", "show"], { encoding: "utf8", env: environment, timeout: 15_000 });

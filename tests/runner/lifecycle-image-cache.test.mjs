@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 import { lifecycleFixtureRevision as revision, prepareLifecycleImages, validateLifecycleImageLock } from "../../scripts/prepare-lifecycle-images.mjs";
@@ -109,12 +109,31 @@ test("automatic historical path refuses inherited host overrides before resource
   for (const name of ["DOCKER_HOST", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH"]) {
     const env = { [name]: "inherited-override" };
     assert.throws(() => runInNewContext(source.slice(start, end), {
-      stages: ["deployment_lifecycle"], process: { env }, checkLifecycleSource: () => {},
+      stages: ["deployment_lifecycle"], process: { env }, resolve, checkLifecycleSource: () => {},
     }), /does not support inherited Docker host or TLS overrides/);
     for (const bypass of [{ TEMPO_LIFECYCLE_SCHEMA61_IMAGES: "/explicit/images.json" }, { TEMPO_LIFECYCLE_P0_59_ONLY: "1" }]) {
       assert.doesNotThrow(() => runInNewContext(source.slice(start, end), {
-        stages: ["deployment_lifecycle"], process: { env: { ...env, ...bypass } }, checkLifecycleSource: () => {},
+        stages: ["deployment_lifecycle"], process: { env: { ...env, ...bypass } }, resolve, checkLifecycleSource: () => {},
       }));
     }
   }
+});
+
+test("missing schema62 bridge image refuses before candidate construction or lifecycle mutation", async () => {
+  const source = readFileSync(new URL("../../database/tests/test-postgres-docker.mjs", import.meta.url), "utf8");
+  const start = source.indexOf("  image_build: async () => {");
+  const end = source.indexOf("  maintenance_cli: async () => {", start);
+  const calls = [];
+  const context = {
+    stages: ["deployment_lifecycle"], environment: { TEMPO_LIFECYCLE_SCHEMA62_ROOT: "/owned/62", TEMPO_LIFECYCLE_SCHEMA61_IMAGES: "/owned/61.json" },
+    assert, waitForStudyQuiet: async () => calls.push("quiet"),
+    spawnSync: () => ({ status: 0, stdout: "owned-context\n" }),
+    readSchema62Bridge: () => ({ manifest: { images: { api: id(1) } } }),
+    inspectImmutableImageSet: async () => { calls.push("bridge-inspect"); throw new Error("Bridge image unavailable"); },
+    managedComposeBuild: () => { calls.push("build"); }, resourcesCreated: false,
+    options: { mode: "lifecycle" }, candidateMode: null, borrowedCandidate: null,
+  };
+  await assert.rejects(runInNewContext(`({${source.slice(start, end)}})`, context).image_build(), /Bridge image unavailable/);
+  assert.deepEqual(calls, ["quiet", "bridge-inspect"]);
+  assert.equal(context.resourcesCreated, false);
 });
