@@ -162,6 +162,22 @@ it("controlled_browser_context_teardown_fences_native_polling_before_releasing_i
   expect(host.apiEscapes).toEqual([]);
 });
 
+it("controlled_browser_context_teardown_closes_pages_before_releasing_activity_routes", async () => {
+  const order: string[] = [];
+  const api = new ControlledApi("http://127.0.0.1:1234");
+  let finish!: () => void;
+  const pending = new Promise<void>(resolve => { finish = resolve; });
+  api.pending.add(pending);
+  const page = { close: async () => { order.push("page closed"); finish(); } };
+  const context = {
+    pages: () => [page],
+    close: async () => { order.push("context closed"); expect(order).toEqual(["page closed", "route settled", "context closed"]); },
+  } as unknown as BrowserContext;
+  void pending.then(() => { order.push("route settled"); api.pending.delete(pending); });
+  await finishControlledContext(context, api);
+  expect(order).toEqual(["page closed", "route settled", "context closed"]);
+});
+
 it("study_priority_controlled_activity_contract_accepts_one_valid_session_and_rejects_unknown_or_duplicate_fields",()=>{
   const contract={method:"POST",path:"/api/system/browser-activity",query:browserActivityQuery};
   const request={method:"POST",url:"http://127.0.0.1:1234/api/system/browser-activity?session_id=tab-one&expires_in_ms=3000",headers:{},body:null};
