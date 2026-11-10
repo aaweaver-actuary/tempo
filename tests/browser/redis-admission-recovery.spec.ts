@@ -6,10 +6,14 @@ import { join } from "node:path";
 import { test, expect } from "./observability";
 import { boardBounds } from "./ui-fixtures";
 import { RedisAdmissionCleanup } from "./support/redis-admission-cleanup";
+import { connectedReviewState, nativeStudyRecords } from "./native-study-storage";
+import type { IntentRecord } from "@tempo/browser-intents";
 
 const execute = promisify(execFile);
 type OperationReceipt = { operation_id: string; command_name: string; payload_json: string | null; state: string };
 type ReceiptAudit = { queue_entry_ids: number[]; operations: OperationReceipt[] };
+const immutableEnvelope = ({ key, kind, attemptId, requestId, endpoint, revision, createdAt, payload }: IntentRecord) =>
+  ({ key, kind, attemptId, requestId, endpoint, revision, createdAt, payload });
 
 test("test_issue218_redis_outage_retains_review_intent_and_recovers_without_duplicate", async ({ page, request }, testInfo) => {
   const project = process.env.TEMPO_TEST_COMPOSE_PROJECT;
@@ -104,15 +108,26 @@ test("test_issue218_redis_outage_retains_review_intent_and_recovers_without_dupl
         expect(delivery.status).toBe(503);
         expect(delivery.result).toEqual({ detail: "Foreground admission unavailable; check Redis service status and retry with the same Idempotency-Key" });
         expect(Date.now() - started).toBeLessThan(15_000);
-        const retained = await page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1") ?? "[]"));
-        expect(retained).toHaveLength(1);
-        expect(retained[0].backendId).toBe(`${identity}-${fault === "refusal" ? 0 : 1}`);
-        expect(retained[0].attemptId).toMatch(/^[a-f0-9-]{36}$/);
-        expect(delivery.key).toBe(`review-attempt:${retained[0].attemptId}`);
+        const submitted = JSON.parse(delivery.body);
+        const attemptId = submitted.attempt_id as string;
+        const backendId = `${identity}-${fault === "refusal" ? 0 : 1}`;
+        expect(attemptId).toMatch(/^[a-f0-9-]{36}$/);
+        expect(String(submitted.queue_entry_id)).toBe(queueEntry);
+        expect(delivery.key).toBe(`review-attempt:${attemptId}`);
+        const originalKey = `review:${attemptId}`;
+        await expect.poll(async () => (await nativeStudyRecords(page)).filter(record => record.key === originalKey && record.kind === "review" && record.state === "pending")).toHaveLength(1);
+        const retained = (await nativeStudyRecords(page)).find(record => record.key === originalKey)!;
+        expect(retained).toMatchObject({ key: originalKey, kind: "review", state: "pending", attemptId,
+          requestId: delivery.key, endpoint: `/api/cards/${encodeURIComponent(backendId)}/review`,
+          payload: { backendId, queueEntryId: Number(queueEntry), attemptId } });
+        const envelope = immutableEnvelope(retained);
         await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", queueEntry!);
         expect(await fixture("inspect")).toEqual(baseline);
         await page.reload();
-        await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1") ?? "[]"))).toEqual(retained);
+        await expect.poll(async () => {
+          const record = (await nativeStudyRecords(page)).find(item => item.key === originalKey);
+          return record && { state: record.state, envelope: immutableEnvelope(record) };
+        }).toEqual({ state: "pending", envelope });
         // After a true reload no successor is usable while admission is unavailable.
         await expect(page.locator(".board-frame[data-input-enabled='true']")).toHaveCount(0);
         expect(await fixture("inspect")).toEqual(baseline);
@@ -122,22 +137,27 @@ test("test_issue218_redis_outage_retains_review_intent_and_recovers_without_dupl
         }, { timeout: recoveryDeadline }).toBe(true);
         await page.reload();
         await expect.poll(async () => (await fixture("inspect")).reviews.length, { timeout: recoveryDeadline }).toBe(baseline.reviews.length + 1);
-        await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1") ?? "[]")), { timeout: recoveryDeadline }).toEqual([]);
-        const accepted = await request.post(`${api}/cards/${retained[0].backendId}/review`, { headers: { "Idempotency-Key": delivery.key, "Content-Type": "application/json" }, data: delivery.body });
+        await expect.poll(() => connectedReviewState(page, attemptId), { timeout: recoveryDeadline }).toBe("committed");
+        await expect.poll(async () => (await nativeStudyRecords(page)).filter(record => record.key === originalKey && record.state === "pending"), { timeout: recoveryDeadline }).toEqual([]);
+        const accepted = await request.post(`${api}/cards/${backendId}/review`, { headers: { "Idempotency-Key": delivery.key, "Content-Type": "application/json" }, data: delivery.body });
         expect(accepted.status()).toBe(200);
         const acceptedResult = await accepted.json();
         expect(acceptedResult.persisted).toBe(true);
         if (!JSON.parse(delivery.body).prepared_next) expect(acceptedResult).not.toHaveProperty("prepared_continuation");
         const subsequentOperation = randomUUID();
-        const replay = await request.post(`${api}/cards/${retained[0].backendId}/review`, { headers: { "Idempotency-Key": subsequentOperation, "Content-Type": "application/json" }, data: delivery.body });
+        const replay = await request.post(`${api}/cards/${backendId}/review`, { headers: { "Idempotency-Key": subsequentOperation, "Content-Type": "application/json" }, data: delivery.body });
         expect(replay.status()).toBe(200);
         expect(await replay.json()).toEqual(acceptedResult);
         const recovered = await fixture("inspect");
         expect(recovered.reviews).toHaveLength(baseline.reviews.length + 1);
         expect(recovered.receipts).toHaveLength(baseline.receipts.length + 1);
         expect(recovered.operations.filter((row: string[]) => row[0] === delivery.key || row[0] === subsequentOperation).map((row: string[]) => row[1])).toEqual(["complete", "complete"]);
-        expect(JSON.parse(recovered.receipts.find((row: unknown[]) => row[0] === retained[0].attemptId)[3])).toEqual(acceptedResult);
-        evidence.push({ fault, queueEntry, delivery, retained, acceptedResult, subsequentOperation, recovered });
+        expect(JSON.parse(recovered.receipts.find((row: unknown[]) => row[0] === attemptId)[3])).toEqual(acceptedResult);
+        const committed = (await nativeStudyRecords(page)).find(record => record.key === originalKey);
+        expect(committed?.state).toBe("committed");
+        expect(committed?.receipt).toEqual(acceptedResult);
+        expect(immutableEnvelope(committed!)).toEqual(envelope);
+        evidence.push({ fault, queueEntry, delivery, retained, committed, acceptedResult, subsequentOperation, recovered });
       });
     }
     const directory = process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/issue-225";
