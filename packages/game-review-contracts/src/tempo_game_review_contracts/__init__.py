@@ -146,6 +146,6 @@ class ActionPort(Protocol):
     def execute(self, request: ActionRequest) -> Unavailable: ...
 
 
-from .replay import replay_line
+from .replay import ReplaySession, replay_line
 
-__all__ = ['CanonicalGame', 'ReentryAuthority', 'AuthoredRoute', 'RepertoireSnapshot', 'RouteContext', 'PositionFact', 'ComparisonReport', 'GameInput', 'GameIngester', 'RepertoireComparer', 'Unavailable', 'ClassificationPort', 'ActionRequest', 'ActionPort', 'replay_line']
+__all__ = ['CanonicalGame', 'ReentryAuthority', 'AuthoredRoute', 'RepertoireSnapshot', 'RouteContext', 'PositionFact', 'ComparisonReport', 'GameInput', 'GameIngester', 'RepertoireComparer', 'Unavailable', 'ClassificationPort', 'ActionRequest', 'ActionPort', 'replay_line', 'ReplaySession']

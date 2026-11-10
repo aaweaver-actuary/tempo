@@ -11,7 +11,7 @@ from typing import Protocol, get_args
 
 from tempo_game_classification import classify_response, resolve_equivalent_mapping
 from tempo_game_ingestion import BytesInput, PgnGameIngester
-from tempo_game_review_contracts import CanonicalGame, replay_line
+from tempo_game_review_contracts import CanonicalGame, ReplaySession, replay_line
 from tempo_repertoire_comparison import RouteFrontier, TraversalRoute
 
 from app.contracts.product_v02.games import Finding, GameRecord, TimePrecision
@@ -207,22 +207,25 @@ def _compare_repertoire(
     """One repertoire owns its frontier; other repertoires cannot end its coverage."""
     membership = snapshot.membership
     scope = (repertoire_id,)
-    route_positions = [replay_line(route.starting_fen, route.moves) for route in routes]
+    traversal = []
+    by_executable = {}
+    replay_session = ReplaySession()
     own_responses_by_position = {}
-    for route, frames in zip(routes, route_positions):
-        for ply, frame in enumerate(frames[:-1]):
-            if frame["turn"] == game.learner_color:
-                own_responses_by_position.setdefault(
-                    (route.repertoire_id, frame["comparison_key"]), set()
-                ).add(route.moves[ply])
-    # No unconditional FEN-based anchors: only the supplied index may validate
-    # one for the current game position, route and current physical mapping.
-    traversal = [
-        TraversalRoute(
-            tuple(p["comparison_key"] for p in positions), tuple(route.moves)
-        )
-        for route, positions in zip(routes, route_positions)
-    ]
+    for route in routes:
+        # Each alias keeps its frontier index and route-local bindings. Only
+        # exact chess execution is shared within this repertoire comparison.
+        executable = (route.starting_fen, route.moves)
+        if executable not in by_executable:
+            frames = replay_session.replay_line(*executable)
+            for frame in frames[:-1]:
+                if frame["turn"] == game.learner_color:
+                    own_responses_by_position.setdefault(
+                        (repertoire_id, frame["comparison_key"]), set()
+                    ).add(frame["move"])
+            by_executable[executable] = TraversalRoute(
+                tuple(frame["comparison_key"] for frame in frames), route.moves
+            )
+        traversal.append(by_executable[executable])
     positions = replay_line(game.starting_fen, game.moves)
     frontier = RouteFrontier(traversal, positions[0]["comparison_key"])
     boundaries = {item.route_id: item for item in snapshot.boundaries}
@@ -330,16 +333,16 @@ def _compare_repertoire(
             and boundaries[routes[index].route_id].deliberate
             for index, ply in candidates
         )
+        active_occurrences = {
+            (routes[index].route_id, ply) for index, ply in candidates
+        }
         mappings = tuple(
             {
                 item
                 for item in snapshot.decision_presentations
                 if item.repertoire_id == repertoire_id
                 and item.position_key == key
-                and any(
-                    _mapping_applies(item, routes[index].route_id, ply)
-                    for index, ply in candidates
-                )
+                and (item.route_id is None or (item.route_id, item.route_ply) in active_occurrences)
             }
         )
         mapping = resolve_equivalent_mapping(mappings)
@@ -350,19 +353,19 @@ def _compare_repertoire(
         )
         if incompatible_mapping:
             mapping = None
-        active_occurrences = {
-            (routes[index].route_id, ply) for index, ply in candidates
+        mapped_occurrences = {
+            (item.route_id, item.route_ply) for item in mappings if item.route_id is not None
         }
         route_mapping_ambiguous = (
             learner_turn
             and len(expected) == 1
             and len(active_occurrences) > 1
-            and any(item.route_id is not None for item in mappings)
+            and bool(mapped_occurrences)
             and (
                 mapping is None
-                or any(
-                    not any(_mapping_applies(item, route_id, ply) for item in mappings)
-                    for route_id, ply in active_occurrences
+                or (
+                    not any(item.route_id is None for item in mappings)
+                    and not active_occurrences.issubset(mapped_occurrences)
                 )
             )
         )

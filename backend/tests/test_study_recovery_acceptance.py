@@ -593,3 +593,18 @@ def test_capture_timed_wrapper_preserves_result_and_exception(capsys):
     assert markers.out == "" and "private" not in markers.err
     assert "snapshot_full_start" in markers.err and "snapshot_full_end" in markers.err
     assert "snapshot_candidate_raise" in markers.err
+
+
+def test_packaged_collection_foreground_owns_periodic_scheduler():
+    from test_packaged_collection import _ordinary_worker_command
+
+    foreground = _ordinary_worker_command("foreground-worker")
+    background = _ordinary_worker_command("background-worker")
+    assert "--queues=foreground" in foreground and "--concurrency=2" in foreground
+    assert "--beat" in foreground
+    assert "--schedule=/tmp/qualification-celerybeat-schedule" in foreground
+    assert "--queues=background" in background and "--concurrency=1" in background
+    assert "--beat" not in background
+    assert not any(value.startswith("--schedule=") for value in background)
+    with pytest.raises(ValueError, match="unknown packaged worker role"):
+        _ordinary_worker_command("unexpected")

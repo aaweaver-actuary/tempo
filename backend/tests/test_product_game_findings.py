@@ -193,14 +193,26 @@ def equivalent_routes(source, count=2, changed=None):
 @pytest.mark.parametrize("count", [2, 62])
 @pytest.mark.parametrize("played", ["e2e4", "d2d4"])
 def test_equivalent_route_aliases_resolve_once_and_preserve_all_provenance(
-    count, played
+    count, played, monkeypatch
 ):
+    from app.games.feedback import comparison
+
     source = record((played,))
     captured = equivalent_routes(source, count)
     before = deepcopy(captured.model_dump())
     selected = resolve_equivalent_mapping(captured.decision_presentations)
     assert selected is not None and selected.route_id == "alias-00"
+    calls = []
+
+    original = comparison.ReplaySession.replay_line
+
+    def replay(session, starting_fen, moves):
+        calls.append((starting_fen, tuple(moves)))
+        return original(session, starting_fen, moves)
+
+    monkeypatch.setattr(comparison.ReplaySession, "replay_line", replay)
     (finding,) = compare(source, captured)
+    assert calls == [(START, ("e2e4",))]
     assert finding.kind == "known_unintroduced" and not finding.lapse_eligible
     assert (
         finding.decision_id,

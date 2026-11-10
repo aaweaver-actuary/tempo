@@ -6896,3 +6896,12 @@ regression plus actual historical lifecycle passed in a four-case selection
 (one native/three pure), source/dependency hashes and cleanup verified. This
 scoped preparation/output bound does not qualify the unchanged shared
 `owner_mode` publication-time current-epoch transfer as universally bounded.
+
+Sound cues and repeated puzzle setup (November 10, 2026):
+
+- `tests/unit/chess-sound-regressions.test.ts::selects exactly one cue from real move metadata and actor` covers cue selection for move metadata and actor; its existing loading, expiry, mute and settings cases preserve nonfatal playback behavior. `tests/unit/board-move-feedback-regressions.test.tsx::distinguishes an illegal board attempt from a legal move rejected by its consumer` covers the board rejection seam.
+- `backend/tests/test_puzzle_setup_position.py::test_repeated_setup_move_keeps_first_position_and_complete_solution` exercises both active validators with string and list input and replays the complete solution. Its incomplete and later-illegal cases preserve rejection.
+
+Packaged Games fixture scheduler (November 10, 2026):
+
+- `backend/tests/test_study_recovery_acceptance.py::test_packaged_collection_foreground_owns_periodic_scheduler` checks the existing foreground worker owns the genuine embedded Celery scheduler with a private schedule file, while the background worker does not. The packaged suite observes actual scheduler startup and retains its natural queue-refresh and receipt assertions.

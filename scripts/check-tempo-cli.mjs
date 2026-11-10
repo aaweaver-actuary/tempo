@@ -16,6 +16,17 @@ import { verifyPersistedRedisReadiness } from "../database/tests/redis/check-red
 import { forgetMigrationSuffix, markHistoryIncorrect, markHistoryCorrect, readLatestMigration } from "../database/tests/cli/lifecycle-storage.mjs";
 import { resolvePython } from './resolve-python.mjs';
 
+// The cold probe may start missing dependencies without replacing them; the
+// actual correction must still follow the explicit application shutdown.
+export function assertDependencyCorrectionOrder(calls) {
+  const postgresUp = call => call.args.includes("up") && call.args.includes("postgres");
+  const coldPreflight = calls.findIndex(postgresUp);
+  const shutdown = calls.findIndex(call => call.args.includes("stop") && call.args.includes("foreground-worker"));
+  const recreation = calls.findIndex(call => postgresUp(call) && call.args.includes("--force-recreate"));
+  assert(coldPreflight >= 0 && calls[coldPreflight].args.includes("--no-recreate"));
+  assert(shutdown >= 0 && recreation > shutdown);
+}
+
 export async function verifyTempoCliLifecycle({ project, environment, composeFiles, revision, measure = null }) {
   const root = process.cwd();
   composeFiles = releaseComposeFiles({ root, composeFiles });
@@ -759,10 +770,7 @@ await executeLifecycle({ recreate: false }, runtime);
     const correctionStart = commandLog.length;
     await lifecycle("dependency_fallback", { recreate: false }, correctedFallback);
     const correctionCalls = commandLog.slice(correctionStart);
-    const correctionShutdown = correctionCalls.findIndex(call => call.args.includes("stop") && call.args.includes("foreground-worker"));
-    const correctionStartup = correctionCalls.findIndex(call => call.args.includes("up") && call.args.includes("postgres"));
-    assert(correctionShutdown >= 0 && correctionStartup > correctionShutdown);
-    assert(correctionCalls[correctionStartup].args.includes("--force-recreate"));
+    assertDependencyCorrectionOrder(correctionCalls);
     assert.deepEqual((await correctedFallback.ensureImages()), { dependenciesMayChange: false }, "restored dependencies match saved immutable image/config identities");
     assert.deepEqual(await readHistory(), expected, "dependency correction preserves authoritative data");
 

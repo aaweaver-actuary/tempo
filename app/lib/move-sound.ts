@@ -1,6 +1,6 @@
 import { assetUrl } from "../const";
 
-type SoundKind = "move" | "capture" | "check";
+type SoundKind = "move-self" | "move-opponent" | "capture" | "check" | "castle" | "promote" | "illegal";
 type SoundPlayback = {
   audio: HTMLAudioElement;
   generation: number;
@@ -8,9 +8,13 @@ type SoundPlayback = {
 };
 
 const soundPaths: Record<SoundKind, string> = {
-  move: "sounds/standard/Move.mp3",
-  capture: "sounds/standard/Capture.mp3",
-  check: "sounds/standard/Check.wav",
+  "move-self": "sounds/move-self.mp3",
+  "move-opponent": "sounds/move-opponent.mp3",
+  capture: "sounds/capture.mp3",
+  check: "sounds/check.mp3",
+  castle: "sounds/castle.mp3",
+  promote: "sounds/promote.mp3",
+  illegal: "sounds/illegal.mp3",
 };
 const soundPlaybacks: Partial<Record<SoundKind, SoundPlayback>> = {};
 
@@ -18,6 +22,10 @@ export type MoveSoundEvents = {
   capture?: boolean;
   check?: boolean;
   force?: boolean;
+  actor?: "self" | "opponent";
+  promotion?: boolean;
+  castle?: boolean;
+  illegal?: boolean;
 };
 
 export function moveSoundEnabled() {
@@ -38,9 +46,7 @@ function prepareSound(soundKind: SoundKind): SoundPlayback {
 export function prepareMoveSounds() {
   if (typeof window === "undefined") return;
   try {
-    prepareSound("move");
-    prepareSound("capture");
-    prepareSound("check");
+    for (const kind of Object.keys(soundPaths) as SoundKind[]) prepareSound(kind);
   } catch { /* Board interaction remains available when audio is unsupported. */ }
 }
 
@@ -65,11 +71,15 @@ export function playMoveSound({
   force = false,
   capture = false,
   check = false,
+  actor = "self",
+  promotion = false,
+  castle = false,
+  illegal = false,
 }: MoveSoundEvents = {}) {
   if (typeof window === "undefined" || (!force && !moveSoundEnabled())) return;
   try {
     // A check is the most urgent event, including when the checking move captures.
-    const soundKind: SoundKind = check ? "check" : capture ? "capture" : "move";
+    const soundKind: SoundKind = illegal ? "illegal" : check ? "check" : promotion ? "promote" : castle ? "castle" : capture ? "capture" : `move-${actor}`;
     const playback = prepareSound(soundKind);
     const audio = playback.audio;
     // A cue belongs to its move. Loading it later must not replay old moves.
@@ -100,8 +110,9 @@ export function playMoveSound({
 }
 
 export function playChessMoveSound(
-  move: { captured?: string } | null | undefined,
+  move: { captured?: string; promotion?: string; flags?: string } | null | undefined,
   givesCheck: boolean,
+  actor: "self" | "opponent" = "self",
 ) {
-  playMoveSound({ capture: Boolean(move?.captured), check: givesCheck });
+  playMoveSound({ capture: Boolean(move?.captured), check: givesCheck, promotion: Boolean(move?.promotion), castle: Boolean(move?.flags?.match(/[kq]/)), actor });
 }

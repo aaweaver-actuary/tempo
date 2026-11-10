@@ -45,6 +45,9 @@ export class ControlledApi {
 
 /** Stop native polling before releasing interception, then account every in-flight route. */
 export async function finishControlledContext(context: BrowserContext, api: ControlledApi) {
+  // Keep context routes installed until every page has stopped producing requests.
+  await Promise.all(context.pages().map(page => page.close()));
+  await Promise.allSettled([...api.pending]);
   await context.close();
   await Promise.allSettled([...api.pending]);
   api.assertClean();

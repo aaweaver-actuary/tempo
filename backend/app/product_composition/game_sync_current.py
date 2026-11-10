@@ -4,7 +4,14 @@ Importing this module starts nothing. The HTTP app does not import or invoke its
 launcher; saved recurrence alone cannot activate a worker.
 """
 
+from collections import OrderedDict
+from datetime import datetime, timezone
+from hashlib import sha256
 import json
+import zlib
+
+from pydantic_core import to_json
+from app.contracts.product_v02.repertoire import RepertoireSnapshot
 
 from app.repertoire import project_published_repertoire
 from app.games.feedback.review import ReviewUnavailable
@@ -78,13 +85,46 @@ class CurrentSyncSchedule:
 
 
 class CurrentRepertoireSnapshots:
-    def __init__(self, connections):
+    # The recovery workload's ten snapshots occupy about 13 MiB compressed.
+    _max_bytes = 16 * 1024 * 1024
+    _max_entries = 16
+
+    def __init__(self, connections, *, reuse_projections=False):
         self.connections = connections
+        self.reuse_projections = reuse_projections
+        self._projections: OrderedDict[str, tuple[bytes, bytes]] = OrderedDict()
 
     def snapshot(self, repertoire_id):
         with self.connections(repertoire_snapshot=True) as database:
             facts = read_repertoire(database, repertoire_id)
-        return project_published_repertoire(facts)
+        if not self.reuse_projections:
+            return project_published_repertoire(facts)
+        # Read every current fact on every page. Changed row/key order can only
+        # cause a cache miss. No publication counter grants reuse on its own.
+        digest = sha256(to_json(facts)).digest()
+        previous = self._projections.pop(repertoire_id, None)
+        if previous is not None and previous[0] == digest:
+            del facts
+            snapshot = RepertoireSnapshot.model_validate_json(zlib.decompress(previous[1]))
+            self._projections[repertoire_id] = previous
+            membership = snapshot.membership.model_copy(
+                update={"captured_at": datetime.now(timezone.utc).isoformat()}
+            )
+            return snapshot.model_copy(update={"membership": membership})
+        del previous
+        snapshot = project_published_repertoire(facts)
+        del facts
+        compressed = zlib.compress(to_json(snapshot), level=1)
+        entry_bytes = len(digest) + len(compressed)
+        if entry_bytes <= self._max_bytes:
+            used = sum(len(key) + len(data) for key, data in self._projections.values())
+            while self._projections and (
+                len(self._projections) >= self._max_entries or used + entry_bytes > self._max_bytes
+            ):
+                _, (key, data) = self._projections.popitem(last=False)
+                used -= len(key) + len(data)
+            self._projections[repertoire_id] = (digest, compressed)
+        return snapshot
 
 
 def create_current_game_sync(
@@ -168,7 +208,9 @@ def create_current_game_sync(
     runtime = create_game_sync(
         policies=tuple(configuration_policy(value) for value in configurations),
         store=store,
-        snapshots=CurrentRepertoireSnapshots(connections),
+        snapshots=CurrentRepertoireSnapshots(
+            connections, reuse_projections=forward_window is not None
+        ),
         learning=learning,
         clock=clock,
         source_identity=store,

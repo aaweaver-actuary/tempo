@@ -1105,7 +1105,8 @@
         "ClassificationPort",
         "ActionRequest",
         "ActionPort",
-        "replay_line"
+        "replay_line",
+        "ReplaySession"
       ],
       "dependencies": [
         "pydantic",

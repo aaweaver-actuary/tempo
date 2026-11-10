@@ -11,8 +11,13 @@ const required = [
   "data/tactics-decks.json",
   "data/tactics-catalog.json",
   "data/tactics-packs",
-  "sounds/standard/Move.mp3",
-  "sounds/standard/Capture.mp3",
+  "sounds/move-self.mp3",
+  "sounds/move-opponent.mp3",
+  "sounds/capture.mp3",
+  "sounds/check.mp3",
+  "sounds/castle.mp3",
+  "sounds/promote.mp3",
+  "sounds/illegal.mp3",
 ];
 
 const missing = required.filter((path) => !existsSync(new URL(path, root)));

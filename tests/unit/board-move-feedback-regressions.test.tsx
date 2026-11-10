@@ -7,7 +7,7 @@ import { PersistentBoardShell } from "../../app/components/board/persistent-boar
 import { PositionSolutionBoard, PositionSolutionTabs } from "../../app/components/position-solution-editor";
 import { usePositionSolutionEditor } from "../../app/hooks/use-position-solution-editor";
 import { useBoardPublisher } from "../../app/hooks/use-board-publisher";
-import { playChessMoveSound } from "../../app/lib/move-sound";
+import { playChessMoveSound, playMoveSound } from "../../app/lib/move-sound";
 import { useBoardShellStore } from "../../app/state/board-shell-store";
 import StudyExerciseRunner from "../../app/views/study_exercise_runner";
 
@@ -111,4 +111,20 @@ it("promotion metadata updates preserve the board and a new owner defaults to qu
   view.rerender(<><PersistentBoardShell /><BoardOwner owner="games" /></>);
   playBoardInput("a7", "a8");
   expect(playChessMoveSound).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ promotion: "q" }), true);
+});
+
+
+it("distinguishes an illegal board attempt from a legal move rejected by its consumer", async () => {
+  const onMove = vi.fn();
+  render(<Chessboard fen={new Chess().fen()} locked={false} showHint={false} theme="brown" pieceSet="cburnett" onMove={onMove} />);
+  await waitFor(() => expect(createBoard).toHaveBeenCalled());
+  playBoardInput("e2", "e5");
+  expect(playMoveSound).toHaveBeenCalledExactlyOnceWith({ illegal: true });
+  expect(playChessMoveSound).not.toHaveBeenCalled();
+  vi.mocked(playMoveSound).mockClear();
+  onMove.mockClear();
+  playBoardInput("e2", "e4");
+  expect(onMove).toHaveBeenCalledExactlyOnceWith("e2", "e4");
+  expect(playChessMoveSound).toHaveBeenCalledTimes(1);
+  expect(playMoveSound).not.toHaveBeenCalled();
 });

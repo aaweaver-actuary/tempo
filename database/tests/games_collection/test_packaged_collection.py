@@ -24,6 +24,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'backend/tests'))
 from test_product_game_lapse_postgres import ROOT, owned_postgres, case, retained_owner_case
 
 
+def _ordinary_worker_command(role):
+    if role not in ("foreground-worker", "background-worker"):
+        raise ValueError("unknown packaged worker role")
+    foreground = role == "foreground-worker"
+    return ["celery", "-A", "app.celery_app:celery_app", "worker",
+            "--queues=" + ("foreground" if foreground else "background"),
+            "--concurrency=" + ("2" if foreground else "1"),
+            "--prefetch-multiplier=1", "--loglevel=INFO",
+            *(["--beat", "--schedule=/tmp/qualification-celerybeat-schedule"] if foreground else [])]
+
+
 def _retain_capture_markers(stderr, *, directory, owner, report, private_values=()):
     """Keep only the fixed observer's bounded stderr, never change a command."""
     text = stderr.decode('utf8', errors='replace') if isinstance(stderr, bytes) else (stderr or '')
@@ -733,10 +744,17 @@ print(hashlib.sha256(path.read_bytes()).hexdigest())
         postgres_attached=True
         launch('redis',['redis-server','--appendonly','no','--save',''],kind='redis')
         if recovery_mode is None:
-            launch('foreground-worker',['celery','-A','app.celery_app:celery_app','worker','--queues=foreground',
-                '--concurrency=2','--prefetch-multiplier=1','--loglevel=INFO'])
-            launch('background-worker',['celery','-A','app.celery_app:celery_app','worker','--queues=background',
-                '--concurrency=1','--prefetch-multiplier=1','--loglevel=INFO'])
+            launch('foreground-worker', _ordinary_worker_command('foreground-worker'))
+            launch('background-worker', _ordinary_worker_command('background-worker'))
+            def scheduler_started():
+                logs = docker('logs', containers['foreground-worker']['id'])
+                return next((line for line in (logs.stdout + '\n' + logs.stderr).splitlines()
+                             if 'beat: Starting' in line), None)
+            report['essential_scheduler'] = dict(
+                runtime='supported embedded Celery beat in existing foreground worker',
+                schedule='/tmp/qualification-celerybeat-schedule',
+                startup=wait_for(scheduler_started, 'packaged_essential_scheduler_missing'),
+                additional_service=False)
         else:
             launch('foreground-worker',['python','-B','-c',fixture_entry,'recovery-foreground'])
             launch('background-worker',['python','-B','-c',fixture_entry,'recovery-background'])

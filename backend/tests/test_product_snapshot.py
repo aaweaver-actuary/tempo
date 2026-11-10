@@ -648,14 +648,13 @@ def test_repertoire_read_port_is_one_parameter_bound_read_and_fails_on_truncatio
             self.calls.append((statement, parameters))
             return self
 
-        def fetchone(self):
-            return {
-                "snapshot": snapshot_envelope(
-                    bounded=self.bounded,
-                    line_count=1 if self.bounded else 10001,
-                    facts=repertoire_facts() if self.bounded else None,
-                )
-            }
+        def fetchall(self):
+            envelope = snapshot_envelope(
+                bounded=self.bounded,
+                line_count=1 if self.bounded else 10001,
+                facts=repertoire_facts() if self.bounded else None,
+            )
+            return EnvelopeReader(envelope).fetchall()
 
     reader = Reader()
     requested = "rep' OR true --"
@@ -692,8 +691,13 @@ class EnvelopeReader:
     def execute_native(self, statement, parameters):
         return self
 
-    def fetchone(self):
-        return {"snapshot": self.envelope}
+    def fetchall(self):
+        header = self.envelope.copy()
+        graphs = []
+        if header["facts"] is not None:
+            header["facts"] = header["facts"].copy()
+            graphs = header["facts"].pop("graphs")
+        return [{"snapshot": row} for row in [header, *graphs]]
 
 
 @pytest.mark.parametrize(
@@ -819,7 +823,7 @@ def test_repertoire_snapshot_has_no_whole_snapshot_byte_cap():
         bounded=True, facts=facts, estimated_bytes=64 * 1024 * 1024
     )
     result = read_repertoire(EnvelopeReader(envelope), "rep")
-    assert result is facts
+    assert result == facts
     snapshot = project_repertoire(result)
     assert snapshot.membership.complete and snapshot.membership.routes
     assert facts["repertoire"]["name"] == "x" * (32 * 1024 * 1024)
@@ -857,12 +861,14 @@ def test_snapshot_mapping_and_text_envelopes_preserve_facts_and_typed_bounds(enc
     envelope = snapshot_envelope(bounded=True, facts=facts)
 
     class WireReader(EnvelopeReader):
-        def fetchone(self):
-            return {
-                "snapshot": json.dumps(self.envelope, ensure_ascii=False)
-                if encoded
-                else self.envelope
-            }
+        def fetchall(self):
+            rows = super().fetchall()
+            if encoded:
+                return [
+                    {"snapshot": json.dumps(row["snapshot"], ensure_ascii=False)}
+                    for row in rows
+                ]
+            return rows
 
     reader = WireReader(envelope)
     assert read_repertoire(reader, "rep") == facts
@@ -893,9 +899,12 @@ def test_snapshot_mapping_port_is_eager_and_projects_after_reader_exit(
     events, reading = [], [False]
 
     class WireReader(EnvelopeReader):
-        def fetchone(self):
+        def fetchall(self):
             events.append("read")
-            return {"snapshot": json.dumps(self.envelope) if encoded else self.envelope}
+            rows = super().fetchall()
+            if encoded:
+                return [{"snapshot": json.dumps(row["snapshot"])} for row in rows]
+            return rows
 
     def decode(value):
         assert reading[0]
@@ -921,7 +930,7 @@ def test_snapshot_mapping_port_is_eager_and_projects_after_reader_exit(
     projected = project_published_repertoire(result)
     assert projected.membership.complete and projected.membership.routes
     assert events == (
-        ["read", "owner_decode", "closed"] if encoded else ["read", "closed"]
+        ["read", "owner_decode", "owner_decode", "closed"] if encoded else ["read", "closed"]
     )
 
 

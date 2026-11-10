@@ -15,7 +15,18 @@ import { parseArguments, ensureDocker } from "../../scripts/tempo-cli.mjs";
 import { authenticateManagedSettlement, inspectRegisteredIsolation, matchesManagedPinnedHelper, runManagedPinnedChild } from "../../scripts/tempo-managed-isolation.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
+import { assertDependencyCorrectionOrder } from "../../scripts/check-tempo-cli.mjs";
 import { validateOwnedPostgresTelemetry } from '../../database/tests/managed_cli_rehearsal.mjs';
+
+test("dependency fallback distinguishes cold preflight from replacement after writer shutdown", () => {
+  const call = (...args) => ({ args });
+  const cold = call("up", "--no-recreate", "postgres", "redis");
+  const stop = call("stop", "foreground-worker");
+  const replace = call("up", "--force-recreate", "postgres", "redis");
+  assert.doesNotThrow(() => assertDependencyCorrectionOrder([cold, stop, replace]));
+  assert.throws(() => assertDependencyCorrectionOrder([cold, replace, stop]));
+  assert.throws(() => assertDependencyCorrectionOrder([replace, stop]));
+});
 
 test('offline image build requires stopped registered API and all writers', () => {
   const target={project:'tempo',postgresVolumeKey:'data',volumes:{data:{name:'owned'}}};
@@ -457,6 +468,15 @@ test("failed application identity inspection stops unconfirmed writers before da
   assert(calls.includes("stopApplications"));
   assert(!calls.includes("ensureDatabase") && !calls.includes("checkSchema") && !calls.includes("startServices") && !calls.includes("commitDeployment"));
   assert(calls.includes("recordFailure"));
+});
+
+test("fallback ledger probe failure shuts down recorded writers when the older image exits before returning JSON", async () => {
+  const { calls, handlers } = actions();
+  handlers.fallback = true;
+  handlers.recordedApplicationsMatch = async () => true;
+  handlers.checkSchema = async () => { throw new Error("PostgreSQL schema is newer than this image"); };
+  await assert.rejects(executeLifecycle({ recreate: false }, handlers), /newer than this image/);
+  assert.deepEqual(calls, ["ensureImages", "ensureDatabase", "stopApplications", "recordFailure"]);
 });
 
 function commandFixture(t, mode) {
@@ -1012,6 +1032,8 @@ test("actual CLI compatible fallback trusts immutable dependency IDs rather than
 
 function interruptedApplicationRollout(t, partial = false) {
   const fixture = commandFixture(t, "upgrade");
+  // Managed image preparation requires the target lock in a private state directory.
+  fs.chmodSync(fixture.stateDirectory, 0o700);
   const receiptPath = join(fixture.stateDirectory, "deployment.json");
   const receipt = readFixtureJson(fixture, "deployment.json", true);
   const configuration = readFixtureJson(fixture, "fixture.json").config;
@@ -1107,6 +1129,25 @@ test("actual CLI interrupted fallback rejects incompatible schema cleanly with n
   const fixture = interruptedApplicationRollout(t);
   editFixtureJson(fixture, "machine.json", machine => { machine.running = ["postgres", "redis"]; });
   assertIncompatibleRecovery(fixture, false);
+});
+
+for (const drift of [false, true]) test(`incompatible fallback stops recorded writers with ${drift ? "changed" : "matching"} dependencies`, t => {
+  const fixture = commandFixture(t, "ci-fail");
+  const receiptPath = join(fixture.stateDirectory, "deployment.json");
+  const receipt = { ...readFixtureJson(fixture, "deployment.json", true), schema: 28 };
+  writeFileSync(receiptPath, JSON.stringify(receipt));
+  if (drift) editFixtureJson(fixture, "machine.json", machine => {
+    machine.containers.find(container => container.Id === "container-redis").Image = "sha256:drifted";
+  });
+  const result = fixture.command("start", "--no-open");
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /previous deployment is incompatible with the current database/);
+  const after = readFixtureJson(fixture, "machine.json");
+  assert.deepEqual(after.running.sort(), ["postgres", "redis"]);
+  assert.equal(after.schema, 29);
+  assert.equal(after.migrations, 0);
+  assert.equal(readFileSync(receiptPath, "utf8"), JSON.stringify(receipt));
+  assert(!fixture.calls().some(call => call.args.includes("up") && (call.args.includes("api") || call.args.includes("--force-recreate"))));
 });
 
 test("actual CLI compatible fallback keeps committed applications running despite a stale rollout journal", t => {
