@@ -10,6 +10,8 @@ FROM node:22-slim AS web
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/chess-line/package.json ./packages/chess-line/package.json
+COPY database/browser-intents/package.json ./database/browser-intents/package.json
+COPY packages/study-session/package.json ./packages/study-session/package.json
 RUN npm ci
 COPY . .
 COPY --from=core /app/public/tempo-core ./public/tempo-core

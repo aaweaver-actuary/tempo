@@ -6,7 +6,7 @@ import { it } from "vitest";
 // Run the same dependency-free behavioral suite locally and in the regular
 // Vitest gate. Node's TAP output preserves the individual regression names.
 it("PostgreSQL test speedups preserve full coverage, failure propagation, and disposable cleanup", () => {
-  const result = spawnSync(process.execPath, ["--test", "tests/runner/postgres-test-speedups.test.mjs", "tests/runner/lifecycle-source-preflight.test.mjs"], {
+  const result = spawnSync(process.execPath, ["--test", "tests/runner/postgres-test-speedups.test.mjs", "tests/runner/lifecycle-source-preflight.test.mjs", "tests/runner/web-build-context.test.mjs"], {
     cwd: process.cwd(), encoding: "utf8", timeout: 30_000,
   });
   assert.ifError(result.error);
