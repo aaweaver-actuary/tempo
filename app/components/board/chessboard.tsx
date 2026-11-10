@@ -215,7 +215,7 @@ export function Chessboard({
             const move = nextPosition.move({ from, to, promotion: handlers.current.promotion });
             playChessMoveSound(move, nextPosition.isCheck());
           } catch {
-            playMoveSound();
+            playMoveSound({ illegal: true });
           }
         }
         apiRef.current?.setAutoShapes([]);

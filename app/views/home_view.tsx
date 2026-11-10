@@ -1054,7 +1054,7 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
         useTrainingStore.getState().isAttemptFailed ? "guided" : "playerTurn",
       );
       setFeedback(nextStep >= card.moves.length ? "complete" : "ready");
-      playChessMoveSound(reply, replyPosition.isCheck());
+      playChessMoveSound(reply, replyPosition.isCheck(), "opponent");
       if (nextStep >= card.moves.length) completeAttempt(replyPosition.fen());
     }, 420);
   });

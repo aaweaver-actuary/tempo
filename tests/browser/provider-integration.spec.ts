@@ -1,7 +1,7 @@
 import { test, expect, api, nav, boardVisible } from "./product-fixtures";
 
 
-test("real packaged tactics and standard chess sounds are readable and preloaded before opening Tactics", async ({
+test("real packaged tactics and chess sounds are readable and preloaded before opening Tactics", async ({
   page,
   request,
 }) => {
@@ -13,9 +13,9 @@ test("real packaged tactics and standard chess sounds are readable and preloaded
     (record: { DeckId: string }) => record.DeckId === "hangingPiece-easy-01",
   );
   expect(deck).toHaveLength(25);
-  for (const path of ["Move", "Capture"])
+  for (const path of ["move-self", "move-opponent", "capture", "check", "castle", "promote", "illegal"])
     expect(
-      (await request.get(`/sounds/standard/${path}.mp3`)).ok(),
+      (await request.get(`/sounds/${path}.mp3`)).ok(),
     ).toBeTruthy();
   let requests = 0;
   const progress = await (await request.get(`${api}/tactics/progress`)).json();

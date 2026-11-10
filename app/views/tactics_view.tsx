@@ -462,7 +462,7 @@ function TacticsWorkspace({
       const reply = replyBoard.move(currentPuzzleMoves[replyIndex]);
       nextAttempt.fen = asFenString(replyBoard.fen());
       nextAttempt.step = replyIndex + 1;
-      playChessMoveSound(reply, replyBoard.isCheck());
+      playChessMoveSound(reply, replyBoard.isCheck(), "opponent");
       if (replyIndex + 1 >= currentPuzzleMoves.length) void finish(nextAttempt);
       else setAttempt(nextAttempt);
     },

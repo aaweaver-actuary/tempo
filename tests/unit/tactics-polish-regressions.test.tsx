@@ -151,6 +151,7 @@ it("tactic Show Move, capture dialog, and Restart retain the guided attempt and 
   expect(playChessMoveSound).toHaveBeenCalledWith(
     expect.objectContaining({ from: "d7", to: "d8" }),
     false,
+    "opponent",
   );
   fireEvent.click(screen.getByRole("button", { name: /Restart/ }));
   expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(
