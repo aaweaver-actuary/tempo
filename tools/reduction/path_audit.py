@@ -4,7 +4,7 @@ from pathlib import Path
 root=Path(__file__).resolve().parents[2]
 base,end=sys.argv[1:3]
 rows=subprocess.check_output(['git','diff','--name-status','--find-renames=80%',base,end],cwd=root,text=True).splitlines()
-writer=csv.writer(sys.stdout);writer.writerow(['status','old_path','new_path','classification','reason'])
+writer=csv.writer(sys.stdout,lineterminator="\n");writer.writerow(['status','old_path','new_path','classification','reason'])
 for row in rows:
  fields=row.split('\t');status=fields[0];old=fields[1] if status[0]!='A' else '';new=fields[-1] if status[0]!='D' else '';p=new or old
  if p.startswith('docs/architecture/reduction-pass2/') or p.startswith('tools/reduction/'):
