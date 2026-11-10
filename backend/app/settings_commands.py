@@ -10,25 +10,13 @@ from fastapi import HTTPException
 
 from .command_gateway import register_descriptor
 from .contracts.command_registry import CommandDescriptor
-from tempo_legacy_database.adapters.foreground_controls import settings as storage
+from tempo_storage.foreground_controls import settings as storage
 from app.contracts.transport.settings import Settings
-from tempo_legacy_database.adapters.postgres_store import PostgresConnection
+from tempo_storage.postgres import PostgresConnection
 from .queue_commands import request_queue_refresh_in_transaction
 
 
 _SETTINGS_COLUMNS = tuple(Settings.model_fields)
-_DEFERRED_REFRESH_COLUMNS = frozenset(
-    {
-        "discovery_window_days",
-        "coverage_reply_denominator",
-        "coverage_cumulative_target",
-        "coverage_horizon_fullmoves",
-        "coverage_path_floor",
-        "coverage_maia_elo",
-    }
-)
-
-
 @dataclass(frozen=True)
 class SettingsRequest:
     settings: Settings
@@ -54,45 +42,13 @@ def apply_settings(
         raise HTTPException(
             503, "Settings are unavailable; retry after the database is restored"
         )
-    if any(
-        existing[column_name] != getattr(settings, column_name)
-        for column_name in _DEFERRED_REFRESH_COLUMNS
-    ):
-        raise HTTPException(
-            503, "Coverage and discovery settings await the analysis-worker cutover"
-        )
     values = settings.model_dump(mode="json")
-    for boolean_field in (
-        "include_defensive_cards_in_daily_stack",
-        "defensive_analysis_enabled",
-        "study_only_mode",
-    ):
-        if boolean_field not in supplied_fields:
-            values[boolean_field] = bool(existing[boolean_field])
-    stored_values = {
-        **values,
-        "include_defensive_cards_in_daily_stack": int(
-            values["include_defensive_cards_in_daily_stack"]
-        ),
-        "defensive_analysis_enabled": int(values["defensive_analysis_enabled"]),
-        "study_only_mode": int(values["study_only_mode"]),
-    }
-    storage.store_settings(database, stored_values, _SETTINGS_COLUMNS)
-    for provider, username in (
-        ("lichess", settings.lichess_username.strip()),
-        ("chess.com", settings.chesscom_username.strip()),
-    ):
-        if username:
-            storage.store_provider_account(database, provider, username)
-        else:
-            storage.remove_provider_account(database, provider)
+    if "study_only_mode" not in supplied_fields:
+        values["study_only_mode"] = bool(existing["study_only_mode"])
+    storage.store_settings(database, {**values, "study_only_mode": int(values["study_only_mode"])}, _SETTINGS_COLUMNS)
     request_queue_refresh_in_transaction(database, date.today().isoformat())
-    return {
-        **values,
-        "include_defensive_cards_in_daily_stack": bool(
-            values["include_defensive_cards_in_daily_stack"]
-        ),
-    }
+    return values
+
 
 
 def update_settings(

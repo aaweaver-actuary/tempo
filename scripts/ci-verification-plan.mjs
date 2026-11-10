@@ -63,7 +63,7 @@ function developmentSelection(paths, comparisonAvailable, sourceInventory) {
       }
       allFrontend = true; ["frontend", "build", "browser"].forEach(layer => selected.add(layer));
       if (/\.(tsx|css|scss|svg|png|jpe?g|webp)$/.test(path)) selected.add("visual");
-    } else if (path.startsWith("backend/app/") || path.startsWith("database/tempo_legacy_database/ddl/migrations/")) {
+    } else if (path.startsWith("backend/app/") || path.startsWith("database/tempo_storage/ddl/migrations/")) {
       if (!path.startsWith("backend/app/services/") || /(?:database|background_runtime|database_executor|redis_admission_gate)\.py$/.test(path)) broadBrowser = true;
       allBackend = true; ["backend", "postgres", "browser"].forEach(layer => selected.add(layer));
       if (lifecycleApplicability({ paths: [path], comparisonAvailable: true, complete: false, sourceInventory }).applicable) selected.add("lifecycle");
@@ -281,7 +281,7 @@ function git(args) {
 }
 
 export function createPlan({ base, complete = false, context = {} } = {}) {
-  validateMigrationInventory(readdirSync("database/tempo_legacy_database/ddl/migrations"), readFileSync("database/tempo_legacy_database/ddl/schema_version.py", "utf8"));
+  validateMigrationInventory(readdirSync("database/tempo_storage/ddl/migrations"), readFileSync("database/tempo_storage/ddl/schema_version.py", "utf8"));
   protectRegressionSuite("tests"); protectRegressionSuite("backend/tests");
   let paths = [], comparisonAvailable = false;
   if (base) {

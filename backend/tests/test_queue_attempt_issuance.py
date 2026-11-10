@@ -1,7 +1,7 @@
 """PR142: admission identity must not authorize an unissued later attempt."""
 
 
-from tempo_legacy_database import connections as database
+from tempo_storage import connections as database
 from app import main
 
 

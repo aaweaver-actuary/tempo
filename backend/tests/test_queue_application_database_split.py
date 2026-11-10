@@ -4,7 +4,7 @@ import ast
 from pathlib import Path
 
 from app.services import queue_application
-from tempo_legacy_database.adapters.queue_refresh.application import eligibility
+from tempo_storage.queue_refresh.application import eligibility
 
 
 def test_queue_unlock_captures_eligible_projection_before_selected_write(monkeypatch):
@@ -73,7 +73,7 @@ def test_queue_application_policy_delegates_all_database_calls():
 
 
 def test_queue_materialization_captures_clock_before_blocked_read(monkeypatch):
-    from tempo_legacy_database.adapters.queue_refresh.application import publication
+    from tempo_storage.queue_refresh.application import publication
 
     database, events = object(), []
     diagnostics = [{"card_id": "card", "message": "incomplete"}]

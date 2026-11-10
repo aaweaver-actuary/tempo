@@ -88,7 +88,7 @@ def capture_head(day, card):
 
 ns = dict(__name__='app.main', JSONResponse=JSONResponse, json=json, logging=logging, datetime=FixtureClock, timedelta=timedelta, timezone=timezone,
           read_connection=lambda: nullcontext(None), queue_projection_storage=storage,
-          postgres_store=SimpleNamespace(configured=lambda: True), MISS_REASON='miss',
+          postgres=SimpleNamespace(configured=lambda: True), MISS_REASON='miss',
           _issue_returned_queue_head=capture_head, assemble_queue_cards=assemble_queue_cards,
           add_encounter_evidence=add_encounter_evidence, finalize_queue_cards=finalize_queue_cards,
           queue_payload=queue_payload, exercise_snapshot=exercise_snapshot)

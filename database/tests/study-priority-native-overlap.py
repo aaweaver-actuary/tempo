@@ -72,7 +72,7 @@ def owned_popen(command, *arguments, **options):
 subprocess.Popen = owned_popen
 
 def optional_sections():
-    from tempo_legacy_database.connections import background_connection
+    from tempo_storage.connections import background_connection
     from app.services.activity_gate import activity_gate, BackgroundAdmissionDeferred
     from app.services import queue_application
     from psycopg.errors import TransactionTimeout

@@ -1,3 +1,5 @@
+
+from app.repertoire import position_study_source as _source_preparation
 from types import SimpleNamespace as NS
 
 from tempo_evidence_math.position_learning import Hold
@@ -6,12 +8,12 @@ from app.services.position_queue_admission import select_carrier
 
 def test_due_consumers_apply_position_ownership_only_when_schema_present(monkeypatch):
     import psycopg
-    from tempo_legacy_database.adapters.queue_refresh import eligibility
-    from tempo_legacy_database.adapters.queue_refresh.application import (
+    from tempo_storage.queue_refresh import eligibility
+    from tempo_storage.queue_refresh.application import (
         admission,
         seeding,
     )
-    from tempo_legacy_database.adapters.study import conflicts
+    from tempo_storage.study import conflicts
 
     class Connection:
         pass
@@ -63,7 +65,7 @@ def test_due_consumers_apply_position_ownership_only_when_schema_present(monkeyp
 def test_due_owner_schema_probe_failure_is_not_treated_as_legacy(monkeypatch):
     import psycopg
     import pytest
-    from tempo_legacy_database.adapters.queue_refresh.eligibility import (
+    from tempo_storage.queue_refresh.eligibility import (
         position_due_exclusion,
     )
 
@@ -168,15 +170,15 @@ def test_refresh_consumes_prepared_due_before_advancing(monkeypatch):
 def test_admission_fences_before_card_and_date_and_deduplicates(monkeypatch):
     from datetime import date, datetime, timezone
     from app.services.position_queue_admission import admit_due
-    from tempo_legacy_database.adapters.authored_repertoires import (
+    from tempo_storage.authored_repertoires import (
         position_study_source,
     )
-    from tempo_legacy_database.adapters.study import (
+    from tempo_storage.study import (
         position_owner_epoch,
         position_due_candidates,
     )
-    from tempo_legacy_database.adapters.queue_refresh import admissions
-    from tempo_legacy_database.adapters import queue_position_lock
+    from tempo_storage.queue_refresh import admissions
+    from tempo_storage import queue_position_lock
 
     order = []
     now = datetime(2026, 11, 2, tzinfo=timezone.utc)
@@ -245,8 +247,8 @@ def test_native_refresh_admits_due_carrier_and_reuses_pending(monkeypatch):
     import psycopg
     from psycopg import sql
     from tempo_evidence_math.position_learning import PositionKey, PositionDefinition
-    from tempo_legacy_database.adapters.postgres_store import tempo_row_factory
-    from tempo_legacy_database.adapters.authored_repertoires import (
+    from tempo_storage.postgres import tempo_row_factory
+    from tempo_storage.authored_repertoires import (
         position_study_source,
     )
     from app.services import postgres_queue_refresh as refresh, study_mode
@@ -296,12 +298,12 @@ def test_native_refresh_admits_due_carrier_and_reuses_pending(monkeypatch):
                 CREATE TABLE review_attempt_receipts(attempt_id text)""")
             ddl = (
                 Path(__file__).resolve().parents[2]
-                / "database/tempo_legacy_database/ddl/migrations/057_position_study.sql"
+                / "database/tempo_storage/ddl/migrations/057_position_study.sql"
             )
             raw.execute(ddl.read_text())
             feedback_ddl = (
                 Path(__file__).resolve().parents[2]
-                / "database/tempo_legacy_database/ddl/migrations/051_study_game_feedback.sql"
+                / "database/tempo_storage/ddl/migrations/051_study_game_feedback.sql"
             )
             raw.execute(feedback_ddl.read_text())
             moves = json.dumps(["e2e4", "e7e5", "g1f3"])
@@ -340,7 +342,7 @@ def test_native_refresh_admits_due_carrier_and_reuses_pending(monkeypatch):
                     return self.raw.execute(query, params)
 
             port = Port(raw)
-            prepared = position_study_source.prepare_position_source(port, "r")
+            prepared = _source_preparation.prepare_position_source(port, "r")
             assert not isinstance(prepared, Hold)
             digest = prepared.authored_token.authored_digest
             raw.execute(
@@ -414,8 +416,8 @@ def test_native_refresh_admits_due_carrier_and_reuses_pending(monkeypatch):
                 VALUES(%s,'card',1,%s,0,'r',0,%s,%s,'white','opening')""",
                 (entry, day, chess.STARTING_FEN, moves),
             )
-            from tempo_legacy_database import connections
-            from tempo_legacy_database.adapters.study import game_feedback
+            from tempo_storage import connections
+            from tempo_storage.study import game_feedback
             from app.contracts.product_v02.games import (
                 FirstDepartureRoute,
                 FirstDepartureScope,
@@ -718,8 +720,8 @@ def test_native_refresh_admits_due_carrier_and_reuses_pending(monkeypatch):
 def test_issued_head_replays_exact_attempt_without_rebuilding_source(monkeypatch):
     from contextlib import contextmanager
     from app.services.queue_next_card import prepare_queue_head
-    from tempo_legacy_database import connections
-    from tempo_legacy_database.adapters.study import position_issued_plans
+    from tempo_storage import connections
+    from app.study.position_learning import issuance as position_issued_plans
 
     calls = []
     plan = NS(to_wire=lambda: {"attempt_id": "original"})
@@ -760,10 +762,10 @@ def test_new_position_issue_fences_source_before_existing_queue_locks_and_rolls_
     from fastapi import HTTPException
     from app import queue_commands
     from app.services import queue_next_card
-    from tempo_legacy_database.adapters.authored_repertoires import (
+    from tempo_storage.authored_repertoires import (
         position_study_source,
     )
-    from tempo_legacy_database.adapters.study import position_issued_plans
+    from app.study.position_learning import issuance as position_issued_plans
 
     calls = []
     payload = {
@@ -810,8 +812,8 @@ def test_new_position_issue_fences_source_before_existing_queue_locks_and_rolls_
 
 def test_source_preparation_cache_invalidates_on_source_revision(monkeypatch):
     from app.services import queue_next_card
-    from tempo_legacy_database.adapters.http_composition import queue_projection
-    from tempo_legacy_database.adapters.authored_repertoires import (
+    from tempo_storage.http_composition import queue_projection
+    from tempo_storage.authored_repertoires import (
         position_study_source,
     )
 
@@ -823,7 +825,7 @@ def test_source_preparation_cache_invalidates_on_source_revision(monkeypatch):
         lambda *a: (revision[0], 2, 3, "ready"),
     )
     monkeypatch.setattr(
-        position_study_source,
+        _source_preparation,
         "prepare_position_source",
         lambda *a: calls.append(1) or NS(),
     )
@@ -877,12 +879,9 @@ def test_urgent_game_target_is_selected_when_natural_due_is_false(monkeypatch):
     from contextlib import contextmanager
     from app.services import queue_next_card, position_queue_admission
     from app.study.position_learning.issued_plan_contracts import SelectionRequest
-    from tempo_legacy_database import connections
-    from tempo_legacy_database.adapters.study import (
-        game_feedback,
-        position_due_candidates,
-        position_issued_plans,
-    )
+    from tempo_storage import connections
+    from tempo_storage.study import game_feedback, position_due_candidates
+    from app.study.position_learning import issuance as position_issued_plans
     from tests.test_position_issued_plan_contracts import option, request_for
 
     request = request_for(option("italian-knight-attack"), target_ply=2, due=False)
@@ -1010,13 +1009,11 @@ def test_changed_urgency_rolls_back_inserted_position_plan(monkeypatch):
     from fastapi import HTTPException
     from app import queue_commands
     from app.services import queue_next_card
-    from tempo_legacy_database.adapters.authored_repertoires import (
+    from tempo_storage.authored_repertoires import (
         position_study_source,
     )
-    from tempo_legacy_database.adapters.study import (
-        game_feedback,
-        position_issued_plans,
-    )
+    from tempo_storage.study import game_feedback
+    from app.study.position_learning import issuance as position_issued_plans
 
     payload = {
         "queue_date": "2026-11-02",

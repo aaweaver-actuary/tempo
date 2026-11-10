@@ -6,9 +6,9 @@ from datetime import datetime, timedelta, timezone
 from .clock import date
 import json
 
-from tempo_legacy_database.adapters.opening_progression import unlock_legacy_children_after_review
+from tempo_storage.opening_progression import unlock_legacy_children_after_review
 from app.services.scheduler import schedule_review, unlock_ready
-from tempo_legacy_database.adapters import review_reconciliation as storage
+from tempo_storage import review_reconciliation as storage
 
 
 SCHEDULE_COLUMNS = storage.SCHEDULE_COLUMNS

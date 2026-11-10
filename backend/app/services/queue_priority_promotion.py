@@ -5,7 +5,7 @@ from .redis_admission_gate import BackgroundAdmissionDeferred
 
 from .queue_ordering import _priority_queue_order
 from .queue_presentation import presentation_rows, MISS_REASON
-from tempo_legacy_database.adapters.queue_refresh.presentation import (
+from tempo_storage.queue_refresh.presentation import (
     prepare_presentation_queries,
     priority_ownership_state,
 )

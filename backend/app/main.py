@@ -29,10 +29,10 @@ from app.product_composition.database_infrastructure import bind_database_infras
 
 bind_database_infrastructure()
 
-from tempo_legacy_database.connections import connection, initialize, query_only_request, read_connection
-from tempo_legacy_database.adapters.http_composition import system as system_storage, settings as settings_storage, queue_projection as queue_projection_storage, repertoires as repertoire_http_storage, line_authoring as line_authoring_storage, practice as practice_storage
-from tempo_legacy_database.adapters.durable_tasks import storage as durable_task_storage
-from tempo_legacy_database.adapters import repertoire_lines as repertoire_projection_storage
+from tempo_storage.connections import connection, initialize, query_only_request, read_connection, background_read_connection
+from tempo_storage.http_composition import system as system_storage, settings as settings_storage, queue_projection as queue_projection_storage, repertoires as repertoire_http_storage, line_authoring as line_authoring_storage, practice as practice_storage
+from tempo_storage.durable_tasks import storage as durable_task_storage
+from tempo_storage import repertoire_lines as repertoire_projection_storage
 from .command_gateway import CommandConflict, load_blocked_operation, read_operation
 from .celery_app import celery_app
 from app.contracts.transport.tactics import TacticActivationRequest
@@ -69,7 +69,7 @@ from .services.activity_gate import activity_gate
 from .services.redis_admission_gate import BackgroundAdmissionDeferred
 from app.chess.cards import card_id
 from app.chess.pgn import parse_pgn
-from .services.real_game_feedback import MISS_REASON
+MISS_REASON = "Priority review · missed in a recent game"
 
 from .services.durable_tasks import annotate_queue_projection_workers, list_tasks
 from .services.repertoire_conflicts import find_repertoire_conflicts
@@ -86,11 +86,6 @@ async def lifespan(_: FastAPI):
             "The PostgreSQL API must use only TEMPO_DATABASE_READ_URL"
         )
     initialize()
-    from .product_composition.feedback_release import (
-        register_feedback_next_card_priority,
-    )
-
-    register_feedback_next_card_priority()
     from .command_dispatch import dispatch_command
 
     startup_queue_request = dispatch_command(
@@ -117,21 +112,28 @@ app = FastAPI(title="Tempo local API", version="0.2.0", lifespan=lifespan)
 from .services.background_runtime import StudyResponseTiming
 
 app.add_middleware(StudyResponseTiming)
-from .game_evidence_routes import router as game_evidence_router
+from .games.review import router as game_review_router
+app.include_router(game_review_router)
+from .contracts.opening_evidence import OpeningEvidenceCheckpoint
 
-app.include_router(game_evidence_router)
-from .opening_evidence_api import router as opening_evidence_router
+@app.get("/api/opening-evidence/attempts/{attempt_id}")
+def opening_attempt_status(attempt_id: str):
+    from tempo_storage.opening_evidence.storage import attempt_status
+    reader = background_read_connection if activity_gate.in_background else read_connection
+    with reader() as database:
+        row = attempt_status(database, attempt_id)
+    if row is None:
+        raise HTTPException(404, "Opening attempt not found")
+    return dict(row)
 
-app.include_router(opening_evidence_router)
-from .product_composition.game_review import current_game_review_router
 
-app.include_router(current_game_review_router())
-from .product_composition.repertoire_runtime import (
-    current_repertoire_router,
-    is_repertoire_command_path,
-)
+@app.post("/api/opening-evidence/checkpoints")
+def opening_checkpoint(request: "OpeningEvidenceCheckpoint", idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    from .command_dispatch import dispatch_command
+    return dispatch_command("opening_evidence.checkpoint", {"checkpoint": request.model_dump(mode="json")},
+                            idempotency_key=idempotency_key, background=True)
 
-app.include_router(current_repertoire_router())
+
 
 
 @app.exception_handler(ReviewConflict)
@@ -194,7 +196,7 @@ def retry_blocked_operation(operation_id: str):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
+    allow_origin_regex='https?://(localhost|127\\.0\\.0\\.1)(:\\d+)?',
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -207,6 +209,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
     read_only_post = request.method == "POST" and request.url.path in {
         "/api/repertoire/paste/preview",
         "/api/cards/validate",
+        "/api/product/game-review/compare",
     }
     if (
         request.method not in {'GET', 'HEAD', 'OPTIONS'} and any((route.matches(request.scope)[0] == Match.FULL for route in app.routes))
@@ -298,18 +301,6 @@ async def prioritize_foreground_requests(request: Request, call_next):
             "opening-evidence",
             "checkpoints",
         ]
-        product_feedback_command = request.method == "POST" and path_parts == [
-            "api",
-            "game-evidence",
-            "product",
-            "feedback",
-        ]
-        product_review_command = request.method == "POST" and request.url.path in {
-            "/api/product/game-review/configuration",
-            "/api/product/game-review/sync",
-            "/api/product/game-review/refresh",
-            "/api/product/game-review/feedback/retry",
-        }
         branch_add_command = (
             path_parts == ["api", "repertoire", "branches"] and request.method == "POST"
         )
@@ -339,18 +330,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
         card_validation = (
             path_parts == ["api", "cards", "validate"] and request.method == "POST"
         )
-        product_repertoire_command = is_repertoire_command_path(
-            request.method, path_parts
-        )
-        next_card_preparation = request.method == "POST" and path_parts == [
-            "api",
-            "queue",
-            "prepare-next",
-        ]
         if not read_only_post and not any(
             (
-                next_card_preparation,
-                product_repertoire_command,
                 queue_entry_command,
                 card_review_command,
                 card_revision_command,
@@ -369,8 +350,6 @@ async def prioritize_foreground_requests(request: Request, call_next):
                 settings_command,
                 operation_retry_command,
                 opening_checkpoint_command,
-                product_feedback_command,
-                product_review_command,
                 branch_add_command,
                 branch_remove_command,
                 pgn_import_command,
@@ -403,16 +382,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
             request.method == "POST"
             and request.url.path == "/api/opening-evidence/checkpoints"
         )
-        or (
-            request.method == "POST"
-            and request.url.path == "/api/game-evidence/product/feedback"
-        )
-        or (
-            request.method == "GET"
-            and request.url.path == "/api/game-evidence/product/effect"
-        )
         or request.url.path.startswith("/api/product/game-review/")
-        or request.url.path.startswith("/api/product/repertoires/")
     )
     queue_issuance_read = request.method == "GET" and request.url.path in {
         "/api/queue/today",
@@ -641,7 +611,6 @@ def reconcile_unseen_queue(db, day, limit, repertoire_limits=None):
     return queue_application.reconcile_unseen_queue(db, day, limit, repertoire_limits)
 
 
-_ACTIVE_OPENING_MISS_SQL = queue_application._ACTIVE_OPENING_MISS_SQL
 _PRIORITY_OPENING_CANDIDATE_BODY = queue_application._PRIORITY_OPENING_CANDIDATE_BODY
 
 
@@ -792,17 +761,6 @@ def _issue_returned_queue_head(queue_date: str, card: dict) -> dict | JSONRespon
     from .command_dispatch import dispatch_command
 
     result = dispatch_command("queue.issue_head", payload, idempotency_key=None)
-    if (
-        not isinstance(result, JSONResponse)
-        and result.get("reason") == "study_feedback_preparation_pending"
-    ):
-        raise HTTPException(
-            503,
-            {
-                "code": "study_feedback_preparation_pending",
-                "message": "Local Study priority work must prepare before the next new attempt",
-            },
-        )
     if isinstance(result, JSONResponse):
         return result
     if result.get("position_study_mode") == "position":
@@ -933,31 +891,16 @@ def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool =
                     )
                 }
             )
-    else:
-        from .services.queue_next_card import pending_next_card_preparation
-
-        with read_connection() as pending_database:
-            pending_priority = pending_next_card_preparation(pending_database, day)
-        if pending_priority:
-            raise HTTPException(
-                503,
-                {
-                    "code": "study_feedback_preparation_pending",
-                    "message": "Local Study priority work must prepare before the next new attempt",
-                },
-            )
     finalize_queue_cards(cards)
     position_head = bool(cards and cards[0].get("position_presentation"))
     if include_opening_evidence or position_head:
-        from .services.postgres_opening_evidence import queue_manifests
+        from .study.position_checkpoint import queue_manifests
 
         queue_manifests(cards if include_opening_evidence else cards[:1])
         if position_head:
-            from .services.postgres_opening_evidence import issued_position_manifest
+            from .study.position_checkpoint import issued_position_manifest
             from tempo_evidence_math.position_learning import Hold
-            from tempo_legacy_database.adapters.study.position_issued_plans import (
-                replay_exact_attempt,
-            )
+            from app.study.position_learning.issuance import replay_exact_attempt
 
             card = cards[0]
             with read_connection() as database:
@@ -988,15 +931,6 @@ def queue_today(include_opening_evidence: bool = False):
     return _queue_payload(include_opening_evidence=include_opening_evidence)
 
 
-@app.post("/api/queue/prepare-next")
-def prepare_next_queue_head(
-    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
-):
-    from .command_dispatch import dispatch_command
-
-    return dispatch_command(
-        "queue.prepare_next", {}, idempotency_key=idempotency_key
-    )
 
 
 @app.get("/api/queue/prepared")
@@ -1388,7 +1322,7 @@ def review(
     review_payload = request.durable_payload()
     command_payload = {"card_id": identifier, "review": review_payload}
     if request.opening_evidence_completion:
-        from .services.postgres_opening_evidence import prepare_checkpoint
+        from .study.position_checkpoint import prepare_checkpoint
         from .services.background_runtime import training_timing_stage
 
         with training_timing_stage("checkpoint_preparation"):
@@ -1417,7 +1351,7 @@ def reconcile_review(
     review_payload = request.durable_payload()
     command_payload = {"card_id": identifier, "review": review_payload}
     if request.opening_evidence_completion:
-        from .services.postgres_opening_evidence import prepare_checkpoint
+        from .study.position_checkpoint import prepare_checkpoint
 
         command_payload["prepared_manifest"] = prepare_checkpoint(
             request.opening_evidence_completion

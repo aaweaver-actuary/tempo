@@ -9,8 +9,8 @@ from app import queue_commands
 from app import queue_attempt_origins
 from app.services import durable_tasks
 from app.services.queue_ordering import PRESENTATION_VERSION
-from tempo_legacy_database.adapters import postgres_store
-from tempo_legacy_database.adapters.commands import queue as storage
+from tempo_storage import postgres
+from tempo_storage.commands import queue as storage
 
 
 def test_queue_command_policy_has_no_sql_or_driver_operations():
@@ -99,7 +99,7 @@ def test_availability_projection_is_captured_before_each_date_read(monkeypatch):
 def test_queue_warming_captures_compiler_before_completion_callback(monkeypatch):
     events = []
     monkeypatch.setattr(
-        postgres_store,
+        postgres,
         "postgres_sql",
         lambda statement: events.append(("compile", statement)),
     )
@@ -107,7 +107,7 @@ def test_queue_warming_captures_compiler_before_completion_callback(monkeypatch)
     def warm_completion():
         events.append(("completion", None))
         monkeypatch.setattr(
-            postgres_store,
+            postgres,
             "postgres_sql",
             lambda *_: events.append(("late compiler", None)),
         )
@@ -211,7 +211,7 @@ def test_internal_readiness_queries_return_day_receipt_and_queued_presence(
     queued, receipt
 ):
     import sqlite3
-    from tempo_legacy_database.adapters.lifecycle import refresh_requests
+    from tempo_storage.lifecycle import refresh_requests
 
     with sqlite3.connect(":memory:") as database:
         database.row_factory = sqlite3.Row
@@ -257,7 +257,7 @@ def test_legacy_issuance_owner_facts_are_fenced_before_card_locks(
     monkeypatch, dispositions, expected
 ):
     from types import SimpleNamespace
-    from tempo_legacy_database.adapters.study import position_owner_epoch
+    from tempo_storage.study import position_owner_epoch
 
     events, reads = [], []
     rows = [{"repertoire_id": "a"}, {"repertoire_id": "b"}]

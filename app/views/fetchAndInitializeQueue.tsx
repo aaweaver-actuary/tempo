@@ -2,7 +2,6 @@ import { holdActiveStudyRequest } from "../lib/study-priority";
 import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy } from "../lib/study-connection";
 import { recoverStudyRequests } from "../lib/study-command-client";
 import { PendingOperationError } from "../lib/operation-status";
-import { NextCardPreparationDeferredError, prepareNextCard } from "../lib/next-card-preparation";
 import { initializeStudyIntentStorage, isStudyIntentStoreCurrent } from "../../database/browser/study-intent-storage";
 import { isIPhoneHomeScreen, usesLocalApi } from "../utils/local";
 import { learningDayKey as localDayKey } from "../lib/study-connection";
@@ -236,16 +235,12 @@ async function followQueueIssuance(response: Response, payload: unknown, signal:
 }
 
 async function loadTodayQueueWithRetry(
-  signal: AbortSignal, progression: string, retryPreparation: boolean, acquisition: { observedBusyHead: boolean },
+  signal: AbortSignal, acquisition: { observedBusyHead: boolean },
 ): Promise<QueuePayload> {
   let failedRequests = 0;
-  let retryDeferred = retryPreparation;
-  let localPriorityPending = false;
-  let completedPreparationHold: string | null = null;
-  let nonblockingPreparationHold = false;
   let retryBusyHead = false;
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    const { response, payload: responsePayload } = await fetchQueueWindow(signal, attempt > 0 && !localPriorityPending && !retryBusyHead);
+    const { response, payload: responsePayload } = await fetchQueueWindow(signal, attempt > 0 && !retryBusyHead);
     if (response.status === 202) {
       // Cancellation stops only this observation; the durable server operation
       // retains its identity and can finish after navigation or tab closure.
@@ -276,8 +271,6 @@ async function loadTodayQueueWithRetry(
           await waitForQueueRetry(250, signal);
           continue;
         }
-        if (nonblockingPreparationHold) publishNotification({ severity: "info", source: "training queue",
-          key: "optional-feedback-hold", message: "Game feedback is pending. Ordinary Study remains available and the pending work is retained." });
         return validated.data;
       }
       if (attempt === 19) throw new QueueProcessingError("Daily queue is still preparing. Check Tempo’s queue maintenance status and retry.");
@@ -296,37 +289,6 @@ async function loadTodayQueueWithRetry(
       retryable = payload.retryable === true || retryable;
     } catch {
       // Keep the stable HTTP fallback when the service returned no JSON body.
-    }
-    const priorityFailure = responsePayload as { detail?: { code?: string } } | undefined;
-    if (!independentStudy && response.status === 503 &&
-        priorityFailure?.detail?.code === 'study_feedback_preparation_pending') {
-      if (retryBusyHead) throw new QueueProcessingError("Study preparation is pending. Retry loading the queue after its prerequisite is restored.");
-      localPriorityPending = true;
-      // One fresh server read can supersede an old completed hold after mode
-      // disable or recovery. If still blocked, retain it without another POST.
-      if (completedPreparationHold) throw new QueueProcessingError(completedPreparationHold);
-      // The server has declined new attempt authority. Existing work and saved
-      // results are intact. Advance one bounded local owner unit explicitly;
-      // neither a queue GET nor client-side prefetch may perform this write.
-      const allowDeferredRetry = retryDeferred;
-      retryDeferred = false;
-      try {
-        const prepared = await awaitQueueStage(prepareNextCard({ progression, signal, retryDeferred: allowDeferredRetry }), signal);
-        if (!prepared.progressed && prepared.pending) {
-          completedPreparationHold = "Study preparation is still pending. Saved results are retained. Retry loading the queue after its prerequisite is restored.";
-          nonblockingPreparationHold = prepared.blocks_issuance === false;
-          continue;
-        }
-      } catch (error) {
-        if (error instanceof NextCardPreparationDeferredError) {
-          completedPreparationHold = error.message;
-          continue;
-        }
-        if (!(error instanceof PendingOperationError)) throw error;
-      }
-      if (attempt === 19) throw new QueueProcessingError('Local Study priority work is still preparing. Retry loading the queue.');
-      await waitForQueueRetry(50, signal);
-      continue;
     }
     if (response.status === 503 && detail === "Waiting for foreground activity") {
       await waitForQueueRetry(250, signal);
@@ -461,8 +423,7 @@ export async function fetchAndInitializeQueue(
     let raw: QueuePayload;
     const acquisition = { observedBusyHead: false };
     try {
-      raw = await awaitQueueStage(loadTodayQueueWithRetry(controller.signal, options.expectedAttempt?.attemptId ??
-        useTrainingStore.getState().attempt.attemptId ?? "queue-load", options.retryPreparation === true, acquisition), controller.signal);
+      raw = await awaitQueueStage(loadTodayQueueWithRetry(controller.signal, acquisition), controller.signal);
     } catch (caught) {
       const error = acquisition.observedBusyHead && !controller.signal.aborted && !(caught instanceof QueueProcessingError)
         ? new QueueProcessingError(`Position study could not be loaded after a busy response. ${String(caught)}`, { cause: caught })

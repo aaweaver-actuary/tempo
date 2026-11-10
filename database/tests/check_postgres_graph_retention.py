@@ -36,7 +36,7 @@ from psycopg.errors import TransactionTimeout
 from psycopg.rows import dict_row
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend"))
-from tempo_legacy_database.adapters import postgres_store
+from tempo_storage import postgres
 from app.services import postgres_opening_graph as graph, redis_admission_gate
 from database.tooling.postgres_rehearsal_admission import admitted_call
 
@@ -237,9 +237,9 @@ class IncidentFixture:
     @contextmanager
     def capture(self, label: str):
         measurement = {"label": label, "transactions": [], "statements": []}
-        original_connection = postgres_store.connection
-        original_execute = postgres_store.PostgresConnection.execute_native
-        original_compat_execute = postgres_store.PostgresConnection.execute
+        original_connection = postgres.connection
+        original_execute = postgres.PostgresConnection.execute_native
+        original_compat_execute = postgres.PostgresConnection.execute
 
         @contextmanager
         def timed_connection(**options):
@@ -290,16 +290,16 @@ class IncidentFixture:
             return original_execute(database, statement, parameters)
 
         def compat_execute(database, statement, parameters=()):
-            translated_statement = postgres_store.postgres_sql(statement)
+            translated_statement = postgres.postgres_sql(statement)
             if translated_statement is not None:
                 record_statement(database, translated_statement, parameters)
             return original_compat_execute(database, statement, parameters)
 
         started_at = time.perf_counter()
         try:
-            with patch.object(postgres_store, "connection", timed_connection), \
-                    patch.object(postgres_store.PostgresConnection, "execute_native", native_execute), \
-                    patch.object(postgres_store.PostgresConnection, "execute", compat_execute):
+            with patch.object(postgres, "connection", timed_connection), \
+                    patch.object(postgres.PostgresConnection, "execute_native", native_execute), \
+                    patch.object(postgres.PostgresConnection, "execute", compat_execute):
                 yield measurement
         finally:
             measurement["total_seconds"] = time.perf_counter() - started_at
@@ -368,7 +368,7 @@ class IncidentFixture:
             assert checkpoint["phase"] == "cleanup"
             assert checkpoint["payload"]["after_card_id"] == self.card_id(1)
             assert self.link_state(self.card_id(2))["links"], "Third obsolete card skipped by frontier"
-            postgres_store.close_pools()
+            postgres.close_pools()
             # Restart from durable state, not the caller's prepared page.
             task = self.claim(task["id"])
             assert admitted_call(graph.execute_graph_cleanup_slice, task)
@@ -433,7 +433,7 @@ class IncidentFixture:
             database.execute("UPDATE opening_graph_publications SET generation=generation+1 "
                              "WHERE repertoire_id=%s", (self.repertoire_id,))
         with self.capture("graph_stale_generation_publication"):
-            with postgres_store.connection(background=True) as database:
+            with postgres.connection(background=True) as database:
                 assert not graph.cleanup_graph_cards_in_transaction(database, task, prepared)
         assert self.link_state(self.card_id(0)) == before
         with psycopg.connect(DATABASE_URL) as database:
@@ -476,7 +476,7 @@ class IncidentFixture:
             assert datetime.fromisoformat(checkpoint["next_attempt_at"]) > datetime.fromisoformat(checkpoint["updated_at"])
             assert self.link_state(self.card_id(0)) == before, "Timed-out mutation escaped rollback"
             assert self.history() == history_before
-            postgres_store.close_pools()
+            postgres.close_pools()
             task = self.claim_retry_when_due(task["id"])
             with self.capture("graph_successful_replay_after_timeout"):
                 assert tasks.execute_background_slice.run(task)
@@ -539,7 +539,7 @@ class IncidentFixture:
             print("PASS " + regression)
 
     def cleanup(self) -> None:
-        postgres_store.close_pools()
+        postgres.close_pools()
 
 
 def validate_disposable_database() -> dict:
@@ -547,7 +547,7 @@ def validate_disposable_database() -> dict:
     if os.getenv("TEMPO_TEST_INSTANCE") != "disposable":
         raise RuntimeError("This rehearsal requires the runner-owned disposable PostgreSQL instance")
     expected_schema = max(int(path.name.split("_", 1)[0]) for path in
-                          (Path(__file__).resolve().parents[2] / "database/tempo_legacy_database/ddl/migrations").glob("[0-9]*.sql"))
+                          (Path(__file__).resolve().parents[2] / "database/tempo_storage/ddl/migrations").glob("[0-9]*.sql"))
     with psycopg.connect(DATABASE_URL, options="-c default_transaction_read_only=on", row_factory=dict_row) as database:
         metadata = database.execute(
             "SELECT current_database() database_name,current_user database_user,"
@@ -621,7 +621,7 @@ def owned_fixture_database():
     owned_read_database_url = make_conninfo(owned_database_url, options="-c default_transaction_read_only=on")
     owner_marker = DISPOSABLE_DATABASE_MARKER + ":" + owned_database_name
     created = False
-    postgres_store.close_pools()
+    postgres.close_pools()
     try:
         with psycopg.connect(parent_database_url, autocommit=True) as parent_database:
             parent_database.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(owned_database_name)))
@@ -643,7 +643,7 @@ def owned_fixture_database():
                 owned_admission_scope(owned_database_name), owned_study_policy(owned_database_name):
             yield owned_database_name
     finally:
-        postgres_store.close_pools()
+        postgres.close_pools()
         DATABASE_URL = parent_database_url
         if created:
             with psycopg.connect(parent_database_url, autocommit=True) as parent_database:

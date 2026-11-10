@@ -123,67 +123,6 @@
       "testInventory": "REGRESSIONS.md"
     },
     {
-      "id": "analysis-jobs-contracts",
-      "type": "contract",
-      "maintainer": "Tempo / #264",
-      "status": "implemented",
-      "root": "contracts/analysis-jobs",
-      "publicExports": [
-        "tempo_analysis_jobs_contracts.v1",
-        "tempo_analysis_jobs_contracts.stockfish",
-        "tempo_analysis_jobs_contracts.maia",
-        "schemas/v1/*.json"
-      ],
-      "dependencies": [
-        "pydantic"
-      ],
-      "buildInputs": [
-        "pyproject.toml",
-        "src",
-        "schemas",
-        "fixtures",
-        "examples",
-        "tests",
-        "README.md",
-        "REGRESSIONS.md"
-      ],
-      "buildCommand": "python -m build --no-isolation",
-      "artifact": {
-        "name": "tempo-analysis-jobs-contracts",
-        "version": "1.0.0",
-        "format": "wheel + sdist + packaged JSON schema"
-      },
-      "tests": [
-        {
-          "owner": "analysis-jobs-contracts",
-          "kind": "python",
-          "cwd": "contracts/analysis-jobs",
-          "command": "python -m pytest tests --import-mode=importlib -q",
-          "inputs": [
-            "tests"
-          ]
-        }
-      ],
-      "toolchain": {
-        "python": ">=3.12,<3.15",
-        "qualificationPython": [
-          "3.12",
-          "3.14"
-        ]
-      },
-      "dataOwnership": {
-        "authority": "#264",
-        "databases": [],
-        "migrations": [],
-        "documents": [
-          "contracts/OWNERSHIP.md"
-        ],
-        "productionAdoption": false
-      },
-      "catalog": "contracts/catalog.json",
-      "testInventory": "REGRESSIONS.md"
-    },
-    {
       "id": "chess-line",
       "type": "library",
       "maintainer": "Tempo",
@@ -470,63 +409,6 @@
       }
     },
     {
-      "id": "introduction-eligibility",
-      "type": "library",
-      "maintainer": "Tempo / #230",
-      "status": "planned",
-      "root": "packages/introduction-eligibility",
-      "publicExports": [],
-      "dependencies": [],
-      "buildInputs": [],
-      "buildCommand": null,
-      "artifact": null,
-      "tests": [],
-      "toolchain": {},
-      "dataOwnership": {
-        "authority": null,
-        "databases": [],
-        "migrations": []
-      }
-    },
-    {
-      "id": "introduction-ordering",
-      "type": "library",
-      "maintainer": "Tempo / #231",
-      "status": "planned",
-      "root": "packages/introduction-ordering",
-      "publicExports": [],
-      "dependencies": [],
-      "buildInputs": [],
-      "buildCommand": null,
-      "artifact": null,
-      "tests": [],
-      "toolchain": {},
-      "dataOwnership": {
-        "authority": null,
-        "databases": [],
-        "migrations": []
-      }
-    },
-    {
-      "id": "admission-application",
-      "type": "library",
-      "maintainer": "Tempo / #232",
-      "status": "planned",
-      "root": "packages/admission-application",
-      "publicExports": [],
-      "dependencies": [],
-      "buildInputs": [],
-      "buildCommand": null,
-      "artifact": null,
-      "tests": [],
-      "toolchain": {},
-      "dataOwnership": {
-        "authority": null,
-        "databases": [],
-        "migrations": []
-      }
-    },
-    {
       "id": "evidence-math",
       "type": "library",
       "maintainer": "Tempo / #156",
@@ -588,8 +470,8 @@
         "run_suite.py",
         "hatch_build.py",
         "integration",
-        "../../../database/tempo_legacy_database/tooling/learning_review",
-        "../../../database/tempo_legacy_database/tests/learning_review"
+        "../../../database/tempo_storage/tooling/learning_review",
+        "../../../database/tempo_storage/tests/learning_review"
       ],
       "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
       "artifact": {
@@ -619,13 +501,11 @@
             "services/learning/application/qualification.py",
             "services/learning/application/qualify.py",
             "services/learning/application/integration/test_qualification_runners.py",
-            "database/tempo_legacy_database/tooling/learning_review/run_postgres.py",
             "backend/tests/test_learning_package_installation.py",
             "backend/pyproject.toml",
             "backend/requirements-test.txt",
             "backend/Dockerfile",
             "services/learning/application/run_suite.py",
-            "database/tempo_legacy_database/tests/learning_review/test_native_runner.py",
             "services/learning/application/hatch_build.py"
           ]
         },
@@ -633,13 +513,11 @@
           "owner": "learning-review-application",
           "kind": "postgres",
           "cwd": ".",
-          "command": "python database/tempo_legacy_database/tooling/learning_review/run_postgres.py",
+          "command": "python database/tempo_storage/tooling/learning_review/run_postgres.py",
           "inputs": [
-            "database/tempo_legacy_database/tooling/learning_review/run_postgres.py",
-            "database/tempo_legacy_database/tests/learning_review/test_postgres.py",
-            "database/tempo_legacy_database",
+            "database/tempo_storage",
             "backend/app",
-            "database/tempo_legacy_database/ddl/migrations",
+            "database/tempo_storage/ddl/migrations",
             "backend/requirements.txt",
             "database/tooling/apply_postgres_migrations.py",
             "database/tooling/provision_postgres_roles.py",
@@ -662,143 +540,6 @@
         "authority": "#224 application increment; legacy gateway owns transaction",
         "databases": [],
         "migrations": []
-      },
-      "testInventory": "REGRESSIONS.md"
-    },
-    {
-      "id": "learning-remediation",
-      "type": "library",
-      "maintainer": "Tempo / #230 #231 #232 #41",
-      "status": "implemented",
-      "root": "services/learning/remediation",
-      "publicExports": [
-        "AcceptedDecision",
-        "AdmissionPort",
-        "AdmissionProposal",
-        "AdmissionResult",
-        "AttemptAuthority",
-        "Candidate",
-        "CandidateFactsPort",
-        "ContentAuthority",
-        "CurrentMissProjection",
-        "Eligibility",
-        "ReceiveContext",
-        "RemediationError",
-        "ReviewOutcome",
-        "WorkItem",
-        "WorkPage",
-        "Preparation",
-        "PostgresRepository",
-        "PAGE_SIZE",
-        "MAX_PREPARATION_PAGES",
-        "evaluate_eligibility",
-        "order_candidates",
-        "propose_admission",
-        "validate_delivery",
-        "prepare_admissions",
-        "apply_admission",
-        "current_miss_sql",
-        "LegacyAcceptedDecision",
-        "LegacyAuthority",
-        "accepted_storage_identity"
-      ],
-      "dependencies": [
-        "tempo_game_evidence_contracts"
-      ],
-      "buildInputs": [
-        "../../../database/tempo_remediation_database",
-        "hatch_build.py",
-        "pyproject.toml",
-        "uv.lock",
-        "src",
-        "../../../database/tempo_remediation_database/ddl/migrations",
-        "tests",
-        "integration",
-        "run_suite.py",
-        "README.md",
-        "REGRESSIONS.md"
-      ],
-      "buildCommand": "python -m build --no-isolation",
-      "artifact": {
-        "name": "tempo-learning-remediation",
-        "version": "0.1.0",
-        "format": "wheel + sdist + module-local migration"
-      },
-      "tests": [
-        {
-          "owner": "learning-remediation",
-          "kind": "python",
-          "cwd": ".",
-          "command": "python services/learning/remediation/run_suite.py pure",
-          "inputs": [
-            "services/learning/remediation/tests",
-            "services/learning/remediation/run_suite.py",
-            "services/learning/application/qualification.py",
-            "services/learning/remediation/src",
-            "services/learning/remediation/pyproject.toml",
-            "services/learning/remediation/uv.lock",
-            "database/tempo_remediation_database/ddl/migrations",
-            "contracts/game-evidence/src",
-            "contracts/game-evidence/pyproject.toml"
-          ]
-        },
-        {
-          "owner": "learning-remediation",
-          "kind": "python",
-          "cwd": ".",
-          "command": "python services/learning/remediation/run_suite.py tooling",
-          "inputs": [
-            "services/learning/remediation/integration",
-            "services/learning/remediation/run_suite.py",
-            "services/learning/application/qualification.py",
-            "database/ownership/fixture.py",
-            "services/learning/remediation/src",
-            "services/learning/remediation/pyproject.toml",
-            "services/learning/remediation/uv.lock",
-            "database/tempo_remediation_database/ddl/migrations",
-            "contracts/game-evidence/src",
-            "contracts/game-evidence/pyproject.toml",
-            "services/learning/remediation/tests",
-            "database/tempo_remediation_database/tooling/run_postgres.py",
-            "database/tempo_remediation_database/tests/native/test_runner.py"
-          ]
-        },
-        {
-          "owner": "learning-remediation",
-          "kind": "postgres",
-          "cwd": ".",
-          "command": "python database/tempo_remediation_database/tooling/run_postgres.py",
-          "inputs": [
-            "database/tempo_remediation_database/tooling/run_postgres.py",
-            "database/tempo_remediation_database/tests/native/test_postgres.py",
-            "database/tempo_remediation_database/ddl/migrations",
-            "services/learning/remediation/tests/support.py",
-            "services/learning/application/qualification.py",
-            "database/ownership/fixture.py",
-            "services/learning/remediation/src",
-            "services/learning/remediation/pyproject.toml",
-            "services/learning/remediation/uv.lock",
-            "contracts/game-evidence/src",
-            "contracts/game-evidence/pyproject.toml"
-          ]
-        }
-      ],
-      "toolchain": {
-        "python": ">=3.12,<3.15",
-        "qualificationPython": [
-          "3.12",
-          "3.14"
-        ]
-      },
-      "dataOwnership": {
-        "authority": "Learning remediation / A owns outer transaction and ordered registration",
-        "databases": [
-          "Learning (module-local ownership; no cutover)"
-        ],
-        "migrations": [
-          "database/tempo_remediation_database/ddl/migrations/001_remediation.sql"
-        ],
-        "productionAdoption": false
       },
       "testInventory": "REGRESSIONS.md"
     },
@@ -869,224 +610,6 @@
         "productionAdoption": false
       },
       "testInventory": "REGRESSIONS.md"
-    },
-    {
-      "id": "game-ingestion",
-      "type": "library",
-      "maintainer": "Tempo / Games restoration",
-      "status": "implemented",
-      "root": "packages/game-ingestion",
-      "publicExports": [
-        "PgnGameIngester",
-        "BytesInput",
-        "FileInput",
-        "normalize_pgn",
-        "MAX_SOURCE_BYTES"
-      ],
-      "dependencies": [
-        "chess",
-        "tempo_game_review_contracts"
-      ],
-      "buildInputs": [
-        "pyproject.toml",
-        "uv.lock",
-        "src",
-        "tests",
-        "README.md",
-        "REGRESSIONS.md"
-      ],
-      "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
-      "artifact": {
-        "name": "tempo-game-ingestion",
-        "version": "0.1.0",
-        "format": "wheel + sdist"
-      },
-      "tests": [
-        {
-          "owner": "game-ingestion",
-          "kind": "python",
-          "cwd": "packages/game-ingestion",
-          "command": "python -m pytest tests --import-mode=importlib -q",
-          "inputs": [
-            "tests",
-            "src",
-            "pyproject.toml",
-            "uv.lock"
-          ]
-        }
-      ],
-      "toolchain": {
-        "python": ">=3.12,<3.15"
-      },
-      "dataOwnership": {
-        "authority": null,
-        "databases": [],
-        "migrations": [],
-        "productionAdoption": false
-      },
-      "testInventory": "REGRESSIONS.md"
-    },
-    {
-      "id": "game-classification",
-      "type": "library",
-      "maintainer": "Tempo / Games restoration",
-      "status": "implemented",
-      "root": "packages/game-classification",
-      "publicExports": [
-        "UnimplementedClassification",
-        "FindingKind",
-        "classify_response",
-        "resolve_equivalent_mapping"
-      ],
-      "dependencies": [
-        "tempo_game_review_contracts"
-      ],
-      "buildInputs": [
-        "pyproject.toml",
-        "uv.lock",
-        "src",
-        "tests",
-        "README.md",
-        "REGRESSIONS.md"
-      ],
-      "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
-      "artifact": {
-        "name": "tempo-game-classification",
-        "version": "0.1.0",
-        "format": "wheel + sdist"
-      },
-      "tests": [
-        {
-          "owner": "game-classification",
-          "kind": "python",
-          "cwd": "packages/game-classification",
-          "command": "python -m pytest tests --import-mode=importlib -q",
-          "inputs": [
-            "tests",
-            "src",
-            "pyproject.toml",
-            "uv.lock"
-          ]
-        }
-      ],
-      "toolchain": {
-        "python": ">=3.12,<3.15"
-      },
-      "dataOwnership": {
-        "authority": null,
-        "databases": [],
-        "migrations": [],
-        "productionAdoption": false
-      },
-      "testInventory": "REGRESSIONS.md"
-    },
-    {
-      "id": "game-actions",
-      "type": "library",
-      "maintainer": "Tempo / Games restoration",
-      "status": "implemented",
-      "root": "packages/game-actions",
-      "publicExports": [
-        "UnimplementedActions"
-      ],
-      "dependencies": [
-        "tempo_game_review_contracts"
-      ],
-      "buildInputs": [
-        "pyproject.toml",
-        "uv.lock",
-        "src",
-        "tests",
-        "README.md",
-        "REGRESSIONS.md"
-      ],
-      "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
-      "artifact": {
-        "name": "tempo-game-actions",
-        "version": "0.1.0",
-        "format": "wheel + sdist"
-      },
-      "tests": [
-        {
-          "owner": "game-actions",
-          "kind": "python",
-          "cwd": "packages/game-actions",
-          "command": "python -m pytest tests --import-mode=importlib -q",
-          "inputs": [
-            "tests",
-            "src",
-            "pyproject.toml",
-            "uv.lock"
-          ]
-        }
-      ],
-      "toolchain": {
-        "python": ">=3.12,<3.15"
-      },
-      "dataOwnership": {
-        "authority": null,
-        "databases": [],
-        "migrations": [],
-        "productionAdoption": false
-      },
-      "testInventory": "REGRESSIONS.md"
-    },
-    {
-      "id": "repertoire-comparison",
-      "type": "library",
-      "maintainer": "Tempo / Games restoration",
-      "status": "implemented",
-      "root": "packages/repertoire-comparison",
-      "publicExports": [
-        "CurrentRepertoireComparer",
-        "compare",
-        "RouteFrontier",
-        "TraversalRoute",
-        "DepartureResult",
-        "first_departure",
-        "first_departure_ply"
-      ],
-      "dependencies": [
-        "tempo_game_review_contracts"
-      ],
-      "buildInputs": [
-        "pyproject.toml",
-        "uv.lock",
-        "src",
-        "tests",
-        "README.md",
-        "REGRESSIONS.md"
-      ],
-      "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
-      "artifact": {
-        "name": "tempo-repertoire-comparison",
-        "version": "0.1.0",
-        "format": "wheel + sdist"
-      },
-      "tests": [
-        {
-          "owner": "repertoire-comparison",
-          "kind": "python",
-          "cwd": "packages/repertoire-comparison",
-          "command": "python -m pytest tests --import-mode=importlib -q",
-          "inputs": [
-            "tests",
-            "src",
-            "pyproject.toml",
-            "uv.lock"
-          ]
-        }
-      ],
-      "toolchain": {
-        "python": ">=3.12,<3.15"
-      },
-      "dataOwnership": {
-        "authority": null,
-        "databases": [],
-        "migrations": [],
-        "productionAdoption": false
-      },
-      "testInventory": "REGRESSIONS.md"
     }
   ],
   "suites": [
@@ -1128,90 +651,49 @@
         "backend/app/study",
         "backend/app/games",
         "backend/app/contracts/product_v02",
-        "backend/app/product_composition/encounters",
-        "backend/app/product_composition/feedback_maintenance.py",
-        "backend/app/services/encounter_preparation.py",
-        "backend/app/services/feedback_diagnostics.py",
-        "database/tempo_legacy_database/adapters/queue_refresh/presentation.py",
+        "database/tempo_storage/queue_refresh/presentation.py",
         "backend/tests/test_study_priority_interface.py",
-        "backend/tests/test_product_contracts.py",
-        "backend/tests/test_study_encounter_intake_boundary.py",
-        "backend/tests/test_product_deferred_priority_integration.py",
-        "backend/tests/test_product_encounter_integration.py",
-        "backend/tests/test_product_feedback_integration.py",
-        "backend/tests/test_product_game_lapse.py",
-        "backend/tests/test_product_game_lapse_postgres.py",
-        "backend/tests/test_scaled_game_priority_postgres.py",
-        "backend/tests/test_priority_ownership_pickup_postgres.py",
-        "backend/tests/product_encounter_fixtures.py",
         "tools/component-build/check-interface-boundaries.mjs",
         "tools/component-build/check-python.py",
-        "backend/app/product_composition/provider_priority.py",
-        "backend/app/product_composition/current_first_boundary.py",
-        "backend/app/product_composition/feedback_release.py",
-        "backend/app/product_composition/next_card_priority.py",
-        "backend/app/product_composition/game_sync_current.py",
-        "backend/app/product_composition/game_review_commands.py",
         "backend/app/services/queue_next_card.py",
         "backend/app/services/queue_priority_promotion.py",
         "backend/app/services/learning_review_adapter.py",
         "backend/app/queue_commands.py",
         "backend/app/main.py",
         "backend/app/tasks.py",
-        "database/tempo_legacy_database/adapters/study",
-        "database/tempo_legacy_database/adapters/games/product_feedback.py",
-        "database/tempo_legacy_database/adapters/games/managed_mode.py",
-        "database/tempo_legacy_database/adapters/authored_repertoires/product_snapshot.py",
-        "database/tempo_legacy_database/ddl/migrations/055_study_attempt_issuance.sql",
-        "database/tempo_legacy_database/ddl/migrations/056_managed_game_feedback_mode.sql",
-        "backend/tests/test_product_first_boundary.py",
-        "backend/tests/test_product_delivery_qualification.py",
-        "backend/tests/test_product_feedback_release.py",
-        "backend/tests/test_queue_randomization_feedback_parity.py",
+        "database/tempo_storage/study",
+        "database/tempo_storage/authored_repertoires/product_snapshot.py",
+        "database/tempo_storage/ddl/migrations/055_study_attempt_issuance.sql",
+        "database/tempo_storage/ddl/migrations/056_managed_game_feedback_mode.sql",
         "backend/tests/test_queue_refresh_read_database_split.py",
         "backend/app/services/postgres_queue_refresh.py",
         "backend/app/services/queue_presentation.py",
         "backend/app/services/queue_ordering.py",
         "backend/app/study/policy/queue_ordering.py",
-        "backend/tests/test_product_recombination_postgres.py",
         "backend/tests/test_study_attempt_issuance_postgres.py",
         "backend/tests/test_prepared_review_continuation.py",
-        "backend/tests/test_product_game_sync_integration.py",
         "contracts/product-v02/fixtures/first-departure",
-        "database/tempo_legacy_database/connections.py",
-        "database/tempo_legacy_database/adapters/postgres_store.py",
-        "backend/tests/test_product_game_review_commands_postgres.py",
+        "database/tempo_storage/connections.py",
+        "database/tempo_storage/postgres.py",
         "backend/app/repertoire",
-        "database/tempo_legacy_database/adapters/http_composition/queue_projection.py",
-        "database/tempo_legacy_database/adapters/http_composition/availability.py",
-        "backend/tests/test_product_snapshot.py",
-        "backend/tests/test_next_card_preparation_selection.py",
-        "backend/tests/test_study_qualification_leaf.py",
-        "backend/tests/test_study_feedback_preparation_trace.py",
+        "database/tempo_storage/http_composition/queue_projection.py",
+        "database/tempo_storage/http_composition/availability.py",
         "backend/tests/test_queue_projection_postgres.py",
         "packages/game-review-contracts",
         "backend/tests/fixtures/study_recovery_content.py",
-        "backend/tests/test_product_game_bound_snapshot_postgres.py",
-        "backend/tests/test_game_bound_repertoire_preparation.py",
         "backend/tests/test_study_recovery_acceptance.py",
         "backend",
         "database",
-        "packages/repertoire-comparison/src",
         "packages/chess-line/src",
         "packages/scheduling/src",
-        "packages/game-classification/src",
         "packages/board-ui/src",
         "packages/chess-core/src",
         "packages/game-review-contracts/src",
-        "packages/game-actions/src",
-        "packages/game-ingestion/src",
         "packages/study-session/src",
         "packages/evidence-math/src",
         "services/learning/application/src",
-        "services/learning/remediation/src",
         "contracts/game-evidence/src",
-        "contracts/consumer-examples/src",
-        "contracts/analysis-jobs/src"
+        "contracts/consumer-examples/src"
       ]
     },
     {
@@ -1224,71 +706,36 @@
         "backend/app/study",
         "backend/app/games",
         "backend/app/contracts/product_v02",
-        "backend/app/product_composition/encounters",
-        "backend/app/product_composition/feedback_maintenance.py",
-        "backend/app/services/encounter_preparation.py",
-        "backend/app/services/feedback_diagnostics.py",
-        "database/tempo_legacy_database/adapters/queue_refresh/presentation.py",
+        "database/tempo_storage/queue_refresh/presentation.py",
         "backend/tests/test_study_priority_interface.py",
-        "backend/tests/test_product_contracts.py",
-        "backend/tests/test_study_encounter_intake_boundary.py",
-        "backend/tests/test_product_deferred_priority_integration.py",
-        "backend/tests/test_product_encounter_integration.py",
-        "backend/tests/test_product_feedback_integration.py",
-        "backend/tests/test_product_game_lapse.py",
-        "backend/tests/test_product_game_lapse_postgres.py",
-        "backend/tests/test_scaled_game_priority_postgres.py",
-        "backend/tests/test_priority_ownership_pickup_postgres.py",
-        "backend/tests/product_encounter_fixtures.py",
         "tools/component-build/check-interface-boundaries.mjs",
         "tools/component-build/check-python.py",
-        "backend/app/product_composition/provider_priority.py",
-        "backend/app/product_composition/current_first_boundary.py",
-        "backend/app/product_composition/feedback_release.py",
-        "backend/app/product_composition/next_card_priority.py",
-        "backend/app/product_composition/game_sync_current.py",
-        "backend/app/product_composition/game_review_commands.py",
         "backend/app/services/queue_next_card.py",
         "backend/app/services/queue_priority_promotion.py",
         "backend/app/services/learning_review_adapter.py",
         "backend/app/queue_commands.py",
         "backend/app/main.py",
         "backend/app/tasks.py",
-        "database/tempo_legacy_database/adapters/study",
-        "database/tempo_legacy_database/adapters/games/product_feedback.py",
-        "database/tempo_legacy_database/adapters/games/managed_mode.py",
-        "database/tempo_legacy_database/adapters/authored_repertoires/product_snapshot.py",
-        "database/tempo_legacy_database/ddl/migrations/055_study_attempt_issuance.sql",
-        "database/tempo_legacy_database/ddl/migrations/056_managed_game_feedback_mode.sql",
-        "backend/tests/test_product_first_boundary.py",
-        "backend/tests/test_product_delivery_qualification.py",
-        "backend/tests/test_product_feedback_release.py",
-        "backend/tests/test_queue_randomization_feedback_parity.py",
+        "database/tempo_storage/study",
+        "database/tempo_storage/authored_repertoires/product_snapshot.py",
+        "database/tempo_storage/ddl/migrations/055_study_attempt_issuance.sql",
+        "database/tempo_storage/ddl/migrations/056_managed_game_feedback_mode.sql",
         "backend/tests/test_queue_refresh_read_database_split.py",
         "backend/app/services/postgres_queue_refresh.py",
         "backend/app/services/queue_presentation.py",
         "backend/app/services/queue_ordering.py",
         "backend/app/study/policy/queue_ordering.py",
-        "backend/tests/test_product_recombination_postgres.py",
         "backend/tests/test_study_attempt_issuance_postgres.py",
         "backend/tests/test_prepared_review_continuation.py",
-        "backend/tests/test_product_game_sync_integration.py",
         "contracts/product-v02/fixtures/first-departure",
-        "database/tempo_legacy_database/connections.py",
-        "database/tempo_legacy_database/adapters/postgres_store.py",
-        "backend/tests/test_product_game_review_commands_postgres.py",
+        "database/tempo_storage/connections.py",
+        "database/tempo_storage/postgres.py",
         "backend/app/repertoire",
-        "database/tempo_legacy_database/adapters/http_composition/queue_projection.py",
-        "database/tempo_legacy_database/adapters/http_composition/availability.py",
-        "backend/tests/test_product_snapshot.py",
-        "backend/tests/test_next_card_preparation_selection.py",
-        "backend/tests/test_study_qualification_leaf.py",
-        "backend/tests/test_study_feedback_preparation_trace.py",
+        "database/tempo_storage/http_composition/queue_projection.py",
+        "database/tempo_storage/http_composition/availability.py",
         "backend/tests/test_queue_projection_postgres.py",
         "packages/game-review-contracts",
         "backend/tests/fixtures/study_recovery_content.py",
-        "backend/tests/test_product_game_bound_snapshot_postgres.py",
-        "backend/tests/test_game_bound_repertoire_preparation.py",
         "backend/tests/test_study_recovery_acceptance.py"
       ]
     },
@@ -1300,54 +747,27 @@
       "command": "python -m pytest database/tests/games_collection/test_packaged_collection.py -q",
       "inputs": [
         "backend/app/games",
-        "backend/tests/test_historical_time_precision.py",
-        "backend/tests/test_historical_provider_pagination.py",
-        "backend/tests/test_historical_chesscom_daily.py",
-        "backend/app/product_composition/game_sync.py",
-        "backend/app/product_composition/game_sync_current.py",
-        "backend/app/product_composition/game_collection_status.py",
-        "scripts/game-review-collection.mjs",
-        "tests/runner/game-review-collection.test.mjs",
-        "backend/tests/test_game_collection_status.py",
-        "backend/tests/test_product_snapshot.py",
-        "backend/tests/test_product_game_sync_integration.py",
-        "backend/tests/test_product_feedback_jobs_postgres.py",
         "database/tests/games_collection/test_packaged_collection.py",
-        "backend/tests/fixtures/product_collection_packaged.py",
-        "backend/tests/test_product_game_lapse_postgres.py",
         "backend/tests/test_study_recovery_acceptance.py",
-        "backend/tests/test_product_game_lapse.py",
         "contracts/product-v02/fixtures",
-        "backend/app/product_composition/game_review.py",
-        "backend/app/product_composition/game_worker.py",
         "backend/app/repertoire",
-        "database/tempo_legacy_database/adapters/games",
-        "database/tempo_legacy_database/adapters/authored_repertoires/product_snapshot.py",
+        "database/tempo_storage/authored_repertoires/product_snapshot.py",
         "database/tooling/provision_postgres_roles.py",
         "backend/Dockerfile",
-        "backend/app/product_composition/provider_priority.py",
-        "backend/app/product_composition/current_first_boundary.py",
-        "backend/app/product_composition/feedback_release.py",
-        "backend/app/product_composition/next_card_priority.py",
-        "backend/app/product_composition/feedback_maintenance.py",
-        "backend/app/product_composition/managed_runtime.py",
-        "backend/managed-runtime-entrypoint.sh",
         "backend/app/study",
-        "database/tempo_legacy_database/adapters/study",
+        "database/tempo_storage/study",
         "backend/app/services/queue_next_card.py",
         "backend/app/queue_commands.py",
         "backend/app/main.py",
         "backend/app/tasks.py",
-        "database/tempo_legacy_database/ddl/migrations/055_study_attempt_issuance.sql",
-        "database/tempo_legacy_database/ddl/migrations/056_managed_game_feedback_mode.sql",
-        "tests/browser/real-game-feedback.spec.ts",
+        "database/tempo_storage/ddl/migrations/055_study_attempt_issuance.sql",
+        "database/tempo_storage/ddl/migrations/056_managed_game_feedback_mode.sql",
         "Dockerfile.web",
         "nginx.conf",
         ".dockerignore",
         "config/resource-budgets.json",
-        "database/tempo_legacy_database/connections.py",
-        "database/tempo_legacy_database/adapters/postgres_store.py",
-        "backend/tests/test_product_game_review_commands_postgres.py"
+        "database/tempo_storage/connections.py",
+        "database/tempo_storage/postgres.py"
       ]
     },
     {
@@ -1358,59 +778,33 @@
       "command": "python database/tests/games_collection/qualify_recovery.py",
       "inputs": [
         "backend/app/games",
-        "backend/app/product_composition/game_sync.py",
-        "backend/app/product_composition/game_sync_current.py",
-        "backend/app/product_composition/game_collection_status.py",
-        "scripts/game-review-collection.mjs",
-        "tests/runner/game-review-collection.test.mjs",
-        "backend/tests/test_game_collection_status.py",
-        "backend/tests/test_product_snapshot.py",
-        "backend/tests/test_product_game_sync_integration.py",
-        "backend/tests/test_product_feedback_jobs_postgres.py",
         "database/tests/games_collection/test_packaged_collection.py",
-        "backend/tests/fixtures/product_collection_packaged.py",
-        "backend/tests/test_product_game_lapse_postgres.py",
         "backend/tests/test_study_recovery_acceptance.py",
-        "backend/tests/test_product_game_lapse.py",
         "contracts/product-v02/fixtures",
-        "backend/app/product_composition/game_review.py",
-        "backend/app/product_composition/game_worker.py",
         "backend/app/repertoire",
-        "database/tempo_legacy_database/adapters/games",
-        "database/tempo_legacy_database/adapters/authored_repertoires/product_snapshot.py",
+        "database/tempo_storage/authored_repertoires/product_snapshot.py",
         "database/tooling/provision_postgres_roles.py",
         "backend/Dockerfile",
-        "backend/app/product_composition/provider_priority.py",
-        "backend/app/product_composition/current_first_boundary.py",
-        "backend/app/product_composition/feedback_release.py",
-        "backend/app/product_composition/next_card_priority.py",
-        "backend/app/product_composition/feedback_maintenance.py",
-        "backend/app/product_composition/managed_runtime.py",
-        "backend/managed-runtime-entrypoint.sh",
         "backend/app/study",
-        "database/tempo_legacy_database/adapters/study",
+        "database/tempo_storage/study",
         "backend/app/services/queue_next_card.py",
         "backend/app/queue_commands.py",
         "backend/app/main.py",
         "backend/app/tasks.py",
-        "database/tempo_legacy_database/ddl/migrations/055_study_attempt_issuance.sql",
-        "database/tempo_legacy_database/ddl/migrations/056_managed_game_feedback_mode.sql",
-        "tests/browser/real-game-feedback.spec.ts",
+        "database/tempo_storage/ddl/migrations/055_study_attempt_issuance.sql",
+        "database/tempo_storage/ddl/migrations/056_managed_game_feedback_mode.sql",
         "Dockerfile.web",
         "nginx.conf",
         ".dockerignore",
         "config/resource-budgets.json",
-        "database/tempo_legacy_database/connections.py",
-        "database/tempo_legacy_database/adapters/postgres_store.py",
-        "backend/tests/test_product_game_review_commands_postgres.py",
+        "database/tempo_storage/connections.py",
+        "database/tempo_storage/postgres.py",
         "app",
         "packages/study-session",
         "database/browser-intents",
         "database/tests/games_collection",
         "tests/browser/study-recovery.spec.ts",
-        "backend/tests/fixtures/study_recovery_content.py",
-        "backend/tests/test_product_game_bound_snapshot_postgres.py",
-        "backend/tests/test_game_bound_repertoire_preparation.py"
+        "backend/tests/fixtures/study_recovery_content.py"
       ]
     }
   ]

@@ -11,7 +11,6 @@ sys.path.insert(0, str(_REPOSITORY / "database"))
 
 import argparse
 import hashlib
-from importlib import metadata
 import json
 import os
 from pathlib import Path
@@ -20,37 +19,34 @@ import sys
 import psycopg
 
 
-MIGRATIONS = Path(__file__).resolve().parents[2] / "database/tempo_legacy_database/ddl/migrations"
+MIGRATIONS = Path(__file__).resolve().parents[2] / "database/tempo_storage/ddl/migrations"
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "database"))
-from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
+from tempo_storage.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 
 
 MODULE_MIGRATIONS = {
     "050_learning_remediation.sql": (
-        "tempo-learning-remediation", "0.1.0",
         "tempo_remediation_database/ddl/migrations/001_remediation.sql",
         "96907361dc003e78703dc57182bd020f96e82532bcea6724083326171242da0d",
+        "050_remediation.sql",
     ),
 }
 
 
 def migration_source(path: Path) -> str:
-    """Only this owner registers module schema; no runtime core or source fallback."""
+    """Resolve immutable historical SQL without loading a retired runtime package."""
     local_source = path.read_text()
     registration = MODULE_MIGRATIONS.get(path.name)
     if registration is None:
         if "tempo-module-schema:" in local_source:
             raise RuntimeError("Unregistered module migration")
         return local_source
-    distribution_name, version, resource, checksum = registration
+    resource, checksum, bundled_file = registration
     if (f"-- tempo-module-schema: {resource}\n" not in local_source
             or f"-- sha256: {checksum}\n" not in local_source):
         raise RuntimeError("Module migration registration changed")
-    distribution = metadata.distribution(distribution_name)
-    if distribution.version != version:
-        raise RuntimeError("Module migration distribution version changed")
-    content = distribution.locate_file(resource).read_bytes()
+    content = (MIGRATIONS.parent / "historical" / bundled_file).read_bytes()
     if hashlib.sha256(content).hexdigest() != checksum:
         raise RuntimeError("Module migration checksum changed")
     return "SET LOCAL search_path=public,pg_catalog;\n" + content.decode("utf-8") + "\n" + local_source

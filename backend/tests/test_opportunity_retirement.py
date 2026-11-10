@@ -11,8 +11,8 @@ def test_retired_opportunity_modules_are_physically_absent_after_application_com
     for name in (
         "app.services.repertoire_opportunities",
         "app.opportunity_commands",
-        "tempo_legacy_database.adapters.authored_repertoires.opportunities.storage",
-        "tempo_legacy_database.adapters.authored_repertoires.discovery_commands",
+        "tempo_storage.authored_repertoires.opportunities.storage",
+        "tempo_storage.authored_repertoires.discovery_commands",
     ):
         with pytest.raises(ModuleNotFoundError):
             importlib.import_module(name)

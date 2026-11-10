@@ -3,7 +3,7 @@
 from contextlib import contextmanager
 
 from app import main
-from tempo_legacy_database.adapters import postgres_store
+from tempo_storage import postgres
 
 
 class Cursor:
@@ -23,7 +23,7 @@ def test_postgres_position_summary_types_optional_repertoire_filter(monkeypatch)
     def connection():
         yield Database()
 
-    monkeypatch.setattr(postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(postgres, "configured", lambda: True)
     monkeypatch.setattr(main, "connection", connection)
     fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
     assert main.game_position_summary(fen)["encounters"] == 0

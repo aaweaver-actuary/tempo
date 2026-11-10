@@ -1,4 +1,6 @@
 """Detached preview tests; these do not qualify a migration or its locks."""
+
+from app.repertoire import position_study_source as _source_preparation
 import json
 
 import pytest
@@ -6,15 +8,15 @@ import pytest
 from app.repertoire import build_index
 from app.repertoire.interfaces.position_schedule_occurrences import inventory_from_snapshot
 from tempo_evidence_math.position_learning import SourceCertificate
-from tempo_legacy_database.adapters.authored_repertoires import position_study_source as owner
-from tempo_legacy_database.adapters.study.position_seed_inventory import InventoryRequest, SourceFacts
-from tempo_legacy_database.adapters.study.position_seed import preview_seed_page
+from tempo_storage.authored_repertoires import position_study_source as owner
+from tempo_storage.study.position_seed_inventory import InventoryRequest, SourceFacts
+from tempo_storage.study.position_seed import preview_seed_page
 from test_position_source_authority import setup
 
 
 def test_preview_uses_owner_prepared_source_and_retains_provenance(monkeypatch):
     db = setup(monkeypatch)
-    prepared = owner.prepare_position_source(db, "rep")
+    prepared = _source_preparation.prepare_position_source(db, "rep")
     membership = prepared.snapshot.membership
     certificate = SourceCertificate(membership.snapshot_id, membership.source_revision,
                                     membership.digest, True, True)
@@ -30,7 +32,7 @@ def test_preview_uses_owner_prepared_source_and_retains_provenance(monkeypatch):
 
 def test_preview_refuses_unprepared_or_unbounded_requests(monkeypatch):
     db = setup(monkeypatch)
-    prepared = owner.prepare_position_source(db, "rep")
+    prepared = _source_preparation.prepare_position_source(db, "rep")
     request = InventoryRequest((SourceFacts(prepared.snapshot, inventory_from_snapshot(
         prepared.snapshot, source_certificate=None)),), ())
     with pytest.raises(ValueError, match="prepared_position_source_required"):
@@ -42,7 +44,7 @@ def test_preview_refuses_unprepared_or_unbounded_requests(monkeypatch):
 
 
 def test_legacy_preflight_pages_and_rejects_bad_or_reserved_ids():
-    from tempo_legacy_database.adapters.study.position_seed import scan_legacy_id_page
+    from tempo_storage.study.position_seed import scan_legacy_id_page
     class Result:
         def __init__(self, rows): self.rows = rows
         def fetchall(self): return self.rows
@@ -64,11 +66,11 @@ def test_legacy_preflight_pages_and_rejects_bad_or_reserved_ids():
 def test_writer_holds_when_namespace_guard_unavailable(monkeypatch):
     from datetime import datetime, timezone
     import importlib.util
-    from tempo_legacy_database.adapters.study.position_seed import seed_shadow_page
-    if importlib.util.find_spec('tempo_legacy_database.adapters.study.position_fsrs_namespace') is not None:
+    from tempo_storage.study.position_seed import seed_shadow_page
+    if importlib.util.find_spec('tempo_storage.study.position_fsrs_namespace') is not None:
         pytest.skip('installed namespace guard is tested with native PostgreSQL')
     db = setup(monkeypatch)
-    prepared = owner.prepare_position_source(db, 'rep')
+    prepared = _source_preparation.prepare_position_source(db, 'rep')
     request = InventoryRequest((SourceFacts(prepared.snapshot, inventory_from_snapshot(
         prepared.snapshot, source_certificate=None)),), ())
     before = list(db.calls)
@@ -87,15 +89,15 @@ def test_native_seed_restart_clone_and_original_unchanged(monkeypatch, introduce
     from uuid import uuid4
     import psycopg
     from psycopg import sql
-    from tempo_legacy_database.adapters.postgres_store import tempo_row_factory
-    from tempo_legacy_database.adapters.study.position_seed_inventory import DonorFact
-    from tempo_legacy_database.adapters.study.position_seed import seed_shadow_page, verify_seed_receipts_page
+    from tempo_storage.postgres import tempo_row_factory
+    from tempo_storage.study.position_seed_inventory import DonorFact
+    from tempo_storage.study.position_seed import seed_shadow_page, verify_seed_receipts_page
 
     dsn = os.environ.get('TEMPO_POSITION_TEST_DSN')
     if not dsn:
         pytest.skip('requires task-owned disposable TEMPO_POSITION_TEST_DSN')
     prepared_db = setup(monkeypatch)
-    prepared = owner.prepare_position_source(prepared_db, 'rep')
+    prepared = _source_preparation.prepare_position_source(prepared_db, 'rep')
     membership = prepared.snapshot.membership
     cert = SourceCertificate(membership.snapshot_id, membership.source_revision, membership.digest, True, True)
     blob = json.dumps({'card_id': 42, 'state': 1, 'step': 0, 'stability': None, 'difficulty': None,
@@ -107,10 +109,10 @@ def test_native_seed_restart_clone_and_original_unchanged(monkeypatch, introduce
     # Only this test replaces external authority/guard; SQL, savepoints,
     # sequence, receipts and state are real PostgreSQL operations.
     monkeypatch.setattr(owner, 'fence_position_source', lambda db, source: None)
-    namespace = ModuleType('tempo_legacy_database.adapters.study.position_fsrs_namespace')
+    namespace = ModuleType('tempo_storage.study.position_fsrs_namespace')
     namespace.fence_namespace = lambda db: None
     monkeypatch.setitem(__import__('sys').modules, namespace.__name__, namespace)
-    migration = Path(__file__).resolve().parents[2] / 'tempo_legacy_database/ddl/migrations/057_position_study.sql'
+    migration = Path(__file__).resolve().parents[2] / 'tempo_storage/ddl/migrations/057_position_study.sql'
     now = datetime(2026, 11, 2, tzinfo=timezone.utc)
     with psycopg.connect(dsn, autocommit=True) as admin:
         assert admin.execute('SELECT current_database()').fetchone()[0].startswith('tempo_position_test_')
@@ -167,7 +169,7 @@ def test_native_seed_restart_clone_and_original_unchanged(monkeypatch, introduce
                 assert conn.execute('SELECT count(*) FROM study_position_states').fetchone()[0] == 0
                 conn.rollback()
                 conn.execute('BEGIN')
-                from tempo_legacy_database.adapters.authored_repertoires.card_deletion import storage as deletion
+                from tempo_storage.authored_repertoires.card_deletion import storage as deletion
                 with psycopg.connect(dsn, row_factory=tempo_row_factory) as other:
                     other.execute(sql.SQL('SET search_path TO {}').format(sql.Identifier(schema)))
                     deletion.lock_card(Borrowed(other), 'physical')
@@ -243,8 +245,8 @@ def test_native_seed_restart_clone_and_original_unchanged(monkeypatch, introduce
 
 
 def test_donor_fence_rejects_changed_or_busy_physical_owner():
-    from tempo_legacy_database.adapters.study.position_seed_inventory import DonorFact
-    from tempo_legacy_database.adapters.study.position_seed import fence_donor_facts
+    from tempo_storage.study.position_seed_inventory import DonorFact
+    from tempo_storage.study.position_seed import fence_donor_facts
     fact = DonorFact('card', 'rep', 2, 'learning', '2026-11-03', '{}',
                      '2026-10-01T00:00:00Z', False, False, None, False, ('rep',), deleted=False)
     row = dict(card_id='card', repertoire_id='rep', revision=2, state='learning',
@@ -278,7 +280,7 @@ def test_donor_fence_rejects_changed_or_busy_physical_owner():
 
 def test_seed_preparation_requires_writer_read_only_repeatable_read():
     from test_inventory_readonly import FakeReader
-    from tempo_legacy_database.adapters.study.position_seed_inventory import InventoryHold, read_card_page, read_seed_donor_page
+    from tempo_storage.study.position_seed_inventory import InventoryHold, read_card_page, read_seed_donor_page
     writer = FakeReader(('tempo_writer', 'on', 'repeatable read'))
     assert read_seed_donor_page(writer, candidate_card_ids=('card',)) == [('card',)]
     with pytest.raises(InventoryHold, match='postgres_read_only_role_required'):
@@ -298,7 +300,7 @@ def test_packaged_seed_import_without_tooling(tmp_path):
     import subprocess
     import sys
     root = Path(__file__).resolve().parents[3]
-    shutil.copytree(root / 'database/tempo_legacy_database', tmp_path / 'tempo_legacy_database',
+    shutil.copytree(root / 'database/tempo_storage', tmp_path / 'tempo_storage',
                     ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
     roots = [tmp_path, root / 'backend']
     for group in ('packages', 'contracts', 'services'):
@@ -307,11 +309,11 @@ def test_packaged_seed_import_without_tooling(tmp_path):
     code = '''import importlib.util, sys
 sys.path[:0] = %s
 assert importlib.util.find_spec('tooling') is None
-from tempo_legacy_database.adapters.study.position_seed import (
+from tempo_storage.study.position_seed import (
     seed_shadow_page, verify_seed_receipts_page, scan_legacy_id_page, preview_seed_page)
-from tempo_legacy_database.adapters.study.position_seed_inventory import (
+from tempo_storage.study.position_seed_inventory import (
     DonorFact, InventoryRequest, SourceFacts, read_seed_donor_page, read_card_page)
-from tempo_legacy_database.adapters.study.position_seed_donors import select_donors
+from tempo_storage.study.position_seed_donors import select_donors
 assert all(callable(x) for x in (seed_shadow_page, verify_seed_receipts_page,
     scan_legacy_id_page, preview_seed_page, read_seed_donor_page, read_card_page, select_donors))
 assert 'tooling' not in sys.modules

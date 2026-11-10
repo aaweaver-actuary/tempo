@@ -41,6 +41,6 @@ try {
   if (apply) request.expected_origin_sha256 = values['expected-origin-sha256'];
   const wire = Buffer.from(JSON.stringify({version: 1, plan: !apply, request})).toString('base64');
   const result = await runtime.compose(['exec', '-T', 'foreground-worker', 'python', '-m',
-    'tempo_legacy_database.adapters.lifecycle.queue_attempt_abandonment', '--request-base64', wire], {timeout: 120000});
+    'tempo_storage.lifecycle.queue_attempt_abandonment', '--request-base64', wire], {timeout: 120000});
   process.stdout.write(result.stdout);
 } finally { release(); }

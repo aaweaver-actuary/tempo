@@ -40,7 +40,7 @@ def test_native_rejects_invalid_reporting_or_reporting_with_selection(options):
 
 
 def test_qualifier_rejects_selectors_before_build_and_native_before_docker(tmp_path):
-    for runner in (APPLICATION/'qualify.py', APPLICATION.parents[2]/'database/tempo_legacy_database/tooling/learning_review/run_postgres.py'):
+    for runner in (APPLICATION/'qualify.py', APPLICATION.parents[2]/'database/tempo_storage/tooling/learning_review/run_postgres.py'):
         environment = dict(os.environ, PYTEST_ADDOPTS='-k no_such_required_identity', PATH='')
         result = subprocess.run([sys.executable, str(runner), str(tmp_path/'evidence')],
                                 env=environment, capture_output=True, text=True)

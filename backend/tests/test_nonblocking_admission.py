@@ -99,12 +99,12 @@ def test_background_receipt_read_is_prompt_during_foreground_without_false_succe
     from contextlib import contextmanager
     from types import SimpleNamespace
     from app import command_gateway
-    from tempo_legacy_database.adapters import postgres_store
+    from tempo_storage import postgres
     from app.services.activity_gate import activity_gate
 
     monkeypatch.delenv("TEMPO_REDIS_URL", raising=False)
     monkeypatch.delenv("TEMPO_FOREGROUND_ACTIVITY_URL", raising=False)
-    monkeypatch.setattr(postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(postgres, "configured", lambda: True)
     receipt = (
         (
             "coverage.maia.submit",
@@ -135,7 +135,7 @@ def test_background_receipt_read_is_prompt_during_foreground_without_false_succe
         observations.append(options)
         yield SimpleNamespace(raw=SimpleNamespace(execute=read))
 
-    monkeypatch.setattr(postgres_store, "connection", connection)
+    monkeypatch.setattr(postgres, "connection", connection)
     with activity_gate.foreground(), activity_gate.background_request():
         result = command_gateway.read_operation("saved-receipt", background=True)
         assert result["state"] == ("retrying" if receipt_exists else "unknown")

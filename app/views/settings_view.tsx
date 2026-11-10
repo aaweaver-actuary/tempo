@@ -23,7 +23,6 @@ import { PendingOperationError } from "../lib/operation-status";
 import { publishNotification } from "../lib/notifications";
 
 import { Notice } from "../components/task-tabs";
-import { CurrentGameSyncSettings } from "../product-composition/GameSyncSettings";
 
 type SettingsValues = {
   initial_depth: number;
@@ -32,23 +31,11 @@ type SettingsValues = {
   study_new_per_day: number;
   tactics_new_per_day: number;
   study_only_mode: boolean;
-  discovery_window_days: 30 | 90;
-  lichess_username: string;
-  chesscom_username: string;
-  auto_sync_minutes: number;
-  engine_line_window_cp: number;
   light_first_interval_days: number;
-  draw_hold_user_moves: number;
-  coverage_reply_denominator: number;
-  coverage_cumulative_target: number;
-  coverage_horizon_fullmoves: number;
-  coverage_path_floor: number;
-  coverage_maia_elo: number;
   board_theme: BoardTheme;
   piece_set: PieceSet;
   sound: boolean;
   sound_volume: number;
-  coverage_target: number;
   maia_elo: string;
   maia_transposition_plies: number;
   explorer_speeds: string;
@@ -79,23 +66,11 @@ export default function SettingsView({
     study_new_per_day: 2,
     tactics_new_per_day: 5,
     study_only_mode: false,
-    discovery_window_days: 90,
-    lichess_username: "",
-    chesscom_username: "",
-    auto_sync_minutes: 3,
-    engine_line_window_cp: 30,
     light_first_interval_days: 7,
-    draw_hold_user_moves: 20,
-    coverage_reply_denominator: 100,
-    coverage_cumulative_target: 95,
-    coverage_horizon_fullmoves: 15,
-    coverage_path_floor: 0.0005,
-    coverage_maia_elo: 1500,
     board_theme: theme,
     piece_set: pieceSet,
     sound,
     sound_volume: 0.72,
-    coverage_target: 90,
     maia_elo: "1500",
     maia_transposition_plies: 4,
     explorer_speeds: "blitz,rapid,classical",
@@ -177,18 +152,7 @@ export default function SettingsView({
         study_new_per_day: values.study_new_per_day,
         tactics_new_per_day: values.tactics_new_per_day,
         study_only_mode: values.study_only_mode,
-        discovery_window_days: values.discovery_window_days,
-        lichess_username: values.lichess_username.trim(),
-        chesscom_username: values.chesscom_username.trim(),
-        auto_sync_minutes: values.auto_sync_minutes,
-        engine_line_window_cp: values.engine_line_window_cp,
         light_first_interval_days: values.light_first_interval_days,
-        draw_hold_user_moves: values.draw_hold_user_moves,
-        coverage_reply_denominator: values.coverage_reply_denominator,
-        coverage_cumulative_target: values.coverage_cumulative_target,
-        coverage_horizon_fullmoves: values.coverage_horizon_fullmoves,
-        coverage_path_floor: values.coverage_path_floor,
-        coverage_maia_elo: values.coverage_maia_elo,
       };
       try {
         await saveLocalSettings(backend);
@@ -353,18 +317,12 @@ export default function SettingsView({
             />
           </label>
           {usesLocalApi() && <label>
-            <span>Study-only mode<small>Pause optional analysis and imports. Existing cards, review saves, and the daily queue remain available. Pending work resumes when turned off.</small></span>
+            <span>Study-only mode<small>Pause optional imports and maintenance. Existing cards, review saves, and the daily queue remain available. Pending work resumes when turned off.</small></span>
             <TextInput disabled={!settingsLoaded} type="checkbox"
               checked={values.study_only_mode}
               onChange={(event) => update("study_only_mode", event.target.checked)} />
           </label>}
-          <label>
-            <span>Discovery evidence window<small>How far back Tempo counts analyzed games</small></span>
-            <SelectInput disabled={!settingsLoaded} value={values.discovery_window_days}
-              onChange={(event) => update("discovery_window_days", Number(event.target.value) as 30 | 90)}>
-              <option value={30}>30 days</option><option value={90}>90 days</option>
-            </SelectInput>
-          </label>
+
           <label>
             <span>
               Light first interval
@@ -380,21 +338,7 @@ export default function SettingsView({
               }
             />
           </label>
-          <label>
-            <span>
-              Draw hold length
-              <small>User moves required in endgame studies</small>
-            </span>
-            <TextInput disabled={!settingsLoaded}
-              type="number"
-              min="5"
-              max="100"
-              value={values.draw_hold_user_moves}
-              onChange={(event) =>
-                update("draw_hold_user_moves", Number(event.target.value))
-              }
-            />
-          </label>
+
         </section>
         <section id="settings-section-board" className="settings-card" role="tabpanel" aria-labelledby="settings-tab-board" hidden={activeSection !== "board"}>
           <h2>Board</h2>
@@ -456,7 +400,7 @@ export default function SettingsView({
         </section>
         <section id="settings-section-games" className="settings-card" role="tabpanel" aria-labelledby="settings-tab-games" hidden={activeSection !== "games"}>
           <h2>Games</h2>
-          {activeSection === "games" && <CurrentGameSyncSettings />}
+          {activeSection === "games" && <p>Paste a PGN or open a saved game in Game Review.</p>}
           <p>Configured game sync uses the saved account, UTC date range, game speeds, rated policy, and repertoires selected above.</p>
           <p>Save provider settings with the “Save game sync settings” button above.</p>
         </section>

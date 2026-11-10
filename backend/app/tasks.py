@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from contextlib import nullcontext, contextmanager
-import fcntl
 import os
-import tempfile
 
 import logging
 import time
@@ -23,11 +21,7 @@ from psycopg.errors import (
 )
 from psycopg_pool import PoolTimeout
 from functools import wraps
-from .services.feedback_diagnostics import (
-    diagnose_feedback,
-    feedback_stage,
-    feedback_failure,
-)
+
 
 from .product_composition.database_infrastructure import bind_database_infrastructure
 
@@ -39,10 +33,6 @@ from .contracts.command_registry import (
     is_retired_command,
 )
 from .celery_app import celery_app
-from .product_composition.worker_game_sync import resolve_worker_game_sync_command
-from .product_composition.worker_game_commands import resolve_worker_game_command
-from .product_composition.worker_legacy_evidence import resolve_worker_legacy_evidence
-from .product_composition.worker_product_feedback import resolve_worker_product_feedback
 from .command_gateway import (
     claim_recoverable_operation,
     execute_command,
@@ -50,26 +40,22 @@ from .command_gateway import (
     record_operation_retry,
     defer_operation_for_foreground,
 )
-from tempo_legacy_database.connections import read_connection
-from tempo_legacy_database.adapters.lifecycle.refresh_requests import (
+from tempo_storage.connections import read_connection
+from tempo_storage.lifecycle.refresh_requests import (
     daily_queue_projection,
 )
-from . import study_commands  # noqa: F401 - registers explicit worker commands
 from . import study_attempt_commands  # noqa: F401 - registers Study attempt commands
 from . import tactic_commands  # noqa: F401 - registers tactic attempt commands
 from . import queue_commands  # noqa: F401 - registers foreground queue commands
-from .product_composition.feedback_release import register_feedback_next_card_priority
 
-register_feedback_next_card_priority()
 from . import review_commands  # noqa: F401 - registers foreground review command
-from . import opening_evidence_commands  # noqa: F401 - registers shadow checkpoint command
+from .command_gateway import register_command
+from .study.position_checkpoint import prepare_standalone_checkpoint, commit_standalone_checkpoint
+register_command("opening_evidence.checkpoint", commit_standalone_checkpoint, prepare=prepare_standalone_checkpoint)
+
 from . import teaching_commands  # noqa: F401 - registers foreground teaching command
 from . import repertoire_commands  # noqa: F401 - registers foreground repertoire command
-from . import account_commands  # noqa: F401 - registers foreground account command
 from . import settings_commands  # noqa: F401 - registers foreground settings command
-from .product_composition.repertoire_runtime import register_current_repertoire_commands
-
-register_current_repertoire_commands()
 from . import annotation_commands  # noqa: F401 - registers foreground position notes
 from . import branch_commands  # noqa: F401 - registers foreground branch edits
 from . import pgn_import_commands  # noqa: F401 - registers foreground PGN imports
@@ -119,18 +105,8 @@ def study_only_enabled(database=None):
     )
 
 
-def execute_game_sync_record_slice(claimed_task):
-    from .services.postgres_game_sync import execute_game_sync_record_slice as execute
-
-    return execute(claimed_task)
 
 
-def execute_game_sync_window_slice(claimed_task):
-    from .services.postgres_game_sync_windows import (
-        execute_game_sync_window_slice as execute,
-    )
-
-    return execute(claimed_task)
 
 
 # Only bounded accepted results/releases may bypass foreground admission.
@@ -139,10 +115,7 @@ def execute_game_sync_window_slice(claimed_task):
 # Their source receipts remain durable, but execution needs normal admission.
 _CONTROL_BACKGROUND_COMMANDS = frozenset()
 _SUPPORTED_BACKGROUND_KINDS = (
-    "product_game_refresh",
     "daily_queue",
-    "game_sync_record",
-    "game_sync_window",
     "opening_graph_rebuild",
     "integrity_scan",
 )
@@ -180,28 +153,6 @@ def ensure_daily_queue() -> bool:
         return bool(result["refresh_pending"])
 
 
-@contextmanager
-def _preparation_capacity(required=True):
-    """One potentially expensive preparation across this worker's processes.
-
-    A nonblocking process lock leaves the second foreground process available
-    for saves and issuance. Crash/termination closes the descriptor automatically.
-    Containers have distinct temporary directories; no live/test state is shared.
-    """
-    if not required:
-        yield True
-        return
-    path = os.path.join(tempfile.gettempdir(), "tempo-study-preparation.lock")
-    with open(path, "a") as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            yield False
-            return
-        try:
-            yield True
-        finally:
-            fcntl.flock(lock, fcntl.LOCK_UN)
 
 
 @celery_app.task(name="app.tasks.execute_foreground_command", bind=True)
@@ -233,12 +184,7 @@ def _execute_foreground_command(
     submitted_at = (self.request.headers or {}).get("submitted_at")
     queue_wait = max(0.0, time.time() - float(submitted_at)) if submitted_at else None
     started = time.perf_counter()
-    with (
-        activity_gate.foreground(),
-        _preparation_capacity(
-            command_name == "queue.prepare_next"
-        ) as preparation_admitted,
-    ):
+    with activity_gate.foreground():
         should_execute, saved_payload, attempt_token, _attempt_number = (
             record_operation_attempt(
                 operation_id,
@@ -250,17 +196,10 @@ def _execute_foreground_command(
         )
         if not should_execute:
             return None
-        if not preparation_admitted:
-            defer_operation_for_foreground(operation_id, attempt_token)
-            return None
         try:
             if command_name in PAUSED_IMPORT_COMMANDS and study_only_enabled():
                 defer_operation_for_foreground(operation_id, attempt_token)
                 return None
-            resolve_worker_game_sync_command(command_name)
-            resolve_worker_game_command(command_name)
-            resolve_worker_legacy_evidence(command_name)
-            resolve_worker_product_feedback(command_name)
             result = execute_command(
                 operation_id, command_name, saved_payload, attempt_token=attempt_token
             )
@@ -324,10 +263,6 @@ def execute_background_command(
                 else nullcontext()
             ):
                 activity_gate.check_background_admission()
-                resolve_worker_game_sync_command(command_name)
-                resolve_worker_game_command(command_name)
-                resolve_worker_legacy_evidence(command_name)
-                resolve_worker_product_feedback(command_name)
                 return execute_command(
                     operation_id,
                     command_name,
@@ -375,21 +310,6 @@ def execute_background_command(
 _maintenance_cooldowns = {}
 
 
-def _wake_feedback_retry(eligible_at):
-    """Advisory wake after the recovery transaction; periodic recovery survives loss."""
-    try:
-        celery_app.send_task(
-            "app.tasks.maintain_game_feedback",
-            eta=eligible_at,
-            queue="foreground",
-            retry=False,
-            ignore_result=True,
-        )
-    except Exception as error:
-        _LOGGER.warning(
-            "Study feedback wake unavailable error_class=%s; durable retry retained",
-            type(error).__name__,
-        )
 
 
 def bounded_maintenance(function):
@@ -427,75 +347,6 @@ def bounded_maintenance(function):
     return bounded
 
 
-@celery_app.task(name="app.tasks.maintain_game_feedback", base=CoalescedWakeTask)
-@bounded_maintenance
-@diagnose_feedback
-def maintain_game_feedback() -> bool:
-    """Resume one persisted Study effect without the optional Games worker."""
-    from .product_composition.feedback_maintenance import (
-        claim_feedback_sweep,
-        execute_feedback_sweep,
-    )
-    from tempo_legacy_database.adapters.study.game_feedback_authority import (
-        CurrentDecisionUnavailable,
-    )
-
-    task = None
-    try:
-        with (
-            _preparation_capacity() as preparation_admitted,
-            activity_gate.essential_study_progress("study_game_feedback"),
-            activity_gate.background_job(
-                "study_game_feedback", "one-slice", yielding=True
-            ),
-        ):
-            if not preparation_admitted:
-                return False
-            task = claim_feedback_sweep()
-            if task is None:
-                return False
-            feedback_stage("execute", task)
-            complete = execute_feedback_sweep(task)
-        if not complete:
-            celery_app.send_task(
-                "app.tasks.maintain_game_feedback", countdown=1, queue="foreground"
-            )
-        return True
-    except BackgroundAdmissionDeferred:
-        if task is not None:
-            defer_task_for_foreground(task)
-        return False
-    except CurrentDecisionUnavailable as error:
-        _LOGGER.info("Study feedback maintenance deferred: %s", error.reason)
-        if task is not None:
-            defer_task_for_contention(
-                task["id"], task["generation"], task["lease_token"], kind=task["kind"]
-            )
-        return False
-    except TransactionTimeout as error:
-        feedback_failure(error)
-        feedback_stage("deadline_recovery")
-        if task is None:
-            raise
-        defer_task_for_transaction_timeout(
-            task, TransactionTimeout("transaction_deadline"), wake=_wake_feedback_retry
-        )
-        return False
-    except (LockNotAvailable, DeadlockDetected, SerializationFailure):
-        if task is not None:
-            defer_task_for_contention(
-                task["id"], task["generation"], task["lease_token"], kind=task["kind"]
-            )
-        return False
-    except (psycopg.OperationalError, psycopg.InterfaceError) as error:
-        feedback_failure(error)
-        if task is None:
-            raise
-        feedback_stage("connection_recovery")
-        from .services.durable_tasks import defer_task_for_connection_failure
-
-        defer_task_for_connection_failure(task, wake=_wake_feedback_retry)
-        return False
 
 
 @celery_app.task(name="app.tasks.recover_operations", base=CoalescedWakeTask)
@@ -643,17 +494,8 @@ def _execute_claimed_background_slice(
     *,
     queue_refresh_wake: bool = False,
 ) -> bool:
-    def refresh_slice(task):
-        # Essential Study slices never import or construct the optional producer.
-        from .product_composition.game_refresh import execute_refresh_slice
-
-        return execute_refresh_slice(task)
-
     background_handlers = {
-        "product_game_refresh": refresh_slice,
         "daily_queue": execute_postgres_queue_refresh_slice,
-        "game_sync_record": execute_game_sync_record_slice,
-        "game_sync_window": execute_game_sync_window_slice,
         "opening_graph_rebuild": execute_postgres_opening_graph_slice,
         "integrity_scan": execute_postgres_integrity_slice,
     }

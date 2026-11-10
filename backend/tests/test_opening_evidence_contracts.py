@@ -1,6 +1,6 @@
 """Compatibility and authoritative preparation seams in the regular suite."""
 
-from tempo_legacy_database.adapters import postgres_store
+from tempo_storage import postgres
 from contextlib import asynccontextmanager, contextmanager
 import hashlib
 import json
@@ -59,7 +59,7 @@ def review_policy_settings(monkeypatch):
 def test_opening_checkpoint_http_dispatch_does_not_prepare_evidence_in_api(
     monkeypatch, checkpoint_http_envelope, background_header
 ):
-    monkeypatch.setattr(postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(postgres, "configured", lambda: True)
     from fastapi.testclient import TestClient
     from app import main, command_dispatch
     from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
@@ -68,7 +68,7 @@ def test_opening_checkpoint_http_dispatch_does_not_prepare_evidence_in_api(
     monkeypatch.delenv("TEMPO_REDIS_URL", raising=False)
 
     monkeypatch.setattr(
-        postgres_store,
+        postgres,
         "connection",
         lambda **options: pytest.fail(
             "Checkpoint HTTP dispatch performed an API-side evidence source read"
@@ -107,137 +107,10 @@ def test_opening_checkpoint_http_dispatch_does_not_prepare_evidence_in_api(
     ]
 
 
-@pytest.fixture
-def attempt_http_boundary(monkeypatch):
-    monkeypatch.setattr(postgres_store, "configured", lambda: True)
-    from threading import Event
-    from fastapi.testclient import TestClient
-    from app import main
-    from app.services.activity_gate import activity_gate
-
-    monkeypatch.delenv("TEMPO_REDIS_URL", raising=False)
-    monkeypatch.delenv("TEMPO_FOREGROUND_ACTIVITY_URL", raising=False)
-
-    boundary = SimpleNamespace(
-        reached=Event(),
-        sql_started=Event(),
-        sections=[],
-        active_connections=0,
-        attempt={"attempt_id": "http-attempt", "state": "partial"},
-        failure=None,
-    )
-    original_wait = activity_gate.wait_for_foreground
-
-    def observe_admission():
-        assert activity_gate.in_background, (
-            "Foreground diagnostic tried to wait on its own lease"
-        )
-        boundary.reached.set()
-        original_wait()
-
-    monkeypatch.setattr(activity_gate, "wait_for_foreground", observe_admission)
-
-    def execute(statement, parameters):
-        boundary.sql_started.set()
-        boundary.reached.set()
-        assert parameters == ("http-attempt",)
-        if boundary.failure:
-            raise boundary.failure
-        if "opening_evidence_attempts" in statement:
-            return SimpleNamespace(fetchone=lambda: boundary.attempt)
-        assert (
-            statement
-            == "SELECT event_json FROM opening_evidence_events WHERE attempt_id=%s ORDER BY sequence LIMIT 256"
-        )
-        return SimpleNamespace(
-            fetchall=lambda: [('{"sequence":1}',), ('{"sequence":2}',)]
-        )
-
-    @contextmanager
-    def connection(**options):
-        boundary.sections.append(options)
-        boundary.active_connections += 1
-        try:
-            yield SimpleNamespace(execute_native=execute)
-        finally:
-            boundary.active_connections -= 1
-
-    monkeypatch.setattr(postgres_store, "connection", connection)
-    boundary.client = TestClient(main.app)
-    return boundary
 
 
-@pytest.mark.parametrize("outcome", ["found", "missing", "error"])
-def test_background_opening_attempt_http_read_yields_and_retries_after_foreground_admission(
-    attempt_http_boundary, outcome
-):
-    from concurrent.futures import ThreadPoolExecutor
-    from app.services.activity_gate import activity_gate
-
-    boundary = attempt_http_boundary
-    if outcome == "missing":
-        boundary.attempt = None
-    elif outcome == "error":
-        boundary.failure = RuntimeError("evidence read failed")
-    with ThreadPoolExecutor(max_workers=1) as requests:
-        with activity_gate.foreground():
-            response_future = requests.submit(
-                boundary.client.get,
-                "/api/opening-evidence/attempts/http-attempt",
-                headers={"X-Tempo-Work-Class": "background"},
-            )
-            assert boundary.reached.wait(5), (
-                "Background route reached neither admission nor evidence SQL"
-            )
-            denied = response_future.result(timeout=5)
-            assert denied.status_code == 503
-            assert denied.headers["Retry-After"] == "1"
-            assert denied.json() == {"detail": "Waiting for foreground activity"}
-            assert not boundary.sql_started.is_set(), (
-                "Background attempt evidence SQL started before foreground admission released"
-            )
-            assert not boundary.sections, (
-                "Background attempt opened PostgreSQL before admission"
-            )
-        response_future = requests.submit(
-            boundary.client.get,
-            "/api/opening-evidence/attempts/http-attempt",
-            headers={"X-Tempo-Work-Class": "background"},
-        )
-        if outcome == "error":
-            with pytest.raises(RuntimeError, match="evidence read failed"):
-                response_future.result(timeout=5)
-        else:
-            response = response_future.result(timeout=5)
-            assert response.status_code == (200 if outcome == "found" else 404)
-            if outcome == "found":
-                assert response.json() == {
-                    **boundary.attempt,
-                    "events": [{"sequence": 1}, {"sequence": 2}],
-                }
-            else:
-                assert response.json() == {
-                    "detail": "Opening attempt evidence not found"
-                }
-    assert boundary.sections == [
-        {"read_only": True, "background": True, "authoritative": True}
-    ]
-    assert boundary.active_connections == activity_gate.active_background_sections == 0
-    assert not activity_gate.foreground_requests_active
 
 
-def test_foreground_opening_attempt_http_read_does_not_self_deadlock(
-    attempt_http_boundary,
-):
-    boundary = attempt_http_boundary
-    response = boundary.client.get("/api/opening-evidence/attempts/http-attempt")
-    assert response.status_code == 200
-    assert response.json() == {
-        **boundary.attempt,
-        "events": [{"sequence": 1}, {"sequence": 2}],
-    }
-    assert boundary.sections == [{"read_only": True}]
-    assert boundary.active_connections == 0
 
 
 
@@ -245,14 +118,14 @@ def test_foreground_opening_attempt_http_read_does_not_self_deadlock(
 def test_opening_checkpoint_http_schema_rejection_precedes_dispatch(
     monkeypatch, checkpoint_http_envelope
 ):
-    monkeypatch.setattr(postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(postgres, "configured", lambda: True)
     from fastapi.testclient import TestClient
     from app import main, command_dispatch
 
     monkeypatch.delenv("TEMPO_REDIS_URL", raising=False)
 
     monkeypatch.setattr(
-        postgres_store,
+        postgres,
         "connection",
         lambda **options: pytest.fail("Invalid schema opened PostgreSQL"),
     )
@@ -288,10 +161,10 @@ def test_opening_checkpoint_payload_identity_ignores_historical_preparation(
 def test_foreground_review_http_preparation_keeps_foreground_request_lease(
     monkeypatch, checkpoint_http_envelope, reconciling
 ):
-    from tempo_legacy_database.adapters.opening_evidence import storage
+    from tempo_storage.opening_evidence import storage
 
     monkeypatch.setattr(storage, "postgres_is_configured", lambda: True)
-    monkeypatch.setattr(postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(postgres, "configured", lambda: True)
     from fastapi.testclient import TestClient
     from app import main, command_dispatch
     from app.services.activity_gate import activity_gate
@@ -316,7 +189,7 @@ def test_foreground_review_http_preparation_keeps_foreground_request_lease(
 
     @contextmanager
     def source_read(**options):
-        assert options == {"read_only": True}
+        assert options == {"read_only": True, "repertoire_snapshot": False}
         assert (
             not activity_gate.in_background and activity_gate.foreground_requests_active
         )
@@ -341,7 +214,7 @@ def test_foreground_review_http_preparation_keeps_foreground_request_lease(
 
         yield SimpleNamespace(execute_native=source_row)
 
-    monkeypatch.setattr(postgres_store, "connection", source_read)
+    monkeypatch.setattr(postgres, "connection", source_read)
     submitted = []
 
     def dispatch(name, payload, **options):
@@ -370,37 +243,13 @@ def test_foreground_review_http_preparation_keeps_foreground_request_lease(
     assert not activity_gate.foreground_requests_active
 
 
-def test_opening_attempt_http_closes_read_before_event_decoding(
-    attempt_http_boundary, monkeypatch
-):
-    boundary = attempt_http_boundary
-    original_decode = json.loads
-    decoded = []
-
-    def decode(value, *arguments, **options):
-        if value in ('{"sequence":1}', '{"sequence":2}'):
-            assert boundary.active_connections == 0, (
-                "HTTP response decoding held the attempt read open"
-            )
-            decoded.append(value)
-        return original_decode(value, *arguments, **options)
-
-    monkeypatch.setattr(json, "loads", decode)
-    assert (
-        boundary.client.get(
-            "/api/opening-evidence/attempts/http-attempt",
-            headers={"X-Tempo-Work-Class": "background"},
-        ).status_code
-        == 200
-    )
-    assert decoded == ['{"sequence":1}', '{"sequence":2}']
 
 
 def test_opening_checkpoint_dispatches_as_background_without_changing_review_dispatch(
     monkeypatch,
 ):
-    monkeypatch.setattr(postgres_store, "configured", lambda: True)
-    from app import main, command_dispatch, opening_evidence_api
+    monkeypatch.setattr(postgres, "configured", lambda: True)
+    from app import main, command_dispatch
     from app.contracts.transport.study import ReviewRequest
     from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
 
@@ -427,7 +276,7 @@ def test_opening_checkpoint_dispatches_as_background_without_changing_review_dis
         ),
     )
     for _ in range(2):
-        opening_evidence_api.opening_evidence_checkpoint(
+        main.opening_checkpoint(
             request, idempotency_key="checkpoint-key"
         )
     main.review(
@@ -448,9 +297,9 @@ def test_opening_checkpoint_dispatches_as_background_without_changing_review_dis
 def test_opening_checkpoint_request_is_background_without_a_client_work_class_header(
     monkeypatch,
 ):
-    monkeypatch.setattr(postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(postgres, "configured", lambda: True)
     from fastapi.testclient import TestClient
-    from app import main, command_dispatch, opening_evidence_api
+    from app import main, command_dispatch
 
     fixture = json.loads(
         (
@@ -530,7 +379,7 @@ def test_shadow_manifest_fixture_matches_backend_producer_and_prescribed_revisio
 def test_legacy_review_dispatch_preserves_exact_payload_and_command_fingerprint(
     monkeypatch,
 ):
-    monkeypatch.setattr(postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(postgres, "configured", lambda: True)
     from app import main, command_dispatch
     from app.contracts.transport.study import ReviewRequest
     from app.command_gateway import request_digest
@@ -579,10 +428,10 @@ def test_legacy_review_dispatch_preserves_exact_payload_and_command_fingerprint(
 
 
 def test_shadow_chess_validation_closes_read_connection_before_traversal(monkeypatch):
-    from tempo_legacy_database.adapters.opening_evidence import storage
+    from tempo_storage.opening_evidence import storage
 
     monkeypatch.setattr(storage, "postgres_is_configured", lambda: True)
-    from app.services import postgres_opening_evidence as service
+    from app.study import position_checkpoint as service
     from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
 
     fixture = json.loads(
@@ -621,18 +470,18 @@ def test_shadow_chess_validation_closes_read_connection_before_traversal(monkeyp
         assert not active, "Chess traversal held its database read connection"
         return fixture
 
-    monkeypatch.setattr(service.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(service.postgres_store, "connection", read)
+    monkeypatch.setattr(service.postgres, "configured", lambda: True)
+    monkeypatch.setattr(service, "read_connection", read)
     monkeypatch.setattr(service, "decision_manifest", derive)
     assert service.prepare_checkpoint(request) == fixture
 
 
 def test_evidence_migration_is_unique_additive_and_matches_readiness():
-    from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
+    from tempo_storage.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 
     directory = (
         Path(__file__).resolve().parents[2]
-        / "database/tempo_legacy_database/ddl/migrations"
+        / "database/tempo_storage/ddl/migrations"
     )
     migrations = sorted(directory.glob("[0-9][0-9][0-9]_*.sql"))
     assert [int(path.name[:3]) for path in migrations] == list(
@@ -751,7 +600,7 @@ def test_review_completion_requires_a_resolved_actual_queue_binding(
 
 
 def test_scoped_color_adapter_preserves_raw_legacy_presentation():
-    from app.services.postgres_opening_evidence import _manifest_snapshot
+    from app.study.position_checkpoint import _manifest_snapshot
 
     snapshot = {"trained_color": None, "effective_trained_color": "black", "id": 17}
     assert _manifest_snapshot(snapshot) == {**snapshot, "trained_color": "black"}
@@ -760,7 +609,7 @@ def test_scoped_color_adapter_preserves_raw_legacy_presentation():
 
 def test_scoped_color_adapter_rejects_unknown_and_explicit_mismatch():
     import pytest
-    from app.services.postgres_opening_evidence import _manifest_snapshot
+    from app.study.position_checkpoint import _manifest_snapshot
 
     for raw_color, effective_color in [
         (None, None),
@@ -777,7 +626,7 @@ def test_scoped_color_adapter_rejects_unknown_and_explicit_mismatch():
 def test_evidence_migration_captures_valid_scope_color_without_overwriting_context():
     source = (
         Path(__file__).resolve().parents[2]
-        / "database/tempo_legacy_database/ddl/migrations/030_opening_decision_evidence.sql"
+        / "database/tempo_storage/ddl/migrations/030_opening_decision_evidence.sql"
     ).read_text()
     assert (
         "effective_trained_color TEXT NOT NULL CHECK(effective_trained_color IN ('white','black'))"
@@ -822,7 +671,7 @@ def test_review_requeue_context_correction_only_runs_for_fresh_review(
     reconciling,
 ):
     from app import review_commands
-    from app.services import postgres_opening_evidence
+    from app.study import position_checkpoint as checkpoint_owner
     from app.services import learning_review_adapter
     from tempo_learning_review import (
         apply_review as installed_apply_review,
@@ -920,10 +769,10 @@ def test_review_requeue_context_correction_only_runs_for_fresh_review(
         validation_order.append("completed")
 
     monkeypatch.setattr(
-        postgres_opening_evidence, "persist_checkpoint", persist_completion
+        checkpoint_owner, "persist_checkpoint", persist_completion
     )
     monkeypatch.setattr(
-        postgres_opening_evidence, "complete_review_evidence", complete_evidence
+        checkpoint_owner, "complete_review_evidence", complete_evidence
     )
     handler = (
         review_commands.reconcile_review
@@ -962,7 +811,7 @@ def test_review_requeue_context_correction_only_runs_for_fresh_review(
 def test_opening_checkpoint_receipt_read_uses_background_admission(
     monkeypatch, background
 ):
-    monkeypatch.setattr(postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(postgres, "configured", lambda: True)
     from fastapi.testclient import TestClient
     from app import main
 
@@ -1004,7 +853,7 @@ def test_reconciliation_conflict_rolls_back_new_evidence_and_preserves_saved_che
 ):
     from app import review_commands
     from app.contracts.review_conflicts import ReviewConflict
-    from app.services import postgres_opening_evidence as evidence
+    from app.study import position_checkpoint as evidence
     from app.services import learning_review_adapter
     from tempo_learning_review import apply_review as installed_apply_review
 
@@ -1122,3 +971,104 @@ def test_reconciliation_digest_ignores_only_derived_preparation():
         )
         != digest
     )
+
+
+@pytest.fixture
+def attempt_status_boundary(monkeypatch):
+    """The recovery read returns status only through the real reader-role boundary."""
+    from fastapi.testclient import TestClient
+    from app import main
+    from app.services.activity_gate import activity_gate
+    from threading import Event
+
+    monkeypatch.delenv("TEMPO_REDIS_URL", raising=False)
+    monkeypatch.delenv("TEMPO_FOREGROUND_ACTIVITY_URL", raising=False)
+    boundary = SimpleNamespace(
+        attempt={"attempt_id": "recovery-attempt", "state": "complete"},
+        sections=[], sql=[], active_connections=0, reached=Event(),
+    )
+    original_wait = activity_gate.wait_for_foreground
+
+    def wait():
+        assert activity_gate.in_background
+        boundary.reached.set()
+        original_wait()
+
+    monkeypatch.setattr(activity_gate, "wait_for_foreground", wait)
+
+    def execute(statement, parameters):
+        assert " ".join(statement.split()) == (
+            "SELECT attempt_id,state FROM opening_evidence_attempts WHERE attempt_id=%s"
+        )
+        assert parameters == ("recovery-attempt",)
+        boundary.sql.append((statement, parameters))
+        return SimpleNamespace(fetchone=lambda: boundary.attempt)
+
+    @contextmanager
+    def connection(**options):
+        boundary.sections.append(options)
+        boundary.active_connections += 1
+        try:
+            yield SimpleNamespace(execute=execute, execute_native=execute)
+        finally:
+            boundary.active_connections -= 1
+
+    monkeypatch.setattr(postgres, "connection", connection)
+    boundary.client = TestClient(main.app)
+    return boundary
+
+
+@pytest.mark.parametrize("state", ["complete", "partial", None])
+def test_recovery_attempt_status_background_read_preserves_state_and_reader_role(
+    attempt_status_boundary, state
+):
+    from app.services.activity_gate import activity_gate
+    boundary = attempt_status_boundary
+    boundary.attempt = None if state is None else {"attempt_id": "recovery-attempt", "state": state}
+    response = boundary.client.get(
+        "/api/opening-evidence/attempts/recovery-attempt",
+        headers={"X-Tempo-Work-Class": "background"},
+    )
+    assert response.status_code == (404 if state is None else 200)
+    if state is not None:
+        assert response.json() == boundary.attempt
+    assert boundary.sections == [{
+        "read_only": True, "background": True, "authoritative": False,
+        "pool_timeout_seconds": None,
+    }]
+    assert len(boundary.sql) == 1
+    assert boundary.active_connections == activity_gate.active_background_sections == 0
+
+
+def test_recovery_attempt_status_waits_for_foreground_before_opening_reader(attempt_status_boundary):
+    from concurrent.futures import ThreadPoolExecutor
+    from app.services.activity_gate import activity_gate
+    boundary = attempt_status_boundary
+    with ThreadPoolExecutor(max_workers=1) as requests:
+        with activity_gate.foreground():
+            pending = requests.submit(
+                boundary.client.get, "/api/opening-evidence/attempts/recovery-attempt",
+                headers={"X-Tempo-Work-Class": "background"},
+            )
+            assert boundary.reached.wait(5)
+            response = pending.result(timeout=5)
+            assert response.status_code == 503
+            assert response.headers["Retry-After"] == "1"
+            assert not boundary.sections and not boundary.sql
+        retry = requests.submit(
+            boundary.client.get, "/api/opening-evidence/attempts/recovery-attempt",
+            headers={"X-Tempo-Work-Class": "background"},
+        ).result(timeout=5)
+    assert retry.status_code == 200 and retry.json() == boundary.attempt
+    assert len(boundary.sections) == 1
+
+
+def test_recovery_attempt_status_foreground_read_does_not_wait_on_itself(attempt_status_boundary, monkeypatch):
+    from app.services.activity_gate import activity_gate
+    monkeypatch.setattr(activity_gate, "wait_for_foreground", lambda: pytest.fail("Foreground read waited on itself"))
+    boundary = attempt_status_boundary
+    response = boundary.client.get("/api/opening-evidence/attempts/recovery-attempt")
+    assert response.status_code == 200 and response.json() == boundary.attempt
+    assert boundary.sections == [{"read_only": True, "repertoire_snapshot": False}]
+    assert boundary.active_connections == 0
+    assert not activity_gate.foreground_requests_active

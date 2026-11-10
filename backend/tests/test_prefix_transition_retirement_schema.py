@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 
 
-MIGRATIONS = Path(__file__).resolve().parents[2] / "database/tempo_legacy_database/ddl/migrations"
+MIGRATIONS = Path(__file__).resolve().parents[2] / "database/tempo_storage/ddl/migrations"
 
 
 def test_retirement_removes_exact_historical_scope_triggers_and_keeps_data():

@@ -11,8 +11,8 @@ from fastapi import HTTPException
 
 from .command_gateway import register_command
 from app.contracts.transport.tactics import TacticAttemptRequest, TacticCaptureRequest
-from tempo_legacy_database.adapters.postgres_store import PostgresConnection
-from tempo_legacy_database.adapters.queue_position_lock import (
+from tempo_storage.postgres import PostgresConnection
+from tempo_storage.queue_position_lock import (
     lock_queue_date_for_position,
 )
 from .queue_commands import request_queue_refresh_in_transaction
@@ -20,8 +20,8 @@ from app.chess.cards import card_id
 from .study.queue_placement import ensure_card_queued_after
 from .services.tactical_catalog import activate
 from .product_composition.tactic_capture import capture_tactic
-from tempo_legacy_database.adapters.tactic_admission import lock_daily_tactic_admission
-from tempo_legacy_database.adapters.tactics import attempts as storage
+from tempo_storage.tactic_admission import lock_daily_tactic_admission
+from tempo_storage.tactics import attempts as storage
 
 
 def create_tactic_capture(

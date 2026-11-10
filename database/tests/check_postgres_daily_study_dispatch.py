@@ -24,7 +24,7 @@ import psycopg
 from psycopg.errors import TransactionTimeout
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend"))
-from tempo_legacy_database.adapters import postgres_store
+from tempo_storage import postgres
 from app import tasks
 from app.main import _unlock_eligible_opening_cards
 from app.queue_commands import ensure_current_queue, request_queue_refresh_in_transaction
@@ -41,7 +41,7 @@ def configure():
         raise RuntimeError("Daily study proof requires an explicitly disposable PostgreSQL instance")
     os.environ["TEMPO_DATABASE_WRITE_URL"] = DSN
     os.environ["TEMPO_DATABASE_READ_URL"] = DSN
-    postgres_store.close_pools()
+    postgres.close_pools()
 
 
 def seed(identifier, *, request_refresh, queue_date=None):
@@ -69,12 +69,12 @@ def seed(identifier, *, request_refresh, queue_date=None):
         # Eligible low-priority durable jobs remain behind foreground queue preparation.
         connection.execute("INSERT INTO background_tasks(id,kind,deduplication_key,priority,payload_json,next_attempt_at,created_at,updated_at) SELECT %s||'-analysis-'||number,'game_derivation_compare',%s||'-missing-game-'||number,127,json_build_object('game_id',%s||'-missing-game-'||number,'derivation_version',1)::text,%s,%s,%s FROM generate_series(1,3000) number", (identifier, identifier, identifier, now, now, now))
     if request_refresh:
-        with postgres_store.connection() as connection:
+        with postgres.connection() as connection:
             request_queue_refresh_in_transaction(connection, today)
 
 
 def cleanup(identifier):
-    postgres_store.close_pools()
+    postgres.close_pools()
     with psycopg.connect(DSN) as connection:
         connection.execute("DELETE FROM background_tasks WHERE id LIKE %s OR deduplication_key=%s", (identifier+'-%', identifier))
         connection.execute("DELETE FROM reviews WHERE card_id IN (SELECT id FROM cards WHERE repertoire_id=%s)", (identifier,))
@@ -148,19 +148,19 @@ def proof_deadline_recovery(identifier):
                 saved_task, _projection = saved_state()
                 assert saved_task['transaction_timeout_count'] == timeout_count and saved_task['attempt_count'] == 0
                 assert datetime.fromisoformat(saved_task['next_attempt_at']) == observed_clock[0] + timedelta(seconds=delay_seconds)
-                postgres_store.close_pools()
+                postgres.close_pools()
                 assert not deadline(claimed)
                 assert saved_state()[0]['transaction_timeout_count'] == timeout_count
                 observed_clock[0] += timedelta(seconds=delay_seconds)
                 claimed = claimed_owned()
             crashed_delivery = claimed
             observed_clock[0] += timedelta(seconds=61)
-            postgres_store.close_pools()
+            postgres.close_pools()
             resumed = claimed_owned()
             assert resumed['lease_token'] != crashed_delivery['lease_token']
             assert not deadline(crashed_delivery)
             assert saved_state()[0]['transaction_timeout_count'] == 8
-            with postgres_store.connection(background=True) as connection:
+            with postgres.connection(background=True) as connection:
                 assert durable_tasks.advance_task_slice_in_transaction(connection, resumed,
                     next_phase='publish_projection', next_payload=publication_payload)
             saved_task, projection = saved_state()
@@ -181,7 +181,7 @@ def proof_deadline_recovery(identifier):
             failure = durable_tasks.fail_task(failed_delivery['id'], failed_delivery['generation'], failed_delivery['lease_token'], RuntimeError('Controlled terminal queue failure'))
             assert failure['state'] == 'failed'
             assert saved_state()[1]['state'] == 'failed' and saved_state()[1]['refresh_pending'] == 0
-            with postgres_store.connection() as connection:
+            with postgres.connection() as connection:
                 activity_commands.retry_failed_task(connection, {'task_id': failed_delivery['id']})
             saved_task, projection = saved_state()
             assert saved_task['transaction_timeout_count'] == 0 and saved_task['transaction_timeout_checkpoint'] is None
@@ -196,7 +196,7 @@ def proof_deadline_recovery(identifier):
             durable_tasks.enqueue_task('daily_queue', identifier, publication_payload, priority=1, foreground=False)
             compact_replaced_delivery = claimed_owned()
             assert deadline(compact_replaced_delivery)
-            with postgres_store.connection(background=True) as connection:
+            with postgres.connection(background=True) as connection:
                 durable_tasks.enqueue_compact_postgres_task_in_transaction(connection,
                     'daily_queue', identifier, publication_payload, priority=1)
             saved_task, _projection = saved_state()
@@ -263,7 +263,7 @@ def proof_deadline_recovery(identifier):
             assert not execute_postgres_queue_refresh_slice(claimed_owned())
             print('PASS test_issue135_postgres_command_queue_wake_follows_commit_and_never_rollback')
     finally:
-        postgres_store.close_pools()
+        postgres.close_pools()
         with psycopg.connect(DSN) as connection:
             connection.execute('DELETE FROM queue_projections WHERE queue_date=%s', (queue_date,))
 
@@ -484,7 +484,7 @@ def proof_deferred_capacity_wakes(identifier):
 
                 # A preexisting intent without an essential owner receives an
                 # actual delayed essential delivery from the old marked route.
-                with postgres_store.connection() as database:
+                with postgres.connection() as database:
                     accepted = enqueue_from_command(database, {})
                 before = saved_state()
                 execution_count = len(executions)
@@ -501,7 +501,7 @@ def proof_deferred_capacity_wakes(identifier):
                     observed_clock[0] = eligibility - timedelta(microseconds=1)
                     deliver_due()
                     assert saved_state() == before and len(executions) == execution_count
-                    postgres_store.close_pools()
+                    postgres.close_pools()
                     observed_clock[0] = eligibility
                     deliver_due()
                     saved_task, projection = saved_state()
@@ -529,7 +529,7 @@ def proof_deferred_capacity_wakes(identifier):
                     if scenario != 'recover':
                         if scenario == 'replace':
                             # Commit replacement without injecting a new poll.
-                            with postgres_store.connection() as database:
+                            with postgres.connection() as database:
                                 replacement = enqueue_from_command(database, {})
                         else:
                             reserved_delivery = deliveries[0]
@@ -578,7 +578,7 @@ def proof_deferred_capacity_wakes(identifier):
                   for suffix in ('', ':publication')))
             capacity_messages.close()
             broker_queue(broker).delete()
-            postgres_store.close_pools()
+            postgres.close_pools()
             with psycopg.connect(DSN) as connection:
                 connection.execute('DELETE FROM operation_receipts WHERE operation_id=ANY(%s)', (operation_ids,))
                 connection.execute('DELETE FROM queue_projections WHERE queue_date=%s', (queue_date,))
@@ -588,9 +588,9 @@ def proof_deferred_capacity_wakes(identifier):
 @contextmanager
 def _lock_order_connection():
     """Diagnostic transactions accommodate barriers; production budgets stay unchanged."""
-    with psycopg.connect(DSN, row_factory=postgres_store.tempo_row_factory,
+    with psycopg.connect(DSN, row_factory=postgres.tempo_row_factory,
                          options="-c statement_timeout=5000 -c transaction_timeout=10000") as raw:
-        database = postgres_store.PostgresConnection(raw)
+        database = postgres.PostgresConnection(raw)
         yield database
         database.flush_background_metrics()
 
@@ -722,7 +722,7 @@ def test_issue135_postgres_ensure_current_replacement_fences_timeout_deferral():
     queue_date = '2099-10-10'
     task_locked, release_foreground, deferral_connected = Event(), Event(), Event()
     foreground_pid, deferral_pid = [], []
-    original_execute = postgres_store.PostgresConnection.execute
+    original_execute = postgres.PostgresConnection.execute
 
     def pause_after_task_lock(database, statement, parameters=()):
         cursor = original_execute(database, statement, parameters)
@@ -743,7 +743,7 @@ def test_issue135_postgres_ensure_current_replacement_fences_timeout_deferral():
             return operation(database)
 
     with _queue_lock_order_fixture() as (task, clock), \
-            patch.object(postgres_store.PostgresConnection, 'execute', pause_after_task_lock), \
+            patch.object(postgres.PostgresConnection, 'execute', pause_after_task_lock), \
             patch.object(durable_tasks, 'submit_background_write', background_write), \
             patch.object(durable_tasks, 'wake_queue_refresh') as wake, \
             ThreadPoolExecutor(max_workers=2) as executor:
@@ -777,7 +777,7 @@ def test_issue135_postgres_ensure_current_absent_task_creation_lock_order():
     queue_date = '2099-10-09'
     task_missing, task_inserted, release_creator, ensure_connected = Event(), Event(), Event(), Event()
     ensure_pid, creator_pid = [], []
-    original_execute = postgres_store.PostgresConnection.execute
+    original_execute = postgres.PostgresConnection.execute
 
     def pause_after_missing_task(database, statement, parameters=()):
         cursor = original_execute(database, statement, parameters)
@@ -808,7 +808,7 @@ def test_issue135_postgres_ensure_current_absent_task_creation_lock_order():
         return created
 
     with _queue_lock_order_fixture(leased=False) as (_task, clock), \
-            patch.object(postgres_store.PostgresConnection, 'execute', pause_after_missing_task), \
+            patch.object(postgres.PostgresConnection, 'execute', pause_after_missing_task), \
             ThreadPoolExecutor(max_workers=2) as executor:
         foreground = executor.submit(ensure)
         try:
@@ -934,7 +934,7 @@ def proof_sparse_unlock(identifier):
     while cursor is not None:
         previous_cursor = cursor
         started = time.perf_counter()
-        with postgres_store.connection(background=True) as connection:
+        with postgres.connection(background=True) as connection:
             observed = ObservedUnlockConnection(connection)
             cursor = _unlock_eligible_opening_cards(observed, date.today().isoformat(), after_card_id=cursor, batch_size=8)
         maximum_transaction_seconds = max(maximum_transaction_seconds, time.perf_counter()-started)
@@ -981,7 +981,7 @@ def _proof_daily_queue_dispatch_and_sparse_unlock():
         def publish(claimed):
             assert claimed['id'] == durable_task['id']
             executions.append(claimed['lease_token'])
-            with postgres_store.connection(background=True) as connection:
+            with postgres.connection(background=True) as connection:
                 assert durable_tasks.complete_task_slice_in_transaction(connection, claimed)
             return False
         worker_errors = []

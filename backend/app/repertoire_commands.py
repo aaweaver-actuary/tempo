@@ -8,8 +8,8 @@ from typing import Any
 from fastapi import HTTPException
 
 from .command_gateway import register_command
-from tempo_legacy_database.adapters.foreground_controls import repertoires as storage
-from tempo_legacy_database.adapters.postgres_store import PostgresConnection
+from tempo_storage.foreground_controls import repertoires as storage
+from tempo_storage.postgres import PostgresConnection
 from app.contracts.transport.authored_repertoire import RepertoireSettingsRequest
 from .repertoire_settings import repertoire_settings_response
 from .queue_commands import request_queue_refresh_in_transaction

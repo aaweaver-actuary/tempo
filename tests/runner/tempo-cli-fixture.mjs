@@ -7,8 +7,8 @@ import { targetKey } from "../../scripts/tempo-deployment.mjs";
 export function cliFixture(mode = "upgrade") {
   const directory = mkdtempSync(join(tmpdir(), "tempo-cli-command-"));
   const root = join(directory, "checkout"); const bin = join(directory, "bin");
-  mkdirSync(join(root, "database/tempo_legacy_database/ddl"), { recursive: true }); mkdirSync(bin);
-  writeFileSync(join(root, "database/tempo_legacy_database/ddl/schema_version.py"), "POSTGRES_SCHEMA_VERSION = 29\n");
+  mkdirSync(join(root, "database/tempo_storage/ddl"), { recursive: true }); mkdirSync(bin);
+  writeFileSync(join(root, "database/tempo_storage/ddl/schema_version.py"), "POSTGRES_SCHEMA_VERSION = 29\n");
   const secret = join(directory, "password"); writeFileSync(secret, "canary-private-password", { mode: 0o600 });
   const names = ["postgres", "redis", "api", "foreground-worker", "background-worker", "background-scheduler", "web", "postgres-backup", "migration"];
   const volumes = Object.fromEntries(["tempo-postgres-data", "tempo-postgres-backups", "tempo-redis-data"].map(name => [name, { name, external: true }]));

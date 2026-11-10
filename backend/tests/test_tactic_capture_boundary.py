@@ -7,8 +7,8 @@ import pytest
 from fastapi import HTTPException
 from app.contracts.transport.tactics import TacticCaptureRequest
 from app.product_composition import tactic_capture as composition
-from tempo_legacy_database.adapters.tactics import captures as receipt_storage
-from tempo_legacy_database.adapters.study import captured_tactic as study_storage
+from tempo_storage.tactics import captures as receipt_storage
+from tempo_storage.study import captured_tactic as study_storage
 
 
 def test_tactic_capture_borrowed_admission_preserves_lock_order_and_writer(monkeypatch):
@@ -124,7 +124,7 @@ def test_captured_tactic_public_protocol_import_does_not_start_implementations()
 import importlib.abc, sys
 class Forbid(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, *args):
-        if fullname.startswith(('app.product_composition', 'app.services', 'tempo_legacy_database', 'psycopg', 'redis', 'celery')):
+        if fullname.startswith(('app.product_composition', 'app.services', 'tempo_storage', 'psycopg', 'redis', 'celery')):
             raise AssertionError('public contract imported implementation: ' + fullname)
 sys.meta_path.insert(0, Forbid())
 from app.study.interfaces.captured_tactic import CapturedTacticAdmission
@@ -144,7 +144,7 @@ def test_disposable_capture_proof_binds_database_before_owner_work(monkeypatch):
     from pathlib import Path
     from unittest.mock import patch
     from app.product_composition import database_infrastructure
-    from tempo_legacy_database.adapters import postgres_store
+    from tempo_storage import postgres
 
     calls = []
     original_path = sys.path[:]
@@ -173,7 +173,7 @@ def test_disposable_capture_proof_binds_database_before_owner_work(monkeypatch):
                 calls.append("connection")
                 raise RuntimeError("stopped before database access")
 
-            monkeypatch.setattr(postgres_store, "connection", stop_before_connection)
+            monkeypatch.setattr(postgres, "connection", stop_before_connection)
             with pytest.raises(RuntimeError, match="stopped before database access"):
                 proof["main"]()
             assert calls == ["bind", "connection"]

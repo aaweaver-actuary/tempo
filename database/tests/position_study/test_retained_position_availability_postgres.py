@@ -13,8 +13,8 @@ from psycopg.conninfo import make_conninfo
 
 from database.tests.position_study.acceptance import _dsn
 from database.tests.position_study.italian_acceptance import LINES, _moves, seed_disposable_source
-from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
-from tempo_legacy_database.adapters.http_composition import queue_projection, retained_position_availability
+from tempo_storage.postgres import PostgresConnection, tempo_row_factory
+from tempo_storage.http_composition import queue_projection, retained_position_availability
 
 
 def _fixture(raw, dsn):
@@ -86,13 +86,13 @@ def _retained(raw, entry):
 def test_retained_unissuable_physical_head_yields_to_fenced_successor_without_writes(monkeypatch):
     from app import queue_commands
     from app.services.queue_next_card import prepare_queue_head
-    from tempo_legacy_database.adapters import postgres_store
+    from tempo_storage import postgres
     from app.product_composition.database_infrastructure import bind_database_infrastructure
     bind_database_infrastructure()
     dsn = _dsn()
     monkeypatch.setenv('TEMPO_DATABASE_READ_URL', make_conninfo(dsn,user='tempo_reader'))
     monkeypatch.setenv('TEMPO_DATABASE_WRITE_URL', make_conninfo(dsn,user='tempo_writer'))
-    postgres_store.close_pools()
+    postgres.close_pools()
     try:
         with psycopg.connect(dsn,row_factory=tempo_row_factory) as raw:
             db, day, entry, successor, definition = _fixture(raw, dsn)
@@ -117,17 +117,17 @@ def test_retained_unissuable_physical_head_yields_to_fenced_successor_without_wr
             assert not raw.execute('SELECT 1 FROM study_position_states WHERE repertoire_id=%s AND position=%s',
                 ('italian',definition.key.position)).fetchone()
     finally:
-        postgres_store.close_pools()
+        postgres.close_pools()
 
 
 def test_retained_head_omission_preserves_uncertain_source_state_and_protected_work(monkeypatch):
-    from tempo_legacy_database.adapters import postgres_store
+    from tempo_storage import postgres
     from app.product_composition.database_infrastructure import bind_database_infrastructure
     bind_database_infrastructure()
     dsn = _dsn()
     monkeypatch.setenv('TEMPO_DATABASE_READ_URL', make_conninfo(dsn,user='tempo_reader'))
     monkeypatch.setenv('TEMPO_DATABASE_WRITE_URL', make_conninfo(dsn,user='tempo_writer'))
-    postgres_store.close_pools()
+    postgres.close_pools()
     try:
         with psycopg.connect(dsn,row_factory=tempo_row_factory) as raw:
             db, day, entry, successor, definition = _fixture(raw, dsn)
@@ -185,4 +185,4 @@ def test_retained_head_omission_preserves_uncertain_source_state_and_protected_w
             raw.execute('ROLLBACK TO SAVEPOINT old_state')
             assert _visible(db, day) == successor['id']
     finally:
-        postgres_store.close_pools()
+        postgres.close_pools()

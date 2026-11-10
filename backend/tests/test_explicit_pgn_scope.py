@@ -4,11 +4,11 @@ from types import SimpleNamespace
 import pytest
 from sqlglot import exp, parse_one
 from sqlglot.executor import execute
-from tempo_legacy_database.adapters.authored_repertoires.pgn_import import (
+from tempo_storage.authored_repertoires.pgn_import import (
     preparation as storage,
 )
-from tempo_legacy_database.adapters.durable_tasks import storage as task_storage
-from tempo_legacy_database.adapters.controls.activity import storage as control_storage
+from tempo_storage.durable_tasks import storage as task_storage
+from tempo_storage.controls.activity import storage as control_storage
 
 
 def test_explicit_claim_keeps_receipt_generation_manual_pause_and_lease_fences():
@@ -180,7 +180,7 @@ def test_resume_and_activity_use_receipt_scope_without_bypassing_manual_pause(
 
         execute_native = execute
 
-    monkeypatch.setattr(control_storage.postgres_store, "configured", lambda: native)
+    monkeypatch.setattr(control_storage.postgres, "configured", lambda: native)
     control_storage.prepare_control_read("durable", ("defensive_admission",))(
         Database(), "task"
     )

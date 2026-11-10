@@ -57,7 +57,7 @@ def test_projection_publication_rolls_back_lost_receipt_and_commits_once(monkeyp
         def read_section():
             yield BorrowedDatabase()
 
-        monkeypatch.setattr(refresh.postgres_store, "configured", lambda: True)
+        monkeypatch.setattr(refresh.postgres, "configured", lambda: True)
         monkeypatch.setattr(refresh, "connection", write_section)
         monkeypatch.setattr(refresh, "background_read_connection", read_section)
         monkeypatch.setattr(refresh.activity_gate, "wait_for_foreground", lambda: None)

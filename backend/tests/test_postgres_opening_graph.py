@@ -556,7 +556,7 @@ def test_postgres_graph_finalization_warms_sql_before_bounded_transaction(monkey
     )
     monkeypatch.setattr(postgres_opening_graph, "background_lease", lease)
     monkeypatch.setattr(
-        postgres_opening_graph.postgres_store, "connection", database_connection
+        postgres_opening_graph.postgres, "connection", database_connection
     )
     monkeypatch.setattr(
         postgres_opening_graph,
@@ -625,7 +625,7 @@ def test_postgres_graph_stage_yields_to_foreground_and_discards_restart_replay(
     )
     monkeypatch.setattr(postgres_opening_graph, "background_lease", gated_lease)
     monkeypatch.setattr(
-        postgres_opening_graph.postgres_store, "connection", database_connection
+        postgres_opening_graph.postgres, "connection", database_connection
     )
     monkeypatch.setattr(
         postgres_opening_graph,

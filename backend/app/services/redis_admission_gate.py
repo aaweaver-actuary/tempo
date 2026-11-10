@@ -12,8 +12,8 @@ from typing import Iterator
 
 import redis
 
-from tempo_legacy_database.adapters.redis_control import admission as storage
-from tempo_legacy_database.adapters.redis_control.admission import (
+from tempo_storage.redis_control import admission as storage
+from tempo_storage.redis_control.admission import (
     _REGISTER_FOREGROUND,
     _CLAIM_BACKGROUND,
     _ADMISSION_NAMESPACE,

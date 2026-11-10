@@ -1,85 +1,5 @@
-"""Explicit next-head preparation, injected by the current application assembly.
+"""Prepare and fence an ordinary position-owned queue head before its writer."""
 
-The preparation callback only reads/prepares before the command writer opens.
-The selected owner unit applies in the receipt-fenced borrowed writer.
-Head issuance only observes durable owner facts; it never calls a
-producer, projects repertoire content or runs optional preparation in a review.
-"""
-
-from collections.abc import Callable
-
-from app.study.interfaces.next_card import (
-    PreparedNextCardWork,
-    NoNextCardWork,
-    NextCardPreparation,
-    next_card_preparation_payload,
-)
-
-_prepare: Callable[[], PreparedNextCardWork] | None = None
-_source_pending: Callable[..., bool | NextCardPreparation] | None = None
-
-
-def configure_next_card_work(
-    *,
-    prepare: Callable[[], PreparedNextCardWork],
-    source_pending: Callable[..., bool | NextCardPreparation] | None = None,
-):
-    global _prepare, _source_pending
-    _prepare, _source_pending = prepare, source_pending
-
-
-def pending_next_card_preparation(database, day, *, candidate_card_id=None):
-    from tempo_legacy_database.adapters.study.game_feedback import installed
-
-    priority = None
-    if installed(database):
-        from tempo_legacy_database.adapters.study.game_feedback import (
-            pending_feedback_preparation,
-            feedback_queue_priorities,
-        )
-
-        if candidate_card_id is not None:
-            from tempo_legacy_database.adapters.study.recombination import (
-                regrouped_presentation_ids,
-            )
-
-            regrouped = regrouped_presentation_ids(database, (candidate_card_id,))
-            priority = feedback_queue_priorities(
-                database, (candidate_card_id,), include_regrouped=bool(regrouped)
-            ).get(candidate_card_id)
-        if pending_feedback_preparation(database, day, before_priority=priority):
-            return True
-    source = (
-        _source_pending(database, day, before_priority=priority)
-        if _source_pending
-        else False
-    )
-    # Pending optional obligations are not themselves an issuance veto. Old
-    # bool callbacks keep their previous conservative meaning until upgraded.
-    return (
-        source.issuance_blocked
-        if isinstance(source, NextCardPreparation)
-        else bool(source)
-    )
-
-
-def prepare_next_card_command(payload):
-    if payload:
-        from fastapi import HTTPException
-
-        raise HTTPException(
-            422, "Next-card preparation takes no source or target override"
-        )
-    return _prepare() if _prepare else NoNextCardWork()
-
-
-def prepared_next_card_result(database, prepared: PreparedNextCardWork):
-    result = prepared.apply(database)
-    return next_card_preparation_payload(result)
-
-
-# This ephemeral command payload never crosses the API or enters a receipt; the
-# server-owned original queue identity is the only persisted command envelope.
 from dataclasses import dataclass
 from collections import OrderedDict
 from threading import Lock
@@ -96,10 +16,8 @@ def _cached_position_source(database, repertoire_id, epoch, digest):
     owner's complete in-writer fence, including authored rows and integrity.
     """
     from tempo_evidence_math.position_learning import Hold
-    from tempo_legacy_database.adapters.authored_repertoires.position_study_source import (
-        prepare_position_source,
-    )
-    from tempo_legacy_database.adapters.http_composition.queue_projection import (
+    from app.repertoire.position_study_source import prepare_position_source
+    from tempo_storage.http_composition.queue_projection import (
         position_source_revision,
     )
 
@@ -129,7 +47,6 @@ class PreparedQueueHead:
     mode: str
     proposal: object = None
     reason: str | None = None
-    urgency: object = None
 
 
 def prepare_queue_head(payload):
@@ -137,15 +54,11 @@ def prepare_queue_head(payload):
     from datetime import date, datetime, timezone
     from uuid import NAMESPACE_URL, uuid5
     from tempo_evidence_math.position_learning import Hold
-    from tempo_legacy_database.connections import read_connection
-    from tempo_legacy_database.adapters.study.position_due_candidates import (
+    from tempo_storage.connections import read_connection
+    from tempo_storage.study.position_due_candidates import (
         PositionDueCandidateReader,
     )
-    from tempo_legacy_database.adapters.study.position_issued_plans import (
-        replay_exact_attempt,
-        read_clean_presentation_proof,
-        read_applicable_clean_proofs,
-    )
+    from app.study.position_learning.issuance import replay_exact_attempt, read_clean_presentation_proof, read_applicable_clean_proofs
     from app.study.position_learning.issued_plan_contracts import SelectionRequest
     from app.study.position_learning.issued_plan_service import (
         prepare_position_issuance,
@@ -228,65 +141,30 @@ def prepare_queue_head(payload):
             issued_at=instant,
             study_day=day,
         )
-        # An accepted local Games obligation is independent of natural FSRS
-        # due time. Its Study-owned fact names the exact target; read_context
-        # below preserves the real due flag instead of manufacturing a due.
-        from tempo_legacy_database.adapters.study import game_feedback
-
-        read_urgency = getattr(game_feedback, "read_position_urgency", None)
-        urgency = (
-            read_urgency(
-                db,
-                card_id=payload["card_id"],
-                revision=payload["expected_revision"],
-                repertoire_id=rep,
-            )
-            if read_urgency
-            else None
-        )
-        if isinstance(urgency, Hold):
-            return held(urgency.reason)
         with training_timing_stage("position_due_carrier_scan"):
             target, cursor = None, None
-            if urgency is not None:
-                if (
-                    urgency.owner_epoch != owner["epoch"]
-                    or urgency.source_digest != owner["source_digest"]
-                    or urgency.definition.key.repertoire_id != rep
-                ):
-                    return held("position_urgency_scope_changed")
-                carrier = select_carrier(
-                    source, urgency.definition, card_id=payload["card_id"]
-                )
-                if (
-                    isinstance(carrier, Hold)
-                    or carrier.presentation_revision != payload["expected_revision"]
-                ):
-                    return held("position_urgency_carrier_changed")
-                target = urgency.definition
-            else:
-                # Bound work independently of catalogue size; a larger backlog stays
-                # held rather than falling back to physical-card scheduling.
-                for _ in range(10):
-                    page = reader.read_due_page(after=cursor, limit=100)
-                    if isinstance(page, Hold):
-                        return held(page.reason)
-                    for candidate in page.candidates:
-                        carrier = select_carrier(
-                            source,
-                            candidate.state.definition,
-                            card_id=payload["card_id"],
-                        )
-                        if (
-                            not isinstance(carrier, Hold)
-                            and carrier.presentation_revision
-                            == payload["expected_revision"]
-                        ):
-                            target = candidate.state.definition
-                            break
-                    if target or page.next_cursor is None:
+            # Bound work independently of catalogue size; a larger backlog stays
+            # held rather than falling back to physical-card scheduling.
+            for _ in range(10):
+                page = reader.read_due_page(after=cursor, limit=100)
+                if isinstance(page, Hold):
+                    return held(page.reason)
+                for candidate in page.candidates:
+                    carrier = select_carrier(
+                        source,
+                        candidate.state.definition,
+                        card_id=payload["card_id"],
+                    )
+                    if (
+                        not isinstance(carrier, Hold)
+                        and carrier.presentation_revision
+                        == payload["expected_revision"]
+                    ):
+                        target = candidate.state.definition
                         break
-                    cursor = page.next_cursor
+                if target or page.next_cursor is None:
+                    break
+                cursor = page.next_cursor
         if target is None:
             return held("position_due_target_unavailable")
         with training_timing_stage("position_prior_clean_proofs"):
@@ -351,15 +229,6 @@ def prepare_queue_head(payload):
                 )
             )
             witnesses = tuple(by_key[key] for key in shown_keys)
-        if urgency is not None:
-            target_witness = next(
-                (w for w in witnesses if w.definition == target), None
-            )
-            if (
-                target_witness is None
-                or target_witness.position_revision < urgency.position_version
-            ):
-                return held("position_urgency_state_changed")
         attempt = str(
             uuid5(
                 NAMESPACE_URL,
@@ -387,5 +256,5 @@ def prepare_queue_head(payload):
         return (
             held(proposal.reason)
             if isinstance(proposal, Hold)
-            else PreparedQueueHead(payload, "position", proposal, urgency=urgency)
+            else PreparedQueueHead(payload, "position", proposal)
         )

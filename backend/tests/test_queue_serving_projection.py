@@ -5,8 +5,8 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-from tempo_legacy_database.adapters import postgres_store
-from tempo_legacy_database.adapters.http_composition import queue_projection
+from tempo_storage import postgres
+from tempo_storage.http_composition import queue_projection
 from app.study.queue_serving import add_encounter_evidence
 
 CARD_FIELDS = """id repertoire_id kind start_fen moves_json state due_date interval_days ease
@@ -30,7 +30,7 @@ def test_queue_projection_emits_only_explicit_current_card_fields(
         def fetchall(self):
             return []
 
-    monkeypatch.setattr(postgres_store, "configured", lambda: configured)
+    monkeypatch.setattr(postgres, "configured", lambda: configured)
     database = Capture()
     assert (
         queue_projection.queue_rows(database, "2026-10-30", limit, miss_reason="miss")
@@ -51,7 +51,7 @@ def test_queue_projection_emits_only_explicit_current_card_fields(
 def test_projected_card_fields_exist_in_current_migrated_schema():
     root = Path(__file__).resolve().parents[2]
     initial = (
-        root / "database/tempo_legacy_database/ddl/migrations/001_initial.sql"
+        root / "database/tempo_storage/ddl/migrations/001_initial.sql"
     ).read_text()
     create = re.search(r'CREATE TABLE "cards" \(.*?\);', initial).group()
     conn = sqlite3.connect(":memory:")

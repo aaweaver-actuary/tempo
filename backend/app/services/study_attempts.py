@@ -8,7 +8,7 @@ import json
 from fastapi import HTTPException
 
 from .review_service import apply_scheduling_review
-from tempo_legacy_database.adapters.study_attempts import storage
+from tempo_storage.study_attempts import storage
 
 
 def _json(value) -> str:

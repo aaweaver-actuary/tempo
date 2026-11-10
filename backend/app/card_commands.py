@@ -12,17 +12,15 @@ from fastapi import HTTPException
 from .command_gateway import register_command
 from app.repertoire.changes.application import validate_source_rows
 from app.repertoire.changes.ports import ChangeError
-from tempo_legacy_database.adapters.authored_repertoires import (
+from tempo_storage.authored_repertoires import (
     product_changes as change_storage,
 )
-from tempo_legacy_database.adapters.authored_repertoires.card_edits import storage
-from tempo_legacy_database.adapters.authored_repertoires.card_edits.storage import (
+from tempo_storage.authored_repertoires.card_edits import storage
+from tempo_storage.authored_repertoires.card_edits.storage import (
     card_columns,
 )
 from app.contracts.transport.content import CardRevisionRequest
-from tempo_legacy_database.adapters.authored_repertoires.card_edits.storage import (
-    PostgresConnection,
-)
+from tempo_storage.postgres import PostgresConnection
 from app.chess.cards import card_id
 from .services.postgres_integrity import (
     invalidate_integrity_in_transaction,
@@ -115,7 +113,7 @@ def revise_card(
                 ),
             )
             validate_source_rows(repertoire_id, proposed)
-        except ChangeError as error:
+        except (ChangeError, ValueError) as error:
             raise HTTPException(409, str(error)) from error
     replacement_id = card_id(request.starting_fen, moves)
     storage.lock_prefix_transition(database)
@@ -210,7 +208,7 @@ def revise_card(
                 for row in sources
             ):
                 validate_source_rows(repertoire_id, sources)
-        except ChangeError as error:
+        except (ChangeError, ValueError) as error:
             raise HTTPException(409, str(error)) from error
     for repertoire_id, validated_route in validated_routes.items():
         certify_admitted_route(database, repertoire_id, validated_route)

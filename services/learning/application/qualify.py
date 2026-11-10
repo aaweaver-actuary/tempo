@@ -14,8 +14,8 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
 INPUTS = ("pyproject.toml","uv.lock","src","README.md","REGRESSIONS.md","tests","qualify.py","qualification.py",
           "hatch_build.py","integration","run_suite.py",
-          "database/tempo_legacy_database/tooling/learning_review",
-          "database/tempo_legacy_database/tests/learning_review")
+          "database/tempo_storage/tooling/learning_review",
+          "database/tempo_storage/tests/learning_review")
 
 
 def main():

@@ -11,7 +11,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from app import main
-from tempo_legacy_database.adapters import postgres_store
+from tempo_storage import postgres
 
 
 CONTRACT_PATH = (
@@ -52,7 +52,7 @@ def test_postgres_route_contract_admits_durable_game_review_mutations(monkeypatc
         and row["treatment"] == "foreground_command"
         and row["state"] == "staged"
     } == game_review_writes
-    monkeypatch.setattr(postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(postgres, "configured", lambda: True)
 
     async def probe_routes():
         for method, path, handler in sorted(game_review_writes):
@@ -83,7 +83,7 @@ def test_postgres_route_contract_admits_durable_game_review_mutations(monkeypatc
 
 
 def test_staged_postgres_mutations_pass_the_runtime_write_guard(monkeypatch):
-    monkeypatch.setattr(postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(postgres, "configured", lambda: True)
 
     async def probe_routes():
         blocked = []
@@ -122,7 +122,7 @@ def test_retired_routes_do_not_dispatch_or_match_game_wildcard(monkeypatch):
         raise AssertionError("retired request dispatched a command")
 
     monkeypatch.setattr(command_dispatch, "dispatch_command", unexpected_dispatch)
-    monkeypatch.setattr(postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(postgres, "configured", lambda: True)
     client = TestClient(main.app)
     for method, path in (
         ("GET", "/api/games/example/analysis"),
@@ -176,7 +176,7 @@ def test_recovery_task_routes_scope_status_and_preserve_retry_identity(monkeypat
             (task for task in tasks if task["id"] == values[0]), None
         ),
     )
-    monkeypatch.setattr(postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(postgres, "configured", lambda: True)
     calls = []
     monkeypatch.setattr(
         command_dispatch,

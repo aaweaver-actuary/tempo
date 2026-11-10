@@ -155,7 +155,7 @@ def test_scheduling_wrapper_missing_source_replay_card_preserves_error(
 
 
 def test_scheduling_store_never_commits_outside_command_owner(scheduling_database):
-    from tempo_legacy_database.adapters.scheduling_review_store import (
+    from tempo_storage.scheduling_review_store import (
         OwnedConnectionSchedulingReviewStore,
     )
 
@@ -198,7 +198,7 @@ def test_scheduling_store_maturity_filters_invalidated_history_and_preserves_see
         MaturityFacts,
         OpeningSeedFacts,
     )
-    from tempo_legacy_database.adapters.scheduling_review_store import (
+    from tempo_storage.scheduling_review_store import (
         OwnedConnectionSchedulingReviewStore,
     )
 

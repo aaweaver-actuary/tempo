@@ -138,7 +138,7 @@ def test_position_completion_requires_evidence_before_any_review_effect():
 
 def test_issued_manifest_accepts_fen_en_passant_target_without_legal_capture():
     """An issued e4 e5 route must remain reviewable with full-FEN e6."""
-    from app.services.postgres_opening_evidence import issued_position_manifest
+    from app.study.position_checkpoint import issued_position_manifest
     from tests.test_position_issued_plan_contracts import (
         option,
         request_for,
@@ -173,7 +173,7 @@ def test_repeated_position_in_one_completion_has_one_good(monkeypatch):
     """Two clean occurrences share one position/day even in one writer batch."""
     import importlib.util
     from types import SimpleNamespace
-    from tempo_legacy_database.adapters.study import position_grade_effects as writer
+    from app.study.position_learning import grade_effects as writer
 
     path = (
         Path(__file__).resolve().parents[2]

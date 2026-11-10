@@ -11,14 +11,14 @@ import os
 import sys
 from datetime import date, timedelta
 
-from tempo_legacy_database.adapters import postgres_store
+from tempo_storage import postgres
 
 action, repertoire_id = sys.argv[1:]
 assert action in {"seed", "readback"}
 assert os.environ.get("TEMPO_TEST_INSTANCE") == "disposable"
-assert postgres_store.configured()
+assert postgres.configured()
 
-with postgres_store.connection(read_only=action == "readback") as database:
+with postgres.connection(read_only=action == "readback") as database:
     marker = database.execute_native(
         "SELECT shobj_description((SELECT oid FROM pg_database "
         "WHERE datname=current_database()), 'pg_database')"

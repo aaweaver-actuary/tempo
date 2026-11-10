@@ -17,14 +17,14 @@ import time
 import psycopg
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'backend'))
-from tempo_legacy_database.adapters import postgres_store
+from tempo_storage import postgres
 from app.main import _unlock_eligible_opening_cards, _OPENING_UNLOCK_ELIGIBILITY_SQL
 
 
 def proof_graph_scale(database_url: str, *, compare_baseline: bool = False):
     if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
         raise RuntimeError('Queue scale proof requires an explicitly disposable database')
-    with psycopg.connect(database_url, row_factory=postgres_store.tempo_row_factory) as raw:
+    with psycopg.connect(database_url, row_factory=postgres.tempo_row_factory) as raw:
         # Session-local fixtures disappear on disconnect and cannot change the
         # caller's application tables. Both selectors use identical indexes.
         raw.execute('CREATE TEMP TABLE reviews(card_id TEXT,source_kind TEXT,invalidated_at TEXT)')
@@ -53,7 +53,7 @@ def proof_graph_scale(database_url: str, *, compare_baseline: bool = False):
         measurements = {}
         if compare_baseline:
             started = time.perf_counter()
-            selected = raw.execute(postgres_store.postgres_sql(
+            selected = raw.execute(postgres.postgres_sql(
                 f'SELECT id FROM cards WHERE {_OPENING_UNLOCK_ELIGIBILITY_SQL} AND id>? ORDER BY id LIMIT ?'), ('',9)).fetchall()
             measurements['baseline_selector_seconds'] = time.perf_counter()-started
             print('BASELINE '+json.dumps(measurements),flush=True)
@@ -61,7 +61,7 @@ def proof_graph_scale(database_url: str, *, compare_baseline: bool = False):
             raw.commit()
         cursor = ''
         durations = []
-        wrapped = postgres_store.PostgresConnection(raw)
+        wrapped = postgres.PostgresConnection(raw)
         while cursor is not None:
             started = time.perf_counter()
             with raw.transaction():

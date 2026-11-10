@@ -11,7 +11,7 @@ import psycopg
 
 from database.tests.position_study.acceptance import _dsn
 from database.tests.position_study.italian_acceptance import seed_disposable_source
-from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
+from tempo_storage.postgres import PostgresConnection, tempo_row_factory
 
 
 def test_real_repeated_position_completion_has_one_good_and_observe(monkeypatch):
@@ -29,9 +29,9 @@ def _run_repeated_position(monkeypatch, *, wrong):
     from app.services.opening_decision_evidence import decision_manifest
     from app.services.position_queue_admission import prepare_due, admit_due
     from app.services.queue_next_card import prepare_queue_head
-    from tempo_legacy_database import connections
-    from tempo_legacy_database.adapters.opening_evidence import storage as evidence_storage
-    from tempo_legacy_database.adapters.study.recombination import prepare_recombination_review
+    from tempo_storage import connections
+    from tempo_storage.opening_evidence import storage as evidence_storage
+    from tempo_storage.study.recombination import prepare_recombination_review
 
     dsn = _dsn()
     repeated = ('g1f3','g8f6','f3g1','f6g8','g1f3')

@@ -12,8 +12,8 @@ from app.contracts.product_v02.repertoire import (
 )
 from app.repertoire import build_index
 from app.repertoire.interfaces.position_schedule_occurrences import inventory_from_snapshot
-from tempo_legacy_database.adapters.study.position_seed_donors import select_donors
-from tempo_legacy_database.adapters.study.position_seed_inventory import DonorFact, InventoryRequest, SourceFacts
+from tempo_storage.study.position_seed_donors import select_donors
+from tempo_storage.study.position_seed_inventory import DonorFact, InventoryRequest, SourceFacts
 
 
 def _snapshot(*routes, bindings=()):

@@ -43,7 +43,7 @@ def test_canonical_task_driver_waits_for_real_local_policy_section_without_recla
     claim = Mock(side_effect=[task, None])
     monkeypatch.setattr(proof, "claim_owned", claim)
     closed = Mock()
-    monkeypatch.setattr(proof.postgres_store, "close_pools", closed)
+    monkeypatch.setattr(proof.postgres, "close_pools", closed)
     attempts, effects = [], []
 
     def publisher_read():
@@ -159,7 +159,7 @@ def test_canonical_task_driver_preserves_original_120_slice_exhaustion(
     }
     claim, operation = Mock(return_value=task), Mock()
     monkeypatch.setattr(proof, "claim_owned", claim)
-    monkeypatch.setattr(proof.postgres_store, "close_pools", Mock())
+    monkeypatch.setattr(proof.postgres, "close_pools", Mock())
     with pytest.raises(AssertionError, match="failed to finish its bounded fixture"):
         proof.run_bounded_task_slices("comparison", "original-game", operation)
     assert claim.call_count == operation.call_count == 120

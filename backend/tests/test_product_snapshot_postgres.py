@@ -12,7 +12,7 @@ from psycopg.rows import dict_row
 import pytest
 
 from app.repertoire import build_index
-from tempo_legacy_database.adapters.authored_repertoires import (
+from tempo_storage.authored_repertoires import (
     product_snapshot as storage,
 )
 

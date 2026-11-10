@@ -16,8 +16,8 @@ for directory in [ROOT / 'backend', ROOT / 'database', ROOT, *ROOT.glob('package
     sys.path.insert(0, str(directory))
 
 from database.tests.position_study import acceptance
-from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
-from tempo_legacy_database.adapters.study.original_position_evidence import (
+from tempo_storage.postgres import PostgresConnection, tempo_row_factory
+from tempo_storage.study.original_position_evidence import (
     EvidenceReadBlocked, read_original_plan, read_original_first_responses, read_original_completion,
 )
 
@@ -58,8 +58,8 @@ def test_original_evidence_real_saved_later_mistake_and_repeatable_snapshot(monk
         from app.queue_commands import issue_queue_head
         from app.services import postgres_opening_evidence as source
         from app.services.opening_decision_evidence import decision_manifest
-        from tempo_legacy_database.adapters.authored_repertoires.position_study_source import fence_position_source
-        from tempo_legacy_database.adapters.study.position_owner_epoch import owner_mode
+        from tempo_storage.authored_repertoires.position_study_source import fence_position_source
+        from tempo_storage.study.position_owner_epoch import owner_mode
         import chess
         from datetime import datetime, timezone
         day = plan.local_day.isoformat()
@@ -120,7 +120,7 @@ def test_original_evidence_real_saved_later_mistake_and_repeatable_snapshot(monk
             assert json.loads(second_rows[1].stored_payload_json)['disposition'] == 'alternate'
             assert second_rows[1].effect_id is None
             assert read_original_completion(PostgresConnection(second_reader, read_only=True), attempt_id=second.attempt_id).status == 'pending'
-            from tempo_legacy_database.adapters.study.position_issued_plans import read_clean_presentation_proof
+            from app.study.position_learning.issuance import read_clean_presentation_proof
             assert isinstance(read_clean_presentation_proof(PostgresConnection(second_reader, read_only=True), second.attempt_id), Hold)
         with psycopg.connect(dsn, row_factory=tempo_row_factory) as reader:
             reader.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')

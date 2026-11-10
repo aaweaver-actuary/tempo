@@ -22,8 +22,8 @@ from psycopg import sql
 from psycopg.conninfo import make_conninfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'backend'))
-from tempo_legacy_database.adapters import postgres_store
-from tempo_legacy_database.connections import background_connection
+from tempo_storage import postgres
+from tempo_storage.connections import background_connection
 from app.services import durable_tasks
 from app.services.activity_gate import activity_gate, BackgroundAdmissionDeferred
 
@@ -39,7 +39,7 @@ def proof_scheduling_turns(parent_database_url):
     identity = 'tempo_turns_' + uuid.uuid4().hex
     database_url = make_conninfo(parent_database_url, dbname=identity)
     created = False
-    postgres_store.close_pools()
+    postgres.close_pools()
     try:
         with psycopg.connect(parent_database_url, autocommit=True) as parent:
             parent.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(identity)))
@@ -83,7 +83,7 @@ def proof_scheduling_turns(parent_database_url):
                             started = time.perf_counter()
                             assert durable_tasks.claim_task(allowed_kinds=allowed) is None
                             assert time.perf_counter()-started < 0.25
-                    postgres_store.close_pools()
+                    postgres.close_pools()
                     started = time.perf_counter()
                     claimed = durable_tasks.claim_task(allowed_kinds=allowed)
                     assert claimed is not None
@@ -105,7 +105,7 @@ def proof_scheduling_turns(parent_database_url):
                 print('PASS test_postgres_persisted_scheduling_turns_advance_games_with_foreground_contention_restart_and_replay; '
                       f'4157 queued provider-sync tasks; max claim including pool reopen {max(durations):.4f}s')
     finally:
-        postgres_store.close_pools()
+        postgres.close_pools()
         if created:
             with psycopg.connect(parent_database_url, autocommit=True) as parent:
                 parent.execute(sql.SQL('DROP DATABASE {}').format(sql.Identifier(identity)))

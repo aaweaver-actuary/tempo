@@ -11,7 +11,7 @@ from urllib import request
 
 import pytest
 
-from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
+from tempo_storage.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -57,9 +57,9 @@ def test_packaged_reader_import_is_inert_and_native_proof_is_outside_generic_bac
     ).exists()
     assert reader.POSTGRES_SCHEMA_VERSION == POSTGRES_SCHEMA_VERSION
     for path in (
-        "database/tempo_legacy_database/ddl/schema_version.py",
-        "database/tempo_legacy_database/ddl/migrations/052_product_game_sync.sql",
-        "database/tempo_legacy_database/ddl/migrations/056_managed_game_feedback_mode.sql",
+        "database/tempo_storage/ddl/schema_version.py",
+        "database/tempo_storage/ddl/migrations/052_product_game_sync.sql",
+        "database/tempo_storage/ddl/migrations/056_managed_game_feedback_mode.sql",
     ):
         assert reader.RUNTIME_FILES[path] == "/app/" + path.removeprefix("database/")
         assert (ROOT / path).is_file()

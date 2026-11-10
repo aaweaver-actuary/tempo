@@ -189,7 +189,7 @@ def install():
         "_comparison_revision",
         _timed("comparison_revision", coordinator._comparison_revision),
     )
-    from tempo_legacy_database.adapters.authored_repertoires import product_snapshot
+    from tempo_storage.authored_repertoires import product_snapshot
 
     for name, label in (
         ("read_repertoire", "snapshot_full"),

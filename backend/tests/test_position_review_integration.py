@@ -79,7 +79,7 @@ def test_position_effect_failure_prevents_binding():
 def test_position_human_review_does_not_save_card_schedule(monkeypatch):
     from types import SimpleNamespace
     from app.services.learning_review_adapter import LearningReviewAdapter
-    from tempo_legacy_database.adapters import scheduling_review_store
+    from tempo_storage import scheduling_review_store
 
     card = SimpleNamespace(
         due_date="2026-11-10",

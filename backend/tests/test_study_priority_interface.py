@@ -98,7 +98,7 @@ import importlib.abc, sys
 import pydantic
 class NoPrivate(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, *args):
-        if fullname.startswith(('app.games', 'app.services', 'app.product_composition', 'tempo_legacy_database', 'psycopg', 'sqlite3', 'httpx', 'requests', 'fastapi')) or (fullname.startswith('app.study.') and not fullname.startswith('app.study.interfaces')):
+        if fullname.startswith(('app.games', 'app.services', 'app.product_composition', 'tempo_storage', 'psycopg', 'sqlite3', 'httpx', 'requests', 'fastapi')) or (fullname.startswith('app.study.') and not fullname.startswith('app.study.interfaces')):
             raise AssertionError('public interface imported implementation: ' + fullname)
 sys.meta_path.insert(0, NoPrivate())
 from app.study.interfaces import game_priority as api

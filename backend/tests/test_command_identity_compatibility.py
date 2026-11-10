@@ -95,7 +95,7 @@ def test_gateway_adapter_delegates_to_pure_identity(monkeypatch):
 
 def test_pure_codec_import_excludes_runtime_providers_and_storage():
     root = Path(__file__).resolve().parents[2]
-    code = """\nimport builtins\noriginal = builtins.__import__\ndef guarded(name, *args, **kwargs):\n    if name == "app.main" or name == "app.tasks" or name.startswith(("tempo_legacy_database", "psycopg", "celery", "redis")):\n        raise AssertionError("forbidden import: " + name)\n    return original(name, *args, **kwargs)\nbuiltins.__import__ = guarded\nfrom app.contracts.command_identity import request_digest\nassert len(request_digest("cards.review", {"card_id": "a"})) == 64\n"""
+    code = """\nimport builtins\noriginal = builtins.__import__\ndef guarded(name, *args, **kwargs):\n    if name == "app.main" or name == "app.tasks" or name.startswith(("tempo_storage", "psycopg", "celery", "redis")):\n        raise AssertionError("forbidden import: " + name)\n    return original(name, *args, **kwargs)\nbuiltins.__import__ = guarded\nfrom app.contracts.command_identity import request_digest\nassert len(request_digest("cards.review", {"card_id": "a"})) == 64\n"""
     env = {**os.environ, "PYTHONPATH": str(root / "backend")}
     subprocess.run([sys.executable, "-c", code], cwd=root, env=env, check=True)
 

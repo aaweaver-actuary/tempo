@@ -1,10 +1,12 @@
+
+from app.repertoire import position_study_source as _source_preparation
 from datetime import datetime, timezone
 from types import SimpleNamespace as NS
 
 import pytest
 
 from app.services import postgres_opening_evidence as evidence
-from tempo_legacy_database.adapters.study import position_first_responses as storage
+from tempo_storage.study import position_first_responses as storage
 
 
 def plan():
@@ -92,7 +94,7 @@ def test_standalone_checkpoint_bridges_original_ply_and_replays_guided_correctio
     from types import ModuleType
     from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
     from tempo_evidence_math import opening_position_key
-    from tempo_legacy_database.adapters.authored_repertoires import position_study_source
+    from tempo_storage.authored_repertoires import position_study_source
 
     frozen = plan()
     slot = frozen.decision_slots[0]
@@ -116,11 +118,11 @@ def test_standalone_checkpoint_bridges_original_ply_and_replays_guided_correctio
     # browser's unverified disposition.
     source = NS(routes=[NS(decisions=[NS(definition=slot.definition)])], authored_token=NS(authored_digest='authored'))
     monkeypatch.setattr(position_study_source, 'fence_position_source', lambda *_: None)
-    grade_module = ModuleType('tempo_legacy_database.adapters.study.position_grade_effects')
+    grade_module = ModuleType('tempo_storage.study.position_grade_effects')
     grades = []
     grade_module.apply_in_borrowed_transaction = lambda _db, attempt, ids, **kw: grades.append((attempt, ids))
     monkeypatch.setitem(sys.modules, grade_module.__name__, grade_module)
-    from tempo_legacy_database.adapters.study import position_owner_epoch
+    from tempo_storage.study import position_owner_epoch
     monkeypatch.setattr(position_owner_epoch, 'owner_mode', lambda *_: NS(disposition='position', epoch='epoch'))
     monkeypatch.setattr(evidence, 'begin_position_checkpoint', lambda _db, prep: evidence.PositionCheckpointFence(prep, _db, storage, 'authored', evidence._POSITION_CHECKPOINT_SEAL))
     monkeypatch.setattr(storage, 'lock_original_queue', lambda *_: True)
@@ -176,8 +178,8 @@ def test_standalone_checkpoint_bridges_original_ply_and_replays_guided_correctio
 
 def test_public_preparation_and_owner_fence_bind_writer(monkeypatch):
     from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
-    from tempo_legacy_database.adapters.study import position_issued_plans
-    from tempo_legacy_database.adapters.authored_repertoires import position_study_source
+    from app.study.position_learning import issuance as position_issued_plans
+    from tempo_storage.authored_repertoires import position_study_source
     from tempo_evidence_math.position_learning import Hold
 
     frozen = plan()
@@ -199,7 +201,7 @@ def test_public_preparation_and_owner_fence_bind_writer(monkeypatch):
     db = DB()
     monkeypatch.setattr(storage, 'has_position_tables', lambda *_: True)
     monkeypatch.setattr(position_issued_plans, 'replay_exact_attempt', lambda *_: frozen)
-    monkeypatch.setattr(position_study_source, 'prepare_position_source', lambda *_: Hold('source_changed'))
+    monkeypatch.setattr(_source_preparation, 'prepare_position_source', lambda *_: Hold('source_changed'))
     prep = evidence.prepare_position_checkpoint(db, req)
     fence = evidence.begin_position_checkpoint(db, prep)
     assert fence.preparation.plan is frozen and fence.authored_digest == 'authored'
@@ -257,7 +259,7 @@ def test_issued_manifest_covers_displayed_context_and_repeated_position_ordinals
 def test_foreground_preparation_validates_issued_manifest_not_physical(monkeypatch):
     from contextlib import nullcontext
     from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
-    from tempo_legacy_database.adapters.study import position_issued_plans
+    from app.study.position_learning import issuance as position_issued_plans
     frozen = plan()
     scope = {'manifest_version':1, 'policy_version':1, 'manifest_id':'b'*64,
              'presentation_snapshot_id':13, 'repertoire_id':'r', 'card_id':'card',
@@ -288,8 +290,8 @@ def test_all_displayed_events_map_to_issued_ordinals_including_repeated_position
     import chess
     from tempo_evidence_math import opening_position_key
     from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
-    from tempo_legacy_database.adapters.authored_repertoires import position_study_source
-    from tempo_legacy_database.adapters.study import position_owner_epoch
+    from tempo_storage.authored_repertoires import position_study_source
+    from tempo_storage.study import position_owner_epoch
     board = chess.Board()
     slots = []
     moves = ('g1f3', 'g8f6', 'f3g1', 'f6g8', 'g1f3')

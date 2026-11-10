@@ -1,44 +1,23 @@
-# Study and Games dependency detail
+# Study and minimal Game Review
 
-[Index and source/status legend](README.md) · [System and ownership](system.md) ·
-[Sequences](flows.md)
+[Current ownership](system.md) · [Transaction flow](flows.md) · [Reduction audit](../reduction-pass2/README.md)
 
-Canonical drawings and their source notes render in the owning directory READMEs
-linked below. These headings remain stable pointers; the cross-cutting failure
-table stays here. The canonical views describe merged source at `588cea54` where repaired; merged baseline, retained legacy coupling and deployment-unverified limits remain explicit.
+```mermaid
+flowchart TD
+  Queue["Study queue selection"] --> Source["Application: prepare current authored position source"]
+  Source --> Issue["Application: fence and issue immutable position plan"]
+  Issue --> Response["First-response checkpoint and attempt journal"]
+  Response --> Review["Application: grade and schedule positions"]
+  Review --> Receipt["One writer: human review, effects, receipt"]
+  Receipt --> Queue
+  PGN["Pasted PGN or saved game"] --> Compare["Replay against applicable authored alternatives"]
+  Compare --> Departure["Display first departure or truthful coverage end"]
+```
 
-## Main Study path and source gap
+Position schedules remain owned by repertoire, variant and actual chess position. Human reviews and durable first-response receipts retain their identities and original fences. Review replay does not manufacture a second logical attempt.
 
-The canonical drawing and source notes render directly in
-[app/README.md](../../../app/README.md#main-study-path-and-source-gap).
+Recombination no longer prepares, joins, splits or publishes cards. Existing generated physical exercises, schedule state, reviews and lineage remain stored. Their historical membership keeps them classified as reviews and excludes them from fresh introduction/reset accounting.
 
-## Conditional Study build and offline assets (MAIN)
+Automatic game effects and their producer/retry/qualification protocols are retired. Existing effects and incomplete operations remain preserved with an explicit paused disposition; they do not block ordinary issuance. Old proposal/audit suspensions are historical; current repertoire integrity and source/revision guards remain active.
 
-The canonical drawing and source notes render directly in
-[static/README.md](../../../static/README.md#conditional-study-build-and-offline-assets-main).
-
-## Shared Learning request execution gaps (MAIN)
-
-The canonical drawing and source notes render directly in
-[services/learning/runtime/README.md](../../../services/learning/runtime/README.md#shared-learning-request-execution-gaps-main).
-
-## Retained Game Review and historical Games reader
-
-The current Game Review command and recovery boundary is documented in
-[product composition](../../../backend/app/product_composition/README.md#durable-game-review-commands-and-settings-recovery-590).
-The standalone PR322 Workbench reader is retired; its [source view](https://github.com/aaweaver-actuary/tempo/blob/aec931f9820b8cd6b219074ae0c32d6686c21684/apps/workbench-web/README.md#merged-pr322-games-reader) is historical.
-
-## Failure, lifecycle and resource acceptance
-
-| Path | Local ownership and failure result | Limit of claim |
-| --- | --- | --- |
-| Study → Learning | Browser retains immutable intents; Learning owns readiness, queue and settlement. Authentication failures require reconnection. Learning/database outage can prevent online studying; cached practice remains explicitly unconfirmed. | Learning is an essential dependency. Merged PR324 physically separates optional composition from the Study shell; no deployment claim. |
-| Conditional Study offline assets | PR324 excludes named optional implementations before emission; the worker still requires every emitted JS/MJS/CSS asset and reports missing required assets honestly. | [Canonical build view](../../../static/README.md#conditional-study-build-and-offline-assets-main); prior actual build and synthetic offline/asset-loss evidence are scoped to PR324. No live incident, combined browser qualification or deployment is inferred. |
-| Shared Learning request execution | Merged PR325 uses bounded-memory request accounting with daemon-owned publication/cleanup; PR326 runs complete optional persistence phases in one separate daemon with size-one optional pools. Essential shutdown does not join either stalled optional owner. | [Canonical runtime view](../../../services/learning/runtime/README.md#shared-learning-request-execution-gaps-main); healthy idle may allow foreground overlap up to its remaining 15-second lease. Missing-source denial requires configured expected workspace identities; default `[]` accepts absence. Shared host/DB and deployment isolation remain unverified. |
-| Game Review | The normal workspace reads and replays captured games; Games feedback submits typed work to Study. Provider failure must not block ordinary Study. | [Game Review owner](../../../backend/app/games/README.md); source behavior does not establish installed acceptance. |
-| Shared host / PostgreSQL cluster | CPU/memory/I/O/connection allocation and cluster failure can cross logical service/database boundaries. | **DEPLOYMENT UNVERIFIED:** separate bounded optional workload/connection budgets, effective limits and independent shutdown need verification before rollout. Separate processes or green component tests alone do not prove it. |
-
-The [historical Games source architecture notes](https://github.com/aaweaver-actuary/tempo/blob/aec931f9820b8cd6b219074ae0c32d6686c21684/docs/analysis-restoration/games-only-architecture.md) describe earlier source proofs. This
-documentation PR does not rerun those proofs, qualify a deployment, change CI
-or touch live Study. Exact live reader grants and operational activation remain
-unverified here.
+Minimal Game Review deliberately has no provider refresh, engine analysis, Study admission, or scheduling callback. Pasted PGN input is replayed locally for comparison and is not saved by this screen. Previously saved games remain readable.

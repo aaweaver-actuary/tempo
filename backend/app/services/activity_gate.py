@@ -164,7 +164,7 @@ class ApplicationActivityGate:
         This grants no new task or database budget; optional dispatch never
         enters this scope and cannot select its kind through a request header.
         """
-        if kind not in {"daily_queue", "study_game_feedback"}:
+        if kind not in {"daily_queue"}:
             raise ValueError("Only essential Study owners bypass idle admission")
         token = _essential_study.set(True)
         try:

@@ -112,7 +112,7 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
   const composeArguments = ["compose", "--project-directory", root, "-p", childProject,
     ...composeFiles.flatMap(file => ["-f", file])];
   const compose = (args, options) => docker([...composeArguments, ...args], options);
-  const config = JSON.parse((await compose(["--profile", "maintenance", "--profile", "games-feedback", "config", "--format", "json"])).stdout);
+  const config = JSON.parse((await compose(["--profile", "maintenance", "config", "--format", "json"])).stdout);
   if (environment.TEMPO_LIFECYCLE_MANAGED_REHEARSAL === '1' || environment.TEMPO_LIFECYCLE_SHIPPING_REHEARSAL === '1') {
     assert.equal(config.services.migration.build.context, root);
     assert.equal(config.services.migration.build.dockerfile, 'Dockerfile.postgres-maintenance');
@@ -131,24 +131,6 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     assert.equal((await docker(["volume", "ls", "-q", "--filter", `name=^${volume.name}$`])).stdout.trim(), "");
   const images = {};
   for (const [name, service] of Object.entries(config.services)) {
-    if (name === "game-feedback-worker") {
-      // The inactive optional service has the same build as the already-built
-      // API. Reuse that real image only after proving build/source equality.
-      const builds = [config.services.api.build, service.build].map(build => structuredClone(build));
-      for (const build of builds) {
-        if (build.labels?.["org.opencontainers.image.revision"] !== undefined) {
-          assert.equal(build.labels["org.opencontainers.image.revision"], revision);
-          delete build.labels["org.opencontainers.image.revision"];
-          if (!Object.keys(build.labels).length) delete build.labels;
-        }
-      }
-      assert.deepEqual(builds[0], builds[1], "Optional receipt image must have the exact API build");
-      assert(images.api, "The actual API image must be inspected first");
-      const apiImage = JSON.parse((await docker(["image", "inspect", images.api])).stdout)[0];
-      assert.equal(apiImage.Config?.Labels?.["org.opencontainers.image.revision"], revision);
-      images[name] = apiImage.Id;
-      continue;
-    }
     const tag = service.image ?? `${project}-${name}`;
     const inspected = JSON.parse((await docker(["image", "inspect", tag])).stdout)[0];
     if ((environment.TEMPO_LIFECYCLE_MANAGED_REHEARSAL === '1' || environment.TEMPO_LIFECYCLE_SHIPPING_REHEARSAL === '1') && name === 'migration')
@@ -165,10 +147,10 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
   if (schema61.revision !== schema61Revision) throw new Error("Unexpected historical image revision.");
   const schema61Images = { ...images };
   for (const [name, service] of Object.entries(config.services)) {
-    if (!service.build && name !== "game-feedback-worker" && name !== "migration") continue;
+    if (!service.build && name !== "migration") continue;
     const file = service.build?.dockerfile;
     const kind = name === "migration" || file === "Dockerfile.postgres-maintenance" ? "migration"
-      : name === "game-feedback-worker" || file === "backend/Dockerfile" ? "api"
+      : file === "backend/Dockerfile" ? "api"
         : file === "Dockerfile.web" ? "web" : null;
     if (!kind || !schema61.images?.[kind]) throw new Error(`Missing schema-61 image for ${name}`);
     const inspected = JSON.parse((await docker(["image", "inspect", schema61.images[kind]])).stdout)[0];
@@ -695,7 +677,7 @@ m.apply_migrations(os.environ["TEMPO_POSTGRES_ADMIN_URL"], target_version=61)`;
     atomicJson(candidateOverride, { services: Object.fromEntries(["api", "foreground-worker", "background-worker"]
       .map(name => [name, { environment: { TEMPO_UNCOMMITTED_CANDIDATE: "interrupted-rollout" } }])) });
     const candidateConfig = JSON.parse((await docker([...composeArguments, "-f", candidateOverride,
-      "--profile", "maintenance", "--profile", "games-feedback", "config", "--format", "json"])).stdout);
+      "--profile", "maintenance", "config", "--format", "json"])).stdout);
     const preparedCandidate = join(directory, "uncommitted-prepared-images.json");
     atomicJson(preparedCandidate, { ...preparedImages, configFingerprint: configurationFingerprint(candidateConfig) });
     const interruptedLifecycle = join(directory, "interrupted-lifecycle.mjs");

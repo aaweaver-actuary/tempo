@@ -7,7 +7,7 @@ import json
 import chess
 from fastapi import HTTPException
 from ..chess.position_identity import position_key
-from tempo_legacy_database.adapters.authored_repertoires.canonical_prefix import (
+from tempo_storage.authored_repertoires.canonical_prefix import (
     scope as storage,
 )
 
@@ -208,7 +208,6 @@ def ensure_batch_lines_in_scope(
     database, candidates: list[tuple[str, str, list[str]]]
 ) -> list[dict]:
     """Resolve selected routes together without persisting validation certificates."""
-    storage.begin_batch_scope(database)
     prefixes = {
         repertoire_id: read_prefix(database, repertoire_id, lock=True)
         for repertoire_id in sorted({candidate[0] for candidate in candidates})

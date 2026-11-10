@@ -8,7 +8,7 @@ from tempo_game_review_contracts import AuthoredRoute, RepertoireSnapshot as Mem
 from app.contracts.product_v02.repertoire import DecisionPresentation, RepertoireSnapshot, RouteBoundary
 from app.repertoire import build_index
 from app.repertoire.interfaces.position_schedule_occurrences import inventory_from_snapshot
-from tempo_legacy_database.adapters.study.position_seed_inventory import (
+from tempo_storage.study.position_seed_inventory import (
     DonorFact, InventoryHold, InventoryRequest, SourceFacts, build_inventory, read_card_page,
 )
 

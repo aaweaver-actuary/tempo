@@ -12,7 +12,7 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 NATIVE = (
     Path(__file__).resolve().parents[2]
-    / "database/tempo_legacy_database/tests/queue_admission"
+    / "database/tests/queue_admission"
 )
 sys.path.insert(0, str(NATIVE))
 import queue_fixture_guard as guard
@@ -246,8 +246,8 @@ def test_queue_native_case_guard_blocks_stale_urls_before_pool_or_fixture_write(
     monkeypatch.setattr(
         native, "owned_target", lambda env: guard.owned_target(env, now=1100)
     )
-    monkeypatch.setattr(native.postgres_store, "close_pools", forbidden_connection)
-    monkeypatch.setattr(native.postgres_store, "connection", forbidden_connection)
+    monkeypatch.setattr(native.postgres, "close_pools", forbidden_connection)
+    monkeypatch.setattr(native.postgres, "connection", forbidden_connection)
     monkeypatch.setattr(guard.psycopg, "connect", forbidden_connection)
     with pytest.raises(RuntimeError, match="Every fixture DSN"):
         next(native.fixture_database.__wrapped__())
@@ -266,8 +266,8 @@ def test_queue_native_environment_change_after_identity_check_precedes_fixture_w
     monkeypatch.setattr(
         native, "owned_target", lambda env: guard.owned_target(env, now=1100)
     )
-    monkeypatch.setattr(native.postgres_store, "close_pools", lambda: None)
-    monkeypatch.setattr(native.postgres_store, "connection", forbidden_connection)
+    monkeypatch.setattr(native.postgres, "close_pools", lambda: None)
+    monkeypatch.setattr(native.postgres, "connection", forbidden_connection)
 
     def mutate_after_probe(target):
         changed = conninfo_to_dict(environment["TEMPO_DATABASE_WRITE_URL"])

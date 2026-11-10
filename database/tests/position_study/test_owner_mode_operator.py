@@ -1,11 +1,13 @@
 """Safety checks for the preliminary owner operator."""
+
+from app.repertoire import position_study_source as _source_preparation
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
 
-from tempo_legacy_database.adapters.study import position_owner_operator as operator
-from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
+from tempo_storage.study import position_owner_operator as operator
+from tempo_storage.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 
 
 class Cursor:
@@ -182,7 +184,7 @@ def test_pause_still_available_after_source_changes(prepared):
 
 def test_rollforward_preview_classifies_persisted_definition_without_writes(monkeypatch):
     from test_position_source_authority import setup
-    from tempo_legacy_database.adapters.authored_repertoires.position_study_source import prepare_position_source
+    from app.repertoire.position_study_source import prepare_position_source
     prepared = prepare_position_source(setup(monkeypatch), 'rep')
     definitions = {item.definition for route in prepared.routes for item in route.decisions}
     monkeypatch.setattr(operator, '_lock', lambda db, prepared, **kwargs: 'rep')
@@ -212,12 +214,12 @@ def test_native_owner_transition_frontier_and_retry(monkeypatch):
     from uuid import uuid4
     import psycopg
     from psycopg import sql
-    from tempo_legacy_database.adapters.postgres_store import tempo_row_factory
+    from tempo_storage.postgres import tempo_row_factory
 
     dsn = os.environ.get('TEMPO_POSITION_TEST_DSN')
     if not dsn:
         pytest.skip('requires task-owned disposable TEMPO_POSITION_TEST_DSN')
-    migration = Path(__file__).resolve().parents[2] / 'tempo_legacy_database/ddl/migrations/057_position_study.sql'
+    migration = Path(__file__).resolve().parents[2] / 'tempo_storage/ddl/migrations/057_position_study.sql'
     schema = 'position_f4_' + uuid4().hex
     with psycopg.connect(dsn, autocommit=True) as admin:
         assert admin.execute('SELECT current_database()').fetchone()[0].startswith('tempo_position_test_')
@@ -387,10 +389,10 @@ def test_resume_retained_epoch_requires_original_rollforward_receipt(monkeypatch
 def test_prepare_request_uses_list_inventory_port_and_deleted_donor_fact(monkeypatch):
     from contextlib import contextmanager
     from test_position_source_authority import setup
-    from tempo_legacy_database.adapters.authored_repertoires import position_study_source
-    from tempo_legacy_database.adapters import postgres_store
-    from tempo_legacy_database.adapters.study import position_seed_inventory
-    prepared = position_study_source.prepare_position_source(setup(monkeypatch), 'rep')
+    from tempo_storage.authored_repertoires import position_study_source
+    from tempo_storage import postgres
+    from tempo_storage.study import position_seed_inventory
+    prepared = _source_preparation.prepare_position_source(setup(monkeypatch), 'rep')
     reader = {'open': False}
     @contextmanager
     def connection(**options):
@@ -400,8 +402,8 @@ def test_prepare_request_uses_list_inventory_port_and_deleted_donor_fact(monkeyp
             yield object()
         finally:
             reader['open'] = False
-    monkeypatch.setattr(postgres_store, 'connection', connection)
-    monkeypatch.setattr(position_study_source, 'prepare_position_source', lambda db, rep: prepared)
+    monkeypatch.setattr(postgres, 'connection', connection)
+    monkeypatch.setattr(_source_preparation, 'prepare_position_source', lambda db, rep: prepared)
     def donor_page(db, *, candidate_card_ids):
         assert reader['open'] and isinstance(candidate_card_ids, tuple) and len(candidate_card_ids) <= 500
         # The public owner returns materialized rows, not a cursor.
@@ -463,7 +465,7 @@ def test_pause_plan_and_apply_do_not_prepare_current_source(monkeypatch, capsys)
     import json
     import sys
     from contextlib import contextmanager
-    from tempo_legacy_database.adapters import postgres_store
+    from tempo_storage import postgres
     class PauseDB(DB):
         def execute_native(self, sql, params=()):
             if 'FROM study_position_owners o' in sql:
@@ -473,7 +475,7 @@ def test_pause_plan_and_apply_do_not_prepare_current_source(monkeypatch, capsys)
             return super().execute_native(sql, params)
     @contextmanager
     def connection(): yield PauseDB()
-    monkeypatch.setattr(postgres_store, 'connection', connection)
+    monkeypatch.setattr(postgres, 'connection', connection)
     monkeypatch.setattr(operator, '_lock_repertoire', lambda db, rep: rep)
     def no_source(*args): raise AssertionError('pause must not prepare invalid current source')
     monkeypatch.setattr(operator, '_prepare_request', no_source)
@@ -502,9 +504,9 @@ def test_native_full_source_operator_lifecycle():
     from fsrs import Card
     from psycopg.conninfo import conninfo_to_dict
     from tempo_evidence_math.position_learning import Hold, SourceCertificate
-    from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
-    from tempo_legacy_database.adapters.authored_repertoires.position_study_source import prepare_position_source
-    from tempo_legacy_database.adapters.study.position_seed_inventory import CARD_PAGE_SQL, DonorFact, InventoryRequest, SourceFacts
+    from tempo_storage.postgres import PostgresConnection, tempo_row_factory
+    from app.repertoire.position_study_source import prepare_position_source
+    from tempo_storage.study.position_seed_inventory import CARD_PAGE_SQL, DonorFact, InventoryRequest, SourceFacts
     from app.repertoire.interfaces.position_schedule_occurrences import inventory_from_snapshot
     dsn = os.environ.get('TEMPO_POSITION_F4_FULL_DSN')
     if not dsn:
@@ -657,8 +659,8 @@ def test_native_full_source_operator_lifecycle():
 def test_seed_plan_uses_real_preview_without_writes(monkeypatch):
     from test_position_source_authority import setup
     from tempo_evidence_math.position_learning import SourceCertificate
-    from tempo_legacy_database.adapters.authored_repertoires.position_study_source import prepare_position_source
-    from tempo_legacy_database.adapters.study.position_seed_inventory import InventoryRequest, SourceFacts
+    from app.repertoire.position_study_source import prepare_position_source
+    from tempo_storage.study.position_seed_inventory import InventoryRequest, SourceFacts
     from app.repertoire.interfaces.position_schedule_occurrences import inventory_from_snapshot
     prepared = prepare_position_source(setup(monkeypatch), 'rep')
     membership = prepared.snapshot.membership
@@ -726,7 +728,7 @@ def test_seed_page_failure_rolls_back_before_receipt(monkeypatch):
 def test_cli_begins_caller_owned_transaction_before_plan_or_seed(monkeypatch,capsys,plan):
     import base64,json,sys
     from contextlib import contextmanager
-    from tempo_legacy_database.adapters import postgres_store
+    from tempo_storage import postgres
     db=SimpleNamespace(read_only=False,raw=SimpleNamespace(info=SimpleNamespace(transaction_status=SimpleNamespace(name='IDLE'))))
     statements=[]
     def execute(sql,params=()):
@@ -744,7 +746,7 @@ def test_cli_begins_caller_owned_transaction_before_plan_or_seed(monkeypatch,cap
         if not operator._writer(database):
             raise operator.OperatorHold('borrowed_owner_writer_transaction_required')
         return {'plan':plan,'borrowed_transaction':True}
-    monkeypatch.setattr(postgres_store,'connection',connection)
+    monkeypatch.setattr(postgres,'connection',connection)
     monkeypatch.setattr(operator,'_prepare_request',lambda rep:(object(),object()))
     monkeypatch.setattr(operator,'plan_in_writer',borrowed)
     monkeypatch.setattr(operator,'seed_page_in_writer',borrowed)

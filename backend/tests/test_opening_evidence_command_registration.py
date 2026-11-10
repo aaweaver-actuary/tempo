@@ -14,7 +14,7 @@ class RejectHTTP(importlib.abc.MetaPathFinder):
         if fullname == "app.opening_evidence_api":
             raise AssertionError("checkpoint registration imported HTTP router")
 sys.meta_path.insert(0, RejectHTTP())
-from app import opening_evidence_commands as commands
+from app import tasks as commands
 from app import command_gateway
 name = "opening_evidence.checkpoint"
 assert command_gateway._handlers[name] is commands.commit_standalone_checkpoint

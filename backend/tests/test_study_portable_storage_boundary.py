@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.services import study_portable as application
-from tempo_legacy_database.adapters.studies.portable import storage
+from tempo_storage.studies.portable import storage
 
 
 class Cursor:

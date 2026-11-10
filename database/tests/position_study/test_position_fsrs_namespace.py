@@ -3,9 +3,9 @@ import re
 from pathlib import Path
 
 import pytest
-from tempo_legacy_database.adapters.study.position_fsrs_namespace import fence_namespace
+from tempo_storage.study.position_fsrs_namespace import fence_namespace
 
-SQL = (Path(__file__).resolve().parents[2] / 'tempo_legacy_database/ddl/migrations/057_position_study.sql').read_text()
+SQL = (Path(__file__).resolve().parents[2] / 'tempo_storage/ddl/migrations/057_position_study.sql').read_text()
 BODY = re.search(r'CREATE FUNCTION study_position_guard_legacy_fsrs_id\(\) RETURNS TRIGGER\s+'
                  r'LANGUAGE plpgsql SET search_path = pg_catalog AS \$\$(.*?)\$\$;', SQL, re.S).group(1)
 

@@ -14,7 +14,7 @@ sys.path.insert(0, str(_REPOSITORY))
 sys.path.insert(0, str(_REPOSITORY / "database"))
 from database.tooling.apply_postgres_migrations import MIGRATIONS, apply_migrations, migration_source
 from database.tooling.verify_postgres_cli_state import capture_cut62, verify_cut62, CUT62_RETIRED_TABLES, CUT62_PROTECTED_TABLES
-from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
+from tempo_storage.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 
 ADMIN_DSN = os.getenv("TEMPO_PROFILE_REHEARSAL_ADMIN_DSN", "postgresql://postgres@postgres:5432/postgres")
 FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"

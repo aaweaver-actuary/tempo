@@ -1,6 +1,6 @@
 """Issue #225: real Redis I/O failure must refuse HTTP work before dispatch."""
 
-from tempo_legacy_database.adapters import postgres_store
+from tempo_storage import postgres
 from contextlib import contextmanager
 import socket
 import threading
@@ -64,7 +64,7 @@ def test_issue225_foreground_redis_failure_refuses_before_dispatch(monkeypatch, 
         ),
     )
     monkeypatch.setattr(
-        postgres_store,
+        postgres,
         "connection",
         lambda *args, **kwargs: pytest.fail("Unavailable admission opened a database"),
     )
