@@ -12,7 +12,7 @@ from collections import defaultdict
 from collections.abc import Iterable
 
 from tempo_game_classification import resolve_equivalent_mapping
-from tempo_game_review_contracts import CanonicalGame, replay_line
+from tempo_game_review_contracts import CanonicalGame, ReplaySession, replay_line
 from tempo_repertoire_comparison import RouteFrontier, TraversalRoute
 
 from app.contracts.product_v02.games import (
@@ -287,6 +287,7 @@ def select_first_boundary(
     # Alias identities remain distinct while their exact legal chess execution
     # is shared within this selection. Existing complete input bounds apply.
     replayed = {}
+    replay_session = ReplaySession()
     try:
         for snapshot in snapshots:
             if snapshot.learner_color != game.learner_color:
@@ -320,7 +321,7 @@ def select_first_boundary(
                 else:
                     executable = (route.starting_fen, tuple(route.moves))
                     if executable not in replayed:
-                        replayed[executable] = replay_line(
+                        replayed[executable] = replay_session.replay_line(
                             route.starting_fen, route.moves
                         )
                     frames = replayed[executable]

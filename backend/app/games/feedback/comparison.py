@@ -11,7 +11,7 @@ from typing import Protocol, get_args
 
 from tempo_game_classification import classify_response, resolve_equivalent_mapping
 from tempo_game_ingestion import BytesInput, PgnGameIngester
-from tempo_game_review_contracts import CanonicalGame, replay_line
+from tempo_game_review_contracts import CanonicalGame, ReplaySession, replay_line
 from tempo_repertoire_comparison import RouteFrontier, TraversalRoute
 
 from app.contracts.product_v02.games import Finding, GameRecord, TimePrecision
@@ -209,13 +209,14 @@ def _compare_repertoire(
     scope = (repertoire_id,)
     traversal = []
     by_executable = {}
+    replay_session = ReplaySession()
     own_responses_by_position = {}
     for route in routes:
         # Each alias keeps its frontier index and route-local bindings. Only
         # exact chess execution is shared within this repertoire comparison.
         executable = (route.starting_fen, route.moves)
         if executable not in by_executable:
-            frames = replay_line(*executable)
+            frames = replay_session.replay_line(*executable)
             for frame in frames[:-1]:
                 if frame["turn"] == game.learner_color:
                     own_responses_by_position.setdefault(

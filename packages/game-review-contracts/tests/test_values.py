@@ -106,3 +106,53 @@ def test_shared_replay_renders_once_and_preserves_all_position_facts(monkeypatch
 def test_shared_replay_rejects_invalid_roots_and_illegal_moves(fen, moves, reason):
     with pytest.raises(ValueError, match=reason):
         replay_line(fen, moves)
+
+
+def test_replay_session_matches_independent_legal_replay_and_detaches_frames():
+    from tempo_game_review_contracts import ReplaySession
+
+    session = ReplaySession()
+    cases = [
+        (chess.STARTING_FEN, ("e2e4", "e7e5", "g1f3")),
+        (chess.STARTING_FEN, ("e2e4", "e7e5", "f1c4")),
+        (chess.STARTING_FEN, ("e2e4", "e7e5")),
+        ("r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 12 25", ("e1g1", "e8c8")),
+        ("4k3/P7/8/8/8/8/8/4K3 w - - 3 7", ("a7a8q",)),
+        ("4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 12", ("e5d6",)),
+        ("4k3/8/8/3p4/8/8/8/4K3 w - d6 0 12", ("e1d1",)),
+        ("4k3/8/8/3p4/8/8/8/4K3 w - - 7 13", ("e1d1",)),
+    ]
+    for start, moves in cases + list(reversed(cases)):
+        assert session.replay_line(start, moves) == replay_line(start, moves)
+    terminal = session.replay_line(chess.STARTING_FEN, ("e2e4", "e7e5"))
+    branch = session.replay_line(chess.STARTING_FEN, ("e2e4", "e7e5", "g1f3"))
+    assert terminal[-1]["move"] is None and branch[2]["move"] == "g1f3"
+    branch[0]["fen"] = "caller mutation"
+    assert session.replay_line(chess.STARTING_FEN, ("e2e4",))[0]["fen"] != "caller mutation"
+
+
+def test_replay_session_preserves_errors_after_shared_prefix():
+    from tempo_game_review_contracts import ReplaySession
+
+    session = ReplaySession()
+    session.replay_line(chess.STARTING_FEN, ("e2e4", "e7e5"))
+    for start, moves in [(chess.STARTING_FEN, ("e2e4", "e7e5", "e4e5")),
+                         (chess.STARTING_FEN, ("e2e4", "bad")),
+                         ("8/8/8/8/8/8/8/8 w - - 0 1", ())]:
+        with pytest.raises(Exception) as before:
+            replay_line(start, moves)
+        with pytest.raises(type(before.value)) as after:
+            session.replay_line(start, moves)
+        assert str(after.value) == str(before.value)
+
+
+def test_replay_session_bound_falls_back_without_changing_results(monkeypatch):
+    from tempo_game_review_contracts import ReplaySession
+
+    monkeypatch.setattr(ReplaySession, "_max_nodes", 2)
+    session = ReplaySession()
+    moves = ("e2e4", "e7e5", "g1f3")
+    assert session.replay_line(chess.STARTING_FEN, moves) == replay_line(chess.STARTING_FEN, moves)
+    assert session._node_count == 2
+    assert session.replay_line(chess.STARTING_FEN, moves) == replay_line(chess.STARTING_FEN, moves)
+    assert session._node_count == 2

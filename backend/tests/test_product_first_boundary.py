@@ -450,13 +450,13 @@ def test_selection_is_stable_under_scope_order_aliases_and_reimport(monkeypatch)
     before = deepcopy((current.model_dump(), captured.model_dump()))
     import app.games.feedback.first_boundary as selector_module
 
-    original_replay, calls = selector_module.replay_line, []
+    original_replay, calls = selector_module.ReplaySession.replay_line, []
 
-    def replay(start, moves):
+    def replay(session, start, moves):
         calls.append((start, tuple(moves)))
-        return original_replay(start, moves)
+        return original_replay(session, start, moves)
 
-    monkeypatch.setattr(selector_module, "replay_line", replay)
+    monkeypatch.setattr(selector_module.ReplaySession, "replay_line", replay)
     first = select_first_boundary(current, snapshots=(captured,), source=source)
     authored = captured.membership.routes[0]
     assert calls.count((authored.starting_fen, tuple(authored.moves))) == 1

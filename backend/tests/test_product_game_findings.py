@@ -204,13 +204,15 @@ def test_equivalent_route_aliases_resolve_once_and_preserve_all_provenance(
     assert selected is not None and selected.route_id == "alias-00"
     calls = []
 
-    def replay(starting_fen, moves):
-        calls.append((starting_fen, tuple(moves)))
-        return replay_line(starting_fen, moves)
+    original = comparison.ReplaySession.replay_line
 
-    monkeypatch.setattr(comparison, "replay_line", replay)
+    def replay(session, starting_fen, moves):
+        calls.append((starting_fen, tuple(moves)))
+        return original(session, starting_fen, moves)
+
+    monkeypatch.setattr(comparison.ReplaySession, "replay_line", replay)
     (finding,) = compare(source, captured)
-    assert calls == [(START, ("e2e4",)), (START, (played,))]
+    assert calls == [(START, ("e2e4",))]
     assert finding.kind == "known_unintroduced" and not finding.lapse_eligible
     assert (
         finding.decision_id,

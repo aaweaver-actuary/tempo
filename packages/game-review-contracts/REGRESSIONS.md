@@ -12,3 +12,10 @@ Regular owning suite: `python -m pytest tests --import-mode=importlib -q`.
 - `test_shared_contract_imports_no_feature_or_storage_implementation`: dependency direction guard.
 
 Independent parser/frontier behavior belongs to the ingestion and comparison owning suites.
+
+- `test_replay_session_matches_independent_legal_replay_and_detaches_frames`,
+  `test_replay_session_preserves_errors_after_shared_prefix`, and
+  `test_replay_session_bound_falls_back_without_changing_results` cover shared
+  branches, terminal moves, raw and legal en passant, castling, promotion, FEN
+  clocks, independent returned frames, failures, and bounded fallback. Packaged
+  Study recovery remains a separate acceptance gate.
