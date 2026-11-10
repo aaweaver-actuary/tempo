@@ -15,7 +15,18 @@ import { parseArguments, ensureDocker } from "../../scripts/tempo-cli.mjs";
 import { authenticateManagedSettlement, inspectRegisteredIsolation, matchesManagedPinnedHelper, runManagedPinnedChild } from "../../scripts/tempo-managed-isolation.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
+import { assertDependencyCorrectionOrder } from "../../scripts/check-tempo-cli.mjs";
 import { validateOwnedPostgresTelemetry } from '../../database/tests/managed_cli_rehearsal.mjs';
+
+test("dependency fallback distinguishes cold preflight from replacement after writer shutdown", () => {
+  const call = (...args) => ({ args });
+  const cold = call("up", "--no-recreate", "postgres", "redis");
+  const stop = call("stop", "foreground-worker");
+  const replace = call("up", "--force-recreate", "postgres", "redis");
+  assert.doesNotThrow(() => assertDependencyCorrectionOrder([cold, stop, replace]));
+  assert.throws(() => assertDependencyCorrectionOrder([cold, replace, stop]));
+  assert.throws(() => assertDependencyCorrectionOrder([replace, stop]));
+});
 
 test('offline image build requires stopped registered API and all writers', () => {
   const target={project:'tempo',postgresVolumeKey:'data',volumes:{data:{name:'owned'}}};
