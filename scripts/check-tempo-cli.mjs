@@ -14,6 +14,7 @@ import { Chess } from "chess.js";
 import { createHash } from 'node:crypto';
 import { verifyPersistedRedisReadiness } from "../database/tests/redis/check-redis-readiness.mjs";
 import { forgetMigrationSuffix, markHistoryIncorrect, markHistoryCorrect, readLatestMigration } from "../database/tests/cli/lifecycle-storage.mjs";
+import { renderInterruptedLifecycle } from "./lifecycle-source-preflight.mjs";
 import { resolvePython } from './resolve-python.mjs';
 
 // The cold probe may start missing dependencies without replacing them; the
@@ -699,25 +700,7 @@ m.apply_migrations(os.environ["TEMPO_POSTGRES_ADMIN_URL"], target_version=61)`;
     const preparedCandidate = join(directory, "uncommitted-prepared-images.json");
     atomicJson(preparedCandidate, { ...preparedImages, configFingerprint: configurationFingerprint(candidateConfig) });
     const interruptedLifecycle = join(directory, "interrupted-lifecycle.mjs");
-    writeFileSync(interruptedLifecycle, `
-import { readFileSync } from "node:fs";
-import { commandExecutor } from ${JSON.stringify(join(root, "scripts/tempo-deployment.mjs"))};
-import { createRuntime, executeLifecycle } from ${JSON.stringify(join(root, "scripts/tempo-runtime.mjs"))};
-const [registration, stateDirectory, override, prepared] = process.argv.slice(2);
-const target = JSON.parse(readFileSync(registration, "utf8"));
-target.composeFiles.push(override);
-const preparedImages = JSON.parse(readFileSync(prepared, "utf8"));
-const execute = commandExecutor({ root: target.root, environment: process.env });
-const run = async (command, args, options) => {
-  const result = await execute(command, args, options);
-  if (args.includes("up") && args.includes("foreground-worker")) process.kill(process.pid, "SIGKILL");
-  return result;
-};
-const runtime = createRuntime(target, { run, stateDirectory, revision: preparedImages.revision,
-  evidence: { commit: preparedImages.revision }, preparedImages });
-await runtime.inspectTarget();
-await executeLifecycle({ recreate: false }, runtime);
-`, { mode: 0o600 });
+    writeFileSync(interruptedLifecycle, renderInterruptedLifecycle(root), { mode: 0o600 });
     const interruptedChild = childProcess("interrupted_rollout", process.execPath, [interruptedLifecycle, registration, stateDirectory, candidateOverride, preparedCandidate], {
       encoding: "utf8", env: childEnvironment, timeout: 180_000,
     });

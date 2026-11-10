@@ -15,6 +15,7 @@ import { assertDisposableVolumes, backgroundWorkloadConsumers, executeDiagnostic
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   readStudyQueuePublication, repertoireLimitRecreationPgn, studyDurabilityPgn } from "./postgres-test-fixture.mjs";
 import { createScenarioTimer, isTimingPublicationFailure, postgresCommandTiming } from "../../scripts/test-scenario-timings.mjs";
+import { checkLifecycleSource } from "../../scripts/lifecycle-source-preflight.mjs";
 import { verifyTempoCliLifecycle } from "../../scripts/check-tempo-cli.mjs";
 import { atomicJson, redact } from "../../scripts/tempo-deployment.mjs";
 
@@ -28,6 +29,8 @@ if (options.list) {
     browser_file: options.browserFile, browser_grep: options.browserGrep }, null, 2));
   process.exit(0);
 }
+
+if (stages.includes("deployment_lifecycle")) checkLifecycleSource();
 
 // Docker Desktop only shares the project checkout, so the short-lived secret
 if (!process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN)

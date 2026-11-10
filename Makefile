@@ -93,6 +93,7 @@ docker-durability:
 	node database/tests/test-postgres-docker.mjs --mode durability
 
 docker-lifecycle:
+	node scripts/lifecycle-source-preflight.mjs
 	node scripts/check-test-capabilities.mjs --docker --loopback --workspace-mount
 	node database/tests/test-postgres-docker.mjs --mode lifecycle
 

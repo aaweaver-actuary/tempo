@@ -791,6 +791,11 @@ test("nested timing write failures propagate and cleanup executes even when its 
 
 test("PostgreSQL command timings classify fixed operations without retaining arguments or credentials", () => {
   for (const [args, expected] of [
+    [["image", "inspect", "secret-canary"], { label: "image_inspection", category: "inspection" }],
+    [["compose", "-p", "secret-canary", "config"], { label: "compose_configuration", category: "inspection" }],
+    [["volume", "ls", "secret-canary"], { label: "volume_inspection", category: "inspection" }],
+    [["context", "inspect", "secret-canary"], { label: "daemon_context", category: "inspection" }],
+    [["compose", "-p", "secret-canary", "ps"], { label: "container_inventory", category: "inspection" }],
     [["compose", "build", "secret-canary"], { label: "image_build", category: "build" }],
     [["compose", "stop", "maia-worker"], { label: "compose_shutdown", category: "restart" }],
     [["compose", "up", "--force-recreate"], { label: "compose_recreation", category: "startup" }],
