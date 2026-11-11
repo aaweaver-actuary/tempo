@@ -783,6 +783,29 @@ it("PR105 late foreground persistence cannot advance an unrelated replacement at
   await waitFor(() => expect(useTrainingStore.getState().queueReadiness).toBe("ready"));
   expect(snapshotActive()).toEqual(activeBeforeSave);
   expect(pendingReviews()).toEqual([]);
+  await waitFor(() => expect(trainingProps.reviewPersistenceState).toBe("idle"));
+});
+
+it("PR105 late foreground persistence cannot release a newer replacement save", async () => {
+  await readyHome();
+  let finishFirst!: (response: Response) => void;
+  let finishSecond!: (response: Response) => void;
+  reviewResponse = async url => url.endsWith("/card-a/review")
+    ? new Promise<Response>(resolve => { finishFirst = resolve; })
+    : new Promise<Response>(resolve => { finishSecond = resolve; });
+  let first!: Promise<void>;
+  await act(async () => { first = trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
+  act(() => useTrainingStore.getState().hydrateLocalQueue([mapQueueCardToPracticeCard(queueCard("card-b", 13))], true));
+  let second!: Promise<void>;
+  await act(async () => { second = trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
+  const replacement = snapshotActive();
+  expect(trainingProps.reviewPersistenceState).toBe("saving");
+  await act(async () => { finishFirst(Response.json({ persisted: true })); await settleStudyStorageTasks(); });
+  expect(snapshotActive()).toEqual(replacement);
+  expect(trainingProps.reviewPersistenceState).toBe("saving");
+  await act(async () => { finishSecond(Response.json({ detail: "Invalid", retryable: false }, { status: 422 })); await Promise.all([first, second]); });
+  expect(trainingProps.reviewPersistenceState).toBe("saveFailed");
+  expect(snapshotActive()).toEqual(replacement);
 });
 
 it("PR105 explicit legacy retry credits the normalized attempt without a new identity", async () => {

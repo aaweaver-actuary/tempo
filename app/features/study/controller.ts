@@ -372,6 +372,16 @@ export function useStudyReviewController(options: StudyReviewControllerOptions) 
         "This result could not be confirmed. Keep this browser's data and open Notifications for details before retrying." });
       onEvent({ type: "clear-queue-notice" });
       if (!retryPending) onEvent({ type: "feedback-pause" });
+    } finally {
+      // A replaced attempt cannot receive this result, but its saving indicator
+      // must not remain on the replacement. A newer transition owns its own state.
+      const replacedWhileOwned = () => {
+        const active = useTrainingStore.getState().attempt;
+        return mounted.current && generation === lifecycle.current && transitionGeneration === transition.current &&
+          Boolean(binding && sameAuthority(binding.authority, binding.store)) &&
+          (active.attemptId !== displayed.attemptId || active.generation !== displayed.generation);
+      };
+      if (replacedWhileOwned()) setPhase(previous => replacedWhileOwned() && previous === "saving" ? "idle" : previous);
     }
   }
   const snapshot: StudyReviewSnapshot = { phase, identity, diagnosticIdentity: diagnostic.current, queueReconciliationError };

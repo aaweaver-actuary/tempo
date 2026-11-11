@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => {
     blocked = false; backendId = "other"; queueEntryId = 2; attemptId = "other";
     classification = "transient"; endpoint = "/review"; status = 503; retryable = true; code = undefined;
   }
-  return { reviews: [] as unknown[], enqueue: vi.fn(), flush: vi.fn(), retryNext: vi.fn(), session: vi.fn(), ReplayError };
+  return { attempt: { attemptId: "original", generation: 4 }, reviews: [] as unknown[], enqueue: vi.fn(), flush: vi.fn(), retryNext: vi.fn(), session: vi.fn(), ReplayError };
 });
 vi.mock("../../app/lib/review-outbox", () => ({
   enqueuePendingReview: mocks.enqueue, flushPendingReviews: mocks.flush,
@@ -18,14 +18,14 @@ vi.mock("../../app/lib/review-outbox", () => ({
   pendingReviews: () => mocks.reviews, recoverableReviews: () => mocks.reviews,
   conflictedReviews: () => [], ReviewReplayError: mocks.ReplayError, reviewStudySession: mocks.session,
 }));
-vi.mock("../../app/state/training-store", () => ({ useTrainingStore: { getState: () => ({ attempt: { attemptId: "original", generation: 4 } }) } }));
+vi.mock("../../app/state/training-store", () => ({ useTrainingStore: { getState: () => ({ attempt: mocks.attempt }) } }));
 vi.mock("../../app/views/fetchAndInitializeQueue", () => ({ fetchAndInitializeQueue: vi.fn(), rememberConfirmedQueueEntry: vi.fn(), QueueProcessingError: class extends Error {} }));
 vi.mock("../../app/lib/review-save-notice", () => ({ reportReviewSaveFailure: vi.fn() }));
 vi.mock("../../app/lib/debug-reporting", () => ({ reportDebugError: vi.fn() }));
 
 const card = { id: "a", backendId: "a", queueEntryId: 1, revision: 1 } as PracticeCard;
 const review: PendingReview = { backendId: "a", queueEntryId: 1, attemptId: "original", outcome: "correct", guided: false };
-beforeEach(() => { mocks.reviews = []; mocks.enqueue.mockReset(); mocks.flush.mockReset(); mocks.retryNext.mockReset(); mocks.session.mockReset().mockResolvedValue({ retryNext: mocks.retryNext }); });
+beforeEach(() => { mocks.attempt = { attemptId: "original", generation: 4 }; mocks.reviews = []; mocks.enqueue.mockReset(); mocks.flush.mockReset(); mocks.retryNext.mockReset(); mocks.session.mockReset().mockResolvedValue({ retryNext: mocks.retryNext }); });
 afterEach(cleanup);
 function setup() {
   const hook = renderHook(() => useStudyReviewController({ onNextCard: vi.fn(), checkIntegrity: async () => {}, acquireQueue: vi.fn(), rememberConfirmed: vi.fn(), isRetryable: () => true }));
@@ -79,6 +79,26 @@ it("does not progress a completion after its transition is superseded", async ()
   act(() => { hook.result.current.beginReview("replacement"); });
   await act(async () => { resolve({ persistedAttemptIds: ["original"], conflictedAttemptIds: [] }); await request; });
   expect(onEvent).not.toHaveBeenCalled();
+  expect(confirmed).not.toHaveBeenCalled();
+});
+
+it.each(["saveFailed", "pendingConfirmation"] as const)("keeps a replacement's %s state when the original finishes later", async phase => {
+  const { hook, input, confirmed, onEvent } = setup();
+  let resolveOriginal!: (result: unknown) => void;
+  mocks.flush.mockImplementationOnce(() => new Promise(done => { resolveOriginal = done; }))
+    .mockResolvedValueOnce({ persistedAttemptIds: [], conflictedAttemptIds: [] });
+  let original!: Promise<void>;
+  await act(async () => { original = hook.result.current.submit(input); });
+  mocks.attempt = { attemptId: "replacement", generation: 5 };
+  let replacementTransition!: number;
+  act(() => { replacementTransition = hook.result.current.beginReview("replacement")!; });
+  await act(async () => { await hook.result.current.submit({ ...input, attemptId: phase === "saveFailed" ? undefined : "replacement",
+    attemptGeneration: 5, transitionGeneration: replacementTransition }); });
+  expect(hook.result.current.snapshot.phase).toBe(phase);
+  const eventsBefore = onEvent.mock.calls.length;
+  await act(async () => { resolveOriginal({ persistedAttemptIds: ["original"], conflictedAttemptIds: [] }); await original; });
+  expect(hook.result.current.snapshot.phase).toBe(phase);
+  expect(onEvent).toHaveBeenCalledTimes(eventsBefore);
   expect(confirmed).not.toHaveBeenCalled();
 });
 
