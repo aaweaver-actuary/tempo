@@ -375,7 +375,10 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
   expect(updatedSettings.ok(), await updatedSettings.text()).toBe(true);
   const identity = `position-browser-${randomUUID().replaceAll("-", "")}`;
   const schema = fixture<{ database: string; version: number }>(project, "schema", identity);
-  expect(Number.isInteger(schema.version)).toBe(true);
+  await testInfo.attach("position-study-disposable-schema", {
+    body: Buffer.from(JSON.stringify(schema, null, 2)), contentType: "application/json",
+  });
+  expect(schema.version, "Disposable runtime migration version").toBe(64);
   let originalIdentity: WirePlan | undefined;
   let successorIdentity: WirePlan | undefined;
   const requestTimingSamples: Array<{

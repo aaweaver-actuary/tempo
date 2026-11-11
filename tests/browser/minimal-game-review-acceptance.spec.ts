@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { test, expect, api, nav } from "./product-fixtures";
 import { verifyPostgresFixtureTarget } from "./product-fixture-reset";
+import { validateDevelopmentBudgetOwner, waitForStudyQuiet } from "../../scripts/development-budget.mjs";
 
 // The only inserted row is a saved game, never a Study receipt or plan.
 const program = String.raw`
@@ -32,6 +33,8 @@ test("minimal Game Review compares pasted and saved games against current repert
   await verifyPostgresFixtureTarget({ health, apiUrl: api, project });
   const token = process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN;
   if (!token) throw new Error("Development budget owner required");
+  await validateDevelopmentBudgetOwner();
+  const quiet = () => waitForStudyQuiet({ signal: AbortSignal.timeout(30_000) });
   const fixture = (action: "seed" | "read", identity: string) => {
     const service = action === "seed" ? "foreground-worker" : "api";
     const id = execFileSync("docker", ["compose", "-p", project, "-f", "docker-compose.postgres.test.yml", "ps", "-q", service], { encoding: "utf8" }).trim();
@@ -54,12 +57,25 @@ test("minimal Game Review compares pasted and saved games against current repert
   }
   const repertoire = result.repertoire_id as string;
   expect(repertoire).toBeTruthy();
+  await expect.poll(async () => (await (await request.get(`${api}/repertoires`)).json()).repertoires
+    .find((item: { id: string }) => item.id === repertoire)?.graph_state, { timeout: 30_000 }).toBe("ready");
   const id = `browser-game-${randomUUID()}`;
   fixture("seed", id);
   await page.goto("/");
-  await nav(page, "Games");
+  await nav(page, "Game Review");
   await page.getByLabel("Repertoire").selectOption(repertoire);
-  const before = JSON.parse(fixture("read", id));
+  await page.waitForLoadState("networkidle");
+  await quiet();
+  // Establish a stable baseline after import and navigation have settled.
+  let previous: string | undefined;
+  await expect.poll(() => {
+    const current = fixture("read", id);
+    const stable = previous !== undefined && current === previous;
+    previous = current;
+    return stable;
+  }, { timeout: 30_000, intervals: [1000] }).toBe(true);
+  if (previous === undefined) throw new Error("Study snapshot unavailable");
+  const before = JSON.parse(previous);
   await page.getByLabel("Paste PGN").fill('[Event "Played"]\n\n1. e4 e5 2. Bc4 *');
   const post = page.waitForResponse(response => response.url().endsWith("/api/product/game-review/compare") && response.request().method() === "POST");
   await page.getByRole("button", { name: "Review PGN" }).click();
@@ -73,5 +89,7 @@ test("minimal Game Review compares pasted and saved games against current repert
   expect(savedResponse.ok()).toBe(true);
   expect((await savedResponse.json()).comparison).toMatchObject({ kind: "departure", ply: 3, played_uci: "f1c4", expected_uci: ["g1f3"] });
   await expect(page.getByText(/First departure at ply 3: f1c4; repertoire: g1f3/)).toBeVisible();
+  await page.waitForLoadState("networkidle");
+  await quiet();
   expect(JSON.parse(fixture("read", id))).toEqual(before);
 });

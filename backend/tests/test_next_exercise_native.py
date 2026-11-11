@@ -76,7 +76,9 @@ def test_native_position_writer_rolls_back_and_replays_original_plan(case, monke
 
     rep = 'native-position-' + uuid.uuid4().hex
     now = datetime.now(timezone.utc)
-    day = now.date().isoformat()
+    # This module-scoped owned fixture may already contain today's legacy head.
+    # Use a separate Study day; the production head fence still runs unchanged.
+    day = (now.date() + timedelta(days=1)).isoformat()
     routes = (['e2e4','e7e5','g1f3','b8c6','f1c4','g8f6','f3g5','d7d5','e4d5'],
               ['e2e4','e7e5','g1f3','b8c6','f1c4','f8c5','c2c3'])
     with case.transaction() as db:
@@ -111,11 +113,15 @@ def test_native_position_writer_rolls_back_and_replays_original_plan(case, monke
             due = now-timedelta(days=2)
             raw.execute("""INSERT INTO study_position_states(repertoire_id,variant,position,expected_uci,policy_version,owner_epoch,source_digest,fsrs_internal_card_id,fsrs_json,due_at,introduced_at)
                 VALUES(%s,%s,%s,%s,%s,'native-epoch',%s,%s,%s,%s,%s)""", (rep,definition.key.variant,definition.key.position,definition.expected_uci,definition.policy_version,digest,ident,Card(card_id=ident,due=due).to_json(),due,now-timedelta(days=2)))
-        raw.execute("INSERT INTO daily_queue_days(queue_date,seed,membership_hash,generated_at) VALUES(%s,1,%s,%s) ON CONFLICT(queue_date) DO NOTHING", (day,rep,now.isoformat()))
     with case.transaction() as db:
         item = prepare_due(db, day, {})
         assert isinstance(item, dict) and 'candidate' in item, item
         assert admit_due(db, day, item) is None
+        from app.services.queue_application import randomize_daily_queue
+        from tempo_storage.queue_refresh.application.publication import begin_projection, publish_projection
+        randomize_daily_queue(db, day)
+        begin_projection(db, day)
+        publish_projection(db, day, now.isoformat(), 0)
         row = db.execute_native('SELECT id,card_id FROM daily_queue WHERE admission_repertoire_id=%s ORDER BY position,id LIMIT 1', (rep,)).fetchone()
         assert row
         entry, card_id = row[0], row[1]
