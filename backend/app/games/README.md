@@ -1,13 +1,22 @@
-# Games records and ingestion
+# Minimal Game Review
 
-Games owns the provider adapters, PGN normalization, source records, and the
-repertoire comparison and feedback workflow. Provider acquisition produces
-`GameRecord` values with the original PGN and provider identity. The current
-product workflow normalizes those bytes through `PgnGameIngester`, then commits
-acquired pages and checkpoints through the Games store. Game Review reads that
-store; Study owns learning effects and scheduling.
+The router prefix is `/api/product/game-review`. `GET /games` lists saved games;
+`GET /games/{game_id}?repertoire_id=...` compares a saved game using its saved
+color; `POST /compare` accepts `{pgn, repertoire_id, color}` for one pasted game.
+Both comparison routes fully replay the game legally before reading current
+authored lines, then call the pure `comparison.first_departure` with typed facts.
+Results are `unavailable`, `coverage_end`, `departure`, or `covered`.
 
-Lichess and Chess.com adapters retain their configured account, filters, and
-bounded request behavior. Reading or replaying a game does not acquire games or
-deliver feedback. See [feedback](feedback/README.md) and the provider guides for
-the retained workflows.
+```python
+import chess
+from app.games.comparison import AuthoredLine, GameFacts, first_departure
+
+start = chess.STARTING_FEN
+game = GameFacts(start_fen=start, moves=('e2e4',))
+lines = [AuthoredLine(start_fen=start, moves=('d2d4',))]
+result = first_departure(game, lines)  # departure at ply 1
+```
+
+Storage reads are read-only; comparison neither saves pasted games nor contacts a
+provider or mutates Study. Retired provider and feedback implementations are
+historical, not prerequisites for this path.
