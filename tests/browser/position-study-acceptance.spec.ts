@@ -21,26 +21,29 @@ const fixtureProgram = String.raw`
 import json, os, sys
 from datetime import date, datetime, timedelta, timezone
 import psycopg
-from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
+from tempo_storage.postgres import PostgresConnection, tempo_row_factory
 
 command, rep = sys.argv[1:3]
 assert rep.startswith('position-browser-') and len(rep[17:]) == 32 and rep[17:].isalnum()
-dsn = os.environ['TEMPO_DATABASE_READ_URL'] if command == 'read' else os.environ['TEMPO_DATABASE_WRITE_URL']
-assert dsn.startswith('postgresql://tempo_reader@postgres:5432/tempo') if command == 'read' else dsn.startswith('postgresql://tempo_writer@postgres:5432/tempo')
+dsn = os.environ['TEMPO_DATABASE_READ_URL'] if command in ('read', 'schema') else os.environ['TEMPO_DATABASE_WRITE_URL']
+assert dsn.startswith('postgresql://tempo_reader@postgres:5432/tempo') if command in ('read', 'schema') else dsn.startswith('postgresql://tempo_writer@postgres:5432/tempo')
 with psycopg.connect(dsn, row_factory=tempo_row_factory) as raw:
     assert raw.execute("SELECT current_database()").fetchone()[0] == 'tempo'
-    assert raw.execute("SELECT current_user").fetchone()[0] == ('tempo_reader' if command == 'read' else 'tempo_writer')
+    assert raw.execute("SELECT current_user").fetchone()[0] == ('tempo_reader' if command in ('read', 'schema') else 'tempo_writer')
     port = PostgresConnection(raw)
     now = datetime.now(timezone.utc)
+    if command == 'schema':
+        print(json.dumps({'database': raw.execute('SELECT current_database()').fetchone()[0],
+                          'version': raw.execute('SELECT MAX(version) FROM tempo_schema_migrations').fetchone()[0]}))
     if command in ('seed', 'legacy'):
         import chess
         from fsrs import Card
         from app.queue_commands import current_study_day
-        from tempo_legacy_database.adapters.queue_refresh.application.publication import begin_projection, publish_projection
+        from tempo_storage.queue_refresh.application.publication import begin_projection, publish_projection
         day = current_study_day(port)
     if command == 'seed':
         from tempo_evidence_math.position_learning import Hold
-        from tempo_legacy_database.adapters.authored_repertoires.position_study_source import prepare_position_source
+        from app.repertoire.position_study_source import prepare_position_source
         from app.services.position_queue_admission import prepare_due, admit_due
         assert not raw.execute('SELECT 1 FROM repertoires WHERE id=%s', (rep,)).fetchone()
         raw.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,'Position browser','fixture',%s)", (rep,now.isoformat()))
@@ -128,7 +131,7 @@ with psycopg.connect(dsn, row_factory=tempo_row_factory) as raw:
         legacy_entries = [dict(row) for row in raw.execute("SELECT id,card_id,status,attempt_state FROM daily_queue WHERE card_id=%s ORDER BY id", (rep+'-legacy-card',)).fetchall()]
         print(json.dumps({'plans':plans,'reviews':reviews,'grades':grades,'physical':physical,'states':states,
                           'legacy_reviews':legacy_reviews,'legacy_entries':legacy_entries},default=str))
-    else:
+    elif command != 'schema':
         raise ValueError('unknown fixture operation')
 `;
 
@@ -145,9 +148,9 @@ type Snapshot = { reviews: Array<{ attempt_id: string; outcome: string; guided: 
   legacy_reviews: Array<{ attempt_id: string; card_id: string; queue_entry_id: number; outcome: string; guided: number; review_id: number; rating: string; source_kind: string }>;
   legacy_entries: Array<{ id: number; card_id: string; status: string; attempt_state: string }> };
 
-function fixture<T>(project: string, action: "seed" | "read" | "legacy", identity: string): T {
+function fixture<T>(project: string, action: "seed" | "read" | "legacy" | "schema", identity: string): T {
   // Execute inside already-budgeted runner services: no extra Compose container.
-  const service = ["exec", "-T", action === "read" ? "api" : "foreground-worker"];
+  const service = ["exec", "-T", (action === "read" || action === "schema") ? "api" : "foreground-worker"];
   return JSON.parse(execFileSync("docker", ["compose", "-p", project,
     "-f", "docker-compose.postgres.test.yml", ...service,
     "python", "-c", fixtureProgram, action, identity], { encoding: "utf8", timeout: 30_000 }));
@@ -371,6 +374,10 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
   const updatedSettings = await request.put(`${api}/settings`, { data: { ...settings, new_cards_per_day: 2, initial_depth: 2, lichess_username: "", chesscom_username: "" } });
   expect(updatedSettings.ok(), await updatedSettings.text()).toBe(true);
   const identity = `position-browser-${randomUUID().replaceAll("-", "")}`;
+  const schema = fixture<{ database: string; version: number }>(project, "schema", identity);
+  expect(Number.isInteger(schema.version)).toBe(true);
+  let originalIdentity: WirePlan | undefined;
+  let successorIdentity: WirePlan | undefined;
   const requestTimingSamples: Array<{
     operation: "queue_window" | "accepted_review_http";
     elapsed_ms: number;
@@ -640,6 +647,7 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
       break;
     }
     expect(first, "The app did not recover from the busy card within its retry budget").toBeTruthy();
+    originalIdentity = first;
     const issued = fixture<Snapshot>(project, "read", identity);
     expect(issued.plans).toHaveLength(1);
     expect(issued.plans[0]).toMatchObject({ attempt_id: first.attempt_id, queue_entry_id: first.queue_entry_id,
@@ -675,6 +683,7 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
   }
   expect(successorQueue).toBeDefined();
   const suffix = positionHead(await readAppQueue(successorQueue!), `${identity}-card-b`);
+  successorIdentity = suffix;
   await expect.poll(() => fixture<Snapshot>(project, "read", identity).reviews.some(r =>
     r.attempt_id === first.attempt_id && r.source_kind === "position_study" && r.outcome === "correct" && !r.guided), { timeout: 30_000, intervals: [1000, 2000] }).toBe(true);
   expect(suffix.attempt_id).not.toBe(first.attempt_id);
@@ -796,6 +805,9 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
   await testInfo.attach("position-study-request-timings", {
     body: Buffer.from(JSON.stringify({
       source: "synthetic_disposable_browser_journey",
+      disposable_schema: schema,
+      original: originalIdentity ?? null,
+      successor: successorIdentity ?? null,
       queue_elapsed_boundary: "Playwright app request.timing().responseEnd after response.finished(), relative to request start; not server transaction duration",
       accepted_review_elapsed_boundary: "Playwright request.timing().responseEnd after response.finished(), relative to request start",
       samples: requestTimingSamples,
