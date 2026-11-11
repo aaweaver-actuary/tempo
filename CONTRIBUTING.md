@@ -18,13 +18,11 @@ Formatting preferences, alternate designs, speculative risks, and unrelated clea
 
 Use [docs/testing.md](docs/testing.md) for selection, regressions, and evidence reuse. An intentional requirement change can change an obsolete expectation; record the requirement and replacement proof. Do not weaken still-applicable assertions to obtain green results. A legitimate fixture repair must preserve what the test is meant to prove.
 
-### Architecture coverage before acceptance
+### Lightweight architecture look for code changes
 
-Follow the [Architecture Guardian protocol](docs/architecture/guardian.md) for every integrated candidate, including deletions and policy-only changes. The PR/task must link one current receipt identifying the actual base and head, policy revision, independent reviewer, complete changed-file coverage, routing reason, applicable check evidence, findings and disposition. `Architecture impact: none` is not an exemption from this review. A cheap triager cannot waive mandatory full-review triggers; unknown or missing evidence remains incomplete.
+For code PRs, ask a Guardian-like subagent (preferably inexpensive and distinct from the author) to scan the integrated diff for accidental coupling, new ownership overlap, private cross-domain imports, interface drift and misplaced domain responsibilities. This is a practical review habit, not a second release process. Escalate for substantive interface, storage/state, dependency, composition or lifecycle changes; a small local fix generally needs only a brief check. Ordinary documentation or media edits do not require a Guardian by default.
 
-The final acceptance reviewer checks that the receipt matches the candidate. New commits, changed integration bases or changed policy inputs require renewed routing and review of the delta plus affected dependencies; verified unchanged evidence may be reused explicitly. An author, Manager or generated checkbox cannot self-certify independent review. An unavailable reviewer leaves the gate unmet; only the repository owner may authorize a documented, candidate-specific exception. Do not label such an exception a pass or a standing waiver.
-
-The PR template is a reminder, not enforcement. Automatic invocation, receipt validation and merge protection remain separate implementation/verification work under [#984](https://github.com/aaweaver-actuary/tempo/issues/984). This documentation does not change hosted checks or authorize merge/deployment.
+Keep the outcome concise in the existing PR discussion: what was examined, any concrete concern, and its resolution or reason for deferral. An existing independent code review can include this look; do not spawn a redundant agent solely for a checkbox. If reviewer capacity is unavailable, say so and apply the ordinary risk-based review/merge decision—do not claim a Guardian passed. Actionable correctness, safety and established release requirements remain binding. [Guardian guidance](docs/architecture/guardian.md) describes the questions to ask; [#984](https://github.com/aaweaver-actuary/tempo/issues/984) tracks possible lightweight automation, not a mandatory machine-validated receipt or blanket merge blocker.
 
 ### Architecture impact and drawings
 
