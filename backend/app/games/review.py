@@ -10,7 +10,7 @@ import chess
 import chess.pgn
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-from tempo_chess_core import canonical_fen_key
+from app.games.comparison import AuthoredLine, GameFacts, first_departure, position_identity
 
 from tempo_storage.connections import read_connection
 from tempo_storage import game_review as storage
@@ -22,34 +22,6 @@ class Comparison(BaseModel):
     pgn: str = Field(min_length=1, max_length=2_000_000)
     repertoire_id: str = Field(min_length=1, max_length=200)
     color: str = Field(pattern='^(white|black)$')
-
-
-def first_departure(start_fen, moves, lines):
-    """Follow all alternatives from the exact start, never invent coverage.
-
-    A route ending is explicit coverage end. A shorter alternative does not
-    conceal a departure if another authored continuation remains available.
-    """
-    board = chess.Board(start_fen)
-    identity = canonical_fen_key(board.fen(en_passant='legal'))
-    candidates = [json.loads(line['moves_json']) for line in lines
-                  if canonical_fen_key(chess.Board(line['start_fen']).fen(en_passant='legal')) == identity]
-    if not candidates:
-        return {'kind': 'unavailable', 'reason': 'No applicable authored line begins at this position'}
-    for index, uci in enumerate(moves):
-        expected = sorted({route[index] for route in candidates if len(route) > index})
-        if not expected:
-            return {'kind': 'coverage_end', 'ply': index + 1, 'fen': board.fen()}
-        move = chess.Move.from_uci(uci)
-        if move not in board.legal_moves:
-            raise ValueError(f'Illegal game move at ply {index + 1}')
-        if uci not in expected:
-            return {'kind': 'departure', 'ply': index + 1, 'fen': board.fen(),
-                    'played_uci': uci, 'expected_uci': expected,
-                    'actor': 'white' if board.turn else 'black'}
-        candidates = [route for route in candidates if len(route) > index and route[index] == uci]
-        board.push(move)
-    return {'kind': 'covered'}
 
 
 def detail(start_fen, moves, repertoire_id, color):
@@ -65,7 +37,11 @@ def detail(start_fen, moves, repertoire_id, color):
     with read_connection() as database:
         lines = storage.authored_lines(database, repertoire_id, color)
     return {'starting_fen': start_fen, 'moves': moves, 'positions': positions,
-            'comparison': first_departure(start_fen, moves, lines)}
+            'comparison': first_departure(
+                GameFacts(start_fen, tuple(moves)),
+                [AuthoredLine(line['start_fen'], tuple(json.loads(line['moves_json'])))
+                 for line in lines if position_identity(line['start_fen']) == position_identity(start_fen)],
+            )}
 
 
 @router.get('/games')
