@@ -400,8 +400,8 @@ def test_all_covered_ordinary_introduction_is_skipped_without_completion(monkeyp
     def borrowed(*args, **kwargs):
         yield object()
 
-    monkeypatch.setattr(refresh.read_storage, "native_configured", lambda: True)
     monkeypatch.setattr(refresh, "background_read_connection", borrowed)
+    monkeypatch.setattr(refresh, "read_connection", borrowed)
     monkeypatch.setattr(refresh, "connection", borrowed)
     monkeypatch.setattr(
         refresh.frozen_opening_order, "activation", lambda *a, **k: (None, 0)
@@ -432,6 +432,7 @@ def test_all_covered_ordinary_introduction_is_skipped_without_completion(monkeyp
         "payload": {
             "queue_date": "2026-11-02",
             "_queue_phase": "study_opening_item",
+            "_refresh_cycle_epoch": 1,
             "study_opening_items": [
                 {"repertoire_id": "r", "card_id": "c", "reason": None}
             ],
