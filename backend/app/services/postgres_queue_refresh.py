@@ -516,6 +516,17 @@ def _admit_one_study_card(database, queue_date: str, study_card_id: str) -> bool
 
 
 
+def _annotate_frozen_pages(rows):
+    """Read active frozen-order facts in bounded, closed sections."""
+    annotated = []
+    for offset in range(0, len(rows), 16):
+        with background_read_connection() as database:
+            annotated.extend(
+                frozen_opening_order.annotate(database, rows[offset : offset + 16])
+            )
+    return annotated
+
+
 def _prepare_queue_randomization(
     queue_date: str, *, preserve_through_entry_id: int | None = None
 ) -> dict[str, Any]:
