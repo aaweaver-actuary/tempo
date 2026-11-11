@@ -401,8 +401,6 @@ export default function SettingsView({
         <section id="settings-section-games" className="settings-card" role="tabpanel" aria-labelledby="settings-tab-games" hidden={activeSection !== "games"}>
           <h2>Games</h2>
           {activeSection === "games" && <p>Paste a PGN or open a saved game in Game Review.</p>}
-          <p>Configured game sync uses the saved account, UTC date range, game speeds, rated policy, and repertoires selected above.</p>
-          <p>Save provider settings with the “Save game sync settings” button above.</p>
         </section>
         <section id="settings-section-data" className="settings-card" role="tabpanel" aria-labelledby="settings-tab-data" hidden={activeSection !== "data"}>
           <h2>Data &amp; backup</h2>

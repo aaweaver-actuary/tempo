@@ -34,7 +34,10 @@ test("minimal Game Review compares pasted and saved games against current repert
   const token = process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN;
   if (!token) throw new Error("Development budget owner required");
   await validateDevelopmentBudgetOwner();
-  const quiet = () => waitForStudyQuiet({ signal: AbortSignal.timeout(30_000) });
+  const quiet = () => {
+    const options: Parameters<typeof waitForStudyQuiet>[0] & { signal: AbortSignal } = { signal: AbortSignal.timeout(30_000) };
+    return waitForStudyQuiet(options);
+  };
   const fixture = (action: "seed" | "read", identity: string) => {
     const service = action === "seed" ? "foreground-worker" : "api";
     const id = execFileSync("docker", ["compose", "-p", project, "-f", "docker-compose.postgres.test.yml", "ps", "-q", service], { encoding: "utf8" }).trim();
