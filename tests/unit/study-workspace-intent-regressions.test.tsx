@@ -7,13 +7,14 @@ vi.mock('../../app/lib/study-connection', async importOriginal => ({
 }));
 afterEach(cleanup);
 
-it('exposes exactly three primary destinations on desktop and phone without preloads', () => {
+it('exposes retained desktop and phone destinations without preloads', () => {
   const navigate = vi.fn();
   const fetchSpy = vi.spyOn(globalThis, 'fetch');
   const { container } = render(<Navbar view="train" setView={navigate} />);
   for (const selector of ['.desktop-navigation', '.phone-navigation']) {
     const nav = within(container.querySelector(selector) as HTMLElement);
-    expect(nav.getAllByRole('button').map(button => button.textContent)).toEqual(['Train', 'Tactics', 'Game Review']);
+    expect(nav.getAllByRole('button').map(button => button.textContent)).toEqual(
+      selector === '.desktop-navigation' ? ['Train', 'Tactics', 'Game Review', 'Settings'] : ['Train', 'Tactics', 'Game Review']);
     fireEvent.focus(nav.getByRole('button', { name: 'Game Review' }));
     fireEvent.pointerEnter(nav.getByRole('button', { name: 'Tactics' }));
   }
