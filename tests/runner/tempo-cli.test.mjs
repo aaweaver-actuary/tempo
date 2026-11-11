@@ -1391,6 +1391,7 @@ test('managed deployment settlement recovers publication and permits a later can
   atomicJson(join(root, 'migration-guard.json'), altered);
   assert.equal(runtime.checkMigrationRetry(), false);
   await assert.rejects(runtime.authenticateManagedSettlement(), /settlement authentication failed/);
+  await assert.rejects(runtime.backupOnly(), /settlement authentication failed/);
 });
 
 test("pending managed image receipt reuses exact images without a build and rejects drift", t => {

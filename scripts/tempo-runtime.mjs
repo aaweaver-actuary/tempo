@@ -1343,6 +1343,7 @@ print(json.dumps({'witness_id':witness_id}))`;
 
   async function backupOnly() {
     if (checkMigrationRetry()) throw new Error("Original migration verification is unresolved. Inspect tempo doctor, then run tempo migrate --retry before taking another backup.");
+    await authenticateSettlementBeforeImages();
     const originallyRunning = await runningServices();
     const imagePreparation = await ensureImages();
     if (imagePreparation.dependenciesMayChange) {
