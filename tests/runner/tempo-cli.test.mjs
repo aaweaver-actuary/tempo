@@ -1370,6 +1370,7 @@ test('managed deployment settlement recovers publication and permits a later can
   atomicJson(join(root, 'maintenance.lock'), {pid:process.pid, token:randomUUID()});
   let builds = 0;
   const run = async (_program, args) => { if (args.includes('config')) return {stdout:JSON.stringify(config)};
+    if (args.includes('ps')) return {stdout:'[]'};
     if (args.includes('inspect')) return {stdout:JSON.stringify([{Id:receipt.images.migration,Config:{Labels:{'org.opencontainers.image.revision':revision}}}])};
     if (args.includes('run')) return {stdout:JSON.stringify({witness_id:'original-id',completion_sha256:guard.isolation.completion.sha256})};
     throw new Error('unexpected command'); };
@@ -1378,15 +1379,15 @@ test('managed deployment settlement recovers publication and permits a later can
   await runtime.config(); assert.equal(runtime.checkMigrationRetry(), false);
   await assert.rejects(runtime.startServices(), /not been authenticated/);
   await assert.rejects(runtime.ensureImages(), /authentication is incomplete/);
-  await runtime.authenticateManagedSettlement();
+  await assert.rejects(runtime.backupOnly(), /new candidate build/);
   const settled = JSON.parse(readFileSync(join(root, 'migration-guard.json')));
   assert.equal(authenticateManagedSettlement(root, settled), true);
   writeFileSync(prePath,'changed schema 59 witness');
   assert.throws(() => authenticateManagedSettlement(root, settled), /settlement authentication failed/);
   writeFileSync(prePath,'original schema 59 witness');
-  await assert.rejects(runtime.ensureImages(), /new candidate build/); assert.equal(builds, 1);
+  await assert.rejects(runtime.ensureImages(), /new candidate build/); assert.equal(builds, 2);
   atomicJson(join(root, 'maintenance.lock'), {pid:process.pid, token:randomUUID()});
-  await assert.rejects(runtime.ensureImages(), /lock/i); assert.equal(builds, 1);
+  await assert.rejects(runtime.ensureImages(), /lock/i); assert.equal(builds, 2);
   const altered = structuredClone(settled); altered.managed_image_settlement.payload.deployment_sha256 = '0'.repeat(64);
   atomicJson(join(root, 'migration-guard.json'), altered);
   assert.equal(runtime.checkMigrationRetry(), false);
