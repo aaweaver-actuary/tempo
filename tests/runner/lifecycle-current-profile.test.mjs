@@ -70,14 +70,14 @@ test("schema64 cannot reuse historical lifecycle qualification through direct pr
     assert.throws(() => validateLifecycleProfile(profile, 64, {}), /Schema-64.*not qualified/);
 });
 
-test("direct lifecycle verifier refuses native64 before resources or timing stages", async () => {
+test("direct lifecycle verifier refuses native65 before resources or timing stages", async () => {
   let stages = 0;
   for (const profile of ["full", "current63"])
     await assert.rejects(verifyTempoCliLifecycle({
       project: "must-not-acquire", revision: "a".repeat(40), composeFiles: [], profile,
       environment: { TEMPO_LIFECYCLE_SCHEMA61_IMAGES: "/must-not-read", DOCKER_HOST: "must-not-contact" },
       measure: () => { stages++; throw new Error("Resources must not be acquired"); },
-    }), /Schema-64.*not qualified/);
+    }), /Schema-65.*not qualified/);
   assert.equal(stages, 0);
 });
 
