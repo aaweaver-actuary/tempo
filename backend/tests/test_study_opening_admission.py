@@ -312,3 +312,41 @@ def test_opening_position_preparation_uses_unreserved_repertoire_snapshot(
     with pytest.raises(Prepared):
         worker.execute_postgres_queue_refresh_slice({'payload': payload})
     assert reads == [True]
+
+
+@pytest.mark.parametrize('stale', [False, True])
+def test_opening_snapshot_closes_before_writer_and_stale_fence_holds(
+    phase_harness, monkeypatch, stale
+):
+    from app.services import position_queue_admission
+    from tempo_evidence_math.position_learning import Hold
+
+    active = []
+    @contextmanager
+    def snapshot(*, repertoire_snapshot=False):
+        assert repertoire_snapshot
+        active.append(True)
+        try:
+            yield object()
+        finally:
+            active.pop()
+
+    def fence(*_):
+        assert not active, 'source snapshot must close before writer fencing'
+        return Hold('position_source_changed') if stale else None
+
+    monkeypatch.setattr(worker, 'read_connection', snapshot)
+    monkeypatch.setattr(position_queue_admission, 'prepare_opening_introduction', lambda *_: ('position', object()))
+    monkeypatch.setattr(position_queue_admission, 'fence_opening_introduction', fence)
+    monkeypatch.setattr(position_queue_admission, 'redundant_opening_introduction', lambda *_: False)
+    monkeypatch.setattr(worker, '_admit_one_prioritized_opening', lambda *_: False)
+    payload = {'queue_date': '2026-10-13', '_queue_phase': 'study_opening_item', '_refresh_cycle_epoch': 1,
+               'study_opening_items': [candidate(), candidate(['d2d4'])], 'study_opening_index': 0,
+               'study_opening_more': True, 'study_opening_counts': {'examined': 2, 'eligible': 2}}
+    if stale:
+        with pytest.raises(RuntimeError, match='position_source_changed'):
+            worker.execute_postgres_queue_refresh_slice({'payload': payload})
+        assert not phase_harness
+    else:
+        assert worker.execute_postgres_queue_refresh_slice({'payload': payload})
+        assert phase_harness['payload']['study_opening_index'] == 1
