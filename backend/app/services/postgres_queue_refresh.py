@@ -516,6 +516,17 @@ def _admit_one_study_card(database, queue_date: str, study_card_id: str) -> bool
 
 
 
+def _annotate_frozen_pages(rows):
+    """Read active frozen-order facts in bounded, closed sections."""
+    annotated = []
+    for offset in range(0, len(rows), 16):
+        with background_read_connection() as database:
+            annotated.extend(
+                frozen_opening_order.annotate(database, rows[offset : offset + 16])
+            )
+    return annotated
+
+
 def _prepare_queue_randomization(
     queue_date: str, *, preserve_through_entry_id: int | None = None
 ) -> dict[str, Any]:
@@ -799,7 +810,7 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
         from .position_queue_admission import prepare_opening_introduction
 
         activity_gate.wait_for_foreground()
-        with background_read_connection() as database:
+        with read_connection(repertoire_snapshot=True) as database:
             position_introduction = prepare_opening_introduction(
                 database, planned_introduction
             )
@@ -844,6 +855,7 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
                 },
             )
         position_introduction_fence = None
+        introduction_history_hold = False
         if planned_introduction is not None:
             from tempo_evidence_math.position_learning import Hold
             from .position_queue_admission import fence_opening_introduction
@@ -856,9 +868,16 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
                 database, position_introduction
             )
             if isinstance(position_introduction_fence, Hold):
-                raise RuntimeError(
-                    "Position introduction held: " + position_introduction_fence.reason
-                )
+                if (position_introduction_fence.reason == "position_introduction_history_changed"
+                        and position_introduction_fence.detail):
+                    from tempo_storage.study.position_introductions import record_history_hold
+
+                    record_history_hold(database, position_introduction[1], position_introduction_fence)
+                    introduction_history_hold = True
+                else:
+                    raise RuntimeError(
+                        "Position introduction held: " + position_introduction_fence.reason
+                    )
         if phase == "publish_projection":
             epochs = refresh_requests.lock_refresh_epochs(database, queue_date)
             if epochs is None:
@@ -1034,7 +1053,7 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
             admitted = (
                 False
                 if (
-                    redundant_opening_introduction(
+                    introduction_history_hold or redundant_opening_introduction(
                         position_introduction, position_introduction_fence
                     )
                 )
@@ -1052,6 +1071,7 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
                     now=datetime.now(timezone.utc),
                 )
             counts = dict(payload["study_opening_counts"])
+            counts["history_held"] = counts.get("history_held", 0) + int(introduction_history_hold)
             counts["admitted"] = counts.get("admitted", 0) + int(bool(admitted))
             counts["publication_rejected"] = counts.get(
                 "publication_rejected", 0

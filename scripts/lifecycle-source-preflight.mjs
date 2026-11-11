@@ -82,8 +82,9 @@ export function checkLifecycleSource({ root = process.cwd(), environment = proce
   const nativeSchemaFile = join(root, "database/tempo_storage/ddl/schema_version.py");
   const schemaFile = existsSync(nativeSchemaFile) ? nativeSchemaFile
     : join(root, "database/tempo_legacy_database/ddl/schema_version.py");
-  if (existsSync(schemaFile) && /^POSTGRES_SCHEMA_VERSION\s*=\s*64\s*$/m.test(readFileSync(schemaFile, "utf8")))
-    throw new Error("Schema-64 lifecycle upgrade is not qualified: the historical current63 profile cannot prove a 63-to-64 transition. No resources were acquired.");
+  const nativeVersion = existsSync(schemaFile) && readFileSync(schemaFile, "utf8").match(/^POSTGRES_SCHEMA_VERSION\s*=\s*(\d+)\s*$/m);
+  if (nativeVersion && Number(nativeVersion[1]) >= 64)
+    throw new Error(`Schema-${nativeVersion[1]} lifecycle upgrade is not qualified: the historical current63 profile cannot prove that transition. No resources were acquired.`);
   if (profile === "current63" && (!existsSync(schemaFile)
       || !/^POSTGRES_SCHEMA_VERSION\s*=\s*63\s*$/m.test(readFileSync(schemaFile, "utf8"))
       || environment.TEMPO_LIFECYCLE_P0_59_ONLY === "1" || environment.TEMPO_PG_STALE_DELIVERY_ONLY === "1"))

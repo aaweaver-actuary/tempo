@@ -4,20 +4,30 @@
 
 ```mermaid
 flowchart TD
-  Queue["Study queue selection"] --> Source["Application: prepare current authored position source"]
-  Source --> Issue["Application: fence and issue immutable position plan"]
-  Issue --> Response["First-response checkpoint and attempt journal"]
-  Response --> Review["Application: grade and schedule positions"]
-  Review --> Receipt["One writer: human review, effects, receipt"]
-  Receipt --> Queue
-  PGN["Pasted PGN or saved game"] --> Compare["Replay against applicable authored alternatives"]
-  Compare --> Departure["Display first departure or truthful coverage end"]
+  Home[Home] --> Controller[Public Study controller: snapshot and actions]
+  Controller --> Session[Existing session, outbox and journals]
+  Session --> Transport[Review transport]
+  Transport --> Writer[Foreground writer]
+  Writer --> Receipt[Atomic review, effects and receipt]
+  Receipt -->|confirmed result| Acquire[Queue acquisition]
+  Acquire --> Routes[Three queue GET routes]
+  Routes --> Compose[Study composition]
+  Compose --> Next[Study next exercise operation]
+  Next -->|injected read and issue capabilities| Reads[Borrowed tempo_storage reads]
+  Next --> Issue[Issue or replay original position plan]
+  Issue --> Manifest[Position checkpoint manifest]
+  Manifest --> Queue[Flat queue or truthful hold]
+  PGN[Pasted PGN or saved game] --> Replay[Full legal replay]
+  Replay --> Facts[Read current authored facts]
+  Facts --> Compare[Typed first departure comparison]
+  Compare --> Result[Departure, coverage end, covered or unavailable]
 ```
 
-Position schedules remain owned by repertoire, variant and actual chess position. Human reviews and durable first-response receipts retain their identities and original fences. Review replay does not manufacture a second logical attempt.
+The Study owner rechecks the current day and head after issuance. Original
+attempts, first-response checkpoints and human review receipts retain their
+identity. Browser and native tests are needed to establish the assembled
+saved-review to playable-next journey; this source map is not that evidence.
 
-Recombination no longer prepares, joins, splits or publishes cards. Existing generated physical exercises, schedule state, reviews and lineage remain stored. Their historical membership keeps them classified as reviews and excludes them from fresh introduction/reset accounting.
-
-Automatic game effects and their producer/retry/qualification protocols are retired. Existing effects and incomplete operations remain preserved with an explicit paused disposition; they do not block ordinary issuance. Old proposal/audit suspensions are historical; current repertoire integrity and source/revision guards remain active.
-
-Minimal Game Review deliberately has no provider refresh, engine analysis, Study admission, or scheduling callback. Pasted PGN input is replayed locally for comparison and is not saved by this screen. Previously saved games remain readable.
+Game Review reads storage without provider acquisition or Study effects. Retired
+automatic feedback and recombination do not become current through preserved
+historical records. Pasted PGN comparison does not save a game.

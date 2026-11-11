@@ -83,6 +83,9 @@ export function validateCut62Preflight(status, guard) {
   const continuing64 = guard?.state !== "pending" ||
     ([63, 64].includes(guard.starting_schema) && guard.intended_schema === 64);
   if (expected === 64 && [63, 64].includes(current) && continuing64) return;
+  const continuing65 = guard?.state !== "pending" ||
+    ([64, 65].includes(guard.starting_schema) && guard.intended_schema === 65);
+  if (expected === 65 && [64, 65].includes(current) && continuing65) return;
   const guarded60 = current === 60 && guard?.state === "pending" && guard.starting_schema === 59 && guard.intended_schema === 62;
   if (expected !== 62 || (![59, 61].includes(current) && !guarded60))
     throw new Error(`Unsupported schema ${current}-to-${expected} crossing; applications have not been stopped. Use a supported intermediate release.`);
@@ -1343,6 +1346,7 @@ print(json.dumps({'witness_id':witness_id}))`;
 
   async function backupOnly() {
     if (checkMigrationRetry()) throw new Error("Original migration verification is unresolved. Inspect tempo doctor, then run tempo migrate --retry before taking another backup.");
+    await authenticateSettlementBeforeImages();
     const originallyRunning = await runningServices();
     const imagePreparation = await ensureImages();
     if (imagePreparation.dependenciesMayChange) {

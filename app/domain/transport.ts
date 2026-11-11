@@ -68,3 +68,33 @@ export type BackendQueueCard = {
     revision: number; fen: string; specification: unknown };
   pending_validation?: boolean;
 };
+
+/** Internal Study outcomes; these are not additional HTTP response bodies. */
+export type StudyNextExerciseOutcome<TQueue> =
+  | { kind: "ready"; queue: TQueue }
+  | { kind: "empty"; queue: TQueue }
+  | { kind: "pending"; operationId: string }
+  | { kind: "held"; reason: string; operationId?: string; queue?: TQueue }
+  | { kind: "unavailable"; reason: string; retryable: boolean | null; queue?: TQueue };
+
+/** Raw receipt fields are optional for compatibility and require runtime validation. */
+export type StudyOperationReceiptWire = {
+  operation_id?: unknown;
+  state?: unknown;
+  response?: unknown;
+  error?: unknown;
+  last_error?: unknown;
+  message?: unknown;
+};
+export type StudyOperationFailure = {
+  message?: string; detail?: unknown; status_code?: number; code?: string; retryable?: boolean;
+};
+/** C01 decodes these semantic states; malformed and unavailable are not write failures. */
+export type StudyOperationResult =
+  | { kind: "pending"; operationId: string }
+  | { kind: "blocked"; operationId: string; error?: StudyOperationFailure }
+  | { kind: "complete"; operationId: string; response: unknown }
+  | { kind: "failed"; operationId: string; error: StudyOperationFailure }
+  | { kind: "unknown"; operationId: string }
+  | { kind: "malformed"; operationId: string; reason?: "identity" }
+  | { kind: "unavailable"; operationId: string };

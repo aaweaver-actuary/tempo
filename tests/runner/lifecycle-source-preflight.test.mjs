@@ -158,3 +158,14 @@ test("native schema64 refuses historical lifecycle profiles before rendering or 
     assert.equal(rendered, false);
   }
 });
+
+test("native schema65 refuses the historical lifecycle profile before acquiring resources", t => {
+  const root = mkdtempSync(join(tmpdir(), "tempo-native65-preflight-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const ddl = join(root, "database/tempo_storage/ddl"); mkdirSync(ddl, { recursive: true });
+  writeFileSync(join(ddl, "schema_version.py"), "POSTGRES_SCHEMA_VERSION = 65\n");
+  let rendered = false;
+  assert.throws(() => checkLifecycleSource({root, profile: "full", environment: {},
+    render: () => { rendered = true; }}), /Schema-65 lifecycle upgrade is not qualified/);
+  assert.equal(rendered, false);
+});

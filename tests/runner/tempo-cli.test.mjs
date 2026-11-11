@@ -1370,6 +1370,7 @@ test('managed deployment settlement recovers publication and permits a later can
   atomicJson(join(root, 'maintenance.lock'), {pid:process.pid, token:randomUUID()});
   let builds = 0;
   const run = async (_program, args) => { if (args.includes('config')) return {stdout:JSON.stringify(config)};
+    if (args.includes('ps')) return {stdout:'[]'};
     if (args.includes('inspect')) return {stdout:JSON.stringify([{Id:receipt.images.migration,Config:{Labels:{'org.opencontainers.image.revision':revision}}}])};
     if (args.includes('run')) return {stdout:JSON.stringify({witness_id:'original-id',completion_sha256:guard.isolation.completion.sha256})};
     throw new Error('unexpected command'); };
@@ -1378,19 +1379,20 @@ test('managed deployment settlement recovers publication and permits a later can
   await runtime.config(); assert.equal(runtime.checkMigrationRetry(), false);
   await assert.rejects(runtime.startServices(), /not been authenticated/);
   await assert.rejects(runtime.ensureImages(), /authentication is incomplete/);
-  await runtime.authenticateManagedSettlement();
+  await assert.rejects(runtime.backupOnly(), /new candidate build/);
   const settled = JSON.parse(readFileSync(join(root, 'migration-guard.json')));
   assert.equal(authenticateManagedSettlement(root, settled), true);
   writeFileSync(prePath,'changed schema 59 witness');
   assert.throws(() => authenticateManagedSettlement(root, settled), /settlement authentication failed/);
   writeFileSync(prePath,'original schema 59 witness');
-  await assert.rejects(runtime.ensureImages(), /new candidate build/); assert.equal(builds, 1);
+  await assert.rejects(runtime.ensureImages(), /new candidate build/); assert.equal(builds, 2);
   atomicJson(join(root, 'maintenance.lock'), {pid:process.pid, token:randomUUID()});
-  await assert.rejects(runtime.ensureImages(), /lock/i); assert.equal(builds, 1);
+  await assert.rejects(runtime.ensureImages(), /lock/i); assert.equal(builds, 2);
   const altered = structuredClone(settled); altered.managed_image_settlement.payload.deployment_sha256 = '0'.repeat(64);
   atomicJson(join(root, 'migration-guard.json'), altered);
   assert.equal(runtime.checkMigrationRetry(), false);
   await assert.rejects(runtime.authenticateManagedSettlement(), /settlement authentication failed/);
+  await assert.rejects(runtime.backupOnly(), /settlement authentication failed/);
 });
 
 test("pending managed image receipt reuses exact images without a build and rejects drift", t => {
@@ -2996,6 +2998,21 @@ test("schema 64 retirement accepts only schema 63 or its own completed migration
       { state: "pending", starting_schema: 62, intended_schema: 64 },
     ]) assert.throws(() => validateCut62Preflight(status, guard), /Unsupported/);
   }
+});
+
+test("schema 65 accepts only schema 64 or its own pending retry", () => {
+  for (const current of [64, 65]) {
+    const status = { applied_versions: [current], expected_version: 65 };
+    assert.doesNotThrow(() => validateCut62Preflight(status, null));
+    assert.doesNotThrow(() => validateCut62Preflight(status,
+      { state: "pending", starting_schema: 64, intended_schema: 65 }));
+    for (const guard of [
+      { state: "pending", starting_schema: 63, intended_schema: 64 },
+      { state: "pending", starting_schema: 62, intended_schema: 65 },
+    ]) assert.throws(() => validateCut62Preflight(status, guard), /Unsupported/);
+  }
+  for (const current of [62, 63])
+    assert.throws(() => validateCut62Preflight({ applied_versions: [current], expected_version: 65 }, null), /Unsupported/);
 });
 
 test("schema 63 migration preserves the original history guard through a verification retry", async t => {

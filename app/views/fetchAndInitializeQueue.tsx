@@ -17,6 +17,8 @@ import { hydrateNotifications, notifications, publishNotification, resolveNotifi
 import { attemptEntryKey } from "../domain/attempt";
 import { queueCardSchema, queueEnvelopeSchema } from "../domain/schemas";
 import { studyWorkspace } from "../lib/study-connection";
+import { decodeOperationResult } from "../domain/adapters/operation-result-adapter";
+import type { StudyNextExerciseOutcome } from "../domain/transport";
 
 export function rememberConfirmedQueueEntry(card: PracticeCard): void {
   const keys = useTrainingStore.getState().confirmedQueueEntryKeys ?? [];
@@ -111,6 +113,15 @@ type QueuePayload = {
   local_date?: string;
   projection?: { state?: string; generation?: number; last_error?: string | null };
 };
+
+function queueOutcome(queue: QueuePayload): StudyNextExerciseOutcome<QueuePayload> {
+  const head = queueCardSchema.safeParse(queue.cards?.[0]);
+  if (head.success && head.data.position_study_hold && !head.data.position_presentation)
+    return { kind: "held", reason: head.data.position_study_hold, queue };
+  if (!queue.cards?.length && queue.projection?.state === "refreshing")
+    return { kind: "held", reason: "queue_projection_refreshing", queue };
+  return queue.cards?.length ? { kind: "ready", queue } : { kind: "empty", queue };
+}
 
 export class QueueProcessingError extends Error {}
 class LegacyTrainingFailurePendingError extends QueueProcessingError {}
@@ -221,15 +232,13 @@ async function followQueueIssuance(response: Response, payload: unknown, signal:
     await waitForQueueRetry(delay, signal);
     const { response: status, payload: value } = await fetchQueueWindow(signal, false, operationId);
     if (!status.ok) throw new QueueProcessingError(`Queue operation status could not be loaded (HTTP ${status.status}). Retry loading the queue.`);
-    const receipt = value as { operation_id?: unknown; state?: unknown; message?: string;
-      error?: { message?: string }; last_error?: { message?: string } } | null;
-    if (!receipt || receipt.operation_id !== operationId || typeof receipt.state !== "string")
-      throw new QueueProcessingError("The local queue did not confirm its original issuance operation.");
+    const receipt = decodeOperationResult(value, operationId, true);
     // The receipt's result is a command result, never a current queue envelope.
-    if (receipt.state === "complete") return;
-    if (receipt.state === "failed") throw new QueueProcessingError(receipt.error?.message ?? "Queue issuance failed. Check the service before retrying.");
-    if (receipt.state === "blocked") throw new QueueProcessingError(`Queue issuance is blocked: ${receipt.last_error?.message ?? receipt.message ?? "check the operation status before retrying"}`);
-    if (!pendingIssuanceStates.has(receipt.state)) throw new QueueProcessingError("The local queue returned an invalid operation state.");
+    if (receipt.kind === "complete") return;
+    if (receipt.kind === "failed") throw new QueueProcessingError(receipt.error.message ?? "Queue issuance failed. Check the service before retrying.");
+    if (receipt.kind === "blocked") throw new QueueProcessingError(`Queue issuance is blocked: ${receipt.error?.message ?? "check the operation status before retrying"}`);
+    if (receipt.kind === "malformed") throw new QueueProcessingError("The local queue did not confirm its original issuance operation.");
+
   }
   throw new QueueProcessingError("Queue issuance is still pending. Retry loading the queue to check its result.");
 }
@@ -259,10 +268,11 @@ async function loadTodayQueueWithRetry(
       if (payload.projection?.state !== "refreshing" || payload.cards.length) {
         const validated = queueEnvelopeSchema.safeParse(responsePayload);
         if (!validated.success) throw new QueueProcessingError("The local queue returned an invalid queue response. Retry loading the queue.");
+        const outcome = queueOutcome(validated.data);
         const headResult = queueCardSchema.safeParse(validated.data.cards[0]);
         const head = headResult.success ? headResult.data : undefined;
-        if (head?.position_study_mode === "position" && head.position_presentation === null &&
-            transientPositionHolds.has(head.position_study_hold ?? "")) {
+        if (outcome.kind === "held" && head?.position_study_mode === "position" &&
+            head.position_presentation === null && transientPositionHolds.has(outcome.reason)) {
           acquisition.observedBusyHead = true;
           if (attempt === 19) throw new QueueProcessingError("Position study is temporarily busy. Retry loading the queue.");
           // A retry may issue the head, so it needs the same foreground admission
@@ -290,7 +300,7 @@ async function loadTodayQueueWithRetry(
     } catch {
       // Keep the stable HTTP fallback when the service returned no JSON body.
     }
-    if (response.status === 503 && detail === "Waiting for foreground activity") {
+    if (response.status === 503 && (responsePayload as { code?: unknown } | null)?.code === "foreground_wait") {
       await waitForQueueRetry(250, signal);
       continue;
     }
@@ -320,7 +330,7 @@ export async function fetchAndInitializeQueue(
   const expectedAttemptMatches = () => !options.expectedAttempt ||
     (useTrainingStore.getState().attempt.attemptId === options.expectedAttempt.attemptId &&
       useTrainingStore.getState().attempt.generation === options.expectedAttempt.generation);
-  if (!options.preservePreparedAttempt) useTrainingStore.setState({ queueReadiness: "loading" });
+  if (!options.preservePreparedAttempt) useTrainingStore.setState({ queueReadiness: "loading", queueStatus: { kind: "pending" } });
   let queueInitialized = false;
   let failedOperation = "process today queue";
   let failedEndpoint: string | undefined;
@@ -460,7 +470,9 @@ export async function fetchAndInitializeQueue(
         "The authoritative queue head has unresolved local results. Check saved reviews and Notifications, then retry loading the queue.");
       throw new QueueProcessingError("The authoritative queue head is excluded by local review state. Check saved reviews and Notifications, then retry loading the queue.");
     }
-    useTrainingStore.setState({ queueLocalDate: raw.local_date });
+    const outcome = queueOutcome(raw);
+    useTrainingStore.setState({ queueLocalDate: raw.local_date, queueStatus: outcome.kind === "held"
+      ? { kind: "held", reason: outcome.reason } : { kind: outcome.kind === "ready" || outcome.kind === "empty" ? outcome.kind : "unavailable" } });
     if (options.preservePreparedAttempt) {
       // Reconciliation updates upcoming data, never authorizes advancement or
       // creates another attempt when the prepared board has just completed.
@@ -535,8 +547,7 @@ export async function fetchAndInitializeQueue(
           raw.cards.every((windowCard, index) =>
             typeof windowCard === "object" && windowCard !== null &&
             (windowCard as { queue_entry_id?: unknown }).queue_entry_id === prepared.cards[index]?.queue_entry_id);
-        if (liveWindowMatchesPrepared &&
-            !useTrainingStore.getState().serviceError.includes("no longer in today's queue")) {
+        if (liveWindowMatchesPrepared) {
           const completeCards = await runStudyTask({ kind: "queue", payload: {
             cards: payload.cards, count: payload.count, local_date: payload.local_date,
             projection: payload.projection,
@@ -552,8 +563,7 @@ export async function fetchAndInitializeQueue(
       .then(async (prepared) => {
         if (!prepared) return;
         await waitForOfflineShell();
-        if (generation === requestGeneration && !hasConflicts && prepared.localDate === localDayKey() &&
-            !useTrainingStore.getState().serviceError.includes("no longer in today's queue"))
+        if (generation === requestGeneration && !hasConflicts && prepared.localDate === localDayKey())
           showPhoneQueuePreparationNotice(
             `Phone queue prepared for ${prepared.localDate}.` +
             (prepared.cards.some(requiresConnectedGrading)
@@ -576,6 +586,7 @@ export async function fetchAndInitializeQueue(
       kind: "api", source: queueRequestFailed ? "training-queue" : "training-queue-processing",
       operation: failedOperation, endpoint: failedEndpoint,
     });
+    useTrainingStore.setState({ queueStatus: { kind: "unavailable" } });
     if (options.preservePreparedAttempt) throw error;
     const prepared = queueRequestFailed && (independentStudy || isIPhoneHomeScreen())
       ? await awaitQueueStage(readPreparedTraining().catch(() => null), controller.signal) : null;

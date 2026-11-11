@@ -156,11 +156,11 @@ def stale_queue_predicate():
     # Preserve previously issued/studied attempts. Hold only unstarted captured
     # content whose immutable definition no longer matches the serving card.
     changed = " OR ".join(
-        f"COALESCE(CAST((frozen.definition_json::jsonb #>> '{{field}}') AS TEXT),'')<>COALESCE(CAST(c.{field} AS TEXT),'')"
+        f"COALESCE(CAST((frozen.definition_json::jsonb #>> '{{{field}}}') AS TEXT),'')<>COALESCE(CAST(c.{field} AS TEXT),'')"
         for field in ('revision','start_fen','moves_json','trained_color','source_ref','source_fen','kind','content_type'))
     # Repertoire identifiers are UUIDs (or retained system identifiers). Exact
     # quoted identifiers plus cardinality detect both added and removed links.
-    changed += ' OR CAST((frozen.definition_json::jsonb #>> \'{membership_count}\') AS TEXT)<>\n        CAST((SELECT COUNT(*) FROM (SELECT repertoire_id FROM repertoire_cards link WHERE link.card_id=c.id UNION SELECT c.repertoire_id) current_memberships) AS TEXT)\n        OR instr(frozen.memberships_json,\'"\' || c.repertoire_id || \'"\')=0\n        OR EXISTS(SELECT 1 FROM repertoire_cards link WHERE link.card_id=c.id\n                  AND instr(frozen.memberships_json,\'"\' || link.repertoire_id || \'"\')=0)'
+    changed += ' OR CAST((frozen.definition_json::jsonb #>> \'{membership_count}\') AS TEXT)<>\n        CAST((SELECT COUNT(*) FROM (SELECT repertoire_id FROM repertoire_cards link WHERE link.card_id=c.id UNION SELECT c.repertoire_id) current_memberships) AS TEXT)\n        OR strpos(frozen.memberships_json,\'"\' || c.repertoire_id || \'"\')=0\n        OR EXISTS(SELECT 1 FROM repertoire_cards link WHERE link.card_id=c.id\n                  AND strpos(frozen.memberships_json,\'"\' || link.repertoire_id || \'"\')=0)'
     return """ AND NOT EXISTS(SELECT 1 FROM frozen_opening_ranks frozen
         JOIN frozen_opening_activation active ON active.id=1 AND active.run_id=frozen.run_id
         WHERE frozen.card_id=c.id AND (""" + changed + """ )

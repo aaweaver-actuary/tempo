@@ -25,7 +25,10 @@ import { asFenString } from "../domain/shared";
 import { STANDARD_FEN } from "../const";
 import { partialOpeningAttempt } from "../lib/opening-evidence-journal";
 
+export type QueueStatus = { kind: "pending" | "ready" | "empty" | "unavailable" } | { kind: "held"; reason: string };
+
 export type TrainingStoreState = {
+  queueStatus?: QueueStatus;
   queueReadiness: "uninitialized" | "loading" | "ready" | "unavailable";
   queueLocalDate?: string;
   confirmedQueueEntryKeys?: string[];
@@ -193,6 +196,7 @@ const defaultState = {
   isOfflineQueueActive: false,
   serviceError: "",
   queueReadiness: "uninitialized" as const,
+  queueStatus: undefined,
 };
 
 export const selectTrainingViewState = (state: TrainingStoreState) => ({

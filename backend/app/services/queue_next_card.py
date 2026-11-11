@@ -51,6 +51,7 @@ class PreparedQueueHead:
 
 def prepare_queue_head(payload):
     """Read an exact replay or prepare one position head before the writer opens."""
+    from tempo_storage.study import next_exercise_reads as reads
     from datetime import date, datetime, timezone
     from uuid import NAMESPACE_URL, uuid5
     from tempo_evidence_math.position_learning import Hold
@@ -71,63 +72,43 @@ def prepare_queue_head(payload):
         return PreparedQueueHead(payload, "hold", reason=reason)
 
     with read_connection() as db:
-        rows = db.execute_native(
-            """SELECT p.attempt_id FROM study_position_issued_plans p
-            WHERE p.queue_entry_id=%s AND p.card_id=%s AND p.card_revision=%s LIMIT 2""",
-            (payload["entry_id"], payload["card_id"], payload["expected_revision"]),
-        ).fetchall()
+        rows = reads.original_attempt_ids(db, entry_id=payload["entry_id"], card_id=payload["card_id"], revision=payload["expected_revision"])
         if len(rows) > 1:
             return held("position_original_admission_ambiguous")
         if rows:
-            plan = replay_exact_attempt(db, rows[0]["attempt_id"])
+            plan = replay_exact_attempt(db, rows[0])
             if isinstance(plan, Hold) or plan is None:
                 return held(
                     plan.reason if isinstance(plan, Hold) else "position_plan_missing"
                 )
             return PreparedQueueHead(payload, "replay", plan)
-        origin = db.execute_native(
-            """SELECT o.admission_repertoire_id,o.issued_as_head,c.content_type
-            FROM queue_attempt_origins o JOIN cards c ON c.id=o.card_id
-            WHERE o.queue_entry_id=%s AND o.card_id=%s AND o.revision=%s""",
-            (payload["entry_id"], payload["card_id"], payload["expected_revision"]),
-        ).fetchone()
+        origin = reads.admission_origin(db, entry_id=payload["entry_id"], card_id=payload["card_id"], revision=payload["expected_revision"])
         if not origin:
             return held("position_original_admission_unavailable")
-        if origin["content_type"] != "opening":
+        if origin.content_type != "opening":
             return PreparedQueueHead(payload, "legacy")
-        rep = origin["admission_repertoire_id"]
+        rep = origin.repertoire_id
         if not rep:
-            owners = db.execute_native(
-                """SELECT DISTINCT o.repertoire_id,o.mode FROM study_position_owners o
-                JOIN cards c ON c.id=%s WHERE (c.repertoire_id=o.repertoire_id OR EXISTS
-                  (SELECT 1 FROM repertoire_cards rc WHERE rc.card_id=c.id AND rc.repertoire_id=o.repertoire_id))
-                AND o.mode IN ('active','staged','paused') LIMIT 2""",
-                (payload["card_id"],),
-            ).fetchall()
+            owners = reads.applicable_owner_exists(db, card_id=payload["card_id"])
             return (
                 held("position_admission_scope_ambiguous")
                 if owners
                 else PreparedQueueHead(payload, "legacy")
             )
-        owner = db.execute_native(
-            """SELECT o.mode,o.epoch,e.source_digest FROM study_position_owners o
-            JOIN study_position_epochs e ON e.repertoire_id=o.repertoire_id AND e.epoch=o.epoch
-            WHERE o.repertoire_id=%s""",
-            (rep,),
-        ).fetchone()
-        if not owner or owner["mode"] in ("inactive", "shadow"):
+        owner = reads.position_owner(db, repertoire_id=rep)
+        if not owner or owner.mode in ("inactive", "shadow"):
             return PreparedQueueHead(payload, "legacy")
-        if owner["mode"] != "active":
-            return held("position_owner_" + owner["mode"])
-        if origin["issued_as_head"]:
+        if owner.mode != "active":
+            return held("position_owner_" + owner.mode)
+        if origin.issued_as_head:
             return held("position_issued_head_plan_missing")
         with training_timing_stage("position_source_prepare"):
             source = _cached_position_source(
-                db, rep, owner["epoch"], owner["source_digest"]
+                db, rep, owner.epoch, owner.source_digest
             )
         if isinstance(source, Hold):
             return held(source.reason)
-        if source.authored_token.authored_digest != owner["source_digest"]:
+        if source.authored_token.authored_digest != owner.source_digest:
             return held("position_owner_source_changed")
         instant, day = (
             datetime.now(timezone.utc),
@@ -136,8 +117,8 @@ def prepare_queue_head(payload):
         reader = PositionDueCandidateReader(
             db,
             repertoire_id=rep,
-            owner_epoch=owner["epoch"],
-            source_digest=owner["source_digest"],
+            owner_epoch=owner.epoch,
+            source_digest=owner.source_digest,
             issued_at=instant,
             study_day=day,
         )
@@ -169,21 +150,16 @@ def prepare_queue_head(payload):
             return held("position_due_target_unavailable")
         with training_timing_stage("position_prior_clean_proofs"):
             proofs = []
-            prior = db.execute_native(
-                """SELECT attempt_id FROM study_position_issued_plans
-                WHERE repertoire_id=%s AND owner_epoch=%s AND issue_study_day=%s
-                ORDER BY issued_at DESC,attempt_id LIMIT 20""",
-                (rep, owner["epoch"], day),
-            ).fetchall()
-            for row in prior:
-                proof = read_clean_presentation_proof(db, row["attempt_id"])
+            prior = reads.prior_attempt_ids(db, repertoire_id=rep, owner_epoch=owner.epoch, study_day=day)
+            for attempt_id in prior:
+                proof = read_clean_presentation_proof(db, attempt_id)
                 if not isinstance(proof, Hold):
                     proofs.append(proof)
             proofs = read_applicable_clean_proofs(
                 db,
                 [p.attempt_id for p in proofs],
                 target=target,
-                owner_epoch=owner["epoch"],
+                owner_epoch=owner.epoch,
                 study_day=day,
             )
         if isinstance(proofs, Hold):
@@ -194,7 +170,7 @@ def prepare_queue_head(payload):
                 source.routes,
                 clean_proofs=proofs,
                 study_day=day,
-                owner_epoch=owner["epoch"],
+                owner_epoch=owner.epoch,
             )
         if isinstance(route, Hold):
             return held(route.reason)

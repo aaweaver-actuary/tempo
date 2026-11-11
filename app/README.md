@@ -1,145 +1,17 @@
-# Frontend application
+# Browser application
 
-`app` is the shared React + TypeScript application used by both the local
-Docker web service and the static browser practice build. The full local/demo and physical Study entry points are in `static/src`; Study
-uses the core shell while the full entry owns optional workspace composition.
+Home owns the retained Study presentation and uses the public
+[`features/study`](features/study/README.md) controller: a read-only snapshot and
+named actions coordinate the existing single Study session, outbox and durable
+journals. Original review and attempt identities survive retries; a pending save
+does not advance the attempt. Unmount and supersession fences protect progression.
 
-## Architecture drawings
+Queue acquisition reads the current flat queue and handles the original pending
+issuance operation, holds and unavailable responses. Only explicit
+`foreground_wait` is treated as that admission condition. There is no optional
+prepare-next or feedback preparation request. A playable successor remains an
+assembled-runtime acceptance, not an implication of a controller test.
 
-These are the canonical drawings for the views below. Edit the blocks here;
-peer documents link to them instead of maintaining copies. See the
-[diagram index and source/status baseline](../docs/architecture/diagrams/README.md) and
-[maintenance procedure](../docs/architecture/diagrams/README.md#maintenance-and-review-procedure).
-
-### Main Study path and source gap
-
-**MAIN IMPLEMENTED SOURCE:** the physical Study composition and Learning-owned
-semantic boundaries below are present at the reviewed main source
-[`1ce172e9`](https://github.com/aaweaver-actuary/tempo/commit/1ce172e9f4f312d7d70b2a363dce7b20dab35baf).
-The October 20 qualification receipt remains dated evidence, not a new test run.
-PR324 separates optional legacy workspace ownership from the shared Study shell;
-PR327 reads policy through the borrowed submission transaction; PR329 owns queue
-read projections and ordered refresh operations. The gateway retains transaction,
-first-issuance and settlement authority. See the
-[integration receipt](../docs/architecture/study-isolation-integration-2026-10-20.md)
-for exact reviewed feature/merge inputs and scoped proof. Deployment and effective
-host resource isolation remain unverified.
-
-```mermaid
-flowchart TB
-  Build["Study Vite composition"] -->|"select physical entry before graph discovery"| Entry["static/src/study-main.tsx"]
-  Entry -->|"connect/bootstrap, then lazy import"| Boundary["StudyConnectionBoundary"]
-  Boundary -->|"shared Study shell and training controller"| Home["home_view.tsx"]
-  Home -->|"Train / Tactics / Endgames / appearance"| StudyUI["Core Study views"]
-  Boundary -->|"Learning-owned settings"| Settings["study-settings-panel"]
-  Home -->|"Study intents / review adapter registration"| Session["StudySession - durable submit, receipt recovery, next loading"]
-  Session -->|"IntentStore"| Browser[("Authority-scoped browser intents / checkpoints")]
-  Home -->|"current v1 queue acquisition only"| Prepare["next-card-preparation: durable original operation"]
-  Prepare -->|"atomic reservation, immutable command, expiring claim"| Browser
-  Prepare -->|"same-ID receipt recovery / explicit paced later retry"| V1["Current v1 prepare-next and operation API"]
-  V1 --> Hold["Explicit issuance block versus durable pending hold"]
-  Hold -->|"one fresh authoritative queue read before installing successor"| Home
-  Session -->|"LearningClient supplied by application adapters"| Adapter["review-outbox / study-command-client"]
-  Adapter -->|"learningFetch: exact origin and allowed Study paths"| HTTP["Learning HTTP API"]
-  HTTP -->|"record_intent / execute / read_operation"| Gateway["Learning gateway - transaction owner"]
-  Gateway -->|"borrowed connection"| Review["LearningReviewAdapter"]
-  Review -->|"semantic ReviewSubmissionStore"| App["Pure Learning review application"]
-  Gateway -->|"queue command handlers"| Queue["Learning queue / admission / first issuance"]
-  Review -->|"same-transaction required settlement"| Remediation["Learning remediation adapter / repository"]
-  Review -->|"history / scheduling / evidence / receipt effects"| DB[("Learning-owned PostgreSQL state")]
-  HTTP -->|"read_queue_window semantic operation"| Projection["Learning queue read projection owner"]
-  Projection -->|"complete bound reads in borrowed read-only transaction"| DB
-  Review -->|"policy settings from borrowed command transaction"| DB
-  Review -->|"all daily requests, all remediation requests, projection last"| Queue
-  Queue -->|"canonical writer and lock protocol"| DB
-  Remediation -->|"Learning-owned obligation settlement"| DB
-  Full["static/src/main.tsx - full local/demo entry"] --> Legacy["legacy-home / legacy-workspace"]
-  Legacy -->|"same Home; narrow facts and callbacks"| Home
-  Legacy -->|"owns import, tree and editor UI state"| AuthoringUI["Workspace-local authoring state"]
-  Home -->|"H2 proposed: supplies imported content, mode facts and reconciliation command"| Legacy
-  Home -->|"owns attempt, queue and imported content"| TrainingStore["Study training store"]
-  Legacy -->|"owns retained optional imports and workspace state"| Optional["sync, repertoire, studies, administration and dialogs"]
-  Boundary -.->|"optional user navigation only; no readiness wait"| WB["Independent Workbench URL"]
-```
-
-| Interface / decision | Source correspondence |
-| --- | --- |
-| Physical entry and loaded graph guard | [`studyComposition`](../scripts/study-composition.ts) changes the HTML entry before graph discovery. Its semantic optional implementation list rejects loaded Games/sync, authoring, administration, and legacy composition roots, even if later tree-shaken. [`study-main.tsx`](../static/src/study-main.tsx) has no legacy import. |
-| Optional state, presentation and handoff owner | [`LegacyHome`](views/legacy-home.tsx) injects [`LegacyWorkspace`](views/legacy-workspace.tsx). It owns discovery/filter/paste/repair state, repair race fencing, deletion recovery and retained optional dialogs. Builder editing and its handoffs, plus the Games and analytics dashboards, were retired; Repertoire import and paste remain. [`LegacyWorkspaceProps` / slots / controller](components/optional-workspace.ts) expose explicit queue/card commands; they do not pass the Home store. Home owns one training controller and queue acquisition. Unsupported controls are omitted when their action capability is absent. |
-| Genuine Study settings and navigation | [`StudyConnectionBoundary`](components/study-connection-boundary.tsx) retains [`StudySettingsPanel`](components/study-settings-panel.tsx) for Learning settings. [`StudySettingsView`](views/study-settings-view.tsx) changes browser appearance/shortcuts. [`canOpenWorkspace`](lib/study-workspace-policy.ts) checks direct intents as well as Navbar visibility. |
-| Connection and allowed transport | [`study-connection.ts`](lib/study-connection.ts): `connectStudy`, `studyWorkspace`, `learningPaths`, `authenticatedLearningFetch`. Only the configured Learning origin/Study paths receive the credential; no Games fallback. The boundary waits for Learning bootstrap or explicitly permitted cached practice. |
-| Session and browser data ownership | [`study-session-runtime.ts`](lib/study-session-runtime.ts) composes adapters into [`createStudySession`](../packages/study-session/src/index.ts); [`study-intent-storage.ts`](../database/browser/study-intent-storage.ts) supplies [`IntentStore`](../database/browser-intents/src/index.ts). [`review-outbox.ts`](lib/review-outbox.ts) and [`study-command-client.ts`](lib/study-command-client.ts) preserve family-specific payloads/identities. |
-| Current v1 next-card recovery candidate | [`next-card-preparation.ts`](lib/next-card-preparation.ts) retains the immutable preparation envelope before delivery through the existing intent/checkpoint owner. One unresolved operation is shared across acquisition retries, reloads and tabs within the selected authority. Its separate delivery session cannot supersede the visible review session. A terminal no-progress receipt stops automatic preparation retries; an explicit retry after at least one second may select a later unit. Explicit nonblocking pending holds remain retained without throwing, and repeated calls reuse that completed identity until the paced deliberate retry. Old three-field receipts remain conservative. One fresh authoritative queue read after a completed hold can observe recovery or managed disable; another server refusal remains an error with no additional preparation POST. A fixed optional notice reports retained feedback without exposing exception details. Only a subsequent authoritative queue read installs a successor. The independent Study build does not call this v1 preparation path. No backend or IndexedDB schema changes. |
-| Borrowed policy and queue persistence ownership | [`LearningReviewAdapter.policy`](../services/learning/runtime/src/tempo_learning_runtime/review_adapter.py) reads settings through the caller's borrowed command transaction, unless an injected policy provider is supplied; it acquires no second connection. [`queue_application.read_queue_window`](../services/learning/runtime/src/tempo_learning_runtime/queue_application.py) owns complete parameter-bound card/count/projection reads; HTTP composes semantic facts and retains canonical head-issuance commands. `mark_queue_refresh_pending_in_transaction` owns the projection write; review refresh orders all daily tasks, all remediation tasks, then projections. No second transaction writer is introduced. |
-| Serving, borrowed review and settlement | [API registration](../services/learning/runtime/src/tempo_learning_runtime/api.py), [gateway](../services/learning/runtime/src/tempo_learning_runtime/gateway.py), [`submit_review` / ports](../services/learning/application/src/tempo_learning_review/application.py), [review adapter](../services/learning/runtime/src/tempo_learning_runtime/review_adapter.py), [queue application](../services/learning/runtime/src/tempo_learning_runtime/queue_application.py), [admission](../services/learning/runtime/src/tempo_learning_runtime/admission.py), [receivers](../services/learning/runtime/src/tempo_learning_runtime/receivers.py), [remediation adapter](../services/learning/runtime/src/tempo_learning_runtime/remediation_adapter.py). The review application receives semantic capabilities; gateway retains transaction authority. Settlement uses Learning-local facts, not an online Games call. |
-
-The independent Learning install closure contains no Game Evidence service,
-Intelligence service, legacy backend, Redis/Celery or engine/model runtime. Its
-[package definition](../services/learning/runtime/pyproject.toml) includes
-Game Evidence **contracts** and Learning's own remediation module. Pure shared
-libraries do not create a producer lifecycle dependency.
-
-**Acceptance invariant:** Study must have no Games call, import, wait,
-readiness, transaction or lifecycle dependency. Games must be able to fail
-completely while ordinary Study continues. The physical Study composition repairs the browser source and artifact boundary.
-The merged removal below retires optional endgame calculation; HostActivity
-ownership and deployment resource isolation retain their separate limits.
-
-Optional practice influence enters the **Learning/queue owner's semantic
-interface**, as the [existing evidence sequence](../services/game-evidence/README.md#observed-game-evidence-to-learning-main)
-shows. Learning owns validation, eligibility/admission, idempotency, transactions
-and ordinary queue consumption. Producers must not write Learning queue, review
-or scheduling tables. PR319 remains paused; no proposed encountered-card API is
-assumed here.
-
-
-## Public browser capabilities and extension limits
-
-| Owner-facing surface | Exported functionality and authority |
-| --- | --- |
-| [Study connection](lib/study-connection.ts) | `connectStudy(origin, workspace, credential)`, `disconnectStudy()` and `studyWorkspace()` manage the selected Learning authority. In independent Study, `learningFetch(input, options)` restricts authenticated API delivery to that authority and allowed paths; the full legacy build delegates to ordinary fetch. Disconnect clears the session connection, not durable Study work. The internal path allowlist/authenticated-fetch helper is not a plugin API. |
-| [Study session](../packages/study-session/src/index.ts) | `createStudySession({store, learning, ...})` exposes `start`, `submit`, `checkSave`, `retrySave`, `retryNext`, `getSnapshot`, `subscribe` and `dispose`. Injected `IntentStore` and `LearningClient` (required `deliver`, optional `checkReceipt`) separate durable intent storage and delivery; the session never invents server settlement. |
-| [Optional workspace contract](components/optional-workspace.ts) | `LegacyWorkspaceProps`, `LegacyWorkspaceSlots` and `LegacyWorkspaceController` exchange named facts, callbacks and presentation slots. Legacy composition owns optional state/imports; the shared shell does not hand over its store. |
-| [Workspace policy](lib/study-workspace-policy.ts) | `canOpenWorkspace(view, study)` permits Train, Tactics and Settings in Study, including direct navigation intents. This is a fixed composition policy, not dynamic plugin discovery. |
-
-**Coupling is reduced, not eliminated.** The independent Study entry excludes
-the optional legacy workspace implementation; the full local/demo build still
-shares this React shell, runtime utilities and browser state with its injected
-workspace. The named callbacks include queue/card effects, so they are not an
-unrestricted third-party extension surface. Adding an optional module requires
-explicit outer composition, its own state/cancellation/lifecycle owner, and
-boundary proof that its absence cannot block ordinary Study. Practice influence
-must enter Learning's semantic command interface; importing another workspace's
-store or writing its persistence is not an extension mechanism. The [loaded-graph guard](../scripts/study-composition.ts) uses explicit optional
-families, name classification and exceptions; it is not generic owner-aware
-plugin enforcement. A new optional family needs a corresponding classification
-and negative boundary fixture. No exhaustive repository cycle audit, arbitrary
-plugin compatibility or deployed resource isolation is established by this
-review. Dynamic hot-loading is not required to obtain a clean public boundary.
-
-## Directories
-
-- `components/` — reusable UI, dialogs, board controls, and the persistent
-  board shell.
-- `domain/` — product types, branded primitives, schemas, and adapters for
-  untrusted transport records.
-- `hooks/` — React lifecycle integration for workers, polling, and background
-  APIs.
-- `lib/` — current shared runtime utilities; it is intentionally documented as
-  a future split point for API, persistence, workers, engines, and chess logic.
-- `state/` — cross-workspace Zustand state and selectors.
-- `utils/` — small chess, date, settings, URL, and local-runtime helpers.
-- `views/` — workspace composition and user workflows.
-
-Keep domain code independent of React. Validate external records at the
-boundary, preserve the local API error, and do not turn the static demo's
-sample data into an implicit fallback for a failed service.
-
-
-### Saved endgame practice after calculation removal
-
-Standalone Endgames and legacy Defense training have been retired. If a stale
-retired card reaches Training, it is held visibly without issuing a grade,
-advancing the queue, or changing its existing attempt. The shared board is
-read-only during the hold. Stored history and journals remain under their
-existing owners.
+Tactics, repertoire editing/import and minimal Game Review retain their own
+views. The [source maps](../docs/architecture/diagrams/README.md) describe the
+current ownership and qualification boundaries.

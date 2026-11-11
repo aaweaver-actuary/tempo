@@ -1,0 +1,158 @@
+{
+  "mode": "selected-python",
+  "sources": [
+    {
+      "path": "backend/app/contracts/queue_issuance.py",
+      "imports": [
+        "__future__",
+        "app.contracts.command_identity",
+        "typing"
+      ],
+      "pure": true
+    },
+    {
+      "path": "backend/app/contracts/command_identity.py",
+      "imports": [
+        "app.contracts.analysis_paste_identity",
+        "app.contracts.discovery_command_identity",
+        "app.contracts.review_command_identity",
+        "hashlib",
+        "json"
+      ],
+      "pure": true
+    },
+    {
+      "path": "backend/app/contracts/analysis_paste_identity.py",
+      "imports": [],
+      "pure": true
+    },
+    {
+      "path": "backend/app/contracts/discovery_command_identity.py",
+      "imports": [],
+      "pure": true
+    },
+    {
+      "path": "backend/app/contracts/review_command_identity.py",
+      "imports": [],
+      "pure": true
+    },
+    {
+      "path": "backend/app/study/next_exercise.py",
+      "imports": [
+        "app.contracts.queue_issuance",
+        "collections.abc",
+        "dataclasses",
+        "typing"
+      ],
+      "pure": true
+    },
+    {
+      "path": "backend/app/product_composition/study.py",
+      "imports": [
+        "app.command_dispatch",
+        "app.services.queue_next_card",
+        "app.study.next_exercise",
+        "app.study.position_checkpoint",
+        "app.study.position_learning.issuance",
+        "app.study.queue_serving",
+        "datetime",
+        "fastapi",
+        "fastapi.responses",
+        "json",
+        "logging",
+        "tempo_evidence_math.position_learning"
+      ],
+      "pure": false
+    },
+    {
+      "path": "backend/app/services/queue_next_card.py",
+      "imports": [
+        "app.repertoire.position_study_source",
+        "app.services.background_runtime",
+        "app.services.position_queue_admission",
+        "app.study.position_learning.issuance",
+        "app.study.position_learning.issued_plan_contracts",
+        "app.study.position_learning.issued_plan_service",
+        "app.study.position_learning.route_planner",
+        "collections",
+        "dataclasses",
+        "datetime",
+        "tempo_evidence_math.position_learning",
+        "tempo_storage.connections",
+        "tempo_storage.http_composition.queue_projection",
+        "tempo_storage.study",
+        "tempo_storage.study.next_exercise_reads",
+        "tempo_storage.study.position_due_candidates",
+        "threading",
+        "time",
+        "uuid"
+      ],
+      "pure": false
+    },
+    {
+      "path": "database/tempo_storage/study/next_exercise_reads.py",
+      "imports": [
+        "dataclasses",
+        "datetime"
+      ],
+      "pure": false
+    },
+    {
+      "path": "backend/app/games/comparison.py",
+      "imports": [
+        "chess",
+        "dataclasses",
+        "tempo_chess_core",
+        "typing"
+      ],
+      "pure": true
+    },
+    {
+      "path": "backend/app/games/review.py",
+      "imports": [
+        "app.games.comparison",
+        "chess",
+        "chess.pgn",
+        "fastapi",
+        "io",
+        "json",
+        "pydantic",
+        "tempo_storage",
+        "tempo_storage.connections",
+        "tempo_storage.game_review"
+      ],
+      "pure": false
+    },
+    {
+      "path": "database/tempo_storage/game_review.py",
+      "imports": [
+        "json"
+      ],
+      "pure": false
+    }
+  ],
+  "publicExports": {
+    "app.games.comparison": [
+      "GameFacts",
+      "AuthoredLine",
+      "first_departure",
+      "position_identity"
+    ]
+  },
+  "frontend": {
+    "sources": [
+      "app/features/game-review",
+      "app/views/legacy-workspace.tsx"
+    ],
+    "privateTargets": [
+      "app/state/training-store.ts",
+      "app/views/fetchAndInitializeQueue.tsx",
+      "app/views/index.ts"
+    ],
+    "publicInterface": "app/features/study/index.ts",
+    "implementation": "app/features/study/controller.ts",
+    "controllerConsumers": [
+      "app/views/home_view.tsx"
+    ]
+  }
+}

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, Literal, NotRequired, TypedDict
+
 from .command_identity import request_digest
 
 GENERATION_WIDTH = 12
@@ -42,3 +44,38 @@ def issuance_generation(operation_id: str, payload: dict) -> int:
 def immutable_issuance_conflict(response: dict) -> str | None:
     reason = response.get("position_study_hold")
     return reason if reason in IMMUTABLE_CONFLICTS else None
+# Internal Study application outcomes, not new HTTP response bodies. The queue
+# envelope remains opaque here; only the serving owner can establish currentness.
+class NextExerciseReady(TypedDict):
+    kind: Literal["ready"]
+    queue: dict[str, Any]
+
+
+class NextExerciseEmpty(TypedDict):
+    kind: Literal["empty"]
+    queue: dict[str, Any]
+
+
+class NextExercisePending(TypedDict):
+    kind: Literal["pending"]
+    operation_id: str
+
+
+class NextExerciseHeld(TypedDict):
+    kind: Literal["held"]
+    reason: str
+    operation_id: NotRequired[str]
+    queue: NotRequired[dict[str, Any]]
+
+
+class NextExerciseUnavailable(TypedDict):
+    kind: Literal["unavailable"]
+    reason: str
+    retryable: bool | None
+    queue: NotRequired[dict[str, Any]]
+
+
+NextExerciseOutcome = (
+    NextExerciseReady | NextExerciseEmpty | NextExercisePending
+    | NextExerciseHeld | NextExerciseUnavailable
+)

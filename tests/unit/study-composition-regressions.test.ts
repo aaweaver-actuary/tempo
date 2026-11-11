@@ -5,8 +5,8 @@ import { canOpenWorkspace } from '../../app/lib/study-workspace-policy';
 import type { View } from '../../app/types';
 
 it('independent Study rejects direct optional-workspace intents while legacy navigation remains', () => {
-  const supported: View[] = ['train', 'tactics', 'endgames', 'settings'];
-  const optional: View[] = ['games', 'builder', 'repertoire', 'studies', 'insights', 'compare', 'progress', 'statistics'];
+  const supported: View[] = ['train', 'tactics', 'settings'];
+  const optional: View[] = ['endgames', 'games', 'builder', 'repertoire', 'studies', 'insights', 'compare', 'progress', 'statistics'];
   for (const view of supported) expect(canOpenWorkspace(view, true)).toBe(true);
   for (const view of optional) expect(canOpenWorkspace(view, true)).toBe(false);
   for (const view of [...supported, ...optional]) expect(canOpenWorkspace(view, false)).toBe(true);
@@ -21,6 +21,15 @@ it('Study selects a physical entry with no legacy conditional import', () => {
 });
 
 it.each(Object.values(optionalStudyImplementations).flat())('Study build rejects loaded optional implementation even before emitting it: %s', path => {
+  const hook = studyComposition('/repo').generateBundle!;
+  const handler = typeof hook === 'function' ? hook : hook.handler;
+  const context = { getModuleIds: () => [`/repo/${path}`][Symbol.iterator](), emitFile: () => undefined };
+  expect(() => handler.call(context as never, {} as never, {} as never, false)).toThrow('Study imports optional workspace implementation');
+});
+
+it.each([
+  'app/features/game-review/GameReviewView.tsx',
+])('Study build independently rejects the actual optional entry %s', path => {
   const hook = studyComposition('/repo').generateBundle!;
   const handler = typeof hook === 'function' ? hook : hook.handler;
   const context = { getModuleIds: () => [`/repo/${path}`][Symbol.iterator](), emitFile: () => undefined };

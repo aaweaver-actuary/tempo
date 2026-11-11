@@ -11,16 +11,10 @@ function TabsProbe({ onChange }: { onChange?: (name: string) => void }) {
 describe("UI focus regressions", () => {
   it("primary navigation omits retired views", () => {
     render(<Navbar view="train" setView={() => undefined} />);
-    expect(WORKSPACES.map((workspace) => workspace.label)).toEqual([
-      "Train",
-      "Tactics",
-      "Endgames",
-      "Repertoire",
-      "Games",
-      "Studies",
-      "Settings",
-    ]);
-    expect(screen.getByRole("button", { name: "Games" })).toBeTruthy();
+    expect(WORKSPACES.map((workspace) => workspace.label)).toEqual(["Train", "Tactics", "Game Review", "Settings"]);
+    expect(screen.getAllByRole("button", { name: "Game Review" }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "Endgames" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Studies" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Builder" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Insights" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Progress" })).toBeNull();

@@ -24,6 +24,14 @@ transactions explicitly use PostgreSQL's read-only mode, including authoritative
 reads that borrow the writer pool. Failures leave rollback to the pool's
 transaction context. Storage imports no application orchestrator to run SQL.
 
+## Borrowed next-exercise reads
+
+`study/next_exercise_reads.py` returns detached original attempt IDs, admission
+origin, applicable owner, position owner and prior attempt IDs using the caller's
+borrowed connection. It opens no connection and commits no transaction. The
+Study application prepares and revalidates the issuance under its existing owner
+fences; these reads do not issue a plan or write learning state.
+
 ## Historical schema and retirement
 
 The isolated `ddl/` boundary retains the original ordered migration history for
@@ -40,7 +48,7 @@ polled or consumed as a new task queue. Its `source_record` preserves the exact
 row as it existed during the stopped-writer migration. Any later data disposal
 or resumption needs a separate explicit decision.
 
-The application expects schema 64. Applying migrations, validating the native
+The source expects schema 64; the actual runtime schema has not been queried here. Applying migrations, validating the native
 database and installing the branch are separate operator actions. Focused
 connection-contract tests use an injected driver and do not establish native
 PostgreSQL query, locking or migration correctness.

@@ -168,7 +168,9 @@ def fence_introduction(database, prepared):
             return Hold('position_introduction_card_busy')
         card = database.execute_native('''SELECT revision,introduced_at,state,archived,pending_validation,superseded_by
             FROM cards WHERE id=%s FOR UPDATE SKIP LOCKED''', (card_id,)).fetchone()
-        if (not card or card['revision'] != revision or card['introduced_at'] is not None
+        if not card:
+            return Hold('position_introduction_card_busy')
+        if (card['revision'] != revision or card['introduced_at'] is not None
                 or card['state'] not in ('new', 'locked') or card['archived']
                 or card['pending_validation'] or card['superseded_by'] is not None):
             return Hold('position_introduction_history_changed')
@@ -177,9 +179,34 @@ def fence_introduction(database, prepared):
             OR EXISTS(SELECT 1 FROM queue_attempt_origins o WHERE o.card_id=%s AND
                 (o.issued_as_head=1 OR o.attempt_failed<>0 OR o.review_result_json IS NOT NULL
                  OR o.last_status='complete'))""", (card_id, card_id, card_id)).fetchone()
-        if not history or history[0]:
-            return Hold('position_introduction_history_changed')
+        if not history:
+            return Hold('position_introduction_history_unavailable')
+        if history[0]:
+            return Hold('position_introduction_history_changed', card_id)
     return IntroductionFence(_FENCE_SEAL, prepared, owner.epoch, tuple(missing))
+
+
+def record_history_hold(database, prepared, held):
+    """Record a fenced historical conflict alongside the queue checkpoint."""
+    if (not isinstance(prepared, PreparedIntroduction)
+            or prepared._seal is not _INTRO_SEAL
+            or not isinstance(held, Hold)
+            or held.reason != 'position_introduction_history_changed'
+            or not held.detail):
+        raise ValueError('position_introduction_history_hold_required')
+    revisions = {b.presentation_revision for b in prepared.bindings
+                 if b.presentation_id == held.detail}
+    if len(revisions) != 1:
+        raise ValueError('position_introduction_history_alias_required')
+    token = prepared.source.authored_token
+    database.execute_native("""INSERT INTO study_position_introduction_holds
+        (repertoire_id, source_digest, source_revision, target_card_id,
+         history_card_id, history_card_revision, reason)
+        VALUES (%s,%s,%s,%s,%s,%s,%s)
+        ON CONFLICT (repertoire_id,source_digest,target_card_id,history_card_id,history_card_revision,reason)
+        DO UPDATE SET last_seen_at=CURRENT_TIMESTAMP, observations=study_position_introduction_holds.observations+1""",
+        (token.repertoire_id, token.authored_digest, token.original_source_revision,
+         prepared.card_id, held.detail, next(iter(revisions)), held.reason))
 
 
 def initialize_introduction(database, prepared, fenced, *, now):

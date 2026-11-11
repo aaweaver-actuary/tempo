@@ -332,3 +332,38 @@ def test_issue491_real_browser_input_quiet_lease_still_defers_and_expires(
     now[0] = 103.001
     gate.check_background_admission()
     assert main.foreground_active()["active"] is False
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        (redis_admission_gate.BackgroundAdmissionDeferred(
+            "Waiting for foreground activity", reason="foreground_wait"
+        ), {"detail": "Waiting for foreground activity", "code": "foreground_wait"}),
+        (redis_admission_gate.BackgroundAdmissionDeferred(
+            "Foreground admission is unavailable"
+        ), {"detail": "Foreground admission is unavailable"}),
+        (redis_admission_gate.BackgroundAdmissionDeferred(
+            "Waiting for foreground activity"
+        ), {"detail": "Waiting for foreground activity"}),
+        (redis_admission_gate.BackgroundAdmissionDeferred(
+            "Waiting for a database section", reason="other"
+        ), {"detail": "Waiting for a database section"}),
+    ],
+)
+def test_background_admission_wire_reason_requires_explicit_foreground_metadata(error, expected):
+    from fastapi import FastAPI
+
+    app = FastAPI()
+    app.add_exception_handler(
+        redis_admission_gate.BackgroundAdmissionDeferred, main.background_waiting
+    )
+
+    @app.get("/admission")
+    def admission():
+        raise error
+
+    response = TestClient(app).get("/admission")
+    assert response.status_code == 503
+    assert response.headers["Retry-After"] == "1"
+    assert response.json() == expected

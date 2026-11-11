@@ -1,3 +1,4 @@
+import { decodeOperationResult } from "../domain/adapters/operation-result-adapter";
 import { defaultStudyClient, type StudyClient } from "./study-connection";
 import { notifyOperationStatusChange } from "./operation-status-events";
 
@@ -57,34 +58,33 @@ async function readReceipt(operationId: string, options: OperationResponseOption
   if (status.status === 404 && options.allowMissing) return status;
   if (!status.ok)
     throw new PendingOperationError(operationId);
-  const receipt = await status.json() as {
-    operation_id?: string;
-    state?: string;
-    response?: unknown;
-    error?: { message?: string; detail?: unknown; status_code?: number; code?: string; retryable?: boolean };
-    last_error?: { message?: string; detail?: unknown; status_code?: number; code?: string; retryable?: boolean };
-    message?: string;
-  };
+  let wire: unknown;
+  try {
+    wire = await status.json();
+  } catch (error) {
+    requireBinding(binding);
+    if (error instanceof SyntaxError) throw new PendingOperationError(operationId);
+    throw error;
+  }
   requireBinding(binding);
-  if (((binding?.client.independent ?? defaultStudyClient.independent) || receipt.operation_id !== undefined) && receipt.operation_id !== operationId)
+  const result = decodeOperationResult(wire, operationId, binding?.client.independent ?? defaultStudyClient.independent);
+  if (result.kind === "malformed" && result.reason === "identity")
     throw new PendingOperationError(operationId, "Learning did not confirm the original operation identity.");
-  // A lost admission response can leave no receipt at all. Only callers that
-  // retain the original immutable command may replay that missing admission.
-  if (receipt.state === "unknown" && options.allowMissing)
+  // A missing receipt can only be replayed by a caller retaining the original command.
+  if (result.kind === "unknown" && options.allowMissing)
     return new Response(null, { status: 404 });
-  if (["queued", "executing", "retrying", "pending", "complete", "failed"].includes(receipt.state ?? ""))
+  if (["pending", "complete", "failed"].includes(result.kind))
     notifyOperationStatusChange(operationId);
-  if (receipt.state === "complete")
-    return Response.json(receipt.response);
-  if (receipt.state === "failed")
+  if (result.kind === "complete") return Response.json(result.response);
+  if (result.kind === "failed")
     throw new FailedOperationError(
-      receipt.error?.message ?? "The save failed. Check the service before retrying.",
-      operationId, receipt.error?.status_code, receipt.error?.code,
-      receipt.error?.retryable ?? (receipt.error?.status_code === 409 ? false : undefined), receipt.error?.detail,
+      result.error.message ?? "The save failed. Check the service before retrying.",
+      operationId, result.error.status_code, result.error.code,
+      result.error.retryable ?? (result.error.status_code === 409 ? false : undefined), result.error.detail,
     );
-  if (receipt.state === "blocked")
+  if (result.kind === "blocked")
     throw new PendingOperationError(operationId,
-      `Operation ${operationId} is blocked: ${receipt.last_error?.message ?? receipt.message ?? "check the local service"}. Retry it from the operation status after resolving the error.`,
+      `Operation ${operationId} is blocked: ${result.error?.message ?? "check the local service"}. Retry it from the operation status after resolving the error.`,
       true);
   throw new PendingOperationError(operationId);
 }

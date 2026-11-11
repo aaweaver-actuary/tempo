@@ -10,6 +10,7 @@ export const WORKSPACES: { id: View; label: string }[] = [
   { id: "train", label: "Train" },
   { id: "tactics", label: "Tactics" },
   { id: "games", label: "Game Review" },
+  { id: "settings", label: "Settings" },
 ];
 const workspaces = WORKSPACES.filter(item => canOpenWorkspace(item.id, independentStudy));
 const PHONE_PRIMARY: View[] = ["train", "tactics", "games"];

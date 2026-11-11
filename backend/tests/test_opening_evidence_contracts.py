@@ -505,8 +505,8 @@ def test_queue_evidence_is_explicitly_negotiated_for_live_window_and_prepared_cl
 
     calls = []
 
-    def payload(limit=None, *, include_opening_evidence=False):
-        calls.append((limit, include_opening_evidence))
+    def payload(limit=None, *, include_opening_evidence=False, prepared=False):
+        calls.append((limit, include_opening_evidence, prepared))
         return {
             "cards": [],
             "count": 0,
@@ -524,12 +524,12 @@ def test_queue_evidence_is_explicitly_negotiated_for_live_window_and_prepared_cl
         enabled = route(include_opening_evidence=True)
         assert enabled["opening_evidence_study_timezone"] == "UTC"
     assert calls == [
-        (None, False),
-        (None, True),
-        (20, False),
-        (20, True),
-        (None, False),
-        (None, True),
+        (None, False, False),
+        (None, True, False),
+        (20, False, False),
+        (20, True, False),
+        (None, False, True),
+        (None, True, True),
     ]
 
 

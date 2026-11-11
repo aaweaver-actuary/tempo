@@ -1,15 +1,18 @@
 """Minimal Review follows current authored alternatives without Study writes."""
-import json
-
 import chess
 import pytest
 from fastapi import HTTPException
 
-from app.games.review import Comparison, compare_pgn, first_departure
+from app.games.comparison import AuthoredLine, GameFacts, first_departure as compare_facts
+from app.games.review import Comparison, compare_pgn
 
 
 def line(moves, fen=chess.STARTING_FEN):
-    return dict(start_fen=fen, moves_json=json.dumps(moves))
+    return AuthoredLine(fen, tuple(moves))
+
+
+def first_departure(start_fen, moves, lines):
+    return compare_facts(GameFacts(start_fen, tuple(moves)), lines)
 
 
 def test_follows_any_authored_alternative_then_reports_first_departure():

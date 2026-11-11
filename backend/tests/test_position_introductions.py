@@ -222,6 +222,7 @@ def test_native_authorized_introduction_writes_fresh_state_only_after_admission(
                 / "database/tempo_storage/ddl/migrations/057_position_study.sql"
             )
             raw.execute(ddl.read_text())
+            raw.execute((ddl.parent / "065_position_introduction_holds.sql").read_text())
             moves = json.dumps(["e2e4"])
             raw.execute("INSERT INTO legacy_learning_identity VALUES(1,'fixture')")
             raw.execute("INSERT INTO repertoires VALUES('r','Synthetic',7,0,'[]')")
@@ -300,8 +301,8 @@ def test_native_authorized_introduction_writes_fresh_state_only_after_admission(
             def borrowed(*args, **kwargs):
                 yield port
 
-            monkeypatch.setattr(refresh.read_storage, "native_configured", lambda: True)
             monkeypatch.setattr(refresh, "background_read_connection", borrowed)
+            monkeypatch.setattr(refresh, "read_connection", borrowed)
             monkeypatch.setattr(refresh, "connection", borrowed)
             monkeypatch.setattr(
                 refresh.frozen_opening_order, "activation", lambda *a, **k: (None, 0)
@@ -323,6 +324,7 @@ def test_native_authorized_introduction_writes_fresh_state_only_after_admission(
                 "payload": {
                     "queue_date": day,
                     "_queue_phase": "study_opening_item",
+                    "_refresh_cycle_epoch": 1,
                     "study_opening_items": [planned],
                     "study_opening_index": 0,
                     "study_opening_more": False,
@@ -351,7 +353,48 @@ def test_native_authorized_introduction_writes_fresh_state_only_after_admission(
                 )
                 return True
 
+            # A row skipped under another transaction's lock is contention,
+            # not evidence of retained history or a durable hold.
+            with psycopg.connect(dsn, autocommit=True, row_factory=tempo_row_factory) as other:
+                other.execute(sql.SQL("SET search_path TO {}").format(sql.Identifier(schema)))
+                other.execute("BEGIN")
+                other.execute("SELECT id FROM cards WHERE id='card' FOR UPDATE")
+                raw.execute("BEGIN")
+                busy = intro.fence_introduction(port, source_intro)
+                assert isinstance(busy, Hold) and busy.reason == "position_introduction_card_busy"
+                raw.execute("ROLLBACK")
+                other.execute("ROLLBACK")
+            assert raw.execute("SELECT count(*) FROM study_position_introduction_holds").fetchone()[0] == 0
+
+            # A retained partial attempt is a durable hold, not permission to
+            # introduce or discard it. The hold and checkpoint roll back together.
+            raw.execute("INSERT INTO opening_evidence_attempts(card_id) VALUES('card')")
+            captured = []
+            def checkpoint(*args, **kwargs):
+                captured.append(kwargs)
+                return True
+            monkeypatch.setattr(refresh, "advance_task_slice_in_transaction", checkpoint)
             monkeypatch.setattr(refresh, "_admit_one_prioritized_opening", admit)
+            raw.execute("BEGIN")
+            assert refresh.execute_postgres_queue_refresh_slice(task)
+            assert captured[-1]["next_phase"] == "admit_study"
+            assert captured[-1]["next_payload"]["study_opening_counts"]["history_held"] == 1
+            assert raw.execute("SELECT count(*) FROM study_position_introduction_holds").fetchone()[0] == 1
+            assert raw.execute("SELECT count(*) FROM study_position_states").fetchone()[0] == 0
+            raw.execute("ROLLBACK")
+            assert raw.execute("SELECT count(*) FROM study_position_introduction_holds").fetchone()[0] == 0
+            raw.execute("BEGIN")
+            assert refresh.execute_postgres_queue_refresh_slice(task)
+            raw.execute("COMMIT")
+            raw.execute("BEGIN")
+            assert refresh.execute_postgres_queue_refresh_slice(task)
+            raw.execute("COMMIT")
+            held = raw.execute("SELECT * FROM study_position_introduction_holds").fetchone()
+            assert held["observations"] == 2
+            assert raw.execute("SELECT count(*) FROM study_position_introduction_holds").fetchone()[0] == 1
+            assert (held["target_card_id"], held["history_card_id"], held["history_card_revision"]) == ("card", "card", 1)
+            assert raw.execute("SELECT count(*) FROM opening_evidence_attempts").fetchone()[0] == 1
+            raw.execute("DELETE FROM opening_evidence_attempts WHERE card_id='card'")
             raw.execute("BEGIN")
             assert refresh.execute_postgres_queue_refresh_slice(task)
             raw.execute("COMMIT")
@@ -400,8 +443,9 @@ def test_all_covered_ordinary_introduction_is_skipped_without_completion(monkeyp
     def borrowed(*args, **kwargs):
         yield object()
 
-    monkeypatch.setattr(refresh.read_storage, "native_configured", lambda: True)
     monkeypatch.setattr(refresh, "background_read_connection", borrowed)
+    monkeypatch.setattr(refresh, "read_connection", borrowed)
+    monkeypatch.setattr(refresh, "read_connection", borrowed)
     monkeypatch.setattr(refresh, "connection", borrowed)
     monkeypatch.setattr(
         refresh.frozen_opening_order, "activation", lambda *a, **k: (None, 0)
@@ -432,6 +476,7 @@ def test_all_covered_ordinary_introduction_is_skipped_without_completion(monkeyp
         "payload": {
             "queue_date": "2026-11-02",
             "_queue_phase": "study_opening_item",
+            "_refresh_cycle_epoch": 1,
             "study_opening_items": [
                 {"repertoire_id": "r", "card_id": "c", "reason": None}
             ],
