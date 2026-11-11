@@ -845,7 +845,14 @@
         "backend/app/games/comparison.py",
         "backend/app/games/review.py",
         "database/tempo_storage/study/next_exercise_reads.py",
-        "database/tempo_storage/game_review.py"
+        "database/tempo_storage/game_review.py",
+        "backend/app/services/background_runtime.py",
+        "backend/app/services/position_queue_admission.py",
+        "database/tempo_storage/__init__.py",
+        "database/tempo_storage/connections.py",
+        "database/tempo_storage/http_composition/queue_projection.py",
+        "database/tempo_storage/study/__init__.py",
+        "database/tempo_storage/study/position_due_candidates.py"
       ]
     }
   ]
