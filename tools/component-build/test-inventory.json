@@ -1,6 +1,13 @@
 {
   "version": 1,
-  "explicitRunnerFiles": [],
+  "explicitRunnerFiles": [
+    "tests/runner/lifecycle-current-profile.test.mjs",
+    "tests/runner/lifecycle-image-cache.test.mjs",
+    "tests/runner/lifecycle-source-preflight.test.mjs",
+    "tests/runner/release-candidate-artifacts.test.mjs",
+    "tests/runner/tempo-runtime-image-inspection.test.mjs",
+    "tests/runner/web-build-context.test.mjs"
+  ],
   "lanes": {
     "controlled-browser": [
       "tests/controlled-browser/unit/controlled-browser-regressions.test.ts",
@@ -9,6 +16,12 @@
       "tests/controlled-browser/unit/storage-probes.test.ts"
     ],
     "frontend": [
+      "tests/unit/game-review-minimal.test.tsx",
+      "tests/unit/operation-result-decoder.test.ts",
+      "tests/unit/study-controller-boundary.test.ts",
+      "tests/unit/study-controller-progression.test.ts",
+      "tests/unit/study-controller-review.test.ts",
+      "tests/unit/study-queue-status-regressions.test.ts",
       "tests/unit/analysis-paste-pending-regressions.test.ts",
       "tests/unit/annotation-concealment-regressions.test.tsx",
       "tests/unit/attempt-lifecycle-regressions.test.ts",

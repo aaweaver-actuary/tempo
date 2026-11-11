@@ -806,6 +806,49 @@
         "tests/browser/study-recovery.spec.ts",
         "backend/tests/fixtures/study_recovery_content.py"
       ]
+    },
+    {
+      "id": "study-consolidation-boundaries",
+      "owner": "Study consolidation delivery",
+      "kind": "node",
+      "cwd": ".",
+      "command": "TEMPO_REQUIRE_STUDY_UI=1 node tools/component-build/check-interface-boundaries.mjs tools/component-build/selected-interface-owners.json && env -u TEMPO_REQUIRE_STUDY_UI node --input-type=module -e 'import { runNodeFiles } from \"./tools/component-build/test-node.mjs\"; await runNodeFiles([\"tools/component-build/tests/interface-boundaries.test.mjs\"], undefined, { lane: \"study-consolidation-boundaries\" });'",
+      "inputs": [
+        "tools/component-build",
+        "components.json",
+        "package.json",
+        "package-lock.json",
+        "app/features/game-review",
+        "app/features/study",
+        "app/views/home_view.tsx",
+        "app/views/legacy-workspace.tsx",
+        "app/views/fetchAndInitializeQueue.tsx",
+        "app/views/index.ts",
+        "app/state/training-store.ts",
+        "app/domain/transport.ts",
+        "app/domain/adapters/operation-result-adapter.ts",
+        "app/lib/operation-status.ts",
+        "backend/app/product_composition",
+        "backend/app/study",
+        "backend/app/repertoire",
+        "backend/app/contracts",
+        "backend/app/main.py",
+        "backend/app/services/queue_next_card.py",
+        "backend/tests/test_next_exercise_http.py",
+        "backend/tests/test_next_exercise_import_boundary.py",
+        "backend/tests/test_next_exercise_native.py",
+        "backend/tests/test_study_attempt_issuance_postgres.py",
+        "tests/fixtures/queue-wire",
+        "tests/unit",
+        "scripts/study-composition.ts",
+        "vite.static.config.ts",
+        "backend/app/command_dispatch.py",
+        "tests/fixtures/study-operation-contract.json",
+        "backend/app/games/comparison.py",
+        "backend/app/games/review.py",
+        "database/tempo_storage/study/next_exercise_reads.py",
+        "database/tempo_storage/game_review.py"
+      ]
     }
   ]
 }

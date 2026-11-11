@@ -95,19 +95,8 @@ test("M02 Python public API policy rejects private and unavailable consumer expo
   }
 });
 for (const { id, packageName, publicExports } of [
-  {
-    id: "learning-remediation", packageName: "tempo_learning_remediation",
-    publicExports: ["AcceptedDecision", "AdmissionPort", "AdmissionProposal", "AdmissionResult", "AttemptAuthority",
-      "Candidate", "CandidateFactsPort", "ContentAuthority", "CurrentMissProjection", "Eligibility", "ReceiveContext",
-      "RemediationError", "ReviewOutcome", "WorkItem", "WorkPage", "Preparation", "PostgresRepository",
-      "PAGE_SIZE", "MAX_PREPARATION_PAGES", "evaluate_eligibility", "order_candidates", "propose_admission",
-      "validate_delivery", "prepare_admissions", "apply_admission", "current_miss_sql",
-      "LegacyAcceptedDecision", "LegacyAuthority", "accepted_storage_identity"],
-  },
-  {
-    id: "game-classification", packageName: "tempo_game_classification",
-    publicExports: ["UnimplementedClassification", "FindingKind", "classify_response", "resolve_equivalent_mapping"],
-  },
+  { id: "learning-review-application", packageName: "tempo_learning_review", publicExports: ["apply_review", "review_context", "review_day_at", "submit_review", "register_review_commands", "ReviewConflict", "ReviewFailure", "AttemptReceipt", "CardFacts", "ContinuationFacts", "EvidenceCompletion", "PreparedNext", "QueueAttempt", "ReviewCommand", "ReviewContext", "ReviewPolicy", "ReviewResult", "ReviewStore", "ReviewSubmissionStore"] },
+  { id: "game-review-contracts", packageName: "tempo_game_review_contracts", publicExports: ["CanonicalGame", "ReentryAuthority", "AuthoredRoute", "RepertoireSnapshot", "RouteContext", "PositionFact", "ComparisonReport", "GameInput", "GameIngester", "RepertoireComparer", "Unavailable", "ClassificationPort", "ActionRequest", "ActionPort", "replay_line", "ReplaySession"] },
 ]) test(`M02 ${id} registration matches its existing public package exports`, () => {
   const component = manifest.components.find(candidate => candidate.id === id);
   assert.equal(component.status, "implemented");
@@ -414,8 +403,8 @@ for (const runnerKind of ["generic", "package-local"]) {
 
 test("Python normalized distribution dependencies select their real component producers", async () => {
   const { selectComponents } = await import("../selection.mjs");
-  const selected = selectComponents(manifest, ["learning"]);
-  for (const owner of ["learning", "learning-review-application", "scheduling", "chess-core", "content-publication-contracts", "game-evidence-contracts"])
+  const selected = selectComponents(manifest, ["game-review-contracts"]);
+  for (const owner of ["game-review-contracts", "chess-core"])
     assert.ok(selected.some(component => component.id === owner), "Missing declared producer: " + owner);
 });
 
@@ -427,7 +416,7 @@ test("root Board UI public stylesheet resolves in the real Vite assembly without
   try {
     const metadata = JSON.parse(readFileSync(resolve(repository, "packages/board-ui/package.json")));
     const expected = resolve(repository, "packages/board-ui", metadata.exports["./styles.css"]);
-    for (const consumer of ["app/features/game-review/GameReviewView.tsx", "app/features/repertoire-review/PositionViewer.tsx"]) {
+    for (const consumer of ["app/features/game-review/GameReviewView.tsx"]) {
       const importer = resolve(repository, consumer);
       const result = await server.environments.client.pluginContainer.resolveId("@tempo/board-ui/styles.css", importer);
       assert.equal(result?.id, expected);

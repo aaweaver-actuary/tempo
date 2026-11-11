@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
@@ -9,6 +9,135 @@ import { repository } from "../check-components.mjs";
 import { testFiles } from "../test-node.mjs";
 
 const python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3";
+
+test("Declared facade may re-export its own controller but a foreign owner cannot import it", t => {
+  const f = fixture(t);
+  f.write("backend/app/study/interfaces/__init__.py", "from ..private import hidden\n__all__ = ['hidden']\n");
+  f.manifest.components[1].facades = [{ path: "backend/app/study/interfaces", targets: ["backend/app/study/private.py"] }];
+  f.write("backend/app/games/consumer.py", "from app.study.interfaces import hidden\n");
+  assert.doesNotThrow(f.check);
+  f.write("backend/app/study/other.py", "hidden = True\n");
+  f.write("backend/app/study/interfaces/__init__.py", "from ..other import hidden\n__all__ = ['hidden']\n");
+  assert.throws(f.check, /Interface imports private implementation/);
+  f.write("backend/app/study/interfaces/__init__.py", "from ..private import hidden\n__all__ = ['hidden']\n");
+  f.write("backend/app/games/consumer.py", "from app.study.private import hidden\n");
+  assert.throws(f.check, /Private cross-component import/);
+});
+
+test("Selected real owners pass and reject injected private, infrastructure and SQL dependencies", t => {
+  const root = mkdtempSync(join(tmpdir(), "tempo-selected-boundary-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  cpSync(resolve(repository, "backend/app"), join(root, "backend/app"), { recursive: true });
+  cpSync(resolve(repository, "database/tempo_storage"), join(root, "database/tempo_storage"), { recursive: true });
+  cpSync(resolve(repository, "app/features"), join(root, "app/features"), { recursive: true });
+  cpSync(resolve(repository, "app/views"), join(root, "app/views"), { recursive: true });
+  const manifest = JSON.parse(readFileSync(resolve(repository, "tools/component-build/selected-interface-owners.json"), "utf8"));
+  const check = () => checkInterfaceBoundaries(manifest, root, python);
+  assert.equal(check().files, 12);
+  const inject = (file, code, expected) => {
+    const path = join(root, file), original = readFileSync(path, 'utf8');
+    writeFileSync(path, original + '\n' + code + '\n');
+    assert.throws(check, expected);
+    writeFileSync(path, original);
+  };
+  inject('backend/app/games/review.py', 'def injected():\n    from app.study.next_exercise import hidden', /Undeclared selected import/);
+  inject('backend/app/contracts/queue_issuance.py', 'from app.games.comparison import GameFacts', /Undeclared selected import/);
+  inject('backend/app/games/comparison.py', 'def injected():\n    import sqlite3 as hidden', /Pure selected source imports infrastructure/);
+  inject('backend/app/games/comparison.py', 'def injected(conn):\n    conn.execute("SELECT * FROM daily_queue")', /Pure selected source contains SQL execution/);
+  inject('backend/app/games/comparison.py', 'def injected():\n    import fastapi as hidden', /Pure selected source imports infrastructure/);
+  inject('backend/app/study/next_exercise.py', 'def injected(conn):\n    conn.execute("SELECT * FROM daily_queue")', /Pure selected source contains SQL execution/);
+  inject('backend/app/games/review.py', 'import app.games.comparison as api\ndef injected():\n    return api.HiddenStore', /Unavailable selected public member/);
+  const storage = join(root, 'database/tempo_storage/game_review.py');
+  const storageSource = readFileSync(storage, 'utf8');
+  rmSync(storage);
+  assert.throws(check, /Unavailable selected source\/target|Unavailable selected target/);
+  writeFileSync(storage, storageSource);
+  const comparator = join(root, 'backend/app/games/comparison.py');
+  const comparatorSource = readFileSync(comparator, 'utf8');
+  writeFileSync(comparator, comparatorSource.replace('class GameFacts:', 'class OtherFacts:'));
+  assert.throws(check, /Unavailable selected public exports/);
+  writeFileSync(comparator, comparatorSource);
+  assert.doesNotThrow(check);
+});
+
+test("Selected real optional UI rejects private Study imports and stages only the public controller facade", t => {
+  const root = mkdtempSync(join(tmpdir(), "tempo-selected-ui-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  cpSync(resolve(repository, "backend/app"), join(root, "backend/app"), { recursive: true });
+  cpSync(resolve(repository, "database/tempo_storage"), join(root, "database/tempo_storage"), { recursive: true });
+  cpSync(resolve(repository, "app/features"), join(root, "app/features"), { recursive: true });
+  cpSync(resolve(repository, "app/views"), join(root, "app/views"), { recursive: true });
+  const manifest = JSON.parse(readFileSync(resolve(repository, "tools/component-build/selected-interface-owners.json"), "utf8"));
+  const check = () => checkInterfaceBoundaries(manifest, root, python);
+  assert.deepEqual(check().frontend, { files: 2, controllerConsumers: 1, stagedMissing: [] });
+  const manifestPath = join(root, 'owners.json');
+  writeFileSync(manifestPath, JSON.stringify(manifest));
+  const cli = (extra = {}) => spawnSync(process.execPath, [resolve(repository, 'tools/component-build/check-interface-boundaries.mjs'), manifestPath, root],
+    { encoding: 'utf8', env: { ...process.env, TEMPO_COMPONENT_PYTHON: python, ...extra }, timeout: 15000 });
+  assert.equal(cli({ TEMPO_REQUIRE_STUDY_UI: '1' }).status, 0);
+  const stagedPaths = ['app/features/study/index.ts', 'app/features/study/controller.ts'];
+  const stagedSources = stagedPaths.map(path => readFileSync(join(root, path), 'utf8'));
+  for (const path of stagedPaths) rmSync(join(root, path));
+  assert.deepEqual(check().frontend.stagedMissing, stagedPaths);
+  assert.equal(cli({ TEMPO_REQUIRE_STUDY_UI: '1' }).status, 1);
+  stagedPaths.forEach((path, index) => writeFileSync(join(root, path), stagedSources[index]));
+  for (const source of ['app/features/game-review/GameReviewView.tsx']) {
+    const path = join(root, source), original = readFileSync(path, 'utf8');
+    for (const violation of [
+      'import "../../state/training-store";',
+      'export * from "@/app/state/training-store.js";',
+      'const hidden = () => import("../../views/fetchAndInitializeQueue.js");',
+      'export * from "../../views";',
+      'const hidden = () => import("../study/controller.js");',
+    ]) {
+      writeFileSync(path, original + '\n' + violation);
+      assert.throws(check, /Private selected frontend import/);
+      if (violation.startsWith('import ')) {
+        const result = cli();
+        assert.equal(result.status, 1);
+        assert.match(result.stderr, /Private selected frontend import/);
+      }
+    }
+    writeFileSync(path, original);
+  }
+  for (const [source, violation] of [
+    ['app/views/legacy-workspace.tsx', 'export * from "../state/training-store.js";'],
+    ['app/views/home_view.tsx', 'const hidden = () => import("../features/study/controller.js");'],
+  ]) {
+    const path = join(root, source), original = readFileSync(path, 'utf8');
+    writeFileSync(path, original + '\n' + violation);
+    assert.throws(check, /Private selected frontend import/);
+    writeFileSync(path, original);
+  }
+  const selected = join(root, 'app/views/home_view.tsx'), original = readFileSync(selected, 'utf8');
+  writeFileSync(selected, original.replace('useStudyReviewController({', 'notTheController({'));
+  assert.throws(check, /must call the public Study controller/);
+  for (const violation of [
+    'import { createStudySession as duplicate } from "@tempo/study-session"; duplicate({});',
+    'import * as sessions from "@tempo/study-session"; sessions.createStudySession({});',
+    'import { reviewStudySession as duplicate } from "../lib/review-outbox"; duplicate();',
+  ]) {
+    writeFileSync(selected, original + '\n' + violation);
+    assert.throws(check, /Duplicate selected Study session creation/);
+  }
+  writeFileSync(selected, original.replace('import { useStudyReviewController } from "../features/study";', 'import * as study from "../features/study";').replace('useStudyReviewController({', 'study.useStudyReviewController({'));
+  assert.doesNotThrow(check);
+  writeFileSync(selected, original);
+  for (const source of ['app/features/study/index.ts', 'app/features/study/controller.ts']) {
+    const file = join(root, source), previous = readFileSync(file, 'utf8');
+    writeFileSync(file, previous + '\nimport { createStudySession as duplicate } from "@tempo/study-session"; duplicate({});');
+    assert.throws(check, /Duplicate selected Study session creation/);
+    writeFileSync(file, previous);
+  }
+  const facade = join(root, 'app/features/study/index.ts'), facadeOriginal = readFileSync(facade, 'utf8');
+  writeFileSync(facade, 'export { hidden } from "./other.js";');
+  assert.throws(check, /undeclared private implementation/);
+  writeFileSync(facade, 'export * from "../../state/training-store.js";');
+  assert.throws(check, /undeclared private implementation/);
+  writeFileSync(facade, facadeOriginal);
+  manifest.frontend.unexpected = true;
+  assert.throws(check, /Invalid selected frontend declaration/);
+});
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "tempo-interface-guard-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));

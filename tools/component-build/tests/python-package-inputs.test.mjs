@@ -31,6 +31,23 @@ test('Python centralized database auditing separates wheel runtime from retained
   writeFileSync(join(f.database, 'adapters/runtime.py'), 'import importlib.util\n');
   const rejected = f.check(); assert.notEqual(rejected.status, 0); assert.match(rejected.stderr, /dynamic loader/);
 });
+test('Python static distribution version lookup is accepted without allowing dynamic loaders', t => {
+  const f = fixture(t);
+  const source = join(f.database, 'adapters/runtime.py');
+  for (const input of ['from importlib.metadata import version\nversion("fsrs")\n', 'from importlib.metadata import version as package_version\npackage_version("fsrs")\n']) {
+    writeFileSync(source, input);
+    const result = f.check(); assert.equal(result.status, 0, result.stderr);
+  }
+  for (const input of [
+    'from importlib import import_module as loader\nloader("app.main")\n',
+    'import importlib.util as util\n',
+    'import runpy as runner\n',
+    'from importlib.metadata import version, packages_distributions\n',
+  ]) {
+    writeFileSync(source, input);
+    const result = f.check(); assert.notEqual(result.status, 0, input); assert.match(result.stderr, /dynamic loader/);
+  }
+});
 test('Python wheel exclusions never hide nested runtime code or source symlink escapes', t => {
   const f = fixture(t);
   mkdirSync(join(f.database, 'adapters/tests')); writeFileSync(join(f.database, 'adapters/tests/code.py'), 'import undeclared_runtime\n');
@@ -59,26 +76,28 @@ base = types.ModuleType('hatchling.builders.hooks.plugin.interface')
 base.BuildHookInterface = object
 sys.modules['hatchling.builders.hooks.plugin.interface'] = base
 repository = Path(sys.argv[1])
-for owner, name in [('services/learning/remediation', 'tempo_remediation_database')]:
-    hook = runpy.run_path(str(repository / owner / 'hatch_build.py'))['CustomBuildHook']
-    with TemporaryDirectory() as directory:
-        root = Path(directory) / owner
-        database = root / 'database' / name
-        database.mkdir(parents=True)
-        for entry in ['__init__.py', 'ddl', 'adapters', 'tests', 'tooling', '__pycache__']:
-            path = database / entry
-            if '.' in entry: path.write_text('')
-            else: path.mkdir()
-        instance = hook()
-        instance.root = str(root)
-        instance.target_name = 'wheel'
-        data = {'force_include': {}}
-        instance.initialize(None, data)
-        assert {Path(path).name for path in data['force_include']} == {'__init__.py', 'ddl', 'adapters'}
-        instance.target_name = 'sdist'
-        data = {'force_include': {}}
-        instance.initialize(None, data)
-        assert data['force_include'] == {str(database): 'database/' + name}
+owner = 'services/learning/application'
+hook = runpy.run_path(str(repository / owner / 'hatch_build.py'))['CustomBuildHook']
+with TemporaryDirectory() as directory:
+    root = Path(directory) / owner
+    database = root / 'database/tempo_storage'
+    for category in ['tooling/learning_review', 'tests/learning_review']:
+        (database / category).mkdir(parents=True)
+    instance = hook()
+    instance.root = str(root)
+    instance.target_name = 'wheel'
+    data = {'force_include': {}}
+    instance.initialize(None, data)
+    assert data['force_include'] == {}
+    instance.target_name = 'sdist'
+    instance.initialize(None, data)
+    assert set(data['force_include'].values()) == {'database/tempo_storage/tooling/learning_review', 'database/tempo_storage/tests/learning_review'}
+    (database / 'tests/learning_review').rmdir()
+    try:
+        instance.initialize(None, {'force_include': {}})
+        raise AssertionError('missing input accepted')
+    except FileNotFoundError:
+        pass
 `;
   const result = spawnSync(python, ['-B', '-c', source, repository], {encoding: 'utf8'});
   assert.equal(result.status, 0, result.stdout + result.stderr);

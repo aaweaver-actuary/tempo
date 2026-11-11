@@ -93,7 +93,7 @@ def boundary_facts(root, files):
                 exports = ast.literal_eval(constants['__all__'][0]) if len(constants['__all__']) == 1 else None
             except (ValueError, TypeError): pass
         results.append(dict(path=name, imports=imported, calls=calls, functions=functions,
-                            references=references, exports=exports, loaders=sorted(set(loaders))))
+                            references=references, exports=exports, declarations=[node.name for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))], loaders=sorted(set(loaders))))
     return results
 
 
@@ -156,7 +156,10 @@ def check_python(root, dependencies, exports, artifact=None, build_inputs=()):
                 problems.append(f"{source}:{node.lineno}: unresolved dynamic loader {node.attr}")
             for imported_module in imported:
                 import_root = imported_module.split(".")[0]
-                if import_root in {"importlib", "runpy"}:
+                if import_root in {"importlib", "runpy"} and not (
+                    isinstance(node, ast.ImportFrom) and node.module == "importlib.metadata"
+                    and all(alias.name == "version" for alias in node.names)
+                ):
                     problems.append(f"{source}:{node.lineno}: unresolved dynamic loader {imported_module}")
                 if import_root in owned_packages:
                     module_path = owned_packages[import_root].joinpath(*imported_module.split(".")[1:])
