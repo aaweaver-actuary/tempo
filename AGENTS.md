@@ -11,11 +11,11 @@ Tempo is a single-user, local-first chess study product. Protect playable Study,
 - Work on an isolated feature branch/worktree based on current main or an explicitly approved dependency base. Do not edit main or the live Study checkout. Preserve other owners' changes and use only verified task-owned disposable test resources. Never borrow live data, delete retained work, or globally prune shared resources. Follow [CONTRIBUTING](CONTRIBUTING.md#task-resources-and-cleanup).
 - Existing authorization remains effective; do not ask again for already-approved actions. An assignment, worker role, or documentation command does not grant new permission for consequential merges, deployments, migrations, data changes, or service operations.
 
-### Architecture coverage is an acceptance requirement
+### Architecture Guardian: a routine check, not a universal approval gate
 
-Every integrated candidate needs a current architecture disposition under the [Architecture Guardian protocol](docs/architecture/guardian.md), not a discretionary Manager reminder. Name the review owner at kickoff; keep the disposition in the existing task/PR. A lightweight independent reviewer may clear only the protocol's narrow non-executable class. Executable, contract, policy, dependency, test/gate and uncertain changes require full review; a small diff or unchanged signature is not an exemption. Missing, stale or incomplete review cannot qualify acceptance.
+For code changes, include a brief Guardian-like architecture look at the integrated diff, ideally from a separate inexpensive subagent. Its job is to notice accidental dependency edges, duplicate ownership, hidden imports and changed public behavior before they accumulate. Meaningful changes involving interfaces, state, persistence, composition or cross-component dependencies deserve deeper review. Tiny, clearly contained edits can receive a quick look; documentation-only, media-only and similar non-code edits do not automatically require a Guardian.
 
-The Creator schedules independent coverage within actual agent capacity; the Manager binds it to the integrated candidate and resolves findings; the final reviewer verifies the receipt before accepting. Existing independent technical review may also provide Guardian coverage explicitly. These are workflow requirements, not a claim that an automatic classifier or protected merge check is installed. Follow the protocol for scope, evidence reuse, unavailable reviewers and explicit owner exceptions.
+The Creator should include this step in coding handoffs so it does not depend on the Manager remembering. The Manager considers actionable findings, and an existing independent reviewer may cover architecture in the same pass. Neither a special receipt nor independent-agent availability is a universal merge blocker; existing correctness, safety and explicitly required review gates still apply. State any material unreviewed risk plainly instead of manufacturing approval. See the [Architecture Guardian guidance](docs/architecture/guardian.md).
 
 ## 2. Reliability invariants: Study is the protected product
 
@@ -67,7 +67,7 @@ The Creator schedules independent coverage within actual agent capacity; the Man
 - [SPEC.md](SPEC.md): product behavior, scope, and delivery order.
 - [CONTRIBUTING.md](CONTRIBUTING.md): review, publication, permissions, and resource cleanup.
 - [docs/testing.md](docs/testing.md): test selection, regression ownership, and runner limitations.
-- [Architecture Guardian](docs/architecture/guardian.md): mandatory change coverage, routing, role responsibilities and acceptance receipt.
+- [Architecture Guardian](docs/architecture/guardian.md): lightweight diff check, escalation guidance and ownership responsibilities.
 - [Component architecture](docs/architecture/component-reconstruction.md): public boundaries and discovery.
 - [Architecture diagrams](docs/architecture/diagrams/README.md): canonical drawings and change procedure.
 - [Database guidance](database/README.md): database ownership and schema documentation.
