@@ -80,21 +80,34 @@ def test_study_opening_selector_reads_only_one_page_per_slice(monkeypatch):
         return rows
 
     class Reader:
-        def execute_native(self, *args):
+        def execute_native(self, statement, parameters=()):
+            reads.append((statement, parameters))
             return self
 
-        def fetchone(self):
-            return (True,)
+        def fetchall(self):
+            if len(reads) == 2:
+                return [rows[-1][:6]]
+            assert len(reads) == 3
+            assert reads[-1][1][-1] == 16 and "LIMIT %s" in reads[-1][0]
+            return rows
 
     @contextmanager
     def reader():
         yield Reader()
 
+    @contextmanager
+    def snapshot(*, repertoire_snapshot=False):
+        assert repertoire_snapshot
+        yield Reader()
+
     monkeypatch.setattr(worker.read_storage, "_bounded_read", bounded_read)
     monkeypatch.setattr(worker, "background_read_connection", reader)
     monkeypatch.setattr(worker.read_storage, "background_read_connection", reader)
+    monkeypatch.setattr(worker.read_storage, "read_connection", snapshot)
     monkeypatch.setattr(worker, "_study_opening_route_still_valid", lambda *_: True)
-    monkeypatch.setattr(worker, "has_outstanding_real_game_miss", lambda *_: False)
+    monkeypatch.setattr(worker.frozen_opening_order, "annotate", lambda _, rows: rows)
+    monkeypatch.setattr(worker.frozen_opening_order, "proposal_valid", lambda *_: True)
+    monkeypatch.setattr(worker.openings_storage, "remaining_allowance", lambda *_: (16,))
     page = worker._prepare_study_opening_page("2026-10-13", {})
     assert len(reads) == 3 and page["examined"] == 16
     assert len(page["items"]) == 1  # shared route occurrences, one card
@@ -142,11 +155,6 @@ def test_study_only_replaces_optional_ranked_checkpoint_with_bounded_page(
     monkeypatch.setattr(study_mode, "study_only_enabled", lambda: True)
     monkeypatch.setattr(
         worker,
-        "_prepare_prioritized_openings",
-        lambda *_: pytest.fail("Optional ranking"),
-    )
-    monkeypatch.setattr(
-        worker,
         "_prepare_study_opening_page",
         lambda *_: {
             "items": [candidate()],
@@ -162,6 +170,7 @@ def test_study_only_replaces_optional_ranked_checkpoint_with_bounded_page(
             "payload": {
                 "queue_date": "2026-10-13",
                 "_queue_phase": previous_phase,
+                "_refresh_cycle_epoch": 1,
                 "opening_plan": [{"card_id": "obsolete-ranked-card"}],
                 "opening_index": 0,
             }
@@ -189,7 +198,7 @@ def test_study_opening_rejected_page_advances_without_starvation(
         },
     )
     worker.execute_postgres_queue_refresh_slice(
-        {"payload": {"queue_date": "2026-10-13", "_queue_phase": "study_opening_page"}}
+        {"payload": {"queue_date": "2026-10-13", "_queue_phase": "study_opening_page", "_refresh_cycle_epoch": 1}}
     )
     assert phase_harness["phase"] == "study_opening_page"
     assert phase_harness["payload"]["study_opening_cursor"] == ["rep", "line", 16]
@@ -214,6 +223,12 @@ def test_study_opening_publishes_one_item_then_checkpoints_even_when_mode_resume
     monkeypatch.setattr(
         position_queue_admission, "fence_opening_introduction", lambda *a: None
     )
+    @contextmanager
+    def snapshot(*, repertoire_snapshot=False):
+        assert repertoire_snapshot
+        yield object()
+    monkeypatch.setattr(worker, "read_connection", snapshot)
+    monkeypatch.setattr(position_queue_admission, "redundant_opening_introduction", lambda *_: False)
     monkeypatch.setattr(
         worker,
         "_admit_one_prioritized_opening",
@@ -222,6 +237,7 @@ def test_study_opening_publishes_one_item_then_checkpoints_even_when_mode_resume
     payload = {
         "queue_date": "2026-10-13",
         "_queue_phase": "study_opening_item",
+        "_refresh_cycle_epoch": 1,
         "study_opening_items": [candidate(), candidate(["d2d4"])],
         "study_opening_index": 0,
         "study_opening_more": True,
@@ -234,26 +250,28 @@ def test_study_opening_publishes_one_item_then_checkpoints_even_when_mode_resume
     assert phase_harness["payload"]["study_opening_counts"]["publication_rejected"] == 1
 
 
-def test_normal_mode_keeps_existing_priority_preparation(phase_harness, monkeypatch):
+def test_normal_mode_resumes_retired_priority_checkpoint_with_study_page(phase_harness, monkeypatch):
     monkeypatch.setattr(study_mode, "study_only_enabled", lambda: False)
     monkeypatch.setattr(
         worker,
         "_prepare_study_opening_page",
-        lambda *_: pytest.fail("Fallback in normal mode"),
-    )
-    monkeypatch.setattr(
-        worker, "_prepare_prioritized_openings", lambda *_: [{"card_id": "ranked"}]
+        lambda *_: {"items": [candidate()], "cursor": ["rep", "line", 0],
+                    "upper": ["rep", "line", 1], "has_more": True,
+                    "examined": 16, "stop_reason": None},
     )
     worker.execute_postgres_queue_refresh_slice(
         {
             "payload": {
                 "queue_date": "2026-10-13",
                 "_queue_phase": "prioritized_openings",
+                "_refresh_cycle_epoch": 1,
+                "opening_plan": [{"card_id": "obsolete-ranked-card"}],
             }
         }
     )
-    assert phase_harness["phase"] == "prioritized_opening_item"
-    assert phase_harness["payload"]["opening_plan"] == [{"card_id": "ranked"}]
+    assert phase_harness["phase"] == "study_opening_item"
+    assert "opening_plan" not in phase_harness["payload"]
+    assert len(phase_harness["payload"]["study_opening_items"]) == 1
 
 
 @pytest.fixture(autouse=True)
