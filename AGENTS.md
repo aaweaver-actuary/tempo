@@ -11,6 +11,12 @@ Tempo is a single-user, local-first chess study product. Protect playable Study,
 - Work on an isolated feature branch/worktree based on current main or an explicitly approved dependency base. Do not edit main or the live Study checkout. Preserve other owners' changes and use only verified task-owned disposable test resources. Never borrow live data, delete retained work, or globally prune shared resources. Follow [CONTRIBUTING](CONTRIBUTING.md#task-resources-and-cleanup).
 - Existing authorization remains effective; do not ask again for already-approved actions. An assignment, worker role, or documentation command does not grant new permission for consequential merges, deployments, migrations, data changes, or service operations.
 
+### Architecture coverage is an acceptance requirement
+
+Every integrated candidate needs a current architecture disposition under the [Architecture Guardian protocol](docs/architecture/guardian.md), not a discretionary Manager reminder. Name the review owner at kickoff; keep the disposition in the existing task/PR. A lightweight independent reviewer may clear only the protocol's narrow non-executable class. Executable, contract, policy, dependency, test/gate and uncertain changes require full review; a small diff or unchanged signature is not an exemption. Missing, stale or incomplete review cannot qualify acceptance.
+
+The Creator schedules independent coverage within actual agent capacity; the Manager binds it to the integrated candidate and resolves findings; the final reviewer verifies the receipt before accepting. Existing independent technical review may also provide Guardian coverage explicitly. These are workflow requirements, not a claim that an automatic classifier or protected merge check is installed. Follow the protocol for scope, evidence reuse, unavailable reviewers and explicit owner exceptions.
+
 ## 2. Reliability invariants: Study is the protected product
 
 - **Essential Study and Tactics must work without optional Games, analysis, engines, external providers, or their workers.** An optional failure, missing source, retryable hold, stopped collector, or unavailable feature mode must not indefinitely block an unrelated valid card, a review save, or accepted Study work.
@@ -61,6 +67,7 @@ Tempo is a single-user, local-first chess study product. Protect playable Study,
 - [SPEC.md](SPEC.md): product behavior, scope, and delivery order.
 - [CONTRIBUTING.md](CONTRIBUTING.md): review, publication, permissions, and resource cleanup.
 - [docs/testing.md](docs/testing.md): test selection, regression ownership, and runner limitations.
+- [Architecture Guardian](docs/architecture/guardian.md): mandatory change coverage, routing, role responsibilities and acceptance receipt.
 - [Component architecture](docs/architecture/component-reconstruction.md): public boundaries and discovery.
 - [Architecture diagrams](docs/architecture/diagrams/README.md): canonical drawings and change procedure.
 - [Database guidance](database/README.md): database ownership and schema documentation.

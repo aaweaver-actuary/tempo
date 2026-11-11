@@ -18,6 +18,14 @@ Formatting preferences, alternate designs, speculative risks, and unrelated clea
 
 Use [docs/testing.md](docs/testing.md) for selection, regressions, and evidence reuse. An intentional requirement change can change an obsolete expectation; record the requirement and replacement proof. Do not weaken still-applicable assertions to obtain green results. A legitimate fixture repair must preserve what the test is meant to prove.
 
+### Architecture coverage before acceptance
+
+Follow the [Architecture Guardian protocol](docs/architecture/guardian.md) for every integrated candidate, including deletions and policy-only changes. The PR/task must link one current receipt identifying the actual base and head, policy revision, independent reviewer, complete changed-file coverage, routing reason, applicable check evidence, findings and disposition. `Architecture impact: none` is not an exemption from this review. A cheap triager cannot waive mandatory full-review triggers; unknown or missing evidence remains incomplete.
+
+The final acceptance reviewer checks that the receipt matches the candidate. New commits, changed integration bases or changed policy inputs require renewed routing and review of the delta plus affected dependencies; verified unchanged evidence may be reused explicitly. An author, Manager or generated checkbox cannot self-certify independent review. An unavailable reviewer leaves the gate unmet; only the repository owner may authorize a documented, candidate-specific exception. Do not label such an exception a pass or a standing waiver.
+
+The PR template is a reminder, not enforcement. Automatic invocation, receipt validation and merge protection remain separate implementation/verification work under [#984](https://github.com/aaweaver-actuary/tempo/issues/984). This documentation does not change hosted checks or authorize merge/deployment.
+
 ### Architecture impact and drawings
 
 Update affected canonical diagrams only for a materially changed boundary under [the drawing procedure](docs/architecture/diagrams/README.md#maintenance-and-review-procedure). The PR states the changed boundary and links its view, or `Architecture impact: none` with a brief reason. Instruction-only changes do not themselves change runtime architecture. Do not duplicate the procedure here or require unrelated drawings and rendering audits.
