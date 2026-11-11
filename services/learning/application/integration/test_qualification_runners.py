@@ -40,9 +40,11 @@ def test_native_rejects_invalid_reporting_or_reporting_with_selection(options):
 
 
 def test_qualifier_rejects_selectors_before_build_and_native_before_docker(tmp_path):
-    for runner in (APPLICATION/'qualify.py', APPLICATION.parents[2]/'database/tempo_legacy_database/tooling/learning_review/run_postgres.py'):
+    for runner in (APPLICATION/'qualify.py', APPLICATION/'run_suite.py'):
         environment = dict(os.environ, PYTEST_ADDOPTS='-k no_such_required_identity', PATH='')
-        result = subprocess.run([sys.executable, str(runner), str(tmp_path/'evidence')],
+        argument = 'native' if runner.name == 'run_suite.py' else str(tmp_path/'evidence')
+        environment['TEMPO_LEARNING_EVIDENCE_DIR'] = str(tmp_path/'evidence')
+        result = subprocess.run([sys.executable, str(runner), argument],
                                 env=environment, capture_output=True, text=True)
         assert result.returncode != 0
         assert 'rejects inherited PYTEST_ADDOPTS' in result.stderr
@@ -123,7 +125,7 @@ def test_actual_controlled_collection_execution_and_external_junit_ignore_plugin
     "-k 'ordinary_review_sequence or full_qualification_requires_exact_complete_normal_inventory'",
     '-k no_such_required_identity', '-m no_such_marker', '--deselect=required',
     '--ignore=tests', '--ignore-glob=*', '--maxfail=1', '-x'])
-@pytest.mark.parametrize('suite_index', [0, 1])
+@pytest.mark.parametrize('suite_index', [0, 1, 2])
 def test_registered_component_python_suites_cannot_accept_partial_selection(tmp_path, selector, suite_index):
     import shlex
     root = APPLICATION.parents[2]
@@ -207,3 +209,32 @@ def test_atomic_summary_replacement_never_exposes_partial_json(monkeypatch, tmp_
     with pytest.raises(OSError): qualification.write_json(destination, {'complete':False})
     assert destination.read_text() == original
     assert list(tmp_path.iterdir()) == [destination]
+
+
+@pytest.mark.parametrize('inherited,cli,plugin', [
+    ('-k partial', [], ''), ('--junitxml=a --junit-xml=b', [], ''),
+    ('--junitxml=a', ['--junitxml=b'], ''), ('', [], 'untrusted_plugin'),
+])
+def test_native_rejects_selection_plugin_and_ambiguous_receipts_before_allocation(tmp_path, inherited, cli, plugin):
+    evidence = tmp_path/'evidence'
+    environment = dict(os.environ, PYTEST_ADDOPTS=inherited, PYTEST_PLUGINS=plugin,
+                       TEMPO_LEARNING_EVIDENCE_DIR=str(evidence))
+    result = subprocess.run([sys.executable, str(APPLICATION/'run_suite.py'), 'native', *cli],
+                            env=environment, capture_output=True, text=True)
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert not evidence.exists()
+    assert not (tmp_path/'a').exists() and not (tmp_path/'b').exists()
+
+
+@pytest.mark.parametrize('option', ['--junitxml', '--junit-xml'])
+@pytest.mark.parametrize('separator', ['=', ' '])
+def test_native_runner_uses_single_inherited_junit_with_spaces(monkeypatch, tmp_path, option, separator):
+    runner = load_runner(monkeypatch, 'run_suite.py')
+    fixture = tmp_path/'test_small.py'
+    fixture.write_text('def test_one(): pass\n')
+    monkeypatch.setattr(runner, 'suite_inputs', lambda suite: (tmp_path, [fixture]))
+    monkeypatch.setenv('PYTEST_ADDOPTS', option+separator+repr(str(tmp_path/'external results.xml')))
+    monkeypatch.delenv('PYTEST_PLUGINS', raising=False)
+    monkeypatch.setenv('TEMPO_LEARNING_EVIDENCE_DIR', str(tmp_path/'evidence'))
+    assert runner.main(['native']) == 0
+    assert len(list(xml.parse(tmp_path/'external results.xml').iter('testcase'))) == 1

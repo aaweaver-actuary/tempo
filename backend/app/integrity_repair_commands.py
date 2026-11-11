@@ -12,13 +12,13 @@ from pydantic import BaseModel
 from .command_gateway import register_command
 from app.repertoire.changes.application import validate_repair_source_rows
 from app.repertoire.changes.ports import ChangeError
-from tempo_legacy_database.adapters.authored_repertoires import (
+from tempo_storage.authored_repertoires import (
     product_changes as change_storage,
 )
-from tempo_legacy_database.adapters.authored_repertoires import (
+from tempo_storage.authored_repertoires import (
     integrity_commands as storage,
 )
-from tempo_legacy_database.adapters.postgres_store import PostgresConnection
+from tempo_storage.postgres import PostgresConnection
 from .services.postgres_integrity import invalidate_integrity_in_transaction
 from .services.postgres_opening_graph import request_graph_rebuild_in_transaction
 from .services.repertoire_integrity import _archive_unsupported_card
@@ -131,7 +131,7 @@ def resolve_integrity_issue(
             if row["source_id"] not in removed
         )
         validate_repair_source_rows(repertoire_id, sources, proposed)
-    except ChangeError as error:
+    except (ChangeError, ValueError) as error:
         raise HTTPException(409, str(error)) from error
     admitted_routes = []
     for source_line, moves, validated_route in line_changes:
@@ -155,7 +155,7 @@ def resolve_integrity_issue(
         validate_repair_source_rows(
             repertoire_id, sources, change_storage.lock_sources(database, repertoire_id)
         )
-    except ChangeError as error:
+    except (ChangeError, ValueError) as error:
         raise HTTPException(409, str(error)) from error
     for validated_route in admitted_routes:
         certify_admitted_route(database, repertoire_id, validated_route)

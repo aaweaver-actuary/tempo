@@ -13,8 +13,8 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'database'))
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'backend'))
-from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
-from tempo_legacy_database.adapters.tactics.row_snapshot import read_tactics_row_snapshot
+from tempo_storage.postgres import PostgresConnection, tempo_row_factory
+from tempo_storage.tactics.row_snapshot import read_tactics_row_snapshot
 
 
 def _migrate(raw):
@@ -24,13 +24,7 @@ def _migrate(raw):
     migration.validate_migration_history(paths, [], expected_version=migration.POSTGRES_SCHEMA_VERSION)
     assert len(paths) == migration.POSTGRES_SCHEMA_VERSION
     for path in paths:
-        registration = migration.MODULE_MIGRATIONS.get(path.name)
-        if registration:
-            source = (ROOT / 'database' / registration[2]).read_bytes()
-            assert hashlib.sha256(source).hexdigest() == registration[3]
-            assert '-- sha256: ' + registration[3] in path.read_text()
-            raw.execute(source.decode(), prepare=False)
-        raw.execute(path.read_text(), prepare=False)
+        raw.execute(migration.migration_source(path), prepare=False)
         assert raw.execute('SELECT max(version) FROM tempo_schema_migrations').fetchone()[0] == int(path.name[:3])
 
 

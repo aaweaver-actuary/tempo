@@ -113,7 +113,7 @@ def test_checkpoint_http_proof_isolates_receipt_setup_from_parent_foreground(
     fail_proof,
 ):
     from app import command_gateway
-    from tempo_legacy_database.adapters import postgres_store
+    from tempo_storage import postgres
 
     proof, _unused_server = admission_proof
     parent_keys = (
@@ -174,7 +174,7 @@ def test_checkpoint_http_proof_isolates_receipt_setup_from_parent_foreground(
     server = AdmissionServer()
     monkeypatch.setattr(redis_admission_gate, "client", lambda: server)
     monkeypatch.setattr(redis_admission_gate, "configured", lambda: True)
-    monkeypatch.setattr(postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(postgres, "configured", lambda: True)
     payload = {"checkpoint": {}, "prepared_manifest": {"obsolete": True}}
     command_name = "opening_evidence.checkpoint"
 
@@ -202,7 +202,7 @@ def test_checkpoint_http_proof_isolates_receipt_setup_from_parent_foreground(
         writer_entries.append(options)
         yield SimpleNamespace(raw=ReceiptCursor())
 
-    monkeypatch.setattr(postgres_store, "connection", admitted_writer)
+    monkeypatch.setattr(postgres, "connection", admitted_writer)
 
     def checkpoint_proof():
         setup_events.append("receipt setup")

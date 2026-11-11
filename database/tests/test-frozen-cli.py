@@ -10,7 +10,7 @@ sys.path[:0] = [str(_REPOSITORY), str(_REPOSITORY / "database"), str(_REPOSITORY
 import json, os, secrets, shutil, socket, subprocess, tempfile, time, urllib.request
 from pathlib import Path
 import psycopg
-from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
+from tempo_storage.postgres import PostgresConnection, tempo_row_factory
 from app.services import frozen_opening_order as order
 from app.queue_commands import current_study_day
 from fixtures.frozen_order_staged_plan import staged_plan

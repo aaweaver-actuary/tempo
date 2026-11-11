@@ -266,7 +266,7 @@ def test_protected_requeue_does_not_load_queue_seeding_or_worker_orchestration()
 import sys
 from unittest.mock import patch
 from app.services import review_service
-from tempo_legacy_database.adapters.queue_refresh import presentation
+from tempo_storage.queue_refresh import presentation
 rows=[dict(id=1,card_id='card',position=0,content_type='opening',admission_kind='new',
            gameplay_priority_reason=None,cycle=0,attempt_state='clean')]
 with patch.object(review_service.storage,'queued_entry',return_value={'id':1}), \

@@ -1,0 +1,22 @@
+{
+  "description": "Candidate decoder examples, not live server responses or an adopted decoder.",
+  "expected_operation_id": "review:original-1",
+  "receipts": [
+    {"name": "pending", "wire": {"operation_id": "review:original-1", "state": "pending"}, "kind": "pending"},
+    {"name": "unknown", "wire": {"operation_id": "review:original-1", "state": "unknown"}, "kind": "unknown"},
+    {"name": "blocked", "wire": {"operation_id": "review:original-1", "state": "blocked", "last_error": {"code": "source_hold", "retryable": true}}, "kind": "blocked"},
+    {"name": "committed", "wire": {"operation_id": "review:original-1", "state": "complete", "response": {"review_id": 42, "attempt_id": "attempt-original"}}, "kind": "complete"},
+    {"name": "terminal_conflict", "wire": {"operation_id": "review:original-1", "state": "failed", "error": {"code": "command_identity_reused", "status_code": 409, "retryable": false}}, "kind": "failed"},
+    {"name": "wrong_identity", "wire": {"operation_id": "review:other", "state": "complete", "response": {}}, "kind": "malformed"},
+    {"name": "missing_identity", "wire": {"state": "complete", "response": {}}, "kind": "malformed", "note": "Identity-required mode only; legacy shared transport currently accepts a missing identity and must retain compatibility."},
+    {"name": "missing_complete_response", "wire": {"operation_id": "review:original-1", "state": "complete"}, "kind": "malformed"},
+    {"name": "unknown_state", "wire": {"operation_id": "review:original-1", "state": "future-state"}, "kind": "malformed"}
+  ],
+  "next_exercise": [
+    {"kind": "ready", "queue": {"cards": [{"id": "card-1", "queue_entry_id": 1, "revision": 2}]}},
+    {"kind": "empty", "queue": {"cards": []}},
+    {"kind": "pending", "operation_id": "queue.issue_head:original"},
+    {"kind": "held", "reason": "position_plan_missing"},
+    {"kind": "unavailable", "reason": "dependency_unavailable", "retryable": null}
+  ]
+}

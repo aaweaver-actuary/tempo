@@ -8,7 +8,7 @@ from contextvars import ContextVar
 
 import pytest
 
-from tempo_legacy_database import connections, infrastructure
+from tempo_storage import connections, infrastructure
 
 
 @pytest.fixture
@@ -56,7 +56,7 @@ def port(monkeypatch):
 
 def test_storage_import_does_not_load_application_services():
     code = (
-        "import sys; import tempo_legacy_database.connections; "
+        "import sys; import tempo_storage.connections; "
         "assert 'app.services.activity_gate' not in sys.modules; "
         "assert 'app.services.background_runtime' not in sys.modules"
     )
@@ -72,7 +72,7 @@ def test_bound_gate_denial_precedes_connection_open(monkeypatch, port):
 
     monkeypatch.setattr(gate, "assert_foreground_connection_allowed", deny)
     monkeypatch.setattr(
-        connections.postgres_store, "connection", lambda **kw: pytest.fail("opened")
+        connections.postgres, "connection", lambda **kw: pytest.fail("opened")
     )
     with pytest.raises(RuntimeError, match="denied"):
         with connections.connection(background=True):
@@ -91,7 +91,7 @@ def test_background_exception_unwinds_same_measurement_context(monkeypatch, port
         finally:
             events.append("close")
 
-    monkeypatch.setattr(connections.postgres_store, "connection", opened)
+    monkeypatch.setattr(connections.postgres, "connection", opened)
     with pytest.raises(ValueError):
         with connections.connection(background=True):
             assert context.get()
@@ -135,7 +135,7 @@ def test_database_first_composition_reuses_real_gate_and_stage():
     code = """
 from pathlib import Path
 import sys
-from tempo_legacy_database import connections, infrastructure
+from tempo_storage import connections, infrastructure
 assert 'app.services.activity_gate' not in sys.modules
 from app.product_composition.database_infrastructure import bind_database_infrastructure
 from app.services.activity_gate import activity_gate
@@ -157,7 +157,7 @@ def test_composition_helper_import_is_inert():
         "import sys; import app.product_composition.database_infrastructure; "
         "assert 'app.services.activity_gate' not in sys.modules; "
         "assert 'app.services.background_runtime' not in sys.modules; "
-        "assert 'tempo_legacy_database.connections' not in sys.modules"
+        "assert 'tempo_storage.connections' not in sys.modules"
     )
     subprocess.run([sys.executable, "-c", code], check=True, env=os.environ.copy())
 
@@ -170,7 +170,7 @@ def test_application_entrypoint_binds_database_after_storage_first(
 import importlib
 from pathlib import Path
 import sys
-from tempo_legacy_database import connections, infrastructure
+from tempo_storage import connections, infrastructure
 assert 'app.services.activity_gate' not in sys.modules
 importlib.import_module(sys.argv[1])
 from app.services.activity_gate import activity_gate
@@ -189,7 +189,7 @@ def test_frozen_order_fixture_binds_before_controlled_connection():
     code = """
 import os, runpy, sys
 from contextlib import contextmanager
-from tempo_legacy_database import connections, infrastructure
+from tempo_storage import connections, infrastructure
 @contextmanager
 def controlled():
     from app.services.activity_gate import activity_gate
@@ -231,7 +231,7 @@ def test_startup_validates_existing_postgres_schema_through_reader(
         finally:
             events.append("closed")
 
-    monkeypatch.setattr(connections.postgres_store, "connection", opened)
+    monkeypatch.setattr(connections.postgres, "connection", opened)
     if version_matches:
         connections.initialize()
     else:
@@ -269,7 +269,7 @@ def test_postgres_context_profiles_preserve_publication_and_authoritative_reads(
         opened_profiles.append(options)
         yield object()
 
-    monkeypatch.setattr(connections.postgres_store, "connection", opened)
+    monkeypatch.setattr(connections.postgres, "connection", opened)
     with connections.connection(background=True, queue_refresh_publication=True):
         pass
     with connections.background_read_connection(authoritative=True, pool_timeout_seconds=0.2):

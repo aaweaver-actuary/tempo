@@ -1,9 +1,11 @@
+
+from app.repertoire import position_study_source as _source_preparation
 from datetime import datetime, timezone
 from types import SimpleNamespace as NS
 
 import pytest
 from tempo_evidence_math.position_learning import Hold, PositionDefinition, PositionKey
-from tempo_legacy_database.adapters.study import position_introductions as intro
+from tempo_storage.study import position_introductions as intro
 
 FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -"
 DEF = PositionDefinition(PositionKey("r", FEN), "e2e4", "p1")
@@ -94,10 +96,10 @@ def prepared(introduction="unintroduced"):
 
 @pytest.fixture
 def fences(monkeypatch):
-    from tempo_legacy_database.adapters.authored_repertoires import (
+    from tempo_storage.authored_repertoires import (
         position_study_source,
     )
-    from tempo_legacy_database.adapters.study import (
+    from tempo_storage.study import (
         position_owner_epoch,
         position_fsrs_namespace,
     )
@@ -176,11 +178,11 @@ def test_native_authorized_introduction_writes_fresh_state_only_after_admission(
     import psycopg
     from psycopg import sql
     from test_product_snapshot_postgres import DDL
-    from tempo_legacy_database.adapters.postgres_store import tempo_row_factory
-    from tempo_legacy_database.adapters.authored_repertoires import (
+    from tempo_storage.postgres import tempo_row_factory
+    from tempo_storage.authored_repertoires import (
         position_study_source,
     )
-    from tempo_legacy_database.adapters.study import position_fsrs_namespace
+    from tempo_storage.study import position_fsrs_namespace
     from app.services import (
         postgres_queue_refresh as refresh,
         study_mode,
@@ -217,7 +219,7 @@ def test_native_authorized_introduction_writes_fresh_state_only_after_admission(
                     review_result_json text,last_status text);""")
             ddl = (
                 Path(__file__).resolve().parents[2]
-                / "database/tempo_legacy_database/ddl/migrations/057_position_study.sql"
+                / "database/tempo_storage/ddl/migrations/057_position_study.sql"
             )
             raw.execute(ddl.read_text())
             moves = json.dumps(["e2e4"])
@@ -256,7 +258,7 @@ def test_native_authorized_introduction_writes_fresh_state_only_after_admission(
                     return self.raw.execute(query, params)
 
             port = Port(raw)
-            source = position_study_source.prepare_position_source(port, "r")
+            source = _source_preparation.prepare_position_source(port, "r")
             assert not isinstance(source, Hold)
             definition = source.routes[0].decisions[0].definition
             digest = source.authored_token.authored_digest

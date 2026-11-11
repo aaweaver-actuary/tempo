@@ -14,8 +14,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT), str(ROOT/'database'), str(ROOT/'backend'), str(ROOT/'backend/tests')]
 from test_product_game_lapse_postgres import owned_postgres
 from database.tests.position_study.italian_acceptance import seed_disposable_source, LINES, _moves
-from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
-from tempo_legacy_database.adapters import postgres_store
+from tempo_storage.postgres import PostgresConnection, tempo_row_factory
+from tempo_storage import postgres
 from tempo_evidence_math.position_learning import Hold
 from app.services import postgres_queue_refresh as refresh, durable_tasks, position_queue_admission as position
 from app.product_composition.database_infrastructure import bind_database_infrastructure
@@ -33,7 +33,7 @@ def test_position_due_snapshot_and_writer_fences(owned_postgres, monkeypatch):
     dsn=make_conninfo(**target)
     monkeypatch.setenv('TEMPO_DATABASE_READ_URL',dsn)
     monkeypatch.setenv('TEMPO_DATABASE_WRITE_URL',dsn)
-    postgres_store.prepare_authoritative_background_pool()
+    postgres.prepare_authoritative_background_pool()
     try:
         with psycopg.connect(**target,row_factory=tempo_row_factory) as raw:
             db,source,physical,day=seed_disposable_source(raw,dsn,(_moves(LINES['knight']),_moves(LINES['giuoco'])),('knight','giuoco'),repertoire_id='source-proof',now=datetime.now(timezone.utc))
@@ -93,7 +93,7 @@ def test_position_due_snapshot_and_writer_fences(owned_postgres, monkeypatch):
                 assert active[0] and not in_background[0]
                 started = time.perf_counter()
                 from app.services.queue_application import request_queue_refresh_in_transaction
-                with postgres_store.connection() as foreground_db:
+                with postgres.connection() as foreground_db:
                     request_queue_refresh_in_transaction(foreground_db, day)
                 foreground.append(round((time.perf_counter()-started)*1000,1))
                 assert not future.done(), 'snapshot unexpectedly finished during foreground write'
@@ -108,24 +108,24 @@ def test_position_due_snapshot_and_writer_fences(owned_postgres, monkeypatch):
             assert raw.execute('SELECT jsonb_agg(to_jsonb(s) ORDER BY position) FROM study_position_states s').fetchone()[0] == before_states
             raw.execute("UPDATE study_position_owners SET mode='paused' WHERE repertoire_id='source-proof'")
             raw.commit()
-            with postgres_store.connection(background=True) as writer:
+            with postgres.connection(background=True) as writer:
                 owner_hold=source_admit(writer,day,proposals[0])
                 assert isinstance(owner_hold,Hold), owner_hold
             raw.execute("UPDATE study_position_owners SET mode='active' WHERE repertoire_id='source-proof'")
             raw.execute("UPDATE cards SET revision=revision+1 WHERE id='card-0'")
             raw.commit()
-            with postgres_store.connection(background=True) as writer:
+            with postgres.connection(background=True) as writer:
                 source_hold=source_admit(writer,day,proposals[0])
                 assert isinstance(source_hold,Hold), source_hold
             # A whole-source read may outlive an authored edit. Its original
             # owner token must still be rejected before queue mutation.
             raw.execute("UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE id='source-proof'")
             raw.commit()
-            with postgres_store.connection(background=True) as writer:
+            with postgres.connection(background=True) as writer:
                 authored_hold=source_admit(writer,day,proposals[0])
                 assert isinstance(authored_hold,Hold), authored_hold
                 assert authored_hold.reason.startswith('position_source_'), authored_hold
             assert raw.execute('SELECT count(*) FROM daily_queue WHERE queue_date=%s',(day,)).fetchone()[0] == 1
         print('PASS real 320ms snapshot; reader',snapshots,'writer',writes,'foreground_ms',foreground,'stale_owner',owner_hold,'stale_source',source_hold,'authored_change',authored_hold)
     finally:
-        postgres_store.close_pools()
+        postgres.close_pools()

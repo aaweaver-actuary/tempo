@@ -28,9 +28,9 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from celery.exceptions import TimeoutError as CeleryTimeout
 import psycopg
-from tempo_legacy_database.adapters import postgres_store
+from tempo_storage import postgres
 from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
-from app.services.postgres_opening_evidence import prepare_checkpoint, persist_checkpoint, decision_evidence, canonical_json, queue_manifests
+from app.study.position_checkpoint import prepare_checkpoint, persist_checkpoint, canonical_json, queue_manifests
 from app.review_commands import submit_review
 
 
@@ -53,13 +53,13 @@ def verify_persisted_shadow():
         raise RuntimeError('Shadow verification requires a disposable PostgreSQL instance')
     os.environ['TEMPO_DATABASE_WRITE_URL']=os.getenv('TEMPO_SHADOW_REHEARSAL_URL','postgresql://postgres@postgres:5432/tempo')
     os.environ['TEMPO_DATABASE_READ_URL']=os.environ['TEMPO_DATABASE_WRITE_URL']
-    with postgres_store.connection(read_only=True) as database:
+    with postgres.connection(read_only=True) as database:
         receipts=database.execute_native("SELECT operation_id,response_json FROM operation_receipts WHERE command_name='shadow.evidence.fixture' ORDER BY operation_id").fetchall()
         assert receipts,'Shadow data was absent after service recreation'
         for receipt in receipts:
             assert shadow_digest(database,receipt[0]) == json.loads(receipt[1])['digest'],'Service recreation changed shadow provenance or summaries'
     print('PASS exact PostgreSQL shadow event/provenance/summary digest survives service recreation')
-    postgres_store.close_pools()
+    postgres.close_pools()
 
 
 def test_offline_repeat_reconciles_parent_aggregate_only_fallback(database, card_id, queue_entry_id, checkpoint, event, manifest, observed_at):
@@ -102,7 +102,7 @@ def _create_color_fixture(line_color, *, card_color=None, shared=False, tied_lin
     learner_color = card_color or line_color
     moves = ['e2e4', 'e7e5'] if learner_color == 'black' else ['e2e4']
     alternate = prefix+'-alternate' if shared else None
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         database.execute('INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,?,?)',
                          (prefix, 'Legacy color', 'test', now.isoformat()))
         if tied_lines:
@@ -154,7 +154,7 @@ def _fixture_scheduling(database, fixture):
 
 
 def _retain_color_provenance(fixture):
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         database.execute('DELETE FROM cards WHERE id=?', (fixture['card_id'],))
         database.execute('DELETE FROM repertoires WHERE id=?', (fixture['repertoire_id'],))
         if fixture['alternate']:
@@ -171,7 +171,7 @@ def _large_checkpoint_fixture():
              'f1e1 b7b5 a4b3 d7d6 c2c3 e8g8 h2h3 c6b8 d2d4 b8d7 '
              'b1d2 c7c5 d4d5 c5c4 b3c2 d7c5 d2f1 f6d7 c1e3 c5b7 '
              'f1g3 d7c5 b2b4 c5d7 a2a4 d7b6 a4b5 b6d7 g3f5').split()
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         database.execute('UPDATE cards SET moves_json=?,revision=2 WHERE id=?', (json.dumps(moves), fixture['card_id']))
         # Admit the edited fixture as a new attempt; the original origin must retain revision 1.
         fixture['queue_id'] = database.execute(
@@ -198,7 +198,7 @@ def _large_checkpoint_fixture():
 
 
 def _checkpoint_operation_receipt(operation_id):
-    with postgres_store.connection(read_only=True) as database:
+    with postgres.connection(read_only=True) as database:
         return dict(database.execute_native('SELECT * FROM operation_receipts WHERE operation_id=%s', (operation_id,)).fetchone())
 
 
@@ -240,7 +240,7 @@ def _wait_for_checkpoint_admission(operation):
 
 def _recover_checkpoint_operation(operation_id):
     from app import command_gateway, tasks
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         database.execute_native("UPDATE operation_receipts SET next_retry_at=NOW()-INTERVAL '1 minute',"
                                 "lease_expires_at=NOW()-INTERVAL '1 minute',updated_at='1970-01-01' WHERE operation_id=%s", (operation_id,))
     recovered = _wait_for_checkpoint_admission(command_gateway.claim_recoverable_operation)
@@ -259,7 +259,7 @@ def test_postgres_checkpoint_driver_retries_only_foreground_deferral():
             future = workers.submit(admitted_checkpoint_delivery, operation_id, 'opening_evidence.checkpoint', payload)
             deadline = time.monotonic() + 5
             while True:
-                with postgres_store.connection(read_only=True) as database:
+                with postgres.connection(read_only=True) as database:
                     receipt = database.execute_native('SELECT state,attempt_count,payload_json FROM operation_receipts WHERE operation_id=%s', (operation_id,)).fetchone()
                 if receipt and receipt['state'] == 'retrying':
                     assert receipt['attempt_count'] == 0 and json.loads(receipt['payload_json']) == payload
@@ -298,8 +298,8 @@ def _paused_checkpoint_review(*, complete_same_attempt):
 
 def _assert_paused_checkpoint_review(*, complete_same_attempt):
     from app import command_gateway, tasks
-    from tempo_legacy_database import connections as database_module
-    from app.services import postgres_opening_evidence as evidence
+    from tempo_storage import connections as database_module
+    from app.study import position_checkpoint as evidence
     from app.services.activity_gate import activity_gate
     fixture, payload = _large_checkpoint_fixture()
     operation_id = fixture['card_id']+'-checkpoint'
@@ -380,7 +380,7 @@ def _assert_paused_checkpoint_review(*, complete_same_attempt):
             foreground_ms = (time.perf_counter()-started)*1000
             assert review_result is not None, _checkpoint_operation_receipt(fixture['card_id']+'-review')
             assert review_result['persisted'] and not release.is_set() and not checkpoint_future.done()
-            with postgres_store.connection(read_only=True) as database:
+            with postgres.connection(read_only=True) as database:
                 scheduling = _fixture_scheduling(database, fixture)
                 if complete_same_attempt:
                     _assert_large_checkpoint(database, payload, state='complete')
@@ -392,19 +392,19 @@ def _assert_paused_checkpoint_review(*, complete_same_attempt):
         assert checkpoint_result is None
         receipt = _checkpoint_operation_receipt(operation_id)
         assert receipt['state'] == 'retrying' and json.loads(receipt['last_error_json'])['class'] == 'SerializationFailure'
-        with postgres_store.connection(read_only=True) as database:
+        with postgres.connection(read_only=True) as database:
             assert shadow_digest(database, fixture['repertoire_id']) == before_stale, 'Stale preparation changed completed evidence'
         checkpoint_result = _recover_checkpoint_operation(operation_id)
     assert checkpoint_result['persisted'] and checkpoint_result['contiguous_sequence'] == 256
     assert checkpoint_result['state'] == ('complete' if complete_same_attempt else 'active')
-    with postgres_store.connection(read_only=True) as database:
+    with postgres.connection(read_only=True) as database:
         _assert_large_checkpoint(database, payload, state=checkpoint_result['state'])
         assert _fixture_scheduling(database, fixture) == scheduling, 'Checkpoint publication changed scheduling'
         digest = shadow_digest(database, fixture['repertoire_id'])
     # Same receipt and a distinct delivery key both preserve events, counters and days.
     assert command_gateway.execute_command(operation_id, 'opening_evidence.checkpoint', payload, background=True) == checkpoint_result
     assert admitted_checkpoint_delivery(operation_id+'-replay', 'opening_evidence.checkpoint', payload) == checkpoint_result
-    with postgres_store.connection(read_only=True) as database:
+    with postgres.connection(read_only=True) as database:
         assert shadow_digest(database, fixture['repertoire_id']) == digest and _fixture_scheduling(database, fixture) == scheduling
     receipt = _checkpoint_operation_receipt(operation_id)
     assert json.loads(receipt['payload_json']) == payload
@@ -470,7 +470,7 @@ def _prove_opening_checkpoint_restart_recomputes_original_receipt(admission_name
     from app import command_gateway
     fixture, payload = _large_checkpoint_fixture()
     operation_id = fixture['card_id']+'-restart'
-    with postgres_store.connection(read_only=True) as database:
+    with postgres.connection(read_only=True) as database:
         scheduling = _fixture_scheduling(database, fixture)
     child = subprocess.run([sys.executable, str(Path(__file__).resolve()), '--crash-after-prepare'],
                            input=json.dumps({'operation_id':operation_id, 'payload':payload,
@@ -480,16 +480,16 @@ def _prove_opening_checkpoint_restart_recomputes_original_receipt(admission_name
     receipt = _checkpoint_operation_receipt(operation_id)
     assert receipt['state'] == 'executing' and json.loads(receipt['payload_json']) == payload
     assert receipt['request_hash'] == command_gateway.request_digest('opening_evidence.checkpoint', payload)
-    with postgres_store.connection(read_only=True) as database:
+    with postgres.connection(read_only=True) as database:
         assert not database.execute_native('SELECT 1 FROM opening_evidence_attempts WHERE attempt_id=%s', (payload['checkpoint']['attempt_id'],)).fetchone()
     result = _recover_checkpoint_operation(operation_id)
     assert result['persisted'] and result['contiguous_sequence'] == 256
-    with postgres_store.connection(read_only=True) as database:
+    with postgres.connection(read_only=True) as database:
         _assert_large_checkpoint(database, payload)
         assert _fixture_scheduling(database, fixture) == scheduling
         digest = shadow_digest(database, fixture['repertoire_id'])
     assert command_gateway.execute_command(operation_id, 'opening_evidence.checkpoint', payload, background=True) == result
-    with postgres_store.connection(read_only=True) as database:
+    with postgres.connection(read_only=True) as database:
         assert shadow_digest(database, fixture['repertoire_id']) == digest
     assert _checkpoint_operation_receipt(operation_id)['attempt_count'] == 2
     _retain_color_provenance(fixture)
@@ -543,7 +543,7 @@ def test_postgres_opening_checkpoint_http_admission_preserves_saved_payload_repl
 
 def _prove_opening_checkpoint_http_admission_preserves_saved_payload_replay():
     from app import main, command_dispatch, command_gateway, tasks
-    from tempo_legacy_database import connections as database_module
+    from tempo_storage import connections as database_module
     from app.services import redis_admission_gate
     fixture = _create_color_fixture('white')
     manifest = _transport_color_fixture(fixture)['opening_decision_manifest']
@@ -553,7 +553,7 @@ def _prove_opening_checkpoint_http_admission_preserves_saved_payload_replay():
     claimed, saved, _, _ = command_gateway.record_operation_attempt(
         operation_id, 'opening_evidence.checkpoint', historical_payload, background=True)
     assert claimed and saved == historical_payload
-    with postgres_store.connection() as connection:
+    with postgres.connection() as connection:
         connection.execute_native("UPDATE operation_receipts SET state='queued',attempt_token=NULL,lease_expires_at=NULL WHERE operation_id=%s", (operation_id,))
         scheduling = _fixture_scheduling(connection, fixture)
     preparation_ready, allow_preparation, admission_denied, source_sql_started = Event(), Event(), Event(), Event()
@@ -561,7 +561,7 @@ def _prove_opening_checkpoint_http_admission_preserves_saved_payload_replay():
     source_connection_pids = []
     original_prepare = command_gateway._preparers['opening_evidence.checkpoint']
     original_read = database_module.background_read_connection
-    original_sql = postgres_store.PostgresConnection.execute_native
+    original_sql = postgres.PostgresConnection.execute_native
     server = redis_admission_gate.client()
     original_eval = server.eval
     def observe_eval(script, *arguments):
@@ -595,7 +595,7 @@ def _prove_opening_checkpoint_http_admission_preserves_saved_payload_replay():
     with ThreadPoolExecutor(max_workers=2) as requests, \
             patch.object(server, 'eval', observe_eval), \
             patch.object(database_module, 'background_read_connection', observe_read), \
-            patch.object(postgres_store.PostgresConnection, 'execute_native', observe_sql), \
+            patch.object(postgres.PostgresConnection, 'execute_native', observe_sql), \
             patch.dict(command_gateway._preparers, {'opening_evidence.checkpoint': prepare}):
         def send_task(task_name, *, args, queue, **options):
             assert task_name == 'app.tasks.execute_background_command' and queue == 'background'
@@ -644,7 +644,7 @@ def _prove_opening_checkpoint_http_admission_preserves_saved_payload_replay():
     receipt = _checkpoint_operation_receipt(operation_id)
     assert receipt['state'] == 'complete' and json.loads(receipt['payload_json']) == historical_payload
     assert receipt['request_hash'] == command_gateway.request_digest('opening_evidence.checkpoint', {'checkpoint': checkpoint})
-    with postgres_store.connection(read_only=True) as connection:
+    with postgres.connection(read_only=True) as connection:
         assert _fixture_scheduling(connection, fixture) == scheduling
         digest = shadow_digest(connection, fixture['repertoire_id'])
     with psycopg.connect(os.environ['TEMPO_DATABASE_WRITE_URL']) as probe:
@@ -654,11 +654,11 @@ def _prove_opening_checkpoint_http_admission_preserves_saved_payload_replay():
         recovery_id = operation_id + '-' + state
         assert command_gateway.record_operation_attempt(
             recovery_id, 'opening_evidence.checkpoint', historical_payload, background=True)[0]
-        with postgres_store.connection() as connection:
+        with postgres.connection() as connection:
             connection.execute_native('UPDATE operation_receipts SET state=%s WHERE operation_id=%s', (state, recovery_id))
         assert _recover_checkpoint_operation(recovery_id) == result
         assert json.loads(_checkpoint_operation_receipt(recovery_id)['payload_json']) == historical_payload
-        with postgres_store.connection(read_only=True) as connection:
+        with postgres.connection(read_only=True) as connection:
             assert shadow_digest(connection, fixture['repertoire_id']) == digest
             assert _fixture_scheduling(connection, fixture) == scheduling
     _retain_color_provenance(fixture)
@@ -681,7 +681,7 @@ def _prove_opening_attempt_http_admission_preserves_foreground_diagnostics():
     assert admitted_checkpoint_delivery(fixture['card_id'] + '-get-seed', 'opening_evidence.checkpoint', payload)['persisted']
     # The maximum valid journal must round-trip; PostgreSQL also rejects an
     # out-of-bounds sequence without changing the persisted evidence.
-    with postgres_store.connection() as connection:
+    with postgres.connection() as connection:
         connection.execute_native('SAVEPOINT event_sequence_boundary')
         try:
             connection.execute_native('INSERT INTO opening_evidence_events(attempt_id,sequence,event_json) VALUES(%s,257,%s)',
@@ -696,7 +696,7 @@ def _prove_opening_attempt_http_admission_preserves_foreground_diagnostics():
         digest = shadow_digest(connection, fixture['repertoire_id'])
         scheduling = _fixture_scheduling(connection, fixture)
     original_read = opening_evidence_api.background_read_connection
-    original_sql = postgres_store.PostgresConnection.execute_native
+    original_sql = postgres.PostgresConnection.execute_native
     server = redis_admission_gate.client()
     original_eval = server.eval
     client = TestClient(main.app)
@@ -727,7 +727,7 @@ def _prove_opening_attempt_http_admission_preserves_foreground_diagnostics():
                 ThreadPoolExecutor(max_workers=1) as requests, \
                 patch.object(server, 'eval', observe_eval), \
                 patch.object(opening_evidence_api, 'background_read_connection', observe_read), \
-                patch.object(postgres_store.PostgresConnection, 'execute_native', observe_sql):
+                patch.object(postgres.PostgresConnection, 'execute_native', observe_sql):
             with redis_admission_gate.foreground_lease():
                 attempt_id = checkpoint['attempt_id'] if outcome != 'missing' else fixture['card_id'] + '-missing'
                 attempt_request = requests.submit(client.get, '/api/opening-evidence/attempts/' + attempt_id,
@@ -759,7 +759,7 @@ def _prove_opening_attempt_http_admission_preserves_foreground_diagnostics():
     with patch.object(opening_evidence_api, 'background_read_connection', side_effect=AssertionError('Foreground diagnostic self-admission')):
         diagnostic = client.get('/api/opening-evidence/attempts/' + checkpoint['attempt_id'])
         assert diagnostic.status_code == 200 and diagnostic.json()['events'] == checkpoint['events']
-    with postgres_store.connection(read_only=True) as connection:
+    with postgres.connection(read_only=True) as connection:
         assert shadow_digest(connection, fixture['repertoire_id']) == digest
         assert _fixture_scheduling(connection, fixture) == scheduling
     with psycopg.connect(os.environ['TEMPO_DATABASE_WRITE_URL']) as probe:
@@ -780,7 +780,7 @@ def _assert_color_round_trip(fixture, trained_color):
     checkpoint = _color_checkpoint(fixture, manifest)
     assert prepare_checkpoint(checkpoint) == manifest
     payload = {'checkpoint':checkpoint.model_dump(mode='json'), 'prepared_manifest':manifest}
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         before = _fixture_scheduling(database, fixture)
         result = persist_checkpoint(database, payload)
         assert result['persisted'] and result['contiguous_sequence'] == 1
@@ -801,12 +801,12 @@ def test_postgres_legacy_opening_color_queue_checkpoint_round_trip():
         assert 'opening_decision_manifest' not in ordinary
         manifest, checkpoint, payload = _assert_color_round_trip(fixture, trained_color)
         assert _transport_color_fixture(fixture)['opening_decision_manifest'] == manifest
-        with postgres_store.connection(read_only=True) as database:
+        with postgres.connection(read_only=True) as database:
             snapshot = database.execute_native('SELECT * FROM opening_evidence_presentations WHERE card_id=%s', (fixture['card_id'],)).fetchone()
             assert snapshot['trained_color'] is None
             assert database.execute_native('SELECT effective_trained_color FROM opening_evidence_queue_contexts WHERE queue_entry_id=%s', (fixture['queue_id'],)).fetchone()[0] == trained_color
         opposite = 'black' if trained_color=='white' else 'white'
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             database.execute('DELETE FROM repertoire_lines WHERE repertoire_id=?', (fixture['repertoire_id'],))
             database.execute('INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,?,?,?,?,?,?)',
                              (fixture['card_id']+'-replacement', fixture['repertoire_id'], 'Changed line', opposite, snapshot['start_fen'], snapshot['moves_json'], fixture['now'].isoformat()))
@@ -815,11 +815,11 @@ def test_postgres_legacy_opening_color_queue_checkpoint_round_trip():
         assert _transport_color_fixture(fixture)['opening_decision_manifest'] == manifest
         assert _transport_color_fixture(fixture)['trained_color'] == trained_color
         assert prepare_checkpoint(checkpoint) == manifest
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             assert persist_checkpoint(database, payload)['state'] == 'partial'
             assert database.execute_native('SELECT COUNT(*) FROM opening_evidence_events WHERE attempt_id=%s', (checkpoint.attempt_id,)).fetchone()[0] == 1
             assert database.execute_native('SELECT effective_trained_color FROM opening_evidence_queue_contexts WHERE queue_entry_id=%s', (fixture['queue_id'],)).fetchone()[0] == trained_color
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             replacement_moves = ['e2e4'] if opposite=='white' else ['e2e4','e7e5']
             database.execute('UPDATE cards SET revision=2,moves_json=? WHERE id=?', (json.dumps(replacement_moves), fixture['card_id']))
         replacement_manifest = _transport_color_fixture(fixture)['opening_decision_manifest']
@@ -833,7 +833,7 @@ def test_postgres_legacy_opening_color_queue_checkpoint_round_trip():
         print('PASS test_postgres_legacy_opening_color_queue_checkpoint_round_trip '+trained_color)
         print('PASS test_postgres_legacy_color_replay_survives_line_replacement '+trained_color)
         print('PASS test_postgres_legacy_edit_captures_new_color_without_rewriting_history '+trained_color)
-    postgres_store.close_pools()
+    postgres.close_pools()
 
 
 def test_postgres_modern_color_wins_over_repertoire_fallback():
@@ -849,13 +849,13 @@ def test_postgres_shared_legacy_color_requires_authoritative_admission():
         fixture = _create_color_fixture(trained_color, shared=True)
         opposite = 'black' if trained_color=='white' else 'white'
         assert _transport_color_fixture(fixture, evidence=False)['trained_color'] == opposite
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             unbound = database.execute("INSERT INTO daily_queue(queue_date,card_id,cycle,position,card_bucket) VALUES(?,?,2,2000,'opening') RETURNING id",
                                        (date.today().isoformat(), fixture['card_id'])).fetchone()[0]
         ambiguous = _transport_color_fixture(fixture, queue_id=unbound)
         assert 'opening_decision_manifest' not in ambiguous
         assert 'ambiguous' in ambiguous['opening_evidence_diagnostic']
-        with postgres_store.connection(read_only=True) as database:
+        with postgres.connection(read_only=True) as database:
             assert not database.execute_native('SELECT 1 FROM opening_evidence_queue_contexts WHERE queue_entry_id=%s', (unbound,)).fetchone()
         _assert_color_round_trip(fixture, trained_color)
         _retain_color_provenance(fixture)
@@ -883,7 +883,7 @@ def test_postgres_shared_review_requeue_inherits_authoritative_evidence_scope():
         context_query = ('SELECT context.*,context.xmin::text AS row_version '
                          'FROM opening_evidence_queue_contexts context '
                          'WHERE queue_entry_id IN (%s,%s) ORDER BY queue_entry_id')
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             assert database.execute('SELECT COUNT(*) FROM repertoire_cards WHERE card_id=?', (fixture['card_id'],)).fetchone()[0] == 2
             result = submit_review(database, payload)
             assert result['persisted'] and result['idempotent'] is False and result['requeue_entry_id'] is not None
@@ -902,11 +902,11 @@ def test_postgres_shared_review_requeue_inherits_authoritative_evidence_scope():
         repeat.update(attempt_id=fixture['card_id']+'-repeat',origin_queue_entry_id=repeat_id,
                       queue_entry_id=repeat_id,parent_attempt_id=completion['attempt_id'])
         assert prepare_checkpoint(OpeningEvidenceCheckpoint.model_validate(repeat)) == manifest
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             scheduling = _fixture_scheduling(database, fixture)
             assert persist_checkpoint(database, {'checkpoint':repeat,'prepared_manifest':manifest})['persisted']
             assert _fixture_scheduling(database, fixture) == scheduling
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             assert submit_review(database, payload) == result
             assert _fixture_scheduling(database, fixture) == scheduling
             assert [dict(row) for row in database.execute_native(context_query, (fixture['queue_id'], repeat_id)).fetchall()] == contexts
@@ -917,14 +917,14 @@ def test_postgres_shared_review_requeue_inherits_authoritative_evidence_scope():
 def test_postgres_evidence_context_requires_unique_scope_and_matching_admission():
     fixture = _create_color_fixture('white', shared=True)
     manifest = _transport_color_fixture(fixture)['opening_decision_manifest']
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         # A context belonging to B cannot override explicit queue admission A.
         database.execute_native('DELETE FROM opening_evidence_queue_contexts WHERE queue_entry_id=%s', (fixture['queue_id'],))
         database.execute_native('INSERT INTO opening_evidence_queue_contexts VALUES(%s,%s,%s,%s)',
                                 (fixture['queue_id'],manifest['presentation_snapshot_id'],fixture['alternate'],'black'))
     conflict = _transport_color_fixture(fixture)
     assert 'opening_decision_manifest' not in conflict and 'ambiguous' in conflict['opening_evidence_diagnostic']
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         unbound = database.execute("INSERT INTO daily_queue(queue_date,card_id,cycle,position,card_bucket) VALUES(?,?,2,2000,'opening') RETURNING id",
                                    (date.today().isoformat(), fixture['card_id'])).fetchone()[0]
         for repertoire,color in [(fixture['repertoire_id'],'white'),(fixture['alternate'],'black')]:
@@ -950,7 +950,7 @@ def test_postgres_legacy_review_requeue_inherits_color_after_source_replacement(
                          'FROM opening_evidence_queue_contexts context '
                          'JOIN opening_evidence_presentations snapshot ON snapshot.id=context.presentation_snapshot_id '
                          'WHERE snapshot.card_id=%s ORDER BY context.queue_entry_id')
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             original_card = dict(database.execute('SELECT * FROM cards WHERE id=?', (fixture['card_id'],)).fetchone())
             original_contexts = [dict(row) for row in database.execute_native(context_query, (fixture['card_id'],)).fetchall()]
             database.execute('DELETE FROM repertoire_lines WHERE repertoire_id=?', (fixture['repertoire_id'],))
@@ -965,7 +965,7 @@ def test_postgres_legacy_review_requeue_inherits_color_after_source_replacement(
                    'review':{'outcome':'correct','queue_entry_id':fixture['queue_id'],
                              'attempt_id':completion['attempt_id'],'recorded_at':fixture['now'].isoformat(),
                              'opening_evidence_completion':completion}, 'prepared_manifest':authoritative}
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             result = submit_review(database, payload)
             assert result['persisted'] and result['requeue_entry_id'] and result['idempotent'] is False
             contexts = [dict(row) for row in database.execute_native(context_query, (fixture['card_id'],)).fetchall()]
@@ -984,13 +984,13 @@ def test_postgres_legacy_review_requeue_inherits_color_after_source_replacement(
                       queue_entry_id=result['requeue_entry_id'], parent_attempt_id=completion['attempt_id'])
         repeat_request = OpeningEvidenceCheckpoint.model_validate(repeat)
         assert prepare_checkpoint(repeat_request) == manifest
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             scheduling_before = _fixture_scheduling(database, fixture)
             assert persist_checkpoint(database, {'checkpoint':repeat, 'prepared_manifest':manifest})['persisted']
             assert _fixture_scheduling(database, fixture) == scheduling_before
         # A new delivery can replay the receipt's original idempotent=False result.
         # Its committed contexts must not even acquire a new PostgreSQL row version.
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             assert submit_review(database, payload) == result
             assert _fixture_scheduling(database, fixture) == scheduling_before
             assert [dict(row) for row in database.execute_native(context_query, (fixture['card_id'],)).fetchall()] == contexts
@@ -1005,7 +1005,7 @@ def test_postgres_legacy_review_requeue_preserves_validated_color():
         completion = _color_checkpoint(fixture, manifest).model_dump(mode='json')
         completion['terminal']['state'] = 'complete'
         authoritative = prepare_checkpoint(OpeningEvidenceCheckpoint.model_validate(completion))
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             result = submit_review(database, {'card_id':fixture['card_id'],
                 'review':{'outcome':'correct','queue_entry_id':fixture['queue_id'],
                          'attempt_id':completion['attempt_id'],'recorded_at':fixture['now'].isoformat(),
@@ -1029,7 +1029,7 @@ def test_postgres_missing_or_invalid_legacy_color_omits_context():
         transport = _transport_color_fixture(fixture)
         assert 'opening_decision_manifest' not in transport
         assert 'trained color' in transport['opening_evidence_diagnostic']
-        with postgres_store.connection(read_only=True) as database:
+        with postgres.connection(read_only=True) as database:
             assert not database.execute_native('SELECT 1 FROM opening_evidence_queue_contexts WHERE queue_entry_id=%s', (fixture['queue_id'],)).fetchone()
         _retain_color_provenance(fixture)
     print('PASS test_postgres_missing_or_invalid_legacy_color_omits_context')
@@ -1051,7 +1051,7 @@ def test_postgres_shadow_replay_atomicity_and_scheduling_invariance():
     now = datetime.now(timezone.utc).replace(microsecond=0)
     fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
     moves = ['e2e4','e7e5','g1f3','b8c6','f1b5','a7a6','b5a4','g8f6','e1g1','f8e7','f1e1']
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,?,?)", (prefix,'Shadow rehearsal','test',now.isoformat()))
         database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,trained_color,state,due_date) VALUES(?,?,'prefix',?,?,'white','new',?)",
                          (prefix,prefix,fen,json.dumps(moves),date.today().isoformat()))
@@ -1070,7 +1070,7 @@ def test_postgres_shadow_replay_atomicity_and_scheduling_invariance():
     # Missing admission scope cannot choose between eligible owners. An explicit
     # admission remains authoritative even when the same card is shared elsewhere.
     alternate_repertoire=prefix+'-alternate'
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         database.execute('INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,?,?)',
                          (alternate_repertoire,'Other shadow scope','test',now.isoformat()))
         database.execute('INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)',(alternate_repertoire,prefix))
@@ -1081,7 +1081,7 @@ def test_postgres_shadow_replay_atomicity_and_scheduling_invariance():
     queue_manifests([explicit,unbound])
     assert explicit['opening_decision_manifest']['repertoire_id']==prefix
     assert 'opening_decision_manifest' not in unbound and 'ambiguous' in unbound['opening_evidence_diagnostic']
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         database.execute('DELETE FROM daily_queue WHERE id=?',(unbound_queue,))
         database.execute('DELETE FROM repertoires WHERE id=?',(alternate_repertoire,))
     def checkpoint(attempt='partial', observed=None):
@@ -1098,7 +1098,7 @@ def test_postgres_shadow_replay_atomicity_and_scheduling_invariance():
         return {'checkpoint':request,'prepared_manifest':prepare_checkpoint(OpeningEvidenceCheckpoint.model_validate(request))}
     def save(request):
         payload=prepared(request)
-        with postgres_store.connection() as database: return persist_checkpoint(database,payload)
+        with postgres.connection() as database: return persist_checkpoint(database,payload)
     def scheduling_snapshot(database):
         return {table:[dict(row) for row in database.execute(statement,(prefix+'%',)).fetchall()]
                 for table,statement in {
@@ -1107,7 +1107,7 @@ def test_postgres_shadow_replay_atomicity_and_scheduling_invariance():
                     'queue':'SELECT * FROM daily_queue WHERE card_id LIKE ? ORDER BY id',
                     'splits':'SELECT * FROM prefix_splits WHERE source_card_id LIKE ? ORDER BY source_card_id',
                 }.items()}
-    with postgres_store.connection(read_only=True) as database: unchanged=scheduling_snapshot(database)
+    with postgres.connection(read_only=True) as database: unchanged=scheduling_snapshot(database)
     partial=checkpoint()
     partial['events']=[event(i,i+1) for i in range(4)]+[event(4,5,response_uci='d2d3',disposition='wrong'),event(4,6,'reveal'),event(4,7,'correction')]
     partial['terminal']={'state':'partial','final_sequence':7,'ended_at':now.isoformat()}
@@ -1116,7 +1116,7 @@ def test_postgres_shadow_replay_atomicity_and_scheduling_invariance():
     with ThreadPoolExecutor(max_workers=3) as workers:
         results=list(workers.map(lambda _:save(partial),range(3)))
     assert all(result['contiguous_sequence']==7 for result in results)
-    with postgres_store.connection(read_only=True) as database:
+    with postgres.connection(read_only=True) as database:
         assert scheduling_snapshot(database)==unchanged,'Checkpoints changed scheduling tables'
         observations=database.execute_native('SELECT observation_json FROM opening_evidence_observations WHERE attempt_id=%s ORDER BY decision_index',(partial['attempt_id'],)).fetchall()
         assert len(observations)==5
@@ -1135,13 +1135,13 @@ def test_postgres_shadow_replay_atomicity_and_scheduling_invariance():
     for label,days in [('same-day-one',0),('same-day-two',0),('historical',2)]:
         attempt=checkpoint(label);attempt['events']=[event(0,1,observed_at=(now-timedelta(days=days)).isoformat())]
         attempt['terminal']={'state':'partial','final_sequence':1,'ended_at':now.isoformat()};save(attempt)
-    with postgres_store.connection(read_only=True) as database:
-        summary=decision_evidence(database,manifest['decisions'][0]['decision_id'])
-        assert summary['summary']['first_responses']==4 and summary['summary']['distinct_clean_days']==2
-        assert summary['recent_outcomes'][-1]['attempt_id'].endswith('historical')
-        assert len(decision_evidence(database,manifest['decisions'][0]['decision_id'],limit=2)['observations'])==2
+    with postgres.connection(read_only=True) as database:
+        summary = database.execute_native(
+            "SELECT first_responses,distinct_clean_days FROM opening_evidence_summaries WHERE decision_id=%s",
+            (manifest['decisions'][0]['decision_id'],)).fetchone()
+        assert summary['first_responses']==4 and summary['distinct_clean_days']==2
     # Reconnect/restart: close pools, replay exactly, and verify immutable event rows persist.
-    postgres_store.close_pools();assert save(partial)['state']=='partial'
+    postgres.close_pools();assert save(partial)['state']=='partial'
     # Same card, same clock and logical review: roll back each branch of the parity comparison.
     from fsrs import Card
     from app.services.prefix_split import preview_prefix_split
@@ -1149,7 +1149,7 @@ def test_postgres_shadow_replay_atomicity_and_scheduling_invariance():
         def __init__(self, card_id=None, **arguments):
             super().__init__(card_id=42 if card_id is None else card_id, **arguments)
     for mode,outcome,guided in [('normal','correct',False),('normal','again',False),('normal','correct',True),('light','correct',False),('hard','correct',False)]:
-        with patch("app.services.scheduler.Card", FixedIdentityCard), postgres_store.connection() as database:
+        with patch("app.services.scheduler.Card", FixedIdentityCard), postgres.connection() as database:
             database.execute("UPDATE cards SET scheduling_mode=? WHERE id=?",(mode,prefix))
             logical=checkpoint('parity-'+mode+'-'+outcome+'-'+str(guided))
             logical['events']=[event(0,1)]
@@ -1181,35 +1181,35 @@ def test_postgres_shadow_replay_atomicity_and_scheduling_invariance():
             assert {k:v for k,v in enabled.items() if k not in {'review_id','requeue_entry_id'}}=={k:v for k,v in absent.items() if k not in {'review_id','requeue_entry_id'}}
             assert submit_review(database,{'card_id':prefix,'review':{**review,'opening_evidence_completion':logical},'prepared_manifest':manifest})==enabled
             database.execute_native('ROLLBACK TO SAVEPOINT comparable')
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         database.execute("UPDATE cards SET scheduling_mode='normal' WHERE id=?",(prefix,))
         test_offline_repeat_reconciles_parent_aggregate_only_fallback(database,prefix,queue,checkpoint,event,manifest,now.isoformat())
     # A rejected aggregate review rolls back events, observations and completion together.
     atomic=checkpoint('atomic');atomic['events']=[event(0,1)];atomic['terminal']={'state':'complete','final_sequence':1,'ended_at':now.isoformat()}
     try:
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             submit_review(database,{'card_id':prefix,'review':{'outcome':'correct','guided':False,'queue_entry_id':queue,'attempt_id':atomic['attempt_id'],
               'expected_review_id':999999999,'opening_evidence_completion':atomic},'prepared_manifest':manifest})
     except HTTPException as error:assert error.status_code==409
     else:raise AssertionError('Stale review succeeded')
-    with postgres_store.connection(read_only=True) as database:
+    with postgres.connection(read_only=True) as database:
         assert not database.execute_native('SELECT 1 FROM opening_evidence_attempts WHERE attempt_id=%s',(atomic['attempt_id'],)).fetchone()
     # Persist a final review and receipt, then credit a competing phone attempt through existing reconciliation.
     final=checkpoint('completed');final['events']=[event(0,1)];final['terminal']={'state':'complete','final_sequence':1,'ended_at':now.isoformat()}
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         database.execute("UPDATE cards SET scheduling_mode='normal' WHERE id=?",(prefix,))
         result=submit_review(database,{'card_id':prefix,'review':{'outcome':'correct','queue_entry_id':queue,'attempt_id':final['attempt_id'],
           'recorded_at':now.isoformat(),'opening_evidence_completion':final},'prepared_manifest':manifest})
         assert result['persisted']
         assert database.execute_native('SELECT state FROM opening_evidence_attempts WHERE attempt_id=%s',(final['attempt_id'],)).fetchone()[0]=='complete'
     # Capture content replacement with actual revision and retain the old provenance.
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         database.execute("UPDATE cards SET revision=2,moves_json='[\"d2d4\"]' WHERE id=?",(prefix,))
         assert database.execute_native('SELECT COUNT(*) FROM opening_evidence_presentations WHERE card_id=%s',(prefix,)).fetchone()[0]==2
     assert save(partial)['contiguous_sequence']==7
     historical=checkpoint('competing-phone');historical['events']=[event(0,1,observed_at=(now-timedelta(minutes=1)).isoformat())]
     historical['terminal']={'state':'complete','final_sequence':1,'ended_at':(now-timedelta(minutes=1)).isoformat()}
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         current=scheduling_snapshot(database)['cards']
         reconciled=submit_review(database,{'card_id':prefix,'review':{'outcome':'correct','queue_entry_id':queue,'attempt_id':historical['attempt_id'],
           'expected_revision':1,'recorded_at':historical['terminal']['ended_at'],'opening_evidence_completion':historical},'prepared_manifest':manifest})
@@ -1219,14 +1219,14 @@ def test_postgres_shadow_replay_atomicity_and_scheduling_invariance():
     # Retain this bounded fixture in the disposable DB for service recreation and backup/restore stages.
     print(json.dumps({'test':'test_postgres_shadow_replay_atomicity_and_scheduling_invariance','repertoire_id':prefix,
                       'concurrent_exact_replays':3,'parity_cases':5,'historical_clean_days':2,'retained_for_backup':True}))
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         # Retain only shadow provenance for restore. Active fixture cards would
         # compete with the next scenario's foreground queue and quota admission.
         database.execute('DELETE FROM cards WHERE id IN (?,?)',(prefix,prefix+'-child'))
         database.execute('DELETE FROM repertoires WHERE id=?',(prefix,))
         digest=shadow_digest(database,prefix)
         database.execute_native("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,response_json) VALUES(%s,'shadow.evidence.fixture',%s,'complete',%s)",(prefix,digest,json.dumps({'digest':digest})))
-    postgres_store.close_pools()
+    postgres.close_pools()
 
 
 if __name__=='__main__':

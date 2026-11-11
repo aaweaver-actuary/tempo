@@ -284,7 +284,7 @@ def test_opening_progression_native_driver_replays_only_foreground_deferred_slic
 
     monkeypatch.setattr(proof, "claim_task", lambda kind: task)
     monkeypatch.setattr(proof, "execute_postgres_queue_refresh_slice", execute)
-    monkeypatch.setattr(proof.postgres_store, "connection", connection)
+    monkeypatch.setattr(proof.postgres, "connection", connection)
     if unexpected_error:
         with pytest.raises(AssertionError, match="unexpected SQL failure"):
             proof.drain_queue_refresh(restart=True)

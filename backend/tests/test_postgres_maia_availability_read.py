@@ -3,7 +3,7 @@
 from contextlib import contextmanager
 
 from app import main
-from tempo_legacy_database.adapters import postgres_store
+from tempo_storage import postgres
 from app.services.activity_gate import activity_gate
 
 
@@ -32,7 +32,7 @@ def test_postgres_maia_availability_get_uses_foreground_reader(
         calls.append("background")
         yield Database()
 
-    monkeypatch.setattr(postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(postgres, "configured", lambda: True)
     monkeypatch.setattr(main, "read_connection", foreground_reader)
     monkeypatch.setattr(main, "background_read_connection", background_reader)
     with activity_gate.foreground():

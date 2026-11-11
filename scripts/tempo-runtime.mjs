@@ -5,7 +5,6 @@ import { closeSync, constants, existsSync, fstatSync, fsyncSync, linkSync, lstat
 import { createServer } from "node:net";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { isDeepStrictEqual } from 'node:util';
-import {modeOverrideFor, modeRecordArgs, modes, modeStatusArgs} from './managed-games-control.mjs';
 import { atomicJson, deploymentCanStart, redact, targetKey, validateContainers, validateTarget } from "./tempo-deployment.mjs";
 import { TempoProblem, classifyRedisReply, phaseGuidance } from "./tempo-guidance.mjs";
 
@@ -72,7 +71,7 @@ export function cut62WitnessName(guard) {
 
 // Validate the installed ledger before any application shutdown. A schema-60
 // continuation is valid only under the original pending schema-59 guard.
-// The non-destructive 62-to-63 retirement must not skip or resume the older
+// The non-destructive retirement migrations must not skip or resume the older
 // destructive cut under a different comparator or candidate schema.
 export function validateCut62Preflight(status, guard) {
   const current = status.applied_versions.at(-1), expected = status.expected_version;
@@ -81,6 +80,9 @@ export function validateCut62Preflight(status, guard) {
   const continuing63 = guard?.state !== "pending" ||
     ([62, 63].includes(guard.starting_schema) && guard.intended_schema === 63);
   if (expected === 63 && [62, 63].includes(current) && continuing63) return;
+  const continuing64 = guard?.state !== "pending" ||
+    ([63, 64].includes(guard.starting_schema) && guard.intended_schema === 64);
+  if (expected === 64 && [63, 64].includes(current) && continuing64) return;
   const guarded60 = current === 60 && guard?.state === "pending" && guard.starting_schema === 59 && guard.intended_schema === 62;
   if (expected !== 62 || (![59, 61].includes(current) && !guarded60))
     throw new Error(`Unsupported schema ${current}-to-${expected} crossing; applications have not been stopped. Use a supported intermediate release.`);
@@ -213,13 +215,9 @@ export async function executeLifecycle(plan, actions) {
   }
 }
 
-// Package the optional profile in new releases, without activating it. Old frozen
-// receipts remain exact and are never augmented by current checkout files.
+// Frozen receipts remain exact and are never augmented by current checkout files.
 export function releaseComposeFiles(target, { fallback = false, previous = null } = {}) {
-  if (fallback) return previous.composeFiles;
-  const optional = join(target.root, "docker-compose.games-feedback.yml");
-  return existsSync(optional) && !target.composeFiles.includes(optional)
-    ? [...target.composeFiles, optional] : target.composeFiles;
+  return fallback ? previous.composeFiles : target.composeFiles;
 }
 
 export function createRuntime(target, { run, stateDirectory, revision, evidence, previous = null,
@@ -227,7 +225,8 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   redisReadinessOptions = {}, readinessOptions = {}, buildImages = managedComposeBuild }) {
   let composeFiles = releaseComposeFiles(target, { fallback, previous });
   let imageOverride = fallback ? previous.imageOverride : null;
-  let modeOverride = fallback ? previous?.gamesMode?.override ?? null : null;
+  if (fallback && previous?.gamesMode?.override)
+    throw new Error('This frozen release includes a retired Games overlay. Use its original release for recovery; preserve the receipt and backup.');
   let configuration;
   let containers = [];
   let images = {};
@@ -254,27 +253,11 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   const composePrefix = () => ["compose", "--project-directory", target.root,
     ...(target.envFile ? ["--env-file", target.envFile] : []), "-p", target.project,
     ...composeFiles.flatMap(path => ["-f", path]), ...(imageOverride ? ["-f", imageOverride] : [])];
-  const compose = (args, options) => docker([...composePrefix(), ...(modeOverride ? ['-f', modeOverride] : []), ...args], options);
+  const compose = (args, options) => docker([...composePrefix(), ...args], options);
   const stage = name => { operation.phase = name; atomicJson(journalPath, operation); log(`Tempo: ${name.replaceAll("_", " ")}`); };
 
   async function config() {
-    if (modeOverride) {
-      try {
-        const saved = previous?.gamesMode;
-        const base = JSON.parse((await docker([...composePrefix(), '--profile', 'maintenance', '--profile', 'games-feedback', 'config', '--format', 'json'])).stdout);
-        if (saved?.version !== 1 || !modes.has(saved.mode) || modeOverride !== join(dirname(imageOverride), 'games-mode.json') ||
-            saved.baseFingerprint !== configurationFingerprint(base) ||
-            !isDeepStrictEqual(JSON.parse(readFileSync(modeOverride, 'utf8')), modeOverrideFor(base.services?.['game-feedback-worker'], saved.mode)))
-          throw new Error('managed mode configuration invalid');
-      } catch {
-        // Discard only the invalid optional command/label overlay. Ordinary
-        // services retain the frozen base configuration and exact image checks.
-        modeOverride = null;
-        operation.games_mode = {phase: 'inactive_unconfirmed', mode: previous?.gamesMode?.mode ?? 'collect-only'};
-        log('Tempo: optional Games mode configuration is unavailable; feedback requires explicit verification.');
-      }
-    }
-    configuration = JSON.parse((await compose(["--profile", "maintenance", "--profile", "games-feedback", "config", "--format", "json"])).stdout);
+    configuration = JSON.parse((await compose(["--profile", "maintenance", "config", "--format", "json"])).stdout);
     validateTarget(configuration, target);
     for (const secret of Object.values(configuration.secrets ?? {})) {
       const text = readFileSync(secret.file, "utf8").trim();
@@ -365,7 +348,9 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
           !isDeepStrictEqual(Object.keys(receipt.images).sort(),Object.keys(configuration.services).sort()) ||
           !isDeepStrictEqual(Object.keys(receipt.image_revisions).sort(),Object.keys(receipt.images).sort()))
         throw new Error('Original managed image receipt identity differs; keep writers stopped.');
-      const paths = [...receipt.compose_files,receipt.image_override,...(receipt.mode_override ? [receipt.mode_override] : [])];
+      if (receipt.mode_override)
+        throw new Error('Original managed receipt includes a retired Games overlay. Use its original release for recovery; keep writers stopped.');
+      const paths = [...receipt.compose_files,receipt.image_override];
       if (new Set(paths).size !== paths.length || !isDeepStrictEqual(Object.keys(receipt.files).sort(),[...paths].sort()))
         throw new Error('Original managed image inputs differ; keep writers stopped.');
       syncManagedIsolationEvidence({guardPath,guard:migrationGuard,receiptPath:path,receipt});
@@ -382,7 +367,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
           throw new Error('Original managed image is unavailable or changed; keep writers stopped.');
       }
       assertManagedTargetLock(stateDirectory,lock);
-      composeFiles=receipt.compose_files; imageOverride=receipt.image_override; modeOverride=receipt.mode_override;
+      composeFiles=receipt.compose_files; imageOverride=receipt.image_override;
       images=receipt.images; await config();
       if (configurationFingerprint(configuration)!==receipt.config_fingerprint ||
           Object.entries(configuration.services).some(([name,service])=>service.image!==images[name]))
@@ -391,12 +376,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
       await verifySelectedPostgresImage();
       return { dependenciesMayChange:false };
     }
-    if (!fallback && previous?.revision === revision && previous.gamesMode?.baseFingerprint === desiredFingerprint) {
-      composeFiles = previous.composeFiles; imageOverride = previous.imageOverride; modeOverride = previous.gamesMode.override;
-      await config(); desiredFingerprint = configurationFingerprint(configuration);
-    }
-    const reusable = previous && previous.revision === revision && (previous.configFingerprint === desiredFingerprint ||
-      !modeOverride && previous.gamesMode?.baseFingerprint === desiredFingerprint);
+    const reusable = previous && previous.revision === revision && previous.configFingerprint === desiredFingerprint;
     if (fallback || reusable) {
       if (previous.evidence?.commit !== revision || !previous.verified_at
         || Object.keys(configuration.services).some(name => !previous.images?.[name]))
@@ -411,7 +391,6 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
       return { dependenciesMayChange: !(await recordedDependenciesMatch()) };
     }
     stage("preparing_images");
-    modeOverride = null;
     const releaseDirectory = join(stateDirectory, "releases", `${revision}-${operation.id}`);
     mkdirSync(releaseDirectory, { recursive: true, mode: 0o700 });
     composeFiles = releaseComposeFiles(target).map((source, index) => {
@@ -478,7 +457,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     if (source!==revision || changes || !/^[0-9a-f]{40}$/.test(tree) || !imageOverride || !composeFiles.length ||
         !isDeepStrictEqual(Object.keys(images).sort(),Object.keys(configuration.services).sort()))
       throw new Error('Managed image preparation evidence is incomplete.');
-    const paths=[...composeFiles,imageOverride,...(modeOverride?[modeOverride]:[])], files={};
+    const paths=[...composeFiles,imageOverride], files={};
     if (new Set(paths).size!==paths.length) throw new Error('Managed image input identity is ambiguous.');
     for(const file of paths) {
       if(!file.startsWith(join(stateDirectory,'releases')+'/')) throw new Error('Managed image input is outside the original release.');
@@ -499,7 +478,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     const receipt={version:1,target:targetKey(target),attempt_id:operation.id,revision,tree,
       database:{name:configuration.services.postgres.environment.POSTGRES_DB,volume:target.volumes[target.postgresVolumeKey].name},
       config_fingerprint:configurationFingerprint(configuration),compose_files:composeFiles,image_override:imageOverride,
-      mode_override:modeOverride,files,images,image_revisions:imageRevisions};
+      files,images,image_revisions:imageRevisions};
     const bytes=Buffer.from(JSON.stringify(receipt));
     const fd=openSync(path,'wx',0o600);
     try { writeFileSync(fd,bytes);fsyncSync(fd); } finally { closeSync(fd); }
@@ -845,33 +824,9 @@ print(json.dumps(result))`;
   async function stopApplications({ preservePhase = false, onlyIfRunning = false } = {}) {
     if (!preservePhase) stage("stopping_application_services");
     if (!stoppedServices.length) stoppedServices = await runningServices();
-    const services = [...applicationServices, "postgres-backup", "game-feedback-worker"].filter(name => configuration.services[name]);
+    const services = [...applicationServices, "postgres-backup"].filter(name => configuration.services[name]);
     if (onlyIfRunning && !services.some(name => stoppedServices.includes(name))) return;
-    if (previous?.schema >= 56 && configuration.services['game-feedback-worker']) {
-      try {
-        const result = JSON.parse((await compose(modeStatusArgs('legacy'), {timeout: 5000})).stdout);
-        if (result.schema_version !== 1 || result.read_only !== true || !Object.hasOwn(result, 'intent'))
-          throw new Error('managed mode status unavailable');
-        const intent = result.intent;
-        if (intent && intent.phase !== 'inactive') {
-          const next = {...intent, generation: intent.generation + 1, phase: 'inactive', operation_id: operation.id,
-            runtimes: [], verified_at: null, updated_at: new Date().toISOString()};
-          const saved = JSON.parse((await compose(modeRecordArgs(next, intent.generation), {timeout: 5000})).stdout);
-          if (saved.applied !== true || saved.generation !== next.generation || saved.phase !== 'inactive')
-            throw new Error('managed mode inactive acknowledgment unavailable');
-        }
-        operation.games_mode = {phase: 'inactive', mode: intent?.mode ?? previous.gamesMode?.mode ?? 'collect-only'};
-      } catch {
-        // Optional control failure cannot stop Study shutdown/startup. Every
-        // backend container start refreshes its boot nonce, so a stale intent
-        // cannot reauthorize a restarted ordinary command worker.
-        operation.games_mode = {phase: 'inactive_unconfirmed', mode: previous.gamesMode?.mode ?? 'collect-only'};
-        log('Tempo: optional feedback admission could not be confirmed inactive; new container boots require explicit mode verification.');
-      }
-      atomicJson(journalPath, operation);
-    }
-    // An explicitly enabled collector must not write through release maintenance.
-    // It stays off afterward; startServices never starts this optional profile.
+    // Retired collector containers are rejected during inventory validation.
     await compose(["stop", "--timeout", "60", ...services], { echo: true });
   }
 
@@ -1347,8 +1302,6 @@ print(json.dumps({'witness_id':witness_id}))`;
     requireVerifiedMigration();
     const record = { version: 1, revision, schema: status.expected_version, images, composeFiles,
       imageOverride, configFingerprint: configurationFingerprint(configuration), evidence: evidence ?? previous?.evidence,
-      ...(modeOverride ? {gamesMode: previous.gamesMode} : {}),
-      ...(operation.games_mode ? {gamesModeState: operation.games_mode} : {}),
       verified_at: new Date().toISOString(), ...((backupRecord ?? previous?.backup) ? { backup: backupRecord ?? previous.backup } : {}) };
     if (fallback) {
       operation.phase = "ready_previous_version";

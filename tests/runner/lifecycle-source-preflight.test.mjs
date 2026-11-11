@@ -10,7 +10,7 @@ const revision = "4aa0ad1b731402365c1b866a6ba7bed484d2b6ac";
 test("lifecycle preflight parses rendered interruption harness before resources", () => {
   assert.doesNotThrow(() => checkLifecycleSource({ root: "/temporary path", environment: {} }));
   assert.match(renderInterruptedLifecycle("/temporary path"), /interrupted|executeLifecycle/);
-  assert.throws(() => checkLifecycleSource({ environment: {}, render: () => "const broken = ;" }), /Invalid generated interruption harness/);
+  assert.throws(() => checkLifecycleSource({ root: "/temporary path", environment: {}, render: () => "const broken = ;" }), /Invalid generated interruption harness/);
 });
 test("lifecycle preflight rejects missing, malformed, stale and incomplete explicit manifests", t => {
   const dir = mkdtempSync(join(tmpdir(), "tempo-preflight-"));
@@ -140,5 +140,21 @@ test("schema62 owned handoff stops and removes containers but preserves volume a
   assert.deepEqual(passing.events, ["inspect", "volumes", "stop", "down", "containers", "volumes"]);
   for (const change of [{ changedVolume: true }, { changedGuard: true }, { remaining: true }]) {
     const failing = await run(change); await assert.rejects(failing.result);
+  }
+});
+
+
+test("native schema64 refuses historical lifecycle profiles before rendering or acquiring images", t => {
+  const root = mkdtempSync(join(tmpdir(), "tempo-native64-preflight-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const ddl = join(root, "database/tempo_storage/ddl"); mkdirSync(ddl, { recursive: true });
+  writeFileSync(join(ddl, "schema_version.py"), "POSTGRES_SCHEMA_VERSION = 64\n");
+  for (const profile of ["full", "current63"]) {
+    let rendered = false;
+    assert.throws(() => checkLifecycleSource({ root, profile,
+      environment: { TEMPO_LIFECYCLE_SCHEMA61_IMAGES: "/must-not-read", TEMPO_LIFECYCLE_SCHEMA62_ROOT: "/must-not-check" },
+      render: () => { rendered = true; throw new Error("renderer must not run"); },
+    }), /Schema-64 lifecycle upgrade is not qualified/);
+    assert.equal(rendered, false);
   }
 });

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from app.services import opening_capacity_admission, queue_admission_adapter
-from tempo_legacy_database.adapters.queue_refresh.application import admission
+from tempo_storage.queue_refresh.application import admission
 
 
 def test_admission_composition_contains_no_sql_or_driver_calls():

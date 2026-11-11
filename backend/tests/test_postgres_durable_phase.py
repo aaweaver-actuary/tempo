@@ -1,7 +1,7 @@
 from contextlib import nullcontext
 """Leases and retries must not erase a PostgreSQL slice's saved phase."""
 
-from tempo_legacy_database.adapters import postgres_store
+from tempo_storage import postgres
 from app.services import durable_tasks
 
 
@@ -52,7 +52,7 @@ class Database:
 
 def test_postgres_durable_claim_preserves_phase_after_expired_lease(monkeypatch):
     database = Database()
-    monkeypatch.setattr(postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(postgres, "configured", lambda: True)
     monkeypatch.setattr(durable_tasks, "connection", lambda **_options: nullcontext(database))
     claimed = durable_tasks.claim_task("opening_graph_rebuild")
     assert claimed["phase"] == "link"
@@ -69,7 +69,7 @@ def test_postgres_durable_claim_preserves_phase_after_expired_lease(monkeypatch)
 
 def test_postgres_durable_retry_and_contention_preserve_phase(monkeypatch):
     database = Database()
-    monkeypatch.setattr(postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(postgres, "configured", lambda: True)
     monkeypatch.setattr(durable_tasks, "connection", lambda **_options: nullcontext(database))
     assert (
         durable_tasks.fail_task("task-one", 2, "lease-one", RuntimeError("temporary"))[

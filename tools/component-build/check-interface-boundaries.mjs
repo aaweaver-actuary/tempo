@@ -86,6 +86,10 @@ function typescriptFacts(source, path) {
 /** Small declarative ownership input supplied by the integration owner, not a runtime registry. */
 export function checkInterfaceBoundaries(manifest, root = repository, python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3") {
   root = realpathSync(root);
+  if (manifest.mode === "selected-python") {
+    const result = checkSelectedPython(manifest, root, python);
+    return manifest.frontend === undefined ? result : { ...result, frontend: checkSelectedFrontend(manifest.frontend, root) };
+  }
   if (!Array.isArray(manifest.components) || !manifest.components.length) throw new Error("Missing component ownership map");
   const components = manifest.components.map(component => ({ ...component })), problems = [], allFiles = new Set(), ids = new Set(), tables = new Map(), modulePaths = new Map();
   const absolute = path => {
@@ -98,6 +102,15 @@ export function checkInterfaceBoundaries(manifest, root = repository, python = p
     ids.add(component.id);
     component.roots = component.sources.map(absolute);
     component.publicRoots = component.interfaces.map(absolute);
+    component.facadeTargets = new Map();
+    for (const facade of component.facades ?? []) {
+      if (!facade || typeof facade.path !== "string" || !Array.isArray(facade.targets) || !facade.targets.length) throw new Error("Invalid facade declaration");
+      const path = absolute(facade.path);
+      if (!component.publicRoots.includes(path) || component.facadeTargets.has(path)) throw new Error("Facade must be a unique designated interface: " + path);
+      const targets = facade.targets.map(absolute);
+      for (const target of targets) if (!component.roots.some(owner => inside(owner, target)) || !existsSync(target) || !statSync(target).isFile() || realpathSync(target) !== target) throw new Error("Unavailable/unowned facade target: " + target);
+      component.facadeTargets.set(path, new Set(targets));
+    }
     for (const path of component.publicRoots) {
       if (!component.roots.some(owner => inside(owner, path)) || !existsSync(path)) throw new Error("Unavailable/unowned interface: " + path);
       if (statSync(path).isDirectory() && component.roots.includes(path)) throw new Error("Entire implementation directory cannot be a public interface");
@@ -191,7 +204,7 @@ export function checkInterfaceBoundaries(manifest, root = repository, python = p
       }
       const targetOwner = ownerOf(target.path);
       if (!targetOwner) { report(imported.line, "Local dependency has no declared owner"); continue; }
-      if (isPublic && targetOwner.id === owner.id && !owner.publicRoots.some(path => inside(path, target.path))) report(imported.line, "Interface imports private implementation: " + imported.module);
+      if (isPublic && targetOwner.id === owner.id && !owner.publicRoots.some(path => inside(path, target.path)) && ![...owner.facadeTargets].some(([path, targets]) => inside(path, file) && targets.has(target.path))) report(imported.line, "Interface imports private implementation: " + imported.module);
       if (targetOwner.id !== owner.id) {
         edges.get(owner.id).add(targetOwner.id);
         if (targetOwner.composition) report(imported.line, "Domain imports composition: " + targetOwner.id);
@@ -232,6 +245,129 @@ export function checkInterfaceBoundaries(manifest, root = repository, python = p
   for (const id of ids) visit(id);
   if (problems.length) throw new Error([...new Set(problems)].sort().join("\n"));
   return { files: facts.size, components: components.length, edges: Object.fromEntries([...edges].map(([name, targets]) => [name, [...targets].sort()])) };
+}
+
+/** Bounded direct imports of selected optional UI sources and the staged Study facade. */
+function checkSelectedFrontend(config, root) {
+  const keys = ['sources', 'controllerConsumers', 'privateTargets', 'publicInterface', 'implementation'];
+  if (!config || Object.keys(config).sort().join() !== keys.sort().join() ||
+      !Array.isArray(config.sources) || !config.sources.length || !Array.isArray(config.controllerConsumers) || !config.controllerConsumers.length || !Array.isArray(config.privateTargets) || !config.privateTargets.length ||
+      [...config.sources, ...config.controllerConsumers, ...config.privateTargets, config.publicInterface, config.implementation].some(p => typeof p !== 'string' || !/^app\/[\w./-]+$/.test(p) || p.includes('..')) ||
+      [config.sources, config.controllerConsumers, config.privateTargets].some(paths => new Set(paths).size !== paths.length) ||
+      config.publicInterface !== 'app/features/study/index.ts' || config.implementation !== 'app/features/study/controller.ts') throw new Error('Invalid selected frontend declaration');
+  const safe = path => {
+    const file = resolve(root, path);
+    if (!inside(root, file) || !existsSync(file) || realpathSync(file) !== file || !statSync(file).isFile()) throw new Error('Unavailable selected frontend source: ' + path);
+    return file;
+  };
+  const canonical = path => path.replace(/\.(?:tsx?|js)$/, '').replace(/\/index$/, '');
+  const privateTargets = new Set(config.privateTargets.map(canonical));
+  const publicPath = canonical(config.publicInterface);
+  function importsFor(path) {
+    const file = safe(path);
+    return typescriptImports(readFileSync(file, 'utf8'), file).map(specifier => {
+      const target = specifier.startsWith('.') ? resolve(dirname(file), specifier) : specifier.startsWith('@/') ? resolve(root, specifier.slice(2)) : null;
+      return target && inside(root, target) ? canonical(relative(root, target).split(sep).join('/')) : null;
+    }).filter(Boolean);
+  }
+  const sources = config.sources.flatMap(path => {
+    const absolute = resolve(root, path);
+    if (!inside(root, absolute) || !existsSync(absolute) || realpathSync(absolute) !== absolute) throw new Error('Unavailable selected frontend source: ' + path);
+    return filesUnder(absolute).filter(file => /\.[jt]sx?$/.test(file)).map(file => relative(root, file).split(sep).join('/'));
+  });
+  if (!sources.length || new Set(sources).size !== sources.length) throw new Error('Invalid selected frontend sources');
+  for (const source of sources) for (const target of importsFor(source)) {
+    if (privateTargets.has(target) || (target.startsWith('app/features/study/') && target !== publicPath)) throw new Error('Private selected frontend import: ' + source + ' -> ' + target);
+  }
+  for (const source of config.controllerConsumers) for (const target of importsFor(source)) {
+    if (target.startsWith('app/features/study/') && target !== publicPath) throw new Error('Private selected frontend import: ' + source + ' -> ' + target);
+  }
+  const staged = [config.publicInterface, config.implementation].filter(path => !existsSync(resolve(root, path)));
+  if (staged.length && (staged.length !== 2 || process.env.TEMPO_REQUIRE_STUDY_UI === '1')) throw new Error('Unavailable staged Study frontend: ' + staged.join(', '));
+  if (!staged.length) for (const target of importsFor(config.publicInterface)) {
+    if (privateTargets.has(target) || (target.startsWith('app/features/study/') && target !== canonical(config.implementation))) throw new Error('Study interface imports undeclared private implementation: ' + target);
+  }
+  if (!staged.length) {
+    for (const source of config.controllerConsumers) {
+      const file = safe(source), fact = typescriptFacts(readFileSync(file, 'utf8'), file);
+      const adopts = fact.calls.some(call => {
+        const [module, member] = call.callee.split('#');
+        if (!module || !member || !module.startsWith('.')) return false;
+        return canonical(relative(root, resolve(dirname(file), module)).split(sep).join('/')) === publicPath &&
+          (member === 'useStudyReviewController' || member === '.useStudyReviewController');
+      });
+      if (!adopts) throw new Error('Selected Home must call the public Study controller: ' + source);
+    }
+    for (const source of [...config.controllerConsumers, config.publicInterface, config.implementation]) {
+      const file = safe(source), fact = typescriptFacts(readFileSync(file, 'utf8'), file);
+      for (const call of fact.calls) {
+        const member = call.callee.split(/[.#]/).at(-1);
+        if (member === 'createStudySession' || (source !== config.implementation && member === 'reviewStudySession'))
+          throw new Error('Duplicate selected Study session creation: ' + source);
+      }
+    }
+  }
+  return { files: sources.length, controllerConsumers: config.controllerConsumers.length, stagedMissing: staged };
+}
+
+/** Exact source/import inventory for a bounded Python slice; no app namespace is external. */
+function checkSelectedPython(manifest, root, python) {
+  if (!Array.isArray(manifest.sources) || !manifest.sources.length || !manifest.publicExports) throw new Error("Invalid selected ownership map");
+  const safe = path => {
+    const file = resolve(root, path);
+    if (typeof path !== "string" || !inside(root, file) || !existsSync(file) || realpathSync(file) !== file || !statSync(file).isFile()) throw new Error("Unavailable selected source/target: " + path);
+    return file;
+  };
+  const entries = new Map();
+  for (const entry of manifest.sources) {
+    if (!entry.path?.endsWith('.py') || entries.has(entry.path) || !Array.isArray(entry.imports) || typeof entry.pure !== 'boolean' || entry.imports.some(name => typeof name !== 'string' || name.includes('*'))) throw new Error("Invalid selected source");
+    safe(entry.path); entries.set(entry.path, entry);
+  }
+  const modulePath = name => {
+    const base = resolve(root, name === 'tempo_storage' || name.startsWith('tempo_storage.') ? 'database' : 'backend', ...name.split('.'));
+    const path = [base + '.py', resolve(base, '__init__.py')].find(existsSync);
+    if (!path) throw new Error("Unavailable selected target: " + name);
+    safe(relative(root, path)); return path;
+  };
+  for (const entry of entries.values()) for (const name of entry.imports) if (name === 'app' || name.startsWith('app.') || name === 'tempo_storage' || name.startsWith('tempo_storage.')) modulePath(name);
+  for (const name of Object.keys(manifest.publicExports)) modulePath(name);
+  const result = spawnSync(python, [resolve(repository, 'tools/component-build/check-python.py'), 'boundary-facts', root], { input: JSON.stringify([...entries.keys()]), encoding: 'utf8', timeout: 20000 });
+  if (result.error || result.status !== 0) throw new Error(result.error?.message ?? result.stderr);
+  const facts = JSON.parse(result.stdout), problems = [];
+  for (const fact of facts) {
+    const entry = entries.get(fact.path), parts = fact.path.slice('backend/'.length, -3).split('/');
+    if (parts.at(-1) === '__init__') parts.pop(); else parts.pop();
+    const report = (line, message) => problems.push(`${fact.path}:${line}: ${message}`);
+    if (fact.loaders.length) report(fact.loaders[0], 'Unresolved dynamic loader');
+    for (const item of fact.imports) {
+      const name = item.level ? [...parts.slice(0, parts.length - item.level + 1), item.module].filter(Boolean).join('.') : item.module;
+      if (!entry.imports.includes(name)) report(item.line, 'Undeclared selected import: ' + name);
+      if (item.names.includes('*')) report(item.line, 'Wildcard import in selected source');
+      if (name === 'app' || name.startsWith('app.') || name === 'tempo_storage' || name.startsWith('tempo_storage.')) for (const member of item.names) {
+        const child = resolve(root, name === 'tempo_storage' || name.startsWith('tempo_storage.') ? 'database' : 'backend', ...name.split('.'), member);
+        if ((existsSync(child + '.py') || existsSync(resolve(child, '__init__.py'))) && !entry.imports.includes(name + '.' + member)) report(item.line, 'Undeclared selected import: ' + name + '.' + member);
+      }
+      if (entry.pure && infrastructure.has(name.replace(/^node:/, '').split('.')[0])) report(item.line, 'Pure selected source imports infrastructure: ' + name);
+      const allowed = manifest.publicExports[name];
+      if (allowed && item.names.length) for (const member of item.names) if (!allowed.includes(member)) report(item.line, 'Unavailable selected public export: ' + name + '.' + member);
+    }
+    for (const reference of fact.references) for (const [module, names] of Object.entries(manifest.publicExports)) {
+      if (reference.callee.startsWith(module + '.')) {
+        const member = reference.callee.slice(module.length + 1).split('.')[0];
+        if (!names.includes(member)) report(reference.line, 'Unavailable selected public member: ' + module + '.' + member);
+      }
+    }
+    if (entry.pure) for (const call of fact.calls) {
+      if (Object.hasOwn(call, 'sql')) report(call.line, 'Pure selected source contains SQL execution');
+      if (['open', 'read_text', 'read_bytes', 'write_text', 'write_bytes', 'connect', 'listen', 'spawn'].includes(call.callee.split('.').at(-1))) report(call.line, 'Pure selected source contains lifecycle/I/O: ' + call.callee);
+    }
+  }
+  for (const [name, names] of Object.entries(manifest.publicExports)) {
+    const path = relative(root, modulePath(name)), fact = facts.find(item => item.path === path);
+    if (!fact || names.some(member => !(fact.exports ?? (name === 'app.games.comparison' ? fact.declarations : [])).includes(member))) throw new Error('Unavailable selected public exports: ' + name);
+  }
+  if (problems.length) throw new Error([...new Set(problems)].sort().join('\n'));
+  return { mode: manifest.mode, files: facts.length };
 }
 
 /** Reuse the same queue-call walk for a narrow intake proof before the global map joins. */

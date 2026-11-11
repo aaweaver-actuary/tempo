@@ -25,12 +25,9 @@ LABELS = {
 def test_position_preparation_timing_preserves_proposal_and_source_hold(
     monkeypatch, caplog, timing, held
 ):
-    from tempo_legacy_database import connections
-    from tempo_legacy_database.adapters.study import (
-        game_feedback,
-        position_due_candidates,
-        position_issued_plans,
-    )
+    from tempo_storage import connections
+    from tempo_storage.study import game_feedback, position_due_candidates
+    from app.study.position_learning import issuance as position_issued_plans
     from app.services import position_queue_admission
     from app.study.position_learning import issued_plan_service, route_planner
 

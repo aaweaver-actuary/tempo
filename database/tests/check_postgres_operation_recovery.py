@@ -28,7 +28,7 @@ from psycopg.errors import TransactionTimeout
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend"))
 from app import command_dispatch, tasks
-from tempo_legacy_database.adapters import postgres_store
+from tempo_storage import postgres
 
 DSN = "postgresql://postgres@postgres:5432/tempo"
 from app.command_gateway import (
@@ -48,7 +48,7 @@ def verify_pgn_discard_fencing() -> None:
         for previous_state in ("unknown", "queued", "executing", "retrying", "pending", "blocked", "failed"):
             target_id = f"discard-proof-{uuid.uuid4().hex}"
             owned_ids.append(target_id)
-            with postgres_store.connection(read_only=False) as database:
+            with postgres.connection(read_only=False) as database:
                 if previous_state != "unknown":
                     database.raw.execute(
                         "INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,payload_json,attempt_token) VALUES(%s,'imports.pgn.admit',%s,%s,%s,'old-token')",
@@ -63,7 +63,7 @@ def verify_pgn_discard_fencing() -> None:
                 pass
             else:
                 raise AssertionError("Discarded admission was accepted")
-            with postgres_store.connection(read_only=True) as database:
+            with postgres.connection(read_only=True) as database:
                 assert tuple(database.raw.execute("SELECT state,payload_json,attempt_token FROM operation_receipts WHERE operation_id=%s", (target_id,)).fetchone()) == ("failed", None, None)
                 assert read_operation(target_id)["error"]["code"] == "import_discarded"
                 assert database.raw.execute("SELECT COUNT(*) FROM repertoires WHERE source_name=%s", (source_name,)).fetchone()[0] == 0
@@ -76,7 +76,7 @@ def verify_pgn_discard_fencing() -> None:
         result = {"repertoire_id": "committed-proof"}
 
         def complete_admission():
-            with postgres_store.connection(read_only=False) as database:
+            with postgres.connection(read_only=False) as database:
                 database.raw.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (race_id,))
                 database.raw.execute("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state) VALUES(%s,'imports.pgn.admit','race','pending')", (race_id,))
                 admission_locked.set()
@@ -84,7 +84,7 @@ def verify_pgn_discard_fencing() -> None:
                 database.raw.execute("UPDATE operation_receipts SET state='complete',response_json=%s WHERE operation_id=%s", (json.dumps(result), race_id))
 
         def discard_during_admission():
-            with postgres_store.connection(read_only=False) as database:
+            with postgres.connection(read_only=False) as database:
                 database.raw.execute("SELECT set_config('application_name',%s,true)", (application_name,))
                 return discard_pgn_import(database, {"operation_id": race_id})
 
@@ -95,7 +95,7 @@ def verify_pgn_discard_fencing() -> None:
             try:
                 deadline = time.monotonic() + 5
                 while True:
-                    with postgres_store.connection(read_only=True) as database:
+                    with postgres.connection(read_only=True) as database:
                         waiting = database.raw.execute("SELECT COUNT(*) FROM pg_stat_activity WHERE application_name=%s AND wait_event_type='Lock'", (application_name,)).fetchone()[0]
                     if waiting:
                         break
@@ -106,7 +106,7 @@ def verify_pgn_discard_fencing() -> None:
             admission.result()
             assert discard.result() == {"operation_id": race_id, "outcome": "already_complete", "import_result": result}
     finally:
-        with postgres_store.connection(read_only=False) as database:
+        with postgres.connection(read_only=False) as database:
             database.raw.execute("DELETE FROM operation_receipts WHERE operation_id=ANY(%s::text[])", (owned_ids,))
     print("PASS discarded PGN delivery cannot restore its payload or create repertoire data; admission race preserves completion")
 
@@ -170,7 +170,7 @@ def test_postgres_command_receipt_preserves_http_detail_and_failed_handler_rollb
                 else:
                     raise AssertionError("Failed receipt replay lost HTTP detail")
                 assert read_operation(operation_id) == receipt
-            with postgres_store.connection(read_only=True) as database:
+            with postgres.connection(read_only=True) as database:
                 error_json = database.raw.execute(
                     "SELECT error_json FROM operation_receipts WHERE operation_id=%s", (operation_id,),
                 ).fetchone()[0]
@@ -191,7 +191,7 @@ def test_postgres_concurrent_conflict_preserves_deferred_receipt_recovery() -> N
     for force_overlap in (False, True):
         concurrent_id = f"concurrent-{uuid.uuid4().hex}"
         payload = {"value": concurrent_id}
-        with postgres_store.connection(read_only=False) as database:
+        with postgres.connection(read_only=False) as database:
             database.raw.execute(
                 "INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,"
                 "payload_json,background) VALUES(%s,'test.recovery.state',%s,'queued',%s,TRUE)",
@@ -240,7 +240,7 @@ def test_postgres_concurrent_conflict_preserves_deferred_receipt_recovery() -> N
             receipt = read_operation(concurrent_id)
             assert receipt["state"] == "retrying"
             assert receipt["attempt_count"] == receipt["cycle_attempt_count"] == 0
-            with postgres_store.connection(read_only=False) as database:
+            with postgres.connection(read_only=False) as database:
                 row = database.raw.execute(
                     "SELECT payload_json,attempt_token,lease_expires_at FROM operation_receipts WHERE operation_id=%s",
                     (concurrent_id,),
@@ -252,7 +252,7 @@ def test_postgres_concurrent_conflict_preserves_deferred_receipt_recovery() -> N
                 # proof, then recover through the real durable claim boundary.
                 database.raw.execute("UPDATE operation_receipts SET next_retry_at=NOW()-INTERVAL '1 second' WHERE operation_id=%s",
                                      (concurrent_id,))
-            postgres_store.close_pools()
+            postgres.close_pools()
             recovered = claim_recoverable_operation()
             assert recovered == {"operation_id": concurrent_id, "command_name": "test.recovery.state",
                                  "payload": payload, "background": True}
@@ -264,7 +264,7 @@ def test_postgres_concurrent_conflict_preserves_deferred_receipt_recovery() -> N
         assert completed["state"] == "complete" and completed["response"] == payload
         assert tasks.execute_background_command.run(concurrent_id, "test.recovery.state", payload) is None
         assert read_operation(concurrent_id) == completed
-        with postgres_store.connection(read_only=True) as database:
+        with postgres.connection(read_only=True) as database:
             assert database.raw.execute("SELECT COUNT(*) FROM internal_migrations WHERE name=%s",
                                         (concurrent_id,)).fetchone()[0] == 1
     print("PASS test_postgres_concurrent_conflict_preserves_deferred_receipt_recovery")
@@ -295,14 +295,14 @@ def main(database_url=DSN) -> None:
 
     for attempt_number in range(1, MAX_BACKGROUND_CYCLE_ATTEMPTS + 1):
         if attempt_number > 1:
-            with postgres_store.connection(read_only=False) as database:
+            with postgres.connection(read_only=False) as database:
                 database.raw.execute(
                     "UPDATE operation_receipts SET next_retry_at=NOW()-INTERVAL '1 second' "
                     "WHERE operation_id=%s", (operation_id,),
                 )
             recovered = claim_recoverable_operation()
             assert recovered and recovered["operation_id"] == operation_id
-            postgres_store.close_pools()
+            postgres.close_pools()
         assert tasks.execute_background_command.run(
             operation_id, "test.recovery.state", payload,
         ) is None
@@ -338,7 +338,7 @@ def main(database_url=DSN) -> None:
     tasks.execute_background_command.run(operation_id, "test.recovery.state", payload, retry_cycle)
     tasks.execute_background_command.run(operation_id, "test.recovery.state", payload)
     assert len(attempts) == MAX_BACKGROUND_CYCLE_ATTEMPTS + 1
-    with postgres_store.connection(read_only=True) as database:
+    with postgres.connection(read_only=True) as database:
         business_rows = database.raw.execute(
             "SELECT COUNT(*) FROM internal_migrations WHERE name=%s", (operation_id,),
         ).fetchone()[0]
@@ -350,7 +350,7 @@ def main(database_url=DSN) -> None:
         stale_id, "test.recovery.state", {"value": stale_id}, background=True,
     )
     assert claimed and saved_payload == {"value": stale_id}
-    with postgres_store.connection(read_only=False) as database:
+    with postgres.connection(read_only=False) as database:
         database.raw.execute(
             "UPDATE operation_receipts SET lease_expires_at=NOW()-INTERVAL '1 second' "
             "WHERE operation_id=%s", (stale_id,),
@@ -371,7 +371,7 @@ def main(database_url=DSN) -> None:
     # A wrong payload cannot poison queued, executing, retrying, or blocked originals.
     for state in ("queued", "executing", "retrying", "blocked"):
         state_id = f"conflict-{state}-{uuid.uuid4().hex}"
-        with postgres_store.connection(read_only=False) as database:
+        with postgres.connection(read_only=False) as database:
             database.raw.execute(
                 "INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,"
                 "payload_json,background) VALUES(%s,'test.recovery.state',%s,%s,%s,TRUE)",
@@ -397,7 +397,7 @@ def main(database_url=DSN) -> None:
     test_postgres_concurrent_conflict_preserves_deferred_receipt_recovery()
 
     legacy_id = f"legacy-{uuid.uuid4().hex}"
-    with postgres_store.connection(read_only=False) as database:
+    with postgres.connection(read_only=False) as database:
         database.raw.execute(
             "INSERT INTO operation_receipts(operation_id,command_name,request_hash,state) "
             "VALUES(%s,'test.recovery.state','unrecoverable','pending')", (legacy_id,),
@@ -407,7 +407,7 @@ def main(database_url=DSN) -> None:
     verify_pgn_discard_fencing()
 
     test_postgres_command_receipt_preserves_http_detail_and_failed_handler_rollback()
-    postgres_store.close_pools()
+    postgres.close_pools()
     print("PASS finite retries, restart, conflict states and race, explicit cycle, stale lease, and one business effect")
 
 

@@ -2,22 +2,22 @@
 
 import sqlite3
 
-from tempo_legacy_database.adapters.postgres_store import PostgresConnection
-from tempo_legacy_database.capabilities import BorrowedTransaction, ReadConnection
+from tempo_storage.postgres import PostgresConnection
+from tempo_storage.postgres import PostgresConnection, ReadConnection
 
 
 def sqlite_connection_matches(database: sqlite3.Connection) -> None:
     reader: ReadConnection = database
-    borrowed: BorrowedTransaction = database
+    borrowed: PostgresConnection = database
 
 
 def postgres_connection_matches(database: PostgresConnection) -> None:
     reader: ReadConnection = database
-    borrowed: BorrowedTransaction = database
+    borrowed: PostgresConnection = database
 
 
 def consumers_do_not_own_lifetime(
-    reader: ReadConnection, borrowed: BorrowedTransaction
+    reader: ReadConnection, borrowed: PostgresConnection
 ) -> None:
     reader.commit()  # type: ignore[attr-defined]
     reader.close()  # type: ignore[attr-defined]

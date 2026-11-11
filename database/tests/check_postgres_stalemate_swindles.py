@@ -22,7 +22,7 @@ import chess
 import chess.pgn
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend"))
-from tempo_legacy_database.adapters import postgres_store
+from tempo_storage import postgres
 from app.services.stalemate_swindles import MiningFilters, build_bundle, mine_candidates, new_counts
 from app.services.study_portable import import_bundle
 
@@ -56,11 +56,11 @@ def disposable_postgres_configuration():
     try:
         for variable in database_variables:
             os.environ[variable] = "postgresql://postgres@postgres:5432/tempo"
-        postgres_store.close_pools()
+        postgres.close_pools()
         yield
     finally:
         try:
-            postgres_store.close_pools()
+            postgres.close_pools()
         finally:
             for variable, previous_value in previous_configuration.items():
                 if previous_value is None:
@@ -88,14 +88,14 @@ def prove_bundle_import(bundle, preserved_review_history=None):
         study_id = bundle["tables"]["studies"][0]["id"]
         owned_study = False
         try:
-            with postgres_store.connection() as database:
+            with postgres.connection() as database:
                 assert not database.execute("SELECT 1 FROM studies WHERE id=?", (study_id,)).fetchone()
                 assert not import_bundle(database, bundle)["idempotent"]
                 owned_study = True
                 if preserved_review_history is not None:
                     assert review_history_snapshot(database) == preserved_review_history, "Import changed review history"
-            postgres_store.close_pools()
-            with postgres_store.connection() as database:
+            postgres.close_pools()
+            with postgres.connection() as database:
                 reordered = deepcopy(bundle)
                 for table_rows in reordered["tables"].values():
                     table_rows.reverse()
@@ -124,7 +124,7 @@ def prove_bundle_import(bundle, preserved_review_history=None):
                     assert review_history_snapshot(database) == preserved_review_history, "Rejected import changed review history"
         finally:
             if owned_study:
-                with postgres_store.connection() as database:
+                with postgres.connection() as database:
                     database.execute("DELETE FROM study_exercise_revisions WHERE exercise_id IN (SELECT id FROM study_exercises WHERE study_id=?)", (study_id,))
                     database.execute("DELETE FROM study_exercises WHERE study_id=?", (study_id,))
                     for node_path in ("root.0.0", "root.0", "root"):
@@ -183,12 +183,12 @@ def test_postgres_stalemate_import_reimport_preserves_existing_review_history():
         reviewed_fixture = synthetic_bundle("synthetic-postgres-stalemate-reviewed-history-v1")
         fixture_study_id = reviewed_fixture["tables"]["studies"][0]["id"]
         fixture_exercise_id = reviewed_fixture["tables"]["study_exercises"][0]["id"]
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             assert not import_bundle(database, reviewed_fixture)["idempotent"]
         payload = {"study_id": fixture_study_id, "exercise_id": fixture_exercise_id}
         enrolled = execute_command(str(uuid.uuid4()), "studies.exercises.enroll", payload)
         queued = execute_command(str(uuid.uuid4()), "studies.exercises.train_now", payload)
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             cycle = database.execute("SELECT cycle FROM daily_queue WHERE id=?", (queued["queue_entry_id"],)).fetchone()[0]
         reference = json.loads(reviewed_fixture["tables"]["study_exercise_revisions"][0]["specification_json"])
         result = execute_command(str(uuid.uuid4()), "studies.attempts.submit", {**payload, "attempt": {
@@ -197,8 +197,8 @@ def test_postgres_stalemate_import_reimport_preserves_existing_review_history():
             "answer": {"type": "move_line", "moves": reference["accepted_lines"][0]},
         }})
         assert result["persisted"] and result["rating"] == "correct" and result["review"]["review_id"]
-        seed_standard_review_history(postgres_store.connection, execute_command)
-        with postgres_store.connection() as database:
+        seed_standard_review_history(postgres.connection, execute_command)
+        with postgres.connection() as database:
             preserved = review_history_snapshot(database)
             print("stalemate protected history counts: " + json.dumps({
                 table: len(rows) for table, rows in preserved.items()

@@ -8,8 +8,8 @@ import math
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
-from tempo_legacy_database.adapters.lifecycle import background_metrics as storage
-from tempo_legacy_database.adapters.lifecycle.background_metrics import (
+from tempo_storage.lifecycle import background_metrics as storage
+from tempo_storage.lifecycle.background_metrics import (
     COUNT_NAMES,
     DURATION_NAMES,
     write_metric_delta,

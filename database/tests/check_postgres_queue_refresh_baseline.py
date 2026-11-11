@@ -15,7 +15,7 @@ from psycopg.conninfo import make_conninfo
 from unittest.mock import patch
 from test_product_game_lapse_postgres import owned_postgres
 from queue_refresh_scale_fixture import seed_queue_refresh_case
-from tempo_legacy_database.adapters import postgres_store
+from tempo_storage import postgres
 from app.services import postgres_queue_refresh as refresh
 
 
@@ -60,9 +60,9 @@ def test_native_profile(owned_postgres):
                             if e['id'] in facts.changed_kind_ids: e['kind']='new'
                 start=time.perf_counter()
                 try:
-                    with psycopg.connect(**owned_postgres.connection_options,row_factory=postgres_store.tempo_row_factory) as raw:
+                    with psycopg.connect(**owned_postgres.connection_options,row_factory=postgres.tempo_row_factory) as raw:
                         raw.execute("SET LOCAL transaction_timeout='250ms'; SET LOCAL lock_timeout='25ms'; SET LOCAL jit=off")
-                        result=refresh._publish_queue_randomization(postgres_store.PostgresConnection(raw),facts.queue_date,p)
+                        result=refresh._publish_queue_randomization(postgres.PostgresConnection(raw),facts.queue_date,p)
                         raw.rollback()
                     print('PUBLISH',scenario,'result',result,'ms',round((time.perf_counter()-start)*1000,3))
                 except Exception as e:
@@ -72,5 +72,5 @@ def test_native_profile(owned_postgres):
                 print('STAGE',name,'count',len(values),'p50_ms',round(statistics.median(values),3),
                       'p95_ms',ordered[min(len(ordered)-1, int(len(ordered)*0.95))], 'max_ms',max(values))
     finally:
-        postgres_store.close_pools()
+        postgres.close_pools()
         os.environ.pop('TEMPO_DATABASE_READ_URL',None);os.environ.pop('TEMPO_DATABASE_WRITE_URL',None)

@@ -343,3 +343,32 @@ it("PR105 transient review backoff permits independent receipt confirmation with
   expect(pendingReviews()[0]).toEqual(original);
   expect(fetcher.mock.calls.some(([, options]) => options?.method === "POST")).toBe(false);
 });
+
+it("C05 deferred receipt retains the confirmation binding captured before the flush", async () => {
+  await enqueuePendingReview(review);
+  let finish!: (response: Response) => void;
+  vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(resolve => { finish = resolve; })));
+  const original = vi.fn(), replacement = vi.fn();
+  function Bound({ callback }: { callback: typeof original }) {
+    usePendingReviewRecovery(true, true, false, callback, () => callback); return null;
+  }
+  const mounted = render(<Bound callback={original} />);
+  await advance(1000);
+  act(() => window.dispatchEvent(new Event("pointerdown")));
+  await act(async () => { finish(Response.json({ state: "complete", response: { persisted: true } })); await settleStudyStorageTasks(); });
+  mounted.rerender(<Bound callback={replacement} />);
+  act(() => window.dispatchEvent(new Event("pointerup")));
+  expect(original).toHaveBeenCalledOnce();
+  expect(replacement).not.toHaveBeenCalled();
+});
+
+it("C05 operation status wake preserves a transient review retry deadline", async () => {
+  const { notifyOperationStatusChange } = await import("../../app/lib/operation-status-events");
+  await enqueuePendingReview(review);
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ detail: "Unavailable" }, { status: 503 })));
+  render(<Harness confirmed={vi.fn()} />);
+  await advance(1000); await advance(1000);
+  act(() => notifyOperationStatusChange("review-attempt:original-attempt"));
+  await advance(1999); expect(fetch).toHaveBeenCalledTimes(2);
+  await advance(1); expect(fetch).toHaveBeenCalledTimes(3);
+});

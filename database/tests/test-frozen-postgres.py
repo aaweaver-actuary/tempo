@@ -23,7 +23,7 @@ ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'backend'))
 sys.path.insert(0,str(ROOT/'scripts'))
 import psycopg
-from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory, close_pools
+from tempo_storage.postgres import PostgresConnection, tempo_row_factory, close_pools
 from app.services import frozen_opening_order as order,postgres_queue_refresh as refresh
 from app.chess.cards import card_id
 from database.tooling.provision_postgres_roles import provision

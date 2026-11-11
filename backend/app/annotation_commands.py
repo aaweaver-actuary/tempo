@@ -10,8 +10,8 @@ from fastapi import HTTPException
 
 from .command_gateway import register_command
 from app.contracts.transport.authored_repertoire import PositionAnnotationRequest
-from tempo_legacy_database.adapters.commands import annotations as storage
-from tempo_legacy_database.adapters.postgres_store import PostgresConnection
+from tempo_storage.commands import annotations as storage
+from tempo_storage.postgres import PostgresConnection
 
 
 def save_position_annotation(

@@ -11,7 +11,7 @@ from pathlib import Path
 import sys
 import chess
 ROOT=Path(__file__).resolve().parents[2];sys.path.insert(0,str(ROOT/'backend'))
-from tempo_legacy_database.connections import background_connection
+from tempo_storage.connections import background_connection
 from app.services import frozen_opening_order as order
 from app.chess.cards import card_id
 from app.study.openings.frozen_math import content_fingerprint

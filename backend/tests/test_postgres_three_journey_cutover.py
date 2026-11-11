@@ -1626,7 +1626,7 @@ def test_schema61_defense_recognition_review_history_rehearsal(monkeypatch):
                 ).fetchone()[0]
 
             assert issuance_count() == 1
-            from tempo_legacy_database.adapters.study.issuance import (
+            from tempo_storage.study.issuance import (
                 committed_issuance_count,
             )
 

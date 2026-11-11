@@ -65,10 +65,10 @@ assert str(repository / "database") not in sys.path
 assert str(repository / "backend") not in sys.path
 
 def check_source_roots():
-    database = PathFinder.find_spec("tempo_legacy_database")
+    database = PathFinder.find_spec("tempo_storage")
     application = PathFinder.find_spec("app")
     assert database is not None, "direct CLI cannot discover centralized database package"
-    assert Path(database.origin) == repository / "database/tempo_legacy_database/__init__.py"
+    assert Path(database.origin) == repository / "database/tempo_storage/__init__.py"
     assert application is not None
     assert Path(application.origin) == repository / "backend/app/__init__.py"
 
@@ -77,7 +77,7 @@ class ApplicationBoundaryReached(BaseException):
 
 class StopBeforeApplication(MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
-        if fullname in {"app", "tempo_legacy_database"}:
+        if fullname in {"app", "tempo_storage"}:
             check_source_roots()
             raise ApplicationBoundaryReached()
 
@@ -92,7 +92,7 @@ try:
 except ApplicationBoundaryReached:
     pass
 check_source_roots()
-assert "app" not in sys.modules and "tempo_legacy_database" not in sys.modules
+assert "app" not in sys.modules and "tempo_storage" not in sys.modules
 print("isolated direct CLI database discovery passed")
 """
     result = subprocess.run(

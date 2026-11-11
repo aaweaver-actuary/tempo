@@ -57,7 +57,7 @@ def test_override_replacement_restarts_eligibility_before_reusing_old_checkpoint
     captured = {}
     unlocked = []
     locks = []
-    monkeypatch.setattr(worker.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(worker.postgres, "configured", lambda: True)
     monkeypatch.setattr(worker, "background_read_connection", connection)
     monkeypatch.setattr(worker, "connection", connection)
     monkeypatch.setattr(order, "activation", lambda database, **kwargs: ("new-run", 2))

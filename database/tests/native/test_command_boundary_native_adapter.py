@@ -15,7 +15,7 @@ import pytest
 import redis
 from psycopg.conninfo import make_conninfo
 
-from test_product_introductions_postgres import owned_postgres  # noqa: F401
+from native_study_fixture import owned_postgres  # noqa: F401
 
 
 @pytest.fixture(scope='module')
@@ -93,8 +93,8 @@ def migrated_command_database(command_boundary_native, monkeypatch):
     monkeypatch.setenv('TEMPO_ADMISSION_NAMESPACE', 'tempo:command-proof:' + uuid4().hex)
     from database.tooling.apply_postgres_migrations import apply_migrations
     from app.product_composition.database_infrastructure import bind_database_infrastructure
-    from tempo_legacy_database.adapters import postgres_store
-    from tempo_legacy_database.adapters.redis_control import admission
+    from tempo_storage import postgres
+    from tempo_storage.redis_control import admission
     try:
         bind_database_infrastructure()
         apply_migrations(dsn)
@@ -105,7 +105,7 @@ def migrated_command_database(command_boundary_native, monkeypatch):
         yield dsn
     finally:
         try:
-            postgres_store.close_pools()
+            postgres.close_pools()
         finally:
             try:
                 if admission.client.cache_info().currsize:

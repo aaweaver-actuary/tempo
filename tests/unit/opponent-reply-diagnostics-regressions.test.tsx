@@ -35,7 +35,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function mountTraining(overrides: Record<string, unknown> = {}, reviewWrites?: unknown[]) {
+async function mountTraining(overrides: Record<string, unknown> = {}, reviewWrites?: unknown[], locked = false) {
   vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
   window.history.replaceState({}, "", "/?tempoPerformance=drag");
   const queueCard = {
@@ -56,7 +56,7 @@ async function mountTraining(overrides: Record<string, unknown> = {}, reviewWrit
   }));
   const mounted = render(<Home />);
   await waitFor(() => expect(useTrainingStore.getState().getCard().queueEntryId).toBe(731));
-  await waitFor(() => expect((screen.getByRole("button", { name: "Play e4" }) as HTMLButtonElement).disabled).toBe(false));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Play e4" }) as HTMLButtonElement).disabled).toBe(locked));
   vi.useFakeTimers();
   resetTempoDragDiagnostics();
   const unrelatedId = recordTempoDragPhase("engine-work", "start");
@@ -228,17 +228,20 @@ it("opponent_reply_handled_failure_closes_its_diagnostic_phase", async () => {
 });
 
 
-it("real Home preserves saved endgame queue lines, plays them and submits the ordinary review", async () => {
+it("retired endgame remains held without changing the attempt or writing a review", async () => {
   const fen = "8/8/8/8/8/2k5/R7/1K6 w - - 0 1";
   const reviews: unknown[] = [];
-  await mountTraining({ content_type: "endgame", start_fen: fen, moves: ["a2a3"] }, reviews);
+  await mountTraining({ content_type: "endgame", start_fen: fen, moves: ["a2a3"] }, reviews, true);
   vi.useRealTimers();
-  expect(useTrainingStore.getState().getCard().moves).toEqual(["Ra3+"]);
-  await act(async () => { await useBoardShellStore.getState().board.onMove?.("a2", "a3"); });
-  const played = new Chess(fen); played.move("Ra3+");
-  expect(useTrainingStore.getState().currentFenString).toBe(played.fen());
-  expect(useTrainingStore.getState().feedback).toBe("complete");
-  await waitFor(() => expect(reviews).toHaveLength(1), { timeout: 3000 });
-  expect(reviews[0]).toMatchObject({ outcome: "correct", queue_entry_id: 731 });
-  await waitFor(() => expect(pendingReviews()).toHaveLength(0));
+  const before = useTrainingStore.getState();
+  const boardFen = screen.getByTestId("reply-board").getAttribute("data-fen");
+  fireEvent.click(screen.getByRole("button", { name: "Play e4" }));
+  const after = useTrainingStore.getState();
+  expect(after.attempt).toEqual(before.attempt);
+  expect(after.currentFenString).toBe(before.currentFenString);
+  expect(after.step).toBe(before.step);
+  expect(after.getCard().queueEntryId).toBe(731);
+  expect(screen.getByTestId("reply-board").getAttribute("data-fen")).toBe(boardFen);
+  expect(reviews).toEqual([]);
+  expect(pendingReviews()).toHaveLength(0);
 });

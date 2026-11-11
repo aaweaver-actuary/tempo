@@ -16,13 +16,11 @@ from tempo_evidence_math.position_learning import Hold
 def test_position_writer_timing_preserves_success_and_source_busy_hold(
     monkeypatch, timing, held
 ):
-    from tempo_legacy_database.adapters.authored_repertoires import (
+    from tempo_storage.authored_repertoires import (
         position_study_source,
     )
-    from tempo_legacy_database.adapters.study import (
-        position_issued_plans,
-        game_feedback,
-    )
+    from tempo_storage.study import game_feedback
+    from app.study.position_learning import issuance as position_issued_plans
     from app.services import legacy_study_remediation
 
     payload = {

@@ -1,0 +1,94 @@
+{
+  "source_commit": "65e61ea675110bc729d1bb385edc49968824831d",
+  "passed": [
+    {
+      "check": "Python compilation",
+      "scope": "backend/app and database/tempo_storage"
+    },
+    {
+      "check": "API and worker imports",
+      "scope": "app.main and app.tasks with retained local source libraries"
+    },
+    {
+      "check": "Internal import/module-attribute audit",
+      "result": "0 unresolved source links",
+      "tool": "tools/reduction/check_links.py"
+    },
+    {
+      "check": "Focused Python proof",
+      "result": "94 passed",
+      "scope": "PGN comparison, checkpoint/review/reconciliation, frozen order, durable dispatch, repertoire source guards, injected native driver and historical checksum tests"
+    },
+    {
+      "check": "Retained source/issuance/grade extraction suite",
+      "result": "20 passed,4 DSN-dependent cases skipped"
+    },
+    {
+      "check": "TypeScript",
+      "result": "npx tsc --noEmit --incremental false passed"
+    },
+    {
+      "check": "Focused Vitest",
+      "result": "3 files /53 tests passed",
+      "scope": "minimal Game Review, Study operation receipts, retained review continuation"
+    },
+    {
+      "check": "Frontend build",
+      "result": "npm run build:local passed",
+      "notes": "12 Merida SVG paths remain runtime-resolved; no browser availability claim"
+    },
+    {
+      "check": "Migration inventory",
+      "result": "64 contiguous sources resolve;001\u2013063 byte-identical to starting main;050 bundled SQL checksum preserved"
+    },
+    {
+      "check": "Native SQL source inspection",
+      "result": "680 direct literal calls and dynamic claim/control/tactic lock probes inspected; no placeholder-count/dialect-token errors found",
+      "limit": "Static/injected proof, no actual PostgreSQL execution"
+    },
+    {
+      "check": "Guarded CLI preflight regressions",
+      "result": "7 selected Node tests passed",
+      "scope": "Selected original migration preflight and retired collector guards; old-overlay recovery refusal was source-reviewed only"
+    },
+    {
+      "check": "Git whitespace/conflict checks",
+      "result": "passed after final EOF cleanup"
+    }
+  ],
+  "failed_or_unavailable": [
+    {
+      "check": "Broad backend test collection",
+      "result": "1246 collected; stopped after10 errors",
+      "causes": [
+        "Missing grimp development dependency",
+        "Remaining suites for removed standalone Studies, old source-shape boundaries, stalemate/asset-generation tooling"
+      ],
+      "status": "Not a passing full-suite collection; retained targeted boundaries pass"
+    },
+    {
+      "check": "Native PostgreSQL SQL/locks/migration/concurrency",
+      "result": "not run",
+      "cause": "No task-owned native database or Docker stack used"
+    },
+    {
+      "check": "Assembled review-save to playable next card",
+      "result": "not run"
+    },
+    {
+      "check": "Browser/offline failure-injection and installed readback",
+      "result": "not run"
+    },
+    {
+      "check": "Full CI, Docker lifecycle qualification, production migration",
+      "result": "not run"
+    }
+  ],
+  "publication": {
+    "status": "blocked_by_automatic_approval_review",
+    "command": "git push -u origin codex/tempo-aggressive-reduction-pass2",
+    "reason": "This push would transmit the repository\u2019s potentially private source and a very large deletion commit to GitHub and create a remote branch, but the trusted user messages do not authorize publication to that destination; the repository and remote are not verified as an approved organization-owned destination.",
+    "constraint": "Do not bypass through alternate transport. Local work completed; no PR created by this task.",
+    "attempted_source_commit": "c66270fda22b55eeb70219b48bbb3cb6949fbe03"
+  }
+}

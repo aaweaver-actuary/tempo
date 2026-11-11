@@ -6,10 +6,10 @@ It creates no grants, connection, task kind, or independent task-state writer.
 
 import json
 
-from tempo_legacy_database.adapters.authored_repertoires.pgn_import import (
+from tempo_storage.authored_repertoires.pgn_import import (
     preparation as storage,
 )
-from tempo_legacy_database.connections import background_read_connection
+from tempo_storage.connections import background_read_connection
 from .redis_admission_gate import BackgroundAdmissionDeferred
 
 COMMAND = "imports.pgn.explicit"

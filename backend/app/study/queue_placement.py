@@ -2,7 +2,7 @@
 
 from datetime import date
 
-from tempo_legacy_database.adapters.study.review import storage
+from tempo_storage.study.review import storage
 from app.services.queue_presentation import presentation_rows
 from app.services.queue_ordering import _priority_queue_order
 from app.services.queue_priority_promotion import (

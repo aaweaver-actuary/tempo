@@ -13,7 +13,7 @@ import chess
 import pytest
 
 from app import pgn_import_commands as application
-from tempo_legacy_database.adapters.authored_repertoires.pgn_import import storage
+from tempo_storage.authored_repertoires.pgn_import import storage
 
 
 def _retained_storage_application_imports(source):
@@ -28,7 +28,7 @@ def _retained_storage_application_imports(source):
 
 
 def test_retained_import_storage_does_not_import_application_policy():
-    from tempo_legacy_database.adapters.authored_repertoires import product_imports
+    from tempo_storage.authored_repertoires import product_imports
 
     source = Path(product_imports.__file__).read_text()
     assert _retained_storage_application_imports(source) == set()
@@ -61,7 +61,7 @@ socket.create_connection = forbidden
 sqlite3.connect = forbidden
 subprocess.Popen = forbidden
 denied = {'app.pgn_import_commands', 'app.command_gateway', 'app.main', 'app.tasks',
-          'tempo_legacy_database', 'psycopg'}
+          'tempo_storage', 'psycopg'}
 class RejectImporterOrDatabase(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
         if any(fullname == name or fullname.startswith(name + '.') for name in denied):
@@ -160,10 +160,10 @@ class Borrowed:
 
 
 def test_retained_import_storage_preserves_full_receipt_tuple_and_raw_json():
-    from tempo_legacy_database.adapters.authored_repertoires.product_imports import (
+    from tempo_storage.authored_repertoires.product_imports import (
         RetainedImportStorage,
     )
-    from tempo_legacy_database.adapters.postgres_store import TempoRow
+    from tempo_storage.postgres import TempoRow
 
     columns = (
         "command_name",
@@ -213,10 +213,10 @@ def test_retained_import_storage_preserves_full_receipt_tuple_and_raw_json():
 
 
 def test_retained_import_storage_card_rows_keep_exact_projection_order_and_empty_read():
-    from tempo_legacy_database.adapters.authored_repertoires.product_imports import (
+    from tempo_storage.authored_repertoires.product_imports import (
         RetainedImportStorage,
     )
-    from tempo_legacy_database.adapters.postgres_store import TempoRow
+    from tempo_storage.postgres import TempoRow
 
     columns = (
         "id",
@@ -253,7 +253,7 @@ def test_retained_import_storage_card_rows_keep_exact_projection_order_and_empty
 
 def test_retained_import_storage_requires_exact_intrans_status_without_lifecycle_access():
     from psycopg.pq import TransactionStatus
-    from tempo_legacy_database.adapters.authored_repertoires.product_imports import (
+    from tempo_storage.authored_repertoires.product_imports import (
         RetainedImportStorage,
     )
 
@@ -269,10 +269,10 @@ def test_retained_import_storage_requires_exact_intrans_status_without_lifecycle
 def test_retained_import_storage_locks_original_using_existing_opaque_receipt_writer(
     monkeypatch,
 ):
-    from tempo_legacy_database.adapters.authored_repertoires.product_imports import (
+    from tempo_storage.authored_repertoires.product_imports import (
         RetainedImportStorage,
     )
-    from tempo_legacy_database.adapters.commands.receipts import storage as receipts
+    from tempo_storage.commands.receipts import storage as receipts
 
     database = Borrowed([])
     writer = object()

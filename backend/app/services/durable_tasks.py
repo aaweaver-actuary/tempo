@@ -5,42 +5,21 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 import json
 import random
-from tempo_legacy_database.capabilities import BorrowedTransaction
+from tempo_storage.postgres import PostgresConnection
 import uuid
 from typing import Callable
 
-from tempo_legacy_database.connections import (
+from tempo_storage.connections import (
     connection,
     read_connection,
     background_read_connection,
 )
-from tempo_legacy_database.adapters import postgres_store
-from tempo_legacy_database.adapters.durable_tasks import storage
-from tempo_legacy_database.adapters.durable_tasks.storage import (
-    _EVENT_INSERT_SQL,
-    _EVENT_PRUNE_SQL,
-    _TASK_BY_KIND_SQL,
-    _TASK_UPSERT_SQL,
-    _TASK_BY_ID_SQL,
-    _COMPLETE_SLICE_SQL,
-    _QUEUE_REFRESH_STATUS_SQL,
-    _QUEUE_REFRESH_PROGRESS_SQL,
-    warm_completion_sql,
-)
-from .background_activity import claimable, control_order
-from .defensive_analysis import (
-    DEFENSIVE_TASK_KINDS,
-    analysis_enabled,
-    task_admission_sql,
-)
+from tempo_storage import postgres
+from tempo_storage.durable_tasks import storage
+from tempo_storage.durable_tasks.storage import _EVENT_INSERT_SQL, _EVENT_PRUNE_SQL, _TASK_BY_KIND_SQL, _TASK_UPSERT_SQL, _TASK_BY_ID_SQL, _COMPLETE_SLICE_SQL, _QUEUE_REFRESH_STATUS_SQL, _QUEUE_REFRESH_PROGRESS_SQL
 from .background_metrics import increment, record_event_counts
 from .queue_refresh_wakeup import mark_queue_refresh_requested, wake_queue_refresh
 from .activity_gate import activity_gate
-from .durable_scheduling import (
-    warm_scheduling_sql,
-    select_scheduled_task,
-    persist_scheduling_turn,
-)
 
 
 ACTIVE_STATES = ("queued", "leased", "retrying")
@@ -55,7 +34,7 @@ def _iso(value: datetime | None = None) -> str:
 
 
 def _record_event(
-    database: BorrowedTransaction,
+    database: PostgresConnection,
     task_id: str,
     generation: int,
     event: str,
@@ -118,7 +97,7 @@ def enqueue_task(
 ) -> dict:
     """Coalesce active work and advance its input generation."""
 
-    def operation(database: BorrowedTransaction) -> dict:
+    def operation(database: PostgresConnection) -> dict:
         return enqueue_task_in_transaction(
             database,
             kind,
@@ -154,7 +133,7 @@ def task_state(kind: str, deduplication_key: str) -> str | None:
 
 
 def enqueue_task_in_transaction(
-    database: BorrowedTransaction,
+    database: PostgresConnection,
     kind: str,
     deduplication_key: str,
     payload: dict,
@@ -285,7 +264,7 @@ def _merge_preserve_pointer(target, current):
 def _request_current_queue_in_transaction(
     database, payload, *, priority, max_attempts, delay_seconds, minimum_generation
 ):
-    from tempo_legacy_database.adapters.queue_refresh.foreground import (
+    from tempo_storage.queue_refresh.foreground import (
         signal_queue_refresh_in_transaction,
     )
 
@@ -376,23 +355,22 @@ def claim_task(
         raise ValueError("Use one durable-task kind filter")
     if allowed_kinds is not None and not allowed_kinds:
         raise ValueError("Allowed durable-task kinds cannot be empty")
-    if allowed_kinds is not None:
-        warm_scheduling_sql(allowed_kinds)
-
+    if kind is None and allowed_kinds is None and not explicit_imports_only:
+        allowed_kinds = ("daily_queue", "opening_graph_rebuild", "integrity_scan")
     prepared_import_claim = (
         storage.prepare_task_claim(
-            None, None, _iso(), DEFENSIVE_TASK_KINDS, explicit_imports_only=True
+            None, None, _iso(), explicit_imports_only=True
         )
         if explicit_imports_only
         else None
     )
 
-    def operation(database: BorrowedTransaction) -> dict | None:
+    def operation(database: PostgresConnection) -> dict | None:
         now = _iso()
         reclaim, read_candidate, kind_parameters = (
             prepared_import_claim
             or storage.prepare_task_claim(
-                kind, allowed_kinds, now, DEFENSIVE_TASK_KINDS
+                kind, allowed_kinds, now
             )
         )
 
@@ -415,11 +393,7 @@ def claim_task(
                 generation_restarts=reclaimed_count,
             )
         parameters = [now, *kind_parameters]
-        scheduling_turn = None
-        if allowed_kinds is not None:
-            row, scheduling_turn = select_scheduled_task(database, allowed_kinds, now)
-        else:
-            row = read_candidate(database, parameters)
+        row = read_candidate(database, parameters)
         if not row:
             return None
         lease_token = str(uuid.uuid4())
@@ -430,8 +404,6 @@ def claim_task(
         )
         if not changed:
             return None
-        if scheduling_turn is not None:
-            persist_scheduling_turn(database, scheduling_turn)
         _record_event(
             database,
             row["id"],
@@ -451,7 +423,7 @@ def claim_task(
 def complete_task(
     task_id: str, generation: int, lease_token: str, *, kind: str | None = None
 ) -> bool:
-    def operation(database: BorrowedTransaction) -> bool:
+    def operation(database: PostgresConnection) -> bool:
         now = _iso()
         changed = storage.complete_task(
             database, (now, now, task_id, generation, lease_token)
@@ -499,11 +471,7 @@ def advance_task_slice_in_transaction(
     """Commit slice effects and restart state together in the caller's transaction."""
 
     if task.get("kind") == "daily_queue":
-        locked = (
-            storage.lock_slice(database, (task["id"],))
-            if storage.supports_native_execution(database)
-            else storage.task_by_id(database, (task["id"],))
-        )
+        locked = storage.lock_slice(database, (task["id"],))
         if not (
             locked
             and locked["generation"] == task["generation"]
@@ -575,7 +543,7 @@ def fail_task(
 ) -> dict:
     sanitized_error = str(error)[:500]
 
-    def operation(database: BorrowedTransaction) -> dict:
+    def operation(database: PostgresConnection) -> dict:
         row = storage.failure_budget(database, (task_id, generation, lease_token))
         if not row:
             return {"state": "superseded"}
@@ -588,7 +556,6 @@ def fail_task(
             database,
             (
                 state,
-                *storage.failure_state_parameters(state),
                 _iso(now + timedelta(seconds=delay)),
                 sanitized_error,
                 _iso(now) if terminal else None,
@@ -607,21 +574,6 @@ def fail_task(
             state="failed" if terminal else "refreshing",
             error=sanitized_error,
         )
-        if terminal and row["kind"] in {"game_sync_window", "game_sync_record"}:
-            sync_payload = json.loads(row["payload_json"])
-            job_id = sync_payload["job_id"]
-            storage.fail_sync_job(
-                database, (sanitized_error, _iso(now), _iso(now), job_id)
-            )
-            if row["kind"] == "game_sync_window":
-                provider_row = storage.sync_window_provider(
-                    database, (sync_payload["window_id"],)
-                )
-                provider = provider_row["provider"] if provider_row else None
-            else:
-                provider = sync_payload["record"]["provider"]
-            if provider:
-                storage.fail_sync_provider(database, (sanitized_error, provider))
         if row["kind"] == "integrity_scan":
             integrity_payload = json.loads(row["payload_json"])
             storage.update_integrity_failure(
@@ -684,7 +636,7 @@ def defer_task_for_contention(
 ) -> bool:
     """Yield an expected PostgreSQL lock timeout without spending a retry."""
 
-    def operation(database: BorrowedTransaction) -> bool:
+    def operation(database: PostgresConnection) -> bool:
         next_attempt_at = _iso(_now() + timedelta(milliseconds=250))
         write_contention = storage.prepare_contention_defer()
         changed = write_contention(
@@ -814,7 +766,7 @@ def defer_task_for_transaction_timeout(
 
 
 def retry_task(task_id: str) -> dict | None:
-    def operation(database: BorrowedTransaction) -> dict | None:
+    def operation(database: PostgresConnection) -> dict | None:
         row = storage.failed_task(database, (task_id,))
         if not row:
             return None
@@ -847,7 +799,7 @@ def retry_task(task_id: str) -> dict | None:
 
 
 def requeue_interrupted_tasks() -> None:
-    def operation(database: BorrowedTransaction) -> None:
+    def operation(database: PostgresConnection) -> None:
         now = _iso()
         from ..contracts.command_registry import RETIRED_TASK_KINDS
 
@@ -993,23 +945,6 @@ def list_tasks() -> list[dict]:
     with read_connection() as database:
         rows = storage.visible_tasks(database)
     return [serialize_task(row) for row in rows]
-
-
-def defer_paused_defensive_task(task: dict) -> bool:
-    """Return one pre-dispatched slice without consuming its failure budget or waking retries."""
-    if task["kind"] not in DEFENSIVE_TASK_KINDS:
-        return False
-
-    def operation(database):
-        if analysis_enabled(database):
-            return False
-        storage.defer_disabled_defensive_task(
-            database, (_iso(), task["id"], task["generation"], task["lease_token"])
-        )
-        return True
-
-    with connection(background=True) as database:
-        return operation(database)
 
 
 def current_delivery(task: dict) -> bool:

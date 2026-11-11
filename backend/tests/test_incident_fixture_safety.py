@@ -83,7 +83,7 @@ def test_incident_fixture_refuses_unmarked_database_without_writes_or_cleanup(
         int(path.name.split("_", 1)[0])
         for path in (
             Path(__file__).resolve().parents[2]
-            / "database/tempo_legacy_database/ddl/migrations"
+            / "database/tempo_storage/ddl/migrations"
         ).glob("[0-9]*.sql")
     )
     verify_guard_refusal(

@@ -1,7 +1,7 @@
 """Durable admission proof; daily_queue is a replaceable projection, not a receipt."""
 
-from tempo_legacy_database.adapters.lifecycle import queue_attempt_origins as storage
-from tempo_legacy_database.adapters.lifecycle.queue_attempt_origins import (
+from tempo_storage.lifecycle import queue_attempt_origins as storage
+from tempo_storage.lifecycle.queue_attempt_origins import (
     retain_recovered_completion,
 )
 

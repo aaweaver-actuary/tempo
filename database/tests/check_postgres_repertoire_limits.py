@@ -17,7 +17,7 @@ import chess
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'backend'))
 from app import main, repertoire_commands
-from tempo_legacy_database.adapters import postgres_store  # registers production handlers
+from tempo_storage import postgres  # registers production handlers
 from app.command_gateway import execute_command, read_operation
 from app.queue_commands import request_queue_refresh_in_transaction
 from app.services.durable_tasks import lock_current_slice
@@ -124,7 +124,7 @@ def reconcile_fixture_entries(queue_date, repertoire_ids):
         processed_ids.append(candidate['id'])
         if candidate['repertoire_id'] not in repertoire_ids:
             continue
-        with postgres_store.connection(background=True) as database:
+        with postgres.connection(background=True) as database:
             kept = _reconcile_one_unseen_entry(database, queue_date, candidate, starting_count)
         introduced_counts[candidate['repertoire_id']] = starting_count + int(kept)
 
@@ -156,13 +156,13 @@ def main_check():
     def publish_cards(queue_date):
         for repertoire_id in repertoire_ids:
             for card_index in range(20):
-                with postgres_store.connection(background=True) as database:
+                with postgres.connection(background=True) as database:
                     _admit_one_prioritized_opening(database, queue_date, {
                         'repertoire_id': repertoire_id, 'card_id': f'{repertoire_id}-{card_index:02}', 'reason': None,
                     })
 
     def counts(queue_date):
-        with postgres_store.connection(read_only=True) as database:
+        with postgres.connection(read_only=True) as database:
             return dict(database.execute(
                 "SELECT admission_repertoire_id,COUNT(*) FROM daily_queue WHERE queue_date=? "
                 "AND admission_repertoire_id IN (?,?) AND status='queued' GROUP BY admission_repertoire_id",
@@ -170,7 +170,7 @@ def main_check():
             ).fetchall())
 
     try:
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             environment_snapshot = snapshot_queue_environment(database, (today, tomorrow))
             for repertoire_id in repertoire_ids:
                 database.execute('INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,?,?)',
@@ -186,7 +186,7 @@ def main_check():
                              (older_checkpoint['lease_token'], older_checkpoint['id']))
             assert lock_current_slice(database, older_checkpoint)
         assert set_limit(repertoire_ids[0], 10)['effective_new_cards_per_day'] == 10
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             assert not lock_current_slice(database, older_checkpoint)
             refreshed_task = database.execute('SELECT * FROM background_tasks WHERE id=?', (older_checkpoint['id'],)).fetchone()
             assert refreshed_task['generation'] == older_checkpoint['generation'] + 1
@@ -194,7 +194,7 @@ def main_check():
         assert set_limit(repertoire_ids[1], 5)['effective_new_cards_per_day'] == 5
         publish_cards(today)
         assert counts(today) == dict(zip(repertoire_ids, (10, 5)))
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             for card_index in range(7):
                 card_id = f'{repertoire_ids[0]}-{card_index:02}'
                 database.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval) VALUES(?,'correct',?,0,7)", (card_id, f'{today}T12:00:00'))
@@ -210,13 +210,13 @@ def main_check():
         assert counts(tomorrow)[repertoire_ids[1]] == 5
         reconcile_fixture_entries(tomorrow, repertoire_ids)
         assert counts(tomorrow) == {repertoire_ids[0]: 10}
-        with postgres_store.connection(read_only=True) as database:
+        with postgres.connection(read_only=True) as database:
             assert database.execute('SELECT introduced_at FROM cards WHERE id=?', (f'{repertoire_ids[1]}-19',)).fetchone()[0] is None
         inherited = set_limit(repertoire_ids[1], None)
-        with postgres_store.connection(read_only=True) as database:
+        with postgres.connection(read_only=True) as database:
             assert inherited['effective_new_cards_per_day'] == database.execute('SELECT new_cards_per_day FROM settings WHERE id=1').fetchone()[0]
     finally:
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             for repertoire_id in repertoire_ids:
                 database.execute('DELETE FROM repertoires WHERE id=?', (repertoire_id,))
             for operation_id in operation_ids:

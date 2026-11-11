@@ -20,7 +20,7 @@ from psycopg import sql
 from psycopg.errors import TransactionTimeout
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend"))
-from tempo_legacy_database.adapters import postgres_store
+from tempo_storage import postgres
 
 
 def check_background_jit_admission() -> dict:
@@ -45,13 +45,13 @@ def check_background_jit_admission() -> dict:
     previous = {key: os.environ.get(key) for key in timeout_keys}
     os.environ[timeout_keys[0]], os.environ[timeout_keys[1]] = "250", "25"
     try:
-        postgres_store.prepare_authoritative_background_pool()
-        pool = postgres_store._pool(False, background=True)
+        postgres.prepare_authoritative_background_pool()
+        pool = postgres._pool(False, background=True)
         with pool.connection(timeout=.1) as raw:
             original = tuple(raw.execute("SELECT current_setting('jit'),current_setting('transaction_timeout'),current_setting('lock_timeout')").fetchone())
-        with postgres_store.connection(read_only=True, repertoire_snapshot=True) as database:
+        with postgres.connection(read_only=True, repertoire_snapshot=True) as database:
             reader_jit = database.raw.execute('SHOW jit').fetchone()[0]
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             foreground_jit = database.raw.execute('SHOW jit').fetchone()[0]
             database.raw.execute(sql.SQL('CREATE TABLE {} (marker integer)').format(table))
             database.raw.execute("SELECT set_config('jit','on',true)")
@@ -65,7 +65,7 @@ def check_background_jit_admission() -> dict:
         # performance failure. This small query does not establish live speedup.
         baseline_started = time.perf_counter()
         try:
-            with postgres_store.connection(background=True) as database:
+            with postgres.connection(background=True) as database:
                 assert database.raw.execute('SHOW transaction_timeout').fetchone()[0] == '250ms'
                 assert database.raw.execute('SHOW lock_timeout').fetchone()[0] == '25ms'
                 database.raw.execute("SELECT set_config('jit','on',true)")
@@ -75,11 +75,11 @@ def check_background_jit_admission() -> dict:
         else:
             baseline = dict(outcome='exact_result', rows=branches)
         baseline['seconds'] = time.perf_counter() - baseline_started
-        postgres_store.prepare_authoritative_background_pool()
+        postgres.prepare_authoritative_background_pool()
         # Independently retain the real default server deadline and atomic
         # rollback, without attributing the live queue timeout to compilation.
         try:
-            with postgres_store.connection(background=True) as database:
+            with postgres.connection(background=True) as database:
                 assert database.raw.execute('SHOW transaction_timeout').fetchone()[0] == '250ms'
                 assert database.raw.execute('SHOW lock_timeout').fetchone()[0] == '25ms'
                 database.raw.execute(sql.SQL('INSERT INTO {} VALUES (1)').format(table))
@@ -88,11 +88,11 @@ def check_background_jit_admission() -> dict:
             pass
         else:
             raise AssertionError('Default 250ms background transaction deadline was not enforced')
-        postgres_store.prepare_authoritative_background_pool()
-        with postgres_store.connection() as database:
+        postgres.prepare_authoritative_background_pool()
+        with postgres.connection() as database:
             assert database.raw.execute(sql.SQL('SELECT count(*) FROM {}').format(table)).fetchone()[0] == 0
             assert database.raw.execute('SHOW jit').fetchone()[0] == foreground_jit
-        with postgres_store.connection(background=True) as database:
+        with postgres.connection(background=True) as database:
             assert database.raw.execute('SHOW jit').fetchone()[0] == 'off'
             assert database.raw.execute('SHOW transaction_timeout').fetchone()[0] == '250ms'
             assert database.raw.execute('SHOW lock_timeout').fetchone()[0] == '25ms'
@@ -104,9 +104,9 @@ def check_background_jit_admission() -> dict:
         with pool.connection(timeout=.1) as raw:
             assert raw.execute('SELECT pg_backend_pid()').fetchone()[0] == pid
             assert tuple(raw.execute("SELECT current_setting('jit'),current_setting('transaction_timeout'),current_setting('lock_timeout')").fetchone()) == original
-        with postgres_store.connection(read_only=True, repertoire_snapshot=True) as database:
+        with postgres.connection(read_only=True, repertoire_snapshot=True) as database:
             assert database.raw.execute('SHOW jit').fetchone()[0] == reader_jit
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             assert [row[0] for row in database.raw.execute(sql.SQL('SELECT marker FROM {}').format(table)).fetchall()] == [2]
         return dict(query_seconds=query_seconds, planner_cost=plan['Plan']['Total Cost'],
                     transaction_timeout='250ms', lock_timeout='25ms', rows=branches,
@@ -114,7 +114,7 @@ def check_background_jit_admission() -> dict:
                     rollback_and_session_reset=True, live_performance_causality='unproven')
     finally:
         try:
-            with postgres_store.connection() as database:
+            with postgres.connection() as database:
                 database.raw.execute(sql.SQL('DROP TABLE IF EXISTS {}').format(table))
         finally:
             for key, value in previous.items():
@@ -134,25 +134,25 @@ def main() -> None:
     print("PASS bounded background JIT admission", report)
     os.environ["TEMPO_POSTGRES_BACKGROUND_TRANSACTION_TIMEOUT_MS"] = "1000"
     os.environ["TEMPO_POSTGRES_BACKGROUND_LOCK_TIMEOUT_MS"] = "25"
-    with postgres_store.connection(background=True) as database:
+    with postgres.connection(background=True) as database:
         assert database.raw.execute("SHOW transaction_timeout").fetchone()[0] == "1s"
         assert database.raw.execute("SHOW lock_timeout").fetchone()[0] == "25ms"
         assert database.raw.execute("SELECT pg_sleep(0.075)").fetchone() is not None
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         assert database.raw.execute("SHOW transaction_timeout").fetchone()[0] == "0"
         assert database.raw.execute("SHOW lock_timeout").fetchone()[0] == "0"
     os.environ["TEMPO_POSTGRES_BACKGROUND_TRANSACTION_TIMEOUT_MS"] = "50"
     try:
-        with postgres_store.connection(background=True) as database:
+        with postgres.connection(background=True) as database:
             database.raw.execute("SELECT pg_sleep(0.075)")
     except TransactionTimeout:
         pass
     else:
         raise AssertionError("The disposable transaction did not time out")
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         assert database.raw.execute("SELECT 1").fetchone()[0] == 1
         assert database.raw.execute("SHOW transaction_timeout").fetchone()[0] == "0"
-    postgres_store.close_pools()
+    postgres.close_pools()
     print("PASS background PostgreSQL settings are local, bounded, and recover after rollback")
 
 

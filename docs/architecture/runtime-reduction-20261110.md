@@ -73,3 +73,7 @@ The destination needs cohesive storage for repertoire facts, scheduling, attempt
 - No storage adapter imports an application orchestrator in the replacement owner. No runtime import resolves the retired legacy namespace when that final stage is complete.
 
 Focused source/component results are not a packaged browser pass, merge qualification, installation, or activation. The environment for this audit has Python and Node, but no Docker executable; native database and installed lifecycle behavior are unverified here.
+
+## Pass 2 follow-through
+
+The subsequent [aggressive pass-2 audit](reduction-pass2/README.md) supersedes this document's remaining-runtime inventory. Recombination and automatic feedback are deleted, the legacy database runtime is absent, and retained SQL executes natively through one concrete PostgreSQL owner. Historical rows and migration checksums remain preserved. See the current [source maps](diagrams/README.md) for the retained application; the graphs above describe the earlier reduction boundary.

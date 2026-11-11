@@ -287,7 +287,7 @@ def test_stalemate_postgres_proofs_configure_and_restore_database_environment(
             monkeypatch.setenv(variable, previous_configuration)
     pool_closures = []
     monkeypatch.setattr(
-        proof_module.postgres_store, "close_pools", lambda: pool_closures.append(True)
+        proof_module.postgres, "close_pools", lambda: pool_closures.append(True)
     )
 
     @contextmanager
@@ -301,7 +301,7 @@ def test_stalemate_postgres_proofs_configure_and_restore_database_environment(
         yield  # pragma: no cover - context manager deliberately fails on entry
 
     monkeypatch.setattr(
-        proof_module.postgres_store, "connection", failed_database_operation
+        proof_module.postgres, "connection", failed_database_operation
     )
     with pytest.raises(RuntimeError, match="database proof sentinel"):
         getattr(proof_module, proof_name)()
@@ -322,7 +322,7 @@ def test_stalemate_postgres_configuration_closes_pools_after_success_and_rejects
     specification.loader.exec_module(proof_module)
     pool_closures = []
     monkeypatch.setattr(
-        proof_module.postgres_store, "close_pools", lambda: pool_closures.append(True)
+        proof_module.postgres, "close_pools", lambda: pool_closures.append(True)
     )
     monkeypatch.delenv("TEMPO_DATABASE_WRITE_URL", raising=False)
     monkeypatch.delenv("TEMPO_DATABASE_READ_URL", raising=False)

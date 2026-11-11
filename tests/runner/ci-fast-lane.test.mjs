@@ -127,8 +127,8 @@ test('issue239_exact_database_certificate_exceptions_preserve_explicit_FULL_and_
     }
   }
   // A certificate mapping cannot exempt any other database or security path.
-  for (const path of ['database/tempo_legacy_database/adapters/study/game_feedback.py',
-    'database/tempo_legacy_database/ddl/migrations/999_fixture.sql',
+  for (const path of ['database/tempo_storage/study/game_feedback.py',
+    'database/tempo_storage/ddl/migrations/999_fixture.sql',
     'database/tests/uncertified_redis_fixture.py', 'backend/app/auth.py']) {
     const inventory = structuredClone(fastInventory);
     inventory.certifiedTests.push({...inventory.certifiedTests[3], paths:[path]});
@@ -205,7 +205,7 @@ test('emergency_tactics_grading_change_selects_STUDY', () => {
   assert.equal(selectFastLane(['app/views/tactics_view.tsx']).tier,'STUDY');
 });
 test('emergency_queue_persistence_change_selects_STUDY', () => assert.equal(selectFastLane(['backend/app/services/postgres_queue_refresh.py']).tier,'STUDY'));
-test('emergency_database_migration_selects_FULL', () => assert.equal(selectFastLane(['database/tempo_legacy_database/ddl/migrations/999_emergency.sql']).tier,'FULL'));
+test('emergency_database_migration_selects_FULL', () => assert.equal(selectFastLane(['database/tempo_storage/ddl/migrations/999_emergency.sql']).tier,'FULL'));
 test('emergency_qualification_validator_change_selects_FULL', () => assert.equal(selectFastLane(['scripts/ci-quality.mjs']).tier,'FULL'));
 test('emergency_unknown_or_ambiguous_change_fails_closed_to_FULL', () => {
   assert.equal(selectFastLane(['app/new-component.tsx']).tier,'FULL');
@@ -226,7 +226,7 @@ test('emergency_stale_other_head_evidence_cannot_qualify', () => {
   const current = fixture(); assert(validateFastGate(current.plan,current.report,current.needs,{...pr,head:{sha:'d'.repeat(40)}},execution).length);
 });
 test('emergency_rename_deletion_and_mixed_changes_preserve_highest_risk', () => {
-  const paths = changedPathsFromNameStatus('R100\0database/tempo_legacy_database/ddl/migrations/999_old.sql\0docs/new.md\0D\0scripts/ci-quality.mjs\0');
+  const paths = changedPathsFromNameStatus('R100\0database/tempo_storage/ddl/migrations/999_old.sql\0docs/new.md\0D\0scripts/ci-quality.mjs\0');
   assert.equal(selectFastLane(paths).tier,'FULL');
   assert.equal(selectFastLane(['app/components/debug-error-panel.tsx','app/lib/review-outbox.ts']).tier,'STUDY');
 });
@@ -292,7 +292,7 @@ test('emergency_inactive_provider_adapter_selects_FAST_without_durability', () =
 });
 
 test('emergency_FULL_base_advancement_requires_fresh_integration', () => {
-  const plan = makeFastPlan(['database/tempo_legacy_database/ddl/migrations/999_new.sql'],context);
+  const plan = makeFastPlan(['database/tempo_storage/ddl/migrations/999_new.sql'],context);
   assert(validateFastGate(plan,null,{selection:{result:'success'},quality:{result:'success'}},{...pr,base:{...pr.base,sha:'c'.repeat(40)}},execution).length);
 });
 
@@ -412,8 +412,8 @@ test('issue543_prose_companions_do_not_downgrade_sensitive_unknown_or_invalid_pa
   const sensitive = [
     '.github/workflows/pages.yml', '.github/skills/domain-model-alignment-review/helper.mjs',
     '.github/skills/another-skill/SKILL.md', 'database/other-proposal.md', 'backend/UNKNOWN.md',
-    'database/tempo_legacy_database/ddl/migrations/999_instruction.sql',
-    'database/tempo_legacy_database/adapters/study/game_feedback.py',
+    'database/tempo_storage/ddl/migrations/999_instruction.sql',
+    'database/tempo_storage/study/game_feedback.py',
     'scripts/ci-fast-lane.mjs', 'scripts/ci-fast-lane-inventory.json',
     'tests/runner/ci-fast-lane.test.mjs', 'tests/browser/ui-fixtures.ts',
     'package.json', 'package-lock.json', 'backend/app/main.py', 'app/unknown-source.ts',
@@ -432,7 +432,7 @@ test('issue543_renames_and_deletions_keep_the_sensitive_side_of_reviewed_prose',
   for (const changes of [
     'R100\0scripts/ci-fast-lane.mjs\0backend/ORGANIZATION.md\0',
     'R100\0.github/skills/domain-model-alignment-review/SKILL.md\0.github/skills/domain-model-alignment-review/helper.mjs\0',
-    'D\0database/tempo_legacy_database/adapters/study/game_feedback.py\0M\0database/SIMPLIFICATION.md\0',
+    'D\0database/tempo_storage/study/game_feedback.py\0M\0database/SIMPLIFICATION.md\0',
   ]) assert.equal(selectFastLane(changedPathsFromNameStatus(changes)).tier, 'FULL');
 });
 test('issue543_complete_comparison_and_late_full_requirements_still_apply_to_prose', () => {
@@ -459,7 +459,7 @@ test('spec_prose_exact_root_path_uses_only_existing_static_FAST_commands', () =>
 });
 test('spec_prose_sensitive_unknown_and_dependency_companions_remain_FULL', () => {
   for (const path of [
-    'database/tempo_legacy_database/ddl/migrations/999_spec.sql',
+    'database/tempo_storage/ddl/migrations/999_spec.sql',
     '.github/workflows/pages.yml', 'scripts/ci-fast-lane.mjs',
     'scripts/ci-verification-plan.mjs', 'tests/runner/ci-fast-lane.test.mjs',
     'app/unknown-source.ts', 'package.json', 'backend/requirements.txt',
@@ -557,7 +557,7 @@ test('component_boundary_prose_and_UI_companions_cannot_downgrade_required_FULL'
     }
   }
   for (const path of ['backend/app/study/interfaces/unknown.py',
-    'database/tempo_legacy_database/ddl/migrations/999_component.sql',
+    'database/tempo_storage/ddl/migrations/999_component.sql',
     'backend/app/auth.py','scripts/ci-fast-run.mjs']) {
     assert.equal(selectFastLane(['app/components/debug-error-panel.tsx',path]).tier,'FULL',path);
   }
@@ -621,7 +621,7 @@ test('retained_backend_unknown_sensitive_missing_owner_and_complete_changes_fail
   const paths = retainedBackendOwner.paths;
   for (const path of ['backend/app/games/providers/unknown.py', 'backend/app/repertoire/position_index.py',
     'packages/evidence-math/src/tempo_evidence_math/_identity.py', 'backend/app/auth.py',
-    'database/tempo_legacy_database/ddl/migrations/999_provider.sql',
+    'database/tempo_storage/ddl/migrations/999_provider.sql',
     'scripts/ci-fast-commands.mjs', 'backend/pyproject.toml']) {
     assert.equal(selectFastLane([...paths, path]).tier, 'FULL', path);
   }

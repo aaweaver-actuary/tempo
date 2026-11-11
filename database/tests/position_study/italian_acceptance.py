@@ -16,10 +16,11 @@ from psycopg.conninfo import conninfo_to_dict
 
 from database.tests.position_study.acceptance import _dsn, _migrate
 from tempo_evidence_math.position_learning import Hold, SourceCertificate
-from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
-from tempo_legacy_database.adapters.authored_repertoires.position_study_source import prepare_position_source, fence_position_source
-from tempo_legacy_database.adapters.study.position_seed_inventory import DonorFact, InventoryRequest, SourceFacts, read_card_page
-from tempo_legacy_database.adapters.study.position_seed import seed_shadow_page
+from tempo_storage.postgres import PostgresConnection, tempo_row_factory
+from tempo_storage.authored_repertoires.position_study_source import fence_position_source
+from app.repertoire.position_study_source import prepare_position_source
+from tempo_storage.study.position_seed_inventory import DonorFact, InventoryRequest, SourceFacts, read_card_page
+from tempo_storage.study.position_seed import seed_shadow_page
 from app.repertoire.interfaces.position_schedule_occurrences import inventory_from_snapshot
 
 
@@ -57,7 +58,7 @@ def seed_disposable_source(raw, dsn, routes, labels, *, repertoire_id='italian',
     _migrate(raw)
     db = PostgresConnection(raw)
     raw.execute('INSERT INTO settings(id) VALUES(1)')
-    from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
+    from tempo_storage.study.game_feedback import PostgresGameFeedbackStore
     day = PostgresGameFeedbackStore(db).study_day(now).isoformat()
     raw.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,%s,'n2',%s)", (repertoire_id,repertoire_id+' fixture',now.isoformat()))
     raw.execute("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES(%s,3,'ready',%s)", (repertoire_id,now.isoformat()))
@@ -124,10 +125,10 @@ def test_real_clean_italian_branches_issue_opponent_cue(monkeypatch, first_line)
     from app.services.opening_decision_evidence import decision_manifest
     from app.services.position_queue_admission import prepare_due, admit_due
     from app.services.queue_next_card import prepare_queue_head
-    from tempo_legacy_database import connections
-    from tempo_legacy_database.adapters.opening_evidence import storage as evidence_storage
-    from tempo_legacy_database.adapters.study.position_issued_plans import read_clean_presentation_proof
-    from tempo_legacy_database.adapters.study.recombination import prepare_recombination_review
+    from tempo_storage import connections
+    from tempo_storage.opening_evidence import storage as evidence_storage
+    from app.study.position_learning.issuance import read_clean_presentation_proof
+    from tempo_storage.study.recombination import prepare_recombination_review
 
     dsn = _dsn()
     now = datetime.now(timezone.utc)

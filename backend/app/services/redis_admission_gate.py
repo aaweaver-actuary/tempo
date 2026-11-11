@@ -12,8 +12,8 @@ from typing import Iterator
 
 import redis
 
-from tempo_legacy_database.adapters.redis_control import admission as storage
-from tempo_legacy_database.adapters.redis_control.admission import (
+from tempo_storage.redis_control import admission as storage
+from tempo_storage.redis_control.admission import (
     _REGISTER_FOREGROUND,
     _CLAIM_BACKGROUND,
     _ADMISSION_NAMESPACE,
@@ -31,6 +31,10 @@ _LOGGER = logging.getLogger("tempo.admission")
 
 class BackgroundAdmissionDeferred(RuntimeError):
     """Admission denied or unavailable; durable intent must be retained."""
+
+    def __init__(self, *args, reason: str | None = None):
+        super().__init__(*args)
+        self.reason = reason
 
 
 def foreground_present() -> bool:
@@ -150,7 +154,7 @@ def background_lease() -> Iterator[None]:
             "Foreground admission is unavailable"
         ) from error
     if not admitted:
-        raise BackgroundAdmissionDeferred("Waiting for foreground activity")
+        raise BackgroundAdmissionDeferred("Waiting for foreground activity", reason="foreground_wait")
     try:
         yield
     finally:

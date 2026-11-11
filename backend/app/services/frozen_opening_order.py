@@ -6,9 +6,8 @@ Legacy callers still need domain-boundary migration; this facade is not that pro
 """
 
 from app.study import frozen_order as policy
-from tempo_legacy_database.adapters import frozen_order as storage
+from tempo_storage import frozen_order as storage
 from app.study.openings.frozen_math import content_fingerprint, READER_VERSION
-from .real_game_feedback import MISS_REASON
 
 activation = storage.activation
 card_exposed = storage.card_exposed
@@ -33,16 +32,9 @@ def annotate(database, candidates):
 
 
 def proposal_valid(database, planned):
-    def has_outstanding_miss(card_id):
-        from .real_game_feedback_adapter import has_outstanding_real_game_miss
-
-        return has_outstanding_real_game_miss(database, card_id)
-
     return policy.proposal_valid(
         planned,
         activation(database, lock=True),
-        miss_reason=MISS_REASON,
-        has_outstanding_miss=has_outstanding_miss,
         current_definition_valid=lambda card_id: annotate(
             database, [{"card_id": card_id}]
         )[0]["frozen_valid"],
@@ -55,7 +47,6 @@ def order_queue_slots(
     annotated = annotate(database, rows) if annotated is None else annotated
     return policy.order_queue_slots(
         annotated,
-        miss_reason=MISS_REASON,
         card_exposed=lambda card_id: card_exposed(database, card_id),
         preserve_through_entry_id=preserve_through_entry_id,
         exposed_ids=exposed_ids,
@@ -79,8 +70,8 @@ def queue_state(database, day):
 
 
 def stale_queue_predicate():
-    return storage.stale_queue_predicate(MISS_REASON)
+    return storage.stale_queue_predicate()
 
 
 def legacy_queue_predicate():
-    return storage.legacy_queue_predicate(MISS_REASON)
+    return storage.legacy_queue_predicate()

@@ -22,7 +22,7 @@ rehearsal_specification.loader.exec_module(rehearsal)
 def prepare_recovery(monkeypatch, claim):
     database = Mock()
     monkeypatch.setattr(
-        rehearsal.postgres_store, "connection", lambda: nullcontext(database)
+        rehearsal.postgres, "connection", lambda: nullcontext(database)
     )
     monkeypatch.setattr(command_gateway, "claim_recoverable_operation", claim)
     delivery = Mock(return_value={"persisted": True})
@@ -216,7 +216,7 @@ def prepare_restart_proof(monkeypatch, admission, *, fail_stage=None):
     database.execute_native.return_value.fetchone.return_value = None
     monkeypatch.setattr(rehearsal, "_large_checkpoint_fixture", create_fixture)
     monkeypatch.setattr(
-        rehearsal.postgres_store, "connection", lambda **options: nullcontext(database)
+        rehearsal.postgres, "connection", lambda **options: nullcontext(database)
     )
     monkeypatch.setattr(
         rehearsal, "_fixture_scheduling", lambda *arguments: {"unchanged": True}

@@ -20,14 +20,14 @@ def test_retained_paste_command_commits_once_and_fences_stale_preview(monkeypatc
     from app import tasks, command_gateway, analysis_paste_commands
     from app.contracts.command_registry import RETIRED_COMMANDS
     from app.services.analysis_paste import build_paste_preview
-    from tempo_legacy_database.adapters import postgres_store
+    from tempo_storage import postgres
 
     assert "analysis.paste.commit" not in RETIRED_COMMANDS
     assert (
         command_gateway._handlers["analysis.paste.commit"]
         is analysis_paste_commands.commit_analysis_paste
     )
-    with postgres_store.connection() as db:
+    with postgres.connection() as db:
         db.execute("INSERT INTO settings(id) VALUES(1)")
         db.execute(
             "INSERT INTO repertoires(id,name,source_name,created_at) VALUES('paste-proof','fixture','fixture','2026-01-01')"
@@ -36,12 +36,12 @@ def test_retained_paste_command_commits_once_and_fences_stale_preview(monkeypatc
             "INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES('root','paste-proof','root','white',?,?,'2026-01-01')",
             (chess.STARTING_FEN, json.dumps(["e2e4"])),
         )
-    with postgres_store.connection() as db:
+    with postgres.connection() as db:
         db.execute(
             "INSERT INTO repertoire_integrity_state(repertoire_id,status,scan_status) VALUES('paste-proof','clean','idle') ON CONFLICT(repertoire_id) DO UPDATE SET status='clean'"
         )
     text = "1. e4 e5 2. Nf3 *"
-    with postgres_store.connection(read_only=True) as db:
+    with postgres.connection(read_only=True) as db:
         preview = build_paste_preview(db, text, None, None)
     request = {
         "text": text,
@@ -64,7 +64,7 @@ def test_retained_paste_command_commits_once_and_fences_stale_preview(monkeypatc
         )
         == result
     )
-    with postgres_store.connection(read_only=True) as db:
+    with postgres.connection(read_only=True) as db:
         assert (
             db.execute(
                 "SELECT status FROM repertoire_integrity_state WHERE repertoire_id='paste-proof'"
@@ -95,7 +95,7 @@ def test_retained_paste_command_commits_once_and_fences_stale_preview(monkeypatc
         command_gateway.read_operation("paste-proof-stale")["error"]["status_code"]
         == 409
     )
-    with postgres_store.connection(read_only=True) as db:
+    with postgres.connection(read_only=True) as db:
         assert (
             db.execute(
                 "SELECT count(*) FROM repertoire_lines WHERE repertoire_id='paste-proof'"
@@ -108,4 +108,4 @@ def test_retained_paste_command_commits_once_and_fences_stale_preview(monkeypatc
             ).fetchone()[0]
             == 1
         )
-    postgres_store.close_pools()
+    postgres.close_pools()

@@ -11,7 +11,7 @@ import pytest
 from psycopg.errors import SerializationFailure
 
 from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
-from app.services import postgres_opening_evidence as evidence
+from app.study import position_checkpoint as evidence
 from app.services.opening_decision_evidence import EvidenceConflict, decision_manifest
 
 
@@ -20,9 +20,9 @@ def test_standalone_opening_checkpoint_reduces_outside_background_transaction(
     normal_study_mode, monkeypatch, historical_preparation
 ):
     from app import command_gateway, tasks
-    from tempo_legacy_database import connections as database
+    from tempo_storage import connections as database
     from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
-    from app.services import postgres_opening_evidence as evidence
+    from app.study import position_checkpoint as evidence
 
     manifest = json.loads(
         (
@@ -138,8 +138,7 @@ def test_standalone_opening_checkpoint_reduces_outside_background_transaction(
     )
     assert active_sections == 0
     assert read_options == [{"authoritative": True}]
-    # Optional recombination pre-reading precedes the writer; the ordinary
-    # review and opening evidence still publish through the atomic handler.
+    # Review and opening evidence publish through the atomic handler.
     from app import review_commands
 
     assert command_gateway._handlers["cards.review"] is review_commands.submit_review
@@ -148,12 +147,11 @@ def test_standalone_opening_checkpoint_reduces_outside_background_transaction(
 
 @pytest.mark.parametrize("command_name", ["cards.review", "cards.review.reconcile"])
 @pytest.mark.parametrize("with_completion", [False, True])
-def test_review_prepares_recombination_and_position_before_writer(
+def test_review_prepares_position_before_writer(
     normal_study_mode, monkeypatch, command_name, with_completion
 ):
     from app import command_gateway, review_commands
-    from tempo_legacy_database import connections
-    from tempo_legacy_database.adapters.study import recombination
+    from tempo_storage import connections
 
     manifest = json.loads(
         (
@@ -184,13 +182,8 @@ def test_review_prepares_recombination_and_position_before_writer(
     }
     original = copy.deepcopy(payload)
     order = []
-    recombination_result, position_result, read_database = object(), object(), object()
+    position_result, read_database = object(), object()
     observed = {}
-
-    def prepare_recombination(value):
-        order.append("recombination")
-        assert value is payload and value == original
-        return {**value, "prepared_recombination": recombination_result}
 
     @contextmanager
     def read_connection():
@@ -218,9 +211,6 @@ def test_review_prepares_recombination_and_position_before_writer(
         observed.update(real_prepare(value))
         return observed
 
-    monkeypatch.setattr(
-        recombination, "prepare_recombination_review", prepare_recombination
-    )
     monkeypatch.setattr(connections, "read_connection", read_connection)
     monkeypatch.setattr(evidence, "prepare_position_checkpoint", prepare_position)
     monkeypatch.setattr(command_gateway, "_writer_connection", writer)
@@ -229,13 +219,12 @@ def test_review_prepares_recombination_and_position_before_writer(
     with pytest.raises(WriterReached):
         command_gateway._execute_command("operation", command_name, payload)
     assert order == (
-        ["recombination", "read", "position", "read_closed", "writer"]
+        ["read", "position", "read_closed", "writer"]
         if with_completion
-        else ["recombination", "writer"]
+        else ["writer"]
     )
     assert payload == original and observed["card_id"] == original["card_id"]
     assert observed["review"] == original["review"]
-    assert observed["prepared_recombination"] is recombination_result
     if with_completion:
         assert observed["prepared_position_checkpoint"] is position_result
     else:
@@ -309,7 +298,7 @@ def source_header(request, **changes):
 def test_standalone_checkpoint_preparation_uses_immutable_source_instead_of_historical_manifest(
     monkeypatch, historical_manifest
 ):
-    from tempo_legacy_database import connections as database
+    from tempo_storage import connections as database
     from fastapi import HTTPException
 
     manifest = json.loads(

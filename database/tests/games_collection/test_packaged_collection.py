@@ -102,7 +102,7 @@ def _candidate_schema(image):
     """Read the schema declared by the already validated immutable image."""
     output = subprocess.check_output([
         'docker', 'run', '--rm', '--network', 'none', '--entrypoint', 'python', image,
-        '-c', 'from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION; print(POSTGRES_SCHEMA_VERSION)',
+        '-c', 'from tempo_storage.ddl.schema_version import POSTGRES_SCHEMA_VERSION; print(POSTGRES_SCHEMA_VERSION)',
     ], text=True, timeout=30).strip()
     assert output.isdecimal() and int(output) > 0, 'Candidate image schema must be a positive integer'
     return int(output)
@@ -130,12 +130,12 @@ def test_packaged_collection_retains_deviations_reconciles_and_never_delivers(ca
     repertoire, captured, _, _ = retained_owner_case(case, False)
     from app.games.feedback.review import SyncConfiguration
     from app.product_composition.game_review import configured_job
-    from tempo_legacy_database.adapters.games.product_review import PostgresReviewStore
-    from tempo_legacy_database.adapters.games.product_sources import PostgresCanonicalGamesStore
+    from tempo_storage.games.product_review import PostgresReviewStore
+    from tempo_storage.games.product_sources import PostgresCanonicalGamesStore
     from app.queue_commands import issue_queue_head
     from app.contracts.transport.study import ReviewRequest
     from app.services.learning_review_adapter import apply_legacy_review
-    from tempo_legacy_database.adapters.learning_bridge import review as review_storage
+    from tempo_storage.learning_bridge import review as review_storage
     from types import SimpleNamespace
     from unittest.mock import patch
     @contextmanager
@@ -1170,7 +1170,7 @@ print(hashlib.sha256(path.read_bytes()).hexdigest())
         assert settled['receipt']['status']=='settled'
         assert settled['receipt']['progress']['settlement']['review_id']==clean['response']['review_id']
         with case.transaction() as database:
-            from tempo_legacy_database.adapters.study.issuance import attempt_issuance
+            from tempo_storage.study.issuance import attempt_issuance
             actual_clean_origin = attempt_issuance(database,clean['body']['queue_entry_id'],target_id,clean['body']['expected_revision'])
             assert actual_clean_origin is not None
             assert settled['receipt']['progress']['settlement']['attempt']==actual_clean_origin.model_dump(mode='json')

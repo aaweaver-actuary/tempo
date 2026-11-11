@@ -18,10 +18,11 @@ from fsrs import Card
 from psycopg.conninfo import conninfo_to_dict
 
 from tempo_evidence_math.position_learning import Hold, SourceCertificate
-from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
-from tempo_legacy_database.adapters.authored_repertoires.position_study_source import prepare_position_source, fence_position_source
-from tempo_legacy_database.adapters.study.position_seed_inventory import DonorFact, InventoryRequest, SourceFacts, read_card_page
-from tempo_legacy_database.adapters.study.position_seed import seed_shadow_page
+from tempo_storage.postgres import PostgresConnection, tempo_row_factory
+from tempo_storage.authored_repertoires.position_study_source import fence_position_source
+from app.repertoire.position_study_source import prepare_position_source
+from tempo_storage.study.position_seed_inventory import DonorFact, InventoryRequest, SourceFacts, read_card_page
+from tempo_storage.study.position_seed import seed_shadow_page
 from app.repertoire.interfaces.position_schedule_occurrences import inventory_from_snapshot
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -42,16 +43,10 @@ def _migrate(raw):
     assert raw.execute("SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p','v','S')").fetchone()[0] == 0, 'N2 database must be empty'
     paths = sorted(migration.MIGRATIONS.glob('[0-9][0-9][0-9]_*.sql'))
     migration.validate_migration_history(paths, [], expected_version=migration.POSTGRES_SCHEMA_VERSION)
-    from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
+    from tempo_storage.ddl.schema_version import POSTGRES_SCHEMA_VERSION
     assert len(paths) == POSTGRES_SCHEMA_VERSION
     for path in paths:
-        registration = migration.MODULE_MIGRATIONS.get(path.name)
-        if registration:
-            source = (ROOT / 'database' / registration[2]).read_bytes()
-            assert hashlib.sha256(source).hexdigest() == registration[3]
-            assert '-- sha256: ' + registration[3] in path.read_text()
-            raw.execute(source.decode(), prepare=False)
-        raw.execute(path.read_text(), prepare=False)
+        raw.execute(migration.migration_source(path), prepare=False)
         assert raw.execute('SELECT MAX(version) FROM tempo_schema_migrations').fetchone()[0] == int(path.name[:3])
 
 
@@ -70,8 +65,8 @@ def test_real_clean_position_review_supplies_prefix_proof(monkeypatch):
 def test_real_due_queries_respect_position_owner_without_rewriting_legacy_state():
     """Position ownership suppresses legacy due cards while preserving ordinary due work."""
     from database.tests.position_study.italian_acceptance import LINES, _moves, seed_disposable_source
-    from tempo_legacy_database.adapters.queue_refresh.application.admission import has_missing_due_card
-    from tempo_legacy_database.adapters.queue_refresh.application.seeding import append_due_card, due_cards, maximum_position
+    from tempo_storage.queue_refresh.application.admission import has_missing_due_card
+    from tempo_storage.queue_refresh.application.seeding import append_due_card, due_cards, maximum_position
 
     dsn = _dsn()
     now = datetime.now(timezone.utc)
@@ -173,7 +168,7 @@ def _run_schema_journey(monkeypatch, *, branches, verify_clean_proof=False):
     with psycopg.connect(dsn, row_factory=tempo_row_factory) as raw:
         _migrate(raw)
         raw.execute('INSERT INTO settings(id) VALUES(1)')
-        from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
+        from tempo_storage.study.game_feedback import PostgresGameFeedbackStore
         day = PostgresGameFeedbackStore(PostgresConnection(raw)).study_day(now).isoformat()
         raw.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('n2','N2 synthetic','fixture',%s)", (now.isoformat(),))
         raw.execute("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES('n2',3,'ready',%s)", (now.isoformat(),))
@@ -256,7 +251,7 @@ def _run_schema_journey(monkeypatch, *, branches, verify_clean_proof=False):
         # Connection routing points the real preparation at this fixture; the
         # source, head, lease, stamp and issuer implementations are untouched.
         from contextlib import contextmanager
-        from tempo_legacy_database import connections
+        from tempo_storage import connections
         from app.services.queue_next_card import prepare_queue_head
         from app.queue_commands import issue_queue_head
         @contextmanager
@@ -289,9 +284,9 @@ def _real_review_journey(raw, port, dsn, monkeypatch, plan, entry, card_id, orig
     from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
     from app.services import postgres_opening_evidence as evidence, learning_review_adapter
     from app.services.opening_decision_evidence import decision_manifest
-    from tempo_legacy_database import connections
-    from tempo_legacy_database.adapters.opening_evidence import storage as evidence_storage
-    from tempo_legacy_database.adapters.study.recombination import prepare_recombination_review
+    from tempo_storage import connections
+    from tempo_storage.opening_evidence import storage as evidence_storage
+    from tempo_storage.study.recombination import prepare_recombination_review
 
     @contextmanager
     def fixture_reader(*args, **kwargs):
@@ -396,7 +391,7 @@ def _real_daily_credit_followup(raw, port, dsn, monkeypatch, first_plan, day, *,
     from app.services.position_queue_admission import prepare_due, admit_due
     from app.services.queue_next_card import prepare_queue_head
     from app.queue_commands import issue_queue_head
-    from tempo_legacy_database.adapters.study.recombination import prepare_recombination_review
+    from tempo_storage.study.recombination import prepare_recombination_review
 
     @contextmanager
     def reader(*args, **kwargs):
@@ -489,7 +484,7 @@ def _real_daily_credit_followup(raw, port, dsn, monkeypatch, first_plan, day, *,
     assert state() == after_good, 'a repeated nondue clean response changed position FSRS'
     raw.commit()
     if verify_clean_proof:
-        from tempo_legacy_database.adapters.study.position_issued_plans import read_clean_presentation_proof
+        from app.study.position_learning.issuance import read_clean_presentation_proof
         proof = read_clean_presentation_proof(port, second.attempt_id)
         assert not isinstance(proof, Hold), proof
         assert proof.attempt_id == second.attempt_id

@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from app.study.position_learning.issued_plan_service import prepare_position_issuance
 from tempo_evidence_math.position_learning import Hold
-from tempo_legacy_database.adapters.study.position_issued_plans import replay_exact_attempt, issue_in_borrowed_transaction
+from app.study.position_learning.issuance import replay_exact_attempt, issue_in_borrowed_transaction
 from tests.test_position_issued_plan_contracts import option, request_for
 
 
@@ -78,7 +78,7 @@ def test_preparation_rejects_unowned_routes_and_unproven_prefixes():
 
 
 def test_fresh_issuance_checks_admission_and_all_witnesses_before_insert(monkeypatch):
-    from tempo_legacy_database.adapters.study import position_issued_plans as issuer
+    from app.study.position_learning import issuance as issuer
     work = prepared()
     plan = work.plan
     owner = SimpleNamespace(disposition="position", epoch=plan.owner_epoch, reason="active")
@@ -159,8 +159,8 @@ def test_fresh_issuance_checks_admission_and_all_witnesses_before_insert(monkeyp
 
 
 def test_clean_proof_requires_saved_review_and_all_first_response_receipts(monkeypatch):
-    from app.services import postgres_opening_evidence as evidence
-    from tempo_legacy_database.adapters.study.position_issued_plans import read_clean_presentation_proof
+    from app.study import position_checkpoint as evidence
+    from app.study.position_learning.issuance import read_clean_presentation_proof
     work = prepared()
     plan = work.plan
     monkeypatch.setattr(evidence, 'decode_position_first_response', lambda payload, digest, saved: payload, raising=False)
@@ -211,7 +211,7 @@ def test_native_replay_after_restart_uses_stored_authored_digest():
     import json
     import psycopg
     from psycopg import sql
-    from tempo_legacy_database.adapters.postgres_store import tempo_row_factory
+    from tempo_storage.postgres import tempo_row_factory
     work = prepared()
     plan = work.plan
     record = plan.to_record()
@@ -222,7 +222,7 @@ def test_native_replay_after_restart_uses_stored_authored_digest():
         try:
             conn.execute(sql.SQL('SET search_path TO {}').format(sql.Identifier(schema)))
             conn.execute('CREATE TABLE tempo_schema_migrations(version integer PRIMARY KEY)')
-            ddl = Path(__file__).resolve().parents[3] / 'database/tempo_legacy_database/ddl/migrations/057_position_study.sql'
+            ddl = Path(__file__).resolve().parents[3] / 'database/tempo_storage/ddl/migrations/057_position_study.sql'
             conn.execute(ddl.read_text())
             conn.execute('INSERT INTO study_position_epochs VALUES (%s,%s,%s,%s)',
                 (plan.target.key.repertoire_id, plan.owner_epoch, work.source.authored_token.authored_digest, plan.issued_at))
@@ -242,7 +242,7 @@ def test_native_replay_after_restart_uses_stored_authored_digest():
 def test_later_again_reopens_target_without_discarding_other_clean_prefix(monkeypatch):
     from app.study.position_learning.prefix_eligibility import CleanFirstResponse, CleanPresentationProof
     from app.study.position_learning.route_planner import choose_plan
-    from tempo_legacy_database.adapters.study import position_issued_plans as issuer
+    from app.study.position_learning import issuance as issuer
     route = option('italian-knight-attack')
     work = prepared()
     plan = work.plan
@@ -294,9 +294,9 @@ def test_native_superseding_again_preserves_clean_prefix(monkeypatch):
         pytest.skip('requires task-owned disposable TEMPO_POSITION_TEST_DSN')
     import psycopg
     from psycopg import sql
-    from tempo_legacy_database.adapters.postgres_store import tempo_row_factory
+    from tempo_storage.postgres import tempo_row_factory
     from app.study.position_learning.prefix_eligibility import CleanFirstResponse, CleanPresentationProof
-    from tempo_legacy_database.adapters.study import position_issued_plans as issuer
+    from app.study.position_learning import issuance as issuer
     work = prepared()
     plan, route = work.plan, work.source.routes[0]
     proof = CleanPresentationProof('prior', route.route_id, route.start_fen, route.moves_uci,

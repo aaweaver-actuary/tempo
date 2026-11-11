@@ -152,12 +152,8 @@ test("test_issue218_redis_outage_retains_review_intent_and_recovers_without_dupl
         expect(recovered.reviews).toHaveLength(baseline.reviews.length + 1);
         expect(recovered.receipts).toHaveLength(baseline.receipts.length + 1);
         expect(recovered.operations.filter((row: string[]) => row[0] === delivery.key || row[0] === subsequentOperation).map((row: string[]) => row[1])).toEqual(["complete", "complete"]);
-        // Learning stores its exact core receipt before the compatibility adapter
-        // appends recombination status to the HTTP response. The journal below
-        // retains that complete response, including the explicit fixture hold.
-        const { recombination, ...learningReceipt } = acceptedResult;
-        expect(recombination).toEqual({ status: "held", reason: "route_missing" });
-        expect(JSON.parse(recovered.receipts.find((row: unknown[]) => row[0] === attemptId)[3])).toEqual(learningReceipt);
+        // The saved receipt and browser journal retain the same accepted review.
+        expect(JSON.parse(recovered.receipts.find((row: unknown[]) => row[0] === attemptId)[3])).toEqual(acceptedResult);
         const committed = (await nativeStudyRecords(page)).find(record => record.key === originalKey);
         expect(committed?.state).toBe("committed");
         expect(committed?.receipt).toEqual(acceptedResult);

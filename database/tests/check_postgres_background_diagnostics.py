@@ -25,9 +25,9 @@ from psycopg import sql
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'backend'))
 from database.tooling.apply_postgres_migrations import apply_migrations
-from tempo_legacy_database import connections as database
+from tempo_storage import connections as database
 from app.services.activity_gate import activity_gate
-from tempo_legacy_database.adapters import postgres_store
+from tempo_storage import postgres
 from app.services import durable_tasks, background_diagnostics, background_runtime
 from app.services.background_metrics import increment
 
@@ -134,7 +134,7 @@ def main():
         claimed=durable_tasks.claim_task('daily_queue')
         check_admitted_primary_preflight(claimed)
         check_runtime_publication_boundaries(claimed)
-        with postgres_store.connection() as connection:
+        with postgres.connection() as connection:
             durable_tasks.advance_task_slice_in_transaction(connection,claimed,next_phase='synthetic',next_payload={})
         assert background_diagnostics.snapshot().available
         claimed=durable_tasks.claim_task('daily_queue')
@@ -146,11 +146,11 @@ def main():
         assert replaced['pending_since']==pending_since
         claimed=durable_tasks.claim_task('daily_queue')
         assert durable_tasks.defer_task_for_contention(claimed['id'],claimed['generation'],claimed['lease_token'],kind=claimed['kind'])
-        with postgres_store.connection() as connection:
+        with postgres.connection() as connection:
             assert connection.execute('SELECT pending_since FROM background_tasks WHERE id=?',(row['id'],)).fetchone()[0]==pending_since
             connection.execute('UPDATE background_tasks SET next_attempt_at=? WHERE id=?',('2000-01-01T00:00:00+00:00',row['id']))
         claimed=durable_tasks.claim_task('daily_queue')
-        with postgres_store.connection() as connection:
+        with postgres.connection() as connection:
             connection.execute('UPDATE background_tasks SET lease_expires_at=? WHERE id=?',('2000-01-01T00:00:00+00:00',row['id']))
         durable_tasks.claim_task('daily_queue')
         snapshot=background_diagnostics.snapshot()
@@ -161,7 +161,7 @@ def main():
         assert counters.contention_deferrals==1 and counters.stale_results==1
         # All metric increments roll back with their associated outcome.
         try:
-            with postgres_store.connection() as connection:
+            with postgres.connection() as connection:
                 increment(connection,'engine_game','rollback',engine_completed_positions=9)
                 raise RuntimeError('synthetic rollback')
         except RuntimeError:
@@ -170,7 +170,7 @@ def main():
         # Concurrent additive UPSERTs, including deliberate same-shard contention, lose no counters.
         def worker(index):
             for _ in range(20):
-                with postgres_store.connection() as connection:
+                with postgres.connection() as connection:
                     increment(connection,'engine_game','same-shard',engine_preemptions=1)
         with ThreadPoolExecutor(max_workers=4) as workers:
             list(workers.map(worker,range(4)))
@@ -183,23 +183,23 @@ def main():
                 samples.append(sample.query_duration_seconds)
             return samples
         before=times()
-        with postgres_store.connection() as connection:
+        with postgres.connection() as connection:
             connection.execute_native("INSERT INTO background_task_events(task_id,generation,event,created_at) "
                 "SELECT %s,1,'synthetic',%s FROM generate_series(1,100000)",(row['id'],row['created_at']))
         after=times()
-        with postgres_store.connection() as connection:
+        with postgres.connection() as connection:
             durable_tasks._record_event(connection,row['id'],replaced['generation'],'slice_complete',kind='daily_queue')
             assert connection.execute('SELECT COUNT(*) FROM background_task_events WHERE task_id=?',(row['id'],)).fetchone()[0]==100
             for offset in range(600):
                 increment(connection,'engine_defense','bounded',now=datetime(2026,10,2,tzinfo=timezone.utc)+timedelta(seconds=offset*300),claims=1)
         # Buffered counters become visible after the outcome transaction commits.
-        with postgres_store.connection(read_only=True) as connection:
+        with postgres.connection(read_only=True) as connection:
             assert connection.execute("SELECT COUNT(*) FROM background_metric_buckets WHERE kind='engine_defense'").fetchone()[0]==288
         def write_times(instrumented):
             samples=[]
             for _ in range(50):
                 started=time.perf_counter()
-                with postgres_store.connection(background=True) as connection:
+                with postgres.connection(background=True) as connection:
                     connection.execute_native("UPDATE background_tasks SET updated_at=%s WHERE id=%s",(datetime.now(timezone.utc).isoformat(),row['id']))
                     if instrumented:
                         durable_tasks._record_event(connection,row['id'],replaced['generation'],'slice_complete',kind='daily_queue')
@@ -209,12 +209,12 @@ def main():
                 samples.append(time.perf_counter()-started)
             return samples
         traced_statements=[]
-        original_execute=postgres_store.PostgresConnection.execute
+        original_execute=postgres.PostgresConnection.execute
         def traced_execute(connection,statement,parameters=()):
             traced_statements.append(statement)
             return original_execute(connection,statement,parameters)
         baseline_writes=write_times(False)
-        with patch.object(postgres_store.PostgresConnection,'execute',traced_execute):
+        with patch.object(postgres.PostgresConnection,'execute',traced_execute):
             instrumented_writes=write_times(True)
         assert not any(statement.lower().startswith('select kind from background_tasks where id=') for statement in traced_statements)
         assert max(before+after) < 0.1
@@ -226,7 +226,7 @@ def main():
                           'known_kind_lookup_count':0,
                           'transition_measurement_scope':'domain UPDATE + full raw-event/counter hook + transaction flush; excludes Redis and preflight'}))
     finally:
-        postgres_store.close_pools()
+        postgres.close_pools()
         with psycopg.connect(ADMIN_DSN,autocommit=True) as administrator:
             administrator.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(database_name)))
 

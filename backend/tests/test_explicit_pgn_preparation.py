@@ -13,7 +13,7 @@ from app.services import (
     study_mode,
 )
 from app.services.redis_admission_gate import BackgroundAdmissionDeferred
-from tempo_legacy_database.adapters.authored_repertoires.pgn_import import (
+from tempo_storage.authored_repertoires.pgn_import import (
     preparation as storage,
 )
 

@@ -2,7 +2,7 @@ import threading
 
 import pytest
 
-from tempo_legacy_database import connections as database
+from tempo_storage import connections as database
 from app.services.activity_gate import ApplicationActivityGate, BackgroundContractError
 
 

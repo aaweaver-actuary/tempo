@@ -5,12 +5,12 @@ from __future__ import annotations
 from collections import defaultdict
 import hashlib
 import json
-from tempo_legacy_database.capabilities import BorrowedTransaction
+from tempo_storage.postgres import PostgresConnection
 
 import chess
 
-from tempo_legacy_database.adapters.authored_repertoires.integrity import storage
-from tempo_legacy_database.connections import read_connection
+from tempo_storage.authored_repertoires.integrity import storage
+from tempo_storage.connections import read_connection
 
 from app.chess.cards import card_id
 from app.chess.position_identity import position_key as canonical_fen
@@ -135,7 +135,7 @@ def _record_position(
     )
 
 
-def integrity_summary(database: BorrowedTransaction, repertoire_id: str) -> dict:
+def integrity_summary(database: PostgresConnection, repertoire_id: str) -> dict:
     row = storage.summary_state(database, (repertoire_id,))
     if not row:
         raise KeyError("Repertoire not found")
@@ -157,7 +157,7 @@ def integrity_summary(database: BorrowedTransaction, repertoire_id: str) -> dict
 
 
 def list_integrity_issues(
-    database: BorrowedTransaction, repertoire_id: str
+    database: PostgresConnection, repertoire_id: str
 ) -> list[dict]:
     rows = storage.issue_details(database, (repertoire_id,))
     results = []
@@ -215,7 +215,7 @@ def _transform_source(
 
 
 def _archive_unsupported_card(
-    database: BorrowedTransaction, repertoire_id: str, card_identifier: str
+    database: PostgresConnection, repertoire_id: str, card_identifier: str
 ) -> bool:
     """Detach an already-computed unsupported card without chess traversal."""
 

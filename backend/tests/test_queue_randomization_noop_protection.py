@@ -11,9 +11,9 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "database" / "tests"))
 from queue_refresh_scale_fixture import protected_hash, seed_queue_refresh_case
-from test_product_game_lapse_postgres import owned_postgres
+from native_study_fixture import owned_postgres
 
-from tempo_legacy_database.adapters.queue_refresh.presentation import apply_plan
+from tempo_storage.queue_refresh.presentation import apply_plan
 
 
 class NoSQL:

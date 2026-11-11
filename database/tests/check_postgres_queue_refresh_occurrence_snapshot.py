@@ -18,8 +18,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT / 'database/tests'), str(ROOT / 'backend/tests')]
 from test_product_game_lapse_postgres import owned_postgres
 from queue_refresh_scale_fixture import seed_queue_refresh_case
-from tempo_legacy_database.adapters import postgres_store
-from tempo_legacy_database.adapters.queue_refresh import reads
+from tempo_storage import postgres
+from tempo_storage.queue_refresh import reads
 from app.services import durable_tasks, postgres_queue_refresh as refresh, queue_application
 from app.product_composition.database_infrastructure import bind_database_infrastructure
 
@@ -31,16 +31,16 @@ def test_frozen_occurrence_snapshot_continuation(owned_postgres, monkeypatch):
     dsn = make_conninfo(**options)
     monkeypatch.setenv('TEMPO_DATABASE_READ_URL', dsn)
     monkeypatch.setenv('TEMPO_DATABASE_WRITE_URL', dsn)
-    postgres_store.prepare_authoritative_background_pool()
+    postgres.prepare_authoritative_background_pool()
     try:
-        with psycopg.connect(**options, row_factory=postgres_store.tempo_row_factory) as raw:
+        with psycopg.connect(**options, row_factory=postgres.tempo_row_factory) as raw:
             facts = seed_queue_refresh_case(raw, queued_count=32, issued_count=2, frozen_active=True)
             raw.execute("UPDATE cards SET state='new',introduced_at=NULL WHERE id=ANY(%s)", ([f'queue-refresh-scale-{number:05}' for number in range(1, 33)],))
             raw.execute("DELETE FROM reviews WHERE card_id LIKE 'queue-refresh-scale-%'")
             raw.execute("UPDATE settings SET new_cards_per_day=100 WHERE id=1")
             raw.execute("UPDATE repertoires SET new_cards_per_day=100 WHERE id='queue-refresh-scale'")
             raw.execute('DELETE FROM background_tasks WHERE id=%s', (facts.task_id,))
-            task = queue_application.request_queue_refresh_in_transaction(postgres_store.PostgresConnection(raw), facts.queue_date)
+            task = queue_application.request_queue_refresh_in_transaction(postgres.PostgresConnection(raw), facts.queue_date)
             epoch = raw.execute('SELECT requested_refresh_epoch FROM queue_projections WHERE queue_date=%s', (facts.queue_date,)).fetchone()[0]
             payload = {'queue_date': facts.queue_date, '_queue_phase': 'study_opening_page',
                        '_refresh_cycle_epoch': epoch, 'frozen_token': ['queue-refresh-scale', 1]}
@@ -57,7 +57,7 @@ def test_frozen_occurrence_snapshot_continuation(owned_postgres, monkeypatch):
                 WHERE c.state='new' AND c.introduced_at IS NULL AND publication.state='ready'
                 ORDER BY rank.ordinal,r.created_at,r.id,line.created_at,line.id,step.decision_index,c.id''')]
             assert len(expected) == 32
-        original_execute = postgres_store.PostgresConnection.execute_native
+        original_execute = postgres.PostgresConnection.execute_native
         original_read = getattr(reads, 'read_connection', None)
         original_lock = refresh.lock_current_slice
         held, release = Event(), Event()
@@ -109,12 +109,12 @@ def test_frozen_occurrence_snapshot_continuation(owned_postgres, monkeypatch):
         first = durable_tasks.claim_task('daily_queue')
         assert first
         reader_patch = patch.object(reads, 'read_connection', reader) if original_read else __import__('contextlib').nullcontext()
-        with patch.object(refresh.activity_gate, 'background_database_section', gate), patch.object(postgres_store.PostgresConnection, 'execute_native', execute), reader_patch, patch.object(refresh, 'lock_current_slice', writer):
+        with patch.object(refresh.activity_gate, 'background_database_section', gate), patch.object(postgres.PostgresConnection, 'execute_native', execute), reader_patch, patch.object(refresh, 'lock_current_slice', writer):
             with ThreadPoolExecutor(max_workers=1) as pool:
                 future = pool.submit(refresh.execute_postgres_queue_refresh_slice, first)
                 assert held.wait(10)
                 started = time.perf_counter()
-                with postgres_store.connection() as db:
+                with postgres.connection() as db:
                     queue_application.request_queue_refresh_in_transaction(db, facts.queue_date)
                 foreground.append(round((time.perf_counter()-started)*1000, 1))
                 assert not future.done()
@@ -135,4 +135,4 @@ def test_frozen_occurrence_snapshot_continuation(owned_postgres, monkeypatch):
         print('PASS frozen upper and two ordered continuation pages; snapshot', observations,
               'writer', writers, 'foreground_ms', foreground)
     finally:
-        postgres_store.close_pools()
+        postgres.close_pools()

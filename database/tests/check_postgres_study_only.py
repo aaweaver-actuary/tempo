@@ -24,8 +24,8 @@ from psycopg.conninfo import make_conninfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'backend'))
 from app import main, tasks
-from tempo_legacy_database.adapters import postgres_store
-from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
+from tempo_storage import postgres
+from tempo_storage.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 from app.command_gateway import CommandConflict, execute_command, claim_recoverable_operation, read_operation, request_digest
 from app import command_gateway, settings_commands
 from app.services import durable_tasks, study_mode
@@ -48,7 +48,7 @@ def prove_settings_descriptor_original_identity():
         prepared_values.append(changed.settings.new_cards_per_day)
         return changed
     def snapshot():
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             settings_value = database.execute('SELECT new_cards_per_day FROM settings WHERE id=1').fetchone()[0]
             task = database.execute("SELECT id,generation,state,payload_json FROM background_tasks WHERE kind='daily_queue' AND deduplication_key='current'").fetchone()
             receipt = database.execute('SELECT command_name,request_hash,state,response_json FROM operation_receipts WHERE operation_id=?', (operation,)).fetchone()
@@ -106,7 +106,7 @@ def proof():
             assert upgraded.execute('SELECT * FROM settings').fetchone() == (*settings_before, 0)
             assert upgraded.execute('SELECT COUNT(*),MAX(version) FROM tempo_schema_migrations').fetchone() == (POSTGRES_SCHEMA_VERSION, POSTGRES_SCHEMA_VERSION)
         print('PASS additive_migration_47_preserves_schema46_settings_and_replays')
-        postgres_store.close_pools()
+        postgres.close_pools()
         # This exclusive database executes synchronously; its wake must not be
         # delivered to the parent runner's workers connected to another database.
         with patch.dict(os.environ, {'TEMPO_DATABASE_WRITE_URL': owned_url, 'TEMPO_DATABASE_READ_URL': owned_url}), \
@@ -118,7 +118,7 @@ def proof():
                     {'settings': settings, 'supplied_fields': sorted(settings)})
 
             assert save_mode(True)['study_only_mode'] is True
-            postgres_store.close_pools()
+            postgres.close_pools()
             assert main.get_settings().study_only_mode
             omitted = main.get_settings().model_dump(mode='json')
             omitted.pop('study_only_mode')
@@ -138,15 +138,15 @@ def proof():
             with patch.object(tasks, 'execute_command', side_effect=AssertionError('Paused aggregation executed')):
                 assert tasks.execute_background_command.run(accepted_operation, 'coverage.maia.submit',
                     {'accepted_report': {'preserve': True}}) is None
-            postgres_store.close_pools()
-            with postgres_store.connection() as database:
+            postgres.close_pools()
+            with postgres.connection() as database:
                 assert database.execute('SELECT payload_json FROM operation_receipts WHERE operation_id=?',
                     (accepted_operation,)).fetchone()[0] == '{"accepted_report":{"preserve":true}}'
             assert claim_recoverable_operation(allowed_background_commands=study_mode.STUDY_BACKGROUND_COMMANDS,
                 paused_commands=study_mode.PAUSED_IMPORT_COMMANDS) is None
 
             today = date.today().isoformat()
-            with postgres_store.connection() as database:
+            with postgres.connection() as database:
                 database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('mode-proof','Mode proof','synthetic',?)", (today,))
                 database.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) "
                     "VALUES('mode-line','mode-proof','Saved source','white',?,'[\"d2d4\"]',?)",
@@ -163,7 +163,7 @@ def proof():
             source_fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
             assert verify_repertoire_move('mode-proof', source_fen, 'd2d4')['verified'] is True
             assert verify_repertoire_move('mode-proof', source_fen, 'c2c4')['verified'] is False
-            postgres_store.close_pools()
+            postgres.close_pools()
             assert verify_repertoire_move('mode-proof', source_fen, 'd2d4')['verified'] is True
             print('PASS study_only_mode_verifies_non_expected_move_from_saved_sources_without_bulk_preparation')
             issued = execute_command(uuid4().hex, 'queue.issue_head',
@@ -178,13 +178,13 @@ def proof():
             review_operation = uuid4().hex
             reviewed = execute_command(review_operation, 'cards.review', review_payload)
             assert reviewed['persisted'] is True
-            postgres_store.close_pools()
+            postgres.close_pools()
             assert execute_command(review_operation, 'cards.review', review_payload) == reviewed
             assert execute_command(uuid4().hex, 'cards.review', review_payload) == reviewed
             assert execute_command(uuid4().hex, 'queue.issue_head',
                 {'entry_id': entries[3], 'queue_date': today, 'card_id': 'eligible-b', 'expected_revision': 1})['issued']
             assert main.queue_window(1)['cards'][0]['id'] == 'eligible-b'
-            with postgres_store.connection() as database:
+            with postgres.connection() as database:
                 assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id='eligible-a'").fetchone()[0] == 1
                 assert database.execute("SELECT COUNT(*) FROM review_attempt_receipts WHERE attempt_id='mode-proof-review'").fetchone()[0] == 1
                 assert database.execute('SELECT COUNT(*) FROM daily_queue WHERE id IN (?,?,?,?)', entries).fetchone()[0] == 4
@@ -198,7 +198,7 @@ def proof():
             assert (resumed['id'], resumed['generation'], resumed['payload']) == (optional['id'], optional['generation'], {'cursor': 7})
             print('PASS study_only_mode_pauses_optional_work_and_resumes_after_restart')
     finally:
-        postgres_store.close_pools()
+        postgres.close_pools()
         if created:
             with psycopg.connect(parent_url, autocommit=True) as parent:
                 parent.execute(sql.SQL('DROP DATABASE {}').format(sql.Identifier(identity)))

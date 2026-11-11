@@ -18,7 +18,7 @@ from psycopg.conninfo import make_conninfo
 from database.tests.position_study.acceptance import _dsn
 from database.tests.position_study.italian_acceptance import LINES, _moves, seed_disposable_source
 from tempo_evidence_math.position_learning import Hold
-from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
+from tempo_storage.postgres import PostgresConnection, tempo_row_factory
 
 
 TIMEOUT = 45
@@ -32,9 +32,9 @@ def _configure(dsn):
     os.environ.pop('TEMPO_REDIS_URL', None)
     os.environ.pop('TEMPO_FOREGROUND_ACTIVITY_URL', None)
     from app.product_composition.database_infrastructure import bind_database_infrastructure
-    from tempo_legacy_database.adapters import postgres_store
+    from tempo_storage import postgres
     bind_database_infrastructure()
-    postgres_store.close_pools()
+    postgres.close_pools()
 
 
 def _worker(dsn, payload, channel, entered, release, count, *, selected=None, prepared=None, start=None):
@@ -68,8 +68,8 @@ def _worker(dsn, payload, channel, entered, release, count, *, selected=None, pr
     except BaseException:
         channel.send(('error', traceback.format_exc()))
     finally:
-        from tempo_legacy_database.adapters import postgres_store
-        postgres_store.close_pools()
+        from tempo_storage import postgres
+        postgres.close_pools()
         channel.close()
 
 
@@ -206,7 +206,7 @@ def test_real_two_foreground_processes_share_preparation_and_immutable_plan():
         # conflicts, independently of the delivery single-flight mechanism.
         from app.study.position_learning.issued_plan_contracts import SelectionRequest, IssuedPlan
         from app.study.position_learning.issued_plan_service import prepare_position_issuance
-        from tempo_legacy_database.adapters.study.position_issued_plans import issue_in_borrowed_transaction
+        from app.study.position_learning.issuance import issue_in_borrowed_transaction
         import json
         record = original['plan_json']
         plan = IssuedPlan.from_record(json.loads(record) if isinstance(record, str) else record)

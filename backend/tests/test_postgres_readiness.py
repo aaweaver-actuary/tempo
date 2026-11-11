@@ -11,8 +11,8 @@ import pytest
 
 from app import command_dispatch, main
 from app.operations import postgres_readiness
-from tempo_legacy_database.adapters import postgres_store
-from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
+from tempo_storage import postgres
+from tempo_storage.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 
 
 class Cursor:
@@ -103,7 +103,7 @@ def test_postgres_startup_checks_schema_and_requests_queue(monkeypatch):
     calls = []
     monkeypatch.setenv("TEMPO_DATABASE_READ_URL", "postgresql://reader@example/tempo")
     monkeypatch.delenv("TEMPO_DATABASE_WRITE_URL", raising=False)
-    monkeypatch.setattr(postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(postgres, "configured", lambda: True)
     monkeypatch.setattr(main, "initialize", lambda: calls.append("schema"))
     monkeypatch.setattr(
         command_dispatch,

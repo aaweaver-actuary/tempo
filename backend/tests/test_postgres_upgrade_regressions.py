@@ -22,7 +22,7 @@ path = Path('database/tests/check_postgres_upgrade.py')
 spec = importlib.util.spec_from_file_location('standalone_upgrade', path)
 proof = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(proof)
-from tempo_legacy_database.infrastructure import database_admission
+from tempo_storage.infrastructure import database_admission
 
 def require_unbound():
     try:

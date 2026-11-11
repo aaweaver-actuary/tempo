@@ -31,6 +31,23 @@ test('Python centralized database auditing separates wheel runtime from retained
   writeFileSync(join(f.database, 'adapters/runtime.py'), 'import importlib.util\n');
   const rejected = f.check(); assert.notEqual(rejected.status, 0); assert.match(rejected.stderr, /dynamic loader/);
 });
+test('Python static distribution version lookup is accepted without allowing dynamic loaders', t => {
+  const f = fixture(t);
+  const source = join(f.database, 'adapters/runtime.py');
+  for (const input of ['from importlib.metadata import version\nversion("fsrs")\n', 'from importlib.metadata import version as package_version\npackage_version("fsrs")\n']) {
+    writeFileSync(source, input);
+    const result = f.check(); assert.equal(result.status, 0, result.stderr);
+  }
+  for (const input of [
+    'from importlib import import_module as loader\nloader("app.main")\n',
+    'import importlib.util as util\n',
+    'import runpy as runner\n',
+    'from importlib.metadata import version, packages_distributions\n',
+  ]) {
+    writeFileSync(source, input);
+    const result = f.check(); assert.notEqual(result.status, 0, input); assert.match(result.stderr, /dynamic loader/);
+  }
+});
 test('Python wheel exclusions never hide nested runtime code or source symlink escapes', t => {
   const f = fixture(t);
   mkdirSync(join(f.database, 'adapters/tests')); writeFileSync(join(f.database, 'adapters/tests/code.py'), 'import undeclared_runtime\n');
@@ -50,35 +67,41 @@ test('Python bundled remediation import requires its exact declared distribution
     assert.match(f.check().stderr, /undeclared dependency tempo_unrecognized_database/);
   }
 });
-test('Centralized wheel hooks exclude qualification directories while sdist hooks retain complete database inputs', () => {
+test('Learning review wheel and sdist contain real local inputs without retired database hook', () => {
   const source = `
-from pathlib import Path
-import runpy, sys, types
-from tempfile import TemporaryDirectory
-base = types.ModuleType('hatchling.builders.hooks.plugin.interface')
-base.BuildHookInterface = object
-sys.modules['hatchling.builders.hooks.plugin.interface'] = base
-repository = Path(sys.argv[1])
-for owner, name in [('services/learning/remediation', 'tempo_remediation_database')]:
-    hook = runpy.run_path(str(repository / owner / 'hatch_build.py'))['CustomBuildHook']
-    with TemporaryDirectory() as directory:
-        root = Path(directory) / owner
-        database = root / 'database' / name
-        database.mkdir(parents=True)
-        for entry in ['__init__.py', 'ddl', 'adapters', 'tests', 'tooling', '__pycache__']:
-            path = database / entry
-            if '.' in entry: path.write_text('')
-            else: path.mkdir()
-        instance = hook()
-        instance.root = str(root)
-        instance.target_name = 'wheel'
-        data = {'force_include': {}}
-        instance.initialize(None, data)
-        assert {Path(path).name for path in data['force_include']} == {'__init__.py', 'ddl', 'adapters'}
-        instance.target_name = 'sdist'
-        data = {'force_include': {}}
-        instance.initialize(None, data)
-        assert data['force_include'] == {str(database): 'database/' + name}
+import pathlib, shutil, subprocess, sys, tarfile, tempfile, zipfile
+repository = pathlib.Path(sys.argv[1])
+with tempfile.TemporaryDirectory(prefix='tempo-review-archive-') as directory:
+    root = pathlib.Path(directory) / 'application'
+    shutil.copytree(repository / 'services/learning/application', root, ignore=shutil.ignore_patterns('__pycache__', '.pytest_cache', '.venv', 'dist'))
+    subprocess.run([sys.executable, '-m', 'build', '--no-isolation'], cwd=root, check=True, capture_output=True, text=True)
+    wheel, = (root/'dist').glob('*.whl')
+    sdist, = (root/'dist').glob('*.tar.gz')
+    with zipfile.ZipFile(wheel) as archive:
+        names = archive.namelist()
+        assert 'tempo_learning_review/__init__.py' in names
+        assert not any('database/' in name or 'hatch_build.py' in name or '/tests/' in name for name in names)
+    with tarfile.open(sdist) as archive:
+        names = archive.getnames()
+        for required in ('src/tempo_learning_review/__init__.py', 'tests/test_application.py', 'integration/test_qualification_runners.py', 'qualification.py', 'run_suite.py', 'qualify.py', 'pyproject.toml'):
+            assert any(name.endswith('/'+required) for name in names), required
+        assert not any('/database/' in name or name.endswith('/hatch_build.py') for name in names)
+    import importlib.util
+    sys.path.insert(0, str(root))
+    spec = importlib.util.spec_from_file_location('actual_qualify', root/'qualify.py')
+    qualifier = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(qualifier)
+    assert all((root/name).exists() for name in qualifier.INPUTS)
+    qualifier.HERE = root
+    qualifier.ROOT = root
+    qualifier.subprocess.check_output = lambda *args, **kwargs: 'fixture-revision'
+    (root/'pyproject.toml').unlink()
+    sys.argv = ['qualify.py', str(pathlib.Path(directory)/'evidence')]
+    try:
+        qualifier.main()
+        raise AssertionError('missing declared input accepted')
+    except FileNotFoundError:
+        pass
 `;
   const result = spawnSync(python, ['-B', '-c', source, repository], {encoding: 'utf8'});
   assert.equal(result.status, 0, result.stdout + result.stderr);

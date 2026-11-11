@@ -18,7 +18,7 @@ import uuid
 
 import pytest
 
-from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
+from tempo_storage.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -30,11 +30,11 @@ RUNTIME_FILES = {
     "backend/app/contracts/product_v02/learning.py": "/app/app/contracts/product_v02/learning.py",
     "backend/app/contracts/product_v02/presentation.py": "/app/app/contracts/product_v02/presentation.py",
     "backend/app/study/encounter_feedback.py": "/app/app/study/encounter_feedback.py",
-    "database/tempo_legacy_database/adapters/games/product_review.py": "/app/tempo_legacy_database/adapters/games/product_review.py",
-    "database/tempo_legacy_database/adapters/study/game_feedback.py": "/app/tempo_legacy_database/adapters/study/game_feedback.py",
-    "database/tempo_legacy_database/ddl/schema_version.py": "/app/tempo_legacy_database/ddl/schema_version.py",
-    "database/tempo_legacy_database/ddl/migrations/052_product_game_sync.sql": "/app/tempo_legacy_database/ddl/migrations/052_product_game_sync.sql",
-    "database/tempo_legacy_database/ddl/migrations/056_managed_game_feedback_mode.sql": "/app/tempo_legacy_database/ddl/migrations/056_managed_game_feedback_mode.sql",
+    "database/tempo_storage/adapters/games/product_review.py": "/app/tempo_storage/adapters/games/product_review.py",
+    "database/tempo_storage/adapters/study/game_feedback.py": "/app/tempo_storage/adapters/study/game_feedback.py",
+    "database/tempo_storage/ddl/schema_version.py": "/app/tempo_storage/ddl/schema_version.py",
+    "database/tempo_storage/ddl/migrations/052_product_game_sync.sql": "/app/tempo_storage/ddl/migrations/052_product_game_sync.sql",
+    "database/tempo_storage/ddl/migrations/056_managed_game_feedback_mode.sql": "/app/tempo_storage/ddl/migrations/056_managed_game_feedback_mode.sql",
 }
 
 
@@ -78,7 +78,7 @@ import hashlib, json, os
 from pathlib import Path
 import psycopg
 from psycopg.conninfo import conninfo_to_dict
-from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
+from tempo_storage.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 
 def connect(role):
     assert os.environ.get("TEMPO_TEST_INSTANCE") == "disposable"
@@ -141,8 +141,8 @@ from datetime import datetime
 from app.study.interfaces.game_priority import GameEncounter,GameEffectControl
 from app.study.game_feedback import Effect,effect_id
 from app.study.encounter_feedback import encounter_digest
-from tempo_legacy_database.adapters.postgres_store import PostgresConnection
-from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
+from tempo_storage.postgres import PostgresConnection
+from tempo_storage.study.game_feedback import PostgresGameFeedbackStore
 command = GameEncounter.model_validate_json(json.dumps(payload["command"]))
 now = datetime.fromisoformat(command.detected_at.replace("Z","+00:00"))
 effect = Effect(key=command.key,source_revision=command.source.source_revision,received_at=now,

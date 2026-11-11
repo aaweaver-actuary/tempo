@@ -79,10 +79,10 @@ def private_database(parent_url):
 
 
 def _advance_unlock_checkpoint_attempt(*, force_timeout=False):
-    from tempo_legacy_database.adapters import postgres_store
+    from tempo_storage import postgres
     from app.services import queue_application
     from app.services.postgres_queue_refresh import _ELIGIBILITY_PHASES
-    with postgres_store.connection(background=True) as database:
+    with postgres.connection(background=True) as database:
         row=database.execute("SELECT payload_json FROM background_tasks WHERE id='priority-unlock-checkpoint' AND generation=1 AND lease_token='priority-proof' AND state='leased' FOR UPDATE").fetchone()
         assert row is not None
         payload=json.loads(row[0])
@@ -96,9 +96,9 @@ def _advance_unlock_checkpoint_attempt(*, force_timeout=False):
 
 def advance_unlock_checkpoint(*, force_timeout=False):
     """Exercise the production retry contract without extending any DB deadline."""
-    from tempo_legacy_database.adapters import postgres_store
+    from tempo_storage import postgres
     def persisted():
-        with postgres_store.connection(read_only=True) as database:
+        with postgres.connection(read_only=True) as database:
             row = database.execute("SELECT payload_json FROM background_tasks WHERE id='priority-unlock-checkpoint' AND generation=1 AND lease_token='priority-proof' AND state='leased'").fetchone()
             assert row is not None
             return row[0]
@@ -332,7 +332,7 @@ def study_snapshot(database):
 
 
 def historical_rollback_proof(parent_url, owned_url, receipt_ids):
-    from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
+    from tempo_storage.ddl.schema_version import POSTGRES_SCHEMA_VERSION
     sources = historical_migration_sources()
     with psycopg.connect(owned_url) as original:
         original_snapshot = study_snapshot(original)
@@ -348,7 +348,7 @@ def historical_rollback_proof(parent_url, owned_url, receipt_ids):
                 require_ledger(original, POSTGRES_SCHEMA_VERSION)
                 before = copy_historical_rows(original, historical, receipt_ids)
                 historical.commit()
-                historical.execute((ROOT / 'database/tempo_legacy_database/ddl/rollbacks/049_study_priority_recovery.sql').read_text(), prepare=False)
+                historical.execute((ROOT / 'database/tempo_storage/ddl/rollbacks/049_study_priority_recovery.sql').read_text(), prepare=False)
                 require_ledger(historical, 48)
                 require_priority_indexes(historical, False)
                 require_historical_rows(historical, receipt_ids, before)
@@ -406,7 +406,7 @@ def run_proof(parent_url, redis_url, evidence, *, graph_rows=1_400_000, receipt_
         original = dict(os.environ)
         os.environ.update(configuration)
         from app import main
-        from tempo_legacy_database.adapters import postgres_store
+        from tempo_storage import postgres
         from app.command_gateway import claim_recoverable_operation
         from app.services import queue_application, redis_admission_gate, study_priority
         from app.services.background_runtime import measure_training_timing
@@ -452,7 +452,7 @@ def run_proof(parent_url, redis_url, evidence, *, graph_rows=1_400_000, receipt_
                 cursor = advance_unlock_checkpoint(force_timeout=pages == 0)
                 pages += 1
                 if pages == 2:
-                    postgres_store.close_pools()
+                    postgres.close_pools()
                     # A fresh process needs the repository namespace after this
                     # proof's relocation from scripts/ to database/tests/.
                     restart_environment = {**configuration,
@@ -468,12 +468,12 @@ def run_proof(parent_url, redis_url, evidence, *, graph_rows=1_400_000, receipt_
                 database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type) VALUES('z-root','priority','prefix',%s,'[\"e2e4\"]','locked',%s,'opening')",(FEN,date.today().isoformat()))
                 database.execute("INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,parent_card_id,decision_fen_key,starting_fen,moves_json,trained_color) VALUES('priority',1,'load-line',%s,'z-root',NULL,%s,%s,'[\"e2e4\"]','white')",(graph_rows+1,FEN,FEN))
                 database.execute("UPDATE opening_graph_publications SET state='failed'")
-            with postgres_store.connection(background=True) as database:
+            with postgres.connection(background=True) as database:
                 assert queue_application._unlock_eligible_opening_cards(database,date.today().isoformat(),after_card_id='z-previous',batch_size=8) is None
             with psycopg.connect(owned_url) as database:
                 assert database.execute("SELECT state FROM cards WHERE id='z-root'").fetchone()[0] == 'locked'
                 database.execute("UPDATE opening_graph_publications SET state='ready'")
-            with postgres_store.connection(background=True) as database:
+            with postgres.connection(background=True) as database:
                 queue_application._unlock_eligible_opening_cards(database,date.today().isoformat(),after_card_id='z-previous',batch_size=8)
             with psycopg.connect(owned_url) as database:
                 assert database.execute("SELECT state FROM cards WHERE id='z-root'").fetchone()[0] == 'new'
@@ -519,7 +519,7 @@ def run_proof(parent_url, redis_url, evidence, *, graph_rows=1_400_000, receipt_
                 server_samples = []; network_samples = []; priority_yield = []; progress = [0]
                 stop_load = threading.Event(); load_started = threading.Event(); load_idle = threading.Event()
                 def background_load():
-                    from tempo_legacy_database.connections import background_connection
+                    from tempo_storage.connections import background_connection
                     from app.services.activity_gate import BackgroundAdmissionDeferred, activity_gate
                     while not stop_load.is_set():
                         try:
@@ -611,7 +611,7 @@ def run_proof(parent_url, redis_url, evidence, *, graph_rows=1_400_000, receipt_
                 shared.set(study_priority.POLICY_KEY,encoded,ex=15)
                 results[CASES[4]] = {'independent_devices':2,'expired_policy_denies_optional':True}
             stop_owned_writers(processes, loader, stop_load)
-            postgres_store.close_pools()
+            postgres.close_pools()
             results[CASES[5]] = historical_rollback_proof(parent_url, owned_url, receipt_ids)
             assert set(results) == set(CASES)
             return results
@@ -623,7 +623,7 @@ def run_proof(parent_url, redis_url, evidence, *, graph_rows=1_400_000, receipt_
                 try: process.wait(timeout=10)
                 except subprocess.TimeoutExpired: process.kill(); process.wait(timeout=5)
             for handle in handles: handle.close()
-            postgres_store.close_pools()
+            postgres.close_pools()
             redis_admission_gate.client.cache_clear(); study_priority.control_client.cache_clear()
             redis_admission_gate._FOREGROUND_KEY, redis_admission_gate._BACKGROUND_KEY = saved_admission_keys
             study_priority.POLICY_KEY, study_priority.GENERATION_KEY = saved_policy_keys

@@ -6916,3 +6916,9 @@ Sound cues and repeated puzzle setup (November 10, 2026):
 Packaged Games fixture scheduler (November 10, 2026):
 
 - `backend/tests/test_study_recovery_acceptance.py::test_packaged_collection_foreground_owns_periodic_scheduler` checks the existing foreground worker owns the genuine embedded Celery scheduler with a private schedule file, while the background worker does not. The packaged suite observes actual scheduler startup and retains its natural queue-refresh and receipt assertions.
+
+Minimal Game Review request recovery (#983):
+
+- `tests/unit/game-review-minimal.test.tsx::surfaces an initial HTTP failure from %s and retries` covers failed saved-game and repertoire reads, visible errors, and successful retry.
+- `tests/unit/game-review-minimal.test.tsx::ignores a pending comparison after changing %s` covers repertoire, color, and PGN changes while a comparison is pending.
+- `tests/unit/game-review-minimal.test.tsx::does not let an obsolete saved-game failure clear a newer comparison's pending state` preserves the active request's error, busy state, result, and saved-player orientation.

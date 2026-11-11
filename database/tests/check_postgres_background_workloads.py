@@ -31,7 +31,7 @@ def stale_delivery_witness(phase, project):
     bind_database_infrastructure()
     from app.celery_app import celery_app
     from app.services import durable_tasks
-    from tempo_legacy_database.adapters import postgres_store
+    from tempo_storage import postgres
 
     if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable' or not project.startswith('tempo-pg-regressions-'):
         raise RuntimeError('Broker witness requires the owned disposable test project')
@@ -40,7 +40,7 @@ def stale_delivery_witness(phase, project):
     dsn = 'postgresql://postgres@postgres:5432/tempo'
     os.environ['TEMPO_DATABASE_WRITE_URL'] = dsn
     os.environ['TEMPO_DATABASE_READ_URL'] = dsn
-    postgres_store.close_pools()
+    postgres.close_pools()
     prefix = 'retired-witness-' + project
     fg, bg, task_id = prefix + '-foreground', prefix + '-background', prefix + '-task'
     pack_id, puzzle_id = 'anastasiaMate-easy-01', '1QPdO'

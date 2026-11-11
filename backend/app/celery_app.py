@@ -44,7 +44,6 @@ celery_app.conf.update(
         "app.tasks.execute_background_command": {"queue": "background"},
         "app.tasks.ensure_daily_queue": {"queue": "foreground"},
         "app.tasks.progress_study_queue": {"queue": "foreground"},
-        "app.tasks.maintain_game_feedback": {"queue": "foreground"},
         "app.tasks.execute_background_slice": {"queue": "background"},
         "app.tasks.poll_background_tasks": {"queue": "background"},
         "app.tasks.recover_operations": {"queue": "background"},
@@ -71,10 +70,7 @@ celery_app.conf.update(
             "task": "app.tasks.ensure_daily_queue",
             "schedule": 60.0,
         },
-        "resume-study-game-feedback": {
-            "task": "app.tasks.maintain_game_feedback",
-            "schedule": 60.0,
-        },
+
     },
     broker_connection_retry_on_startup=True,
     result_expires=86_400,

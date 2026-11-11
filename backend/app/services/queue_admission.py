@@ -94,7 +94,6 @@ class QueueAdmissionStore(Protocol):
     def introduction_count_page(
         self, day: str, after_repertoire_id: str | None, *, reviewed_only: bool = False
     ) -> IntroductionCountPage: ...
-    def has_outstanding_miss(self, card_id: str) -> bool: ...
     def retain_unseen(self, day: str, card_id: str) -> None: ...
     def remove_unseen(self, entry_id: int, card_id: str) -> None: ...
     def opening_candidate_page(
@@ -162,7 +161,7 @@ def reconcile_unseen_queue(
             if repertoire_limits is not None
             else limit
         )
-        if consumed < allowance or store.has_outstanding_miss(row["card_id"]):
+        if consumed < allowance:
             store.retain_unseen(day, row["card_id"])
             introduced[repertoire_id] = consumed + 1
         else:

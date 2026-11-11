@@ -1,20 +1,21 @@
 """Repertoire-owned retained line and card mutations within the caller transaction."""
 
 from __future__ import annotations
+from tempo_storage.postgres import PostgresConnection,TempoRow
 
 from datetime import datetime, timezone
 import hashlib
 import json
-import sqlite3
 from typing import Any
 
 from app.chess.cards import card_id
-from tempo_legacy_database.connections import card_columns
-from tempo_legacy_database.adapters.postgres_store import PostgresConnection
-from tempo_legacy_database.adapters.authored_repertoires import (
+from tempo_storage.connections import card_columns
+from tempo_storage.postgres import PostgresConnection
+from tempo_storage.authored_repertoires import (
     integrity_commands as line_storage,
 )
-from tempo_legacy_database.adapters.authored_repertoires.integrity import (
+from tempo_storage.authored_repertoires.card_edits import storage as edit_storage
+from tempo_storage.authored_repertoires.integrity import (
     storage as card_storage,
 )
 
@@ -65,9 +66,9 @@ def replace_repertoire_line(
 
 
 def rewrite_card(
-    database: sqlite3.Connection,
+    database: PostgresConnection,
     repertoire_id: str,
-    row: sqlite3.Row,
+    row: TempoRow,
     moves: list[str],
     *,
     validated_route: dict | None = None,
@@ -85,7 +86,7 @@ def rewrite_card(
     new_id = card_id(row["start_fen"], moves)
     if new_id == row["id"]:
         return False
-    existing = card_storage.card_exists(database, (new_id,))
+    existing = edit_storage.locked_replacement(database, new_id)
     if not existing:
         columns = card_columns(database)
         values = dict(row)
@@ -105,13 +106,13 @@ def rewrite_card(
                 "canonical_route_source": 1,
             }
         )
-        card_storage.insert_replacement_card(database, columns, values)
-    card_storage.mark_card_authored(database, (new_id,))
-    card_storage.upsert_authored_membership(database, (repertoire_id, new_id))
+        edit_storage.insert_replacement(database, columns, values)
+    edit_storage.mark_canonical(database, new_id)
+    edit_storage.admit_membership(database, repertoire_id, new_id)
     card_storage.delete_membership(database, (repertoire_id, row["id"]))
-    remaining = card_storage.card_has_membership(database, (row["id"],))
+    remaining = card_storage.remaining_membership(database, (row["id"], repertoire_id))
     if not remaining:
-        card_storage.archive_superseded_card(database, (new_id, row["id"]))
+        edit_storage.supersede(database, new_id, row["id"])
     if certify:
         certify_admitted_route(database, repertoire_id, validated_route)
     return True

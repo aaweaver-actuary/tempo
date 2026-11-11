@@ -9,26 +9,16 @@ from datetime import datetime, timezone
 import json
 from typing import Any
 
-from tempo_legacy_database.adapters import postgres_store
-from tempo_legacy_database.adapters.postgres_store import PostgresConnection
+from tempo_storage import postgres
+from tempo_storage.postgres import PostgresConnection
 from .durable_tasks import enqueue_task_in_transaction
 from . import frozen_opening_order
-from tempo_legacy_database.adapters.opening_progression import (
+from tempo_storage.opening_progression import (
     PRACTICED_OPENING_PARENT_SQL,
 )
 from app.chess.pgn import ends_on_trained_move
 from .queue_ordering import _queue_membership_hash, _plan_daily_queue_order
-from .real_game_feedback import MISS_REASON
-from tempo_legacy_database.adapters.real_game_miss_projection import (
-    outstanding_miss_query,
-    outstanding_miss_sql,
-)
-from .real_game_feedback_adapter import (
-    has_outstanding_real_game_miss,
-    promote_real_game_card,
-    clear_satisfied_miss_priority,
-    prioritize_queued_misses,
-)
+MISS_REASON = "Priority review · missed in a recent game"
 from app.study.queue_order import capture_daily_queue_order, preserve_daily_queue_order
 from .tactical_catalog import seed_tactical_introductions
 
@@ -49,7 +39,6 @@ def reconcile_unseen_queue(db, day, limit, repertoire_limits=None):
     )
 
 
-from tempo_legacy_database.adapters.queue_refresh.reads import _ACTIVE_OPENING_MISS_SQL
 
 
 def admit_prioritized_opening_cards(
@@ -60,19 +49,19 @@ def admit_prioritized_opening_cards(
     )
 
 
-from tempo_legacy_database.adapters.queue_refresh.application import (
+from tempo_storage.queue_refresh.application import (
     eligibility as eligibility_storage,
 )
-from tempo_legacy_database.adapters.queue_refresh.application import (
+from tempo_storage.queue_refresh.application import (
     seeding as seeding_storage,
 )
-from tempo_legacy_database.adapters.queue_refresh.application import (
+from tempo_storage.queue_refresh.application import (
     publication as publication_storage,
 )
-from tempo_legacy_database.adapters.queue_refresh.application import (
+from tempo_storage.queue_refresh.application import (
     requeue as requeue_storage,
 )
-from tempo_legacy_database.adapters.queue_refresh.application.eligibility import (
+from tempo_storage.queue_refresh.application.eligibility import (
     _OPENING_UNLOCK_ELIGIBILITY_SQL,
     _OPENING_UNLOCK_CANDIDATES_SQL,
     _OPENING_UNLOCK_POSTGRES_CANDIDATES_SQL,
@@ -127,17 +116,9 @@ def _unlock_eligible_opening_cards(
     if batch_size is not None:
         if batch_size < 1:
             raise ValueError("Queue unlock batch size must be positive")
-        if eligibility_storage.uses_native_execution(db):
-            return _unlock_postgres_opening_page(
-                db, after_card_id=after_card_id or "", batch_size=batch_size
-            )
-        candidates = eligibility_storage.sparse_unlock_candidates(
-            db, after_card_id, batch_size
+        return _unlock_postgres_opening_page(
+            db, after_card_id=after_card_id or "", batch_size=batch_size
         )
-        selected_card_ids = [row[0] for row in candidates[:batch_size]]
-        has_more_candidates = len(candidates) > batch_size
-        if not selected_card_ids:
-            return None
     # Recheck the same published eligibility when applying the bounded update.
     eligibility_storage.unlock_eligible_cards(db, selected_card_ids)
     return selected_card_ids[-1] if has_more_candidates else None
@@ -168,20 +149,9 @@ def seed_queue(db, day, *, introductions=None):
     rows = seeding_storage.due_cards(db, day)
     for offset, row in enumerate(rows, 1):
         seeding_storage.append_due_card(db, day, row[0], maximum + offset)
-    from tempo_legacy_database.adapters.study.game_feedback import (
-        resume_available_feedback,
-    )
-
-    resume_available_feedback(db, day)
-    # Recover owed introduced-card feedback before optional new introductions.
     maximum = seeding_storage.maximum_position(db, day)
     if introductions is None:
         admit_prioritized_opening_cards(db, day, repertoire_limits, maximum)
-    outstanding_studied_cards = seeding_storage.outstanding_studied_cards(db)
-    for missed_card in outstanding_studied_cards:
-        promote_real_game_card(db, missed_card["card_id"], day)
-    for stale_priority in seeding_storage.stale_miss_priority(db, day, MISS_REASON):
-        clear_satisfied_miss_priority(db, stale_priority["card_id"])
     if introductions is not None:
         introductions.admit(day)
     study_allowance = seeding_storage.study_allowance(db)
@@ -195,17 +165,12 @@ def seed_queue(db, day, *, introductions=None):
                 db, day, study_row["id"], next_position + offset
             )
 
-    from tempo_legacy_database.adapters.study.recombination import (
-        project_current_presentations,
-    )
-
-    project_current_presentations(db, day)
 
 
-from tempo_legacy_database.adapters.queue_refresh import (
+from tempo_storage.queue_refresh import (
     presentation as presentation_storage,
 )
-from tempo_legacy_database.adapters.queue_refresh.presentation import (
+from tempo_storage.queue_refresh.presentation import (
     _QUEUE_RANDOMIZATION_ROWS_SQL,
 )
 
@@ -232,7 +197,6 @@ def randomize_daily_queue(
         _queue_membership_hash(rows), token
     )
     if saved and saved["membership_hash"] == membership_hash:
-        prioritize_queued_misses(db, day)
         return
     if token[0] is not None:
         rows = frozen_opening_order.annotate(db, rows)
@@ -335,13 +299,13 @@ def requeue(db, day, cid, after, attempt):
     return inserted_entry_id
 
 
-from tempo_legacy_database.adapters.queue_refresh.foreground import (
+from tempo_storage.queue_refresh.foreground import (
     _QUEUE_REFRESH_PROJECTION_SQL,
     mark_queue_refreshing,
 )
 
 
-from tempo_legacy_database.adapters.http_composition import (
+from tempo_storage.http_composition import (
     availability as queue_availability_storage,
 )
 
@@ -381,7 +345,7 @@ def ensure_due_refresh_in_transaction(database, queue_date):
     Call without effect/card/day locks; the queue owner locks its task first.
     A ready projection alone does not prove that newly due work is already queued.
     """
-    from tempo_legacy_database.adapters.commands import queue as storage
+    from tempo_storage.commands import queue as storage
 
     active = storage.lock_current_queue_task(database)
     if (

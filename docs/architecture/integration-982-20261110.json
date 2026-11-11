@@ -1,0 +1,106 @@
+{
+  "local_integration_branch": "codex/tempo-pass2-integrate-982",
+  "local_integration_commit": "efded9aa9293d8a68dae1fcf4985ba6e960df78a",
+  "local_integration_tree": "9c13d6f66180c1002bf00493f46eaf1c6af1eb1f",
+  "pass2_parent": "2b14aad73488efafc701d60a77afce01680c3689",
+  "main_parent": "8ae3987ba5622884fbfea27dd6aa84e644af08ec",
+  "pr982": {
+    "merged": true,
+    "merge_commit": "8ae3987ba5622884fbfea27dd6aa84e644af08ec",
+    "head_commit": "9e09daede046678942258fee58c3400bb7347730",
+    "main_tree": "18cf43dbf56c64a711a15be80e39241b797b19c2"
+  },
+  "git_conflicts": [],
+  "conflict_resolutions": [
+    {
+      "path": "docs/architecture/diagrams/README.md",
+      "decision": "Keep reduced source maps; add the PR982 release-artifact ownership link without restoring retired architecture drawings."
+    },
+    {
+      "path": "scripts/check-tempo-cli.mjs",
+      "decision": "Keep mutable config and artifact-reuse flow; remove retired Games profile/image branch. Read native schema location and refuse unqualified schema64 before work, including direct verifier invocation."
+    }
+  ],
+  "semantic_adaptations": [
+    "Current source reads tempo_storage/ddl; narrow legacy path remains only for actual pinned historical checkouts.",
+    "Retain the historical schema63 profile and its exact guard. Explicitly reject both historical lifecycle modes on schema64 before renderer, acquisition, quiet admission or Docker resources.",
+    "Keep release-owned immutable artifacts separate from fresh suite-owned mutable resources, exact identities and guarded historical image acquisition.",
+    "Keep checkpoint-local batched immutable image inspection with fresh checks at later authority checkpoints.",
+    "Keep explicit web build inputs and its dedicated ignore file.",
+    "Browser Redis recovery compares the full durable accepted receipt after recombination removal.",
+    "Makefile labels the schema63 profile historical and omits retired engine-smoke help."
+  ],
+  "passed": [
+    {
+      "check": "Coordinator lifecycle/source/image-cache/PostgreSQL-runner Node tests",
+      "count": 116
+    },
+    {
+      "check": "Worker release-artifact/image-inspection/web-context/speedup Node tests",
+      "count": 105,
+      "note": "Overlaps coordinator tests; do not sum as unique cases."
+    },
+    {
+      "check": "Regular PostgreSQL speedup Vitest wrapper",
+      "count": 1
+    },
+    {
+      "check": "Selected existing schema63/schema64/cold CLI guards",
+      "count": 3
+    },
+    {
+      "check": "Immutable image inspection tests",
+      "count": 3,
+      "note": "Also included in worker results."
+    },
+    {
+      "check": "Browser TypeScript",
+      "result": "passed"
+    },
+    {
+      "check": "Frontend TypeScript",
+      "result": "passed"
+    },
+    {
+      "check": "Local frontend production build",
+      "result": "passed; no Docker image build"
+    },
+    {
+      "check": "Python compilation and API/worker imports",
+      "result": "passed"
+    },
+    {
+      "check": "Internal source-link scan",
+      "result": "0 unresolved source links"
+    },
+    {
+      "check": "Node syntax, whitespace and conflict checks",
+      "result": "passed"
+    }
+  ],
+  "incomplete_or_unperformed": [
+    {
+      "check": "Broad tempo-cli Node run and broad-pattern attempt",
+      "result": "Interrupted after no completion/output in bounded observation; exit130; not passes."
+    },
+    {
+      "check": "Schema63-to64 native/assembled upgrade qualification",
+      "result": "not performed; source explicitly refuses unsupported historical profile"
+    },
+    {
+      "check": "Docker image build, real browser/Redis recovery, historical lifecycle, live migration, deployment, installation",
+      "result": "not performed"
+    },
+    {
+      "check": "Hosted CI",
+      "result": "not run"
+    }
+  ],
+  "scope_preservation": {
+    "product_backend_and_storage": "Unchanged from pass2 parent",
+    "legacy_runtime_directory": "absent",
+    "pass2_audit": "unchanged historical baseline",
+    "publication": "Child performed no pushes or PR mutations; root owns publication and any remote SHA mapping",
+    "main_merge": "not performed"
+  }
+}

@@ -22,8 +22,8 @@ import psycopg
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]/'backend'))
 from app import command_gateway, tasks
-from tempo_legacy_database.adapters import postgres_store
-from tempo_legacy_database.connections import background_connection
+from tempo_storage import postgres
+from tempo_storage.connections import background_connection
 from app.services import durable_tasks
 from app.services.activity_gate import activity_gate, BackgroundAdmissionDeferred
 
@@ -99,7 +99,7 @@ def _proof_background_admission(database_url):
             row = database.execute('SELECT state,phase,payload_json,attempt_count,lease_token FROM background_tasks WHERE id=%s',(task['id'],)).fetchone()
             assert row == ('retrying','admit_due','{"checkpoint":"resume"}',0,None),row
             database.execute("UPDATE background_tasks SET next_attempt_at='2000-01-01' WHERE id=%s",(task['id'],))
-        postgres_store.close_pools()
+        postgres.close_pools()
         with patch.object(tasks, 'claim_task', claim_owned), patch.object(tasks, 'execute_postgres_queue_refresh_slice', publish):
             tasks.poll_background_tasks.run()
             tasks.poll_background_tasks.run()
@@ -113,7 +113,7 @@ def _proof_background_admission(database_url):
         print('PASS test_postgres_foreground_denial_control_receipt_restart_and_idempotent_replay '+json.dumps({'denial_seconds':denied_seconds,'useful_slices':len(useful)}))
     finally:
         command_gateway._handlers.pop(command_name,None)
-        postgres_store.close_pools()
+        postgres.close_pools()
         with psycopg.connect(database_url) as database:
             database.execute('DELETE FROM background_tasks WHERE id=%s',(task['id'],))
             database.execute('DELETE FROM operation_receipts WHERE operation_id IN (%s,%s)',(identity,identity+'-denied'))
@@ -210,7 +210,7 @@ def _proof_real_control_callbacks(database_url, identity):
                 else:
                     raise AssertionError('Control bypass leaked into ordinary admission')
 
-        postgres_store.close_pools()
+        postgres.close_pools()
         with psycopg.connect(database_url) as database:
             assert database.execute('SELECT state,report_json FROM game_analysis_position_reports WHERE id=%s', (report_id,)).fetchone() == ('complete', json.dumps(raw_report))
             assert database.execute('SELECT status,lease_id FROM game_analysis_jobs WHERE game_id=%s', (report_game,)).fetchone() == ('queued', None)
@@ -228,7 +228,7 @@ def _proof_real_control_callbacks(database_url, identity):
                 assert receipt[:3] == ('retrying', 0, 0) and json.loads(receipt[3]) == {'saved': True}
         print('PASS test_postgres_real_control_results_and_finalization_commit_without_analysis_during_foreground')
     finally:
-        postgres_store.close_pools()
+        postgres.close_pools()
         with psycopg.connect(database_url) as database:
             database.execute('DELETE FROM background_tasks WHERE deduplication_key=%s', (finalize_game,))
             database.execute('DELETE FROM imported_games WHERE id IN (%s,%s)', (report_game, finalize_game))

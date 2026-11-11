@@ -125,7 +125,7 @@ def phase_harness(monkeypatch):
         saved.update(phase=next_phase, payload=next_payload)
         return True
 
-    monkeypatch.setattr(worker.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(worker.postgres, "configured", lambda: True)
     monkeypatch.setattr(worker.activity_gate, "wait_for_foreground", lambda: None)
     monkeypatch.setattr(worker, "connection", section)
     monkeypatch.setattr(worker, "lock_current_slice", lambda database, task: True)
@@ -269,10 +269,10 @@ def legacy_study_order_has_no_accepted_snapshot(monkeypatch):
 
     @contextmanager
     def metadata_compatible_reader():
-        from tempo_legacy_database.adapters import postgres_store
+        from tempo_storage import postgres
         import os
 
-        if postgres_store.configured() and not os.getenv("TEMPO_DATABASE_READ_URL"):
+        if postgres.configured() and not os.getenv("TEMPO_DATABASE_READ_URL"):
             yield object()
         else:
             with original_reader() as database:

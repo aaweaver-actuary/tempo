@@ -25,7 +25,7 @@ def test_issue107_browser_fixture_uses_application_day_without_host_clock(monkey
         proof.psycopg, "connect", lambda *_: nullcontext(fixture_database)
     )
     monkeypatch.setattr(
-        proof.postgres_store, "connection", lambda: nullcontext(fixture_database)
+        proof.postgres, "connection", lambda: nullcontext(fixture_database)
     )
     monkeypatch.setattr(
         proof,
@@ -94,42 +94,6 @@ def test_essential_scope_rejects_optional_kinds_and_releases_on_exception():
             tasks.activity_gate.check_background_admission()
 
 
-def test_optional_preparation_capacity_leaves_ordinary_foreground_command_available(
-    monkeypatch, tmp_path
-):
-    from types import SimpleNamespace
-
-    monkeypatch.setattr(tasks.tempfile, "gettempdir", lambda: str(tmp_path))
-    monkeypatch.setattr(
-        tasks,
-        "record_operation_attempt",
-        lambda *_args, **_kwargs: (True, {}, "original-token", 1),
-    )
-    deferred, executed = [], []
-    monkeypatch.setattr(
-        tasks, "defer_operation_for_foreground", lambda *args: deferred.append(args)
-    )
-    monkeypatch.setattr(
-        tasks,
-        "execute_command",
-        lambda *_args, **_kwargs: executed.append(True) or {"persisted": True},
-    )
-    fake = SimpleNamespace(request=SimpleNamespace(headers={}))
-    with tasks._preparation_capacity() as acquired:
-        assert acquired
-        assert (
-            tasks._execute_foreground_command(
-                fake, "same-operation", "queue.prepare_next", {}
-            )
-            is None
-        )
-        assert deferred == [("same-operation", "original-token")]
-        assert tasks._execute_foreground_command(
-            fake, "review", "cards.review", {}
-        ) == {"persisted": True}
-    assert len(executed) == 1
-    with tasks._preparation_capacity() as acquired:
-        assert acquired
 
 
 def test_foreground_receipt_recovery_uses_existing_essential_only_filter_and_original_identity(
@@ -218,7 +182,7 @@ def test_generic_receipt_recovery_reserves_only_background_identity(
         claims.append(options)
         return dict(
             operation_id="original-background",
-            command_name="game_evidence.product_accept",
+            command_name="opening_evidence.checkpoint",
             payload={"original": "bytes"},
             background=True,
         )
@@ -244,6 +208,6 @@ def test_generic_receipt_recovery_reserves_only_background_identity(
     assert deliveries[0][1]["task_id"] == "original-background"
     assert deliveries[0][1]["args"] == [
         "original-background",
-        "game_evidence.product_accept",
+        "opening_evidence.checkpoint",
         {"original": "bytes"},
     ]

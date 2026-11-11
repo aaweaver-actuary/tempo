@@ -15,7 +15,7 @@ import { Chess } from "chess.js";
 import { createHash } from 'node:crypto';
 import { verifyPersistedRedisReadiness } from "../database/tests/redis/check-redis-readiness.mjs";
 import { forgetMigrationSuffix, markHistoryIncorrect, markHistoryCorrect, readLatestMigration } from "../database/tests/cli/lifecycle-storage.mjs";
-import { assertBridgePreparedBinding, assertBridgeTargetIdentity, readSchema62Bridge, renderInterruptedLifecycle } from "./lifecycle-source-preflight.mjs";
+import { assertBridgePreparedBinding, assertBridgeTargetIdentity, checkLifecycleSource, readSchema62Bridge, renderInterruptedLifecycle } from "./lifecycle-source-preflight.mjs";
 import { resolvePython } from './resolve-python.mjs';
 
 // The cold probe may start missing dependencies without replacing them; the
@@ -45,6 +45,7 @@ export async function handoffOwnedSchema62({ oldRuntime, snapshotVolumes, readEv
 
 export function validateLifecycleProfile(profile, schema, environment) {
   if (!["full", "current63"].includes(profile)) throw new Error("Unknown lifecycle profile");
+  if (schema === 64) throw new Error("Schema-64 lifecycle upgrade is not qualified; the historical schema-63 profile cannot qualify it.");
   if (profile === "current63" && (schema !== 63 || environment.TEMPO_LIFECYCLE_P0_59_ONLY === "1" ||
       environment.TEMPO_PG_STALE_DELIVERY_ONLY === "1"))
     throw new Error("Current lifecycle profile requires schema 63 and the schema-61 predecessor fixture without other scenario overrides");
@@ -57,7 +58,10 @@ export function assertCurrent63Guard(guard) {
 
 export async function verifyTempoCliLifecycle({ project, environment, composeFiles, revision: currentRevision, measure = null, profile = "full" }) {
   const currentRoot = process.cwd();
-  const currentSchema = schemaVersionFromSource(readFileSync(join(currentRoot, "database/tempo_legacy_database/ddl/schema_version.py"), "utf8"));
+  checkLifecycleSource({ root: currentRoot, environment, profile });
+  const nativeSchema = join(currentRoot, "database/tempo_storage/ddl/schema_version.py");
+  const schemaFile = existsSync(nativeSchema) ? nativeSchema : join(currentRoot, "database/tempo_legacy_database/ddl/schema_version.py");
+  const currentSchema = schemaVersionFromSource(readFileSync(schemaFile, "utf8"));
   validateLifecycleProfile(profile, currentSchema, environment);
   const bridge = currentSchema === 63 ? readSchema62Bridge(environment) : null;
   const root = bridge?.root ?? currentRoot;
@@ -155,7 +159,7 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
   const composeArguments = ["compose", "--project-directory", root, "-p", childProject,
     ...composeFiles.flatMap(file => ["-f", file])];
   const compose = (args, options) => docker([...composeArguments, ...args], options);
-  let config = JSON.parse((await compose(["--profile", "maintenance", "--profile", "games-feedback", "config", "--format", "json"])).stdout);
+  let config = JSON.parse((await compose(["--profile", "maintenance", "config", "--format", "json"])).stdout);
   if (environment.TEMPO_LIFECYCLE_MANAGED_REHEARSAL === '1' || environment.TEMPO_LIFECYCLE_SHIPPING_REHEARSAL === '1') {
     assert.equal(config.services.migration.build.context, root);
     assert.equal(config.services.migration.build.dockerfile, 'Dockerfile.postgres-maintenance');
@@ -174,24 +178,7 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     assert.equal((await docker(["volume", "ls", "-q", "--filter", `name=^${volume.name}$`])).stdout.trim(), "");
   const images = {};
   for (const [name, service] of Object.entries(config.services)) {
-    if (name === "game-feedback-worker") {
-      // The inactive optional service has the same build as the already-built
-      // API. Reuse that real image only after proving build/source equality.
-      const builds = [config.services.api.build, service.build].map(build => structuredClone(build));
-      for (const build of builds) {
-        if (build.labels?.["org.opencontainers.image.revision"] !== undefined) {
-          assert.equal(build.labels["org.opencontainers.image.revision"], currentRevision);
-          delete build.labels["org.opencontainers.image.revision"];
-          if (!Object.keys(build.labels).length) delete build.labels;
-        }
-      }
-      assert.deepEqual(builds[0], builds[1], "Optional receipt image must have the exact API build");
-      assert(images.api, "The actual API image must be inspected first");
-      const apiImage = JSON.parse((await docker(["image", "inspect", images.api])).stdout)[0];
-      assert.equal(apiImage.Config?.Labels?.["org.opencontainers.image.revision"], currentRevision);
-      images[name] = apiImage.Id;
-      continue;
-    }
+
     const tag = service.image ?? `${project}-${name}`;
     const inspected = JSON.parse((await docker(["image", "inspect", tag])).stdout)[0];
     if ((environment.TEMPO_LIFECYCLE_MANAGED_REHEARSAL === '1' || environment.TEMPO_LIFECYCLE_SHIPPING_REHEARSAL === '1') && name === 'migration')
@@ -205,11 +192,11 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
       .map(([name]) => [name, { build: { labels: { "org.opencontainers.image.revision": revision } } }])) });
     composeFiles.push(oldBuildLabels);
     composeArguments.push("-f", oldBuildLabels);
-    config = JSON.parse((await compose(["--profile", "maintenance", "--profile", "games-feedback", "config", "--format", "json"])).stdout);
+    config = JSON.parse((await compose(["--profile", "maintenance", "config", "--format", "json"])).stdout);
     for (const service of Object.values(config.services)) if (service.build)
       assert.equal(service.build.labels?.["org.opencontainers.image.revision"], revision);
     for (const [name, service] of Object.entries(config.services))
-      if ((service.build || ["migration", "game-feedback-worker"].includes(name)) && !bridge.manifest.images[name])
+      if ((service.build || name === "migration") && !bridge.manifest.images[name])
         throw new Error(`Schema-62 image manifest lacks configured role ${name}`);
     for (const [name, id] of Object.entries(bridge.manifest.images)) {
       const inspected = JSON.parse((await docker(["image", "inspect", id])).stdout);
@@ -229,10 +216,10 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
   if (schema61.revision !== schema61Revision) throw new Error("Unexpected historical image revision.");
   const schema61Images = { ...images };
   for (const [name, service] of Object.entries(config.services)) {
-    if (!service.build && name !== "game-feedback-worker" && name !== "migration") continue;
+    if (!service.build && name !== "migration") continue;
     const file = service.build?.dockerfile;
     const kind = name === "migration" || file === "Dockerfile.postgres-maintenance" ? "migration"
-      : name === "game-feedback-worker" || file === "backend/Dockerfile" ? "api"
+      : file === "backend/Dockerfile" ? "api"
         : file === "Dockerfile.web" ? "web" : null;
     if (!kind || !schema61.images?.[kind]) throw new Error(`Missing schema-61 image for ${name}`);
     const inspected = JSON.parse((await docker(["image", "inspect", schema61.images[kind]])).stdout)[0];
@@ -925,7 +912,7 @@ m.apply_migrations(os.environ["TEMPO_POSTGRES_ADMIN_URL"], target_version=61)`;
     atomicJson(candidateOverride, { services: Object.fromEntries(["api", "foreground-worker", "background-worker"]
       .map(name => [name, { environment: { TEMPO_UNCOMMITTED_CANDIDATE: "interrupted-rollout" } }])) });
     const candidateConfig = JSON.parse((await docker([...composeArguments, "-f", candidateOverride,
-      "--profile", "maintenance", "--profile", "games-feedback", "config", "--format", "json"])).stdout);
+      "--profile", "maintenance", "config", "--format", "json"])).stdout);
     const preparedCandidate = join(directory, "uncommitted-prepared-images.json");
     atomicJson(preparedCandidate, { ...preparedImages, configFingerprint: configurationFingerprint(candidateConfig) });
     const interruptedLifecycle = join(directory, "interrupted-lifecycle.mjs");

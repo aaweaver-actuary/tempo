@@ -55,11 +55,9 @@ def test_frozen_policy_keeps_legacy_protection_and_route_blocks_independent():
     assert all("frozen_token" not in row for row in candidates)
 
 
-def test_stale_proposal_does_not_call_capabilities_and_miss_requires_real_evidence():
+def test_stale_proposal_skips_definition_check_and_current_proposal_checks_it():
     calls = []
     capabilities = dict(
-        miss_reason="miss",
-        has_outstanding_miss=lambda card: calls.append(("miss", card)) or False,
         current_definition_valid=lambda card: (
             calls.append(("definition", card)) or True
         ),
@@ -68,13 +66,10 @@ def test_stale_proposal_does_not_call_capabilities_and_miss_requires_real_eviden
         {"card_id": "card", "frozen_token": ["old", 1]}, ("run", 2), **capabilities
     )
     assert calls == []
-    planned = {"card_id": "card", "frozen_token": ["run", 2], "reason": "miss"}
-    assert not policy.proposal_valid(planned, ("run", 2), **capabilities)
-    assert calls == [("miss", "card")]
-    assert policy.proposal_valid(
-        {**planned, "reason": "ordinary"}, ("run", 2), **capabilities
-    )
-    assert calls[-1] == ("definition", "card")
+    planned = {"card_id": "card", "frozen_token": ["run", 2]}
+    assert policy.proposal_valid(planned, ("run", 2), **capabilities)
+    assert calls == [("definition", "card")]
+
 
 
 def test_frozen_slot_policy_preserves_exposure_and_unrelated_slots():
@@ -95,7 +90,6 @@ def test_frozen_slot_policy_preserves_exposure_and_unrelated_slots():
         r["id"]
         for r in policy.order_queue_slots(
             rows,
-            miss_reason="miss",
             card_exposed=lambda card: card == "2",
             preserve_through_entry_id=0,
         )

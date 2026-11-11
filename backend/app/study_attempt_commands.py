@@ -11,10 +11,10 @@ from fastapi import HTTPException
 from pydantic import TypeAdapter
 
 from .command_gateway import register_command
-from tempo_legacy_database.adapters.study_attempts import storage
-from tempo_legacy_database.adapters.postgres_store import PostgresConnection
+from tempo_storage.study_attempts import storage
+from tempo_storage.postgres import PostgresConnection
 from .queue_commands import request_queue_refresh_in_transaction
-from tempo_legacy_database.adapters.queue_position_lock import (
+from tempo_storage.queue_position_lock import (
     lock_queue_date_for_position,
 )
 from .services.study_grading import GRADER_VERSION, evaluate_answer

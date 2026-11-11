@@ -29,8 +29,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'backend'))
 from database.tooling.apply_postgres_migrations import apply_migrations
 from app import main
-from tempo_legacy_database.adapters import postgres_store
-from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
+from tempo_storage import postgres
+from tempo_storage.queue_position_lock import lock_queue_date_for_position
 from app.services import durable_tasks, postgres_queue_refresh as worker
 from app.services.opening_graph import GraphInput, build_graph
 
@@ -39,7 +39,7 @@ ADMIN_DSN = 'postgresql://postgres@postgres:5432/postgres'
 
 
 def seed():
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         database.execute("INSERT INTO settings(id,new_cards_per_day,tactics_new_per_day,study_new_per_day) VALUES(1,10,0,0)")
         database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('rep','Capacity','proof',?)", (DAY,))
         lines = []
@@ -69,7 +69,7 @@ def seed():
 
 
 def snapshot():
-    with postgres_store.connection(read_only=True) as database:
+    with postgres.connection(read_only=True) as database:
         return {
             'queue': [tuple(row) for row in database.execute('SELECT card_id,position,cycle,admission_repertoire_id FROM daily_queue ORDER BY id')],
             'cards': [tuple(row) for row in database.execute('SELECT id,state,introduced_at,due_date,interval_days,ease,repetitions,lapses,fsrs_card_json,stability FROM cards ORDER BY id')],
@@ -78,7 +78,7 @@ def snapshot():
 
 
 def admit(proposal, *, background=True):
-    with postgres_store.connection(background=background) as database:
+    with postgres.connection(background=background) as database:
         worker._admit_one_prioritized_opening(database, DAY, proposal)
 
 
@@ -106,18 +106,18 @@ def overlap(proposals):
     """
     barrier = Barrier(len(proposals) + 1)
     def attempt(proposal):
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             backend_pid = database.execute_native('SELECT pg_backend_pid()').fetchone()[0]
             barrier.wait(timeout=5)
             worker._admit_one_prioritized_opening(database, DAY, proposal)
             return backend_pid
     with ThreadPoolExecutor(max_workers=len(proposals)) as executor:
-        with postgres_store.connection() as controller:
+        with postgres.connection() as controller:
             lock_queue_date_for_position(controller, DAY)
             futures = [executor.submit(attempt, proposal) for proposal in proposals]
             barrier.wait(timeout=5)
             deadline = time.monotonic() + 3
-            with postgres_store.connection(read_only=True) as observer:
+            with postgres.connection(read_only=True) as observer:
                 while True:
                     waiting = observer.execute_native("SELECT count(*) FROM pg_locks WHERE NOT granted AND locktype='advisory'").fetchone()[0]
                     if waiting:
@@ -154,7 +154,7 @@ def test_postgres_capacity_concurrent_refreshes_preserve_quota_and_nonrecursive_
     apply_plan()
     assert snapshot() == before
     # With spare capacity, introduction alone must still not expose grandchildren.
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         database.execute('UPDATE settings SET new_cards_per_day=20 WHERE id=1')
     assert worker._prepare_prioritized_openings(DAY) == []
     assert_frontier(steps)
@@ -165,7 +165,7 @@ def test_postgres_capacity_competing_cards_share_last_quota_slot():
     plan = introduce_parents()
     # Two distinct children were planned while eight slots were available.
     # A committed limit change leaves one slot; the writer must recount under lock.
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         database.execute('UPDATE settings SET new_cards_per_day=3 WHERE id=1')
     overlap(plan[:2])
     assert_frontier(steps, 3)
@@ -176,7 +176,7 @@ def test_postgres_capacity_stale_proposal_rejected_without_side_effects(rejectio
     proposal = introduce_parents()[0]
     candidate = proposal['card_id']
     parent = proposal['capacity_route']['parent_card_id']
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         if rejection == 'generation':
             database.execute('UPDATE opening_graph_publications SET generation=2')
         elif rejection == 'publication':
@@ -214,7 +214,7 @@ def test_postgres_capacity_duplicate_rollback_and_worker_checkpoint_replay():
     proposal = introduce_parents()[0]
     before = snapshot()
     try:
-        with postgres_store.connection(background=True) as database:
+        with postgres.connection(background=True) as database:
             worker._admit_one_prioritized_opening(database, DAY, proposal)
             assert database.execute('SELECT 1 FROM daily_queue WHERE card_id=?', (proposal['card_id'],)).fetchone()
             raise RuntimeError('intentional rollback')
@@ -226,7 +226,7 @@ def test_postgres_capacity_duplicate_rollback_and_worker_checkpoint_replay():
     admit(proposal)
     assert snapshot() == admitted
     payload = {'queue_date': DAY, '_queue_phase': 'prioritized_opening_item', 'opening_plan': [proposal], 'opening_index': 0}
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         durable_tasks.enqueue_task_in_transaction(database, 'daily_queue', 'current', payload)
     task = durable_tasks.claim_task(kind='daily_queue')
     assert task and worker.execute_postgres_queue_refresh_slice(task)
@@ -241,7 +241,7 @@ def test_postgres_capacity_background_lock_denial_is_atomic_and_retryable():
     seed()
     proposal = introduce_parents()[0]
     before = snapshot()
-    with postgres_store.connection() as controller:
+    with postgres.connection() as controller:
         lock_queue_date_for_position(controller, DAY)
         with ThreadPoolExecutor(max_workers=1) as executor:
             denied = executor.submit(admit, proposal)
@@ -258,7 +258,7 @@ def test_postgres_capacity_background_lock_denial_is_atomic_and_retryable():
 def test_postgres_capacity_flag_rollback_shared_owner_and_game_miss_exception():
     steps = seed()
     plan = introduce_parents()
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         database.execute("INSERT INTO repertoires(id,name,source_name,created_at,new_cards_per_day) VALUES('shared','Shared','proof',?,1)", (DAY,))
         database.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) SELECT 'shared',id FROM cards")
         database.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) SELECT id||'-shared','shared',name,trained_color,start_fen,moves_json,created_at FROM repertoire_lines WHERE repertoire_id='rep'")
@@ -274,7 +274,7 @@ def test_postgres_capacity_flag_rollback_shared_owner_and_game_miss_exception():
     assert_frontier(steps)
     owners = [row[3] for row in snapshot()['queue']]
     assert owners.count('shared') <= 1 and owners.count('rep') <= 10
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         database.execute("UPDATE repertoires SET new_cards_per_day=? WHERE id='rep'", (owners.count('rep'),))
     assert [(row[0], *row[3:]) for row in snapshot()['cards']] == before_schedules
     os.environ['OPENING_CAPACITY_FRONTIER_EXPANSION'] = '0'
@@ -283,7 +283,7 @@ def test_postgres_capacity_flag_rollback_shared_owner_and_game_miss_exception():
     assert snapshot() == before
     # Ordinary real-game obligations remain admissible above the normal cap.
     grandchild = next(step.card_id for step in steps if step.decision_index == 2)
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         database.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json) VALUES('game','lichess','proof',?,'rapid',1,'white','1-0',?,'[]')", (DAY + 'T00:00:00+00:00', chess.STARTING_FEN))
         database.execute("INSERT INTO repertoire_decision_events_legacy(id,game_id,repertoire_id,card_id,ply,fen_key,expected_uci,actual_uci,outcome,played_at,updated_at) VALUES('miss','game','rep',?,1,'proof','e2e4','d2d4','miss',?,?)", (grandchild, DAY + 'T00:00:00+00:00', DAY))
     miss_plan = worker._prepare_prioritized_openings(DAY)
@@ -304,7 +304,7 @@ def isolated_database(template_name):
     try:
         yield
     finally:
-        postgres_store.close_pools()
+        postgres.close_pools()
         with psycopg.connect(ADMIN_DSN, autocommit=True) as administrator:
             administrator.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(database_name)))
 
@@ -337,7 +337,7 @@ def run():
                     test(parameter) if parameter else test()
                 print(f'PASS {test.__name__}' + (f'[{parameter}]' if parameter else '') + f' ({time.monotonic() - started:.3f}s)', flush=True)
     finally:
-        postgres_store.close_pools()
+        postgres.close_pools()
         with psycopg.connect(ADMIN_DSN, autocommit=True) as administrator:
             administrator.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(template_name)))
 
