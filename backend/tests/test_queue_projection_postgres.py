@@ -19,6 +19,8 @@ def test_interactive_queue_read_preserves_protection_and_scopes_jit_to_transacti
     monkeypatch.setattr(postgres, "configured", lambda: True)
     day = "2026-10-30"
     repertoire = "queue-read-" + uuid.uuid4().hex
+    old_membership = repertoire + "-membership-long"
+    new_membership = repertoire + "-membership"
     names = (
         "new",
         "held-legacy",
@@ -28,6 +30,8 @@ def test_interactive_queue_read_preserves_protection_and_scopes_jit_to_transacti
         "stale-issued",
         "reviewed-legacy",
         "guided-legacy",
+        "membership-swap-unstarted",
+        "membership-swap-issued",
     )
     cards = [repertoire + "-" + name for name in names]
     with owned_postgres() as database:
@@ -36,6 +40,11 @@ def test_interactive_queue_read_preserves_protection_and_scopes_jit_to_transacti
             "INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,'Queue proof','synthetic',%s)",
             (repertoire, day),
         )
+        for membership in (old_membership, new_membership):
+            database.execute_native(
+                "INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,'Membership proof','synthetic',%s)",
+                (membership, day),
+            )
         for position, card_id in enumerate(cards):
             database.execute_native(
                 """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,
@@ -57,8 +66,13 @@ def test_interactive_queue_read_preserves_protection_and_scopes_jit_to_transacti
                     "explicit" if names[position] == "explicit-legacy" else "new",
                 ),
             )
+        for card_id in cards[8:]:
+            database.execute_native(
+                "INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(%s,%s)",
+                (old_membership, card_id),
+            )
         ranks = [
-            dict(row, rank=position, fingerprint="synthetic", memberships=[repertoire])
+            dict(row, rank=position, fingerprint="synthetic", memberships=([repertoire, old_membership] if row["id"] in cards[8:] else [repertoire]))
             for position, row in enumerate(
                 database.execute_native(
                     "SELECT * FROM cards WHERE repertoire_id=%s ORDER BY id",
@@ -77,8 +91,17 @@ def test_interactive_queue_read_preserves_protection_and_scopes_jit_to_transacti
         )
         database.execute_native(
             "UPDATE queue_attempt_origins SET issued_as_head=1 WHERE card_id=ANY(%s)",
-            ([cards[index] for index in (2, 5)],),
+            ([cards[index] for index in (2, 5, 9)],),
         )
+        for card_id in cards[8:]:
+            database.execute_native(
+                "DELETE FROM repertoire_cards WHERE repertoire_id=%s AND card_id=%s",
+                (old_membership, card_id),
+            )
+            database.execute_native(
+                "INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(%s,%s)",
+                (new_membership, card_id),
+            )
         database.execute_native(
             "UPDATE cards SET revision=revision+1 WHERE id=ANY(%s)",
             ([cards[index] for index in (4, 5)],),
@@ -107,14 +130,14 @@ def test_interactive_queue_read_preserves_protection_and_scopes_jit_to_transacti
                     database, day, 20, miss_reason=MISS_REASON
                 )
                 assert [row["id"] for row in result] == [
-                    cards[index] for index in (0, 2, 3, 5, 6, 7)
+                    cards[index] for index in (0, 2, 3, 5, 6, 7, 9)
                 ]
             else:
                 assert (
                     queue_projection.available_count(
                         database, day, miss_reason=MISS_REASON
                     )
-                    == 6
+                    == 7
                 )
             assert database.execute_native("SHOW jit").fetchone()[0] == "off"
             assert (
@@ -142,7 +165,8 @@ def test_interactive_queue_read_preserves_protection_and_scopes_jit_to_transacti
             )
             database.execute_native("DELETE FROM cards WHERE id=ANY(%s)", (cards,))
             database.execute_native(
-                "DELETE FROM repertoires WHERE id=%s", (repertoire,)
+                "DELETE FROM repertoires WHERE id=ANY(%s)",
+                ([repertoire, old_membership, new_membership],),
             )
 
 
