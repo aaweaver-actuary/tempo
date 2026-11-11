@@ -138,6 +138,25 @@ not its tables. Existing evidence supports bounded separability, **not** a blank
 claim of robust arbitrary plugins, eliminated coupling or deployed failure/resource
 isolation.
 
+### Closed C01-C03 composition review — November 1
+
+The [C01–C03 workstream #706](https://github.com/aaweaver-actuary/tempo/issues/706)
+closed at the approved selected source/adoption boundary on
+[`ea68e5d7`](https://github.com/aaweaver-actuary/tempo/commit/ea68e5d7038c02b813e690584c022bf5f0d9edb6).
+The [backend source-status table](../../../backend/app/README.md#c01-c03-composition-closeout-2026-11-01)
+records merged reverse-import, HTTP/optional and worker-registration cuts plus
+remaining eager module imports and registrars. In particular, the historical
+[#734-only resume row](#bounded-resumption-priorities) below is **not** a current
+claim that #706's later selected cuts are unimplemented. Selected cold-import
+tests with fake queue/initialization demonstrate named boundaries, not every
+optional dependency, a populated native Study review, installation or deployed
+resource isolation. [#829](https://github.com/aaweaver-actuary/tempo/issues/829)
+owns residual source classification, [#667](https://github.com/aaweaver-actuary/tempo/issues/667)
+retains overlapping producer work, and [#668](https://github.com/aaweaver-actuary/tempo/issues/668)
+owns the separate unpassed integrated acceptance. This reconciliation changes
+documentation only; it does not reopen the closed workstream or select another
+refactor.
+
 ## Selected source boundaries — November 1
 
 At source [`f5bdbeee`](https://github.com/aaweaver-actuary/tempo/commit/f5bdbeeeaac4bc579cb97eba841a8c6ba5e12bff),
