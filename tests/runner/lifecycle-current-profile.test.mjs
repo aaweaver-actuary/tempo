@@ -80,3 +80,8 @@ test("direct lifecycle verifier refuses native64 before resources or timing stag
     }), /Schema-64.*not qualified/);
   assert.equal(stages, 0);
 });
+
+test("schema65 cannot reuse historical lifecycle qualification", () => {
+  for (const profile of ["full", "current63"])
+    assert.throws(() => validateLifecycleProfile(profile, 65, {}), /Schema-65.*not qualified/);
+});

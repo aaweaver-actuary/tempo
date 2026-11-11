@@ -33,5 +33,24 @@ receipt; a held position and an unavailable projection remain distinct. Explicit
 foreground admission denial uses `foreground_wait`. No optional prepare-next or
 feedback preparation command is part of this flow.
 
-Schema 64 is the source expectation, not a queried runtime schema or evidence of
+Schema 65 is the source expectation, not a queried runtime schema or evidence of
 an applied migration.
+
+A position-introduction history conflict is recorded by the Study storage owner
+in the same transaction as the queue checkpoint. The affected introduction
+remains held while the refresh can continue to unrelated work; later refreshes
+revalidate the source and history. Transient lock contention remains retryable.
+
+```mermaid
+sequenceDiagram
+  participant Worker as Study refresh worker
+  participant Store as Study storage owner
+  participant DB as PostgreSQL
+  Worker->>Store: Fence exact position introduction and history
+  Store->>DB: Lock source, aliases, and inspect retained history
+  DB-->>Store: Retained attempt conflict
+  Store->>DB: Record source, target, alias, revision, and reason
+  Worker->>DB: Advance original refresh checkpoint in same transaction
+  DB-->>Worker: Commit hold and checkpoint together
+  Worker->>Worker: Continue other introductions; recheck on later selection
+```

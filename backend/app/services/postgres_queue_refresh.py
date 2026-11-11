@@ -844,6 +844,7 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
                 },
             )
         position_introduction_fence = None
+        introduction_history_hold = False
         if planned_introduction is not None:
             from tempo_evidence_math.position_learning import Hold
             from .position_queue_admission import fence_opening_introduction
@@ -856,9 +857,16 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
                 database, position_introduction
             )
             if isinstance(position_introduction_fence, Hold):
-                raise RuntimeError(
-                    "Position introduction held: " + position_introduction_fence.reason
-                )
+                if (position_introduction_fence.reason == "position_introduction_history_changed"
+                        and position_introduction_fence.detail):
+                    from tempo_storage.study.position_introductions import record_history_hold
+
+                    record_history_hold(database, position_introduction[1], position_introduction_fence)
+                    introduction_history_hold = True
+                else:
+                    raise RuntimeError(
+                        "Position introduction held: " + position_introduction_fence.reason
+                    )
         if phase == "publish_projection":
             epochs = refresh_requests.lock_refresh_epochs(database, queue_date)
             if epochs is None:
@@ -1034,7 +1042,7 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
             admitted = (
                 False
                 if (
-                    redundant_opening_introduction(
+                    introduction_history_hold or redundant_opening_introduction(
                         position_introduction, position_introduction_fence
                     )
                 )
@@ -1052,6 +1060,7 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
                     now=datetime.now(timezone.utc),
                 )
             counts = dict(payload["study_opening_counts"])
+            counts["history_held"] = counts.get("history_held", 0) + int(introduction_history_hold)
             counts["admitted"] = counts.get("admitted", 0) + int(bool(admitted))
             counts["publication_rejected"] = counts.get(
                 "publication_rejected", 0

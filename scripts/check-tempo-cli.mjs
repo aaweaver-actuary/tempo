@@ -45,7 +45,7 @@ export async function handoffOwnedSchema62({ oldRuntime, snapshotVolumes, readEv
 
 export function validateLifecycleProfile(profile, schema, environment) {
   if (!["full", "current63"].includes(profile)) throw new Error("Unknown lifecycle profile");
-  if (schema === 64) throw new Error("Schema-64 lifecycle upgrade is not qualified; the historical schema-63 profile cannot qualify it.");
+  if (schema >= 64) throw new Error(`Schema-${schema} lifecycle upgrade is not qualified; the historical schema-63 profile cannot qualify it.`);
   if (profile === "current63" && (schema !== 63 || environment.TEMPO_LIFECYCLE_P0_59_ONLY === "1" ||
       environment.TEMPO_PG_STALE_DELIVERY_ONLY === "1"))
     throw new Error("Current lifecycle profile requires schema 63 and the schema-61 predecessor fixture without other scenario overrides");

@@ -3000,6 +3000,21 @@ test("schema 64 retirement accepts only schema 63 or its own completed migration
   }
 });
 
+test("schema 65 accepts only schema 64 or its own pending retry", () => {
+  for (const current of [64, 65]) {
+    const status = { applied_versions: [current], expected_version: 65 };
+    assert.doesNotThrow(() => validateCut62Preflight(status, null));
+    assert.doesNotThrow(() => validateCut62Preflight(status,
+      { state: "pending", starting_schema: 64, intended_schema: 65 }));
+    for (const guard of [
+      { state: "pending", starting_schema: 63, intended_schema: 64 },
+      { state: "pending", starting_schema: 62, intended_schema: 65 },
+    ]) assert.throws(() => validateCut62Preflight(status, guard), /Unsupported/);
+  }
+  for (const current of [62, 63])
+    assert.throws(() => validateCut62Preflight({ applied_versions: [current], expected_version: 65 }, null), /Unsupported/);
+});
+
 test("schema 63 migration preserves the original history guard through a verification retry", async t => {
   let schema = 62, failVerification = true, migrations = 0;
   const history = { reviews: { count: 7, digest: "unchanged-study-history" } };
