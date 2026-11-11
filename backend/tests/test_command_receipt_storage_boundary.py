@@ -237,7 +237,7 @@ def test_terminal_attempt_does_not_restore_removed_payload_or_consume_clock(
 
 
 def test_receipt_writer_is_opaque_and_uses_original_connection():
-    from tempo_legacy_database.adapters.commands.receipts import storage
+    from tempo_storage.commands.receipts import storage
 
     events = []
     raw = Raw(events, [None])
@@ -254,13 +254,13 @@ def test_receipt_writer_is_opaque_and_uses_original_connection():
 
 
 def test_receipt_write_scope_preserves_original_context_selection(monkeypatch):
-    from tempo_legacy_database.adapters.commands.receipts import storage
-    from tempo_legacy_database import connections
-    from tempo_legacy_database.adapters import postgres_store
+    from tempo_storage.commands.receipts import storage
+    from tempo_storage import connections
+    from tempo_storage import postgres
 
     foreground, background = object(), object()
     monkeypatch.setattr(
-        postgres_store, "connection", lambda **options: (foreground, options)
+        postgres, "connection", lambda **options: (foreground, options)
     )
     monkeypatch.setattr(connections, "background_connection", lambda: background)
     assert storage.receipt_write_scope(False) == (foreground, {"read_only": False})

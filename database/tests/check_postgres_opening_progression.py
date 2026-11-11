@@ -24,8 +24,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'backend'))
 from app import main, queue_commands, review_commands
 from app.services.queue_ordering import PRESENTATION_VERSION
 from app.services.real_game_feedback import MISS_REASON
-from tempo_legacy_database.adapters.http_composition.queue_projection import queue_rows
-from tempo_legacy_database.adapters import postgres_store
+from tempo_storage.http_composition.queue_projection import queue_rows
+from tempo_storage import postgres
 from app.contracts.transport.study import ReviewRequest
 from app.services.activity_gate import activity_gate, BackgroundAdmissionDeferred
 from app.services.durable_tasks import claim_task
@@ -89,7 +89,7 @@ def drain_queue_refresh(*, restart=False, preserve_through_expected=True):
         task = claim_task('daily_queue')
         assert task is not None, 'Expected a runnable bounded queue slice'
         if restart and slice_index == 0:
-            with postgres_store.connection(read_only=True) as database:
+            with postgres.connection(read_only=True) as database:
                 before_denial = dict(database.execute('SELECT * FROM background_tasks WHERE id=?', (task['id'],)).fetchone())
             entered = Event()
             completed = Event()
@@ -108,7 +108,7 @@ def drain_queue_refresh(*, restart=False, preserve_through_expected=True):
                 assert entered.wait(2)
                 assert completed.wait(2), 'Denied background slice occupied the worker'
                 assert len(failures) == 1 and isinstance(failures[0], BackgroundAdmissionDeferred), failures
-                with postgres_store.connection(read_only=True) as database:
+                with postgres.connection(read_only=True) as database:
                     assert database.execute('SELECT 1').fetchone()[0] == 1
                     assert dict(database.execute('SELECT * FROM background_tasks WHERE id=?', (task['id'],)).fetchone()) == before_denial
             worker.join(5)
@@ -119,14 +119,14 @@ def drain_queue_refresh(*, restart=False, preserve_through_expected=True):
         if restart and slice_index == 1:
             crashed_task = claim_task('daily_queue')
             assert crashed_task is not None
-            with postgres_store.connection() as database:
+            with postgres.connection() as database:
                 database.execute("UPDATE background_tasks SET lease_expires_at='2000-01-01' WHERE id=?", (crashed_task['id'],))
-            postgres_store.close_pools()
+            postgres.close_pools()
             resumed_task = claim_task('daily_queue')
             assert resumed_task['lease_token'] != crashed_task['lease_token']
             assert execute_postgres_queue_refresh_slice(crashed_task) is False
             execute_postgres_queue_refresh_slice(resumed_task)
-        with postgres_store.connection(read_only=True) as database:
+        with postgres.connection(read_only=True) as database:
             saved = database.execute("SELECT state,payload_json FROM background_tasks WHERE kind='daily_queue' AND deduplication_key='current'").fetchone()
             if preserve_through_expected:
                 assert 'preserve_through_entry_id' in json.loads(saved['payload_json'])
@@ -142,7 +142,7 @@ def test_postgres_opening_practice_progression_is_atomic_restartable_and_quota_b
     original_read_url = os.environ.get('TEMPO_DATABASE_READ_URL')
     fixture_database = 'opening_progression_' + uuid.uuid4().hex
     connection_info = psycopg.conninfo.conninfo_to_dict(database_url)
-    postgres_store.close_pools()
+    postgres.close_pools()
     admin_info = {**connection_info, 'dbname': 'postgres'}
     fixture_scope = ExitStack()
     try:
@@ -156,11 +156,11 @@ def test_postgres_opening_practice_progression_is_atomic_restartable_and_quota_b
         from database.tests.check_postgres_graph_retention import owned_admission_scope
         fixture_scope.enter_context(owned_admission_scope(fixture_database))
         today = date.today().isoformat()
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             database.execute('INSERT INTO settings(id,tactics_new_per_day,study_new_per_day) VALUES(1,0,0)')
         for outcome, guided in [('correct', False), ('again', False), ('correct', True)]:
             identifier = 'practice-' + uuid.uuid4().hex
-            with postgres_store.connection() as database:
+            with postgres.connection() as database:
                 root_id, child_id, grandchild_id, root_entry = seed(database, identifier, today)
                 main._unlock_eligible_opening_cards(database, today, after_card_id='', batch_size=8)
                 assert database.execute('SELECT state FROM cards WHERE id=?', (child_id,)).fetchone()[0] == 'locked'
@@ -174,7 +174,7 @@ def test_postgres_opening_practice_progression_is_atomic_restartable_and_quota_b
                 requested = queue_commands.ensure_current_queue(database, {'queue_date': today})
                 assert requested['refresh_pending'] is True, 'A nonempty ready v3 day must request normal refresh'
             drain_queue_refresh(preserve_through_expected=False)
-            with postgres_store.connection() as database:
+            with postgres.connection() as database:
                 assert [tuple(row) for row in database.execute('SELECT id,card_id,cycle FROM daily_queue ORDER BY id')] == identities
                 assert snapshot(database, 'cards') == before_cards
                 assert snapshot(database, 'reviews') == before_reviews
@@ -193,15 +193,15 @@ def test_postgres_opening_practice_progression_is_atomic_restartable_and_quota_b
                                     attempt_id=identifier+'-attempt', expected_revision=1)
             payload = {'card_id': root_id, 'review': request.model_dump(mode='json')}
             try:
-                with postgres_store.connection() as database:
+                with postgres.connection() as database:
                     review_commands.submit_review(database, payload)
                     raise ValueError('Simulated crash before review commit')
             except ValueError as error:
                 assert str(error) == 'Simulated crash before review commit'
-            with postgres_store.connection(read_only=True) as database:
+            with postgres.connection(read_only=True) as database:
                 assert database.execute('SELECT COUNT(*) FROM reviews WHERE card_id=?', (root_id,)).fetchone()[0] == 0
                 assert database.execute('SELECT COUNT(*) FROM review_attempt_receipts WHERE attempt_id=?', (request.attempt_id,)).fetchone()[0] == 0
-            with postgres_store.connection() as database:
+            with postgres.connection() as database:
                 result = review_commands.submit_review(database, payload)
                 assert result['state'] == 'learning'
                 generation = database.execute("SELECT generation FROM background_tasks WHERE kind='daily_queue' AND deduplication_key='current'").fetchone()[0]
@@ -209,12 +209,12 @@ def test_postgres_opening_practice_progression_is_atomic_restartable_and_quota_b
                 before_child_protected = protected_positions(database, today)
                 protected_ids = {row[0] for row in before_child_protected}
                 ordinary_ids = [row[0] for row in database.execute("SELECT id FROM daily_queue WHERE queue_date=? AND admission_repertoire_id=? AND status='queued' ORDER BY position,id", (today, ordinary_repertoire)) if row[0] not in protected_ids]
-            postgres_store.close_pools()
-            with postgres_store.connection() as database:
+            postgres.close_pools()
+            with postgres.connection() as database:
                 assert review_commands.submit_review(database, payload) == result
                 assert database.execute("SELECT generation FROM background_tasks WHERE kind='daily_queue' AND deduplication_key='current'").fetchone()[0] == generation
             drain_queue_refresh(restart=True)
-            with postgres_store.connection() as database:
+            with postgres.connection() as database:
                 assert database.execute('SELECT state FROM cards WHERE id=?', (child_id,)).fetchone()[0] == 'learning'
                 assert database.execute('SELECT state FROM cards WHERE id=?', (grandchild_id,)).fetchone()[0] == 'locked'
                 assert database.execute('SELECT state FROM cards WHERE id=?', (root_id,)).fetchone()[0] == 'learning'
@@ -229,7 +229,7 @@ def test_postgres_opening_practice_progression_is_atomic_restartable_and_quota_b
                 child_request = ReviewRequest(queue_entry_id=child_entry, outcome='again', attempt_id=identifier+'-child-attempt', expected_revision=1)
                 review_commands.submit_review(database, {'card_id': child_id, 'review': child_request.model_dump(mode='json')})
             drain_queue_refresh()
-            with postgres_store.connection() as database:
+            with postgres.connection() as database:
                 assert database.execute('SELECT state FROM cards WHERE id=?', (grandchild_id,)).fetchone()[0] == 'new'
                 assert database.execute('SELECT COUNT(*) FROM daily_queue WHERE card_id=?', (grandchild_id,)).fetchone()[0] == 0
                 assert database.execute('SELECT COUNT(*) FROM cards WHERE repertoire_id=? AND introduced_at=?', (identifier, today)).fetchone()[0] == 2
@@ -240,7 +240,7 @@ def test_postgres_opening_practice_progression_is_atomic_restartable_and_quota_b
         print('PASS test_postgres_opening_practice_progression_is_atomic_restartable_and_quota_bound')
     finally:
         fixture_scope.close()
-        postgres_store.close_pools()
+        postgres.close_pools()
         for key, value in [('TEMPO_DATABASE_WRITE_URL', original_write_url), ('TEMPO_DATABASE_READ_URL', original_read_url)]:
             if value is None:
                 os.environ.pop(key, None)
@@ -263,7 +263,7 @@ def test_postgres_queue_publication_with_historical_and_null_evidence(database_u
     from app.services import frozen_opening_order
     from app.study.openings.frozen_math import content_fingerprint
     from app.services import postgres_queue_refresh as refresh
-    from tempo_legacy_database.adapters.queue_refresh import presentation as storage
+    from tempo_storage.queue_refresh import presentation as storage
     from database.tooling.apply_postgres_migrations import apply_migrations
     from database.tests.check_postgres_graph_retention import owned_admission_scope
 
@@ -276,7 +276,7 @@ def test_postgres_queue_publication_with_historical_and_null_evidence(database_u
     fixture_dsn = psycopg.conninfo.make_conninfo(**{**info, 'dbname': name})
     report = dict(database=name,queue_rows=575,historical_evidence_rows=5655 if frozen else 5312,
                   transaction_limit_ms=250,cleanup_verified=False,frozen_enabled=frozen,
-                  frozen_predicate_source_sha256=hashlib.sha256(Path(__import__('tempo_legacy_database.adapters.frozen_order',fromlist=['__file__']).__file__).read_bytes()).hexdigest(),
+                  frozen_predicate_source_sha256=hashlib.sha256(Path(__import__('tempo_storage.frozen_order',fromlist=['__file__']).__file__).read_bytes()).hexdigest(),
                   production_source_sha256=hashlib.sha256(Path(storage.__file__).read_bytes()).hexdigest())
     created = False
     scope = ExitStack()
@@ -287,13 +287,13 @@ def test_postgres_queue_publication_with_historical_and_null_evidence(database_u
             created = True
             admin.execute(sql.SQL('COMMENT ON DATABASE {} IS {}').format(sql.Identifier(name),sql.Literal(marker)))
         apply_migrations(fixture_dsn)
-        postgres_store.close_pools()
+        postgres.close_pools()
         os.environ['TEMPO_DATABASE_WRITE_URL'] = fixture_dsn
         os.environ['TEMPO_DATABASE_READ_URL'] = fixture_dsn
         scope.enter_context(owned_admission_scope(name))
         day = date.today().isoformat()
         now = datetime.now(timezone.utc).isoformat()
-        with postgres_store.connection() as db:
+        with postgres.connection() as db:
             db.execute('INSERT INTO settings(id) VALUES(1)')
             db.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('proof','Proof','synthetic',?)",(now,))
             # Deliberately preserve the empty-queue estimate; this is fixture-local.
@@ -363,7 +363,7 @@ def test_postgres_queue_publication_with_historical_and_null_evidence(database_u
                 evidence_count=db.execute_native('SELECT count(*) FROM opening_evidence_attempts').fetchone()[0]
                 assert (origin_count,origin_dates,evidence_count)==(30321,43,5656)
                 report.update(retained_origin_rows=origin_count,origin_dates=origin_dates,total_evidence_rows=evidence_count)
-        with postgres_store.connection(read_only=True) as db:
+        with postgres.connection(read_only=True) as db:
             rows = refresh.queue_application.presentation_rows(db,day)
             protected = queue_ordering._protected_queue_ids(rows)
             assert len(rows)==575
@@ -381,27 +381,27 @@ def test_postgres_queue_publication_with_historical_and_null_evidence(database_u
         plan = refresh._prepare_queue_randomization(day)
         assert plan['entries'] is not None
         # Actual issuance must invalidate the plan, with no receipt publication.
-        with postgres_store.connection() as db:
+        with postgres.connection() as db:
             db.execute_native("UPDATE queue_attempt_origins SET issued_as_head=1 WHERE card_id='card-0008'")
-        with postgres_store.connection(background=True) as db:
+        with postgres.connection(background=True) as db:
             assert refresh._publish_queue_randomization(db,day,plan) is False
-        with postgres_store.connection() as db:
+        with postgres.connection() as db:
             assert db.execute('SELECT count(*) FROM daily_queue_days').fetchone()[0]==0
             db.execute_native("UPDATE queue_attempt_origins SET issued_as_head=0 WHERE card_id='card-0008'")
         # Changed eligibility must also invalidate the plan; retained full derived-state fence.
-        with postgres_store.connection() as db:
+        with postgres.connection() as db:
             db.execute_native("UPDATE cards SET archived=1 WHERE id='card-0009'")
-        with postgres_store.connection(background=True) as db:
+        with postgres.connection(background=True) as db:
             assert refresh._publish_queue_randomization(db,day,plan) is False
-        with postgres_store.connection() as db:
+        with postgres.connection() as db:
             assert db.execute('SELECT count(*) FROM daily_queue_days').fetchone()[0]==0
             db.execute_native("UPDATE cards SET archived=0 WHERE id='card-0009'")
         # The complete production publication transaction must commit under its existing cap.
         started=time.perf_counter()
-        with postgres_store.connection(background=True) as db:
+        with postgres.connection(background=True) as db:
             assert refresh._publish_queue_randomization(db,day,plan) is True
         report['publication_commit_ms']=round((time.perf_counter()-started)*1000,2)
-        with postgres_store.connection(read_only=True) as db:
+        with postgres.connection(read_only=True) as db:
             after=refresh.queue_application.presentation_rows(db,day)
             assert len(after)==575 and {r['id'] for r in after}=={r['id'] for r in rows}
             assert {r['id']:r['position'] for r in after if r['id'] in protected}==positions
@@ -417,13 +417,13 @@ def test_postgres_queue_publication_with_historical_and_null_evidence(database_u
                 assert {row['card_id'] for row in after if row['eligible']}==eligible
         replay=refresh._prepare_queue_randomization(day)
         assert replay['entries'] is None
-        with postgres_store.connection(background=True) as db:
+        with postgres.connection(background=True) as db:
             assert refresh._publish_queue_randomization(db,day,replay) is True
         report.update(complete=True,protected_positions_preserved=True,history_origins_preserved=True,
                       issuance_and_eligibility_stale_plans_rejected=True,replay_stable=True)
     finally:
         scope.close()
-        postgres_store.close_pools()
+        postgres.close_pools()
         for key,value in original_env.items():
             if value is None:os.environ.pop(key,None)
             else:os.environ[key]=value

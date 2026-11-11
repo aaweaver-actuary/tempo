@@ -12,5 +12,5 @@ export function validateMigrationInventory(files, schemaSource) {
   return versions.at(-1);
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  console.log(`Migration inventory: ${validateMigrationInventory(readdirSync('database/tempo_legacy_database/ddl/migrations'), readFileSync('database/tempo_legacy_database/ddl/schema_version.py', 'utf8'))}`);
+  console.log(`Migration inventory: ${validateMigrationInventory(readdirSync('database/tempo_storage/ddl/migrations'), readFileSync('database/tempo_storage/ddl/schema_version.py', 'utf8'))}`);
 }

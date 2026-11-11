@@ -1484,12 +1484,12 @@ describe("integrity request intent ordering regressions", () => {
     });
   }
 
-  for (const destination of ["Studies", "Repertoire"] as const) {
+  for (const destination of ["Settings", "Repertoire"] as const) {
     it(`workspace navigation cancels pending preferred repair intent (${destination})`, async () => {
       const home = await renderIntegrityOrderingHome();
       const before = captureIntegrityOrderingStudy(home);
       await requestIntegrityOrderingRefresh("generic", "rep");
-      fireEvent.click(screen.getByRole("button", { name: destination }));
+      fireEvent.click(screen.getAllByRole("button", { name: destination })[0]);
       await screen.findByRole("heading", { name: destination, level: 1 });
       await home.resolveIntegrity(0, [integrityOrderingRepertoire("rep", 1)]);
       expect(screen.getByRole("heading", { name: destination, level: 1 })).not.toBeNull();

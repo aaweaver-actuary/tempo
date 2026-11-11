@@ -4,17 +4,17 @@ from datetime import timedelta
 import json
 import pytest
 
-from test_product_game_lapse_postgres import owned_postgres, case, NOW
+from native_study_fixture import owned_postgres, case, NOW
 from test_queue_attempt_abandonment_postgres import (
     _new_attempt,
     _apply_payload,
     _retarget_attempt,
 )
-from tempo_legacy_database.adapters.opening_graph import worker
-from tempo_legacy_database.adapters.lifecycle import (
+from tempo_storage.opening_graph import worker
+from tempo_storage.lifecycle import (
     queue_attempt_abandonment as abandonment,
 )
-from tempo_legacy_database.adapters.study.issuance import stamp_issued_head
+from tempo_storage.study.issuance import stamp_issued_head
 
 
 def test_native_completed_history_does_not_block_graph_cleanup_or_get_rewritten(case):
@@ -49,7 +49,7 @@ def test_native_completed_history_does_not_block_graph_cleanup_or_get_rewritten(
         ]
         assert worker.protected_queue_entry(db, ([case.card_id], today)) is None
         worker.retire_orphaned_queue(
-            db, [case.card_id], case.lapse.finding.repertoire_id
+            db, [case.card_id], "white"
         )
         assert [
             tuple(db.execute_native(sql, (key,)).fetchone()) for sql, key in statements

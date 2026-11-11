@@ -128,71 +128,27 @@ it("issue186_queue_retry_recovers_without_resubmitting_saved_review", async () =
   expect(notifications().find(record => record.key === "review-queue:12")).toMatchObject({ active: false, severity: "success" });
 });
 
-it("preparation_deadline_automatic_and_manual_acquisitions_recover_original_operation", async () => {
+it.each(["unavailable", "aborted"])("saved review survives %s queue acquisition and manual retry without optional POST", async failure => {
   await readyHome();
   const originalFetcher = fetcher.getMockImplementation()!;
-  const preparationIds: string[] = [];
-  let finished = false;
   let ready = false;
   fetcher.mockImplementation(async (input, options) => {
     const url = String(input);
-    if (url.endsWith("/api/queue/prepare-next")) {
-      preparationIds.push(new Headers(options?.headers).get("Idempotency-Key")!);
-      return new Promise<Response>((_resolve, reject) => options!.signal!.addEventListener("abort", () => reject(options!.signal!.reason), { once: true }));
+    if (url.includes("/api/queue/window")) {
+      if (ready) return Response.json({ cards: [queueCard("card-b", 13)], count: 1, local_date: new Date().toLocaleDateString("en-CA") });
+      if (failure === "aborted") throw new DOMException("Fetch is aborted", "AbortError");
+      return Response.json({ detail: "Queue unavailable" }, { status: 503 });
     }
-    if (url.includes("/api/operations/") && !url.includes("review-attempt")) {
-      expect(url).toContain(preparationIds[0]);
-      ready = finished;
-      return Response.json({ operation_id: preparationIds[0], state: finished ? "complete" : "executing",
-        response: { progressed: true, pending: false, reason: null } });
-    }
-    if (url.includes("/api/queue/window")) return ready
-      ? Response.json({ cards: [queueCard("card-b", 13)], count: 1, local_date: new Date().toLocaleDateString("en-CA") })
-      : Response.json({ detail: { code: "study_feedback_preparation_pending" } }, { status: 503 });
     return originalFetcher(input, options);
   });
-  await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
-  expect(preparationIds).toHaveLength(1);
-  await act(async () => { await advanceStudyTimers(15_001); await advanceStudyTimers(15_001); });
+  await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); await advanceStudyTimers(5_000); });
   expect(trainingProps.reviewPersistenceState).toBe("queueFailed");
-  expect(preparationIds).toHaveLength(1);
-  expect(fetcher.mock.calls.some(([url]) => String(url).includes(`/api/operations/${preparationIds[0]}`))).toBe(true);
-  finished = true;
-  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Retry loading the queue" })); await settleStudyStorageTasks(); await advanceStudyTimers(51); });
-  expect(trainingProps.reviewPersistenceState).toBe("idle");
-  expect(useTrainingStore.getState().getCard().queueEntryId).toBe(13);
-  expect(preparationIds).toHaveLength(1);
-  expect(reviewPosts()).toHaveLength(1);
-});
-
-it("preparation_manual_queue_retry_starts_later_unit_without_resubmitting_saved_review", async () => {
-  await readyHome();
-  const originalFetcher = fetcher.getMockImplementation()!;
-  const preparationIds: string[] = [];
-  let ready = false;
-  fetcher.mockImplementation(async (input, options) => {
-    const url = String(input);
-    if (url.endsWith("/api/queue/prepare-next")) {
-      preparationIds.push(new Headers(options?.headers).get("Idempotency-Key")!);
-      ready = preparationIds.length > 1;
-      return Response.json({ progressed: ready, pending: !ready, reason: ready ? null : "source_unavailable" });
-    }
-    if (url.includes("/api/queue/window")) return ready
-      ? Response.json({ cards: [queueCard("card-b", 13)], count: 1, local_date: new Date().toLocaleDateString("en-CA") })
-      : Response.json({ detail: { code: "study_feedback_preparation_pending" } }, { status: 503 });
-    return originalFetcher(input, options);
-  });
-  await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
-  expect(trainingProps.reviewPersistenceState).toBe("queueFailed");
-  expect(preparationIds).toHaveLength(1);
-  await act(async () => { await advanceStudyTimers(1_001); });
-  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Retry loading the queue" })); await settleStudyStorageTasks(); });
-  await act(async () => { await advanceStudyTimers(51); });
-  expect(preparationIds).toHaveLength(2);
-  expect(preparationIds[0]).not.toBe(preparationIds[1]);
+  ready = true;
+  await act(async () => { trainingProps.retryQueueAfterReview!(); await settleStudyStorageTasks(); });
   expect(trainingProps.reviewPersistenceState).toBe("idle");
   expect(useTrainingStore.getState().getCard().queueEntryId).toBe(13);
   expect(reviewPosts()).toHaveLength(1);
+  expect(fetcher.mock.calls.some(([url]) => String(url).includes("/api/queue/prepare-next"))).toBe(false);
 });
 
 it("issue186_authoritative_empty_queue_settles_saved_progression", async () => {
@@ -827,6 +783,29 @@ it("PR105 late foreground persistence cannot advance an unrelated replacement at
   await waitFor(() => expect(useTrainingStore.getState().queueReadiness).toBe("ready"));
   expect(snapshotActive()).toEqual(activeBeforeSave);
   expect(pendingReviews()).toEqual([]);
+  await waitFor(() => expect(trainingProps.reviewPersistenceState).toBe("idle"));
+});
+
+it("PR105 late foreground persistence cannot release a newer replacement save", async () => {
+  await readyHome();
+  let finishFirst!: (response: Response) => void;
+  let finishSecond!: (response: Response) => void;
+  reviewResponse = async url => url.endsWith("/card-a/review")
+    ? new Promise<Response>(resolve => { finishFirst = resolve; })
+    : new Promise<Response>(resolve => { finishSecond = resolve; });
+  let first!: Promise<void>;
+  await act(async () => { first = trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
+  act(() => useTrainingStore.getState().hydrateLocalQueue([mapQueueCardToPracticeCard(queueCard("card-b", 13))], true));
+  let second!: Promise<void>;
+  await act(async () => { second = trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
+  const replacement = snapshotActive();
+  expect(trainingProps.reviewPersistenceState).toBe("saving");
+  await act(async () => { finishFirst(Response.json({ persisted: true })); await settleStudyStorageTasks(); });
+  expect(snapshotActive()).toEqual(replacement);
+  expect(trainingProps.reviewPersistenceState).toBe("saving");
+  await act(async () => { finishSecond(Response.json({ detail: "Invalid", retryable: false }, { status: 422 })); await Promise.all([first, second]); });
+  expect(trainingProps.reviewPersistenceState).toBe("saveFailed");
+  expect(snapshotActive()).toEqual(replacement);
 });
 
 it("PR105 explicit legacy retry credits the normalized attempt without a new identity", async () => {
@@ -840,6 +819,24 @@ it("PR105 explicit legacy retry credits the normalized attempt without a new ide
   await waitFor(() => expect(pendingReviews()).toEqual([]));
   expect(trainingProps.reviewPersistenceIdentity?.attemptId).toBe("legacy-online:12");
   expect(reviewPosts()[0][1]?.headers).toMatchObject({ "Idempotency-Key": "review-attempt:legacy-online:12" });
+});
+
+it("completion retains its own identity behind an earlier suppressed same-card review", async () => {
+  await readyHome();
+  await act(async () => { await enqueuePendingReview(suppressedReview); });
+  const position = new Chess(); position.move("e4"); position.move("e5");
+  act(() => {
+    useTrainingStore.getState().setCurrentFenString(asFenString(position.fen()));
+    useTrainingStore.getState().setStep(2);
+    useTrainingStore.getState().setAttemptPhase("playerTurn");
+  });
+  const attemptId = useTrainingStore.getState().attempt.attemptId;
+  await act(async () => { trainingProps.onMove("g1", "f3"); await settleStudyStorageTasks(); });
+  await act(async () => { await advanceStudyTimers(751); });
+  expect(trainingProps.reviewPersistenceIdentity?.attemptId).toBe(attemptId);
+  expect(trainingProps.reviewPersistenceState).toBe("saveFailed");
+  expect(pendingReviews().map(review => review.attemptId)).toEqual(["earlier-a", attemptId]);
+  expect(reviewPosts()).toHaveLength(0);
 });
 
 it.each(["queued", "unconfirmed"])("PR105 committed completion during feedback retains its durable receipt despite later state=%s", async receiptState => {
@@ -943,28 +940,13 @@ it("pr285_teaching_cross_tab_demo_first_clean_does_not_write_the_legacy_cutover_
   expect(localStorage.getItem("tempo-first-clean-passes")).toBe(before);
 });
 
-it("saved_review_nonblocking_feedback_hold_loads_server_head_without_second_review", async () => {
+it("saved_review_loads_authoritative_head_without_optional_post_or_second_review", async () => {
   await readyHome();
-  const originalFetcher = fetcher.getMockImplementation()!;
-  let queueReads = 0;
-  const preparationIds: string[] = [];
-  fetcher.mockImplementation(async (input, options) => {
-    const url = String(input);
-    if (url.endsWith("/api/queue/prepare-next")) {
-      preparationIds.push(new Headers(options?.headers).get("Idempotency-Key")!);
-      return Response.json({ progressed: false, pending: true, reason: "integrity_not_current", blocks_issuance: false });
-    }
-    if (url.includes("/api/queue/window")) return ++queueReads === 1
-      ? Response.json({ detail: { code: "study_feedback_preparation_pending" } }, { status: 503 })
-      : Response.json({ cards: [queueCard("card-b", 13)], count: 1, local_date: new Date().toLocaleDateString("en-CA") });
-    return originalFetcher(input, options);
-  });
+  queue = [queueCard("card-b", 13)];
   await act(async () => { await trainingProps.rateCard("correct"); await settleStudyStorageTasks(); });
   expect(trainingProps.reviewPersistenceState).toBe("idle");
   expect(useTrainingStore.getState().getCard().queueEntryId).toBe(13);
   expect(reviewPosts()).toHaveLength(1);
-  expect(preparationIds).toHaveLength(1);
-  expect(queueReads).toBe(2);
+  expect(fetcher.mock.calls.some(([url]) => String(url).includes("/api/queue/prepare-next"))).toBe(false);
   expect(pendingReviews()).toEqual([]);
-  expect(notifications().find(record => record.key === "optional-feedback-hold")?.message).toContain("pending work is retained");
 });

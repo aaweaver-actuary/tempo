@@ -3,7 +3,7 @@
 import pytest
 import chess
 
-from test_product_game_lapse_postgres import (
+from native_study_fixture import (
     postgres_fixture_profile,
     study_recovery_assembly_allocations,
 )
@@ -243,7 +243,7 @@ def test_recovery_observed_shapes_keep_exact_route_graph_counts_and_explicit_pay
 def test_recovery_assembly_allocation_fits_existing_budget_without_changing_global_roles():
     from copy import deepcopy
     import json
-    from test_product_game_lapse_postgres import ROOT
+    from native_study_fixture import ROOT
 
     configuration = json.loads((ROOT / "config/resource-budgets.json").read_text())
     before = deepcopy(configuration)
@@ -276,7 +276,7 @@ def test_packaged_recovery_helper_binds_database_before_integrity_connection():
     entry = Path(__file__).resolve().parent / "fixtures/product_collection_packaged.py"
     probe = r"""
 import contextlib, http.server, pathlib, runpy, sys, threading
-from tempo_legacy_database import connections, infrastructure
+from tempo_storage import connections, infrastructure
 from app.services.activity_gate import activity_gate
 assert infrastructure._admission is None and infrastructure._measurement is None
 class StopBeforeConnection(Exception): pass

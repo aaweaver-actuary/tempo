@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
     "path,memory,pids",
     [
         (
-            "database/tempo_legacy_database/tooling/learning_review/run_postgres.py",
+            "database/tempo_storage/tooling/learning_review/run_postgres.py",
             "384m",
             "256",
         ),

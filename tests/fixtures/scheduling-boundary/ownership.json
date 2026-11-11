@@ -8,7 +8,7 @@
   "backend_contract_facade_module": "app.services.scheduling_review_contracts",
   "graph_roots": [
     "app",
-    "tempo_legacy_database"
+    "tempo_storage"
   ],
   "owning_tests": [
     "backend/tests/test_scheduling_boundary.py",
@@ -16,7 +16,7 @@
     "backend/tests/test_scheduling_review_application.py"
   ],
   "consumers": {
-    "tempo_legacy_database.adapters.scheduling_review_store": [
+    "tempo_storage.scheduling_review_store": [
       "backend/tests/test_scheduling_review_store.py"
     ],
     "app.services.scheduling_review_contracts": [

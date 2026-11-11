@@ -21,7 +21,7 @@ class ParsedAnnotation:
     squares: list[dict[str, str]]
 
 
-_GRAPHICS = re.compile(r"\[%c(?P<kind>al|sl)\s+(?P<values>[^\]]+)\]", re.IGNORECASE)
+_GRAPHICS = re.compile('\\[%c(%sP<kind>al|sl)\\s+(%sP<values>[^\\]]+)\\]', re.IGNORECASE)
 _COLORS = {"G": "green", "R": "red", "B": "blue", "Y": "yellow"}
 
 

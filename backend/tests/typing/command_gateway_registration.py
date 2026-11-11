@@ -2,7 +2,7 @@
 
 from app.command_gateway import register_descriptor
 from app.contracts.command_registry import CommandDescriptor, CommandRegistry
-from tempo_legacy_database.adapters.postgres_store import PostgresConnection
+from tempo_storage.postgres import PostgresConnection
 
 
 class AlienTransaction:

@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import os
 
-from tempo_legacy_database.adapters.queue_refresh import capacity as capacity_storage
-from tempo_legacy_database.adapters.queue_refresh.capacity import (
+from tempo_storage.queue_refresh import capacity as capacity_storage
+from tempo_storage.queue_refresh.capacity import (
     _available_route_card,
     _CAPACITY_ROUTE_FROM,
-    capacity_priority_statement,
 )
 
 from app.study.openings.capacity_frontier import CapacityRoute

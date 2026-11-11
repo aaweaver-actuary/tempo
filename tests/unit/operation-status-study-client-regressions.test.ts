@@ -117,3 +117,23 @@ it("reports a blocked browser operation without losing its original identity", a
   } satisfies Partial<PendingOperationError>);
   vi.unstubAllGlobals();
 });
+
+it('receipt_body_reconnect_cannot_publish_a_complete_old_authority_result', async () => {
+  let finish!: (chunk: Uint8Array) => void;
+  let started!: () => void;
+  const bodyStarted = new Promise<void>(resolve => { started = resolve; });
+  const transport: typeof fetch = async (input, init) => {
+    const request = new Request(input, init);
+    if (request.url.endsWith('/api/study/bootstrap')) return Response.json(bootstrap(request.headers.get('X-Tempo-Workspace')!));
+    return new Response(new ReadableStream<Uint8Array>({ start(controller) {
+      finish = chunk => { controller.enqueue(chunk); controller.close(); }; started();
+    } }));
+  };
+  const client = createStudyClient({ independent:true, baseUrl:'', storage:storage(), transport });
+  await client.connectStudy('https://a.example', 'alpha', 'a'.repeat(40));
+  const pending = readOperationResponse('original', { client });
+  await bodyStarted;
+  await client.connectStudy('https://b.example', 'beta', 'b'.repeat(40));
+  finish(new TextEncoder().encode(JSON.stringify({ operation_id:'original', state:'complete', response:null })));
+  await expect(pending).rejects.toThrow('authority changed');
+});

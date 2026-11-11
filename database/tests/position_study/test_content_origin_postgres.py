@@ -1,4 +1,6 @@
 """Historical source preparation parity; native lifecycle requires 061 integration."""
+
+from app.repertoire import position_study_source as _source_preparation
 from copy import deepcopy
 from pathlib import Path
 import sys
@@ -13,8 +15,8 @@ for path in [ROOT, ROOT / 'backend', ROOT / 'backend/tests', ROOT / 'database',
 import pytest
 
 from tempo_evidence_math.position_learning import Hold
-from tempo_legacy_database.adapters.authored_repertoires import position_study_source as owner
-from tempo_legacy_database.adapters.authored_repertoires.content_origin import PreparedContentOrigin, capture_content_origin
+from tempo_storage.authored_repertoires import position_study_source as owner
+from tempo_storage.authored_repertoires.content_origin import PreparedContentOrigin, capture_content_origin
 from test_position_source_authority import setup
 
 
@@ -24,8 +26,8 @@ def test_owner_single_read_and_detached_facts(monkeypatch):
     def read(database, repertoire_id):
         calls.append(repertoire_id)
         return deepcopy(database.facts)
-    monkeypatch.setattr(owner, 'read_repertoire', read)
-    both = owner.prepare_position_source_with_facts(db, 'rep')
+    monkeypatch.setattr(_source_preparation, 'read_repertoire', read)
+    both = _source_preparation.prepare_position_source_with_facts(db, 'rep')
     assert not isinstance(both, Hold) and calls == ['rep']
     facts = both.publication_facts()
     facts['lines'][0]['moves_json'] = '[]'
@@ -33,7 +35,7 @@ def test_owner_single_read_and_detached_facts(monkeypatch):
     from app.repertoire.snapshot import project_published_repertoire
     assert project_published_repertoire(both.publication_facts()).membership.digest == both.prepared.authored_token.original_source_digest
     calls.clear()
-    original = owner.prepare_position_source(db, 'rep')
+    original = _source_preparation.prepare_position_source(db, 'rep')
     assert calls == ['rep'] and original.authored_token == both.prepared.authored_token
     assert original.routes == both.prepared.routes
     with pytest.raises(ValueError):
@@ -48,10 +50,10 @@ def test_original_preparation_does_not_retain_publication_facts(monkeypatch):
     def unexpected_retention(_self):
         raise AssertionError('ordinary preparation must not retain facts')
     monkeypatch.setattr(PreparedPublishedRepertoire, 'publication_facts', unexpected_retention)
-    prepared = owner.prepare_position_source(db, 'rep')
+    prepared = _source_preparation.prepare_position_source(db, 'rep')
     assert not isinstance(prepared, Hold)
     with pytest.raises(AssertionError, match='must not retain'):
-        owner.prepare_position_source_with_facts(db, 'rep')
+        _source_preparation.prepare_position_source_with_facts(db, 'rep')
 
 
 def test_historical_origin_native(monkeypatch):
@@ -69,8 +71,8 @@ def test_historical_origin_native(monkeypatch):
                  *root.glob('contracts/*/src'), *root.glob('services/*/src'), *root.glob('services/learning/*/src')]:
         sys.path.insert(0, str(path))
     from database.tests.position_study import acceptance
-    from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
-    from tempo_legacy_database.adapters.authored_repertoires.content_origin import prepare_content_origin, capture_content_origin
+    from tempo_storage.postgres import PostgresConnection, tempo_row_factory
+    from tempo_storage.authored_repertoires.content_origin import prepare_content_origin, capture_content_origin
     admin = os.environ.get('TEMPO_LEARNING_TEST_ADMIN')
     assert admin and os.environ.get('TEMPO_LEARNING_TEST_FIXTURE', '').startswith('tempo-learning-')
     params = conninfo_to_dict(admin)
@@ -161,9 +163,9 @@ def test_native_cross_repertoire_scope_preserves_complete_family_and_anchor(monk
     from psycopg import sql
     from psycopg.conninfo import conninfo_to_dict, make_conninfo
     from database.tests.position_study import acceptance
-    from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
-    from tempo_legacy_database.adapters.authored_repertoires.content_origin import prepare_content_origin
-    from tempo_legacy_database.adapters.authored_repertoires.authority_scope import prepare_cross_repertoire_authority_scope
+    from tempo_storage.postgres import PostgresConnection, tempo_row_factory
+    from tempo_storage.authored_repertoires.content_origin import prepare_content_origin
+    from tempo_storage.authored_repertoires.authority_scope import prepare_cross_repertoire_authority_scope
     admin = os.environ.get('TEMPO_LEARNING_TEST_ADMIN')
     assert admin and os.environ.get('TEMPO_LEARNING_TEST_FIXTURE', '').startswith('tempo-learning-')
     params = conninfo_to_dict(admin)
@@ -243,7 +245,7 @@ def test_native_cross_repertoire_scope_preserves_complete_family_and_anchor(monk
 
 
 def test_authority_scope_stream_refuses_limit_and_incomplete_page():
-    from tempo_legacy_database.adapters.authored_repertoires.authority_scope import _read_stream
+    from tempo_storage.authored_repertoires.authority_scope import _read_stream
     class Result:
         def __init__(self, rows): self.rows = rows
         def fetchone(self): return self.rows[0] if self.rows else None
@@ -261,7 +263,7 @@ def test_authority_scope_stream_refuses_limit_and_incomplete_page():
 def test_authority_scope_prefix_budget_precedes_expansion(monkeypatch):
     """A small catalogue can otherwise repeat a large policy list at every ply."""
     import json
-    from tempo_legacy_database.adapters.authored_repertoires import authority_scope as scope
+    from tempo_storage.authored_repertoires import authority_scope as scope
     policies = {f'policy-{i:05d}-é-\\"' for i in range(10000)}
     root = {'policies': policies, 'children': {}}
     node = root
@@ -284,9 +286,9 @@ def test_authority_scope_prefix_budget_precedes_expansion(monkeypatch):
 def test_origin_budget_refuses_large_epoch_before_full_encoding(monkeypatch):
     """Oversized repeated source text is held before inventory or envelope encoding."""
     import json
-    from tempo_legacy_database.adapters.authored_repertoires import content_origin as origin
+    from tempo_storage.authored_repertoires import content_origin as origin
     source_db = setup(monkeypatch)
-    source = owner.prepare_position_source_with_facts(source_db, 'rep')
+    source = _source_preparation.prepare_position_source_with_facts(source_db, 'rep')
     assert not isinstance(source, Hold)
     token = source.prepared.authored_token
     class Result:

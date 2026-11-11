@@ -3,7 +3,7 @@
 from fastapi import HTTPException
 
 from app.contracts.transport.authored_repertoire import RepertoireSettingsResponse
-from tempo_legacy_database.adapters.controls import settings as storage
+from tempo_storage.controls import settings as storage
 
 from .card_deletion import SYSTEM_REPERTOIRE_IDS as SYSTEM_REPERTOIRES
 

@@ -7,9 +7,9 @@ from datetime import datetime, timezone
 import json
 from typing import Any
 
-from tempo_legacy_database.connections import background_read_connection
-from tempo_legacy_database.adapters import postgres_store
-from tempo_legacy_database.adapters.opening_graph import worker as storage
+from tempo_storage.connections import background_read_connection
+from tempo_storage import postgres
+from tempo_storage.opening_graph import worker as storage
 from ..card_deletion import omit_deleted_graph_steps
 from .durable_tasks import (
     advance_task_slice_in_transaction,
@@ -28,7 +28,7 @@ _CLEANUP_CANDIDATE_PAGE_SIZE = 256
 
 
 def request_graph_rebuild_in_transaction(
-    database: postgres_store.PostgresConnection,
+    database: postgres.PostgresConnection,
     repertoire_id: str,
     local_day: str,
     *,
@@ -141,7 +141,7 @@ def create_graph_cards(database, batch, study_day, *, strict=False):
 
 
 def stage_graph_line_in_transaction(
-    database: postgres_store.PostgresConnection,
+    database: postgres.PostgresConnection,
     task: dict[str, Any],
     prepared: PreparedGraphLine | None,
 ) -> bool:
@@ -226,7 +226,7 @@ def prepare_next_graph_cards(
 
 
 def link_graph_cards_in_transaction(
-    database: postgres_store.PostgresConnection,
+    database: postgres.PostgresConnection,
     task: dict[str, Any],
     card_ids: tuple[str, ...],
 ) -> bool:
@@ -285,7 +285,7 @@ def publish_graph_generation(database, repertoire_id, generation):
 
 
 def publish_graph_in_transaction(
-    database: postgres_store.PostgresConnection,
+    database: postgres.PostgresConnection,
     task: dict[str, Any],
 ) -> bool:
     """Change the visible generation only after every staged card is linked."""
@@ -311,7 +311,7 @@ def execute_graph_publish_slice(task: dict[str, Any]) -> bool:
 
 
 def classify_graph_cards_in_transaction(
-    database: postgres_store.PostgresConnection,
+    database: postgres.PostgresConnection,
     task: dict[str, Any],
     card_ids: tuple[str, ...],
 ) -> bool:
@@ -362,7 +362,7 @@ def execute_graph_classify_slice(task: dict[str, Any]) -> bool:
 
 
 def refresh_graph_integrity_in_transaction(
-    database: postgres_store.PostgresConnection,
+    database: postgres.PostgresConnection,
     task: dict[str, Any],
     card_ids: tuple[str, ...],
 ) -> bool:
@@ -481,7 +481,7 @@ def remove_obsolete_graph_memberships(database, repertoire_id, generation, card_
 
 
 def cleanup_graph_cards_in_transaction(
-    database: postgres_store.PostgresConnection,
+    database: postgres.PostgresConnection,
     task: dict[str, Any],
     prepared: PreparedGraphCleanupSlice,
 ) -> bool:
@@ -527,7 +527,7 @@ def execute_graph_cleanup_slice(task: dict[str, Any]) -> bool:
 
 
 def finalize_graph_in_transaction(
-    database: postgres_store.PostgresConnection,
+    database: postgres.PostgresConnection,
     task: dict[str, Any],
 ) -> bool:
     """Queue the foreground-visible refresh and complete this graph generation."""
@@ -558,9 +558,7 @@ def finalize_graph_in_transaction(
 
 
 def execute_graph_finalize_slice(task: dict[str, Any]) -> bool:
-    from .durable_tasks import warm_completion_sql
 
-    warm_completion_sql()
     with background_lease():
         with storage.writer_connection() as database:
             return finalize_graph_in_transaction(database, task)

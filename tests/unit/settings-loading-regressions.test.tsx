@@ -47,8 +47,7 @@ it("settings hydration blocks premature editing then persists the selected prefi
 });
 
 it("Games settings removes obsolete controls and browser mirroring while global saves preserve compatibility values", async () => {
-  const compatibility = { lichess_username: "SavedLichess", chesscom_username: "SavedChesscom", auto_sync_minutes: 17 };
-  const authoritativeSettings = { initial_depth: 6, ...compatibility };
+  const authoritativeSettings = { initial_depth: 6, timezone: "local", new_cards_per_day: 10, study_new_per_day: 2, tactics_new_per_day: 5, study_only_mode: false, light_first_interval_days: 7 };
   vi.mocked(readWorkspaceResponse).mockImplementation(async () => Response.json(authoritativeSettings));
   const legacyKeys = ["tempo-lichess-username", "tempo-chesscom-username", "tempo-arrow-metric", "tempo-engine-window-cp", "tempo-coverage-target", "tempo-maia-elo", "tempo-maia-transposition-plies", "tempo-explorer-speeds", "tempo-explorer-ratings"];
   for (const key of legacyKeys) localStorage.setItem(key, "Retained browser value");
@@ -62,7 +61,6 @@ it("Games settings removes obsolete controls and browser mirroring while global 
       return Response.json(submitted.at(-1));
     }
     if (path === "/api/repertoires") return Response.json({ repertoires: [{ id: "synthetic", name: "Synthetic repertoire" }] });
-    if (path === "/api/product/game-review/configuration/lichess") return Response.json(null);
     throw new Error(`Unexpected synthetic request: ${path}`);
   }));
   render(<SettingsView theme="brown" pieceSet="cburnett" sound={false}
@@ -72,8 +70,8 @@ it("Games settings removes obsolete controls and browser mirroring while global 
   expect(screen.queryByRole("tab", { name: "Builder" })).toBeNull();
   expect(screen.queryByText(/Stockfish|Maia|Explorer/)).toBeNull();
   fireEvent.click(screen.getByRole("tab", { name: "Games" }));
-  await screen.findByRole("region", { name: "Game sync settings" });
-  expect(screen.getByRole("button", { name: "Save game sync settings" })).toBeTruthy();
+  expect(screen.getByText("Paste a PGN or open a saved game in Game Review.")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Save game sync settings" })).toBeNull();
   expect(screen.queryByLabelText("Lichess username")).toBeNull();
   expect(screen.queryByLabelText("Chess.com username")).toBeNull();
   expect(screen.queryByLabelText(/Automatic sync/)).toBeNull();
@@ -83,7 +81,7 @@ it("Games settings removes obsolete controls and browser mirroring while global 
   fireEvent.change(screen.getByRole("spinbutton", { name: /Default initial prefix length/ }), { target: { value: "9" } });
   fireEvent.click(save);
   await waitFor(() => expect(submitted).toHaveLength(1));
-  expect(submitted[0]).toMatchObject({ initial_depth: 9, ...compatibility });
+  expect(submitted[0]).toEqual({ ...authoritativeSettings, initial_depth: 9 });
   expect(reads.mock.calls.filter(([key]) => legacyKeys.includes(key))).toEqual([]);
   expect(writes.mock.calls.filter(([key]) => legacyKeys.includes(key))).toEqual([]);
   for (const key of legacyKeys) expect(localStorage.getItem(key)).toBe("Retained browser value");

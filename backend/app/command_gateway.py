@@ -9,8 +9,8 @@ import json
 import uuid
 from typing import Any, TypeVar
 
-from tempo_legacy_database.adapters.commands.receipts import storage
-from tempo_legacy_database.adapters.commands.receipts.storage import (
+from tempo_storage.commands.receipts import storage
+from tempo_storage.commands.receipts.storage import (
     psycopg,
     DeadlockDetected,
     LockNotAvailable,
@@ -20,13 +20,13 @@ from tempo_legacy_database.adapters.commands.receipts.storage import (
 )
 from fastapi import HTTPException
 
-from tempo_legacy_database.adapters import postgres_store
+from tempo_storage import postgres
 from .services.redis_admission_gate import BackgroundAdmissionDeferred
 from .contracts.command_identity import request_digest as _identity_digest
 from .contracts.command_registry import CommandDescriptor, CommandRegistry
 
 
-CommandHandler = Callable[[postgres_store.PostgresConnection, Any], Any]
+CommandHandler = Callable[[postgres.PostgresConnection, Any], Any]
 _registry = CommandRegistry()
 # Legacy registrations and the executor share these exact registry-owned maps.
 _handlers = _registry.handlers
@@ -79,7 +79,7 @@ _Result = TypeVar("_Result")
 
 def register_descriptor(
     descriptor: CommandDescriptor[
-        postgres_store.PostgresConnection, _Original, _Prepared, _Result
+        postgres.PostgresConnection, _Original, _Prepared, _Result
     ],
 ) -> None:
     """Register a correlated descriptor in the same default registry as legacy commands."""
@@ -278,6 +278,9 @@ def claim_recoverable_operation(
     background_only: bool = False,
 ) -> dict[str, Any] | None:
     """Reserve one abandoned operation for broker redelivery."""
+    from .contracts.command_registry import RETIRED_COMMANDS
+
+    paused_commands = set(paused_commands) | RETIRED_COMMANDS
     with _writer_connection(True) as database:
         row = storage.recoverable_receipt(
             database,
@@ -438,7 +441,7 @@ def read_operation(
     position_claim_request_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if background:
-        from tempo_legacy_database.connections import background_read_connection
+        from tempo_storage.connections import background_read_connection
         from .services.activity_gate import activity_gate
 
         receipt_connection = background_read_connection()
@@ -477,6 +480,12 @@ def read_operation(
                     "Operation ID was already used for another request"
                 )
     state, response_json, error_json = receipt[2], receipt[3], receipt[4]
+    from .contracts.command_registry import is_retired_command
+    if is_retired_command(receipt[0]) and state not in {"complete", "failed"}:
+        return {"operation_id": operation_id, "state": "blocked",
+                "code": "retired_feature_paused", "retryable": False,
+                "original_state": state, "command_name": receipt[0],
+                "message": "This operation is preserved and paused because its feature was retired."}
     response: dict[str, Any] = {"operation_id": operation_id, "state": state}
     response["attempt_count"] = int(receipt[5])
     response["retry_cycle"] = int(receipt[10])

@@ -83,7 +83,7 @@ describe("desktop live queue isolation", () => {
     try {
       const request = vi.fn().mockResolvedValueOnce(Response.json({ count: 0, cards: [], projection: { state: "refreshing" } }));
       for (let refusal = 0; refusal < 4; refusal += 1)
-        request.mockResolvedValueOnce(Response.json({ detail: "Waiting for foreground activity" }, { status: 503 }));
+        request.mockResolvedValueOnce(Response.json({ detail: "A different message", code: "foreground_wait" }, { status: 503 }));
       request.mockResolvedValueOnce(Response.json({ count: 1, cards: [{
         id: "prepared-live", queue_entry_id: 807, start_fen: startingFen, moves: ["e2e4"],
         content_type: "opening", repertoire_name: "Prepared", repertoire_source: "PGN",
@@ -100,9 +100,23 @@ describe("desktop live queue isolation", () => {
       for (const call of request.mock.calls.slice(1))
         expect(call[1]?.headers).toEqual({ "X-Tempo-Work-Class": "background" });
       expect(useTrainingStore.getState().queueReadiness).toBe("ready");
+      expect(useTrainingStore.getState().queueStatus).toEqual({ kind: "ready" });
       expect(useTrainingStore.getState().serviceError).toBe("");
     } finally { vi.useRealTimers(); }
   });
+  it.each([undefined, "other_reason"])('same wait wording with code %s consumes the failure budget', async code => {
+    vi.useFakeTimers();
+    try {
+      const request = vi.fn(async () => Response.json({ detail: "Waiting for foreground activity", ...(code ? { code } : {}) }, { status: 503 }));
+      vi.stubGlobal("fetch", request);
+      const settled = fetchAndInitializeQueue(false, { preparePhoneQueue: false, replaySavedReviews: false }).catch(error => error);
+      await advanceStudyTimers(5000);
+      expect(await settled).toBeInstanceOf(Error);
+      expect(request).toHaveBeenCalledTimes(3);
+      expect(useTrainingStore.getState().queueStatus).toEqual({ kind: "unavailable" });
+    } finally { vi.useRealTimers(); }
+  });
+
   it("retries a busy position head with foreground authority and installs the issued plan", async () => {
     vi.useFakeTimers();
     try {
@@ -126,6 +140,13 @@ describe("desktop live queue isolation", () => {
       expect(useTrainingStore.getState().getCard().positionPresentation).toEqual(plan.position_presentation);
       expect(useTrainingStore.getState().attempt.attemptId).toBe("issued-attempt-42");
     } finally { vi.useRealTimers(); }
+  });
+
+  it("records a nontransient position hold without claiming readiness", async () => {
+    const request = vi.fn().mockResolvedValue(positionQueue({ ...busyPositionCard(), position_study_hold: "position_manifest_scope_unavailable" }));
+    vi.stubGlobal("fetch", request);
+    await fetchAndInitializeQueue(false, { preparePhoneQueue: false, replaySavedReviews: false });
+    expect(useTrainingStore.getState().queueStatus).toEqual({ kind: "held", reason: "position_manifest_scope_unavailable" });
   });
 
   it("bounds repeated busy responses and retains the previous attempt", async () => {
@@ -181,17 +202,18 @@ describe("desktop live queue isolation", () => {
     } finally { vi.useRealTimers(); }
   });
 
-  it("does not start preparation when a busy retry encounters a priority hold", async () => {
+  it("busy retry treats unavailable queue as bounded failure without optional POST", async () => {
     vi.useFakeTimers();
     try {
-      const request = vi.fn().mockResolvedValueOnce(positionQueue(busyPositionCard())).mockResolvedValueOnce(
-        Response.json({ detail: { code: "study_feedback_preparation_pending" } }, { status: 503 }));
+      const request = vi.fn().mockResolvedValueOnce(positionQueue(busyPositionCard())).mockImplementation(async () =>
+        Response.json({ detail: "Queue unavailable" }, { status: 503 }));
       vi.stubGlobal("fetch", request);
       const loading = fetchAndInitializeQueue(false, { preparePhoneQueue: false });
       const settled = loading.then(() => null, error => error);
       await advanceStudyTimers(5_000);
       expect(await settled).toBeInstanceOf(Error);
-      expect(request).toHaveBeenCalledTimes(2);
+      expect(request).toHaveBeenCalledTimes(4);
+      expect(request.mock.calls.every(([url]) => String(url).includes("/api/queue/window"))).toBe(true);
       expect(String(request.mock.calls[1][0])).toContain("/api/queue/window");
       expect(request.mock.calls[1][1]?.headers).toBeUndefined();
     } finally { vi.useRealTimers(); }

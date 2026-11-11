@@ -34,6 +34,18 @@ This assignment does not reset repertoire content, position schedules, attempts,
 
 The [source audit and reduction boundary](docs/architecture/runtime-reduction-20261110.md) records the concrete cut, remaining dependency knots, and finite retained-journey verification. No merged, installed, or activated state is implied by this specification.
 
+### November 10 aggressive reduction pass 2
+
+This explicit assignment supersedes earlier automatic Game feedback and adaptive recombination requirements, including R02's Study effects and R11's joining/splitting. The retained source is Study, Tactics, repertoire editing/import, and PGN/repertoire Game Review. Existing position scheduling, first-response checkpoints, review grading/receipts, attempts, ordinary queue recovery and frozen introduction ordering remain owned by Study.
+
+The automatic feedback/sync/provider closure, recombination, optional pre-issuance preparation protocol, standalone annotated-Studies authoring and proposal/audit framework are retired. Existing generated exercises are frozen ordinary exercises; their content, schedule state, reviews and lineage remain stored. Accepted optional operations and effects are paused with their original identities. Current source/integrity guards continue to protect ordinary editing and Study.
+
+The entire legacy database runtime is replaced by selected concrete native PostgreSQL operations in `database/tempo_storage`; no SQL dialect translator or replacement repository framework remains. Position source preparation, grading and immutable issuance policy live in application owners rather than SQL modules. Historical migrations remain isolated and schema 64 adds a non-destructive retirement ledger. No production migration or data cleanup is authorized by this source change.
+
+Minimal Game Review replays one pasted PGN or an existing saved game, follows applicable authored alternatives and displays the first departure/coverage end. It has no engine, provider refresh or Study mutation. Pasted PGNs are compared without saving new game records. Obsolete provider, analysis, discovery and defensive settings no longer participate in ordinary settings writes; their stored historical values remain untouched.
+
+[The pass-2 audit](docs/architecture/reduction-pass2/README.md) records source counts, dependencies, exact path dispositions and proportional verification. No merge, installation, activation or native/assembled qualification is implied.
+
 ## 2. Required outcomes
 
 | ID | Outcome |

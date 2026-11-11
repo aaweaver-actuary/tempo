@@ -1,22 +1,22 @@
 """Atomic splitting of an overlong opening prefix into two study cards."""
 
 from __future__ import annotations
+from tempo_storage.postgres import PostgresConnection,TempoRow
 
 from datetime import date, datetime, timezone
 import json
-import sqlite3
 
 import chess
 
-from tempo_legacy_database.connections import card_columns
-from tempo_legacy_database.adapters.authored_repertoires.opening_mutations import (
+from tempo_storage.connections import card_columns
+from tempo_storage.authored_repertoires.opening_mutations import (
     prefix_splits as storage,
 )
 from app.chess.cards import card_id
 from app.study.queue_order import capture_daily_queue_order, preserve_daily_queue_order
 
 
-def _trained_color_for_card(database: sqlite3.Connection, card: sqlite3.Row) -> str:
+def _trained_color_for_card(database: PostgresConnection, card: TempoRow) -> str:
     if card["trained_color"] in {"white", "black"}:
         return card["trained_color"]
     line = storage.first_line_color(database, card["repertoire_id"])
@@ -25,7 +25,7 @@ def _trained_color_for_card(database: sqlite3.Connection, card: sqlite3.Row) -> 
     return line["trained_color"]
 
 
-def _legal_split(card: sqlite3.Row, trained_color: str) -> dict:
+def _legal_split(card: TempoRow, trained_color: str) -> dict:
     moves = json.loads(card["moves_json"])
     board = chess.Board(card["start_fen"])
     trained_chess_color = chess.WHITE if trained_color == "white" else chess.BLACK
@@ -97,7 +97,7 @@ def _response(
     }
 
 
-def preview_prefix_split(database: sqlite3.Connection, source_card_id: str) -> dict:
+def preview_prefix_split(database: PostgresConnection, source_card_id: str) -> dict:
     card = storage.card_row(database, source_card_id)
     if not card:
         raise KeyError("Card not found")
@@ -109,15 +109,15 @@ def preview_prefix_split(database: sqlite3.Connection, source_card_id: str) -> d
 
 
 def _copy_card(
-    database: sqlite3.Connection,
-    source_card: sqlite3.Row,
+    database: PostgresConnection,
+    source_card: TempoRow,
     values: dict,
 ) -> None:
     storage.copy_card(database, source_card, values)
 
 
 def _queue_split_followups(
-    database: sqlite3.Connection,
+    database: PostgresConnection,
     shortened_card_id: str,
     continuation_card_id: str,
     today: str,
@@ -160,7 +160,7 @@ def _queue_split_followups(
 
 
 def apply_prefix_split(
-    database: sqlite3.Connection,
+    database: PostgresConnection,
     source_card_id: str,
     expected_revision: int,
 ) -> dict:

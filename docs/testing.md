@@ -16,6 +16,8 @@ State a finite selection briefly in the existing task/PR. Reuse existing tests a
 | UI-only behavior | Relevant component checks and browser proof where real browser behavior matters; no unrelated database/backend suites. |
 | Shared layout, dependencies, security, or verification infrastructure | Affected consumers and concrete shared risks, with the broader selection explained. |
 
+For reduced-source consolidation, select checks that establish the retained user journey and its real owner boundaries, including negative cases. Runner inventory and green wrappers support discoverability; they do not alone prove native replay or an assembled playable successor. Check actual consumed build inputs: a README included in a package can change its artifact hash even when runtime behavior is unchanged.
+
 Matching types alone do not prove semantic compatibility. Use current relevant identity, timestamp precision, missing-value, admission, retry, and transaction semantics rather than inventing convenient incompatible fixtures.
 
 Component workers own component proof. The delivery owner owns changed assembled behavior. Do not make every worker repeat the same assembly run or unchanged dependency suite.
@@ -313,7 +315,15 @@ Schema version 2 adds start-ordered `details` beneath the unchanged required sta
 
 ## Deployment lifecycle selection
 
-For the explicit schema-63 current-upgrade profile, use
+The schema-64 native-storage reduction has no qualified 63-to-64 lifecycle
+rehearsal yet. Both lifecycle modes refuse this source before image acquisition,
+resource admission, or lifecycle mutation. The historical PR #982 evidence does
+not qualify schema 64. Candidate artifact reuse and historical image acquisition
+remain available for applicable non-lifecycle checks; neither implies an upgrade
+pass. Implement and demonstrate the 63-to-64 transition before enabling a current
+schema-64 profile.
+
+For historical schema-63 source only, the explicit current-upgrade profile uses
 `make docker-lifecycle-current` / `--mode lifecycle-current`, with the pinned
 schema-62 source/artifact prerequisites below. Its distinct
 `deployment_lifecycle_current` stage performs a real historical upgrade to 61,

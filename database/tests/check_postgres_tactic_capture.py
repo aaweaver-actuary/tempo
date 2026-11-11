@@ -20,12 +20,12 @@ from unittest.mock import patch
 import chess
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend"))
-from tempo_legacy_database.adapters import postgres_store
-from tempo_legacy_database.adapters.tactics import captures as capture_storage
+from tempo_storage import postgres
+from tempo_storage.tactics import captures as capture_storage
 from app import tactic_commands  # registers the production handler
 from app.command_gateway import execute_command, read_operation
 from app.services.postgres_queue_refresh import _publish_tactical_introduction
-from tempo_legacy_database.adapters.tactic_admission import count_daily_tactic_introductions
+from tempo_storage.tactic_admission import count_daily_tactic_introductions
 from app.chess.cards import card_id
 
 
@@ -41,7 +41,7 @@ def main(database_url="postgresql://postgres@postgres:5432/tempo"):
                "moves": ["e2e4"], "source_kind": "manual", "note": "durability synthetic"}
     payload = {"request": request}
     operation_id = request["capture_id"]
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         original_limit = database.execute("SELECT tactics_new_per_day FROM settings WHERE id=1").fetchone()[0]
         initial_count = count_daily_tactic_introductions(database, day)
         database.execute("UPDATE settings SET tactics_new_per_day=?", (initial_count + 1,))
@@ -57,7 +57,7 @@ def main(database_url="postgresql://postgres@postgres:5432/tempo"):
     rendezvous = threading.Barrier(2)
     def publish():
         rendezvous.wait(timeout=5)
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             return _publish_tactical_introduction(database, day, prepared)
     def capture():
         rendezvous.wait(timeout=5)
@@ -69,35 +69,35 @@ def main(database_url="postgresql://postgres@postgres:5432/tempo"):
             captured = captured_future.result(timeout=10)
             automatic_published = published_future.result(timeout=10)
         assert captured and captured["queued"]
-        with postgres_store.connection(read_only=True) as database:
+        with postgres.connection(read_only=True) as database:
             assert count_daily_tactic_introductions(database, day) == initial_count + 1 + int(automatic_published)
             entries_before = [tuple(row) for row in database.execute("SELECT * FROM daily_queue ORDER BY id")]
             assert database.execute("SELECT COUNT(*) FROM tactic_captures WHERE id=?", (operation_id,)).fetchone()[0] == 1
             assert database.execute("SELECT attempt_state FROM daily_queue WHERE card_id=?", (captured["card_id"],)).fetchone()[0] == "guided"
-        postgres_store.close_pools()  # restart the client's persistence boundary
+        postgres.close_pools()  # restart the client's persistence boundary
         assert execute_command(operation_id, "tactics.capture.create", payload) == captured
         assert read_operation(operation_id)["state"] == "complete"
-        with postgres_store.connection(read_only=True) as database:
+        with postgres.connection(read_only=True) as database:
             assert entries_before == [tuple(row) for row in database.execute("SELECT * FROM daily_queue ORDER BY id")]
         # A failing command must retain its failed receipt and no business effects.
         invalid = {**request, "capture_id": str(uuid.uuid4()), "moves": ["e2e5"]}
         assert execute_command(invalid["capture_id"], "tactics.capture.create", {"request": invalid}) is None
         assert read_operation(invalid["capture_id"])["state"] == "failed"
-        with postgres_store.connection(read_only=True) as database:
+        with postgres.connection(read_only=True) as database:
             assert database.execute("SELECT COUNT(*) FROM tactic_captures WHERE id=?", (invalid["capture_id"],)).fetchone()[0] == 0
             assert entries_before == [tuple(row) for row in database.execute("SELECT * FROM daily_queue ORDER BY id")]
         # Failure immediately before the capture receipt rolls back every borrowed
         # card/queue effect while the gateway retains its own failed operation receipt.
         fault = {**request, "capture_id": str(uuid.uuid4()), "moves": ["d2d4"]}
         def business_rows():
-            with postgres_store.connection(read_only=True) as database:
+            with postgres.connection(read_only=True) as database:
                 return {table: [tuple(row) for row in database.execute(f"SELECT * FROM {table} ORDER BY {order}")]
                         for table, order in (("repertoires", "id"), ("cards", "id"),
                             ("repertoire_cards", "repertoire_id,card_id"), ("daily_queue", "id"),
                             ("tactic_captures", "id"))}
         before_fault = business_rows()
         fault_card_id = card_id(fault["starting_fen"], fault["moves"])
-        with postgres_store.connection(read_only=True) as database:
+        with postgres.connection(read_only=True) as database:
             assert database.execute("SELECT COUNT(*) FROM cards WHERE id=?", (fault_card_id,)).fetchone()[0] == 0
             assert database.execute("SELECT COUNT(*) FROM tactic_captures WHERE id=?", (fault["capture_id"],)).fetchone()[0] == 0
         observed_admission = []
@@ -118,12 +118,12 @@ def main(database_url="postgresql://postgres@postgres:5432/tempo"):
         assert read_operation(fault["capture_id"])["state"] == "failed"
         assert business_rows() == before_fault
         # Existing-card collision rolls back the repertoire/event/schedule/queue changes.
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             database.execute("UPDATE cards SET archived=1 WHERE id=?", (captured["card_id"],))
         collision = {**request, "capture_id": str(uuid.uuid4())}
         assert execute_command(collision["capture_id"], "tactics.capture.create", {"request": collision}) is None
         assert read_operation(collision["capture_id"])["error"]["status_code"] == 409
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             assert database.execute("SELECT COUNT(*) FROM tactic_captures WHERE id=?", (collision["capture_id"],)).fetchone()[0] == 0
             database.execute("UPDATE cards SET archived=0 WHERE id=?", (captured["card_id"],))
             database.execute("UPDATE daily_queue SET status='complete' WHERE card_id=?", (captured["card_id"],))
@@ -131,10 +131,10 @@ def main(database_url="postgresql://postgres@postgres:5432/tempo"):
         recapture = {**request, "capture_id": str(uuid.uuid4())}
         result = execute_command(recapture["capture_id"], "tactics.capture.create", {"request": recapture})
         assert result["reused"] and not result["introduced"]
-        with postgres_store.connection(read_only=True) as database:
+        with postgres.connection(read_only=True) as database:
             assert database.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id=? AND status='queued'", (captured["card_id"],)).fetchone()[0] == 1
     finally:
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             database.execute("UPDATE settings SET tactics_new_per_day=?", (original_limit,))
             database.execute("DELETE FROM tactic_pack_activation WHERE pack_id='capture-synthetic'")
             # Retain event/card rows for backup comparison, but retire this scenario's
@@ -142,7 +142,7 @@ def main(database_url="postgresql://postgres@postgres:5432/tempo"):
             fixture_card_ids = (card_id(request["starting_fen"], request["moves"]), prepared["card_id"])
             database.execute("UPDATE cards SET archived=1 WHERE id IN (?,?)", fixture_card_ids)
             database.execute("UPDATE daily_queue SET status='complete' WHERE card_id IN (?,?)", fixture_card_ids)
-        postgres_store.close_pools()
+        postgres.close_pools()
     print("PASS capture/automatic contention, quota recheck, restart and receipt replay, atomic rejection, and finished queue reopen")
 
 

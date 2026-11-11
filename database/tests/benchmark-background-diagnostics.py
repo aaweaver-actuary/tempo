@@ -15,8 +15,8 @@ import tempfile
 import time
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'backend'))
-from tempo_legacy_database import connections as database
-from tempo_legacy_database.adapters import postgres_store
+from tempo_storage import connections as database
+from tempo_storage import postgres
 from app.services import durable_tasks, background_diagnostics
 
 
@@ -34,7 +34,7 @@ def measure(call, repetitions=30):
 def main():
     from app.product_composition.database_infrastructure import bind_database_infrastructure
     bind_database_infrastructure()
-    if postgres_store.configured():
+    if postgres.configured():
         raise RuntimeError("Compatibility benchmark requires an environment without PostgreSQL URLs")
     with tempfile.TemporaryDirectory(prefix='tempo-diagnostic-benchmark-') as directory:
         database.DB_PATH=Path(directory)/'synthetic.db'

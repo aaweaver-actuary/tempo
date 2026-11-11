@@ -1,6 +1,6 @@
 """Run mypy with --warn-unused-ignores to check opaque receipt authority."""
 
-from tempo_legacy_database.adapters.commands.receipts.storage import ReceiptWriter
+from tempo_storage.commands.receipts.storage import ReceiptWriter
 
 
 def no_driver_authority(writer: ReceiptWriter) -> None:

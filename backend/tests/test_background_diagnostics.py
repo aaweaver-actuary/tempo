@@ -54,7 +54,7 @@ def test_background_diagnostics_preserves_foreground_responsiveness(monkeypatch)
 
 
 def test_postgres_background_counter_flush_follows_domain_writes_and_sorts_locks():
-    from tempo_legacy_database.adapters.postgres_store import PostgresConnection
+    from tempo_storage.postgres import PostgresConnection
 
     statements = []
 

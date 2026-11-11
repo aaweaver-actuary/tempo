@@ -28,7 +28,7 @@ from psycopg.conninfo import make_conninfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'backend'))
 from app import main, tasks
-from tempo_legacy_database.adapters import postgres_store  # registers the real worker commands
+from tempo_storage import postgres  # registers the real worker commands
 from app.command_gateway import execute_command
 from app.services import durable_tasks, postgres_queue_refresh as worker
 from database.tooling.apply_postgres_migrations import apply_migrations
@@ -37,7 +37,7 @@ from database.tests.check_postgres_opening_capacity import seed, snapshot, DAY
 
 def enable(limit=2):
     steps = seed()
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         database.execute('UPDATE settings SET study_only_mode=1,new_cards_per_day=? WHERE id=1', (limit,))
     return steps
 
@@ -51,7 +51,7 @@ def claim_fixture_delivery():
     """
 
     def administer(operation, *, label):
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             return operation(database)
     with patch.object(durable_tasks, 'submit_background_write', administer):
         return durable_tasks.claim_task(allowed_kinds=('daily_queue',))
@@ -79,7 +79,7 @@ def test_postgres_study_only_introduces_openings_without_analysis():
     assert after['reviews'] == before['reviews']
     assert all(card[3:] == dict((row[0], row[3:]) for row in before['cards'])[card[0]]
                for card in after['cards'])
-    with postgres_store.connection(read_only=True) as database:
+    with postgres.connection(read_only=True) as database:
         assert database.execute("SELECT state FROM queue_projections WHERE queue_date=?", (DAY,)).fetchone()[0] == 'ready'
     refresh('study-introductions-replay')
     assert snapshot() == after
@@ -93,7 +93,7 @@ def test_postgres_study_only_review_unlocks_child_preserves_fsrs_and_receipts():
     queued = snapshot()['queue']
     assert len(queued) == 2
     root_id = queued[0][0]
-    with postgres_store.connection(read_only=True) as database:
+    with postgres.connection(read_only=True) as database:
         entry_id = database.execute('SELECT id FROM daily_queue WHERE card_id=?', (root_id,)).fetchone()[0]
     assert execute_command(uuid4().hex, 'queue.issue_head',
         {'entry_id': entry_id, 'queue_date': DAY, 'card_id': root_id, 'expected_revision': 1})['issued']
@@ -113,7 +113,7 @@ def test_postgres_study_only_review_unlocks_child_preserves_fsrs_and_receipts():
     assert after_refresh['reviews'] == before_refresh['reviews']
     root_before = next(row for row in before_refresh['cards'] if row[0] == root_id)
     assert next(row for row in after_refresh['cards'] if row[0] == root_id) == root_before
-    postgres_store.close_pools()
+    postgres.close_pools()
     assert execute_command(operation_id, 'cards.review', review) == saved
     assert snapshot()['reviews'] == after_refresh['reviews']
 
@@ -125,7 +125,7 @@ def test_postgres_study_only_daily_limits_and_empty_sets(limit):
     before = snapshot()
     refresh('limit-replay')
     assert snapshot() == before
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         database.execute('UPDATE cards SET archived=1')
     refresh('empty')
 
@@ -133,7 +133,7 @@ def test_postgres_study_only_daily_limits_and_empty_sets(limit):
 def test_postgres_study_only_safety_exclusions_do_not_starve_later_roots(exclusion):
     steps = enable(2)
     root = next(step.card_id for step in steps if step.parent_card_id is None)
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         if exclusion in ('archived', 'pending_validation'):
             database.execute(f'UPDATE cards SET {exclusion}=1 WHERE id=?', (root,))
         elif exclusion == 'deleted':
@@ -168,7 +168,7 @@ def test_postgres_study_only_checkpoint_restart_and_stale_replay():
     assert worker.execute_postgres_queue_refresh_slice(task)
     assert len(snapshot()['queue']) == 1
     assert not worker.execute_postgres_queue_refresh_slice(task)
-    postgres_store.close_pools()
+    postgres.close_pools()
     resumed = claim_fixture_delivery()
     assert resumed['payload']['study_opening_index'] == 1
     # Superseding a leased generation is cancellation, not a replay permission.
@@ -187,12 +187,12 @@ def test_postgres_study_only_concurrent_refreshes_share_last_allowance():
     enable(2)
     page = worker._prepare_study_opening_page(DAY, {})
     assert len(page['items']) == 2
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         database.execute('UPDATE settings SET new_cards_per_day=1 WHERE id=1')
     barrier = Barrier(2)
     def admit(proposal):
         barrier.wait(timeout=5)
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             return worker._admit_one_prioritized_opening(database, DAY, proposal)
     with ThreadPoolExecutor(max_workers=2) as pool:
         outcomes = list(pool.map(admit, page['items']))
@@ -206,12 +206,12 @@ def test_postgres_study_only_shared_memberships_and_route_recheck():
     page = worker._prepare_study_opening_page(DAY, {})
     proposal = page['items'][0]
     before = snapshot()
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         database.execute("UPDATE opening_graph_publications SET generation=2 WHERE repertoire_id='rep'")
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         assert not worker._admit_one_prioritized_opening(database, DAY, proposal)
     assert snapshot() == before
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         database.execute("UPDATE opening_graph_publications SET generation=1 WHERE repertoire_id='rep'")
         database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('shared','Shared','proof',?)", (DAY,))
         database.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) SELECT 'shared-line','shared',name,trained_color,start_fen,moves_json,created_at FROM repertoire_lines ORDER BY id LIMIT 1")
@@ -225,7 +225,7 @@ def test_postgres_study_only_shared_memberships_and_route_recheck():
 
 def test_postgres_study_only_blocked_pages_advance_in_stable_graph_order():
     enable(1)
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         root = database.execute("SELECT card_id FROM opening_graph_steps WHERE parent_card_id IS NULL ORDER BY line_id LIMIT 1").fetchone()[0]
         database.execute("UPDATE cards SET moves_json='[\"e2e5\"]' WHERE id=?", (root,))
         original_line = database.execute('SELECT id FROM repertoire_lines ORDER BY id LIMIT 1').fetchone()[0]
@@ -243,7 +243,7 @@ def test_postgres_study_only_blocked_pages_advance_in_stable_graph_order():
 def test_postgres_study_only_real_game_miss_retains_quota_exception():
     steps = enable(0)
     descendant = next(step.card_id for step in steps if step.decision_index == 2)
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         database.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json) VALUES('game','lichess','proof',?,'rapid',1,'white','1-0',?,'[]')", (DAY + 'T00:00:00+00:00', 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'))
         database.execute("INSERT INTO repertoire_decision_events_legacy(id,game_id,repertoire_id,card_id,ply,fen_key,expected_uci,actual_uci,outcome,played_at,updated_at) VALUES('miss','game','rep',?,1,'proof','e2e4','d2d4','miss',?,?)", (descendant, DAY + 'T00:00:00+00:00', DAY))
     refresh()
@@ -254,7 +254,7 @@ def test_postgres_study_only_real_game_miss_retains_quota_exception():
 def test_postgres_study_only_already_queued_card_does_not_consume_planned_allowance():
     enable(1)
     first = worker._prepare_study_opening_page(DAY, {})['items'][0]
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         database.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind) VALUES(?,?,0,'explicit')",
                          (DAY, first['card_id']))
     remaining = worker._prepare_study_opening_page(DAY, {})['items']
@@ -262,7 +262,7 @@ def test_postgres_study_only_already_queued_card_does_not_consume_planned_allowa
         'Already queued card starved the next eligible opening with unused allowance'
     refresh()
     assert len(snapshot()['queue']) == 2
-    with postgres_store.connection(read_only=True) as database:
+    with postgres.connection(read_only=True) as database:
         assert database.execute('SELECT introduced_at FROM cards WHERE id=?', (first['card_id'],)).fetchone()[0] is None
         assert database.execute('SELECT COUNT(*) FROM cards WHERE introduced_at=?', (DAY,)).fetchone()[0] == 1
 
@@ -272,13 +272,13 @@ def test_postgres_study_only_foreground_contention_rolls_back_and_resumes():
     page = worker._prepare_study_opening_page(DAY, {})
     proposal = page['items'][0]
     before = snapshot()
-    from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
+    from tempo_storage.queue_position_lock import lock_queue_date_for_position
     from psycopg.errors import LockNotAvailable
     def background_admit():
-        with postgres_store.connection(background=True) as database:
+        with postgres.connection(background=True) as database:
             worker._admit_one_prioritized_opening(database, DAY, proposal)
     with ThreadPoolExecutor(max_workers=1) as pool:
-        with postgres_store.connection() as foreground:
+        with postgres.connection() as foreground:
             lock_queue_date_for_position(foreground, DAY)
             blocked = pool.submit(background_admit)
             try:
@@ -289,7 +289,7 @@ def test_postgres_study_only_foreground_contention_rolls_back_and_resumes():
                 raise AssertionError('Background admission ignored foreground queue contention')
             assert foreground.execute('SELECT COUNT(*) FROM reviews').fetchone()[0] == 0
     assert snapshot() == before
-    with postgres_store.connection(background=True) as database:
+    with postgres.connection(background=True) as database:
         assert worker._admit_one_prioritized_opening(database, DAY, proposal)
     assert len(snapshot()['queue']) == 1
 
@@ -311,10 +311,10 @@ def restart_proof(admin_url, database_name, stage):
                 expected = json.loads(json.dumps(snapshot()))
                 marker = durable_tasks.enqueue_task('daily_queue', 'native-restart-marker',
                     {'queue_date': DAY, 'expected_native_restart_state': expected})
-                with postgres_store.connection() as database:
+                with postgres.connection() as database:
                     database.execute("UPDATE background_tasks SET state='complete' WHERE id=?", (marker['id'],))
             else:
-                with postgres_store.connection(read_only=True) as database:
+                with postgres.connection(read_only=True) as database:
                     marker = database.execute("SELECT payload_json FROM background_tasks WHERE deduplication_key='native-restart-marker'").fetchone()
                     delivered = dict(database.execute("SELECT * FROM background_tasks WHERE deduplication_key='after-real-review'").fetchone())
                 expected = json.loads(marker[0])['expected_native_restart_state']
@@ -326,7 +326,7 @@ def restart_proof(admin_url, database_name, stage):
                 assert json.loads(json.dumps(snapshot())) == expected
                 print('PASS test_postgres_study_only_server_restart_preserves_introductions_reviews_and_replay')
         finally:
-            postgres_store.close_pools()
+            postgres.close_pools()
             if stage == 'verify':
                 with psycopg.connect(admin_url, autocommit=True) as admin:
                     admin.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(database_name)))
@@ -336,7 +336,7 @@ def measure_foreground_with_bounded_preparation():
     """Small paired native queue-read measurement, not a production SLO claim."""
     enable(10)
     refresh()
-    with postgres_store.connection(read_only=True) as database:
+    with postgres.connection(read_only=True) as database:
         head = database.execute('SELECT id,card_id FROM daily_queue ORDER BY position LIMIT 1').fetchone()
     assert execute_command(uuid4().hex, 'queue.issue_head',
         {'entry_id': head[0], 'queue_date': DAY, 'card_id': head[1], 'expected_revision': 1})['issued']
@@ -392,7 +392,7 @@ def owned_database(admin_url, template_name):
         try:
             yield
         finally:
-            postgres_store.close_pools()
+            postgres.close_pools()
             with psycopg.connect(admin_url, autocommit=True) as admin:
                 admin.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(database_name)))
 
@@ -441,7 +441,7 @@ def run():
                     test(parameter) if parameter is not None else test()
                 print(f'PASS {test.__name__}[{parameter}] ({time.monotonic() - started:.3f}s)', flush=True)
     finally:
-        postgres_store.close_pools()
+        postgres.close_pools()
         with psycopg.connect(admin_url, autocommit=True) as admin:
             admin.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(template_name)))
 

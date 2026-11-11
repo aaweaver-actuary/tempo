@@ -21,7 +21,7 @@ import psycopg
 
 from database.tooling.apply_postgres_migrations import MIGRATIONS, migration_source
 from database.tooling.provision_postgres_roles import provision
-from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
+from tempo_storage.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 
 
 ABANDON_CARD = "cli-synthetic-abandon-orphan"

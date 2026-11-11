@@ -60,10 +60,8 @@ def select_carrier(source, target, *, card_id=None):
 def prepare_due(database, day, payload):
     """Prepare one introduced due decision using bounded H1 reads outside the writer."""
     from datetime import date, datetime, timezone
-    from tempo_legacy_database.adapters.authored_repertoires.position_study_source import (
-        prepare_position_source,
-    )
-    from tempo_legacy_database.adapters.study.position_due_candidates import (
+    from app.repertoire.position_study_source import prepare_position_source
+    from tempo_storage.study.position_due_candidates import (
         PositionDueCandidateReader,
         PositionDueCursor,
     )
@@ -161,17 +159,17 @@ def prepare_due(database, day, payload):
 def admit_due(database, day, prepared):
     """Fence one proposal before acquiring the ordinary card and date locks."""
     from datetime import date
-    from tempo_legacy_database.adapters.authored_repertoires.position_study_source import (
+    from tempo_storage.authored_repertoires.position_study_source import (
         fence_position_source,
     )
-    from tempo_legacy_database.adapters.study.position_owner_epoch import owner_mode
-    from tempo_legacy_database.adapters.study.position_due_candidates import (
+    from tempo_storage.study.position_owner_epoch import owner_mode
+    from tempo_storage.study.position_due_candidates import (
         PositionDueCandidateReader,
     )
-    from tempo_legacy_database.adapters.queue_position_lock import (
+    from tempo_storage.queue_position_lock import (
         lock_queue_date_for_position,
     )
-    from tempo_legacy_database.adapters.queue_refresh import admissions
+    from tempo_storage.queue_refresh import admissions
 
     source, candidate, carrier = (
         prepared["source"],
@@ -228,7 +226,7 @@ def admit_due(database, day, prepared):
 
 def prepare_opening_introduction(database, planned):
     """Prepare position state only for the existing selected introduction."""
-    from tempo_legacy_database.adapters.study.position_introductions import (
+    from tempo_storage.study.position_introductions import (
         prepare_introduction,
     )
 
@@ -258,8 +256,8 @@ def prepare_opening_introduction(database, planned):
 
 
 def fence_opening_introduction(database, prepared):
-    from tempo_legacy_database.adapters.study.position_owner_epoch import owner_mode
-    from tempo_legacy_database.adapters.study.position_introductions import (
+    from tempo_storage.study.position_owner_epoch import owner_mode
+    from tempo_storage.study.position_introductions import (
         fence_introduction,
     )
 
@@ -270,7 +268,7 @@ def fence_opening_introduction(database, prepared):
 
 
 def apply_opening_introduction(database, prepared, fenced, *, now):
-    from tempo_legacy_database.adapters.study.position_introductions import (
+    from tempo_storage.study.position_introductions import (
         initialize_introduction,
     )
 
@@ -289,7 +287,7 @@ def prepare_targeted_position_introduction(source, target):
     J2 supplies its owner-validated target. The Repertoire capability must
     contain the same current physical and logical occurrence.
     """
-    from tempo_legacy_database.adapters.study.position_introductions import (
+    from tempo_storage.study.position_introductions import (
         prepare_introduction,
     )
 
@@ -332,7 +330,7 @@ def prepare_targeted_position_introduction(source, target):
 
 def fence_targeted_position_introduction(database, prepared_target):
     """Acquire the H2 introduction fences before J2 card/effect/day locks."""
-    from tempo_legacy_database.adapters.study.position_introductions import (
+    from tempo_storage.study.position_introductions import (
         fence_introduction,
     )
 
@@ -354,7 +352,7 @@ def admit_targeted_position_introduction(
     The capability is Study-owned and its result is the actual introduction
     receipt, not a fabricated review or Games scheduling effect.
     """
-    from tempo_legacy_database.adapters.study.position_introductions import (
+    from tempo_storage.study.position_introductions import (
         initialize_introduction,
     )
 

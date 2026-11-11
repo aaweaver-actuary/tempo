@@ -27,7 +27,7 @@ def timeout_database(normal_study_mode, monkeypatch):
         CREATE TABLE background_task_events(id INTEGER PRIMARY KEY,task_id TEXT,
             generation INTEGER,event TEXT,phase TEXT,detail TEXT,created_at TEXT);
     """)
-    monkeypatch.setattr(durable_tasks.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(durable_tasks.postgres, "configured", lambda: True)
     monkeypatch.setattr(durable_tasks, "connection", lambda **_options: nullcontext(database))
     monkeypatch.setattr(
         durable_tasks, "_now", lambda: datetime(2026, 10, 4, tzinfo=timezone.utc)

@@ -56,7 +56,7 @@ def test_graph_rehearsal_yields_to_real_policy_section_without_reclaiming_lease(
     monkeypatch.setattr(
         fixture, "link_state", Mock(return_value={"links": [fixture.repertoire_id]})
     )
-    monkeypatch.setattr(proof.postgres_store, "close_pools", Mock())
+    monkeypatch.setattr(proof.postgres, "close_pools", Mock())
     monkeypatch.setattr(
         proof.graph,
         "prepare_obsolete_graph_cards",

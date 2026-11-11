@@ -23,10 +23,10 @@ from psycopg import sql
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from database.tooling.apply_postgres_migrations import MIGRATIONS, apply_migrations
-from tempo_legacy_database.ddl.schema_version import POSTGRES_SCHEMA_VERSION
+from tempo_storage.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend"))
-from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
-from tempo_legacy_database.adapters import postgres_store
+from tempo_storage.postgres import PostgresConnection, tempo_row_factory
+from tempo_storage import postgres
 from app import discovery_commands
 from app.services import discovery_admission
 
@@ -91,11 +91,11 @@ def test_postgres_stale_admission_and_revisioned_same_move_replay(dsn: str) -> N
     fen_key = " ".join(starting_fen.split()[:4])
     opportunity_id = _fixture_id(repertoire_id, "weak_known_decision", fen_key, "e2e4")
     original_urls = {name: os.environ.get(name) for name in ("TEMPO_DATABASE_WRITE_URL", "TEMPO_DATABASE_READ_URL")}
-    postgres_store.close_pools()
+    postgres.close_pools()
     for name in original_urls:
         os.environ[name] = dsn
     try:
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             now = datetime.now(timezone.utc).isoformat()
             database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,?,?)",
                              (repertoire_id, "Revision lifecycle", "regression", now))
@@ -120,12 +120,12 @@ def test_postgres_stale_admission_and_revisioned_same_move_replay(dsn: str) -> N
             database.execute("INSERT INTO repertoire_integrity_state(repertoire_id,status,checked_at,scan_status) VALUES(?,'clean',?,'idle')",
                              (repertoire_id, datetime.now(timezone.utc).isoformat()))
         def lease(intent_id):
-            with postgres_store.connection() as database:
+            with postgres.connection() as database:
                 row = database.execute("UPDATE background_tasks SET state='leased',lease_token=? WHERE kind='discovery_admission' AND deduplication_key=? RETURNING *",
                                        (f"lease:{intent_id}", intent_id)).fetchone()
                 return {**dict(row), "payload": {"intent_id": intent_id}}
         task_a = lease(intent_a)
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             # The retained admission reader receives a different saved evidence row;
             # the withdrawn producer/materiality algorithm is outside this fixture.
             database.execute("UPDATE repertoire_opportunities SET evidence_json=?,evidence_fingerprint='saved-fixture:B',handled_evidence_json=NULL,admission_state=NULL,admitted_card_id=NULL WHERE id=?",
@@ -137,8 +137,8 @@ def test_postgres_stale_admission_and_revisioned_same_move_replay(dsn: str) -> N
         with patch.object(discovery_admission, "_materialize_admission_branch"), patch.object(discovery_admission, "_ensure_admission_coverage_refresh"):
             assert discovery_admission.execute_admission_intent_slice(task_a) is False
             assert discovery_admission.execute_admission_intent_slice(task_a) is False
-            postgres_store.close_pools()  # Verify through newly opened connections.
-            with postgres_store.connection() as database:
+            postgres.close_pools()  # Verify through newly opened connections.
+            with postgres.connection() as database:
                 assert database.execute("SELECT state FROM discovery_admission_intents WHERE id=?", (intent_a,)).fetchone()[0] == "queued"
                 current = database.execute("SELECT * FROM repertoire_opportunities WHERE id=?", (opportunity_id,)).fetchone()
                 assert current["evidence_fingerprint"] == fingerprint_b
@@ -175,14 +175,14 @@ def test_postgres_stale_admission_and_revisioned_same_move_replay(dsn: str) -> N
             task_b = lease(intent_b)
             assert discovery_admission.execute_admission_intent_slice(task_b) is False
             assert discovery_admission.execute_admission_intent_slice(task_b) is False
-        postgres_store.close_pools()
-        with postgres_store.connection() as database:
+        postgres.close_pools()
+        with postgres.connection() as database:
             assert database.execute("SELECT handled_evidence_json=evidence_json FROM repertoire_opportunities WHERE id=?", (opportunity_id,)).fetchone()[0]
             assert database.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id='revision-card'").fetchone()[0] == 1
             assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id='revision-card'").fetchone()[0] == 0
             assert database.execute("SELECT state FROM discovery_admission_intents WHERE id=?", (intent_a,)).fetchone()[0] == "queued"
     finally:
-        postgres_store.close_pools()
+        postgres.close_pools()
         for name, value in original_urls.items():
             if value is None:
                 os.environ.pop(name, None)

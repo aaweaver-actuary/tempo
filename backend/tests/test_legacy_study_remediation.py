@@ -10,7 +10,7 @@ import asyncio
 
 import pytest
 
-from tempo_legacy_database import connections as database
+from tempo_storage import connections as database
 
 
 _PRIORITY_POSITION_SQL = """UPDATE daily_queue queue SET position=planned.position
@@ -47,7 +47,7 @@ def test_http_cutover_matching_background_admission_and_query_only_guard_are_pre
     from fastapi import Request
     from fastapi.responses import JSONResponse
     from app import main
-    from tempo_legacy_database.adapters import postgres_store
+    from tempo_storage import postgres
 
     entered = []
 
@@ -60,7 +60,7 @@ def test_http_cutover_matching_background_admission_and_query_only_guard_are_pre
         entered.append("background")
         return nullcontext()
 
-    monkeypatch.setattr(postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(postgres, "configured", lambda: True)
     monkeypatch.setattr(main.activity_gate, "async_foreground", foreground)
     monkeypatch.setattr(main.activity_gate, "background_request", background)
     request = Request(

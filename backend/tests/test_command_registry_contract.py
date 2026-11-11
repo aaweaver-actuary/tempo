@@ -106,7 +106,7 @@ def test_default_legacy_registration_and_executor_maps_are_registry_owned(monkey
 
 def test_descriptor_registration_shares_legacy_execution_maps():
     from app import command_gateway as gateway
-    from tempo_legacy_database.adapters.postgres_store import PostgresConnection
+    from tempo_storage.postgres import PostgresConnection
 
     observed = []
 
@@ -138,7 +138,7 @@ def test_descriptor_registration_shares_legacy_execution_maps():
 
 def test_pure_contract_import_does_not_start_or_import_runtime():
     root = Path(__file__).resolve().parents[2]
-    code = """\nimport builtins\noriginal = builtins.__import__\ndef guarded(name, *args, **kwargs):\n    if name in {"app.main", "app.tasks", "app.command_gateway"} or name.startswith(("tempo_legacy_database", "psycopg", "redis", "celery")):\n        raise AssertionError(name)\n    return original(name, *args, **kwargs)\nbuiltins.__import__ = guarded\nfrom app.contracts.command_registry import CommandDescriptor, CommandRegistry\nassert CommandRegistry().handlers == {}\n"""
+    code = """\nimport builtins\noriginal = builtins.__import__\ndef guarded(name, *args, **kwargs):\n    if name in {"app.main", "app.tasks", "app.command_gateway"} or name.startswith(("tempo_storage", "psycopg", "redis", "celery")):\n        raise AssertionError(name)\n    return original(name, *args, **kwargs)\nbuiltins.__import__ = guarded\nfrom app.contracts.command_registry import CommandDescriptor, CommandRegistry\nassert CommandRegistry().handlers == {}\n"""
     subprocess.run(
         [sys.executable, "-c", code],
         cwd=root,

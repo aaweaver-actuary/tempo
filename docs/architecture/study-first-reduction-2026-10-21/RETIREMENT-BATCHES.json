@@ -874,9 +874,9 @@
         "backend/app/guided_review_commands.py",
         "backend/app/services/guided_review.py",
         "backend/app/contracts/transport/guided_review.py",
-        "database/tempo_legacy_database/adapters/games/guided_review/storage.py",
-        "database/tempo_legacy_database/adapters/games/guided_review/__init__.py",
-        "database/tempo_legacy_database/adapters/games/guided_review/README.md",
+        "database/tempo_storage/games/guided_review/storage.py",
+        "database/tempo_storage/games/guided_review/__init__.py",
+        "database/tempo_storage/games/guided_review/README.md",
         "backend/tests/test_guided_review.py",
         "backend/tests/test_postgres_guided_review.py"
       ],
@@ -922,7 +922,7 @@
           "required_edit": "Replace only the Games guided review DTO inventory row with the immutable last-good pointer and unsupported-route disposition; preserve Study and other transport ownership."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/games/README.md",
+          "path": "database/tempo_storage/games/README.md",
           "required_edit": "Replace only the guided storage link/flow paragraph with its last-good pointer and the retained schema/export history pointer. Its removed adapter README owns the only capability-specific drawing; do not remove the schema ER diagrams or other Games storage flows."
         },
         {
@@ -947,8 +947,8 @@
           "backend/app/guided_review_commands.py",
           "backend/app/services/guided_review.py",
           "backend/app/contracts/transport/guided_review.py",
-          "database/tempo_legacy_database/adapters/games/guided_review/storage.py",
-          "database/tempo_legacy_database/adapters/games/guided_review/__init__.py"
+          "database/tempo_storage/games/guided_review/storage.py",
+          "database/tempo_storage/games/guided_review/__init__.py"
         ],
         "delete_path_count": 5,
         "deleted_physical_lines": 399,
@@ -970,7 +970,7 @@
         "exclusive_test_lines": 258,
         "exclusive_test_functions": 10,
         "deleted_documentation_paths": [
-          "database/tempo_legacy_database/adapters/games/guided_review/README.md"
+          "database/tempo_storage/games/guided_review/README.md"
         ],
         "deleted_documentation_lines": 24,
         "shared_test_edit_paths": [
@@ -1092,7 +1092,7 @@
           "disposition": "Keep generic status/retry interfaces for current Study and surviving source operations. Old guided command obligations do not require transfer or settlement under the superseding fresh-start policy; no live row change is performed."
         },
         {
-          "source": "backend/app/services/guided_review.py:11-13,35-168; backend/app/guided_review_commands.py:13-18; database/tempo_legacy_database/adapters/games/guided_review/storage.py:1-138",
+          "source": "backend/app/services/guided_review.py:11-13,35-168; backend/app/guided_review_commands.py:13-18; database/tempo_storage/games/guided_review/storage.py:1-138",
           "route": "Only guided service/commands import the private storage module. Service reads/ranks/reconciles/reveals/grades findings; command borrows native transaction and locks game/session. Adapter reads imported_games/current_game_findings and reads/writes only guided session/attempt tables.",
           "disposition": "Delete exclusive policy/storage with capability; retain shared connection/Postgres wrapper, finding publication/view, game data, receipt owner, chess dependency and all other consumers."
         },
@@ -1112,7 +1112,7 @@
           "disposition": "Preserve current normal launcher/build source until retained-artifact selection is implemented and accepted. No backend/Dockerfile/root Compose/lifecycle deletion in this packet; no old-history drain requirement."
         },
         {
-          "source": "backend/app/main.py:1804-1844; database/tempo_legacy_database/adapters/http_composition/snapshots.py:60-61; database/tooling/migrate_sqlite_to_postgres.py; database/tooling/generate_postgres_schema.py:24; database/browser/tempo-db.ts:119-120",
+          "source": "backend/app/main.py:1804-1844; database/tempo_storage/http_composition/snapshots.py:60-61; database/tooling/migrate_sqlite_to_postgres.py; database/tooling/generate_postgres_schema.py:24; database/browser/tempo-db.ts:119-120",
           "route": "Migration snapshot explicitly exports both guided tables; generic sorted-table converter and browser snapshot mapping retain them. Initial DDL/SQLite construction/FKs/index and schema chart also retain their stored facts. Tracked SQL/view/migration search found no view or migration importing the five Python implementations.",
           "disposition": "Existing schema/export/converter consumers remain authored source and may be used for graph recovery where the graph owner identifies a concrete dependency. Old guided-only rows may be disposable after exact graph separation; source manifest approval never approves a live table drop or data operation."
         },
@@ -1134,27 +1134,27 @@
           "sha256": "c4fccd8d511548f3c2c59d8ce3f864fe1dd290e5f26cba42adb21e4f2de61afa"
         },
         {
-          "path": "database/tempo_legacy_database/adapters/commands/receipts/storage.py",
+          "path": "database/tempo_storage/commands/receipts/storage.py",
           "reason": "All operation receipts, recovery filtering/fencing and borrowed transaction authority remain; no receipt deletion or reinterpretation.",
           "sha256": "8161f58b91c2419a6aebcea56bed0ec9b24d0d252280383c930b7bdb56bcfcd5"
         },
         {
-          "path": "database/tempo_legacy_database/adapters/http_composition/snapshots.py",
+          "path": "database/tempo_storage/http_composition/snapshots.py",
           "reason": "portable_table_rows explicitly retains guided_review_sessions and guided_review_attempts at lines 60-61. Existing snapshot is a retained consumer, not a complete historical converter or pending-receipt export.",
           "sha256": "50a832f7285bd40d3071a48375bc566b3c7dc614cf53c2cf55868d059cd12ebb"
         },
         {
-          "path": "database/tempo_legacy_database/connections.py",
+          "path": "database/tempo_storage/connections.py",
           "reason": "Retain SQLite schema construction and guided tables/index plus all shared connections, review/attempt and compatibility behavior.",
           "sha256": "4b3733dc312679f3ed38491fe5ba4f4954087bb18a8598222cca2e1b9c80a554"
         },
         {
-          "path": "database/tempo_legacy_database/ddl/migrations/001_initial.sql",
+          "path": "database/tempo_storage/ddl/migrations/001_initial.sql",
           "reason": "Retain both guided tables, game/session/finding FKs and idx_guided_review_game. Code retirement never approves DROP or migration edits.",
           "sha256": "18b25af4ec4baf419c1ae6ff368258939322c7d14ae357fec1e5b88fc5642cd4"
         },
         {
-          "path": "database/tempo_legacy_database/schema/study-queue-review-1/README.md",
+          "path": "database/tempo_storage/schema/study-queue-review-1/README.md",
           "reason": "Stored table/field/FK descriptions and ER chart stay accurate because no physical schema retires.",
           "sha256": "ef52ce460717ab9d956c0bec95a30767fdb5ed4b6ff79c783b057e6c57cf2717"
         },
@@ -1204,7 +1204,7 @@
           "sha256": "cdabe6bebb7e9c00b63981f5ce2f576ea955d253be16911a1c3c491090b08b6c"
         },
         {
-          "path": "database/tempo_legacy_database/adapters/frozen_order.py",
+          "path": "database/tempo_storage/frozen_order.py",
           "reason": "Saved frozen ranking/normal introduction remains; no rank regeneration or admission policy changes.",
           "sha256": "cfb01350dcf09a59bc68e42b9d9c19522d233ae6fc6ff3502c7c8b33454fdd2e"
         },
@@ -1240,7 +1240,7 @@
         },
         {
           "path": "backend/Dockerfile",
-          "reason": "Broad COPY backend/app and database/tempo_legacy_database still assembles legacy source; no build registration can be inferred absent. Launcher/update acceptance is a blocker, not an authorized Dockerfile edit.",
+          "reason": "Broad COPY backend/app and database/tempo_storage still assembles legacy source; no build registration can be inferred absent. Launcher/update acceptance is a blocker, not an authorized Dockerfile edit.",
           "sha256": "f5920c997bc07fd0c797865ecaf664739ef7f74010783e7fc4265dcc9a463663"
         },
         {
@@ -1393,17 +1393,17 @@
           "sha256": "558727af3955fac6f661102a3932020040eb5c0a09413e854c8b3adad1114255"
         },
         {
-          "path": "database/tempo_legacy_database/adapters/games/guided_review/storage.py",
+          "path": "database/tempo_storage/games/guided_review/storage.py",
           "role": "delete",
           "sha256": "8bb59aa6a6a455c6a0fe03abac6a5b31f615e2f6c3e2b7e7636565e72a4c1a77"
         },
         {
-          "path": "database/tempo_legacy_database/adapters/games/guided_review/__init__.py",
+          "path": "database/tempo_storage/games/guided_review/__init__.py",
           "role": "delete",
           "sha256": "8954d410ff7b1a24902b04c06fb043df1dccd1167a90652854ebd558a946113c"
         },
         {
-          "path": "database/tempo_legacy_database/adapters/games/guided_review/README.md",
+          "path": "database/tempo_storage/games/guided_review/README.md",
           "role": "delete",
           "sha256": "012fec38b1789d1c1b41ad871350422b8694cbe331aa50ec7d071692ec425e55"
         },
@@ -1468,7 +1468,7 @@
           "sha256": "61924fc1b6e5fd1a479e8ac9f432855dace162cbe295e7abc359074b0ab85e63"
         },
         {
-          "path": "database/tempo_legacy_database/adapters/games/README.md",
+          "path": "database/tempo_storage/games/README.md",
           "role": "edit",
           "sha256": "20b179c060838d59f1ad2d00e293ad0d9335e587631458a4f88042ecf25a89b2"
         },
@@ -1689,72 +1689,72 @@
           "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/opening_graph/worker.py",
+          "path": "database/tempo_storage/opening_graph/worker.py",
           "sha256": "f2ed8a1e4463b61e3492920833cbd2ae5e8f102252011db307c6949f4e18afe4",
           "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/opening_graph/compatibility.py",
+          "path": "database/tempo_storage/opening_graph/compatibility.py",
           "sha256": "66fc1acbce0e2e0af91d5a70da845cf8b6c91f1f12ce89cac893626438286bbf",
           "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/authored_repertoires/prefix_commands.py",
+          "path": "database/tempo_storage/authored_repertoires/prefix_commands.py",
           "sha256": "0baaceff8dbd6f4ffbf28b9dd1e4c57f1efb7d0212e1098c14685955b9adb2d8",
           "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/authored_repertoires/canonical_prefix/scope.py",
+          "path": "database/tempo_storage/authored_repertoires/canonical_prefix/scope.py",
           "sha256": "ecc4651bf7e5f8e4130d90bf5fc4548fdef7df5d0cd986d14b6f81d92fc44dc2",
           "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/authored_repertoires/canonical_prefix/preview.py",
+          "path": "database/tempo_storage/authored_repertoires/canonical_prefix/preview.py",
           "sha256": "55326486b997af5c829718600dbc3ee0b110713132d8ffccc0809661b36f2938",
           "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/authored_repertoires/card_deletion/storage.py",
+          "path": "database/tempo_storage/authored_repertoires/card_deletion/storage.py",
           "sha256": "16d3da891d78debbe4cf55d029fb0b8d0a0332f7a3e3c43e26a59e3b7fbdf9db",
           "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/http_composition/snapshots.py",
+          "path": "database/tempo_storage/http_composition/snapshots.py",
           "sha256": "50a832f7285bd40d3071a48375bc566b3c7dc614cf53c2cf55868d059cd12ebb",
           "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
         },
         {
-          "path": "database/tempo_legacy_database/ddl/migrations/001_initial.sql",
+          "path": "database/tempo_storage/ddl/migrations/001_initial.sql",
           "sha256": "18b25af4ec4baf419c1ae6ff368258939322c7d14ae357fec1e5b88fc5642cd4",
           "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
         },
         {
-          "path": "database/tempo_legacy_database/ddl/migrations/021_priority_preparations.sql",
+          "path": "database/tempo_storage/ddl/migrations/021_priority_preparations.sql",
           "sha256": "6b98247e09ba7bb23d6aff38afea49b02765fd7c13d61c77d5e984bea3f3c7e6",
           "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
         },
         {
-          "path": "database/tempo_legacy_database/ddl/migrations/033_canonical_prefix.sql",
+          "path": "database/tempo_storage/ddl/migrations/033_canonical_prefix.sql",
           "sha256": "5691e6d59c0b96246caf78990a28962b4efed333424c200382b527bb373607e0",
           "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
         },
         {
-          "path": "database/tempo_legacy_database/ddl/migrations/034_current_canonical_routes.sql",
+          "path": "database/tempo_storage/ddl/migrations/034_current_canonical_routes.sql",
           "sha256": "45fa3b7333e9ed23aeaed176d1b4a6bcc3929778fb0593edea2be3ef94e04793",
           "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
         },
         {
-          "path": "database/tempo_legacy_database/ddl/migrations/035_canonical_publication_freshness.sql",
+          "path": "database/tempo_storage/ddl/migrations/035_canonical_publication_freshness.sql",
           "sha256": "350dd32bdb2832b8a949937b093efaf9f626f011000d06ac69bfb49a608c4ac0",
           "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
         },
         {
-          "path": "database/tempo_legacy_database/ddl/migrations/037_card_deletion.sql",
+          "path": "database/tempo_storage/ddl/migrations/037_card_deletion.sql",
           "sha256": "6d0c5e2ea1210e0d672c48bad02db1b74c751667f0e596f7b40f57686ede068d",
           "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
         },
         {
-          "path": "database/tempo_legacy_database/ddl/migrations/038_prefix_transition_application.sql",
+          "path": "database/tempo_storage/ddl/migrations/038_prefix_transition_application.sql",
           "sha256": "76f00efcd3eb86fd968abca69052c0086061eac856bd20ebdd0c3c2d229b9f87",
           "reason": "Graph/repertoire definition, reconstruction, canonical-source certification, deletion exclusion, or schema/export dependency. Unchanged by the six optional priority callbacks."
         }
@@ -1835,7 +1835,7 @@
           "required_edit": "Add one bounded canonical diagram describing exact six-source callback withdrawal and retained source/graph/Study/opportunity boundaries."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/coverage/README.md",
+          "path": "database/tempo_storage/coverage/README.md",
           "required_edit": "Update only affected priority/opportunity callback claims/drawing; no schema/storage ownership change."
         },
         {
@@ -1923,7 +1923,7 @@
           "prefix_transition fences -> applications -> operation_receipts have NO ACTION dependencies; old row disposal is ordered, not a drain requirement."
         ],
         "portable_snapshot_gap": {
-          "reader": "database/tempo_legacy_database/adapters/http_composition/snapshots.py::portable_table_rows",
+          "reader": "database/tempo_storage/http_composition/snapshots.py::portable_table_rows",
           "omitted": [
             "repertoire_line_training_depths",
             "opening_graph_steps",
@@ -1995,15 +1995,15 @@
         "backend/app/services/postgres_daily_statistics.py",
         "backend/app/statistics_commands.py",
         "backend/tests/test_postgres_daily_statistics.py",
-        "database/tempo_legacy_database/adapters/commands/statistics.py",
-        "database/tempo_legacy_database/adapters/derived_publications/daily_statistics.py"
+        "database/tempo_storage/commands/statistics.py",
+        "database/tempo_storage/derived_publications/daily_statistics.py"
       ],
       "deleted_path_sha256": {
         "backend/app/services/postgres_daily_statistics.py": "c85affbafa0c43b5421e1b78ec2a00856a49d5b223b2a1a62d43eff7b21dfe8a",
         "backend/app/statistics_commands.py": "a3ec16008ad7b196e03dbe5f5c8c626e6e31bf8d5a685e860ac5bf8dec95ccc1",
         "backend/tests/test_postgres_daily_statistics.py": "4e5dfe6443ed62c55b7033c1604efe39510e2dc3b152afc301a48c394f1080b3",
-        "database/tempo_legacy_database/adapters/commands/statistics.py": "f02afaf33c0e100e4d89778d4ce07e00a2e0f6981c0d9ad38583092a4339a6fc",
-        "database/tempo_legacy_database/adapters/derived_publications/daily_statistics.py": "8b1025067981c07687d70fb55b25a1e3f301e833dd5615d215b0b2bd6edcb2e1"
+        "database/tempo_storage/commands/statistics.py": "f02afaf33c0e100e4d89778d4ce07e00a2e0f6981c0d9ad38583092a4339a6fc",
+        "database/tempo_storage/derived_publications/daily_statistics.py": "8b1025067981c07687d70fb55b25a1e3f301e833dd5615d215b0b2bd6edcb2e1"
       },
       "edit_paths": [
         {
@@ -2061,19 +2061,19 @@
           "required_edit": "Remove statistics command side-effect import, postgres_daily_statistics import and daily_statistics supported-kind/handler/settlement-exclusion entries only."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/controls/activity/storage.py",
+          "path": "database/tempo_storage/controls/activity/storage.py",
           "sha256": "11195c143619b60f04098e397801446695819895a0506b676ce8c2af32b532a2",
           "proposed_sha256": "d36c5833847a9ae665298eace716d230f9fac01ae74ce11498b1c232fe5ee90d",
           "required_edit": "Remove statistics source map entry and statistics_activity query only; preserve all other activity/control SQL."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/games/sync/records.py",
+          "path": "database/tempo_storage/games/sync/records.py",
           "sha256": "f69fc86309785de06395aafc52ddb9f0367ac18bcc84e7e4cf629787bc93a02e",
           "proposed_sha256": "ddcb4fe0146f217c8d9fe890948c9e963c861be23af1fc1282043d09c91640b6",
           "required_edit": "Remove only invalidate_day_snapshot and invalidate_day_insights; other persistence helpers remain AST-identical."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/statistics/storage.py",
+          "path": "database/tempo_storage/statistics/storage.py",
           "sha256": "3faa4d6428ff3d1b9d939cf25c59e43dc55fe489e48c89896aaa23d55943d5ab",
           "proposed_sha256": "bfd6645911ae841d726c97532330e8f91edd57b432bba0d7b0d666e5e4cb54bc",
           "required_edit": "Remove fourteen daily materialization/job/insight helper functions and now-unused claim imports; retain five exact per-game projection ASTs and canonical feature upsert re-export."
@@ -2135,31 +2135,31 @@
           "required_edit": "Only affected daily capability test/registration/inventory/owner diagram change; frontend backgroundKind removes daily_statistics value only. Preserve unrelated assertions, route rows and source inventories."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/commands/README.md",
+          "path": "database/tempo_storage/commands/README.md",
           "sha256": "5bcf889a5e60c5f836e13f31e85fda741ab8c5f261b941331a8fe709ee510cf9",
           "proposed_sha256": "b397decb6b6f4c4ce70170bebfd0bb72381b2e85afa3f42adb240db829cfd773",
           "required_edit": "Only affected daily capability test/registration/inventory/owner diagram change; frontend backgroundKind removes daily_statistics value only. Preserve unrelated assertions, route rows and source inventories."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/controls/activity/README.md",
+          "path": "database/tempo_storage/controls/activity/README.md",
           "sha256": "7a250a971535d9d1aaba0d03c746a3ff6e0e3221b297d934d999cd52a60edd70",
           "proposed_sha256": "15c0896192cc98f00de5d95b37b63384a6aeb61a1c6e7ff7ae88442818902feb",
           "required_edit": "Only affected daily capability test/registration/inventory/owner diagram change; frontend backgroundKind removes daily_statistics value only. Preserve unrelated assertions, route rows and source inventories."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/derived_publications/README.md",
+          "path": "database/tempo_storage/derived_publications/README.md",
           "sha256": "914ad02a51e6bc89ef939ee091908736e8d1987d12a789f5e5a5d84d6635fac2",
           "proposed_sha256": "34e046c6e8804c3ea9f51f1eeaddcaa880052bbb0c00cee819159e8f043b0a46",
           "required_edit": "Only affected daily capability test/registration/inventory/owner diagram change; frontend backgroundKind removes daily_statistics value only. Preserve unrelated assertions, route rows and source inventories."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/games/sync/README.md",
+          "path": "database/tempo_storage/games/sync/README.md",
           "sha256": "06db41053a8dfb1d1851d0c5b79c9f050ece934395f80988536bccbbe2dcd959",
           "proposed_sha256": "205b5f72c9dcd4cac707f04f248ae86cea666c18f87c9624f6209b38da764d47",
           "required_edit": "Only affected daily capability test/registration/inventory/owner diagram change; frontend backgroundKind removes daily_statistics value only. Preserve unrelated assertions, route rows and source inventories."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/statistics/README.md",
+          "path": "database/tempo_storage/statistics/README.md",
           "sha256": "983fb7bb8ec11080c0e9e15199a50d341c7c84758b736f385555064bd3ecb0a2",
           "proposed_sha256": "2f2affb79e478559d1abaf1b9a8d7e9f218989825b1962c4c5d6fe1fa3e6e70d",
           "required_edit": "Only affected daily capability test/registration/inventory/owner diagram change; frontend backgroundKind removes daily_statistics value only. Preserve unrelated assertions, route rows and source inventories."
@@ -2190,12 +2190,12 @@
           "reason": "Canonical per-game feature writer/phase6 handoff remains byte-identical; no schema/storage owner change."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/games/derivation/features.py",
+          "path": "database/tempo_storage/games/derivation/features.py",
           "sha256": "a64d3e7115ad21710f48d5b1baa82675ae33a2cf482f9c13bfec3b0decdf89d3",
           "reason": "Canonical per-game feature writer/phase6 handoff remains byte-identical; no schema/storage owner change."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/games/derivation/jobs.py",
+          "path": "database/tempo_storage/games/derivation/jobs.py",
           "sha256": "71b85d996b095490c7ad2e4c0414dbc559c96960c12e9c7feb13fbb7a1007ee0",
           "reason": "Canonical per-game feature writer/phase6 handoff remains byte-identical; no schema/storage owner change."
         }
@@ -2207,7 +2207,7 @@
           "_evaluation_before_ply",
           "refresh_game_features"
         ],
-        "database/tempo_legacy_database/adapters/statistics/storage.py": [
+        "database/tempo_storage/statistics/storage.py": [
           "game_row",
           "analysis_rows",
           "game_event_rows",
@@ -2314,19 +2314,19 @@
       "delete_paths": [
         "backend/app/opportunity_commands.py",
         "backend/app/services/repertoire_opportunities.py",
-        "database/tempo_legacy_database/adapters/authored_repertoires/discovery_commands.py",
-        "database/tempo_legacy_database/adapters/authored_repertoires/opportunities/README.md",
-        "database/tempo_legacy_database/adapters/authored_repertoires/opportunities/__init__.py",
-        "database/tempo_legacy_database/adapters/authored_repertoires/opportunities/storage.py",
+        "database/tempo_storage/authored_repertoires/discovery_commands.py",
+        "database/tempo_storage/authored_repertoires/opportunities/README.md",
+        "database/tempo_storage/authored_repertoires/opportunities/__init__.py",
+        "database/tempo_storage/authored_repertoires/opportunities/storage.py",
         "database/tests/check_postgres_opportunity_freshness.py"
       ],
       "deleted_path_sha256": {
         "backend/app/opportunity_commands.py": "b081f2f64cbc9e07aa1be2eb453547d840fd5026cf9d4a4bfaa71fcdddea9744",
         "backend/app/services/repertoire_opportunities.py": "473ccae64693c286e42904c225becd1da71cc4682d080bed34b7ec53e16db568",
-        "database/tempo_legacy_database/adapters/authored_repertoires/discovery_commands.py": "51b1d1b25974f5835b2e4bcf81dd99a4bb7ed59933126ecb87fcd725237ecb7b",
-        "database/tempo_legacy_database/adapters/authored_repertoires/opportunities/README.md": "03c958b15f61be7065d0bdf6627396427291cc9b5a730edb37622e71ac5e9b00",
-        "database/tempo_legacy_database/adapters/authored_repertoires/opportunities/__init__.py": "e7f7e5f6f763aaf934e030c23a0ff6d36784d5208c649dc98baa871fa334ab72",
-        "database/tempo_legacy_database/adapters/authored_repertoires/opportunities/storage.py": "da1e7b172681f0904d84d23dfbb7e19c4c34f86791c73b59196580c8a770a76d",
+        "database/tempo_storage/authored_repertoires/discovery_commands.py": "51b1d1b25974f5835b2e4bcf81dd99a4bb7ed59933126ecb87fcd725237ecb7b",
+        "database/tempo_storage/authored_repertoires/opportunities/README.md": "03c958b15f61be7065d0bdf6627396427291cc9b5a730edb37622e71ac5e9b00",
+        "database/tempo_storage/authored_repertoires/opportunities/__init__.py": "e7f7e5f6f763aaf934e030c23a0ff6d36784d5208c649dc98baa871fa334ab72",
+        "database/tempo_storage/authored_repertoires/opportunities/storage.py": "da1e7b172681f0904d84d23dfbb7e19c4c34f86791c73b59196580c8a770a76d",
         "database/tests/check_postgres_opportunity_freshness.py": "397a881c9aafb7d2f47748240827651df9f77f54a3264f59ad9e020146277d7a"
       },
       "edit_paths": [
@@ -2451,19 +2451,19 @@
           "required_edit": "Remove opportunity command side-effect import, task supported-kind/handler and settlement-exclusion wiring only."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/authored_repertoires/opening_advisory/segmentation.py",
+          "path": "database/tempo_storage/authored_repertoires/opening_advisory/segmentation.py",
           "sha256": "ae4d1cfaa046616324b126de65f4d5e8f497ba64483ab6f4d21b978d3f6ec36d",
           "proposed_sha256": "4469f7dfebc88d320152d38f6a629ffdfb5f1e11c98508994eb70ac0612e4200",
           "required_edit": "Move exact existing repertoire existence query into its actual segmentation adapter, with same caller connection/bound parameters/result and AST-identical body; no helper deletion credit."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/http_composition/discovery.py",
+          "path": "database/tempo_storage/http_composition/discovery.py",
           "sha256": "c0d41cccda80994a96b4e7011257fe728859d37fef0bb1ac57785ef1f41b2198",
           "proposed_sha256": "e6df36012fa3d6ae495652f0f5338372e0d3f8a8136cd5e7581f68233d11e7e6",
           "required_edit": "Remove only retired opportunity feed/eligibility HTTP read projections; retained separate discovery acceptance/recommendation remains outside this cut."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/lifecycle/refresh_requests.py",
+          "path": "database/tempo_storage/lifecycle/refresh_requests.py",
           "sha256": "7fc494bf6d93b8316ddf5cb3111c5ef73fd317f7b80528f1783bfb80592e1473",
           "proposed_sha256": "fb12f9827eff29dd75c1e7016d23d63f3a50226feb45c0cb0b49e69ddfc2bd46",
           "required_edit": "Remove only opportunity refresh request SQL; remaining daily_queue_projection/priority work remains with current owner."
@@ -2562,13 +2562,13 @@
           "required_edit": "Update only affected capability inventory, regression ownership, route/transport or owner drawing/link rows; preserve unrelated records. SIMPLIFICATION change is the two explicitly released historical pointer rows."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/authored_repertoires/README.md",
+          "path": "database/tempo_storage/authored_repertoires/README.md",
           "sha256": "379f969a598f3295f21041fa4592a6a55cf5d905fb4aad2329f71e7375c6eb6d",
           "proposed_sha256": "102fb9dd213a47edb0e80a67686b4b1adf6397c0d538c33b7480569c972ef277",
           "required_edit": "Update only affected capability inventory, regression ownership, route/transport or owner drawing/link rows; preserve unrelated records. SIMPLIFICATION change is the two explicitly released historical pointer rows."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/http_composition/README.md",
+          "path": "database/tempo_storage/http_composition/README.md",
           "sha256": "c61d15d155fa789add2d68b023fdc85699d4cd8e655dfee1414807cb0e5a389e",
           "proposed_sha256": "33256f4febf6da0faa0b768010b40d1d9dafdefc60a2114492df28647afd9bcb",
           "required_edit": "Update only affected capability inventory, regression ownership, route/transport or owner drawing/link rows; preserve unrelated records. SIMPLIFICATION change is the two explicitly released historical pointer rows."
@@ -2624,22 +2624,22 @@
       ],
       "keep_paths": [
         {
-          "path": "database/tempo_legacy_database/adapters/queue_refresh/openings.py",
+          "path": "database/tempo_storage/queue_refresh/openings.py",
           "sha256": "eadeadbc9a28d7a34d76b2eae8c66deef5e4fa95c8c5b41ff811237ee920e99d",
           "reason": "Current ordinary Study saved-row queue eligibility/admission/capacity and canonical trigger ownership remain byte-identical; no producer call or schema change."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/queue_refresh/application/admission.py",
+          "path": "database/tempo_storage/queue_refresh/application/admission.py",
           "sha256": "b5b03119c9790aab00c56b9f6668ec5f545dfc5a079c628599b1744f2024613b",
           "reason": "Current ordinary Study saved-row queue eligibility/admission/capacity and canonical trigger ownership remain byte-identical; no producer call or schema change."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/queue_refresh/capacity.py",
+          "path": "database/tempo_storage/queue_refresh/capacity.py",
           "sha256": "99221638336456f557f40ad1fb553440898a655c7b32d49886b517351b9d0774",
           "reason": "Current ordinary Study saved-row queue eligibility/admission/capacity and canonical trigger ownership remain byte-identical; no producer call or schema change."
         },
         {
-          "path": "database/tempo_legacy_database/ddl/migrations/035_canonical_publication_freshness.sql",
+          "path": "database/tempo_storage/ddl/migrations/035_canonical_publication_freshness.sql",
           "sha256": "350dd32bdb2832b8a949937b093efaf9f626f011000d06ac69bfb49a608c4ac0",
           "reason": "Current ordinary Study saved-row queue eligibility/admission/capacity and canonical trigger ownership remain byte-identical; no producer call or schema change."
         }
@@ -2658,7 +2658,7 @@
       "retained_consumer_frontier": [
         {
           "consumer": "Ordinary Study native opening route projection",
-          "path": "database/tempo_legacy_database/adapters/queue_refresh/openings.py",
+          "path": "database/tempo_storage/queue_refresh/openings.py",
           "symbols": [
             "_STUDY_OPENING_ROUTES",
             "_PRIORITY_OPENING_PAGE_SQL",
@@ -2687,7 +2687,7 @@
         },
         {
           "consumer": "Ordinary queue admission and resolution owner",
-          "path": "database/tempo_legacy_database/adapters/queue_refresh/application/admission.py",
+          "path": "database/tempo_storage/queue_refresh/application/admission.py",
           "symbols": [
             "_PRIORITY_OPENING_CANDIDATE_BODY"
           ],
@@ -2699,7 +2699,7 @@
         },
         {
           "consumer": "Capacity priority read",
-          "path": "database/tempo_legacy_database/adapters/queue_refresh/capacity.py",
+          "path": "database/tempo_storage/queue_refresh/capacity.py",
           "symbols": [
             "current_capacity_priority"
           ],
@@ -2717,13 +2717,13 @@
           "symbols": [
             "state_projection"
           ],
-          "projection": "database/tempo_legacy_database/adapters/authored_repertoires/opening_advisory/segmentation.py::repertoire",
+          "projection": "database/tempo_storage/authored_repertoires/opening_advisory/segmentation.py::repertoire",
           "facts": "Exact existing bound SELECT1, caller connection and fetchone/errors; no optional module import."
         }
       ],
       "moved_projection": {
-        "from": "database/tempo_legacy_database/adapters/authored_repertoires/discovery_commands.py",
-        "to": "database/tempo_legacy_database/adapters/authored_repertoires/opening_advisory/segmentation.py",
+        "from": "database/tempo_storage/authored_repertoires/discovery_commands.py",
+        "to": "database/tempo_storage/authored_repertoires/opening_advisory/segmentation.py",
         "symbol": "repertoire",
         "old_AST_sha256": "c129bf3c6cec4d54b87bc8b4e1d3ac90357feaf59d3beb323dafd729d4f1bd7b",
         "new_AST_sha256": "c129bf3c6cec4d54b87bc8b4e1d3ac90357feaf59d3beb323dafd729d4f1bd7b",
@@ -2936,15 +2936,15 @@
         "backend/tests/test_priority_lifecycle_database_split.py",
         "backend/tests/test_priority_storage.py",
         "backend/tests/test_refresh_input_coalescing.py",
-        "database/tempo_legacy_database/adapters/introduction_priorities/README.md",
-        "database/tempo_legacy_database/adapters/introduction_priorities/__init__.py",
-        "database/tempo_legacy_database/adapters/introduction_priorities/inputs.py",
-        "database/tempo_legacy_database/adapters/introduction_priorities/jobs.py",
-        "database/tempo_legacy_database/adapters/introduction_priorities/publications.py",
-        "database/tempo_legacy_database/adapters/priority_lifecycle/README.md",
-        "database/tempo_legacy_database/adapters/priority_lifecycle/__init__.py",
-        "database/tempo_legacy_database/adapters/priority_lifecycle/preparation.py",
-        "database/tempo_legacy_database/adapters/priority_lifecycle/retention.py",
+        "database/tempo_storage/introduction_priorities/README.md",
+        "database/tempo_storage/introduction_priorities/__init__.py",
+        "database/tempo_storage/introduction_priorities/inputs.py",
+        "database/tempo_storage/introduction_priorities/jobs.py",
+        "database/tempo_storage/introduction_priorities/publications.py",
+        "database/tempo_storage/priority_lifecycle/README.md",
+        "database/tempo_storage/priority_lifecycle/__init__.py",
+        "database/tempo_storage/priority_lifecycle/preparation.py",
+        "database/tempo_storage/priority_lifecycle/retention.py",
         "database/tests/benchmark_postgres_priority.py",
         "database/tests/check_postgres_priority_recovery.py",
         "database/tests/check_postgres_refresh_inputs.py",
@@ -2962,15 +2962,15 @@
         "backend/tests/test_priority_lifecycle_database_split.py": "8a7ea7c14c34d567609fcd07c2f144011ba9d7caf5e1acfc45fe95a18ba5c4b7",
         "backend/tests/test_priority_storage.py": "781788c49b455c85668b028c6218e413a44a1bc230cc05d2916e40ca32e14647",
         "backend/tests/test_refresh_input_coalescing.py": "6bbbf3a21ed000b6ff062b276c81a38437b3cb31c98e690bd5502c70550dbf5e",
-        "database/tempo_legacy_database/adapters/introduction_priorities/README.md": "647670ec7409d7f87308f7184658022fd6efdd07e64e885eff993b94ecd9a10f",
-        "database/tempo_legacy_database/adapters/introduction_priorities/__init__.py": "8859788cd5f4c472db12081dbce9eef2c019809d3cf2ff3e1216defc9fcee8bf",
-        "database/tempo_legacy_database/adapters/introduction_priorities/inputs.py": "83e632f56a111fa58c82ecafc9421a57bf96ded02d69dcabf58e7aaad5b89812",
-        "database/tempo_legacy_database/adapters/introduction_priorities/jobs.py": "077cc7eab0cdb0484fcdaf5151af12b61c57a2c134f348d8ed7f5ae26751a5c3",
-        "database/tempo_legacy_database/adapters/introduction_priorities/publications.py": "1dc8718cc479689b946ed0b35d3ff7fa46ab978521082700579b80123b415a6f",
-        "database/tempo_legacy_database/adapters/priority_lifecycle/README.md": "f4b775b2cd79700bfebfdead1c72ea6dc44461af35e1a4a066460cb710f4a586",
-        "database/tempo_legacy_database/adapters/priority_lifecycle/__init__.py": "0371f5acd034259c1fc0d40217de6e5f7bd2996ea65d5c67cae88849739a50f0",
-        "database/tempo_legacy_database/adapters/priority_lifecycle/preparation.py": "8d0180c43da220a20916f3c2a2c157feb7d2d48f05b11813c7ba2d536d6d0130",
-        "database/tempo_legacy_database/adapters/priority_lifecycle/retention.py": "86e11ada77697677075cda8e8555dc154e5efc76bba6e6bb3a2b5423a5ebdbd9",
+        "database/tempo_storage/introduction_priorities/README.md": "647670ec7409d7f87308f7184658022fd6efdd07e64e885eff993b94ecd9a10f",
+        "database/tempo_storage/introduction_priorities/__init__.py": "8859788cd5f4c472db12081dbce9eef2c019809d3cf2ff3e1216defc9fcee8bf",
+        "database/tempo_storage/introduction_priorities/inputs.py": "83e632f56a111fa58c82ecafc9421a57bf96ded02d69dcabf58e7aaad5b89812",
+        "database/tempo_storage/introduction_priorities/jobs.py": "077cc7eab0cdb0484fcdaf5151af12b61c57a2c134f348d8ed7f5ae26751a5c3",
+        "database/tempo_storage/introduction_priorities/publications.py": "1dc8718cc479689b946ed0b35d3ff7fa46ab978521082700579b80123b415a6f",
+        "database/tempo_storage/priority_lifecycle/README.md": "f4b775b2cd79700bfebfdead1c72ea6dc44461af35e1a4a066460cb710f4a586",
+        "database/tempo_storage/priority_lifecycle/__init__.py": "0371f5acd034259c1fc0d40217de6e5f7bd2996ea65d5c67cae88849739a50f0",
+        "database/tempo_storage/priority_lifecycle/preparation.py": "8d0180c43da220a20916f3c2a2c157feb7d2d48f05b11813c7ba2d536d6d0130",
+        "database/tempo_storage/priority_lifecycle/retention.py": "86e11ada77697677075cda8e8555dc154e5efc76bba6e6bb3a2b5423a5ebdbd9",
         "database/tests/benchmark_postgres_priority.py": "8a5e36f7d9d46ec4755d68f0d8ef2aa21da4a7f8f9a3696985305fff7f79cc4f",
         "database/tests/check_postgres_priority_recovery.py": "c278362481c3baa54b9e2e072ef4368d674182c15e5a59b1907b493ba3dbcee7",
         "database/tests/check_postgres_refresh_inputs.py": "6cc021db1f5422286611e59be07cd55a5dc644e946a35b0f866e8faf271326c6",
@@ -3026,19 +3026,19 @@
           "required_edit": "Remove only producer/retention imports, supported-kind/handler and settlement/timeout registrations; retain essential daily_queue projection/public import and native game_derivation_priorities cursor protocol."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/controls/activity/storage.py",
+          "path": "database/tempo_storage/controls/activity/storage.py",
           "sha256": "11195c143619b60f04098e397801446695819895a0506b676ce8c2af32b532a2",
           "proposed_sha256": "7e0a69668feace56f634dba9cc1b86039b2aa127fb91400da26700c34f268eab",
           "required_edit": "Remove only priority source/generation map entry and priority_activity SQL; other source/control queries remain."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/games/coordinator/storage.py",
+          "path": "database/tempo_storage/games/coordinator/storage.py",
           "sha256": "9ff46be2e83e39bcf9f0ff04db2d8405826ee7bb4837d100426717e1e0d70792",
           "proposed_sha256": "21d93fcbff4267ddad8fb691cb9ff2d6ff7ec0f2f05a89e3ce42b1e3f9911be2",
           "required_edit": "Remove only requeue_interrupted_priorities SQL helper; all current primary terminal state storage remains."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/lifecycle/refresh_requests.py",
+          "path": "database/tempo_storage/lifecycle/refresh_requests.py",
           "sha256": "fb12f9827eff29dd75c1e7016d23d63f3a50226feb45c0cb0b49e69ddfc2bd46",
           "proposed_sha256": "cffee557a8ba8e09ed53ffdc90d531ee316772d03a7676e08a9fd3c5384a4c5a",
           "required_edit": "Remove obsolete coalesced priority refresh admission/publication SQL, retaining only daily_queue_projection with exact public import, signature, function source, bound query and result."
@@ -3185,13 +3185,13 @@
           "required_edit": "Retire mutation/compaction assertions with removed CLI; retain real SQLite exact visible queue checksum invariance and explicit CLI rejection before any database access."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/README.md",
+          "path": "database/tempo_storage/README.md",
           "sha256": "ecea27a98e1a42d9ac8389361fefa0d56efb09e9467f88b7ef9b4a6338f6c046",
           "proposed_sha256": "6842ecbf8f0fce0021e54fec4dead6832865315f2c756f86c06ca40a9880373b",
           "required_edit": "Update only affected owner drawing, retired path/link inventory, current diagnostic example and regression disposition; preserve unrelated rows. Current public checksum/queue projection and local six-stage/native seven-stage ownership are explicit."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/lifecycle/README.md",
+          "path": "database/tempo_storage/lifecycle/README.md",
           "sha256": "a80ecd1a1b18ed1806924586f634d0ee0539e98ad950df1fe1606fa8a9987cc4",
           "proposed_sha256": "0954a07c87295701373e6aba8c992b34b9a62e089ed58dc517c4f9276afb158b",
           "required_edit": "Update only affected owner drawing, retired path/link inventory, current diagnostic example and regression disposition; preserve unrelated rows. Current public checksum/queue projection and local six-stage/native seven-stage ownership are explicit."
@@ -3348,87 +3348,87 @@
           "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/opening_graph/worker.py",
+          "path": "database/tempo_storage/opening_graph/worker.py",
           "sha256": "f2ed8a1e4463b61e3492920833cbd2ae5e8f102252011db307c6949f4e18afe4",
           "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/opening_graph/compatibility.py",
+          "path": "database/tempo_storage/opening_graph/compatibility.py",
           "sha256": "66fc1acbce0e2e0af91d5a70da845cf8b6c91f1f12ce89cac893626438286bbf",
           "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/authored_repertoires/prefix_commands.py",
+          "path": "database/tempo_storage/authored_repertoires/prefix_commands.py",
           "sha256": "0baaceff8dbd6f4ffbf28b9dd1e4c57f1efb7d0212e1098c14685955b9adb2d8",
           "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/authored_repertoires/canonical_prefix/scope.py",
+          "path": "database/tempo_storage/authored_repertoires/canonical_prefix/scope.py",
           "sha256": "ecc4651bf7e5f8e4130d90bf5fc4548fdef7df5d0cd986d14b6f81d92fc44dc2",
           "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/authored_repertoires/canonical_prefix/preview.py",
+          "path": "database/tempo_storage/authored_repertoires/canonical_prefix/preview.py",
           "sha256": "55326486b997af5c829718600dbc3ee0b110713132d8ffccc0809661b36f2938",
           "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/authored_repertoires/card_deletion/storage.py",
+          "path": "database/tempo_storage/authored_repertoires/card_deletion/storage.py",
           "sha256": "16d3da891d78debbe4cf55d029fb0b8d0a0332f7a3e3c43e26a59e3b7fbdf9db",
           "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/http_composition/snapshots.py",
+          "path": "database/tempo_storage/http_composition/snapshots.py",
           "sha256": "50a832f7285bd40d3071a48375bc566b3c7dc614cf53c2cf55868d059cd12ebb",
           "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
         },
         {
-          "path": "database/tempo_legacy_database/ddl/migrations/001_initial.sql",
+          "path": "database/tempo_storage/ddl/migrations/001_initial.sql",
           "sha256": "18b25af4ec4baf419c1ae6ff368258939322c7d14ae357fec1e5b88fc5642cd4",
           "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
         },
         {
-          "path": "database/tempo_legacy_database/ddl/migrations/021_priority_preparations.sql",
+          "path": "database/tempo_storage/ddl/migrations/021_priority_preparations.sql",
           "sha256": "6b98247e09ba7bb23d6aff38afea49b02765fd7c13d61c77d5e984bea3f3c7e6",
           "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
         },
         {
-          "path": "database/tempo_legacy_database/ddl/migrations/033_canonical_prefix.sql",
+          "path": "database/tempo_storage/ddl/migrations/033_canonical_prefix.sql",
           "sha256": "5691e6d59c0b96246caf78990a28962b4efed333424c200382b527bb373607e0",
           "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
         },
         {
-          "path": "database/tempo_legacy_database/ddl/migrations/034_current_canonical_routes.sql",
+          "path": "database/tempo_storage/ddl/migrations/034_current_canonical_routes.sql",
           "sha256": "45fa3b7333e9ed23aeaed176d1b4a6bcc3929778fb0593edea2be3ef94e04793",
           "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
         },
         {
-          "path": "database/tempo_legacy_database/ddl/migrations/035_canonical_publication_freshness.sql",
+          "path": "database/tempo_storage/ddl/migrations/035_canonical_publication_freshness.sql",
           "sha256": "350dd32bdb2832b8a949937b093efaf9f626f011000d06ac69bfb49a608c4ac0",
           "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
         },
         {
-          "path": "database/tempo_legacy_database/ddl/migrations/037_card_deletion.sql",
+          "path": "database/tempo_storage/ddl/migrations/037_card_deletion.sql",
           "sha256": "6d0c5e2ea1210e0d672c48bad02db1b74c751667f0e596f7b40f57686ede068d",
           "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
         },
         {
-          "path": "database/tempo_legacy_database/ddl/migrations/038_prefix_transition_application.sql",
+          "path": "database/tempo_storage/ddl/migrations/038_prefix_transition_application.sql",
           "sha256": "76f00efcd3eb86fd968abca69052c0086061eac856bd20ebdd0c3c2d229b9f87",
           "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/queue_refresh/openings.py",
+          "path": "database/tempo_storage/queue_refresh/openings.py",
           "sha256": "eadeadbc9a28d7a34d76b2eae8c66deef5e4fa95c8c5b41ff811237ee920e99d",
           "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/queue_refresh/application/admission.py",
+          "path": "database/tempo_storage/queue_refresh/application/admission.py",
           "sha256": "b5b03119c9790aab00c56b9f6668ec5f545dfc5a079c628599b1744f2024613b",
           "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/queue_refresh/capacity.py",
+          "path": "database/tempo_storage/queue_refresh/capacity.py",
           "sha256": "99221638336456f557f40ad1fb553440898a655c7b32d49886b517351b9d0774",
           "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
         },
@@ -3438,7 +3438,7 @@
           "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
         },
         {
-          "path": "database/tempo_legacy_database/adapters/games/derivation/priorities.py",
+          "path": "database/tempo_storage/games/derivation/priorities.py",
           "sha256": "f349feb8d1232f6e3907ba02a5bda76af1b4142ded089bb4f9b477a213d385a3",
           "reason": "Graph/repertoire definitions/current invalidation, ordinary Study saved-score/no-score/frozen SQL or actual native handoff protocol remains byte-identical to8bcd; structural source epochs/schema remain necessary."
         }
@@ -3460,39 +3460,39 @@
           "comparison": "byte-identical to dependency source baseline"
         },
         {
-          "path": "database/tempo_legacy_database/adapters/queue_refresh/openings.py",
+          "path": "database/tempo_storage/queue_refresh/openings.py",
           "sha256": "eadeadbc9a28d7a34d76b2eae8c66deef5e4fa95c8c5b41ff811237ee920e99d",
           "comparison": "byte-identical to dependency source baseline"
         },
         {
-          "path": "database/tempo_legacy_database/adapters/queue_refresh/application/admission.py",
+          "path": "database/tempo_storage/queue_refresh/application/admission.py",
           "sha256": "b5b03119c9790aab00c56b9f6668ec5f545dfc5a079c628599b1744f2024613b",
           "comparison": "byte-identical to dependency source baseline"
         },
         {
-          "path": "database/tempo_legacy_database/adapters/queue_refresh/capacity.py",
+          "path": "database/tempo_storage/queue_refresh/capacity.py",
           "sha256": "99221638336456f557f40ad1fb553440898a655c7b32d49886b517351b9d0774",
           "comparison": "byte-identical to dependency source baseline"
         },
         {
-          "path": "database/tempo_legacy_database/adapters/authored_repertoires/prefix_commands.py",
+          "path": "database/tempo_storage/authored_repertoires/prefix_commands.py",
           "sha256": "0baaceff8dbd6f4ffbf28b9dd1e4c57f1efb7d0212e1098c14685955b9adb2d8",
           "comparison": "byte-identical to dependency source baseline"
         },
         {
-          "path": "database/tempo_legacy_database/adapters/games/derivation/priorities.py",
+          "path": "database/tempo_storage/games/derivation/priorities.py",
           "sha256": "f349feb8d1232f6e3907ba02a5bda76af1b4142ded089bb4f9b477a213d385a3",
           "comparison": "byte-identical to dependency source baseline"
         },
         {
-          "path": "database/tempo_legacy_database/ddl/migrations/035_canonical_publication_freshness.sql",
+          "path": "database/tempo_storage/ddl/migrations/035_canonical_publication_freshness.sql",
           "sha256": "350dd32bdb2832b8a949937b093efaf9f626f011000d06ac69bfb49a608c4ac0",
           "comparison": "byte-identical to dependency source baseline"
         }
       ],
       "preserved_function_sources": [
         {
-          "path": "database/tempo_legacy_database/adapters/lifecycle/refresh_requests.py",
+          "path": "database/tempo_storage/lifecycle/refresh_requests.py",
           "symbol": "daily_queue_projection",
           "source_sha256": "3572709abcb8df2664e3e8f229e489fbef0b9756fd7ba9d512bc403052c07f93",
           "comparison": "function body/source byte-identical to dependency baseline"
@@ -3529,7 +3529,7 @@
         }
       ],
       "protected_public_contracts": [
-        "tempo_legacy_database.adapters.lifecycle.refresh_requests.daily_queue_projection: exact queue_date argument, caller connection, bound SELECT and returned row used by essential daily rollover.",
+        "tempo_storage.lifecycle.refresh_requests.daily_queue_projection: exact queue_date argument, caller connection, bound SELECT and returned row used by essential daily rollover.",
         "database.tooling.reclaim_priority_storage.queue_order_checksum plus _encoded_row: source-identical read-only SQL-backed visible queue checksum for unchanged existing snapshot reader; cleanup CLI rejects before database open.",
         "Existing queue_refresh saved-score/current view and frozen/no-score selectors, canonical prefix invalidation and physical priority epochs/triggers remain. Source producer removal is not blanket table/source-dependency retirement.",
         "Local derivation has six real primary stages and Finished6/6; native game_derivation_priorities remains cursor/terminal completion protocol at stage 7. Both remain exactly repaired dependency source, with no producer callback."
@@ -3784,12 +3784,12 @@
             "sha256": "473ccae64693c286e42904c225becd1da71cc4682d080bed34b7ec53e16db568"
           },
           {
-            "path": "database/tempo_legacy_database/adapters/authored_repertoires/opportunities/__init__.py",
+            "path": "database/tempo_storage/authored_repertoires/opportunities/__init__.py",
             "physical_lines": 1,
             "sha256": "e7f7e5f6f763aaf934e030c23a0ff6d36784d5208c649dc98baa871fa334ab72"
           },
           {
-            "path": "database/tempo_legacy_database/adapters/authored_repertoires/opportunities/storage.py",
+            "path": "database/tempo_storage/authored_repertoires/opportunities/storage.py",
             "physical_lines": 625,
             "sha256": "da1e7b172681f0904d84d23dfbb7e19c4c34f86791c73b59196580c8a770a76d"
           }
@@ -3814,12 +3814,12 @@
           "sha256": "473ccae64693c286e42904c225becd1da71cc4682d080bed34b7ec53e16db568"
         },
         {
-          "path": "database/tempo_legacy_database/adapters/authored_repertoires/opportunities/__init__.py",
+          "path": "database/tempo_storage/authored_repertoires/opportunities/__init__.py",
           "reason": "Package remains while storage is imported.",
           "sha256": "e7f7e5f6f763aaf934e030c23a0ff6d36784d5208c649dc98baa871fa334ab72"
         },
         {
-          "path": "database/tempo_legacy_database/adapters/authored_repertoires/opportunities/storage.py",
+          "path": "database/tempo_storage/authored_repertoires/opportunities/storage.py",
           "reason": "All 64 top-level functions referenced by the service; reads, generation/lease publication and training writes remain active.",
           "sha256": "da1e7b172681f0904d84d23dfbb7e19c4c34f86791c73b59196580c8a770a76d"
         },
@@ -3844,7 +3844,7 @@
           "sha256": "9ddbdba6fb33034c6e24669d3bff030ca1b2d73c30199236d22e2df7617aa3f4"
         },
         {
-          "path": "database/tempo_legacy_database/adapters/lifecycle/refresh_requests.py",
+          "path": "database/tempo_storage/lifecycle/refresh_requests.py",
           "reason": "Keep saved requested/published identities; task disappearance does not certify publication.",
           "sha256": "7fc494bf6d93b8316ddf5cb3111c5ef73fd317f7b80528f1783bfb80592e1473"
         },
@@ -3874,7 +3874,7 @@
           "sha256": "ffe915e1bfc1cc3616c57d0624daf6715a4ca42aa1ea77cb8d1d49998eee5f39"
         },
         {
-          "path": "database/tempo_legacy_database/adapters/discovery_acceptance_store.py",
+          "path": "database/tempo_storage/discovery_acceptance_store.py",
           "reason": "Keep matching historical intent reads and saved intent/task effects.",
           "sha256": "a4218cfd3bea0eeda37e06403466238623854e1b611ebeecda930238df811c11"
         },
@@ -3884,42 +3884,42 @@
           "sha256": "cd02d5729e5ce32f46f7373115045cc38e5ca660ca7a5bfd5dbdcff851185bde"
         },
         {
-          "path": "database/tempo_legacy_database/adapters/authored_repertoires/discovery_admission/storage.py",
+          "path": "database/tempo_storage/authored_repertoires/discovery_admission/storage.py",
           "reason": "Keep all 307 lines of saved branch/card/intent/task operations; handled marker must still fence exact evidence fingerprint.",
           "sha256": "be7519cb29d3049ab1c08c8bcc938d82953988e64b54baa86369209bc8651956"
         },
         {
-          "path": "database/tempo_legacy_database/adapters/authored_repertoires/discovery_admission/__init__.py",
+          "path": "database/tempo_storage/authored_repertoires/discovery_admission/__init__.py",
           "reason": "Retained admission namespace.",
           "sha256": "28760ce62f9c1eef6190ce9d0dcd602e1a69cde4d6051467286774951e531cac"
         },
         {
-          "path": "database/tempo_legacy_database/adapters/authored_repertoires/discovery_commands.py",
+          "path": "database/tempo_storage/authored_repertoires/discovery_commands.py",
           "reason": "Shared command persistence: opening_advisory/segmentation.py still imports repertoire; not a whole-adapter deletion.",
           "sha256": "51b1d1b25974f5835b2e4bcf81dd99a4bb7ed59933126ecb87fcd725237ecb7b"
         },
         {
-          "path": "database/tempo_legacy_database/adapters/http_composition/discovery.py",
+          "path": "database/tempo_storage/http_composition/discovery.py",
           "reason": "Keep admission status and existing feed projection.",
           "sha256": "c0d41cccda80994a96b4e7011257fe728859d37fef0bb1ac57785ef1f41b2198"
         },
         {
-          "path": "database/tempo_legacy_database/adapters/http_composition/queue_maintenance.py",
+          "path": "database/tempo_storage/http_composition/queue_maintenance.py",
           "reason": "Keep missing-task pending admission scan; it excludes an intent if ANY matching task row exists, including failed/complete.",
           "sha256": "4c6f14a4780ca208c60899819de580d3b4866d77c8940200cd0a52f3ec8533ef"
         },
         {
-          "path": "database/tempo_legacy_database/adapters/queue_refresh/openings.py",
+          "path": "database/tempo_storage/queue_refresh/openings.py",
           "reason": "Keep active current non-analysis weak-known-decision candidate union, eligibility/reasons, current_opportunity and resolution on ordinary admission.",
           "sha256": "eadeadbc9a28d7a34d76b2eae8c66deef5e4fa95c8c5b41ff811237ee920e99d"
         },
         {
-          "path": "database/tempo_legacy_database/adapters/queue_refresh/application/admission.py",
+          "path": "database/tempo_storage/queue_refresh/application/admission.py",
           "reason": "Keep ordinary candidate/eligibility/reason/resolution and explicit-admission exclusion from unseen reconciliation.",
           "sha256": "b5b03119c9790aab00c56b9f6668ec5f545dfc5a079c628599b1744f2024613b"
         },
         {
-          "path": "database/tempo_legacy_database/adapters/queue_refresh/capacity.py",
+          "path": "database/tempo_storage/queue_refresh/capacity.py",
           "reason": "Keep current_capacity_priority opportunity EXISTS; stopping publication is not removal of stored eligibility.",
           "sha256": "99221638336456f557f40ad1fb553440898a655c7b32d49886b517351b9d0774"
         },
@@ -3929,22 +3929,22 @@
           "sha256": "281a8a51732de00026683cf3853ea503b60da04f8d1f001d213b83fb8eaae598"
         },
         {
-          "path": "database/tempo_legacy_database/adapters/repertoire_scope/freshness.py",
+          "path": "database/tempo_storage/repertoire_scope/freshness.py",
           "reason": "Keep current opportunity SQL predicates and game-generation locks.",
           "sha256": "6585207eee6a730c94a6f3c9c083cd10e1cb0d226fa48ac0444aaf33f8f14f7b"
         },
         {
-          "path": "database/tempo_legacy_database/ddl/canonical_scope_schema.py",
+          "path": "database/tempo_storage/ddl/canonical_scope_schema.py",
           "reason": "Keep current_repertoire_opportunities definition and all schema.",
           "sha256": "b3b0229d33fe3e7ad3b6c9efa918d9c40f878852d39c838eef09a6aea5ec9a6f"
         },
         {
-          "path": "database/tempo_legacy_database/ddl/migrations/035_canonical_publication_freshness.sql",
+          "path": "database/tempo_storage/ddl/migrations/035_canonical_publication_freshness.sql",
           "reason": "Preserve historical current-view DDL and source-generation semantics.",
           "sha256": "350dd32bdb2832b8a949937b093efaf9f626f011000d06ac69bfb49a608c4ac0"
         },
         {
-          "path": "database/tempo_legacy_database/ddl/migrations/028_revisioned_discovery_admissions.sql",
+          "path": "database/tempo_storage/ddl/migrations/028_revisioned_discovery_admissions.sql",
           "reason": "Preserve historical intent IDs, revision identities and task references.",
           "sha256": "57555e6a4b74acaff74ba134d22704c5622fabf893c3514d60b473cff869102d"
         },
@@ -4258,7 +4258,7 @@
           "interface": "current_repertoire_opportunities; ordinary queue admission/capacity and explicit queue provenance",
           "disposition": "KEEP views, rows and ordinary readers/writers",
           "why": "Current active non-analysis weak_known_decision rows can admit locked cards under normal route/integrity/quota checks. Producer cessation cannot relabel/remove saved eligibility, queue, reviews or introductions.",
-          "source": "database/tempo_legacy_database/adapters/queue_refresh/openings.py:8-76,100-107,169-175; database/tempo_legacy_database/adapters/queue_refresh/application/admission.py:7-45,48-60,147-155; database/tempo_legacy_database/adapters/queue_refresh/capacity.py:148-156"
+          "source": "database/tempo_storage/queue_refresh/openings.py:8-76,100-107,169-175; database/tempo_storage/queue_refresh/application/admission.py:7-45,48-60,147-155; database/tempo_storage/queue_refresh/capacity.py:148-156"
         }
       ],
       "transition_truth_table": [

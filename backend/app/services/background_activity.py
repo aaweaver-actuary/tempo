@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
+import psycopg
+
 from datetime import datetime, timezone
 import logging
-import sqlite3
 from fastapi import HTTPException
 
-from tempo_legacy_database.connections import connection
-from tempo_legacy_database.adapters import postgres_store
-from tempo_legacy_database.adapters.controls.activity import storage
-from tempo_legacy_database.adapters.controls.activity.storage import SOURCES
-from tempo_legacy_database.adapters.controls.claim_sql import claimable, control_order
-
-
-from .defensive_analysis import DEFENSIVE_TASK_KINDS
+from tempo_storage.connections import connection
+from tempo_storage import postgres
+from tempo_storage.controls.activity import storage
+from tempo_storage.controls.activity.storage import SOURCES
+from tempo_storage.controls.claim_sql import claimable, control_order
 
 
 def _now() -> str:
@@ -75,7 +73,7 @@ def emit_progress(
         report_progress(
             source, work_id, generation_key, phase, completed_units, total_units
         )
-    except sqlite3.OperationalError:
+    except psycopg.OperationalError:
         logging.getLogger("tempo.background").warning(
             "Could not record progress source=%s work_id=%s",
             source,
@@ -124,7 +122,7 @@ def set_control_in_transaction(
         "normal",
     }:
         return False
-    read_work = storage.prepare_control_read(source, DEFENSIVE_TASK_KINDS)
+    read_work = storage.prepare_control_read(source)
     work_row = read_work(database, work_id)
     if not work_row or work_row[0] in {"failed", "superseded"}:
         return False
@@ -133,8 +131,7 @@ def set_control_in_transaction(
     if action == "resume" and not allow_settings_blocked_resume and not work_row[1]:
         raise HTTPException(
             409,
-            "Defensive analysis is disabled in Settings. "
-            "Enable Defensive analysis in Settings before resuming this work.",
+            "This work is paused while Study-only mode is enabled.",
         )
     now = _now()
     storage.ensure_control(database, (source, work_id, now))

@@ -13,12 +13,12 @@ from fastapi import HTTPException
 from .command_gateway import register_command
 from app.repertoire.changes.application import validate_source_rows
 from app.repertoire.changes.ports import ChangeError
-from tempo_legacy_database.adapters.authored_repertoires import (
+from tempo_storage.authored_repertoires import (
     product_changes as change_storage,
 )
 from app.contracts.transport.authored_lines import BranchRequest, RemoveBranchRequest
-from tempo_legacy_database.adapters.postgres_store import PostgresConnection
-from tempo_legacy_database.adapters.authored_repertoires import branches as storage
+from tempo_storage.postgres import PostgresConnection
+from tempo_storage.authored_repertoires import branches as storage
 from app.chess.cards import card_id
 from .services.canonical_prefix import ensure_line_in_scope, certify_admitted_route
 from .services.postgres_opening_graph import request_graph_rebuild_in_transaction
@@ -60,7 +60,7 @@ def add_repertoire_branch(
                 ),
             ),
         )
-    except ChangeError as error:
+    except (ChangeError, ValueError) as error:
         raise HTTPException(409, str(error)) from error
     validated_route = ensure_line_in_scope(
         database, repertoire_id, request.starting_fen, moves, remember=False

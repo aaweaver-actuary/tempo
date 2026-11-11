@@ -356,7 +356,7 @@ function StandardTrainingView({
       {serviceError && (
         <div role="alert">
           {serviceError}{" "}
-          <RetryButton onRetry={() => void refreshDatabaseQueue(serviceError.includes("no longer in today's queue"), true, true)} />
+          <RetryButton onRetry={() => void refreshDatabaseQueue(false, true, true)} />
         </div>
       )}
       {["saveFailed", "pendingConfirmation"].includes(reviewPersistenceState) && (

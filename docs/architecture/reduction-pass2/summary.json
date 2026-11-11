@@ -1,0 +1,73 @@
+{
+  "starting_commit": "7456e29a9c2164cff881074dde8cac7ea120ff1c",
+  "ending_source_commit": "65e61ea675110bc729d1bb385edc49968824831d",
+  "branch": "codex/tempo-aggressive-reduction-pass2",
+  "graph_scope": "Tracked runtime/library Python; includes function-local and literal dynamic imports; src package roots normalized; computed imports and JavaScript graph excluded",
+  "before": {
+    "runtime": {
+      "files": 1887,
+      "lines": 182082
+    },
+    "tests": {
+      "files": 759,
+      "lines": 200600
+    },
+    "docs": {
+      "files": 420,
+      "lines": 93488
+    },
+    "audit": {
+      "files": 0,
+      "lines": 0
+    }
+  },
+  "after": {
+    "runtime": {
+      "files": 1617,
+      "lines": 134735
+    },
+    "tests": {
+      "files": 624,
+      "lines": 133104
+    },
+    "docs": {
+      "files": 344,
+      "lines": 84971
+    },
+    "audit": {
+      "files": 1,
+      "lines": 1
+    }
+  },
+  "graph_before": {
+    "modules": 569,
+    "edges": 1794,
+    "cyclic_components": 8,
+    "largest_component_size": 32
+  },
+  "graph_after": {
+    "modules": 352,
+    "edges": 857,
+    "cyclic_components": 2,
+    "largest_component_size": 10
+  },
+  "legacy_runtime_import_edges_before": 404,
+  "legacy_runtime_import_edges_after": 0,
+  "storage_reverse_edges_before": 65,
+  "storage_reverse_edges_after": 3,
+  "remaining_reverse_edges": [
+    [
+      "tempo_storage.frozen_order",
+      "app.study.frozen_order.interfaces"
+    ],
+    [
+      "tempo_storage.scheduling_review_store",
+      "app.study.policy.scheduling_review_contracts"
+    ],
+    [
+      "tempo_storage.study.issuance",
+      "app.contracts.product_v02.learning"
+    ]
+  ],
+  "publication": "blocked_by_automatic_approval_review"
+}

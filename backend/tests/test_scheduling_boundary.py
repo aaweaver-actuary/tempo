@@ -78,8 +78,8 @@ def synthetic_package(tmp_path, additions):
         "app.services.review_service": "",
         "app.study.game_feedback": "",
         "app.study.encounter_feedback": "",
-        "tempo_legacy_database.connections": "",
-        "tempo_legacy_database.adapters.scheduling_review_store": "",
+        "tempo_storage.connections": "",
+        "tempo_storage.scheduling_review_store": "",
     }
     for module, source_path in METADATA["source_paths"].items():
         sources[module] = (REPOSITORY / source_path).read_text()
@@ -104,7 +104,7 @@ def synthetic_package(tmp_path, additions):
     [
         "import app.main",
         "import psycopg",
-        "def hidden():\n    from tempo_legacy_database import connections",
+        "def hidden():\n    from tempo_storage import connections",
         "if False:\n    from . import unrelated_analysis",
     ],
 )
@@ -138,14 +138,14 @@ def test_scheduling_boundary_rejects_transitive_infrastructure_imports(
         tmp_path,
         {
             scheduler_module: "from .bridge import value",
-            bridge: "from tempo_legacy_database import connections\nvalue = 1",
+            bridge: "from tempo_storage import connections\nvalue = 1",
         },
     )
     completed = lint_imports(backend_directory)
     assert completed.returncode != 0, completed.stdout
     assert (
         scheduler_module in completed.stdout
-        and "tempo_legacy_database.connections" in completed.stdout
+        and "tempo_storage.connections" in completed.stdout
     )
 
 
@@ -376,7 +376,7 @@ def test_pure_package_checker_rejects_direct_lazy_conditional_and_transitive_imp
     entry = import_root / "__init__.py"
     entry.write_text(entry.read_text() + "\n" + forbidden_source + "\n")
     if forbidden_source == "from . import bridge":
-        (import_root / "bridge.py").write_text("import tempo_legacy_database\n")
+        (import_root / "bridge.py").write_text("import tempo_storage\n")
     completed = subprocess.run(
         [
             sys.executable,

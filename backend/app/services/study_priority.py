@@ -14,8 +14,8 @@ import time
 
 import redis
 
-from tempo_legacy_database.adapters.redis_control import policy as storage
-from tempo_legacy_database.adapters.redis_control.policy import (
+from tempo_storage.redis_control import policy as storage
+from tempo_storage.redis_control.policy import (
     POLICY_KEY,
     GENERATION_KEY,
     _PUBLISH,
@@ -40,7 +40,7 @@ def refresh_policy(*, invalidate: bool = True) -> bool:
     # module configuration. Publish only to the identity that reserved this
     # generation; deleting that private generation must fence the late result.
     policy_key, generation_key = POLICY_KEY, GENERATION_KEY
-    from tempo_legacy_database.connections import background_read_connection
+    from tempo_storage.connections import background_read_connection
     from .activity_gate import activity_gate
 
     try:

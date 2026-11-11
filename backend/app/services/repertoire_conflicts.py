@@ -1,6 +1,6 @@
 """Legacy call-site composition for authored repertoire conflict detection."""
 
-from tempo_legacy_database.adapters.repertoire_lines import (
+from tempo_storage.repertoire_lines import (
     line_snapshot as _line_snapshot,
 )
 from app.studies.repertoire_conflicts import (

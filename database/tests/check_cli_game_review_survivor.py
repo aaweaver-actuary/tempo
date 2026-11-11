@@ -66,8 +66,8 @@ from datetime import datetime
 from app.study.interfaces.game_priority import GameEncounter,GameEffectControl
 from app.study.game_feedback import Effect,effect_id
 from app.study.encounter_feedback import encounter_digest
-from tempo_legacy_database.adapters.postgres_store import PostgresConnection
-from tempo_legacy_database.adapters.study.game_feedback import PostgresGameFeedbackStore
+from tempo_storage.postgres import PostgresConnection
+from tempo_storage.study.game_feedback import PostgresGameFeedbackStore
 assert version==59
 command=GameEncounter.model_validate_json(json.dumps(p['command']))
 assert effect_id(command.key)==p['effect_id']

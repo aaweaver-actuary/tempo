@@ -8,55 +8,41 @@ import json
 import logging
 from typing import Any
 
-from tempo_legacy_database.adapters.queue_refresh.reads import (
+from tempo_storage.queue_refresh.reads import (
     TransactionTimeout,
     _bounded_read,
 )
 
-from tempo_legacy_database.connections import (
+from tempo_storage.connections import (
     background_read_connection,
     connection,
     read_connection,
 )
-from tempo_legacy_database.adapters import postgres_store
-from tempo_legacy_database.adapters.queue_refresh import reads as read_storage
-from tempo_legacy_database.adapters.queue_refresh import (
+from tempo_storage import postgres
+from tempo_storage.queue_refresh import reads as read_storage
+from tempo_storage.queue_refresh import (
     admissions,
     openings as openings_storage,
     presentation as presentation_storage,
 )
-from tempo_legacy_database.adapters.queue_refresh import foreground as refresh_requests
-from tempo_legacy_database.adapters.queue_refresh.openings import (
+from tempo_storage.queue_refresh import foreground as refresh_requests
+from tempo_storage.queue_refresh.openings import (
     _STUDY_OPENING_ORDER,
     _STUDY_OPENING_ROUTES,
-    _PRIORITY_OPENING_PAGE_SQL,
 )
-from tempo_legacy_database.adapters.queue_refresh.presentation import (
+from tempo_storage.queue_refresh.presentation import (
     _QUARANTINE_OPENING_ELIGIBILITY,
     _PROJECTION_BLOCKED_COUNT_SQL,
 )
-from tempo_legacy_database.adapters.queue_refresh.eligibility import (
+from tempo_storage.queue_refresh.eligibility import (
     _DUE_CARD_ELIGIBILITY,
     _STUDY_NEW_ELIGIBILITY,
 )
-from tempo_legacy_database.adapters.queue_position_lock import (
+from tempo_storage.queue_position_lock import (
     lock_queue_date_for_position,
 )
 from . import queue_application, queue_ordering, frozen_opening_order
-from app.study.openings.capacity_frontier import plan_prioritized_opening_admissions
-from .queue_application import AdmittedOpeningProposal
-from .queue_admission_adapter import QueueAdmissionAdapter
 from app.chess.cards import card_id
-from .real_game_feedback import MISS_REASON
-from tempo_legacy_database.adapters.real_game_miss_projection import (
-    outstanding_miss_sql,
-)
-from .real_game_feedback_adapter import (
-    has_outstanding_real_game_miss,
-    promote_real_game_card,
-    clear_satisfied_miss_priority,
-    prioritize_queued_misses,
-)
 from .activity_gate import activity_gate
 from .durable_tasks import (
     advance_task_slice_in_transaction,
@@ -66,7 +52,7 @@ from .durable_tasks import (
 from app.chess.pgn import ends_on_trained_move
 from .puzzles import validate_puzzle_record
 from .tactical_catalog import pack_records
-from tempo_legacy_database.adapters.tactic_admission import (
+from tempo_storage.tactic_admission import (
     DAILY_TACTIC_COUNT_SQL,
     count_daily_tactic_introductions,
     lock_daily_tactic_admission,
@@ -116,7 +102,7 @@ def _study_opening_cursor(opening_occurrence) -> tuple:
     """Stable repertoire/line/decision order, with IDs only breaking ties."""
 
     values = tuple(opening_occurrence)
-    return (*values[12:14], *values[:6]) if len(values) == 14 else values[:6]
+    return (*values[12:13], *values[:6]) if len(values) == 13 else values[:6]
 
 
 def _study_opening_route_still_valid(database, planned: dict, queue_date: str) -> bool:
@@ -137,12 +123,6 @@ def _study_opening_route_still_valid(database, planned: dict, queue_date: str) -
         or list(tuple(current_occurrence)[3:]) != planned_route["content"]
     ):
         return False
-    outstanding = has_outstanding_real_game_miss(database, planned["card_id"])
-    opportunity = openings_storage.current_opportunity(
-        database, planned["repertoire_id"], planned["card_id"]
-    )
-    if outstanding or opportunity:
-        return True
     if current_occurrence[1] != "new" or current_occurrence[2] > queue_date:
         return False
     return (
@@ -231,11 +211,6 @@ def _prepare_study_opening_page(queue_date: str, payload: dict) -> dict:
             planned_opening = frozen_opening_order.annotate(
                 database, [planned_opening]
             )[0]
-            outstanding = has_outstanding_real_game_miss(
-                database, opening_occurrence[5]
-            )
-            if outstanding:
-                planned_opening["reason"] = MISS_REASON
             if not frozen_opening_order.proposal_valid(database, planned_opening):
                 page_exclusions["invalid_content"] += 1
                 continue
@@ -248,8 +223,7 @@ def _prepare_study_opening_page(queue_date: str, payload: dict) -> dict:
                 database, queue_date, opening_occurrence[1]
             )
             if remaining_allowance_row is None or (
-                not outstanding
-                and remaining_allowance_row[0]
+                remaining_allowance_row[0]
                 <= planned_counts_by_repertoire.get(opening_occurrence[1], 0)
             ):
                 page_exclusions["quota_exhausted"] += 1
@@ -418,12 +392,7 @@ def _reconcile_one_unseen_entry(
     limit = _current_opening_limit(database, candidate["repertoire_id"])
     if limit is None:
         return False
-    # Share ordinary reconciliation's Study-owned retention fact. An applied
-    # same-definition encounter introduction survives a zero ordinary allowance;
-    # pending observations alone still grant no introduction or queue entry.
-    if introduced_count < limit or QueueAdmissionAdapter(database).has_outstanding_miss(
-        candidate["card_id"]
-    ):
+    if introduced_count < limit:
         admissions.keep_unseen_introduction(database, queue_date, candidate["card_id"])
         return True
     admissions.remove_unseen_entry(database, candidate["id"])
@@ -448,134 +417,8 @@ def _admit_one_due_card(database, queue_date: str, card_id: str) -> bool:
     return True
 
 
-def _annotate_frozen_pages(rows):
-    annotated = []
-    for offset in range(0, len(rows), 16):
-        with background_read_connection() as database:
-            annotated.extend(
-                frozen_opening_order.annotate(database, rows[offset : offset + 16])
-            )
-    return annotated
 
 
-def _prepare_prioritized_openings(queue_date: str) -> list[AdmittedOpeningProposal]:
-    """Plan openings using separate bounded reads and no open write transaction."""
-
-    active_misses = [row[0] for row in read_storage.active_opening_misses()]
-    candidates = []
-    after_card_id = ""
-    while True:
-        card_ids = [
-            row[0]
-            for row in read_storage.opening_candidate_ids(
-                after_card_id, _OPENING_CANDIDATE_READ_BATCH_SIZE
-            )
-        ]
-        if not card_ids:
-            break
-        candidates.extend(
-            read_storage.priority_opening_rows(
-                active_misses, card_ids, MISS_REASON, queue_date
-            )
-        )
-        after_card_id = card_ids[-1]
-    # Count consumption independently from current candidate eligibility.
-    counts = read_storage.introduced_opening_counts(queue_date)
-    daily_limit = dict(read_storage.opening_daily_limits())
-    candidates = _annotate_frozen_pages(candidates)
-    plan = plan_prioritized_opening_admissions(
-        candidates,
-        dict(counts),
-        queue_date,
-        daily_limit,
-        miss_reason=MISS_REASON,
-    )
-    planned_items = [
-        {
-            "repertoire_id": repertoire_id,
-            "card_id": candidate["id"],
-            "reason": candidate["gameplay_priority_reason"],
-            "frozen_token": candidate.get("frozen_token", [None, 0]),
-        }
-        for repertoire_id, candidate in plan
-    ]
-    from .opening_capacity_admission import (
-        capacity_expansion_enabled,
-        remaining_opening_allowances,
-        read_capacity_routes,
-        propose_capacity_expansion_from_priority_rows,
-        capacity_proposal_payload,
-        CAPACITY_READ_BATCH_SIZE,
-    )
-
-    if not capacity_expansion_enabled():
-        return planned_items
-    from .study_mode import study_only_enabled
-
-    if study_only_enabled():
-        return planned_items
-    frozen_active = any(row.get("frozen_token", [None])[0] for row in candidates)
-    remaining = remaining_opening_allowances(
-        [] if frozen_active else plan, dict(counts), daily_limit
-    )
-    if not any(remaining.values()):
-        return planned_items
-    normal_parent_ids = (
-        tuple(row["id"] for row in candidates)
-        if frozen_active
-        else tuple(candidate["id"] for _, candidate in plan)
-    )
-    routes = tuple(
-        route
-        for repertoire_id in sorted(remaining)
-        if remaining[repertoire_id] > 0
-        for route in read_capacity_routes(
-            read_storage._bounded_read, repertoire_id, normal_parent_ids
-        )
-    )
-    capacity_rows = []
-    card_ids = sorted({card_id for card_id, _ in routes})
-    for offset in range(0, len(card_ids), CAPACITY_READ_BATCH_SIZE):
-        capacity_rows.extend(
-            read_storage.capacity_priority_rows(
-                active_misses,
-                card_ids[offset : offset + CAPACITY_READ_BATCH_SIZE],
-                MISS_REASON,
-                queue_date,
-            )
-        )
-    capacity_rows = _annotate_frozen_pages(capacity_rows)
-    if frozen_active:
-        from .opening_capacity_admission import plan_frozen_with_capacity
-
-        return [
-            {
-                **row,
-                "card_id": row["id"],
-                "repertoire_id": repertoire_id,
-                "reason": row["gameplay_priority_reason"],
-            }
-            for repertoire_id, row in plan_frozen_with_capacity(
-                queue_date,
-                candidates,
-                dict(counts),
-                daily_limit,
-                routes,
-                capacity_rows,
-                miss_reason=MISS_REASON,
-            )
-        ]
-    return planned_items + [
-        capacity_proposal_payload(proposal)
-        for proposal in propose_capacity_expansion_from_priority_rows(
-            queue_date,
-            plan,
-            remaining,
-            routes,
-            capacity_rows,
-            miss_reason=MISS_REASON,
-        )
-    ]
 
 
 def _current_opening_limit(database, repertoire_id: str) -> int | None:
@@ -616,7 +459,6 @@ def _admit_one_prioritized_opening(database, queue_date: str, planned: dict) -> 
     admitted_count = openings_storage.admitted_count(
         database, queue_date, planned["repertoire_id"]
     )
-    outstanding = has_outstanding_real_game_miss(database, card_id)
     safe_route = openings_storage.safe_route(
         database, planned["repertoire_id"], card_id
     )
@@ -626,22 +468,9 @@ def _admit_one_prioritized_opening(database, queue_date: str, planned: dict) -> 
         database, planned, queue_date
     ):
         return False
-    opportunity = openings_storage.current_opportunity(
-        database, planned["repertoire_id"], card_id
-    )
-    capacity_proposal = "capacity_route" in planned
-    if capacity_proposal:
-        from .opening_capacity_admission import capacity_route_still_valid
-
-        if not capacity_route_still_valid(database, planned, queue_date):
-            return False
-    if card[0] == "locked" and not (outstanding or opportunity or capacity_proposal):
+    if card[0] != "new":
         return False
-    if planned["reason"] == MISS_REASON and not outstanding:
-        return False
-    if daily_limit is None or (
-        admitted_count >= daily_limit and (capacity_proposal or not outstanding)
-    ):
+    if daily_limit is None or admitted_count >= daily_limit:
         return False
     position = admissions.next_queue_position(database, queue_date)
     openings_storage.append_opening(
@@ -653,10 +482,6 @@ def _admit_one_prioritized_opening(database, queue_date: str, planned: dict) -> 
         planned["repertoire_id"],
     )
     admissions.keep_unseen_introduction(database, queue_date, card_id)
-    now = datetime.now(timezone.utc).isoformat()
-    openings_storage.resolve_opportunity(
-        database, now, planned["repertoire_id"], card_id
-    )
     return True
 
 
@@ -689,12 +514,17 @@ def _admit_one_study_card(database, queue_date: str, study_card_id: str) -> bool
     return True
 
 
-def _prepare_real_game_obligation(queue_date: str, after_card_id: str) -> str | None:
 
-    candidates = read_storage.real_game_obligation(
-        queue_date, MISS_REASON, after_card_id
-    )
-    return str(candidates[0][0]) if candidates else None
+
+def _annotate_frozen_pages(rows):
+    """Read active frozen-order facts in bounded, closed sections."""
+    annotated = []
+    for offset in range(0, len(rows), 16):
+        with background_read_connection() as database:
+            annotated.extend(
+                frozen_opening_order.annotate(database, rows[offset : offset + 16])
+            )
+    return annotated
 
 
 def _prepare_queue_randomization(
@@ -772,13 +602,9 @@ def _publish_queue_randomization(database, queue_date: str, plan: dict) -> bool:
     ):
         return False
     if plan["entries"] is None:
-        if presentation_storage.has_queue_priority(database, queue_date):
-            prioritize_queued_misses(database, queue_date)
         return True
     saved = presentation_storage.locked_membership_hash(database, queue_date)
     if saved and saved[0] == plan["membership_hash"]:
-        if presentation_storage.has_queue_priority(database, queue_date):
-            prioritize_queued_misses(database, queue_date)
         return True
     entries = plan["entries"]
     if plan.get("frozen_token", [None])[0] is not None:
@@ -800,8 +626,6 @@ def _publish_queue_randomization(database, queue_date: str, plan: dict) -> bool:
         plan["membership_hash"],
         datetime.now(timezone.utc).isoformat(),
     )
-    if presentation_storage.has_queue_priority(database, queue_date):
-        prioritize_queued_misses(database, queue_date)
     return True
 
 
@@ -865,9 +689,6 @@ def _prepare_projection_blocked_count(queue_date: str) -> int:
 def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     """Apply one eligibility phase; later queue phases remain explicitly gated."""
 
-    if not read_storage.native_configured():
-        raise RuntimeError("PostgreSQL queue refresh requires the PostgreSQL store")
-
     payload = task["payload"]
     queue_date = str(payload.get("queue_date") or date.today().isoformat())
     # Pin before preparing any work. An upgraded checkpoint cannot certify that
@@ -915,9 +736,6 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
         "publish_projection",
     ):
         raise RuntimeError(f"Queue refresh phase is not yet ported: {phase}")
-    from .study_mode import study_only_enabled
-
-    minimal_study = study_only_enabled()
     with background_read_connection() as frozen_database:
         frozen_token = list(frozen_opening_order.activation(frozen_database))
     if payload.get("frozen_token", [None, 0]) != frozen_token:
@@ -939,8 +757,16 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
         "prioritized_opening_item": "study_opening_page",
         "real_game_misses": "randomize_queue",
     }
-    if minimal_study and phase in skipped_phases:
+    if phase in skipped_phases:
         phase = skipped_phases[phase]
+    # Old optional-priority cursors had a leading miss rank. Restart the
+    # authored scan; existing queue identities exclude already admitted work.
+    if any(len(payload.get(key) or ()) == 8 for key in
+           ("study_opening_cursor", "study_opening_upper")):
+        payload = {key: value for key, value in payload.items()
+                   if not key.startswith("study_opening_")}
+        if phase in {"study_opening_page", "study_opening_item"}:
+            phase = "study_opening_page"
     study_opening_page = None
     if phase == "study_opening_page":
         activity_gate.wait_for_foreground()
@@ -980,32 +806,18 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
         planned_introduction = payload["study_opening_items"][
             int(payload["study_opening_index"])
         ]
-    elif phase == "prioritized_opening_item":
-        index = int(payload["opening_index"])
-        if index < len(payload["opening_plan"]):
-            planned_introduction = payload["opening_plan"][index]
     if planned_introduction is not None:
         from .position_queue_admission import prepare_opening_introduction
 
         activity_gate.wait_for_foreground()
-        with background_read_connection() as database:
+        with read_connection(repertoire_snapshot=True) as database:
             position_introduction = prepare_opening_introduction(
                 database, planned_introduction
             )
-    prioritized_plan = None
-    if phase == "prioritized_openings":
-        activity_gate.wait_for_foreground()
-        prioritized_plan = _prepare_prioritized_openings(queue_date)
     study_card_id = None
     if phase == "admit_study":
         activity_gate.wait_for_foreground()
         study_card_id = _prepare_study_admission(queue_date)
-    real_game_card_id = None
-    if phase == "real_game_misses":
-        activity_gate.wait_for_foreground()
-        real_game_card_id = _prepare_real_game_obligation(
-            queue_date, str(payload.get("after_card_id") or "")
-        )
     randomization_plan = None
     if phase == "randomize_queue":
         activity_gate.wait_for_foreground()
@@ -1043,6 +855,7 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
                 },
             )
         position_introduction_fence = None
+        introduction_history_hold = False
         if planned_introduction is not None:
             from tempo_evidence_math.position_learning import Hold
             from .position_queue_admission import fence_opening_introduction
@@ -1055,9 +868,16 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
                 database, position_introduction
             )
             if isinstance(position_introduction_fence, Hold):
-                raise RuntimeError(
-                    "Position introduction held: " + position_introduction_fence.reason
-                )
+                if (position_introduction_fence.reason == "position_introduction_history_changed"
+                        and position_introduction_fence.detail):
+                    from tempo_storage.study.position_introductions import record_history_hold
+
+                    record_history_hold(database, position_introduction[1], position_introduction_fence)
+                    introduction_history_hold = True
+                else:
+                    raise RuntimeError(
+                        "Position introduction held: " + position_introduction_fence.reason
+                    )
         if phase == "publish_projection":
             epochs = refresh_requests.lock_refresh_epochs(database, queue_date)
             if epochs is None:
@@ -1175,7 +995,7 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
                     "Position queue admission held: " + position_due.reason
                 )
             if position_due is None:
-                next_phase = "prioritized_openings"
+                next_phase = "study_opening_page"
                 next_payload = {"queue_date": queue_date, "_queue_phase": next_phase}
             elif "repertoire_done" in position_due:
                 next_phase = phase
@@ -1194,16 +1014,6 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
                     "_queue_phase": phase,
                     **position_due["cursor"],
                 }
-        elif phase == "prioritized_openings":
-            next_phase = (
-                "prioritized_opening_item" if prioritized_plan else "admit_study"
-            )
-            next_payload = {
-                "queue_date": queue_date,
-                "_queue_phase": next_phase,
-                "opening_plan": prioritized_plan or [],
-                "opening_index": 0,
-            }
         elif phase == "study_opening_page":
             counts = dict(payload.get("study_opening_counts", {}))
             counts["examined"] = (
@@ -1243,10 +1053,9 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
             admitted = (
                 False
                 if (
-                    redundant_opening_introduction(
+                    introduction_history_hold or redundant_opening_introduction(
                         position_introduction, position_introduction_fence
                     )
-                    and items[item_index].get("reason") != MISS_REASON
                 )
                 else _admit_one_prioritized_opening(
                     database, queue_date, items[item_index]
@@ -1262,6 +1071,7 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
                     now=datetime.now(timezone.utc),
                 )
             counts = dict(payload["study_opening_counts"])
+            counts["history_held"] = counts.get("history_held", 0) + int(introduction_history_hold)
             counts["admitted"] = counts.get("admitted", 0) + int(bool(admitted))
             counts["publication_rejected"] = counts.get(
                 "publication_rejected", 0
@@ -1283,61 +1093,13 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
             if next_phase != "study_opening_item":
                 next_payload.pop("study_opening_items")
                 next_payload.pop("study_opening_index")
-        elif phase == "prioritized_opening_item":
-            opening_plan = payload["opening_plan"]
-            opening_index = int(payload["opening_index"])
-            if opening_index < len(opening_plan):
-                from .position_queue_admission import redundant_opening_introduction
-
-                admitted = (
-                    False
-                    if (
-                        redundant_opening_introduction(
-                            position_introduction, position_introduction_fence
-                        )
-                        and opening_plan[opening_index].get("reason") != MISS_REASON
-                    )
-                    else _admit_one_prioritized_opening(
-                        database, queue_date, opening_plan[opening_index]
-                    )
-                )
-                if admitted and position_introduction is not None:
-                    from .position_queue_admission import apply_opening_introduction
-
-                    apply_opening_introduction(
-                        database,
-                        position_introduction,
-                        position_introduction_fence,
-                        now=datetime.now(timezone.utc),
-                    )
-            opening_index += 1
-            next_phase = phase if opening_index < len(opening_plan) else "admit_study"
-            next_payload = {
-                "queue_date": queue_date,
-                "_queue_phase": next_phase,
-                "opening_plan": opening_plan,
-                "opening_index": opening_index,
-            }
         elif phase == "admit_study":
             if study_card_id is None:
-                next_phase = "real_game_misses"
+                next_phase = "randomize_queue"
             else:
                 _admit_one_study_card(database, queue_date, study_card_id)
                 next_phase = phase
             next_payload = {"queue_date": queue_date, "_queue_phase": next_phase}
-        elif phase == "real_game_misses":
-            if real_game_card_id is None:
-                next_phase = "randomize_queue"
-                next_payload = {"queue_date": queue_date, "_queue_phase": next_phase}
-            else:
-                promote_real_game_card(database, real_game_card_id, queue_date)
-                clear_satisfied_miss_priority(database, real_game_card_id)
-                next_phase = phase
-                next_payload = {
-                    "queue_date": queue_date,
-                    "_queue_phase": phase,
-                    "after_card_id": real_game_card_id,
-                }
         elif phase == "randomize_queue":
             published = _publish_queue_randomization(
                 database,

@@ -36,7 +36,7 @@ if (options.list) {
 // Reject invalid opt-in inputs before budget admission or temporary secrets.
 if (options.mode === "lifecycle-current") {
   if (staleOnly || process.env.TEMPO_LIFECYCLE_P0_59_ONLY === "1"
-      || schemaVersionFromSource(readFileSync("database/tempo_legacy_database/ddl/schema_version.py", "utf8")) !== 63)
+      || schemaVersionFromSource(readFileSync("database/tempo_storage/ddl/schema_version.py", "utf8")) !== 63)
     throw new Error("Current lifecycle profile requires schema 63 and the schema-61 predecessor fixture without other scenario overrides");
 }
 if (process.env.TEMPO_RELEASE_CANDIDATE_MODE) {

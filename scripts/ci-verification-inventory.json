@@ -3,24 +3,46 @@
   "lifecycle": {
     "sensitivePaths": [
       "backend/app/contracts/runtime_timing.py",
-      "database/tempo_legacy_database/connections.py", "database/tempo_legacy_database/adapters/postgres_store.py", "database/tempo_legacy_database/adapters/postgres_readiness.py",
-      "database/tempo_legacy_database/ddl/schema_version.py", "backend/app/celery_app.py", "backend/app/main.py",
+      "database/tempo_storage/connections.py",
+      "database/tempo_storage/postgres.py",
+      "database/tempo_storage/postgres_readiness.py",
+      "database/tempo_storage/ddl/schema_version.py",
+      "backend/app/celery_app.py",
+      "backend/app/main.py",
       "backend/app/services/background_runtime.py",
-      "database/tempo_legacy_database/adapters/repertoire_lines.py",
-      "database/tempo_legacy_database/adapters/tactic_admission.py",
-      "tests/unit/tempo-cli-regressions.test.ts", "tests/unit/ci-reliability-regressions.test.ts",
-      "tests/unit/postgres-test-speedups-regressions.test.ts", "tests/unit/postgres-test-runner-regressions.test.ts",
-      "tests/unit/test-plan-regressions.test.ts", "tests/unit/api-schema-parity-regressions.test.ts"
+      "database/tempo_storage/repertoire_lines.py",
+      "database/tempo_storage/tactic_admission.py",
+      "tests/unit/tempo-cli-regressions.test.ts",
+      "tests/unit/ci-reliability-regressions.test.ts",
+      "tests/unit/postgres-test-speedups-regressions.test.ts",
+      "tests/unit/postgres-test-runner-regressions.test.ts",
+      "tests/unit/test-plan-regressions.test.ts",
+      "tests/unit/api-schema-parity-regressions.test.ts"
     ],
-    "sensitivePrefixes": ["database/tempo_legacy_database/ddl/migrations/", "scripts/", "database/", "tests/runner/", "docker/", ".github/"],
+    "sensitivePrefixes": [
+      "database/tempo_storage/ddl/migrations/",
+      "scripts/",
+      "database/",
+      "tests/runner/",
+      "docker/",
+      ".github/"
+    ],
     "sensitivePatterns": [
-      "(^|/)Dockerfile($|\\.)", "(^|/)docker-compose[^/]*\\.ya?ml$",
+      "(^|/)Dockerfile($|\\.)",
+      "(^|/)docker-compose[^/]*\\.ya?ml$",
       "(^|/)[^/]*(migration|schema|upgrade|backup|restore|redis|credential|secret)[^/]*\\.(py|mjs|[cm]?tsx?|json|ya?ml|sh)$"
     ],
-    "ordinaryPrefixes": ["app/", "backend/tests/", "tests/unit/", "tests/browser/", "public/", "assets/", "tempo-core/src/"],
+    "ordinaryPrefixes": [
+      "app/",
+      "backend/tests/",
+      "tests/unit/",
+      "tests/browser/",
+      "public/",
+      "assets/",
+      "tempo-core/src/"
+    ],
     "ordinaryPaths": [
       "backend/ORGANIZATION.md",
-      "backend/app/product_composition/game_collection_status.py",
       "backend/app/README.md",
       "backend/app/authoring/README.md",
       "backend/app/authoring/__init__.py",
@@ -29,9 +51,7 @@
       "backend/app/chess/position_identity.py",
       "backend/app/contracts/README.md",
       "backend/app/contracts/__init__.py",
-      "backend/app/contracts/next_opponent.py",
       "backend/app/contracts/opening_graph.py",
-      "backend/app/contracts/opening_move_probability.py",
       "backend/app/contracts/transport/README.md",
       "backend/app/contracts/transport/__init__.py",
       "backend/app/contracts/transport/authored_import.py",
@@ -39,91 +59,67 @@
       "backend/app/contracts/transport/authored_lines.py",
       "backend/app/contracts/transport/authored_repertoire.py",
       "backend/app/contracts/transport/content.py",
-      "backend/app/contracts/transport/defense.py",
-      "backend/app/contracts/transport/discovery.py",
-      "backend/app/contracts/transport/endgames.py",
-      "backend/app/contracts/transport/engine.py",
-      "backend/app/contracts/transport/game_analysis.py",
-      "backend/app/contracts/transport/game_findings.py",
-      "backend/app/contracts/transport/game_sync.py",
-      "backend/app/contracts/transport/games.py",
       "backend/app/contracts/transport/settings.py",
       "backend/app/contracts/transport/study.py",
       "backend/app/contracts/transport/tactics.py",
       "backend/app/games/README.md",
       "backend/app/games/__init__.py",
-      "backend/app/games/contracts.py",
-      "backend/app/games/ingestion/__init__.py",
-      "backend/app/games/ingestion/serialization.py",
-      "backend/app/games/opponents/__init__.py",
-      "backend/app/games/opponents/profile.py",
-      "backend/app/games/providers/__init__.py",
       "backend/app/study/README.md",
       "backend/app/study/openings/README.md",
       "backend/app/study/openings/__init__.py",
       "backend/app/study/openings/capacity_frontier.py",
       "backend/app/study/openings/frozen_math.py",
-      "backend/app/study/openings/policy_reach.py",
-      "backend/app/study/openings/preparedness.py",
       "backend/app/study/review/README.md",
       "backend/app/study/review/__init__.py",
-      "backend/app/study/review/feedback_contracts.py",
       "backend/organization-inventory.json",
-      "README.md", "CONTRIBUTING.md", "AGENTS.md", "THIRD_PARTY_NOTICES.md",
-      "DUCKDB_VS_SQLITE.md", "GAMES_SYNC_RESEARCH.md", "GAMES_SYNC_IMPLEMENTATION.md", "tests/REGRESSIONS.md",
-      "backend/app/account_commands.py", "backend/app/activity_commands.py",
-      "backend/app/analysis_paste_commands.py", "backend/app/annotation_commands.py",
-      "backend/app/branch_commands.py", "backend/app/card_commands.py",
-      "backend/app/defense_commands.py",
-      "backend/app/endgame_commands.py",
-      "backend/app/game_analysis_commands.py",
-      "backend/app/game_analysis_publication.py", "backend/app/game_commands.py",
-      "backend/app/game_sync_commands.py", "backend/app/integrity_repair_commands.py", "backend/app/models.py",
-      "backend/app/opening_evidence_api.py", "backend/app/contracts/opening_evidence.py",
-      "backend/app/pgn_import_commands.py", "backend/app/prefix_split_commands.py",
-      "backend/app/queue_attempt_origins.py", "backend/app/queue_commands.py",
-      "backend/app/repertoire_commands.py", "backend/app/repertoire_settings.py",
-      "backend/app/review_commands.py", "backend/app/contracts/review_conflicts.py",
+      "README.md",
+      "CONTRIBUTING.md",
+      "AGENTS.md",
+      "THIRD_PARTY_NOTICES.md",
+      "DUCKDB_VS_SQLITE.md",
+      "GAMES_SYNC_RESEARCH.md",
+      "GAMES_SYNC_IMPLEMENTATION.md",
+      "tests/REGRESSIONS.md",
+      "backend/app/activity_commands.py",
+      "backend/app/analysis_paste_commands.py",
+      "backend/app/annotation_commands.py",
+      "backend/app/branch_commands.py",
+      "backend/app/card_commands.py",
+      "backend/app/integrity_repair_commands.py",
+      "backend/app/contracts/opening_evidence.py",
+      "backend/app/pgn_import_commands.py",
+      "backend/app/prefix_split_commands.py",
+      "backend/app/queue_attempt_origins.py",
+      "backend/app/queue_commands.py",
+      "backend/app/repertoire_commands.py",
+      "backend/app/repertoire_settings.py",
+      "backend/app/review_commands.py",
+      "backend/app/contracts/review_conflicts.py",
       "backend/app/settings_commands.py",
-      "backend/app/study_attempt_commands.py", "backend/app/study_commands.py",
-      "backend/app/contracts/studies.py", "backend/app/study_routes.py",
-      "backend/app/tactic_commands.py", "backend/app/teaching_commands.py",
-      "backend/app/threat_analysis_commands.py",
+      "backend/app/study_attempt_commands.py",
+      "backend/app/contracts/studies.py",
+      "backend/app/tactic_commands.py",
+      "backend/app/teaching_commands.py",
       "backend/app/services/README.md",
       "backend/app/services/__init__.py",
       "backend/app/services/activity_gate.py",
       "backend/app/services/analysis_paste.py",
       "backend/app/services/background_activity.py",
       "backend/app/services/background_diagnostic_types.py",
-      "backend/app/services/background_diagnostics.py",
       "backend/app/services/background_metric_kinds.py",
       "backend/app/services/background_metrics.py",
       "backend/app/services/canonical_prefix.py",
-      "backend/app/services/canonical_scope_freshness.py",
       "backend/app/chess/cards.py",
-      "backend/app/games/providers/chesscom.py",
-      "backend/app/services/defensive_analysis.py",
       "backend/app/services/durable_tasks.py",
-      "backend/app/services/engine_diagnostics.py",
-      "backend/app/chess/evaluation.py",
-      "backend/app/services/game_analysis_worker.py",
-      "backend/app/games/ingestion/normalizer.py",
-      "backend/app/games/records.py",
-      "backend/app/games/providers/lichess.py",
       "backend/app/services/opening_decision_evidence.py",
       "backend/app/services/opening_graph.py",
       "backend/app/chess/opening_segments.py",
       "backend/app/chess/pgn.py",
-      "backend/app/services/postgres_game_sync.py",
-      "backend/app/services/postgres_game_sync_completion.py",
-      "backend/app/services/postgres_game_sync_windows.py",
       "backend/app/services/postgres_integrity.py",
-      "backend/app/services/postgres_opening_evidence.py",
       "backend/app/services/postgres_opening_graph.py",
       "backend/app/services/postgres_queue_refresh.py",
       "backend/app/services/prefix_split.py",
       "backend/app/services/puzzles.py",
-      "backend/app/services/real_game_feedback.py",
       "backend/app/services/repertoire_conflicts.py",
       "backend/app/studies/repertoire_conflicts.py",
       "backend/app/services/repertoire_integrity.py",
@@ -132,51 +128,190 @@
       "backend/app/services/scheduler.py",
       "backend/app/services/study_attempts.py",
       "backend/app/services/study_grading.py",
-      "backend/app/studies/pgn.py",
-      "backend/app/services/study_portable.py",
       "backend/app/services/tactic_capture.py",
-      "backend/app/services/tactical_catalog.py",
-      "backend/app/services/threat_pipeline.py",
-      "backend/app/services/threat_training.py"
+      "backend/app/services/tactical_catalog.py"
     ],
-    "ordinaryPatterns": ["^docs/.*\\.md$", "^tempo-core/.*\\.md$"]
+    "ordinaryPatterns": [
+      "^docs/.*\\.md$",
+      "^tempo-core/.*\\.md$"
+    ]
   },
   "families": {
-    "board": ["board-geometry.spec.ts", "board-input.spec.ts", "board-interactions.spec.ts", "board-state.spec.ts", "held-drag.spec.ts", "held-drag-preservation.spec.ts", "keyboard-context.spec.ts"],
-    "activity": ["activity-tray.spec.ts", "retired-jobs-saves.spec.ts"],
-    "training": ["opening-progression.spec.ts", "phone-opening-study.spec.ts", "position-study-acceptance.spec.ts", "training-prefetch.spec.ts", "training-critical-path.spec.ts", "post-review-progression.spec.ts", "phone-offline-training.spec.ts", "opening-evidence.spec.ts", "recovery.spec.ts", "tactic-capture.spec.ts", "study-only-mode.spec.ts", "redis-admission-recovery.spec.ts", "training-queue-contention.spec.ts", "frozen-opening-order.spec.ts", "product-recombination.spec.ts", "study-recovery.spec.ts", "tactic-pack-restart.spec.ts"],
-    "repertoire": ["prefix-split-training.spec.ts", "settings-repertoire-limits.spec.ts", "content-deletion.spec.ts", "product-repertoire-review.spec.ts"],
-    "studies": ["studies.spec.ts"],
-    "games": ["paste-analysis.spec.ts", "real-game-feedback.spec.ts", "product-game-feedback.spec.ts"],
-    "defense": ["defense-preview.spec.ts", "settings-defense-toggle.spec.ts", "provider-integration.spec.ts"],
-    "workspace": ["product-fixture-reset.spec.ts", "accessibility.spec.ts", "layout.spec.ts", "workspace-flows.spec.ts", "cross-browser.spec.ts", "cutover-journal-inspection.spec.ts"],
-    "pinned": ["visual.spec.ts", "performance.spec.ts"]
+    "board": [
+      "board-geometry.spec.ts",
+      "board-input.spec.ts",
+      "board-interactions.spec.ts",
+      "board-state.spec.ts",
+      "held-drag.spec.ts",
+      "held-drag-preservation.spec.ts",
+      "keyboard-context.spec.ts"
+    ],
+    "activity": [
+      "activity-tray.spec.ts",
+      "retired-jobs-saves.spec.ts"
+    ],
+    "training": [
+      "opening-progression.spec.ts",
+      "phone-opening-study.spec.ts",
+      "position-study-acceptance.spec.ts",
+      "training-prefetch.spec.ts",
+      "training-critical-path.spec.ts",
+      "post-review-progression.spec.ts",
+      "phone-offline-training.spec.ts",
+      "opening-evidence.spec.ts",
+      "recovery.spec.ts",
+      "tactic-capture.spec.ts",
+      "study-only-mode.spec.ts",
+      "redis-admission-recovery.spec.ts",
+      "training-queue-contention.spec.ts",
+      "frozen-opening-order.spec.ts",
+      "product-recombination.spec.ts",
+      "study-recovery.spec.ts",
+      "tactic-pack-restart.spec.ts"
+    ],
+    "repertoire": [
+      "prefix-split-training.spec.ts",
+      "settings-repertoire-limits.spec.ts",
+      "content-deletion.spec.ts",
+      "product-repertoire-review.spec.ts"
+    ],
+    "studies": [
+      "studies.spec.ts"
+    ],
+    "games": [
+      "paste-analysis.spec.ts",
+      "real-game-feedback.spec.ts",
+      "product-game-feedback.spec.ts"
+    ],
+    "defense": [
+      "defense-preview.spec.ts",
+      "settings-defense-toggle.spec.ts",
+      "provider-integration.spec.ts"
+    ],
+    "workspace": [
+      "product-fixture-reset.spec.ts",
+      "accessibility.spec.ts",
+      "layout.spec.ts",
+      "workspace-flows.spec.ts",
+      "cross-browser.spec.ts",
+      "cutover-journal-inspection.spec.ts"
+    ],
+    "pinned": [
+      "visual.spec.ts",
+      "performance.spec.ts"
+    ]
   },
   "sources": [
-    {"paths": ["backend/app/chess/opening_segments.py"], "families": ["repertoire", "training"], "reason": "Pure segmentation identities/occurrences also build opening-decision evidence manifests consumed by training."},
-    {"paths": ["app/views/study_exercise_runner.tsx", "app/domain/study-exercises.ts", "backend/app/study_routes.py", "backend/app/contracts/studies.py", "backend/app/study_commands.py", "backend/app/study_attempt_commands.py", "backend/app/services/study_grading.py", "backend/app/services/study_portable.py"], "families": ["studies", "training"], "reason": "Study authoring/contracts/grading feed both Study workflows and the live/prepared training queue, including Study offline replay."},
-    {"paths": ["app/domain/opening-evidence.ts", "app/lib/opening-evidence-journal.ts", "app/lib/opening-evidence-recovery-policy.ts", "app/hooks/use-opening-evidence-recovery.ts", "backend/app/opening_evidence_api.py", "backend/app/contracts/opening_evidence.py", "backend/app/services/opening_decision_evidence.py", "backend/app/services/postgres_opening_evidence.py"], "families": ["training"], "reason": "Opening-only manifests, optional journals, recovery and reducers are covered by the complete opening-evidence and training family."},
-    {"paths": ["app/lib/opening-evidence-review.ts"], "families": ["training", "defense"], "reason": "The evidence-aware delivery helper also sends ordinary defensive-card reviews when no opening completion is present."}
+    {
+      "paths": [
+        "backend/app/chess/opening_segments.py"
+      ],
+      "families": [
+        "repertoire",
+        "training"
+      ],
+      "reason": "Pure segmentation identities/occurrences also build opening-decision evidence manifests consumed by training."
+    },
+    {
+      "paths": [
+        "app/views/study_exercise_runner.tsx",
+        "app/domain/study-exercises.ts",
+        "backend/app/contracts/studies.py",
+        "backend/app/study_attempt_commands.py",
+        "backend/app/services/study_grading.py"
+      ],
+      "families": [
+        "studies",
+        "training"
+      ],
+      "reason": "Study authoring/contracts/grading feed both Study workflows and the live/prepared training queue, including Study offline replay."
+    },
+    {
+      "paths": [
+        "app/domain/opening-evidence.ts",
+        "app/lib/opening-evidence-journal.ts",
+        "app/lib/opening-evidence-recovery-policy.ts",
+        "app/hooks/use-opening-evidence-recovery.ts",
+        "backend/app/contracts/opening_evidence.py",
+        "backend/app/services/opening_decision_evidence.py"
+      ],
+      "families": [
+        "training"
+      ],
+      "reason": "Opening-only manifests, optional journals, recovery and reducers are covered by the complete opening-evidence and training family."
+    },
+    {
+      "paths": [
+        "app/lib/opening-evidence-review.ts"
+      ],
+      "families": [
+        "training",
+        "defense"
+      ],
+      "reason": "The evidence-aware delivery helper also sends ordinary defensive-card reviews when no opening completion is present."
+    }
   ],
-  "prosePaths": ["AGENTS.md", "CONTRIBUTING.md", "THIRD_PARTY_NOTICES.md", "DUCKDB_VS_SQLITE.md", "GAMES_SYNC_RESEARCH.md", "GAMES_SYNC_IMPLEMENTATION.md", "tests/REGRESSIONS.md"],
+  "prosePaths": [
+    "AGENTS.md",
+    "CONTRIBUTING.md",
+    "THIRD_PARTY_NOTICES.md",
+    "DUCKDB_VS_SQLITE.md",
+    "GAMES_SYNC_RESEARCH.md",
+    "GAMES_SYNC_IMPLEMENTATION.md",
+    "tests/REGRESSIONS.md"
+  ],
   "critical": [
-    {"file": "recovery.spec.ts", "title": "intentional training failure is saved once and reload resumes it without another failure", "covers": "browser failure outbox persistence, reload resume and duplicate prevention; failure API intercepted"},
-    {"file": "phone-offline-training.spec.ts", "title": "prepared phone queue and study worker survive full offline reload and sync one review per attempt", "covers": "offline replay"},
-    {"file": "studies.spec.ts", "title": "FEN-only study square exercise is authored enrolled and reviewed through the real workspace", "covers": "Study grading"},
-    {"file": "held-drag-preservation.spec.ts", "title": "held training drag survives sync, notification and parent updates and drops once", "covers": "held drag preservation"}
+    {
+      "file": "recovery.spec.ts",
+      "title": "intentional training failure is saved once and reload resumes it without another failure",
+      "covers": "browser failure outbox persistence, reload resume and duplicate prevention; failure API intercepted"
+    },
+    {
+      "file": "phone-offline-training.spec.ts",
+      "title": "prepared phone queue and study worker survive full offline reload and sync one review per attempt",
+      "covers": "offline replay"
+    },
+    {
+      "file": "studies.spec.ts",
+      "title": "FEN-only study square exercise is authored enrolled and reviewed through the real workspace",
+      "covers": "Study grading"
+    },
+    {
+      "file": "held-drag-preservation.spec.ts",
+      "title": "held training drag survives sync, notification and parent updates and drops once",
+      "covers": "held drag preservation"
+    }
   ],
   "development": {
     "runnerOwners": {
-      "tests/runner/ci-fast-lane.test.mjs": ["tests/unit/ci-fast-lane-regressions.test.ts"],
-      "tests/runner/ci-browser-shards.test.mjs": ["tests/unit/ci-reliability-regressions.test.ts"],
-      "tests/runner/ci-development.test.mjs": ["tests/unit/ci-reliability-regressions.test.ts"],
-      "tests/runner/ci-reliability.test.mjs": ["tests/unit/ci-reliability-regressions.test.ts"],
-      "tests/runner/merge-conflict-guard.test.mjs": ["tests/unit/ci-reliability-regressions.test.ts"],
-      "tests/runner/postgres-test-speedups.test.mjs": ["tests/unit/postgres-test-speedups-regressions.test.ts"],
-      "tests/runner/tempo-cli-study-routing.test.mjs": ["tests/unit/tempo-cli-regressions.test.ts"],
-      "tests/runner/tempo-cli.test.mjs": ["tests/unit/tempo-cli-regressions.test.ts"]
+      "tests/runner/ci-fast-lane.test.mjs": [
+        "tests/unit/ci-fast-lane-regressions.test.ts"
+      ],
+      "tests/runner/ci-browser-shards.test.mjs": [
+        "tests/unit/ci-reliability-regressions.test.ts"
+      ],
+      "tests/runner/ci-development.test.mjs": [
+        "tests/unit/ci-reliability-regressions.test.ts"
+      ],
+      "tests/runner/ci-reliability.test.mjs": [
+        "tests/unit/ci-reliability-regressions.test.ts"
+      ],
+      "tests/runner/merge-conflict-guard.test.mjs": [
+        "tests/unit/ci-reliability-regressions.test.ts"
+      ],
+      "tests/runner/postgres-test-speedups.test.mjs": [
+        "tests/unit/postgres-test-speedups-regressions.test.ts"
+      ],
+      "tests/runner/tempo-cli-study-routing.test.mjs": [
+        "tests/unit/tempo-cli-regressions.test.ts"
+      ],
+      "tests/runner/tempo-cli.test.mjs": [
+        "tests/unit/tempo-cli-regressions.test.ts"
+      ]
     },
-    "postgresFixturePaths": ["database/tests/check_postgres_opening_evidence.py"],
+    "postgresFixturePaths": [
+      "database/tests/check_postgres_opening_evidence.py"
+    ],
     "harnessPaths": [
       ".github/workflows/verify-browser.yml",
       "scripts/ci-browser-shards.mjs",
@@ -206,14 +341,8 @@
     ],
     "nonPersistenceBackend": [
       {
-        "paths": [
-          "backend/app/games/providers/chesscom.py",
-          "backend/app/games/providers/lichess.py"
-        ],
-        "tests": [
-          "backend/tests/test_game_sync.py",
-          "backend/tests/test_postgres_game_sync_windows.py"
-        ],
+        "paths": [],
+        "tests": [],
         "families": [
           "defense",
           "games"

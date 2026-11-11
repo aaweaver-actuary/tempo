@@ -43,9 +43,6 @@ def extract(path, names, namespace):
 queue_commands = types.ModuleType('app.queue_commands')
 queue_commands.current_study_day = lambda db: DAY
 sys.modules['app.queue_commands'] = queue_commands
-next_card = types.ModuleType('app.services.queue_next_card')
-next_card.pending_next_card_preparation = lambda db, day: False
-sys.modules['app.services.queue_next_card'] = next_card
 
 def row(identifier, entry, family):
     return dict(id=identifier, queue_entry_id=entry, start_fen=FEN,
@@ -76,20 +73,24 @@ storage = SimpleNamespace(
 manifest_storage = SimpleNamespace(read_connection=lambda: nullcontext(None), queue_context_rows=lambda db, args: [dict(
     id=4, queue_entry_id=21, card_id='opening-1', revision=2, start_fen=FEN,
     moves_json=json.dumps(['e2e4']), trained_color='white', effective_trained_color='white', repertoire_id='rep-1')])
-manifest_ns = dict(__name__='fixture_manifest', json=json, storage=manifest_storage, decision_manifest=decision_manifest)
-extract('backend/app/services/postgres_opening_evidence.py', {'_manifest_snapshot', 'queue_manifests'}, manifest_ns)
-manifest_module = types.ModuleType('app.services.postgres_opening_evidence')
-manifest_module.queue_manifests = manifest_ns['queue_manifests']
-sys.modules[manifest_module.__name__] = manifest_module
+manifest_ns = dict(__name__='fixture_manifest', json=json, storage=manifest_storage, read_connection=manifest_storage.read_connection, decision_manifest=decision_manifest)
+extract('backend/app/study/position_checkpoint.py', {'_manifest_snapshot', 'queue_manifests'}, manifest_ns)
+from app.study import position_checkpoint
+position_checkpoint.queue_manifests = manifest_ns['queue_manifests']
 issued_heads = []
-def capture_head(day, card):
+def capture_head(day, card, **capabilities):
     issued_heads.append((day, card['queue_entry_id'], card['id'], card['revision']))
-    return {'issued': True}
+    return None, {'issued': True}, None
+
+# Inject at the current composition capability, retaining the real Study operation.
+from app.product_composition import study as study_composition
+study_composition._issue_facts = capture_head
+study_composition.datetime = FixtureClock
 
 ns = dict(__name__='app.main', JSONResponse=JSONResponse, json=json, logging=logging, datetime=FixtureClock, timedelta=timedelta, timezone=timezone,
           read_connection=lambda: nullcontext(None), queue_projection_storage=storage,
           postgres_store=SimpleNamespace(configured=lambda: True), MISS_REASON='miss',
-          _issue_returned_queue_head=capture_head, assemble_queue_cards=assemble_queue_cards,
+          assemble_queue_cards=assemble_queue_cards,
           add_encounter_evidence=add_encounter_evidence, finalize_queue_cards=finalize_queue_cards,
           queue_payload=queue_payload, exercise_snapshot=exercise_snapshot)
 extract('backend/app/main.py', {'_queue_payload', 'prepared_queue'}, ns)

@@ -22,7 +22,7 @@ def main(arguments=()):
     os.environ['PYTHONPATH'] = os.pathsep.join(map(str, paths))
     os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
     sys.dont_write_bytecode = True
-    for name in ('app', 'tempo_legacy_database', 'tempo_game_review_contracts', 'tempo_learning_remediation'):
+    for name in ('app', 'tempo_storage', 'tempo_game_review_contracts', 'tempo_learning_remediation'):
         spec = importlib.util.find_spec(name)
         if spec is None or spec.origin is None or not Path(spec.origin).resolve().is_relative_to(ROOT):
             raise RuntimeError('Recovery fixture source is not bound to the selected checkout: ' + name)

@@ -9,7 +9,7 @@ import pytest
 
 from app.services import queue_application
 from app.services.legacy_game_evidence_scope import BRIDGE_MISS_REASON
-from tempo_legacy_database.adapters.queue_refresh import reads
+from tempo_storage.queue_refresh import reads
 
 
 def test_queue_refresh_and_capacity_keep_all_sql_and_driver_mechanics_in_root_database():
@@ -130,7 +130,7 @@ def test_empty_presentation_keeps_single_read_without_review_or_eligibility_quer
     monkeypatch,
 ):
     statements = []
-    monkeypatch.setattr(reads.postgres_store, "configured", lambda: False)
+    monkeypatch.setattr(reads.postgres, "configured", lambda: False)
 
     def read(statement, parameters):
         statements.append((statement, parameters))
@@ -187,7 +187,7 @@ def _presentation_reader(rows, *, owed=(), reviewed=(), eligible=(), failure=Non
 def _ready_priority_capability(monkeypatch, identities):
     # This suite owns bounded-reader plumbing. The native #622 owner case proves
     # the real ready/reset receipt query; a pending receipt alone is not ready.
-    from tempo_legacy_database.adapters.study import game_feedback
+    from tempo_storage.study import game_feedback
 
     def ready(database, requested, *, read=None, include_regrouped=False):
         assert database is None and callable(read)
@@ -207,7 +207,7 @@ def _ready_priority_capability(monkeypatch, identities):
 def test_game_priority_bounded_presentation_keeps_owed_labels_without_connection(
     monkeypatch,
 ):
-    monkeypatch.setattr(reads.postgres_store, "configured", lambda: False)
+    monkeypatch.setattr(reads.postgres, "configured", lambda: False)
     _ready_priority_capability(monkeypatch, ("card-1", "card-2"))
     rows = [
         _priority_presentation_row(1, "product_game_lapse"),
@@ -240,7 +240,7 @@ def test_game_priority_bounded_presentation_keeps_owed_labels_without_connection
 
 
 def test_game_priority_bounded_presentation_clears_only_unowed_labels(monkeypatch):
-    monkeypatch.setattr(reads.postgres_store, "configured", lambda: False)
+    monkeypatch.setattr(reads.postgres, "configured", lambda: False)
     _ready_priority_capability(monkeypatch, ("card-1", "card-2"))
     rows = [
         _priority_presentation_row(
@@ -276,7 +276,7 @@ def test_game_priority_bounded_presentation_clears_only_unowed_labels(monkeypatc
 
 
 def test_owed_priority_only_receipt_is_not_ready_urgent_queue_authority(monkeypatch):
-    monkeypatch.setattr(reads.postgres_store, "configured", lambda: False)
+    monkeypatch.setattr(reads.postgres, "configured", lambda: False)
     _ready_priority_capability(monkeypatch, ())
     rows = [_priority_presentation_row(1, "product_game_encounter")]
     reader, _ = _presentation_reader(rows, owed=("card-1",), eligible=(1,))
@@ -287,7 +287,7 @@ def test_owed_priority_only_receipt_is_not_ready_urgent_queue_authority(monkeypa
 
 
 def test_game_priority_native_presentation_uses_borrowed_connection():
-    from tempo_legacy_database.adapters.study.game_feedback import (
+    from tempo_storage.study.game_feedback import (
         owed_feedback_card_ids,
         has_owed_feedback,
     )
@@ -357,7 +357,7 @@ def test_game_priority_lookup_failure_propagates_without_fabricating_settlement(
 ):
     from psycopg import OperationalError
 
-    monkeypatch.setattr(reads.postgres_store, "configured", lambda: False)
+    monkeypatch.setattr(reads.postgres, "configured", lambda: False)
     rows = [
         _priority_presentation_row(1, "product_game_lapse"),
         _priority_presentation_row(2, "product_game_encounter"),
@@ -378,7 +378,7 @@ def test_game_priority_lookup_failure_propagates_without_fabricating_settlement(
 
 @pytest.mark.parametrize("reason", [None, BRIDGE_MISS_REASON])
 def test_nonpriority_presentation_does_not_read_owed_feedback(monkeypatch, reason):
-    monkeypatch.setattr(reads.postgres_store, "configured", lambda: False)
+    monkeypatch.setattr(reads.postgres, "configured", lambda: False)
     rows = [_priority_presentation_row(1, reason)]
     reader, calls = _presentation_reader(rows, eligible=(1,))
     result = queue_application.presentation_rows(
@@ -426,8 +426,8 @@ def test_feedback_priority_paths_survive_bounded_sql_translation(
     lookup, expected_paths
 ):
     from sqlglot import exp, parse_one
-    from tempo_legacy_database.adapters.postgres_store import postgres_sql
-    from tempo_legacy_database.adapters.study.game_feedback import (
+    from tempo_storage.postgres import postgres_sql
+    from tempo_storage.study.game_feedback import (
         feedback_queue_priorities,
         owed_feedback_card_ids,
     )
@@ -492,80 +492,13 @@ def test_feedback_priority_paths_survive_bounded_sql_translation(
         )
 
 
-@pytest.mark.parametrize(
-    "installed,candidate,regrouped,expected",
-    [
-        (True, "mapped", True, False),
-        (True, "ordinary", False, True),
-        (True, None, False, True),
-        (False, "ordinary", False, False),
-    ],
-)
-def test_next_card_pending_work_respects_ready_regrouped_candidate_cutoff(
-    monkeypatch, installed, candidate, regrouped, expected
-):
-    from app.services import queue_next_card
-    from app.services.queue_ordering import urgent_priority_key
-    from tempo_legacy_database.adapters.study import game_feedback, recombination
-
-    database, calls, sources = object(), [], []
-    ready = dict(
-        urgent_stream="reconciliation",
-        urgent_determined_at="2026-10-25T00:00:00Z",
-        urgent_effect_id="retained-effect",
-    )
-    later = dict(ready, urgent_determined_at="2026-10-26T00:00:00Z")
-    monkeypatch.setattr(
-        game_feedback, "installed", lambda borrowed: borrowed is database and installed
-    )
-
-    def members(borrowed, requested):
-        assert borrowed is database and requested == (candidate,)
-        calls.append("membership")
-        return {candidate} if regrouped else set()
-
-    def priority(borrowed, requested, *, read=None, include_regrouped=False):
-        assert borrowed is database and read is None and requested == (candidate,)
-        assert include_regrouped is regrouped
-        calls.append("priority")
-        return {candidate: ready} if include_regrouped else {}
-
-    def pending(borrowed, day, *, before_priority=None):
-        assert borrowed is database and day == "2026-10-28"
-        calls.append(("pending", before_priority))
-        return before_priority is None or urgent_priority_key(
-            later
-        ) < urgent_priority_key(before_priority)
-
-    def source(borrowed, day, *, before_priority=None):
-        assert borrowed is database and day == "2026-10-28"
-        sources.append(before_priority)
-        return False
-
-    monkeypatch.setattr(recombination, "regrouped_presentation_ids", members)
-    monkeypatch.setattr(game_feedback, "feedback_queue_priorities", priority)
-    monkeypatch.setattr(game_feedback, "pending_feedback_preparation", pending)
-    monkeypatch.setattr(queue_next_card, "_source_pending", source)
-    assert (
-        queue_next_card.pending_next_card_preparation(
-            database, "2026-10-28", candidate_card_id=candidate
-        )
-        is expected
-    )
-    if installed and candidate is not None:
-        assert calls[:2] == ["membership", "priority"]
-    else:
-        assert "membership" not in calls and "priority" not in calls
-    assert sources == ([ready] if regrouped else [] if installed else [None])
-
-
 def test_presentation_protection_sets_match_correlated_facts_with_historical_and_null_evidence(
     monkeypatch,
 ):
     import sqlite3
-    from tempo_legacy_database.adapters.queue_refresh import presentation
+    from tempo_storage.queue_refresh import presentation
 
-    monkeypatch.setattr(presentation.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(presentation.postgres, "configured", lambda: True)
     with sqlite3.connect(":memory:") as database:
         database.row_factory = sqlite3.Row
         database.executescript("""

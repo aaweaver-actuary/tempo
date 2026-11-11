@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { runInNewContext } from "node:vm";
 import { test } from "node:test";
-import { assertCurrent63Guard, validateLifecycleProfile } from "../../scripts/check-tempo-cli.mjs";
+import { assertCurrent63Guard, validateLifecycleProfile, verifyTempoCliLifecycle } from "../../scripts/check-tempo-cli.mjs";
 
 test("current lifecycle profile rejects unknown, wrong-schema and schema59 selections before work", () => {
   assert.doesNotThrow(() => validateLifecycleProfile("full", 62, {}));
@@ -62,4 +62,26 @@ test("current lifecycle profile requires the original verified schema63 guard an
   assert.doesNotThrow(() => assertCurrent63Guard(guard));
   for (const mutation of [{ state: "pending" }, { starting_schema: 61 }, { intended_schema: 62 }, { backup: { verified: false } }])
     assert.throws(() => assertCurrent63Guard({ ...guard, ...mutation }));
+});
+
+
+test("schema64 cannot reuse historical lifecycle qualification through direct profile calls", () => {
+  for (const profile of ["full", "current63"])
+    assert.throws(() => validateLifecycleProfile(profile, 64, {}), /Schema-64.*not qualified/);
+});
+
+test("direct lifecycle verifier refuses native65 before resources or timing stages", async () => {
+  let stages = 0;
+  for (const profile of ["full", "current63"])
+    await assert.rejects(verifyTempoCliLifecycle({
+      project: "must-not-acquire", revision: "a".repeat(40), composeFiles: [], profile,
+      environment: { TEMPO_LIFECYCLE_SCHEMA61_IMAGES: "/must-not-read", DOCKER_HOST: "must-not-contact" },
+      measure: () => { stages++; throw new Error("Resources must not be acquired"); },
+    }), /Schema-65.*not qualified/);
+  assert.equal(stages, 0);
+});
+
+test("schema65 cannot reuse historical lifecycle qualification", () => {
+  for (const profile of ["full", "current63"])
+    assert.throws(() => validateLifecycleProfile(profile, 65, {}), /Schema-65.*not qualified/);
 });

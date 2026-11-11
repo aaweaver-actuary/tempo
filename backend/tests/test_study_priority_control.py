@@ -67,7 +67,7 @@ def test_study_control_unavailable_expired_or_refreshing_never_authorizes_option
 def test_study_control_poll_never_reads_postgres_and_old_refresh_cannot_override_new_policy(
     control, monkeypatch
 ):
-    from tempo_legacy_database import connections as database
+    from tempo_storage import connections as database
     from app import main
 
     monkeypatch.setattr(
@@ -97,7 +97,7 @@ def test_study_control_poll_never_reads_postgres_and_old_refresh_cannot_override
 def test_study_control_refresh_reserves_generation_before_bounded_settings_read(
     control, monkeypatch
 ):
-    from tempo_legacy_database import connections as database
+    from tempo_storage import connections as database
 
     @contextmanager
     def reader(**options):
@@ -161,7 +161,7 @@ def test_study_policy_refresh_retains_reserved_key_identity_after_private_owner_
     monkeypatch,
 ):
     import threading
-    from tempo_legacy_database import connections as database
+    from tempo_storage import connections as database
 
     parent_keys = study_priority.POLICY_KEY, study_priority.GENERATION_KEY
     private_keys = (

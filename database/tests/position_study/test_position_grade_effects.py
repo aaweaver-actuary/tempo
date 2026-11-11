@@ -7,7 +7,7 @@ from app.study.position_learning.daily_credit import CurrentPositionState
 from tempo_evidence_math.position_learning import (
     AcceptedEvidence, DueAtIssuance, FirstResponse, Hold, PositionDefinition, PositionKey,
 )
-from tempo_legacy_database.adapters.study.position_grade_effects import _decide
+from app.study.position_learning.grade_effects import _decide
 
 
 NOW = datetime(2026, 11, 2, 12, tzinfo=timezone.utc)
@@ -43,7 +43,7 @@ def test_stale_due_correct_observes_without_schedule():
 
 
 def test_state_locks_use_stable_order_and_authored_source():
-    from tempo_legacy_database.adapters.study.position_grade_effects import _lock_states
+    from app.study.position_learning.grade_effects import _lock_states
 
     class Cursor:
         rowcount = 1
@@ -71,7 +71,7 @@ def test_state_locks_use_stable_order_and_authored_source():
 
 def test_grade_writer_aborts_before_writes_when_correct_is_pending(monkeypatch):
     from types import SimpleNamespace
-    from tempo_legacy_database.adapters.study import position_grade_effects as writer
+    from app.study.position_learning import grade_effects as writer
 
     evidence, due, _, _, state_json = facts('e2e4')
     response = evidence.first_response
@@ -103,7 +103,7 @@ def test_grade_writer_aborts_before_writes_when_correct_is_pending(monkeypatch):
 def test_two_due_decisions_write_two_effects_and_propagate_late_failure(monkeypatch):
     from types import SimpleNamespace
     import pytest
-    from tempo_legacy_database.adapters.study import position_grade_effects as writer
+    from app.study.position_learning import grade_effects as writer
 
     key2 = PositionKey('r', 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -')
     def2 = PositionDefinition(key2, 'e7e5', 'v1')
@@ -165,9 +165,7 @@ def test_native_two_decisions_and_late_failure_rollback():
     from app.services.postgres_opening_evidence import position_first_response_envelope, _position_digest
     from app.study.position_learning.issued_plan_contracts import select_and_freeze
     from tests.test_position_issued_plan_contracts import option, request_for
-    from tempo_legacy_database.adapters.study.position_grade_effects import (
-        CompletionAuthority, apply_in_borrowed_transaction,
-    )
+    from app.study.position_learning.grade_effects import CompletionAuthority, apply_in_borrowed_transaction
 
     route = option('italian-knight-attack')
     request = request_for(route)
@@ -182,7 +180,7 @@ def test_native_two_decisions_and_late_failure_rollback():
     now = plan.issued_at
     schema = 'position_d3_' + uuid4().hex
     migration = (Path(__file__).resolve().parents[2] /
-                 'tempo_legacy_database/ddl/migrations/057_position_study.sql').read_text()
+                 'tempo_storage/ddl/migrations/057_position_study.sql').read_text()
 
     class Borrowed:
         read_only = False
@@ -250,7 +248,7 @@ def test_native_two_decisions_and_late_failure_rollback():
             assert all(r['version'] == 7 for r in conn.execute('SELECT version FROM study_position_states').fetchall())
             from concurrent.futures import ThreadPoolExecutor
             from threading import Barrier
-            from tempo_legacy_database.adapters.study.position_grade_effects import GradeEffectError
+            from app.study.position_learning.grade_effects import GradeEffectError
             barrier = Barrier(2)
             def run_duplicate():
                 with psycopg.connect(dsn, autocommit=True, row_factory=dict_row) as other:
@@ -296,7 +294,7 @@ def test_exact_retry_returns_original_negative_and_changed_payload_conflicts(mon
     import hashlib
     from types import SimpleNamespace
     import pytest
-    from tempo_legacy_database.adapters.study import position_grade_effects as writer
+    from app.study.position_learning import grade_effects as writer
     response = facts('d2d4')[0].first_response
     plan = SimpleNamespace(plan_id='p', attempt_id='attempt', owner_epoch='epoch')
     monkeypatch.setattr(writer, '_load_plan', lambda *_: plan)

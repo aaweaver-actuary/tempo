@@ -12,9 +12,9 @@ from unittest.mock import patch
 
 from fastapi.encoders import jsonable_encoder
 from fastapi.testclient import TestClient
-from tempo_legacy_database import connections as database
+from tempo_storage import connections as database
 from app import main, command_gateway
-from tempo_legacy_database.adapters import postgres_store
+from tempo_storage import postgres
 from app.contracts.transport.study import ReviewRequest
 
 
@@ -25,7 +25,7 @@ class FixtureDate(date):
 
 
 def produce_examples():
-    if postgres_store.configured():
+    if postgres.configured():
         raise RuntimeError("Provider fixtures require an environment without PostgreSQL configuration")
     with TemporaryDirectory(prefix="tempo-b01-provider-") as temporary_directory, ExitStack() as stack:
         stack.enter_context(patch.object(database, "DB_PATH", Path(temporary_directory) / "provider.db"))
@@ -91,7 +91,7 @@ def produce_receipts():
                    "message": "Original entry retired"} if state == "failed" else None
         row = ("cards.review", "fixture-hash", state, json.dumps(result) if result else None,
                json.dumps(failure) if failure else None, 1, None, None, None, "{}", 0, 1)
-        with patch.object(postgres_store, "connection", return_value=nullcontext(ReceiptConnection(None if state == "unknown" else row))):
+        with patch.object(postgres, "connection", return_value=nullcontext(ReceiptConnection(None if state == "unknown" else row))):
             examples[state] = command_gateway.read_operation("review-attempt:fixture-original")
     examples["review_request"] = ReviewRequest(outcome="correct", queue_entry_id=41,
         attempt_id="fixture-original", recorded_at="2026-09-18T16:00:00Z").durable_payload()

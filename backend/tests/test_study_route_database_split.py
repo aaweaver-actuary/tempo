@@ -8,7 +8,7 @@ import re
 import pytest
 
 from app import study_routes
-from tempo_legacy_database.adapters.commands.studies import routes as storage
+from tempo_storage.commands.studies import routes as storage
 
 
 def test_exercise_row_query_is_eager_but_later_cursor_failure_stays_lazy():
@@ -88,7 +88,7 @@ def test_chapter_payload_callbacks_interleave_before_read_context_closes(monkeyp
 
 
 def test_study_http_keeps_database_operations_in_root_and_driver_alias_identity():
-    assert study_routes.postgres_store is storage.postgres_store
+    assert study_routes.postgres is storage.postgres
     for node in ast.walk(ast.parse(Path(study_routes.__file__).read_text())):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
             assert node.func.attr not in {

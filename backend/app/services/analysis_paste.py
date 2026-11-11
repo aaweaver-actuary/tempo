@@ -1,12 +1,12 @@
 """Preview and atomically add pasted SAN/PGN variations to repertoires."""
 
 from __future__ import annotations
+from tempo_storage.postgres import PostgresConnection
 
 import hashlib
 import io
 import json
 import re
-import sqlite3
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 import chess
 import chess.pgn
 
-from tempo_legacy_database.adapters.authored_repertoires import (
+from tempo_storage.authored_repertoires import (
     analysis_paste as storage,
 )
 
@@ -51,18 +51,18 @@ class PastedLine:
 
 def _validate_movetext_tokens(source: str) -> None:
     """python-chess ignores unknown PGN words, so reject them explicitly."""
-    without_headers = re.sub(r"(?m)^\s*\[[^\n]*\]\s*$", " ", source)
+    without_headers = re.sub('(%sm)^\\s*\\[[^\\n]*\\]\\s*$', " ", source)
     without_comments = re.sub(
-        r"\{[^}]*\}|;[^\n]*|(?m:^%[^\n]*)", " ", without_headers, flags=re.S
+        '\\{[^}]*\\}|;[^\\n]*|(%sm:^%[^\\n]*)', " ", without_headers, flags=re.S
     )
-    without_numbers = re.sub(r"\b\d+\.(?:\.\.)?|\.\.\.", " ", without_comments)
+    without_numbers = re.sub('\\b\\d+\\.(%s:\\.\\.)%s|\\.\\.\\.', " ", without_comments)
     without_nags = re.sub(r"\$\d+", " ", without_numbers)
     for token in re.sub(r"[()]", " ", without_nags).split():
         if token in {"*", "1-0", "0-1", "1/2-1/2"}:
             continue
-        normalized = token.rstrip("!?")
+        normalized = token.rstrip('!?')
         if not chess.SAN_REGEX.fullmatch(normalized) and not re.fullmatch(
-            r"[O0]-[O0](?:-[O0])?[+#]?", normalized
+            '[O0]-[O0](%s:-[O0])%s[+#]%s', normalized
         ):
             raise PasteInputError(f"Unrecognized move text: {token}")
 
@@ -108,7 +108,7 @@ def parse_pasted_lines(raw_text: str, starting_fen: str | None) -> list[PastedLi
             context_fen = context_board.fen()
         except ValueError as error:
             raise PasteInputError("Starting FEN is invalid") from error
-    has_headers = bool(re.search(r"(?m)^\s*\[[A-Za-z]+\s+\"", raw_text))
+    has_headers = bool(re.search('(%sm)^\\s*\\[[A-Za-z]+\\s+\\"', raw_text))
     chunks = [raw_text] if has_headers else re.split(r"\n\s*\n", raw_text.strip())
     parsed: list[PastedLine] = []
     for chunk in chunks:
@@ -149,7 +149,7 @@ def _position_moves(line: PastedLine) -> list[tuple[str, str]]:
     return positions
 
 
-def _snapshot(database: sqlite3.Connection) -> tuple[list[dict], list[dict], str]:
+def _snapshot(database: PostgresConnection) -> tuple[list[dict], list[dict], str]:
     repertoires = storage.repertoires(database)
     lines = storage.lines(database)
     signature = hashlib.sha256(
@@ -260,7 +260,7 @@ def _destination_options(
 
 
 def build_paste_preview(
-    database: sqlite3.Connection,
+    database: PostgresConnection,
     raw_text: str,
     starting_fen: str | None,
     source_gap_id: str | None,
@@ -297,7 +297,7 @@ def build_paste_preview(
 
 
 def _resolves_gap(
-    database: sqlite3.Connection,
+    database: PostgresConnection,
     source_gap_id: str,
     repertoire_id: str,
     pasted: PastedLine,
@@ -321,7 +321,7 @@ def _resolves_gap(
 
 
 def commit_pasted_lines(
-    database: sqlite3.Connection,
+    database: PostgresConnection,
     raw_text: str,
     starting_fen: str | None,
     source_gap_id: str | None,
@@ -330,7 +330,6 @@ def commit_pasted_lines(
     prepared_preview: dict,
     parsed: list[PastedLine],
 ) -> dict:
-    storage.begin_write_if_needed(database)
     if prepared_preview["preview_token"] != preview_token:
         raise StalePastePreview(
             "Repertoires changed since the preview. Preview again before saving"

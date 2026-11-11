@@ -7,7 +7,7 @@ import uuid
 import chess
 
 from app.contracts.transport.tactics import TacticCaptureRequest
-from tempo_legacy_database.adapters.tactics import captures as storage
+from tempo_storage.tactics import captures as storage
 from app.contracts.tactic_capture import (
     ValidatedCapture,
     TacticCaptureValidationError,

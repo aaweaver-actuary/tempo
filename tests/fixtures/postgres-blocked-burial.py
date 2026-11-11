@@ -1,10 +1,10 @@
 """Prepare a real foreground burial receipt using the production retry lifecycle."""
 import sys
-from tempo_legacy_database.adapters import postgres_store
+from tempo_storage import postgres
 from app import queue_commands  # Register the production handler.
 from app.command_gateway import record_operation_attempt, record_operation_retry, load_blocked_operation
 
-assert postgres_store.configured()
+assert postgres.configured()
 entry_id = int(sys.argv[1])
 operation_id = sys.argv[2]
 payload = {"entry_id": entry_id}

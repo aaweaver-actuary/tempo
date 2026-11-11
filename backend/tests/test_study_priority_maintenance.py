@@ -112,7 +112,7 @@ def test_owned_fixture_database_renews_private_policy_without_touching_parent_co
     import threading
     import time
     from types import SimpleNamespace
-    from tempo_legacy_database import connections as database
+    from tempo_storage import connections as database
     from app.services import study_priority
 
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / "scripts"))
@@ -180,7 +180,7 @@ def test_owned_fixture_database_renews_private_policy_without_touching_parent_co
     monkeypatch.setattr(
         fixtures.psycopg, "connect", lambda *_args, **_kwargs: FixtureDatabase()
     )
-    monkeypatch.setattr(fixtures.postgres_store, "close_pools", lambda: None)
+    monkeypatch.setattr(fixtures.postgres, "close_pools", lambda: None)
     monkeypatch.setattr(fixtures, "owned_admission_scope", lambda _: nullcontext())
     monkeypatch.setattr(migrations, "apply_migrations", lambda _: None)
     monkeypatch.setattr(
@@ -266,7 +266,7 @@ def test_postgres_sparse_unlock_proof_retains_three_write_batches_while_bounding
 
     database = Database()
     monkeypatch.setattr(
-        proof.postgres_store, "connection", lambda **_: nullcontext(database)
+        proof.postgres, "connection", lambda **_: nullcontext(database)
     )
     monkeypatch.setattr(
         proof.psycopg, "connect", lambda *_args, **_kwargs: nullcontext(database)

@@ -8,10 +8,10 @@ from typing import Any
 from fastapi import HTTPException
 
 from .command_gateway import register_command
-from tempo_legacy_database.adapters.foreground_controls import prefix_splits as storage
+from tempo_storage.foreground_controls import prefix_splits as storage
 from app.contracts.transport.content import PrefixSplitRequest
-from tempo_legacy_database.adapters.postgres_store import PostgresConnection
-from tempo_legacy_database.adapters.queue_position_lock import (
+from tempo_storage.postgres import PostgresConnection
+from tempo_storage.queue_position_lock import (
     lock_queue_date_for_position,
 )
 from .services.postgres_integrity import invalidate_integrity_in_transaction
@@ -40,18 +40,6 @@ def accept_prefix_split(
     _lock_prefix_card(database, card_id)
     lock_queue_date_for_position(database, date.today().isoformat())
     try:
-        from tempo_legacy_database.adapters.study.recombination import (
-            accept_current_split,
-        )
-
-        regrouped = accept_current_split(
-            database,
-            card_id,
-            request.expected_revision,
-            confirmed_queue_entry_id=request.queue_entry_id,
-        )
-        if regrouped is not None:
-            return {**regrouped, **_shared_usage(database, card_id)}
         result = apply_prefix_split(database, card_id, request.expected_revision)
     except KeyError as error:
         raise HTTPException(404, str(error)) from error

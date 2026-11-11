@@ -1,9 +1,11 @@
 """Contract fakes; PostgreSQL lock/transaction behavior needs native proof."""
+
+from app.repertoire import position_study_source as _source_preparation
 from types import SimpleNamespace
 
 import pytest
 from tempo_evidence_math.position_learning import Hold, PositionDefinition, PositionKey
-from tempo_legacy_database.adapters.study import position_owner_epoch as owner
+from tempo_storage.study import position_owner_epoch as owner
 
 
 class Result:
@@ -90,14 +92,14 @@ def test_unpublished_response_is_held(source):
 
 
 def test_reprepared_physical_card_change_keeps_authored_owner(monkeypatch):
-    from tempo_legacy_database.adapters.authored_repertoires import position_study_source
+    from tempo_storage.authored_repertoires import position_study_source
     from test_position_source_authority import setup
 
     source_db = setup(monkeypatch)
-    original = position_study_source.prepare_position_source(source_db, "rep")
+    original = _source_preparation.prepare_position_source(source_db, "rep")
     assert not isinstance(original, Hold)
     source_db.facts["cards"][0]["revision"] += 1
-    changed = position_study_source.prepare_position_source(source_db, "rep")
+    changed = _source_preparation.prepare_position_source(source_db, "rep")
     assert not isinstance(changed, Hold)
     assert changed.authored_token.original_source_digest != original.authored_token.original_source_digest
     assert changed.authored_token.authored_digest == original.authored_token.authored_digest
@@ -143,7 +145,7 @@ def test_native_owner_lock_and_epoch_visibility():
         try:
             admin.execute(sql.SQL("SET search_path TO {}").format(sql.Identifier(schema)))
             admin.execute("CREATE TABLE tempo_schema_migrations (version integer PRIMARY KEY)")
-            migration = Path(__file__).resolve().parents[2] / "tempo_legacy_database/ddl/migrations/057_position_study.sql"
+            migration = Path(__file__).resolve().parents[2] / "tempo_storage/ddl/migrations/057_position_study.sql"
             admin.execute(migration.read_text())
             admin.execute("INSERT INTO study_position_epochs VALUES ('rep','e1','digest',now()), ('rep','e2','new',now())")
             admin.execute("INSERT INTO study_position_owners VALUES ('rep','e1','active',now())")

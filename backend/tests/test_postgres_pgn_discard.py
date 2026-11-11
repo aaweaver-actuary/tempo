@@ -1,6 +1,6 @@
 """Portable command regressions; real locks/recreation are proved by Docker durability."""
 
-from tempo_legacy_database.adapters import postgres_store
+from tempo_storage import postgres
 from contextlib import nullcontext
 import json
 import sqlite3

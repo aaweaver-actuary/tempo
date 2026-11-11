@@ -8,7 +8,7 @@ from uuid import uuid4
 import pytest
 
 from tempo_evidence_math.position_learning import Hold, PositionKey
-from tempo_legacy_database.adapters.study.position_schedule_state import PositionScheduleStateReader
+from tempo_storage.study.position_schedule_state import PositionScheduleStateReader
 
 NOW = datetime(2026, 11, 2, 12, tzinfo=timezone.utc)
 FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -'
@@ -143,7 +143,7 @@ def test_native_position_lock_borrowing_and_repertoire_isolation():
             setup.execute(sql.SQL('SET search_path TO {}').format(sql.Identifier(schema)))
             setup.execute('CREATE TABLE tempo_schema_migrations(version integer PRIMARY KEY)')
             setup.execute('CREATE TABLE cards(id text PRIMARY KEY,fsrs_card_json text)')
-            ddl = Path(__file__).resolve().parents[3] / 'database/tempo_legacy_database/ddl/migrations/057_position_study.sql'
+            ddl = Path(__file__).resolve().parents[3] / 'database/tempo_storage/ddl/migrations/057_position_study.sql'
             setup.execute(ddl.read_text())
             setup.execute("INSERT INTO study_position_epochs VALUES ('r','e1','source',%s),('other','e1','source',%s)", (NOW, NOW))
             setup.execute("INSERT INTO study_position_owners VALUES ('r','e1','active',%s),('other','e1','active',%s)", (NOW, NOW))

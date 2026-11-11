@@ -1,0 +1,202 @@
+"""Bounded repertoire-only SELECT over the existing borrowed PostgreSQL port.
+
+One statement owns one MVCC view even inside a READ COMMITTED writer transaction.
+No connection, transaction settings, locks, commits or schema are owned here.
+"""
+from __future__ import annotations
+
+import json
+
+class RepertoireSnapshotBoundExceeded(ValueError):
+    """A proved budget refusal containing only public numeric diagnostics."""
+
+    def __init__(self, *, stage, sample_complete, violations):
+        dimensions = {
+            "source_rows",
+            "card_rows",
+            "membership_rows",
+            "graph_rows",
+            "row_bytes",
+            "estimated_snapshot_bytes",
+            "snapshot_bytes",
+            "authored_moves",
+        }
+        observations = {"exact", "lower_bound", "conservative_estimate"}
+        if stage not in {"read", "projection"} or type(sample_complete) is not bool:
+            raise ValueError("invalid_repertoire_snapshot_bound_diagnostic")
+        copied = []
+        for violation in violations:
+            if (
+                set(violation) != {"dimension", "observed", "limit", "observation"}
+                or violation["dimension"] not in dimensions
+                or violation["observation"] not in observations
+                or type(violation["observed"]) is not int
+                or type(violation["limit"]) is not int
+                or violation["limit"] < 0
+                or violation["observed"] <= violation["limit"]
+            ):
+                raise ValueError("invalid_repertoire_snapshot_bound_diagnostic")
+            copied.append(
+                tuple(
+                    violation[key]
+                    for key in ("dimension", "observed", "limit", "observation")
+                )
+            )
+        if not copied:
+            raise ValueError("invalid_repertoire_snapshot_bound_diagnostic")
+        self._stage, self._sample_complete, self._violations = (
+            stage,
+            sample_complete,
+            tuple(copied),
+        )
+        super().__init__("repertoire_snapshot_exceeds_bound")
+
+    def diagnostic(self):
+        return {
+            "code": "repertoire_snapshot_exceeds_bound",
+            "stage": self._stage,
+            "sample_complete": self._sample_complete,
+            "violations": [
+                dict(zip(("dimension", "observed", "limit", "observation"), values))
+                for values in self._violations
+            ],
+        }
+
+
+MAX_SOURCE_ROWS = 10000
+MAX_ROW_BYTES = 65536
+
+# Raw text is bounded before JSON aggregation. Six bytes per source byte covers
+# JSON escaping; 512 bytes per row covers fixed keys/scalars/array punctuation.
+# A row-count sentinel prevents a bounded prefix from claiming completeness.
+_SOURCE_CTES = """
+WITH limits AS (
+    SELECT %s::text repertoire_id, %s::int source_limit,
+           %s::bigint row_byte_limit
+), repertoire AS MATERIALIZED (
+    SELECT r.id,r.name,r.scope_source_revision,r.canonical_prefix_revision,
+           r.canonical_prefix_moves_json,p.generation graph_generation,p.state graph_state,
+           (SELECT workspace_id FROM legacy_learning_identity WHERE id=1) workspace_id
+    FROM repertoires r CROSS JOIN limits l
+    LEFT JOIN opening_graph_publications p ON p.repertoire_id=r.id
+    WHERE r.id=l.repertoire_id
+), lines AS MATERIALIZED (
+    SELECT s.id,s.repertoire_id,s.name,s.trained_color,s.start_fen,s.moves_json
+    FROM repertoire_lines s CROSS JOIN limits l WHERE s.repertoire_id=l.repertoire_id
+    ORDER BY s.id LIMIT (SELECT source_limit+1 FROM limits)
+), cards AS MATERIALIZED (
+    SELECT c.id,c.repertoire_id,c.revision,c.start_fen,c.moves_json,c.trained_color,
+           c.content_type,c.archived,c.pending_validation,c.superseded_by,
+           c.canonical_route_source,c.introduced_at,
+           EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks b WHERE b.card_id=c.id) integrity_blocked,
+           EXISTS(SELECT 1 FROM deleted_cards d WHERE d.card_id=c.id) deleted
+    FROM cards c CROSS JOIN limits l
+    WHERE c.content_type='opening' AND (c.repertoire_id=l.repertoire_id OR EXISTS(
+        SELECT 1 FROM repertoire_cards rc WHERE rc.repertoire_id=l.repertoire_id AND rc.card_id=c.id))
+    ORDER BY c.id LIMIT (SELECT source_limit+1 FROM limits)
+), memberships AS MATERIALIZED (
+    SELECT rc.repertoire_id,rc.card_id,rc.canonical_route_source
+    FROM repertoire_cards rc JOIN cards c ON c.id=rc.card_id CROSS JOIN limits l
+    WHERE rc.repertoire_id=l.repertoire_id ORDER BY rc.card_id
+    LIMIT (SELECT source_limit+1 FROM limits)
+), graphs AS MATERIALIZED (
+    SELECT g.repertoire_id,g.generation,g.line_id,g.decision_index,g.card_id,
+           g.starting_fen,g.moves_json,g.trained_color
+    FROM opening_graph_steps g JOIN repertoire r
+      ON r.id=g.repertoire_id AND r.graph_generation=g.generation AND r.graph_state='ready'
+), sizes AS (
+    SELECT 'repertoire' kind,octet_length(concat_ws('',id,name,scope_source_revision,
+        canonical_prefix_revision,canonical_prefix_moves_json,graph_generation,graph_state,workspace_id)) bytes
+    FROM repertoire
+    UNION ALL SELECT 'lines',octet_length(concat_ws('',id,repertoire_id,name,trained_color,start_fen,moves_json)) FROM lines
+    UNION ALL SELECT 'cards',octet_length(concat_ws('',id,repertoire_id,revision,start_fen,moves_json,
+        trained_color,content_type,archived,pending_validation,superseded_by,canonical_route_source,
+        introduced_at,integrity_blocked,deleted)) FROM cards
+    UNION ALL SELECT 'memberships',octet_length(concat_ws('',repertoire_id,card_id,canonical_route_source)) FROM memberships
+    UNION ALL SELECT 'graphs',octet_length(concat_ws('',repertoire_id,generation,line_id,decision_index,
+        card_id,starting_fen,moves_json,trained_color)) FROM graphs
+), budget AS (
+    SELECT count(*) FILTER (WHERE kind='repertoire') repertoire_count,
+           count(*) FILTER (WHERE kind='lines') line_count,
+           count(*) FILTER (WHERE kind='cards') card_count,
+           count(*) FILTER (WHERE kind='memberships') membership_count,
+           count(*) FILTER (WHERE kind='graphs') graph_count,
+           coalesce(sum(bytes*6+512),0)+1024 estimated_bytes,
+           coalesce(max(bytes),0) largest_row
+    FROM sizes
+), allowed AS (
+    SELECT b.*,b.line_count<=l.source_limit AND b.card_count<=l.source_limit
+        AND b.membership_count<=l.source_limit
+        AND b.largest_row<=l.row_byte_limit bounded
+    FROM budget b CROSS JOIN limits l
+)
+"""
+
+# Return graph rows separately so PostgreSQL does not build and copy an
+# aggregate proportional to the entire publication. The budget and every row
+# still share one statement snapshot. An unqualified source emits only its header.
+STATEMENT = _SOURCE_CTES + """SELECT snapshot FROM (
+    SELECT 0 section, NULL::text line_id, NULL::bigint decision_index,
+        json_build_object(
+            'exists',repertoire_count=1,'bounded',bounded,'estimated_bytes',estimated_bytes,
+            'line_count',line_count,'card_count',card_count,'membership_count',membership_count,
+            'graph_count',graph_count,'largest_row',largest_row,
+            'facts',CASE WHEN bounded AND repertoire_count=1 THEN json_build_object(
+                'repertoire',(SELECT row_to_json(r) FROM repertoire r),
+                'lines',coalesce((SELECT json_agg(row_to_json(s) ORDER BY id) FROM lines s),'[]'::json),
+                'cards',coalesce((SELECT json_agg(row_to_json(c) ORDER BY id) FROM cards c),'[]'::json),
+                'memberships',coalesce((SELECT json_agg(row_to_json(m) ORDER BY card_id) FROM memberships m),'[]'::json)
+            ) ELSE NULL END
+        ) snapshot FROM allowed
+    UNION ALL
+    SELECT 1,g.line_id,g.decision_index,row_to_json(g)
+    FROM graphs g CROSS JOIN allowed
+    WHERE bounded AND repertoire_count=1
+) snapshot_rows ORDER BY section,line_id,decision_index
+"""
+
+
+def _refuse_unbounded_source(document):
+    counts = (("line_count", "source_rows", MAX_SOURCE_ROWS),
+              ("card_count", "card_rows", MAX_SOURCE_ROWS),
+              ("membership_count", "membership_rows", MAX_SOURCE_ROWS))
+    fields = [key for key, _, _ in counts] + ["estimated_bytes", "largest_row"]
+    if (any(type(document.get(key)) is not int or document[key] < 0 for key in fields)
+            or any(document[key] > limit + 1 for key, _, limit in counts)):
+        raise ValueError("invalid_repertoire_snapshot_bound_metadata")
+    complete = all(document[key] <= limit for key, _, limit in counts)
+    violations = [dict(dimension=dimension, observed=document[key], limit=limit, observation="lower_bound")
+                  for key, dimension, limit in counts if document[key] > limit]
+    for key, dimension, limit, observation in (
+            ("largest_row", "row_bytes", MAX_ROW_BYTES, "exact" if complete else "lower_bound"),):
+        if document[key] > limit:
+            violations.append(dict(dimension=dimension, observed=document[key], limit=limit, observation=observation))
+    if not violations:
+        raise ValueError("invalid_repertoire_snapshot_bound_metadata")
+    raise RepertoireSnapshotBoundExceeded(stage="read", sample_complete=complete, violations=violations)
+
+
+def read_repertoire(database, repertoire_id: str) -> dict:
+    """One parameter-bound read; overflow fails, never a silently partial view."""
+    if not isinstance(repertoire_id, str) or not repertoire_id or len(repertoire_id) > 200:
+        raise ValueError("invalid_repertoire_scope")
+    execute = getattr(database, "execute_native", None) or database.execute
+    header, *graphs = execute(
+        STATEMENT, (repertoire_id, MAX_SOURCE_ROWS, MAX_ROW_BYTES)
+    ).fetchall()
+    document = _snapshot_value(header)
+    if not document["exists"]:
+        raise ValueError("repertoire_not_found")
+    if not document["bounded"]:
+        _refuse_unbounded_source(document)
+    facts = document["facts"]
+    facts["graphs"] = [_snapshot_value(row) for row in graphs]
+    return facts
+
+
+def _snapshot_value(row):
+    try:
+        value = row["snapshot"]
+    except TypeError:
+        value = row[0]
+    return json.loads(value) if isinstance(value, str) else value

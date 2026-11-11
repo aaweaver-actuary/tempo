@@ -14,8 +14,8 @@ import os
 import socket
 import time
 
-from tempo_legacy_database.adapters.redis_control.wake_runtime import runtime as storage
-from tempo_legacy_database.adapters.redis_control.wake_runtime.runtime import (
+from tempo_storage.redis_control.wake_runtime import runtime as storage
+from tempo_storage.redis_control.wake_runtime.runtime import (
     _diagnostic_client,
 )
 

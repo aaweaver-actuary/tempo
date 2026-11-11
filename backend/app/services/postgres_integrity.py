@@ -8,15 +8,15 @@ import json
 from hashlib import sha256
 from typing import Any
 
-from tempo_legacy_database.connections import background_read_connection
-from tempo_legacy_database.adapters import postgres_store
-from tempo_legacy_database.adapters.authored_repertoires.integrity import (
+from tempo_storage.connections import background_read_connection
+from tempo_storage import postgres
+from tempo_storage.authored_repertoires.integrity import (
     native as storage,
 )
-from tempo_legacy_database.adapters.authored_repertoires.integrity.certificate import (
+from tempo_storage.authored_repertoires.integrity.certificate import (
     integrity_certificate_from_row,
 )
-from tempo_legacy_database.adapters.postgres_store import PostgresConnection
+from tempo_storage.postgres import PostgresConnection
 from .durable_tasks import (
     advance_task_slice_in_transaction,
     complete_task_slice_in_transaction,
@@ -286,7 +286,7 @@ def execute_integrity_source_slice(task: dict[str, Any]) -> bool:
         str(payload.get("after_source_id", "")),
     )
     with background_lease():
-        with postgres_store.connection(read_only=False, background=True) as database:
+        with postgres.connection(read_only=False, background=True) as database:
             return stage_integrity_source_in_transaction(
                 database, task, prepared_source
             )
@@ -400,7 +400,7 @@ def execute_integrity_aggregate_slice(task: dict[str, Any]) -> bool:
         int(payload.get("source_offset", 0)),
     )
     with background_lease():
-        with postgres_store.connection(read_only=False, background=True) as database:
+        with postgres.connection(read_only=False, background=True) as database:
             return aggregate_integrity_run_in_transaction(database, task, prepared_run)
 
 
@@ -483,7 +483,7 @@ def execute_integrity_evaluate_slice(task: dict[str, Any]) -> bool:
         str(payload.get("after_fen_key", "")),
     )
     with background_lease():
-        with postgres_store.connection(read_only=False, background=True) as database:
+        with postgres.connection(read_only=False, background=True) as database:
             return stage_integrity_issue_in_transaction(
                 database, task, prepared_position
             )
@@ -546,7 +546,7 @@ def publish_integrity_issues_in_transaction(
 
 def execute_integrity_publish_slice(task: dict[str, Any]) -> bool:
     with background_lease():
-        with postgres_store.connection(read_only=False, background=True) as database:
+        with postgres.connection(read_only=False, background=True) as database:
             return publish_integrity_issues_in_transaction(database, task)
 
 
@@ -593,7 +593,7 @@ def execute_integrity_validate_cards_slice(task: dict[str, Any]) -> bool:
         str(payload.get("after_card_id", "")),
     )
     with background_lease():
-        with postgres_store.connection(read_only=False, background=True) as database:
+        with postgres.connection(read_only=False, background=True) as database:
             return validate_integrity_cards_in_transaction(database, task, card_ids)
 
 
@@ -634,11 +634,9 @@ def complete_integrity_scan_in_transaction(
 
 
 def execute_integrity_complete_slice(task: dict[str, Any]) -> bool:
-    from ..queue_commands import warm_queue_refresh_sql
 
-    warm_queue_refresh_sql()
     with background_lease():
-        with postgres_store.connection(read_only=False, background=True) as database:
+        with postgres.connection(read_only=False, background=True) as database:
             return complete_integrity_scan_in_transaction(database, task)
 
 

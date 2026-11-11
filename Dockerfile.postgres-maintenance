@@ -2,13 +2,11 @@ FROM python:3.12-slim
 
 WORKDIR /work
 COPY backend/requirements.txt ./requirements.txt
-COPY services/learning/remediation /services/learning/remediation
-COPY contracts/game-evidence /contracts/game-evidence
-COPY database/tempo_remediation_database /database/tempo_remediation_database
-RUN pip install --no-cache-dir -r requirements.txt /services/learning/remediation /contracts/game-evidence
-COPY database/tempo_legacy_database/__init__.py ./database/tempo_legacy_database/
-COPY database/tempo_legacy_database/ddl ./database/tempo_legacy_database/ddl
+RUN pip install --no-cache-dir -r requirements.txt
+COPY database/tempo_storage/__init__.py ./database/tempo_storage/
+COPY database/tempo_storage/ddl ./database/tempo_storage/ddl
 COPY database/tooling ./database/tooling
 COPY scripts ./scripts
+ENV PYTHONPATH=/work/database
 
 ENTRYPOINT ["python"]

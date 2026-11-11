@@ -3,7 +3,7 @@ import psycopg
 import sys
 from psycopg.conninfo import make_conninfo
 
-from test_product_introductions_postgres import owned_postgres  # noqa: F401
+from native_study_fixture import owned_postgres  # noqa: F401
 
 
 def test_native_tactic_capture_contention_replay_and_rollback(owned_postgres, monkeypatch):
@@ -12,7 +12,7 @@ def test_native_tactic_capture_contention_replay_and_rollback(owned_postgres, mo
     monkeypatch.setenv('TEMPO_DATABASE_WRITE_URL', dsn)
     monkeypatch.setenv('TEMPO_DATABASE_READ_URL', dsn)
     from database.tooling.apply_postgres_migrations import apply_migrations
-    from tempo_legacy_database.adapters import postgres_store
+    from tempo_storage import postgres
     apply_migrations(dsn)
     with psycopg.connect(dsn) as connection:
         connection.execute('INSERT INTO settings(id) VALUES(1) ON CONFLICT(id) DO NOTHING')
@@ -23,4 +23,4 @@ def test_native_tactic_capture_contention_replay_and_rollback(owned_postgres, mo
         main(dsn)
     finally:
         sys.path[:] = original_path
-        postgres_store.close_pools()
+        postgres.close_pools()

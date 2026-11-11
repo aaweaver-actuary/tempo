@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT / 'database/tests'), str(ROOT / 'backend/tests')]
 from test_product_game_lapse_postgres import owned_postgres as native_owner
 from queue_refresh_scale_fixture import seed_queue_refresh_case, protected_hash
-from tempo_legacy_database.adapters import postgres_store
+from tempo_storage import postgres
 from app.services import durable_tasks, queue_application, postgres_queue_refresh as refresh
 
 
@@ -41,10 +41,10 @@ def test_queue_refresh_native_interleavings(owned_postgres, monkeypatch):
     url = make_conninfo(**options)
     monkeypatch.setenv('TEMPO_DATABASE_READ_URL', url)
     monkeypatch.setenv('TEMPO_DATABASE_WRITE_URL', url)
-    postgres_store.prepare_authoritative_background_pool()
+    postgres.prepare_authoritative_background_pool()
 
     def raw():
-        return psycopg.connect(**options, row_factory=postgres_store.tempo_row_factory)
+        return psycopg.connect(**options, row_factory=postgres.tempo_row_factory)
 
     def snapshot(day):
         with raw() as db:
@@ -57,7 +57,7 @@ def test_queue_refresh_native_interleavings(owned_postgres, monkeypatch):
             if barrier:
                 barrier.wait(timeout=10)
             return queue_application.request_queue_refresh_in_transaction(
-                postgres_store.PostgresConnection(db), day, preserve_through_entry_id=pointer)
+                postgres.PostgresConnection(db), day, preserve_through_entry_id=pointer)
 
     def claim():
         task = durable_tasks.claim_task('daily_queue')
@@ -141,7 +141,7 @@ def test_queue_refresh_native_interleavings(owned_postgres, monkeypatch):
             state_before = snapshot(day)
             try:
                 with raw() as db:
-                    review_commands.submit_review(postgres_store.PostgresConnection(db), payload)
+                    review_commands.submit_review(postgres.PostgresConnection(db), payload)
                     raise ValueError('simulated review rollback')
             except ValueError as error:
                 assert str(error) == 'simulated review rollback'
@@ -149,10 +149,10 @@ def test_queue_refresh_native_interleavings(owned_postgres, monkeypatch):
             with raw() as db:
                 assert db.execute('SELECT count(*) FROM review_attempt_receipts WHERE attempt_id=%s', ('w14-real-review',)).fetchone()[0] == 0
             with raw() as db:
-                result = review_commands.submit_review(postgres_store.PostgresConnection(db), payload)
+                result = review_commands.submit_review(postgres.PostgresConnection(db), payload)
                 assert result['persisted']
             with raw() as db:
-                replay = review_commands.submit_review(postgres_store.PostgresConnection(db), payload)
+                replay = review_commands.submit_review(postgres.PostgresConnection(db), payload)
                 assert replay == result
             return result
         with patch.object(refresh, '_prepare_projection_blocked_count', held_prepare):
@@ -234,7 +234,7 @@ def test_queue_refresh_native_interleavings(owned_postgres, monkeypatch):
         assert not refresh.execute_postgres_queue_refresh_slice(delivery)
         print('PASS native queue refresh concurrent signals, late review fence, rollback, replay and rollover')
     finally:
-        postgres_store.close_pools()
+        postgres.close_pools()
 
 
 def test_queue_refresh_native_publication_budget(owned_postgres, monkeypatch):
@@ -247,7 +247,7 @@ def test_queue_refresh_native_publication_budget(owned_postgres, monkeypatch):
     monkeypatch.setenv('TEMPO_DATABASE_READ_URL', url)
     monkeypatch.setenv('TEMPO_DATABASE_WRITE_URL', url)
     def raw():
-        return psycopg.connect(**options, row_factory=postgres_store.tempo_row_factory)
+        return psycopg.connect(**options, row_factory=postgres.tempo_row_factory)
     try:
         with raw() as db:
             columns = db.execute("SELECT count(*) FROM information_schema.columns WHERE table_name='queue_projections' AND column_name IN ('requested_refresh_epoch','published_refresh_epoch')").fetchone()[0]
@@ -255,7 +255,7 @@ def test_queue_refresh_native_publication_budget(owned_postgres, monkeypatch):
             assert db.execute('SELECT max(version) FROM tempo_schema_migrations').fetchone()[0] == 59
             facts = seed_queue_refresh_case(db, queued_count=1258, issued_count=2, changed_kind_count=16, frozen_active=False)
             db.execute('DELETE FROM background_tasks WHERE id=%s', (facts.task_id,))
-            queue_application.request_queue_refresh_in_transaction(postgres_store.PostgresConnection(db), facts.queue_date)
+            queue_application.request_queue_refresh_in_transaction(postgres.PostgresConnection(db), facts.queue_date)
         original_prepare = refresh._prepare_queue_randomization
         original_publish = refresh._publish_queue_randomization
         failures = []
@@ -347,7 +347,7 @@ def test_queue_refresh_native_publication_budget(owned_postgres, monkeypatch):
             print('PUBLICATION', scenario, outcome, 'total_ms', elapsed, 'writer_ms', writer_ms, 'settings', settings[0], 'stages', stage_times, flush=True)
         assert not failures, f'publication exceeded budget: {failures}'
     finally:
-        postgres_store.close_pools()
+        postgres.close_pools()
 
 
 def test_native_tactic_attempt_and_review(owned_postgres, monkeypatch):
@@ -360,7 +360,7 @@ def test_native_tactic_attempt_and_review(owned_postgres, monkeypatch):
     url = make_conninfo(**options)
     monkeypatch.setenv('TEMPO_DATABASE_READ_URL', url)
     monkeypatch.setenv('TEMPO_DATABASE_WRITE_URL', url)
-    postgres_store.prepare_authoritative_background_pool()
+    postgres.prepare_authoritative_background_pool()
     fen = 'q3k1nr/1pp1nQpp/3p4/1P2p3/4P3/B1PP1b2/B5PP/5K2 b k - 0 17'
     moves = ['e8d7', 'a2e6', 'd7d8', 'f7f8']
     payload = {'request': {'attempt_id': 'w14-tactic-discovery', 'puzzle_id': 'w14-tactic',
@@ -368,12 +368,12 @@ def test_native_tactic_attempt_and_review(owned_postgres, monkeypatch):
                'source_fen': fen, 'moves': moves}, 'pack_id': 'hangingPiece-easy',
                'training_fen': fen, 'solution': moves}
     def raw():
-        return psycopg.connect(**options, row_factory=postgres_store.tempo_row_factory)
+        return psycopg.connect(**options, row_factory=postgres.tempo_row_factory)
     try:
         with raw() as db:
-            result = tactic_commands.submit_tactic_attempt(postgres_store.PostgresConnection(db), payload)
+            result = tactic_commands.submit_tactic_attempt(postgres.PostgresConnection(db), payload)
         with raw() as db:
-            assert tactic_commands.submit_tactic_attempt(postgres_store.PostgresConnection(db), payload) == result
+            assert tactic_commands.submit_tactic_attempt(postgres.PostgresConnection(db), payload) == result
             row = db.execute("SELECT id FROM daily_queue WHERE card_id=%s AND status='queued'", (result['card_id'],)).fetchone()
             assert row is not None
             entry = row[0]
@@ -381,20 +381,20 @@ def test_native_tactic_attempt_and_review(owned_postgres, monkeypatch):
                   'queue_entry_id': entry, 'attempt_id': 'w14-tactic-review', 'expected_revision': 1}}
         try:
             with raw() as db:
-                review_commands.submit_review(postgres_store.PostgresConnection(db), review)
+                review_commands.submit_review(postgres.PostgresConnection(db), review)
                 raise ValueError('rollback tactic review')
         except ValueError as error:
             assert str(error) == 'rollback tactic review'
         with raw() as db:
             assert db.execute('SELECT count(*) FROM review_attempt_receipts WHERE attempt_id=%s', ('w14-tactic-review',)).fetchone()[0] == 0
-            saved = review_commands.submit_review(postgres_store.PostgresConnection(db), review)
+            saved = review_commands.submit_review(postgres.PostgresConnection(db), review)
             assert saved['persisted']
         with raw() as db:
-            assert review_commands.submit_review(postgres_store.PostgresConnection(db), review) == saved
+            assert review_commands.submit_review(postgres.PostgresConnection(db), review) == saved
             assert db.execute('SELECT count(*) FROM review_attempt_receipts WHERE attempt_id=%s', ('w14-tactic-review',)).fetchone()[0] == 1
         print('PASS native tactic attempt and saved review rollback, commit and idempotent replay')
     finally:
-        postgres_store.close_pools()
+        postgres.close_pools()
 
 
 def test_schema_58_to_59_preserves_existing_state(owned_postgres, monkeypatch):
@@ -439,14 +439,14 @@ def test_native_review_after_randomization_prepare_rejects_stale_plan(owned_post
     url = make_conninfo(**options)
     monkeypatch.setenv('TEMPO_DATABASE_READ_URL', url)
     monkeypatch.setenv('TEMPO_DATABASE_WRITE_URL', url)
-    postgres_store.prepare_authoritative_background_pool()
+    postgres.prepare_authoritative_background_pool()
     def raw():
-        return psycopg.connect(**options, row_factory=postgres_store.tempo_row_factory)
+        return psycopg.connect(**options, row_factory=postgres.tempo_row_factory)
     try:
         with raw() as db:
             facts = seed_queue_refresh_case(db, queued_count=32, issued_count=2, frozen_active=False)
             db.execute('DELETE FROM background_tasks WHERE id=%s', (facts.task_id,))
-            queue_application.request_queue_refresh_in_transaction(postgres_store.PostgresConnection(db), facts.queue_date)
+            queue_application.request_queue_refresh_in_transaction(postgres.PostgresConnection(db), facts.queue_date)
             row = db.execute("SELECT id FROM background_tasks WHERE kind='daily_queue' AND deduplication_key='current'").fetchone()
             epoch = db.execute('SELECT requested_refresh_epoch FROM queue_projections WHERE queue_date=%s', (facts.queue_date,)).fetchone()[0]
             payload = {'queue_date': facts.queue_date, '_queue_phase': 'randomize_queue', '_refresh_cycle_epoch': epoch}
@@ -466,7 +466,7 @@ def test_native_review_after_randomization_prepare_rejects_stale_plan(owned_post
                 future = pool.submit(refresh.execute_postgres_queue_refresh_slice, claimed)
                 assert prepared.wait(10)
                 with raw() as db:
-                    result = review_commands.submit_review(postgres_store.PostgresConnection(db),
+                    result = review_commands.submit_review(postgres.PostgresConnection(db),
                         {'card_id': 'queue-refresh-scale-00001', 'review': {'outcome': 'correct',
                          'guided': False, 'queue_entry_id': 1, 'attempt_id': 'w14-stale-plan-review', 'expected_revision': 1}})
                     assert result['persisted']
@@ -494,11 +494,11 @@ def test_native_review_after_randomization_prepare_rejects_stale_plan(owned_post
             assert (projection[0], projection[1], projection[2] == projection[3]) == ('ready', 0, True)
         print('PASS real late review rejects stale randomization and converges')
     finally:
-        postgres_store.close_pools()
+        postgres.close_pools()
 
 
 def test_native_priority_fast_path_and_date_lock(owned_postgres, monkeypatch):
-    from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
+    from tempo_storage.queue_position_lock import lock_queue_date_for_position
     from app.product_composition.database_infrastructure import bind_database_infrastructure
     bind_database_infrastructure()
     monkeypatch.setenv('TEMPO_TEST_INSTANCE', 'disposable')
@@ -506,9 +506,9 @@ def test_native_priority_fast_path_and_date_lock(owned_postgres, monkeypatch):
     url = make_conninfo(**options)
     monkeypatch.setenv('TEMPO_DATABASE_READ_URL', url)
     monkeypatch.setenv('TEMPO_DATABASE_WRITE_URL', url)
-    postgres_store.prepare_authoritative_background_pool()
+    postgres.prepare_authoritative_background_pool()
     def raw():
-        return psycopg.connect(**options, row_factory=postgres_store.tempo_row_factory)
+        return psycopg.connect(**options, row_factory=postgres.tempo_row_factory)
     def snapshot(db):
         return tuple(tuple(row) for row in db.execute("SELECT id,position,card_bucket,admission_kind,gameplay_priority_reason FROM daily_queue WHERE queue_date=%s ORDER BY id", (facts.queue_date,)))
     try:
@@ -524,7 +524,7 @@ def test_native_priority_fast_path_and_date_lock(owned_postgres, monkeypatch):
             with raw() as db:
                 with patch.object(refresh.presentation_storage, 'has_queue_priority', return_value=True) if force else patch.object(refresh.presentation_storage, 'has_queue_priority', wraps=refresh.presentation_storage.has_queue_priority):
                     with patch.object(refresh, 'prioritize_queued_misses', wraps=actual_priority) as observed:
-                        assert refresh._publish_queue_randomization(postgres_store.PostgresConnection(db), facts.queue_date, plan)
+                        assert refresh._publish_queue_randomization(postgres.PostgresConnection(db), facts.queue_date, plan)
                         outcomes.append(snapshot(db))
                         calls.append(observed.call_count)
                 db.rollback()
@@ -534,7 +534,7 @@ def test_native_priority_fast_path_and_date_lock(owned_postgres, monkeypatch):
         plan = refresh._prepare_queue_randomization(facts.queue_date)
         with raw() as db:
             with patch.object(refresh, 'prioritize_queued_misses', wraps=actual_priority) as observed:
-                assert refresh._publish_queue_randomization(postgres_store.PostgresConnection(db), facts.queue_date, plan)
+                assert refresh._publish_queue_randomization(postgres.PostgresConnection(db), facts.queue_date, plan)
                 assert observed.call_count == 1
             db.rollback()
         # The exact queue-date lock makes a same-day reason writer wait until
@@ -550,11 +550,11 @@ def test_native_priority_fast_path_and_date_lock(owned_postgres, monkeypatch):
             return query(db, day)
         def publisher():
             with raw() as db:
-                return refresh._publish_queue_randomization(postgres_store.PostgresConnection(db), facts.queue_date, plan)
+                return refresh._publish_queue_randomization(postgres.PostgresConnection(db), facts.queue_date, plan)
         def reason_writer():
             with raw() as db:
                 writer_started.set()
-                lock_queue_date_for_position(postgres_store.PostgresConnection(db), facts.queue_date)
+                lock_queue_date_for_position(postgres.PostgresConnection(db), facts.queue_date)
                 db.execute("UPDATE daily_queue SET gameplay_priority_reason='unknown-retained-reason' WHERE id=%s", (facts.queued_ids[3],))
             writer_finished.set()
         with patch.object(refresh.presentation_storage, 'has_queue_priority', pause):
@@ -573,12 +573,12 @@ def test_native_priority_fast_path_and_date_lock(owned_postgres, monkeypatch):
         plan = refresh._prepare_queue_randomization(facts.queue_date)
         with raw() as db:
             with patch.object(refresh, 'prioritize_queued_misses', wraps=actual_priority) as observed:
-                assert refresh._publish_queue_randomization(postgres_store.PostgresConnection(db), facts.queue_date, plan)
+                assert refresh._publish_queue_randomization(postgres.PostgresConnection(db), facts.queue_date, plan)
                 assert observed.call_count == 1
             db.rollback()
         print('PASS priority no-reason parity, unknown reason and same-day lock ordering')
     finally:
-        postgres_store.close_pools()
+        postgres.close_pools()
 
 
 def test_native_http_task_diagnostics(owned_postgres, monkeypatch):
@@ -589,7 +589,7 @@ def test_native_http_task_diagnostics(owned_postgres, monkeypatch):
     url = make_conninfo(**options)
     monkeypatch.setenv('TEMPO_DATABASE_READ_URL', url)
     monkeypatch.setenv('TEMPO_DATABASE_WRITE_URL', url)
-    postgres_store.prepare_authoritative_background_pool()
+    postgres.prepare_authoritative_background_pool()
     try:
         with psycopg.connect(**options) as db:
             facts = seed_queue_refresh_case(db, queued_count=32, issued_count=2, frozen_active=False)
@@ -616,7 +616,7 @@ def test_native_http_task_diagnostics(owned_postgres, monkeypatch):
         assert projections[facts.queue_date]['worker_status'] == 'current'
         print('PASS native HTTP task timeout diagnostics and historical annotation')
     finally:
-        postgres_store.close_pools()
+        postgres.close_pools()
 
 
 def test_native_foreground_review_waits_and_lock_timeout_rolls_back(owned_postgres, monkeypatch):
@@ -628,14 +628,14 @@ def test_native_foreground_review_waits_and_lock_timeout_rolls_back(owned_postgr
     url = make_conninfo(**options)
     monkeypatch.setenv('TEMPO_DATABASE_READ_URL', url)
     monkeypatch.setenv('TEMPO_DATABASE_WRITE_URL', url)
-    postgres_store.prepare_authoritative_background_pool()
+    postgres.prepare_authoritative_background_pool()
     def raw():
-        return psycopg.connect(**options, row_factory=postgres_store.tempo_row_factory)
+        return psycopg.connect(**options, row_factory=postgres.tempo_row_factory)
     try:
         with raw() as db:
             facts = seed_queue_refresh_case(db, queued_count=32, issued_count=2, frozen_active=False)
             db.execute('DELETE FROM background_tasks WHERE id=%s', (facts.task_id,))
-            task = queue_application.request_queue_refresh_in_transaction(postgres_store.PostgresConnection(db), facts.queue_date)
+            task = queue_application.request_queue_refresh_in_transaction(postgres.PostgresConnection(db), facts.queue_date)
             epoch = db.execute('SELECT requested_refresh_epoch FROM queue_projections WHERE queue_date=%s', (facts.queue_date,)).fetchone()[0]
             payload = {'queue_date': facts.queue_date, '_queue_phase': 'randomize_queue', '_refresh_cycle_epoch': epoch}
             db.execute("UPDATE background_tasks SET phase='randomize_queue',payload_json=%s WHERE id=%s", (json.dumps(payload), task['id']))
@@ -662,7 +662,7 @@ def test_native_foreground_review_waits_and_lock_timeout_rolls_back(owned_postgr
             review_started.set()
             started = time.perf_counter()
             with raw() as db:
-                result = review_commands.submit_review(postgres_store.PostgresConnection(db),
+                result = review_commands.submit_review(postgres.PostgresConnection(db),
                     {'card_id': 'queue-refresh-scale-00001', 'review': {'outcome': 'correct', 'guided': False,
                      'queue_entry_id': 1, 'attempt_id': 'w14-contention-review', 'expected_revision': 1}})
             review_done.set()
@@ -710,7 +710,7 @@ def test_native_foreground_review_waits_and_lock_timeout_rolls_back(owned_postgr
             assert (projection[0], projection[1], projection[2] == projection[3]) == ('ready', 0, True)
         print('PASS 25ms lock conflicts, foreground review, expired-lease recovery; review_ms', wait_ms)
     finally:
-        postgres_store.close_pools()
+        postgres.close_pools()
 
 
 def test_native_scale_active_frozen_and_stored_priority(owned_postgres, monkeypatch):
@@ -723,9 +723,9 @@ def test_native_scale_active_frozen_and_stored_priority(owned_postgres, monkeypa
     url = make_conninfo(**options)
     monkeypatch.setenv('TEMPO_DATABASE_READ_URL', url)
     monkeypatch.setenv('TEMPO_DATABASE_WRITE_URL', url)
-    postgres_store.prepare_authoritative_background_pool()
+    postgres.prepare_authoritative_background_pool()
     def raw():
-        return psycopg.connect(**options, row_factory=postgres_store.tempo_row_factory)
+        return psycopg.connect(**options, row_factory=postgres.tempo_row_factory)
     try:
         with raw() as db:
             facts = seed_queue_refresh_case(db, queued_count=1258, issued_count=2, frozen_active=True)
@@ -737,7 +737,7 @@ def test_native_scale_active_frozen_and_stored_priority(owned_postgres, monkeypa
                 [(content_fingerprint(dict(card), ['queue-refresh-scale']), 'queue-refresh-scale', card['id']) for card in cards])
             db.execute("UPDATE daily_queue SET gameplay_priority_reason='unknown-retained-reason' WHERE id=%s", (facts.queued_ids[3],))
             db.execute('DELETE FROM background_tasks WHERE id=%s', (facts.task_id,))
-            task = queue_application.request_queue_refresh_in_transaction(postgres_store.PostgresConnection(db), facts.queue_date)
+            task = queue_application.request_queue_refresh_in_transaction(postgres.PostgresConnection(db), facts.queue_date)
             epoch = db.execute('SELECT requested_refresh_epoch FROM queue_projections WHERE queue_date=%s', (facts.queue_date,)).fetchone()[0]
             payload = {'queue_date': facts.queue_date, '_queue_phase': 'randomize_queue',
                        '_refresh_cycle_epoch': epoch, 'frozen_token': ['queue-refresh-scale', 1]}
@@ -777,4 +777,4 @@ def test_native_scale_active_frozen_and_stored_priority(owned_postgres, monkeypa
             assert db.execute('SELECT gameplay_priority_reason FROM daily_queue WHERE id=%s', (facts.queued_ids[3],)).fetchone()[0] == 'unknown-retained-reason'
         print('PASS 1258 active frozen valid ranks and retained priority pass', 'prepare_ms', prepared[0][1], 'publish_ms', stages[0], 'settings', settings[0])
     finally:
-        postgres_store.close_pools()
+        postgres.close_pools()

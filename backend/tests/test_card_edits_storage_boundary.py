@@ -8,7 +8,7 @@ import chess
 import pytest
 
 from app import card_commands as application
-from tempo_legacy_database.adapters.authored_repertoires.card_edits import storage
+from tempo_storage.authored_repertoires.card_edits import storage
 
 
 class Rows:

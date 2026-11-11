@@ -8,8 +8,8 @@ from kombu.transport.redis import Channel as RedisChannel, Transport as RedisTra
 from kombu.utils.json import dumps
 import redis
 
-from tempo_legacy_database.adapters.redis_control.wake_runtime import wakes as storage
-from tempo_legacy_database.adapters.redis_control.wake_runtime.wakes import (
+from tempo_storage.redis_control.wake_runtime import wakes as storage
+from tempo_storage.redis_control.wake_runtime.wakes import (
     _KEY_PREFIX,
     _RESERVE,
     _PUBLISH,

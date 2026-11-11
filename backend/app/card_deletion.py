@@ -11,8 +11,8 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from tempo_legacy_database.adapters.authored_repertoires.card_deletion import storage
-from tempo_legacy_database.adapters.authored_repertoires.card_deletion.storage import (
+from tempo_storage.authored_repertoires.card_deletion import storage
+from tempo_storage.authored_repertoires.card_deletion.storage import (
     is_card_deleted,
     _delete_matching,
 )
@@ -57,20 +57,15 @@ def cancel_repertoire_tasks(database, repertoire_id: str) -> None:
             or isinstance(payload, dict)
             and payload.get("repertoire_id") == repertoire_id
         ):
-            native_recheck, current = storage.locked_cancellation_candidate(
-                database, task
-            )
-            if native_recheck:
-                # Lock exact matches in ID order, then recheck after a worker's
-                # checkpoint. Clearing its lease fences every later slice.
-                if current is None:
-                    continue
-                current_payload = json.loads(current["payload_json"])
-                if current["deduplication_key"] != repertoire_id and (
-                    not isinstance(current_payload, dict)
-                    or current_payload.get("repertoire_id") != repertoire_id
-                ):
-                    continue
+            current = storage.locked_cancellation_candidate(database, task)
+            if current is None:
+                continue
+            current_payload = json.loads(current["payload_json"])
+            if current["deduplication_key"] != repertoire_id and (
+                not isinstance(current_payload, dict)
+                or current_payload.get("repertoire_id") != repertoire_id
+            ):
+                continue
             storage.cancel_task(database, now, task["id"])
 
 
@@ -80,8 +75,7 @@ def purge_card_data(database, identifiers: list[str]) -> None:
         return
     queue_ids, puzzle_ids = storage.purge_sources(database, identifiers)
     storage.purge_tactic_attempts(database, puzzle_ids)
-    if storage.native_cleanup_supported(database):
-        _purge_opening_evidence(database, identifiers, queue_ids)
+    _purge_opening_evidence(database, identifiers, queue_ids)
     storage.clear_source_references(
         database, identifiers, lambda: datetime.now(timezone.utc).isoformat()
     )

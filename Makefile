@@ -5,7 +5,7 @@
 # Full order, with permissions checked before any test family:
 #  0 Docker + loopback + checkout bind-mount preflight
 #  1 unit                         7 lint
-#  2 defense-engine smoke         8 typecheck
+#  2 backend checks         8 typecheck
 #  3 Python backend tests         9 WASM build
 #  4 Rust format                 10 local frontend build
 #  5 Rust lint                   11 PostgreSQL durability + regular browser matrix
@@ -39,7 +39,7 @@ help:
 	@printf '%s\n' 'Browser scopes exclude recovery/backup checks; make full still requires them all.'
 	@printf '%s\n' 'Docker recovery: make docker-durability (ordinary PostgreSQL durability without browser/lifecycle)'
 	@printf '%s\n' 'Deployment rehearsal: make docker-lifecycle (complete CLI recovery/deployment lifecycle)'
-	@printf '%s\n' 'Current schema 63 upgrade: make docker-lifecycle-current (distinct bounded profile)'
+	@printf '%s\n' 'Historical schema 63 upgrade: make docker-lifecycle-current (schema 63 source only)'
 	@printf '%s\n' 'Focused files: make unit-file FILE=tests/unit/example.test.ts'
 	@printf '%s\n' '               make python-file FILE=backend/tests/test_services.py'
 	@printf '%s\n' '               make ui-file FILE=games-board-context.spec.ts'

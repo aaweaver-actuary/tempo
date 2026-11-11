@@ -3,8 +3,8 @@
 from datetime import datetime, timezone
 import hashlib
 
-from tempo_legacy_database.adapters.study.review import storage
-from tempo_legacy_database.adapters.frozen_order import activation
+from tempo_storage.study.review import storage
+from tempo_storage.frozen_order import activation
 from app.study.policy.queue_ordering import (
     queue_order_provenance,
     preserved_queue_fingerprint,

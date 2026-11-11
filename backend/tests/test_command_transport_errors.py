@@ -1,6 +1,6 @@
 """Failed command receipts preserve HTTP semantics across worker timing."""
 
-from tempo_legacy_database.adapters import postgres_store
+from tempo_storage import postgres
 from contextlib import nullcontext
 import json
 from types import SimpleNamespace
@@ -98,7 +98,7 @@ class ReceiptTransport:
 def receipt_transport(monkeypatch):
     transport = ReceiptTransport()
     monkeypatch.setattr(
-        command_gateway.postgres_store,
+        command_gateway.postgres,
         "connection",
         lambda **_options: nullcontext(SimpleNamespace(raw=transport)),
     )
@@ -336,7 +336,7 @@ def test_prepared_command_database_failure_remains_retryable_without_failed_rece
 def test_opening_checkpoint_http_semantic_rejection_preserves_terminal_receipt(
     receipt_transport, monkeypatch, deferred
 ):
-    monkeypatch.setattr(postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(postgres, "configured", lambda: True)
     from pathlib import Path
     from app import main
 
@@ -373,7 +373,7 @@ def test_opening_checkpoint_http_semantic_rejection_preserves_terminal_receipt(
     monkeypatch.delenv("TEMPO_FOREGROUND_ACTIVITY_URL", raising=False)
 
     monkeypatch.setattr(
-        postgres_store,
+        postgres,
         "connection",
         lambda **options: nullcontext(
             SimpleNamespace(raw=transport, execute_native=source_read)
@@ -382,7 +382,7 @@ def test_opening_checkpoint_http_semantic_rejection_preserves_terminal_receipt(
     monkeypatch.setitem(
         command_gateway._handlers, "opening_evidence.checkpoint", transport.handler
     )
-    from app.services.postgres_opening_evidence import prepare_standalone_checkpoint
+    from app.study.position_checkpoint import prepare_standalone_checkpoint
 
     monkeypatch.setitem(
         command_gateway._preparers,

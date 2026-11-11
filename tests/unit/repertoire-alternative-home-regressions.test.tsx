@@ -21,7 +21,7 @@ import { demoCards } from "../../app/samples";
 
 // Main ignores the result; PR #172 explicitly consumes successful installation.
 const initializeQueueMock = vi.hoisted(() => vi.fn<() => Promise<"installed">>());
-vi.mock("../../app/views/fetchAndInitializeQueue", () => ({ fetchAndInitializeQueue: initializeQueueMock, invalidateTrainingQueueCache: vi.fn() }));
+vi.mock("../../app/views/fetchAndInitializeQueue", () => ({ fetchAndInitializeQueue: initializeQueueMock, invalidateTrainingQueueCache: vi.fn(), rememberConfirmedQueueEntry: vi.fn() }));
 vi.mock("../../app/components/board/chessboard", () => ({ Chessboard: () => <div /> }));
 vi.mock("../../app/lib/move-sound", () => ({ playMoveSound: vi.fn(), playChessMoveSound: vi.fn(),
   moveSoundEnabled: () => false, prepareMoveSounds: vi.fn(), cancelMoveSounds: vi.fn() }));

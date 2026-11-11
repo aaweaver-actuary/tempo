@@ -37,23 +37,18 @@ def proposal_valid(
     planned,
     token,
     *,
-    miss_reason: str,
-    has_outstanding_miss: CardPredicate,
     current_definition_valid: CardPredicate,
 ):
     if planned.get("frozen_token", [None, 0]) != list(token):
         return False
     if token[0] is None:
         return True
-    if planned.get("reason") == miss_reason:
-        return has_outstanding_miss(planned["card_id"])
     return current_definition_valid(planned["card_id"])
 
 
 def order_queue_slots(
     annotated,
     *,
-    miss_reason: str,
     card_exposed: CardPredicate,
     preserve_through_entry_id=None,
     exposed_ids=None,
@@ -64,7 +59,6 @@ def order_queue_slots(
         if (
             row.get("content_type") != "opening"
             or row.get("admission_kind") != "new"
-            or row.get("gameplay_priority_reason") == miss_reason
         ):
             continue
         if not row.get("frozen_valid"):

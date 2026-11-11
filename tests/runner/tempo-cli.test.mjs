@@ -117,6 +117,13 @@ test("retired engine journal is optional and retains the existing production dep
   const maia = structuredClone(engine);
   maia.Config.Labels["com.docker.compose.service"] = "maia-worker";
   assert.throws(() => validateContainers([maia], old), /retired maia-worker/);
+  const collector = structuredClone(engine);
+  collector.Config.Labels["com.docker.compose.service"] = "game-feedback-worker";
+  assert.throws(() => validateContainers([collector], old), /retired game-feedback-worker/);
+  collector.State = { Running: false, Restarting: true };
+  assert.throws(() => validateContainers([collector], old), /retired game-feedback-worker/);
+  collector.State = { Running: false, Restarting: false };
+  assert.doesNotThrow(() => validateContainers([collector], old));
   assert.doesNotThrow(() => validateContainers([engine], {...old, project: "other"}));
 });
 
@@ -1363,6 +1370,7 @@ test('managed deployment settlement recovers publication and permits a later can
   atomicJson(join(root, 'maintenance.lock'), {pid:process.pid, token:randomUUID()});
   let builds = 0;
   const run = async (_program, args) => { if (args.includes('config')) return {stdout:JSON.stringify(config)};
+    if (args.includes('ps')) return {stdout:'[]'};
     if (args.includes('inspect')) return {stdout:JSON.stringify([{Id:receipt.images.migration,Config:{Labels:{'org.opencontainers.image.revision':revision}}}])};
     if (args.includes('run')) return {stdout:JSON.stringify({witness_id:'original-id',completion_sha256:guard.isolation.completion.sha256})};
     throw new Error('unexpected command'); };
@@ -1371,19 +1379,20 @@ test('managed deployment settlement recovers publication and permits a later can
   await runtime.config(); assert.equal(runtime.checkMigrationRetry(), false);
   await assert.rejects(runtime.startServices(), /not been authenticated/);
   await assert.rejects(runtime.ensureImages(), /authentication is incomplete/);
-  await runtime.authenticateManagedSettlement();
+  await assert.rejects(runtime.backupOnly(), /new candidate build/);
   const settled = JSON.parse(readFileSync(join(root, 'migration-guard.json')));
   assert.equal(authenticateManagedSettlement(root, settled), true);
   writeFileSync(prePath,'changed schema 59 witness');
   assert.throws(() => authenticateManagedSettlement(root, settled), /settlement authentication failed/);
   writeFileSync(prePath,'original schema 59 witness');
-  await assert.rejects(runtime.ensureImages(), /new candidate build/); assert.equal(builds, 1);
+  await assert.rejects(runtime.ensureImages(), /new candidate build/); assert.equal(builds, 2);
   atomicJson(join(root, 'maintenance.lock'), {pid:process.pid, token:randomUUID()});
-  await assert.rejects(runtime.ensureImages(), /lock/i); assert.equal(builds, 1);
+  await assert.rejects(runtime.ensureImages(), /lock/i); assert.equal(builds, 2);
   const altered = structuredClone(settled); altered.managed_image_settlement.payload.deployment_sha256 = '0'.repeat(64);
   atomicJson(join(root, 'migration-guard.json'), altered);
   assert.equal(runtime.checkMigrationRetry(), false);
   await assert.rejects(runtime.authenticateManagedSettlement(), /settlement authentication failed/);
+  await assert.rejects(runtime.backupOnly(), /settlement authentication failed/);
 });
 
 test("pending managed image receipt reuses exact images without a build and rejects drift", t => {
@@ -1491,7 +1500,7 @@ function assertNoCandidateMutation(fixture) {
 for (const probe of ["branch", "head", "status", "remote", "launch"]) test(`actual CLI source inspection fallback survives ${probe} probe failure without candidate mutation`, t => {
   const fixture = sourceFallbackFixture(t, probe);
   const receipt = readFileSync(join(fixture.stateDirectory, "deployment.json"), "utf8");
-  const sourceFiles = [join(fixture.root, "study-notes"), join(fixture.root, "database/tempo_legacy_database/ddl/schema_version.py"), ...fixture.target.composeFiles];
+  const sourceFiles = [join(fixture.root, "study-notes"), join(fixture.root, "database/tempo_storage/ddl/schema_version.py"), ...fixture.target.composeFiles];
   const sourceBefore = sourceFiles.map(path => readFileSync(path, "utf8"));
   const sourceHead = readFixtureJson(fixture, "machine.json").head;
   const result = fixture.command("start", "--no-wait", "--no-open");
@@ -1571,7 +1580,7 @@ for (const surface of ["doctor", "status", "start", "restart", "migrate"]) test(
 
 test("actual CLI source inspection diagnostics retain independent facts when Git cannot launch or local schema is unreadable", t => {
   const fixture = sourceFallbackFixture(t, "launch");
-  rmSync(join(fixture.root, "database/tempo_legacy_database/ddl/schema_version.py"));
+  rmSync(join(fixture.root, "database/tempo_storage/ddl/schema_version.py"));
   const result = fixture.command("doctor", "--verbose");
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stdout, /unknown branch.*unknown revision.*working-tree status unavailable/);
@@ -2106,7 +2115,7 @@ test("actual CLI diagnostic safety leaves source state receipts guards services 
   writeFileSync(join(fixture.stateDirectory, "migration-guard.json"), JSON.stringify({ state: "pending", origin_revision: "b".repeat(40), backup: { filename: "original.dump" } }));
   const preservedPaths = [join(fixture.directory, "machine.json"), fixture.registration,
     ...readdirSync(fixture.stateDirectory).map(name => join(fixture.stateDirectory, name)),
-    join(fixture.root, "database/tempo_legacy_database/ddl/schema_version.py")];
+    join(fixture.root, "database/tempo_storage/ddl/schema_version.py")];
   const before = preservedPaths.map(path => readFileSync(path, "utf8"));
   for (const argumentsList of [["status"], ["doctor"], ["start", "--plan"], ["restart", "--plan"], ["migrate", "--plan"]]) {
     const result = fixture.command(...argumentsList, "--verbose");
@@ -2953,7 +2962,7 @@ test("schema 62 interrupted capture leaves original guard fenced and never rebas
 });
 
 test("schema preflight refuses unsupported crossing before any writer stop", async () => {
-  for (const [current, expected] of [[58, 62], [60, 62], [59, 63], [61, 63], [62, 64], [63, 64], [64, 63]]) {
+  for (const [current, expected] of [[58, 62], [60, 62], [59, 63], [61, 63], [62, 64], [64, 63]]) {
     const status = { applied_versions: Array.from({ length: current }, (_, index) => index + 1), expected_version: expected };
     const { calls, handlers } = actions();
     handlers.preflightSchema = async () => { calls.push("preflight"); validateCut62Preflight(status, null); };
@@ -2975,6 +2984,35 @@ test("schema 63 preflight allows the current retirement and its own retry withou
     assert.throws(() => validateCut62Preflight(status,
       { state: "pending", starting_schema: 61, intended_schema: 62 }), /Unsupported/);
   }
+});
+
+test("schema 64 retirement accepts only schema 63 or its own completed migration and retry", () => {
+  for (const current of [63, 64]) {
+    const status = { applied_versions: [current], expected_version: 64 };
+    assert.doesNotThrow(() => validateCut62Preflight(status, null));
+    assert.doesNotThrow(() => validateCut62Preflight(status,
+      { state: "pending", starting_schema: 63, intended_schema: 64 }));
+    for (const guard of [
+      { state: "pending", starting_schema: 59, intended_schema: 62 },
+      { state: "pending", starting_schema: 62, intended_schema: 63 },
+      { state: "pending", starting_schema: 62, intended_schema: 64 },
+    ]) assert.throws(() => validateCut62Preflight(status, guard), /Unsupported/);
+  }
+});
+
+test("schema 65 accepts only schema 64 or its own pending retry", () => {
+  for (const current of [64, 65]) {
+    const status = { applied_versions: [current], expected_version: 65 };
+    assert.doesNotThrow(() => validateCut62Preflight(status, null));
+    assert.doesNotThrow(() => validateCut62Preflight(status,
+      { state: "pending", starting_schema: 64, intended_schema: 65 }));
+    for (const guard of [
+      { state: "pending", starting_schema: 63, intended_schema: 64 },
+      { state: "pending", starting_schema: 62, intended_schema: 65 },
+    ]) assert.throws(() => validateCut62Preflight(status, guard), /Unsupported/);
+  }
+  for (const current of [62, 63])
+    assert.throws(() => validateCut62Preflight({ applied_versions: [current], expected_version: 65 }, null), /Unsupported/);
 });
 
 test("schema 63 migration preserves the original history guard through a verification retry", async t => {

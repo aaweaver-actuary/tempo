@@ -30,7 +30,7 @@ for (const failure of ["prepared abort", "fallback abort", "fallback timeout", "
     let releaseReview!: () => void;
     const reviewRelease = new Promise<void>(resolve => { releaseReview = resolve; });
     let persistedResponseHeld = false;
-    const consumers = ["background-worker", "background-scheduler", "maia-worker"];
+    const consumers = ["background-worker", "background-scheduler"];
     try {
       const todayResponse = await request.get(`${api}/queue/window?limit=20`);
       expect(todayResponse.ok()).toBe(true);

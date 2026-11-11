@@ -129,7 +129,7 @@ def main():
 
 def prove_optional_handoff(identifier):
     """Real locks, post-review head validation and both durable receipt layers."""
-    from tempo_legacy_database.adapters import postgres_store
+    from tempo_storage import postgres
     from app.command_gateway import execute_command, request_digest
     from app.contracts.transport.study import ReviewRequest
 
@@ -163,7 +163,7 @@ def prove_optional_handoff(identifier):
     operation = str(uuid4())
     result = execute_command(operation, "cards.review", payload)
     assert result["prepared_continuation"] == {**identity(2), "attempt_failed": False}
-    postgres_store.close_pools()
+    postgres.close_pools()
     assert execute_command(operation, "cards.review", payload) == result
     assert execute_command(str(uuid4()), "cards.review", payload) == result
     with psycopg.connect(DSN) as connection:
@@ -233,7 +233,7 @@ def test_postgres_prepared_issuance_fences_competing_edits_and_deletions(identit
     from threading import Event
     from time import monotonic
     from unittest.mock import patch
-    from tempo_legacy_database.adapters import postgres_store
+    from tempo_storage import postgres
     from app import review_commands
     from app.card_deletion import permanent_delete_card
     from app.command_gateway import execute_command
@@ -256,7 +256,7 @@ def test_postgres_prepared_issuance_fences_competing_edits_and_deletions(identit
             return original_issuance(adapter, candidate)
 
         def mutate_successor():
-            with postgres_store.connection() as database:
+            with postgres.connection() as database:
                 mutation_pids.append(database.execute_native("SELECT pg_backend_pid()").fetchone()[0])
                 mutation_started.set()
                 if mutation == "delete":

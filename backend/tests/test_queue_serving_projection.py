@@ -5,8 +5,7 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-from tempo_legacy_database.adapters import postgres_store
-from tempo_legacy_database.adapters.http_composition import queue_projection
+from tempo_storage.http_composition import queue_projection
 from app.study.queue_serving import add_encounter_evidence
 
 CARD_FIELDS = """id repertoire_id kind start_fen moves_json state due_date interval_days ease
@@ -17,12 +16,14 @@ trained_color pending_validation prefix_split_rejected_after_review_id study_exe
 canonical_route_source""".split()
 
 
-@pytest.mark.parametrize("configured", [False, True])
 @pytest.mark.parametrize("limit", [None, 20])
 def test_queue_projection_emits_only_explicit_current_card_fields(
-    monkeypatch, configured, limit
+    limit
 ):
     class Capture:
+        def execute_native(self, sql):
+            self.profile = sql
+
         def execute(self, sql, params):
             self.sql, self.params = sql, params
             return self
@@ -30,19 +31,19 @@ def test_queue_projection_emits_only_explicit_current_card_fields(
         def fetchall(self):
             return []
 
-    monkeypatch.setattr(postgres_store, "configured", lambda: configured)
     database = Capture()
     assert (
         queue_projection.queue_rows(database, "2026-10-30", limit, miss_reason="miss")
         == []
     )
+    assert database.profile == "SELECT set_config('jit', 'off', true)"
     selected = database.sql.split(")) admission_source,", 1)[1].split(
         "COALESCE(r.name", 1
     )[0]
     assert re.findall(r"c\.([a-z_]+)", selected) == CARD_FIELDS
     assert "c.*" not in selected
     assert database.params == (
-        (("2026-10-30", limit, limit) if configured else ("2026-10-30", limit))
+        ("2026-10-30", limit, limit)
         if limit is not None
         else ("2026-10-30",)
     )
@@ -51,7 +52,7 @@ def test_queue_projection_emits_only_explicit_current_card_fields(
 def test_projected_card_fields_exist_in_current_migrated_schema():
     root = Path(__file__).resolve().parents[2]
     initial = (
-        root / "database/tempo_legacy_database/ddl/migrations/001_initial.sql"
+        root / "database/tempo_storage/ddl/migrations/001_initial.sql"
     ).read_text()
     create = re.search(r'CREATE TABLE "cards" \(.*?\);', initial).group()
     conn = sqlite3.connect(":memory:")

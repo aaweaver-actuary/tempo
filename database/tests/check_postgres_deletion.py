@@ -22,7 +22,7 @@ import psycopg
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend"))
 from app import main, card_commands, repertoire_commands, review_commands
-from tempo_legacy_database.adapters import postgres_store
+from tempo_storage import postgres
 from app.command_gateway import execute_command, read_operation
 from app.card_deletion import RETAINED_REPERTOIRE_ID, permanent_delete_card
 from app.services.durable_tasks import enqueue_task_in_transaction, lock_current_slice
@@ -79,14 +79,14 @@ def main_check():
         from app.services import postgres_queue_refresh
         from app.chess.cards import card_id
         from app.services.puzzles import validate_puzzle_record
-        from tempo_legacy_database.adapters.tactic_admission import count_daily_tactic_introductions
+        from tempo_storage.tactic_admission import count_daily_tactic_introductions
 
         pack_id = f"{prefix}-tactics"
         records = tactical_deletion_fixture_records(pack_id)
         identifiers = [card_id(*validate_puzzle_record(record)) for record in records]
         unrelated_ids = [f"{prefix}-unrelated-tombstone-{index}" for index in range(128)]
         card_ids.extend(identifiers + unrelated_ids)
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             assert not database.execute_native("SELECT 1 FROM cards WHERE id=ANY(%s)", (identifiers,)).fetchone()
             active_before = [row[0] for row in database.execute("SELECT pack_id FROM tactic_pack_activation WHERE active=1")]
             limit_before = database.execute("SELECT tactics_new_per_day FROM settings WHERE id=1").fetchone()[0]
@@ -110,10 +110,10 @@ def main_check():
             with patch.object(postgres_queue_refresh, "pack_records", return_value=records), patch.object(postgres_queue_refresh, "_bounded_read", candidate_read):
                 prepared = postgres_queue_refresh._prepare_tactical_introduction(today)
                 assert prepared["card_id"] == identifiers[1]
-                with postgres_store.connection() as database:
+                with postgres.connection() as database:
                     database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type) VALUES(?,?,'checkpoint',?,?,'new',?,'tactic')", (identifiers[1], other, prepared["training_fen"], prepared["solution_json"], today))
                 command("cards.delete", {"card_id": identifiers[1], "expected_revision": 1})
-                with postgres_store.connection() as database:
+                with postgres.connection() as database:
                     assert postgres_queue_refresh._publish_tactical_introduction(database, today, prepared)
                     assert count_daily_tactic_introductions(database, today) == reservations_before
                     assert database.execute("SELECT last_pack_id FROM tactic_rotation WHERE id=1").fetchone()[0] == rotation_before
@@ -123,14 +123,14 @@ def main_check():
                     assert not database.execute_native("SELECT 1 FROM daily_queue WHERE card_id=ANY(%s)", (identifiers[:2],)).fetchone()
                 eligible = postgres_queue_refresh._prepare_tactical_introduction(today)
                 assert eligible["card_id"] == identifiers[2]
-                with postgres_store.connection() as database:
+                with postgres.connection() as database:
                     assert postgres_queue_refresh._publish_tactical_introduction(database, today, eligible)
                     assert count_daily_tactic_introductions(database, today) == reservations_before + 1
                     assert database.execute("SELECT card_id FROM tactic_progress WHERE puzzle_id=?", (records[2]["PuzzleId"],)).fetchone()[0] == identifiers[2]
                 assert postgres_queue_refresh._prepare_tactical_introduction(today) is None
                 assert lookup_batches == [identifiers, identifiers]
         finally:
-            with postgres_store.connection() as database:
+            with postgres.connection() as database:
                 purge_card_data(database, identifiers)
                 database.execute("DELETE FROM tactic_introductions WHERE pack_id=?", (pack_id,))
                 database.execute("DELETE FROM tactic_pack_activation WHERE pack_id=?", (pack_id,))
@@ -151,7 +151,7 @@ def main_check():
                     repertoire_ids.extend((removed, survivor, third))
                     card_ids.extend((identifier, exclusive))
                     now = datetime.now(timezone.utc).isoformat()
-                    with postgres_store.connection() as database:
+                    with postgres.connection() as database:
                         for repertoire_id in (removed, survivor, third):
                             database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,?,?)", (repertoire_id, repertoire_id, "shared admission proof", today))
                         database.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,?,'Original scope','white',?,'[\"e2e4\"]',?)", (f"{case_id}-line", removed, chess.STARTING_FEN, now))
@@ -196,7 +196,7 @@ def main_check():
                                     ("clean_days", "SELECT clean_day.* FROM opening_evidence_clean_days clean_day WHERE decision_id IN (SELECT observation.decision_id FROM opening_evidence_observations observation JOIN opening_evidence_attempts attempt ON attempt.attempt_id=observation.attempt_id WHERE attempt.card_id=?) ORDER BY decision_id,study_day"),
                                 )}
 
-                    with postgres_store.connection() as database:
+                    with postgres.connection() as database:
                         card_before = dict(database.execute("SELECT * FROM cards WHERE id=?", (identifier,)).fetchone())
                         queues_before = [dict(row) for row in database.execute("SELECT * FROM daily_queue WHERE card_id=? ORDER BY id", (identifier,))]
                         history_before = history_snapshot(database)
@@ -205,8 +205,8 @@ def main_check():
                         assert len(history_before["attempts"]) == 1 and history_before["attempts"][0]["state"] == "complete"
                         operation_before = dict(database.execute("SELECT * FROM operation_receipts WHERE operation_id=?", (historical_operation,)).fetchone())
                     deletion_statements = []
-                    original_execute = postgres_store.PostgresConnection.execute_native
-                    original_compatible_execute = postgres_store.PostgresConnection.execute
+                    original_execute = postgres.PostgresConnection.execute_native
+                    original_compatible_execute = postgres.PostgresConnection.execute
 
                     def record_deletion_statement(database, statement, parameters=()):
                         deletion_statements.append((statement, parameters))
@@ -216,7 +216,7 @@ def main_check():
                         deletion_statements.append((statement, parameters))
                         return original_compatible_execute(database, statement, parameters)
 
-                    with patch.object(postgres_store.PostgresConnection, "execute_native", record_deletion_statement), patch.object(postgres_store.PostgresConnection, "execute", record_compatible_deletion_statement):
+                    with patch.object(postgres.PostgresConnection, "execute_native", record_deletion_statement), patch.object(postgres.PostgresConnection, "execute", record_compatible_deletion_statement):
                         command("repertoires.delete", {"repertoire_id": removed, "learned_cards": policy})
                     locked_cards = [parameters[0].removeprefix("tempo:card-edit:") for statement, parameters in deletion_statements
                                     if "pg_advisory_xact_lock" in statement and parameters[0].startswith("tempo:card-edit:")]
@@ -224,8 +224,8 @@ def main_check():
                     queue_update_index = next(index for index, (statement, _) in enumerate(deletion_statements) if "UPDATE daily_queue SET admission_repertoire_id" in statement)
                     assert all(index < queue_update_index for index, (statement, parameters) in enumerate(deletion_statements)
                                if "pg_advisory_xact_lock" in statement and parameters[0].startswith("tempo:card-edit:"))
-                    postgres_store.close_pools()
-                    with postgres_store.connection() as database:
+                    postgres.close_pools()
+                    with postgres.connection() as database:
                         assert dict(database.execute("SELECT * FROM cards WHERE id=?", (identifier,)).fetchone()) == {**card_before, "repertoire_id": survivor}
                         queues_after = [dict(row) for row in database.execute("SELECT * FROM daily_queue WHERE card_id=? ORDER BY id", (identifier,))]
                         expected_queues = [{**row, "admission_repertoire_id": survivor}
@@ -255,7 +255,7 @@ def main_check():
                         assert "opening_decision_manifest" not in current_transport
                         assert "Normal review remains available" in current_transport["opening_evidence_diagnostic"]
                     assert command("cards.review", {"card_id": identifier, "review": {"outcome": "correct", "attempt_id": f"{case_id}-current-review", "queue_entry_id": queue_ids[0], "expected_revision": 1}})["persisted"]
-                    with postgres_store.connection() as database:
+                    with postgres.connection() as database:
                         current_history = history_snapshot(database)
                         for evidence_table in ("presentations", "attempts", "events", "observations", "summaries", "clean_days"):
                             assert current_history[evidence_table] == history_before[evidence_table]
@@ -272,7 +272,7 @@ def main_check():
             "moves_json": json.dumps(repetition_moves), "trained_color": "white"}
         repeated_steps = build_graph(GraphInput(repetition_repertoire, (repetition_source,), 1))
         assert repeated_steps[1].card_id == repeated_steps[3].card_id
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             assert not database.execute_native("SELECT 1 FROM cards WHERE id=ANY(%s)", ([step.card_id for step in repeated_steps],)).fetchone(), "Repetition proof identities collide with another fixture"
             card_ids.extend(step.card_id for step in repeated_steps)
             database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,?,?)", (repetition_repertoire, repetition_repertoire, "repetition proof", today))
@@ -288,8 +288,8 @@ def main_check():
             database.execute("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES(?,?,'ready',?)", (repetition_repertoire, repeated_task["generation"], today))
         command("cards.delete", {"card_id": repeated_steps[1].card_id, "expected_revision": 1})
         for restart in (False, True):
-            postgres_store.close_pools()
-            with postgres_store.connection() as database:
+            postgres.close_pools()
+            with postgres.connection() as database:
                 if restart:
                     repeated_task["lease_token"] = "repetition-restarted"
                     database.execute("UPDATE background_tasks SET state='leased',phase='stage',lease_token=?,payload_json=? WHERE id=?", (repeated_task["lease_token"], json.dumps(repeated_task["payload"]), repeated_task["id"]))
@@ -298,7 +298,7 @@ def main_check():
                     assert database.execute("SELECT parent_card_id FROM opening_graph_steps WHERE repertoire_id=? AND line_id=? AND decision_index=?", (repetition_repertoire, repetition_line, decision_index)).fetchone()[0] == expected_parent
                 assert database.execute("SELECT moves_json FROM repertoire_lines WHERE id=?", (repetition_line,)).fetchone()[0] == repetition_source["moves_json"]
                 assert database.execute("SELECT 1 FROM cards WHERE id=?", (repeated_steps[1].card_id,)).fetchone() is None
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             database.execute("UPDATE cards SET state='learning' WHERE id=?", (repeated_steps[0].card_id,))
             database.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval) VALUES(?,'correct',?,0,1)", (repeated_steps[0].card_id, today))
             child_id = repeated_steps[2].card_id
@@ -310,7 +310,7 @@ def main_check():
         print("PASS test_deleted_repeated_route_prerequisite_reparents_each_occurrence_without_self_dependency; permanent deletion, reconnect/rebuild and real descendant unlock")
 
     try:
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             queue_snapshot = snapshot_queue_environment(database, (today, tomorrow))
             main_ids = [row[0] for row in database.execute("SELECT id FROM repertoires WHERE is_main=1")]
             retained_existed = database.execute("SELECT 1 FROM repertoires WHERE id=?", (RETAINED_REPERTOIRE_ID,)).fetchone() is not None
@@ -337,7 +337,7 @@ def main_check():
             database.execute("UPDATE background_tasks SET state='leased',lease_token=? WHERE id=?", (target_task["lease_token"], target_task["id"]))
         for repertoire_id, policy in ((keep, "keep"), (delete, "delete")):
             assert command("repertoires.delete", {"repertoire_id": repertoire_id, "learned_cards": policy}) == {"deleted": True, "id": repertoire_id}
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             assert not lock_current_slice(database, target_task)
             assert database.execute("SELECT state FROM background_tasks WHERE id=?", (unrelated_task["id"],)).fetchone()[0] == "queued"
             assert database.execute("SELECT is_main FROM repertoires WHERE id=?", (other,)).fetchone()[0] == 1
@@ -385,7 +385,7 @@ def main_check():
             board.push(selected_move)
         source = {"id": line_id, "start_fen": starting_fen, "moves_json": json.dumps(moves), "trained_color": "white"}
         steps = build_graph(GraphInput(graph, (source,), 1))
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             assert not database.execute_native("SELECT 1 FROM cards WHERE id=ANY(%s)", ([step.card_id for step in steps],)).fetchone(), "Proof identities collide with another fixture"
             card_ids.extend(step.card_id for step in steps)
             database.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,?,'Proof','white',?,?,?)", (line_id, graph, source["start_fen"], source["moves_json"], today))
@@ -398,25 +398,25 @@ def main_check():
         contention_result = []
         def attempt_contended_slice():
             try:
-                with postgres_store.connection(background=True) as background_database:
+                with postgres.connection(background=True) as background_database:
                     stage_graph_line_in_transaction(background_database, task, prepared)
             except Exception as error:
                 contention_result.append(error)
-        with postgres_store.connection() as foreground_database:
+        with postgres.connection() as foreground_database:
             foreground_database.execute_native("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (f"tempo:card-edit:{steps[0].card_id}",))
             contender = threading.Thread(target=attempt_contended_slice)
             contender.start()
-            with postgres_store.connection(read_only=True) as reader:
+            with postgres.connection(read_only=True) as reader:
                 assert reader.execute("SELECT 1 FROM repertoires WHERE id=?", (graph,)).fetchone()
             contender.join(timeout=5)
             assert not contender.is_alive() and len(contention_result) == 1 and isinstance(contention_result[0], (psycopg.errors.LockNotAvailable, psycopg.errors.TransactionTimeout)), f"Background slice did not yield to the foreground deletion lock: {contention_result}"
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             assert stage_graph_line_in_transaction(database, task, prepared)
             database.execute("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES(?,?,'ready',?)", (graph, task["generation"], today))
             assert database.execute("SELECT state FROM cards WHERE id=?", (steps[1].card_id,)).fetchone()[0] == "locked"
         print("PASS test_permanent_card_deletion_foreground_contention_yields_and_replays_idempotently")
         assert command("cards.delete", {"card_id": steps[0].card_id, "expected_revision": 1})["deleted"]
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             assert database.execute("SELECT moves_json FROM repertoire_lines WHERE id=?", (line_id,)).fetchone()[0] == source["moves_json"]
             assert database.execute("SELECT parent_card_id FROM opening_graph_steps WHERE card_id=?", (steps[1].card_id,)).fetchone()[0] is None
             unlock_cursor = f"{int(steps[1].card_id, 16) - 1:064x}"
@@ -436,7 +436,7 @@ def main_check():
     except psycopg.errors.CheckViolation:
         # The failed insert's nested transaction has rolled back. Reconnect to
         # prove the exclusion survives connection/worker restart and stale input.
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             assert database.execute("SELECT 1 FROM deleted_cards WHERE card_id=?", (steps[0].card_id,)).fetchone()
             database.execute("UPDATE background_tasks SET state='leased',phase='stage',lease_token=?,payload_json=? WHERE id=?", (task["lease_token"], json.dumps(task["payload"]), task["id"]))
             assert stage_graph_line_in_transaction(database, task, prepared)
@@ -454,7 +454,7 @@ def main_check():
         from app.chess.pgn import ParsedLine
         import_payload = prepare_import_payload(f"{prefix}-import.pgn", "white", 2, 1,
             [ParsedLine(starting_fen, moves, ())])
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             from app.card_deletion import purge_card_data
             import_ids = import_payload["segment_ids"]
             card_ids.extend(import_ids)
@@ -463,14 +463,14 @@ def main_check():
         repertoire_ids.append(imported["repertoire_id"])
         assert imported["cards_created"] == imported["prefix_cards_created"] == imported["decision_cards_created"] == 0
         assert imported["shared_prefixes_reused"] == imported["shared_decisions_reused"] == 0
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             from app.card_deletion import cancel_repertoire_tasks
             cancel_repertoire_tasks(database, imported["repertoire_id"])
             task_ids.extend(row[0] for row in database.execute("SELECT id FROM background_tasks WHERE deduplication_key=?", (imported["repertoire_id"],)))
         print("PASS test_import_does_not_report_deleted_content_as_created_or_shared")
         prove_repeated_route_dependencies()
     finally:
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             if card_ids:
                 from app.card_deletion import purge_card_data
                 purge_card_data(database, list(set(card_ids)))

@@ -14,10 +14,8 @@ from pydantic import BaseModel, Field
 
 from .command_gateway import register_command
 from .pgn_import_validation import validate_sources
-from tempo_legacy_database.adapters.authored_repertoires.pgn_import import storage
-from tempo_legacy_database.adapters.authored_repertoires.pgn_import.storage import (
-    PostgresConnection,
-)
+from tempo_storage.authored_repertoires.pgn_import import storage
+from tempo_storage.postgres import PostgresConnection
 from app.chess.cards import card_id
 from .services.canonical_prefix import (
     ensure_batch_lines_in_scope,
@@ -273,10 +271,6 @@ def admit_pgn_import(database, raw_payload):
 
 
 def explicit_pgn_import(database, raw_payload):
-    if "retained_import_preview" in raw_payload:
-        from app.repertoire.changes.imports import validate_approved_import
-
-        raw_payload = validate_approved_import(database, raw_payload)
     return _admit_pgn_import(database, raw_payload, explicit=True)
 
 

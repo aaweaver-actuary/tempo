@@ -1,10 +1,12 @@
 """Pure fakes exercise owner preparation/fencing; not PostgreSQL lock proof."""
+
+from app.repertoire import position_study_source as _source_preparation
 from copy import deepcopy
 from types import SimpleNamespace
 
 from tempo_evidence_math.position_learning import Hold
-from tempo_legacy_database.adapters.authored_repertoires import position_study_source as owner
-from test_product_snapshot import repertoire_facts
+from tempo_storage.authored_repertoires import position_study_source as owner
+from database.tests.position_study.source_facts import repertoire_facts
 
 
 class Result:
@@ -38,13 +40,13 @@ class Database:
 def setup(monkeypatch):
     facts = repertoire_facts()
     db = Database(facts)
-    monkeypatch.setattr(owner, "read_repertoire", lambda database, rep: deepcopy(database.facts))
+    monkeypatch.setattr(_source_preparation, "read_repertoire", lambda database, rep: deepcopy(database.facts))
     return db
 
 
 def test_owner_prepares_and_fences_original_provenance_and_authored_content(monkeypatch):
     db = setup(monkeypatch)
-    prepared = owner.prepare_position_source(db, "rep")
+    prepared = _source_preparation.prepare_position_source(db, "rep")
     assert not isinstance(prepared, Hold)
     assert prepared.routes and prepared.authored_token.original_source_digest == prepared.snapshot.membership.digest
     assert owner.fence_position_source(db, prepared) is None
@@ -55,7 +57,7 @@ def test_owner_prepares_and_fences_original_provenance_and_authored_content(monk
 
 def test_physical_change_is_not_authored_change_but_source_route_change_holds(monkeypatch):
     db = setup(monkeypatch)
-    prepared = owner.prepare_position_source(db, "rep")
+    prepared = _source_preparation.prepare_position_source(db, "rep")
     db.facts["cards"][0]["revision"] += 1
     assert owner.fence_position_source(db, prepared) is None
     db.facts["lines"][0]["moves_json"] = '["d2d4"]'
@@ -64,7 +66,7 @@ def test_physical_change_is_not_authored_change_but_source_route_change_holds(mo
 
 def test_source_and_integrity_changes_and_graph_busy_hold(monkeypatch):
     db = setup(monkeypatch)
-    prepared = owner.prepare_position_source(db, "rep")
+    prepared = _source_preparation.prepare_position_source(db, "rep")
     db.busy = True
     assert owner.fence_position_source(db, prepared).reason == "position_source_graph_busy"
     db.busy = False
@@ -73,12 +75,12 @@ def test_source_and_integrity_changes_and_graph_busy_hold(monkeypatch):
     db.facts["repertoire"]["scope_source_revision"] -= 1
     db.integrity["scan_status"] = "running"
     assert owner.fence_position_source(db, prepared).reason == "position_source_fence_unavailable"
-    assert isinstance(owner.prepare_position_source(db, "rep"), Hold)
+    assert isinstance(_source_preparation.prepare_position_source(db, "rep"), Hold)
 
 
 def test_untrusted_construction_and_nonwriter_are_rejected(monkeypatch):
     db = setup(monkeypatch)
-    prepared = owner.prepare_position_source(db, "rep")
+    prepared = _source_preparation.prepare_position_source(db, "rep")
     try:
         owner.PreparedPositionSource(None, prepared.snapshot, prepared.routes, prepared.authored_token)
         assert False
@@ -92,13 +94,13 @@ def test_conflicting_authored_answers_are_not_certified(monkeypatch):
     db = setup(monkeypatch)
     line = deepcopy(db.facts["lines"][0]); line.update(id="other", moves_json='["d2d4"]')
     db.facts["lines"].append(line)
-    result = owner.prepare_position_source(db, "rep")
+    result = _source_preparation.prepare_position_source(db, "rep")
     assert isinstance(result, Hold) and "own_response_conflict" in result.detail
 
 
 def test_busy_authored_line_cannot_be_certified_as_complete(monkeypatch):
     db = setup(monkeypatch)
-    prepared = owner.prepare_position_source(db, "rep")
+    prepared = _source_preparation.prepare_position_source(db, "rep")
     db.line_busy = True
     assert owner.fence_position_source(db, prepared).reason == "position_source_authored_content_changed"
 
@@ -116,7 +118,7 @@ def test_native_id_only_edit_and_busy_row_cannot_cross_fence():
     from psycopg.conninfo import conninfo_to_dict
     import pytest
     from test_product_snapshot_postgres import DDL
-    from tempo_legacy_database.adapters.postgres_store import tempo_row_factory
+    from tempo_storage.postgres import tempo_row_factory
 
     dsn = os.environ.get("TEMPO_POSITION_SOURCE_TEST_DSN")
     if not dsn:
@@ -125,7 +127,7 @@ def test_native_id_only_edit_and_busy_row_cannot_cross_fence():
     if params.get("host") not in {"localhost", "127.0.0.1"} or not params.get("dbname", "").startswith("tempo_position_"):
         raise RuntimeError("explicit local task-owned tempo_position_* database required")
     schema = "position_source_" + uuid.uuid4().hex
-    migration = (Path(__file__).parents[2] / "tempo_legacy_database/ddl/migrations/035_canonical_publication_freshness.sql").read_text()
+    migration = (Path(__file__).parents[2] / "tempo_storage/ddl/migrations/035_canonical_publication_freshness.sql").read_text()
     function = "CREATE OR REPLACE FUNCTION advance_canonical_prefix_source()" + migration.split("CREATE OR REPLACE FUNCTION advance_canonical_prefix_source()", 1)[1].split("END $$;", 1)[0] + "END $$;"
     with psycopg.connect(dsn, autocommit=True) as setup_db:
         setup_db.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema)))
@@ -156,7 +158,7 @@ def test_native_id_only_edit_and_busy_row_cannot_cross_fence():
 
         with psycopg.connect(dsn, options=opts, row_factory=tempo_row_factory) as raw:
             port = Port(raw)
-            prepared = owner.prepare_position_source(port, "rep")
+            prepared = _source_preparation.prepare_position_source(port, "rep")
             assert not isinstance(prepared, Hold)
             raw.commit()
             # With a line already locked by another writer, SKIP LOCKED cannot

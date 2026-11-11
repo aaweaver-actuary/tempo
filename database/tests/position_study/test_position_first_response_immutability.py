@@ -17,7 +17,7 @@ for directory in [ROOT, ROOT / 'backend', ROOT / 'database', *ROOT.glob('package
                   *ROOT.glob('contracts/*/src')]:
     sys.path.insert(0, str(directory))
 from database.tests.position_study import acceptance
-from tempo_legacy_database.adapters.postgres_store import PostgresConnection, tempo_row_factory
+from tempo_storage.postgres import PostgresConnection, tempo_row_factory
 
 
 def test_lp07_original_response_native_migration_and_immutability(monkeypatch):
@@ -46,7 +46,7 @@ def test_lp07_original_response_native_migration_and_immutability(monkeypatch):
         empty_dsn = make_conninfo(admin, dbname=empty_name)
         migration.apply_migrations(empty_dsn)
         with psycopg.connect(empty_dsn) as empty:
-            assert empty.execute('SELECT max(version) FROM tempo_schema_migrations').fetchone()[0] == 60
+            assert empty.execute('SELECT max(version) FROM tempo_schema_migrations').fetchone()[0] == migration.POSTGRES_SCHEMA_VERSION
             assert empty.execute('SELECT count(*) FROM study_position_first_responses').fetchone()[0] == 0
     finally:
         with psycopg.connect(admin, autocommit=True) as conn:
@@ -55,14 +55,11 @@ def test_lp07_original_response_native_migration_and_immutability(monkeypatch):
     def migrate_to_59(raw):
         assert raw.execute("SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p','v','S')").fetchone()[0] == 0
         paths = sorted(migration.MIGRATIONS.glob('[0-9][0-9][0-9]_*.sql'))
-        migration.validate_migration_history(paths, [], expected_version=60)
-        for path in paths[:-1]:
-            registration = migration.MODULE_MIGRATIONS.get(path.name)
-            if registration:
-                source = (ROOT / 'database' / registration[2]).read_bytes()
-                assert hashlib.sha256(source).hexdigest() == registration[3]
-                raw.execute(source.decode(), prepare=False)
-            raw.execute(path.read_text(), prepare=False)
+        migration.validate_migration_history(paths, [], expected_version=migration.POSTGRES_SCHEMA_VERSION)
+        for path in paths:
+            if int(path.name[:3]) > 59:
+                break
+            raw.execute(migration.migration_source(path), prepare=False)
         assert raw.execute('SELECT max(version) FROM tempo_schema_migrations').fetchone()[0] == 59
     monkeypatch.setattr(acceptance, '_migrate', migrate_to_59)
     journey = acceptance._real_review_journey
@@ -84,7 +81,7 @@ def test_lp07_original_response_native_migration_and_immutability(monkeypatch):
         assert raw.execute("SELECT to_regprocedure('public.reject_position_first_response_mutation()')").fetchone()[0] is None
         raw.commit()
         migration.apply_migrations(dsn)
-        assert raw.execute('SELECT max(version) FROM tempo_schema_migrations').fetchone()[0] == 60
+        assert raw.execute('SELECT max(version) FROM tempo_schema_migrations').fetchone()[0] == migration.POSTGRES_SCHEMA_VERSION
         assert [dict(row) for row in raw.execute('SELECT * FROM study_position_first_responses ORDER BY decision_index').fetchall()] == before
         raw.commit()
         first = before[0]
@@ -143,7 +140,7 @@ def test_lp07_original_response_native_migration_and_immutability(monkeypatch):
         from app.services.queue_next_card import prepare_queue_head
         from app.queue_commands import issue_queue_head
         from app.services.opening_decision_evidence import decision_manifest
-        from tempo_legacy_database.adapters.study import position_grade_effects
+        from app.study.position_learning import grade_effects as position_grade_effects
         from datetime import datetime, timezone
         import chess
         day = plan.local_day.isoformat()

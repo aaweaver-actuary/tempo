@@ -7,12 +7,13 @@ import { reportDebugError } from "../lib/debug-reporting";
 
 /** One retained review per idle opportunity. Manual saves share the outbox's in-flight guard. */
 export function usePendingReviewRecovery(enabled: boolean, ready: boolean, blocked: boolean,
-  onConfirmed: (result: ReviewFlushResult) => void): void {
+  onConfirmed: (result: ReviewFlushResult) => void,
+  captureConfirmation?: () => (result: ReviewFlushResult) => void): void {
   const deadlines = useRef(new Map<string, { failures: number; retryAt: number }>());
   const confirmed = useCommittedCallback(onConfirmed);
   const pointerHeld = useRef(false);
   const running = useRef(false);
-  const deferredConfirmations = useRef<ReviewFlushResult[]>([]);
+  const deferredConfirmations = useRef<Array<{ result: ReviewFlushResult; confirm: (result: ReviewFlushResult) => void }>>([]);
   const [confirmationGeneration, setConfirmationGeneration] = useState(0);
   useEffect(() => {
     if (!enabled) return;
@@ -23,7 +24,7 @@ export function usePendingReviewRecovery(enabled: boolean, ready: boolean, block
       clearTimeout(timer);
       if (idleId !== undefined) { window.cancelIdleCallback(idleId); idleId = undefined; }
       if (disposed || running.current || pointerHeld.current || !ready || blocked || navigator.onLine === false || document.visibilityState === "hidden") return;
-      for (const result of deferredConfirmations.current.splice(0)) confirmed(result);
+      for (const { result, confirm } of deferredConfirmations.current.splice(0)) confirm(result);
       const deferredAttemptIds = new Set([...deadlines.current]
         .filter(([, deadline]) => deadline.retryAt > Date.now()).map(([attemptId]) => attemptId));
       let review;
@@ -48,17 +49,18 @@ export function usePendingReviewRecovery(enabled: boolean, ready: boolean, block
           idleId = undefined;
           if (disposed || navigator.onLine === false || document.visibilityState === "hidden") return;
           running.current = true;
+          const confirm = captureConfirmation?.() ?? confirmed;
           void flushPendingReviews(1, true, undefined, deferredAttemptIds).then(result => {
             for (const confirmedIdentity of [...result.persistedAttemptIds, ...result.conflictedAttemptIds])
               deadlines.current.delete(confirmedIdentity);
             // The receipt is authoritative even if foreground readiness changed during the read.
-            deferredConfirmations.current.push(result);
+            deferredConfirmations.current.push({ result, confirm });
           }).catch(error => {
             if (error instanceof ReviewReplayError && error.flushResult &&
                 error.flushResult.persistedAttemptIds.length + error.flushResult.conflictedAttemptIds.length) {
               for (const settledIdentity of [...error.flushResult.persistedAttemptIds, ...error.flushResult.conflictedAttemptIds])
                 deadlines.current.delete(settledIdentity);
-              deferredConfirmations.current.push(error.flushResult);
+              deferredConfirmations.current.push({ result: error.flushResult, confirm });
             }
             // A manual flush may be shared with this idle observer. Attribute its
             // result to the attempted review, never the independent scheduled one.
@@ -98,11 +100,8 @@ export function usePendingReviewRecovery(enabled: boolean, ready: boolean, block
     window.addEventListener("tempo:review-outbox", changed);
     window.addEventListener("online", schedule);
     document.addEventListener("visibilitychange", schedule);
-    const unsubscribe = subscribeOperationStatusChange(operationId => {
-      if (running.current) return; // Receipt reads announce status too; they must not erase their own backoff.
-      for (const identity of deadlines.current.keys()) if (operationId === `review-attempt:${identity}` || operationId.startsWith(`review-reconcile:${identity}:`))
-        deadlines.current.delete(identity);
-      schedule();
+    const unsubscribe = subscribeOperationStatusChange(() => {
+      if (!running.current) schedule(); // A wake does not erase an existing retry deadline.
     });
     schedule();
     return () => { disposed = true; clearTimeout(timer); unsubscribe();
@@ -113,5 +112,5 @@ export function usePendingReviewRecovery(enabled: boolean, ready: boolean, block
       window.removeEventListener("tempo:review-outbox", changed);
       window.removeEventListener("online", schedule);
       document.removeEventListener("visibilitychange", schedule); };
-  }, [enabled, ready, blocked, confirmed, confirmationGeneration]);
+  }, [enabled, ready, blocked, confirmed, captureConfirmation, confirmationGeneration]);
 }

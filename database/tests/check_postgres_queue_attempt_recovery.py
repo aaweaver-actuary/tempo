@@ -23,7 +23,7 @@ import psycopg
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from tempo_legacy_database.adapters import postgres_store
+from tempo_storage import postgres
 from app import queue_commands, queue_attempt_origins, review_commands  # registers the production review handlers
 from app.command_gateway import CommandConflict, execute_command, read_operation, request_digest
 from app.services.postgres_queue_refresh import _reconcile_one_unseen_entry
@@ -36,7 +36,7 @@ def test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recov
     dsn = "postgresql://postgres@postgres:5432/tempo"
     os.environ["TEMPO_DATABASE_WRITE_URL"] = dsn
     os.environ["TEMPO_DATABASE_READ_URL"] = dsn
-    postgres_store.close_pools()
+    postgres.close_pools()
     identifier = f"queue-origin-proof-{uuid.uuid4()}"
     card_ids = [f"{identifier}-{suffix}" for suffix in ("stale", "independent", "changed", "poisoned")]
     today = date.today().isoformat()
@@ -46,7 +46,7 @@ def test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recov
     executor = ThreadPoolExecutor(max_workers=1)
     waiting_review = None
     try:
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             snapshot = snapshot_queue_environment(database, (today, today))
             queue_positions = [tuple(row) for row in database.execute("SELECT id,position FROM daily_queue WHERE queue_date=?", (today,))]
             database.execute("INSERT INTO repertoires(id,name,source_name,created_at,new_cards_per_day) VALUES(?,?,'synthetic',?,0)", (identifier, "Queue recovery proof", today))
@@ -62,7 +62,7 @@ def test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recov
                     for index, (card_id, entry_id) in enumerate(zip(card_ids, entries))]
         # Hold only this fixture's maintenance transaction. Its actual bounded
         # production reconciliation deletes the projection before review resumes.
-        maintenance = psycopg.connect(dsn, row_factory=postgres_store.tempo_row_factory)
+        maintenance = psycopg.connect(dsn, row_factory=postgres.tempo_row_factory)
         try:
             maintenance.execute("SELECT id FROM cards WHERE id=%s FOR UPDATE", (card_ids[0],))
             operation = f"{identifier}-foreground"
@@ -81,7 +81,7 @@ def test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recov
             independent_operation = f"{identifier}-independent"
             operations.append(independent_operation)
             assert execute_command(independent_operation, "cards.review", payloads[1])["persisted"]
-            adapter = postgres_store.PostgresConnection(maintenance)
+            adapter = postgres.PostgresConnection(maintenance)
             assert not _reconcile_one_unseen_entry(adapter, today,
                 {"id": entries[0], "card_id": card_ids[0], "repertoire_id": identifier}, 0)
             maintenance.commit()
@@ -89,12 +89,12 @@ def test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recov
             maintenance.close()
         saved = waiting_review.result(timeout=5)
         assert saved["persisted"] and saved["reconciliation"] == "queue_origin"
-        postgres_store.close_pools()
+        postgres.close_pools()
         assert execute_command(operation, "cards.review", payloads[0]) == saved
         replay_operation = f"{identifier}-canonical-replay"
         operations.append(replay_operation)
         assert execute_command(replay_operation, "cards.review.reconcile", payloads[0]) == saved
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id=?", (card_ids[0],)).fetchone()[0] == 1
             assert database.execute("SELECT introduced_at FROM cards WHERE id=?", (card_ids[0],)).fetchone()[0] == today
             assert database.execute("SELECT admission_repertoire_id FROM queue_attempt_origins WHERE queue_entry_id=?", (entries[0],)).fetchone()[0] == identifier
@@ -114,7 +114,7 @@ def test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recov
         # codes. Recovery gets a different transport identity, never a new result.
         legacy_operation = f"{identifier}-historical-failure"
         operations.append(legacy_operation)
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             database.raw.execute("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,error_json) VALUES(%s,'cards.review',%s,'failed',%s)",
                                  (legacy_operation, request_digest("cards.review", payloads[3]), json.dumps({"message": "409: This queue attempt is no longer available", "status_code": 409})))
         try:
@@ -128,18 +128,18 @@ def test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recov
         recovered = execute_command(recovery_operation, "cards.review.reconcile", payloads[3])
         assert recovered["persisted"] and recovered["reconciliation"] == "queue_origin"
         assert execute_command(recovery_operation, "cards.review.reconcile", payloads[3]) == recovered
-        with postgres_store.connection(read_only=True) as database:
+        with postgres.connection(read_only=True) as database:
             assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id=?", (card_ids[3],)).fetchone()[0] == 1
         conflict_operation = f"{identifier}-retained-conflict"
         operations.append(conflict_operation)
         conflict = execute_command(conflict_operation, "cards.review.reconcile", payloads[2])
         assert conflict["persisted"] is False and conflict["conflict"]["code"] == "card_revision_changed"
-        postgres_store.close_pools()
+        postgres.close_pools()
         assert execute_command(conflict_operation, "cards.review.reconcile", payloads[2]) == conflict
         assert read_operation(recovery_operation)["state"] == "complete"
         # A stale guided marker must not poison content reassigned to the same
         # projection ID. The production foreground handler receives displayed identity.
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             database.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id) VALUES(?,?,-200,'review',?) RETURNING id", (today, card_ids[2], identifier))
             reassigned_entry = database.execute("SELECT id FROM daily_queue WHERE card_id=? AND position=-200", (card_ids[2],)).fetchone()[0]
             database.execute("UPDATE daily_queue SET card_id=? WHERE id=?", (card_ids[3], reassigned_entry))
@@ -149,7 +149,7 @@ def test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recov
             operations.append(marker_operation)
             assert execute_command(marker_operation, "queue.attempt_failed", marker_payload) is None
             assert read_operation(marker_operation)["error"]["code"] == "queue_attempt_unprovable"
-        with postgres_store.connection(read_only=True) as database:
+        with postgres.connection(read_only=True) as database:
             assert database.execute("SELECT attempt_failed FROM daily_queue WHERE id=?", (reassigned_entry,)).fetchone()[0] == 0
         current_marker_operation = f"{identifier}-current-marker"
         operations.append(current_marker_operation)
@@ -160,8 +160,8 @@ def test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recov
         print("PASS test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recovery")
     finally:
         executor.shutdown(wait=True)
-        postgres_store.close_pools()
-        with postgres_store.connection() as database:
+        postgres.close_pools()
+        with postgres.connection() as database:
             for operation_id in operations:
                 database.execute("DELETE FROM operation_receipts WHERE operation_id=?", (operation_id,))
             for card_id in card_ids:
@@ -177,7 +177,7 @@ def test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recov
                 database.execute("UPDATE daily_queue SET position=? WHERE id=?", (position, queue_id))
             if snapshot is not None:
                 restore_queue_environment(database, snapshot)
-        postgres_store.close_pools()
+        postgres.close_pools()
 
 
 def test_postgres_guided_marker_locks_displayed_revision_until_commit():
@@ -186,7 +186,7 @@ def test_postgres_guided_marker_locks_displayed_revision_until_commit():
     dsn = "postgresql://postgres@postgres:5432/tempo"
     os.environ["TEMPO_DATABASE_WRITE_URL"] = dsn
     os.environ["TEMPO_DATABASE_READ_URL"] = dsn
-    postgres_store.close_pools()
+    postgres.close_pools()
     identifier = f"guided-revision-proof-{uuid.uuid4()}"
     card_ids = [f"{identifier}-{suffix}" for suffix in ("marker-first", "edit-first")]
     today = date.today().isoformat()
@@ -198,7 +198,7 @@ def test_postgres_guided_marker_locks_displayed_revision_until_commit():
     original_validation = queue_attempt_origins.validate_failure_marker
     marker_pid = []
     try:
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             database.execute("INSERT INTO repertoires(id,name,source_name,created_at,new_cards_per_day) VALUES(?,?,'synthetic',?,0)", (identifier, "Guided revision proof", today))
             entries = []
             for index, card_id in enumerate(card_ids):
@@ -239,7 +239,7 @@ def test_postgres_guided_marker_locks_displayed_revision_until_commit():
                 release_marker.set()
             assert marker_future.result(timeout=5)["attempt_failed"]
             editor_future.result(timeout=5)
-        with postgres_store.connection(read_only=True) as database:
+        with postgres.connection(read_only=True) as database:
             origins = [tuple(row) for row in database.execute("SELECT revision,attempt_failed FROM queue_attempt_origins WHERE queue_entry_id=? ORDER BY revision", (entries[0],))]
             assert origins == [(1, 1), (2, 0)], origins
             projection = database.execute("SELECT attempt_failed,status,admission_kind,admission_repertoire_id,cycle FROM daily_queue WHERE id=?", (entries[0],)).fetchone()
@@ -255,7 +255,7 @@ def test_postgres_guided_marker_locks_displayed_revision_until_commit():
         replay_operation = f"{identifier}-review-replay"
         operations.append(replay_operation)
         assert execute_command(replay_operation, "cards.review.reconcile", payload) == saved
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             assert [tuple(row) for row in database.execute("SELECT rating,guided FROM reviews WHERE card_id=?", (card_ids[0],))] == [("correct", 0)]
             # Opposite ordering: editing commits before the stale marker arrives.
             database.execute("UPDATE cards SET revision=2,moves_json='[\"d2d4\"]' WHERE id=?", (card_ids[1],))
@@ -263,7 +263,7 @@ def test_postgres_guided_marker_locks_displayed_revision_until_commit():
         operations.append(stale_operation)
         assert execute_command(stale_operation, "queue.attempt_failed", {"entry_id": entries[1], "card_id": card_ids[1], "expected_revision": 1}) is None
         assert read_operation(stale_operation)["error"]["code"] == "queue_attempt_unprovable"
-        with postgres_store.connection(read_only=True) as database:
+        with postgres.connection(read_only=True) as database:
             assert database.execute("SELECT attempt_failed FROM daily_queue WHERE id=?", (entries[1],)).fetchone()[0] == 0
             assert [tuple(row) for row in database.execute("SELECT revision,attempt_failed FROM queue_attempt_origins WHERE queue_entry_id=? ORDER BY revision", (entries[1],))] == [(1, 0), (2, 0)]
         print("PASS test_postgres_guided_marker_locks_displayed_revision_until_commit (marker-first and edit-first)")
@@ -272,8 +272,8 @@ def test_postgres_guided_marker_locks_displayed_revision_until_commit():
         executor.shutdown(wait=True)
         editor.rollback()
         editor.close()
-        postgres_store.close_pools()
-        with postgres_store.connection() as database:
+        postgres.close_pools()
+        with postgres.connection() as database:
             for operation_id in operations:
                 database.execute("DELETE FROM operation_receipts WHERE operation_id=?", (operation_id,))
             for card_id in card_ids:
@@ -282,7 +282,7 @@ def test_postgres_guided_marker_locks_displayed_revision_until_commit():
             database.execute("DELETE FROM repertoires WHERE id=?", (identifier,))
             for card_id in card_ids:
                 database.execute("DELETE FROM queue_attempt_origins WHERE card_id=?", (card_id,))
-        postgres_store.close_pools()
+        postgres.close_pools()
 
 
 def test_postgres_retired_opening_evidence_reconciliation_is_atomic_and_replay_safe():
@@ -297,11 +297,11 @@ def test_postgres_retired_opening_evidence_reconciliation_is_atomic_and_replay_s
     dsn = "postgresql://postgres@postgres:5432/tempo"
     os.environ["TEMPO_DATABASE_WRITE_URL"] = dsn
     os.environ["TEMPO_DATABASE_READ_URL"] = dsn
-    postgres_store.close_pools()
+    postgres.close_pools()
     operations = []
     fixtures = []
     today = date.today().isoformat()
-    with postgres_store.connection() as database:
+    with postgres.connection() as database:
         snapshot = snapshot_queue_environment(database, (today, today))
     try:
         for scenario in ("valid", "guided", "changed", "unprovable"):
@@ -320,7 +320,7 @@ def test_postgres_retired_opening_evidence_reconciliation_is_atomic_and_replay_s
             original_operation = fixture['card_id']+'-original-save'
             reconcile_operation = fixture['card_id']+'-reconcile'
             operations.extend((original_operation, reconcile_operation))
-            with postgres_store.connection() as database:
+            with postgres.connection() as database:
                 # Previously acknowledged capture remains durable if this operation conflicts.
                 active = {**checkpoint, 'events':[], 'terminal':None}
                 persist_checkpoint(database, {'checkpoint':active,'prepared_manifest':prepared})
@@ -349,7 +349,7 @@ def test_postgres_retired_opening_evidence_reconciliation_is_atomic_and_replay_s
             result = execute_command(reconcile_operation, 'cards.review.reconcile', payload)
             assert result is not None, read_operation(reconcile_operation)
             assert read_operation(original_operation)['state'] == 'failed'
-            with postgres_store.connection() as database:
+            with postgres.connection() as database:
                 if scenario in {'changed','unprovable'}:
                     expected_code = 'card_revision_changed' if scenario == 'changed' else 'queue_attempt_unprovable'
                     assert result['persisted'] is False and result['conflict']['code'] == expected_code
@@ -378,13 +378,13 @@ def test_postgres_retired_opening_evidence_reconciliation_is_atomic_and_replay_s
             replay_operation = fixture['card_id']+'-reconcile-replay'
             operations.append(replay_operation)
             assert execute_command(replay_operation, 'cards.review.reconcile', payload) == result
-            with postgres_store.connection() as database:
+            with postgres.connection() as database:
                 assert shadow_digest(database, fixture['card_id']) == after_shadow
                 assert _fixture_scheduling(database, fixture) == after_scheduling
             _retain_color_provenance(fixture)
         print('PASS test_postgres_retired_opening_evidence_reconciliation_is_atomic_and_replay_safe (valid/guided/changed/unprovable, failed transport, receipt replay, completion, immutable color)')
     finally:
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             for operation in operations:
                 database.execute('DELETE FROM operation_receipts WHERE operation_id=?', (operation,))
             for fixture in fixtures:
@@ -393,7 +393,7 @@ def test_postgres_retired_opening_evidence_reconciliation_is_atomic_and_replay_s
                 database.execute('DELETE FROM repertoires WHERE id=?', (fixture['repertoire_id'],))
                 database.execute('DELETE FROM queue_attempt_origins WHERE card_id=?', (fixture['card_id'],))
             restore_queue_environment(database, snapshot)
-        postgres_store.close_pools()
+        postgres.close_pools()
 
 
 @contextmanager
@@ -424,7 +424,7 @@ def test_postgres_real_game_obligation_admission_restart_publication_and_remedia
     from app.services.durable_tasks import claim_task, enqueue_task_in_transaction
     os.environ["TEMPO_DATABASE_WRITE_URL"] = "postgresql://postgres@postgres:5432/tempo"
     os.environ["TEMPO_DATABASE_READ_URL"] = os.environ["TEMPO_DATABASE_WRITE_URL"]
-    postgres_store.close_pools()
+    postgres.close_pools()
     identifier = f"real-game-obligation-{uuid.uuid4()}"
     card_ids = [f"{identifier}-{suffix}" for suffix in ("a-locked", "b-studied", "z-active")]
     today = date.today().isoformat()
@@ -435,7 +435,7 @@ def test_postgres_real_game_obligation_admission_restart_publication_and_remedia
     positions = []
     saved_days = []
     try:
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             snapshot = snapshot_queue_environment(database, (today, tomorrow))
             positions = [tuple(row) for row in database.execute("SELECT id,position FROM daily_queue WHERE queue_date IN (?,?)", (today,tomorrow))]
             saved_days = [dict(row) for row in database.execute("SELECT * FROM daily_queue_days WHERE queue_date IN (?,?)", (today,tomorrow))]
@@ -465,21 +465,21 @@ def test_postgres_real_game_obligation_admission_restart_publication_and_remedia
         assert issued['cards'][0]['queue_entry_id'] == active_entry
         # Rehearse an upgrade with existing games, then roll back the isolated
         # schema/task writes. Fresh installs do not need the one-time backfill.
-        migration = (Path(__file__).resolve().parents[2] / 'database/tempo_legacy_database/ddl/migrations/041_real_game_study_obligations.sql').read_text()
+        migration = (Path(__file__).resolve().parents[2] / 'database/tempo_storage/ddl/migrations/041_real_game_study_obligations.sql').read_text()
         with psycopg.connect(os.environ["TEMPO_DATABASE_WRITE_URL"]) as upgrade:
             upgrade.execute(migration.split('INSERT INTO tempo_schema_migrations')[0])
             backfill = upgrade.execute("SELECT state,payload_json FROM background_tasks WHERE kind='repertoire_game_refresh' AND deduplication_key='all'").fetchone()
             assert backfill[0] == 'queued' and json.loads(backfill[1]) == {'after_game_id':''}
             upgrade.rollback()
         ordinary_order_plan = refresh._prepare_queue_randomization(today)
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             promote_real_game_card(database,card_ids[1],today)
             # Membership is unchanged; a prepared ordinary mix must respect the
             # newly published priority at commit rather than overwrite it.
             assert refresh._publish_queue_randomization(database,today,ordinary_order_plan) is False
         plan = refresh._prepare_prioritized_openings(today)
         locked_plan = next(item for item in plan if item['card_id'] == card_ids[0])
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             refresh._admit_one_prioritized_opening(database,today,locked_plan)
             entry = database.execute("SELECT id FROM daily_queue WHERE queue_date=? AND card_id=?", (today,card_ids[0])).fetchone()[0]
             assert refresh._reconcile_one_unseen_entry(database,today,{'id':entry,'card_id':card_ids[0],'repertoire_id':identifier},0)
@@ -488,10 +488,10 @@ def test_postgres_real_game_obligation_admission_restart_publication_and_remedia
             assert dict(database.execute("SELECT * FROM cards WHERE id=?", (card_ids[2],)).fetchone()) == before_parent
             assert dict(database.execute("SELECT * FROM cards WHERE id=?", (card_ids[1],)).fetchone()) == before_studied
             assert database.execute("SELECT COUNT(*) FROM daily_queue WHERE queue_date=? AND card_id=?", (today,card_ids[1])).fetchone()[0] == 1
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             database.execute("UPDATE daily_queue SET gameplay_priority_reason=NULL WHERE queue_date=? AND card_id IN (?,?)", (today,card_ids[0],card_ids[1]))
         stale_priority_plan = refresh._prepare_queue_randomization(today)
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             promote_real_game_card(database,card_ids[0],today)
             promote_real_game_card(database,card_ids[1],today)
             # Promotions invalidate the captured priority witness, just as in
@@ -499,7 +499,7 @@ def test_postgres_real_game_obligation_admission_restart_publication_and_remedia
             assert refresh._publish_queue_randomization(database,today,stale_priority_plan) is False
         # Capture the issued attempt and all protected positions before publishing:
         # urgent obligations lead movable entries, not an already-issued head.
-        with postgres_store.connection(read_only=True) as database:
+        with postgres.connection(read_only=True) as database:
             before_rows = refresh.queue_application.presentation_rows(database, today)
             protected_ids = refresh.queue_ordering._protected_queue_ids(before_rows, urgent=True)
             protected_positions = {row['id']: row['position'] for row in before_rows if row['id'] in protected_ids}
@@ -507,7 +507,7 @@ def test_postgres_real_game_obligation_admission_restart_publication_and_remedia
             origin_before = dict(database.execute("SELECT * FROM queue_attempt_origins WHERE queue_entry_id=? AND card_id=?", (active_entry, card_ids[2])).fetchone())
             assert active_entry in protected_ids and origin_before['issued_as_head']
         current_priority_plan = refresh._prepare_queue_randomization(today)
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             assert refresh._publish_queue_randomization(database,today,current_priority_plan)
             ordered = [dict(row) for row in database.execute("SELECT id,card_id,position FROM daily_queue WHERE queue_date=? AND status='queued' ORDER BY position,id", (today,))]
             ordered_ids = [row['card_id'] for row in ordered]
@@ -520,12 +520,12 @@ def test_postgres_real_game_obligation_admission_restart_publication_and_remedia
         operation = f'{identifier}-retained-marker'
         operations.append(operation)
         assert execute_command(operation,'queue.attempt_failed',{'entry_id':active_entry,'card_id':card_ids[2],'expected_revision':1})['attempt_failed']
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             enqueue_task_in_transaction(database,'daily_queue','current',{'queue_date':tomorrow,'_queue_phase':'real_game_misses'},priority=10)
         abandoned = claim_task('daily_queue')
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             database.execute("UPDATE background_tasks SET lease_expires_at=? WHERE id=?", ((now-timedelta(seconds=1)).isoformat(),abandoned['id']))
-        postgres_store.close_pools()
+        postgres.close_pools()
         restarted = claim_task('daily_queue')
         assert restarted and restarted['lease_token'] != abandoned['lease_token']
         assert not refresh.execute_postgres_queue_refresh_slice(abandoned)
@@ -539,7 +539,7 @@ def test_postgres_real_game_obligation_admission_restart_publication_and_remedia
         else:
             raise AssertionError('Bounded obligation refresh did not finish')
         assert phases.count('real_game_misses') >= 3
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             queued = database.execute("SELECT card_id FROM daily_queue WHERE queue_date=? AND status='queued' ORDER BY position,id", (tomorrow,)).fetchall()
             assert [row[0] for row in queued if row[0] in card_ids[:2]] == card_ids[:2]
             studied_entry = database.execute("SELECT id FROM daily_queue WHERE queue_date=? AND card_id=?", (today,card_ids[1])).fetchone()[0]
@@ -549,7 +549,7 @@ def test_postgres_real_game_obligation_admission_restart_publication_and_remedia
         # Hold the production publication lock, then let an actual foreground
         # study contend. Independent retained-attempt reads still finish.
         with ThreadPoolExecutor(max_workers=1) as review_executor:
-            with psycopg.connect(os.environ["TEMPO_DATABASE_WRITE_URL"], row_factory=postgres_store.tempo_row_factory) as publication:
+            with psycopg.connect(os.environ["TEMPO_DATABASE_WRITE_URL"], row_factory=postgres.tempo_row_factory) as publication:
                 publication.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (f"tempo:card-edit:{card_ids[1]}",))
                 review_future = review_executor.submit(execute_command,operation,'cards.review',payload)
                 deadline = time.monotonic()+5
@@ -557,13 +557,13 @@ def test_postgres_real_game_obligation_admission_restart_publication_and_remedia
                     while not observer.execute("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE wait_event_type='Lock' AND query LIKE 'SELECT pg_advisory_xact_lock(hashtextextended%')").fetchone()[0]:
                         if review_future.done() or time.monotonic()>deadline:
                             raise AssertionError('Foreground review did not reach publication lock')
-                assert promote_real_game_card(postgres_store.PostgresConnection(publication),card_ids[1],today)
-                with postgres_store.connection(read_only=True) as reader:
+                assert promote_real_game_card(postgres.PostgresConnection(publication),card_ids[1],today)
+                with postgres.connection(read_only=True) as reader:
                     assert reader.execute("SELECT attempt_failed FROM daily_queue WHERE id=?", (active_entry,)).fetchone()[0] == 1
                 publication.commit()
             assert review_future.result(timeout=5)['persisted']
         assert execute_command(operation,'cards.review',payload)['persisted']
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             assert not has_outstanding_real_game_miss(database,card_ids[1])
             assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id=?", (card_ids[1],)).fetchone()[0] == 2
             assert database.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id=? AND gameplay_priority_reason=?", (card_ids[1],MISS_REASON)).fetchone()[0] == 0
@@ -576,7 +576,7 @@ def test_postgres_real_game_obligation_admission_restart_publication_and_remedia
             assert database.execute("SELECT COUNT(*) FROM daily_queue WHERE queue_date=? AND card_id=? AND status='queued'", (today,card_ids[1])).fetchone()[0] == 1
         print('PASS test_postgres_real_game_obligation_admission_restart_publication_and_remediation',flush=True)
     finally:
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             for operation in operations:
                 database.execute('DELETE FROM operation_receipts WHERE operation_id=?',(operation,))
             database.execute('DELETE FROM imported_games WHERE id=?',(identifier,))
@@ -594,7 +594,7 @@ def test_postgres_real_game_obligation_admission_restart_publication_and_remedia
                 database.execute('INSERT INTO daily_queue_days(queue_date,seed,membership_hash,generated_at) VALUES(?,?,?,?)',tuple(day[column] for column in ('queue_date','seed','membership_hash','generated_at')))
             if snapshot is not None:
                 restore_queue_environment(database,snapshot)
-        postgres_store.close_pools()
+        postgres.close_pools()
 
 
 
@@ -604,9 +604,9 @@ def test_retained_command_retry_preserves_immutable_identity():
         raise RuntimeError("Queue issuance proof requires disposable PostgreSQL")
     os.environ["TEMPO_DATABASE_WRITE_URL"] = "postgresql://postgres@postgres:5432/tempo"
     os.environ["TEMPO_DATABASE_READ_URL"] = os.environ["TEMPO_DATABASE_WRITE_URL"]
-    postgres_store.close_pools()
+    postgres.close_pools()
     from urllib.request import urlopen
-    from tempo_legacy_database.adapters.queue_position_lock import lock_queue_date_for_position
+    from tempo_storage.queue_position_lock import lock_queue_date_for_position
     from app.services.review_service import preserve_daily_queue_order
 
     identifier = f"queue-issuance-{uuid.uuid4()}"
@@ -619,7 +619,7 @@ def test_retained_command_retry_preserves_immutable_identity():
     release_issuance = Event()
     executor = ThreadPoolExecutor(max_workers=2)
     try:
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             saved_positions = [tuple(row) for row in database.execute(
                 "SELECT id,position FROM daily_queue WHERE queue_date=?", (today,))]
             database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,'synthetic',?)",
@@ -641,7 +641,7 @@ def test_retained_command_retry_preserves_immutable_identity():
 
         # Rehearse the additive upgrade on surviving historical origins; rollback
         # restores this disposable candidate's schema before the behavioral proof.
-        migration = (Path(__file__).resolve().parents[2] / 'database/tempo_legacy_database/ddl/migrations/042_queue_attempt_issuance.sql').read_text()
+        migration = (Path(__file__).resolve().parents[2] / 'database/tempo_storage/ddl/migrations/042_queue_attempt_issuance.sql').read_text()
         with psycopg.connect(os.environ['TEMPO_DATABASE_WRITE_URL']) as upgrade:
             upgrade.execute('ALTER TABLE queue_attempt_origins DROP COLUMN issued_as_head')
             upgrade.execute(migration.split('INSERT INTO tempo_schema_migrations')[0])
@@ -655,8 +655,8 @@ def test_retained_command_retry_preserves_immutable_identity():
         with urlopen('http://api:8000/api/queue/window?limit=3', timeout=10) as response:
             issued = json.load(response)
         assert [card['queue_entry_id'] for card in issued['cards']] == entry_ids
-        postgres_store.close_pools()
-        with postgres_store.connection(read_only=True) as observer:
+        postgres.close_pools()
+        with postgres.connection(read_only=True) as observer:
             assert [tuple(row) for row in observer.execute(
                 "SELECT queue_entry_id,issued_as_head FROM queue_attempt_origins WHERE card_id IN (?,?,?) ORDER BY queue_entry_id",
                 tuple(card_ids))] == list(zip(entry_ids, (1, 0, 0)))
@@ -675,7 +675,7 @@ def test_retained_command_retry_preserves_immutable_identity():
                             "card_id": card_ids[0], "expected_revision": 1}
         promotion_waiting = Event()
         def promote_ahead():
-            with postgres_store.connection() as database:
+            with postgres.connection() as database:
                 database.execute_native("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
                                         (f"tempo:card-edit:{card_ids[2]}",))
                 database.execute("SELECT id FROM cards WHERE id=? FOR UPDATE", (card_ids[2],))
@@ -688,13 +688,13 @@ def test_retained_command_retry_preserves_immutable_identity():
             assert issuance_validated.wait(5), "Head issuance did not reach validation"
             promotion_future = executor.submit(promote_ahead)
             assert promotion_waiting.wait(5), "Promotion did not begin contention"
-            with postgres_store.connection(read_only=True) as observer:
+            with postgres.connection(read_only=True) as observer:
                 assert observer.execute("SELECT card_id FROM daily_queue WHERE queue_date=? AND status='queued' ORDER BY position,id LIMIT 1", (today,)).fetchone()[0] == card_ids[0]
             release_issuance.set()
             assert issuance_future.result(timeout=5) == {"issued": True}
             promotion_future.result(timeout=5)
 
-        postgres_store.close_pools()
+        postgres.close_pools()
         for action in ("attempt_failed", "bury"):
             operation_id, payload, accepted = command(f"retained-{action}", f"queue.{action}", 0)
             assert accepted and accepted.get('attempt_failed' if action == 'attempt_failed' else 'buried')
@@ -712,14 +712,14 @@ def test_retained_command_retry_preserves_immutable_identity():
         assert legacy_result is None and read_operation(legacy_operation)['error']['code'] == 'queue_attempt_inactive'
         _, _, head_result = command('legacy-head', 'queue.attempt_failed', 2, identified=False)
         assert head_result == {'attempt_failed': True}
-        with postgres_store.connection(read_only=True) as observer:
+        with postgres.connection(read_only=True) as observer:
             assert tuple(observer.execute("SELECT status,attempt_failed FROM daily_queue WHERE id=?", (entry_ids[1],)).fetchone()) == ('queued', 0)
             assert observer.execute("SELECT COUNT(*) FROM reviews WHERE card_id IN (?,?,?)", tuple(card_ids)).fetchone()[0] == 0
         print('PASS test_retained_command_retry_preserves_immutable_identity')
     finally:
         release_issuance.set()
         executor.shutdown(wait=True)
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             for operation_id in operation_ids:
                 database.execute("DELETE FROM operation_receipts WHERE operation_id=?", (operation_id,))
             # Include the API's task-owned issuance receipt, whose key is server-generated.
@@ -731,7 +731,7 @@ def test_retained_command_retry_preserves_immutable_identity():
                 database.execute("DELETE FROM queue_attempt_origins WHERE card_id=?", (card_id,))
             for entry_id, position in saved_positions:
                 database.execute("UPDATE daily_queue SET position=? WHERE id=?", (position, entry_id))
-        postgres_store.close_pools()
+        postgres.close_pools()
 
 @contextmanager
 def _scheduling_adapter_fixture():
@@ -741,13 +741,13 @@ def _scheduling_adapter_fixture():
     dsn = "postgresql://postgres@postgres:5432/tempo"
     os.environ["TEMPO_DATABASE_WRITE_URL"] = dsn
     os.environ["TEMPO_DATABASE_READ_URL"] = dsn
-    postgres_store.close_pools()
+    postgres.close_pools()
     identifier = f"scheduling-store-{uuid.uuid4()}"
     card_id = identifier + "-card"
     operation_ids = []
     saved_positions = []
     try:
-        with postgres_store.connection() as database:
+        with postgres.connection() as database:
             saved_positions = [tuple(row) for row in database.execute(
                 "SELECT id,position FROM daily_queue WHERE queue_date=?", (date.today().isoformat(),))]
             database.execute("INSERT INTO repertoires(id,name,source_name,created_at,new_cards_per_day) VALUES(?,?,'synthetic',?,0)",
@@ -767,8 +767,8 @@ def _scheduling_adapter_fixture():
                    "expected_revision": 1, "recorded_at": datetime.now(timezone.utc).isoformat()}}
         yield card_id, entry_id, payload, operation_ids
     finally:
-        postgres_store.close_pools()
-        with postgres_store.connection() as database:
+        postgres.close_pools()
+        with postgres.connection() as database:
             for operation_id in operation_ids:
                 database.execute("DELETE FROM operation_receipts WHERE operation_id=?", (operation_id,))
             database.execute("DELETE FROM review_schedule_snapshots WHERE review_id IN (SELECT id FROM reviews WHERE card_id=?)", (card_id,))
@@ -779,19 +779,19 @@ def _scheduling_adapter_fixture():
                 database.execute("UPDATE daily_queue SET position=? WHERE id=?", (position, entry_id))
             assert database.execute("SELECT COUNT(*) FROM cards WHERE id=?", (card_id,)).fetchone()[0] == 0
             assert database.execute("SELECT COUNT(*) FROM queue_attempt_origins WHERE card_id=?", (card_id,)).fetchone()[0] == 0
-        postgres_store.close_pools()
+        postgres.close_pools()
 
 
 def test_postgres_scheduling_adapter_effects_rollback_with_receipt_failure():
     """Fail after schedule/history/queue writes, inside and outside the savepoint."""
     from app.services.review_reconciliation import card_schedule_state
-    from tempo_legacy_database.adapters.scheduling_review_store import OwnedConnectionSchedulingReviewStore
+    from tempo_storage.scheduling_review_store import OwnedConnectionSchedulingReviewStore
 
     with _scheduling_adapter_fixture() as (card_id, entry_id, payload, operations):
-        with postgres_store.connection(read_only=True) as database:
+        with postgres.connection(read_only=True) as database:
             original_schedule = card_schedule_state(database, card_id)
-        original_execute = postgres_store.PostgresConnection.execute
-        original_raw_execute = postgres_store._TimingConnection.execute
+        original_execute = postgres.PostgresConnection.execute
+        original_raw_execute = postgres._TimingConnection.execute
         original_save = OwnedConnectionSchedulingReviewStore.save_card_state
         saved_connections = []
         def observe_save(store, saved_card_id, state):
@@ -813,8 +813,8 @@ def test_postgres_scheduling_adapter_effects_rollback_with_receipt_failure():
             operation = str(uuid.uuid4())
             operations.append(operation)
             with patch.object(OwnedConnectionSchedulingReviewStore, "save_card_state", observe_save), \
-                 patch.object(postgres_store.PostgresConnection, "execute", fail_logical_receipt if boundary == "logical" else original_execute), \
-                 patch.object(postgres_store._TimingConnection, "execute", fail_operation_receipt if boundary == "operation" else original_raw_execute), \
+                 patch.object(postgres.PostgresConnection, "execute", fail_logical_receipt if boundary == "logical" else original_execute), \
+                 patch.object(postgres._TimingConnection, "execute", fail_operation_receipt if boundary == "operation" else original_raw_execute), \
                  patch("app.services.queue_refresh_wakeup.wake_queue_refresh") as wake:
                 if boundary == "logical":
                     assert execute_command(operation, "cards.review", payload) is None
@@ -828,7 +828,7 @@ def test_postgres_scheduling_adapter_effects_rollback_with_receipt_failure():
                         raise AssertionError("Operation receipt failure did not escape to transaction owner")
                     assert read_operation(operation)["state"] == "unknown"
                 wake.assert_not_called()
-            with postgres_store.connection(read_only=True) as observer:
+            with postgres.connection(read_only=True) as observer:
                 if boundary == "operation":
                     assert observer.execute("SELECT COUNT(*) FROM operation_receipts WHERE operation_id=?", (operation,)).fetchone()[0] == 0
                 assert card_schedule_state(observer, card_id) == original_schedule
@@ -843,7 +843,7 @@ def test_postgres_scheduling_adapter_effects_rollback_with_receipt_failure():
 
 def test_postgres_scheduling_concurrent_replay_preserves_one_history_and_queue_effect():
     """Native card/operation locks serialize deliveries; restart returns receipts."""
-    from tempo_legacy_database.adapters.scheduling_review_store import OwnedConnectionSchedulingReviewStore
+    from tempo_storage.scheduling_review_store import OwnedConnectionSchedulingReviewStore
     saved = Event()
     release = Event()
     original_save = OwnedConnectionSchedulingReviewStore.save_card_state
@@ -880,7 +880,7 @@ def test_postgres_scheduling_concurrent_replay_preserves_one_history_and_queue_e
             release.set()
             executor.shutdown(wait=True)
         assert save_count == [card_id]
-        postgres_store.close_pools()
+        postgres.close_pools()
         # Drop the first response and reconnect: both receipt layers stay exact.
         assert execute_command(operation, "cards.review", payload) == result
         restarted_operation = str(uuid.uuid4())
@@ -897,7 +897,7 @@ def test_postgres_scheduling_concurrent_replay_preserves_one_history_and_queue_e
         operations.append(conflicting_operation)
         assert execute_command(conflicting_operation,"cards.review",conflicting) is None
         assert read_operation(conflicting_operation)["error"]["code"] == "review_attempt_reused"
-        with postgres_store.connection(read_only=True) as database:
+        with postgres.connection(read_only=True) as database:
             assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id=?", (card_id,)).fetchone()[0] == 1
             history = database.execute("SELECT rating,internal_rating,guided,reviewed_at,previous_interval,next_interval,source_kind,source_ref FROM reviews WHERE card_id=?", (card_id,)).fetchone()
             assert tuple(history) == ("correct","good",0,payload["review"]["recorded_at"],0,0,"study",f"attempt:{payload['review']['attempt_id']}")
@@ -916,10 +916,10 @@ def test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_r
     dsn = 'postgresql://postgres@postgres:5432/tempo'
     os.environ['TEMPO_DATABASE_WRITE_URL'] = dsn
     os.environ['TEMPO_DATABASE_READ_URL'] = dsn
-    postgres_store.close_pools()
+    postgres.close_pools()
     from psycopg.errors import LockNotAvailable, TransactionTimeout
     from app.services import durable_tasks, postgres_queue_refresh, frozen_opening_order
-    from tempo_legacy_database.adapters.queue_refresh import foreground as refresh_requests
+    from tempo_storage.queue_refresh import foreground as refresh_requests
     identifier = f'queue-extraction-{uuid.uuid4()}'
     day = '2099-10-12'
     now = datetime.now(timezone.utc).isoformat()
@@ -932,7 +932,7 @@ def test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_r
     def interrupted_checkpoint(*args, **kwargs):
         raise InterruptedPublication('after application effect, before checkpoint')
     try:
-        with postgres_store.connection() as owned_database:
+        with postgres.connection() as owned_database:
             snapshot = snapshot_queue_environment(owned_database, (day, day))
             owned_database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,'synthetic',?)", (identifier, identifier, now))
             owned_database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES(?,?,'prefix',?,'[\"e2e4\"]','learning',?)", (identifier, identifier, 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', day))
@@ -944,13 +944,13 @@ def test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_r
             owned_database.execute("UPDATE background_tasks SET payload_json=?,state='leased',lease_token=?,lease_expires_at=? WHERE id=?", (json.dumps(payload), identifier, '2099-10-13T00:00:00+00:00', task['id']))
             task = {**task, 'payload': payload, 'lease_token': identifier}
         def state():
-            with postgres_store.connection(read_only=True) as observer:
+            with postgres.connection(read_only=True) as observer:
                 card_state = observer.execute('SELECT state FROM cards WHERE id=?', (identifier,)).fetchone()[0]
                 checkpoint = observer.execute('SELECT state,phase,payload_json,generation,lease_token FROM background_tasks WHERE id=?', (task['id'],)).fetchone()
                 return card_state, tuple(checkpoint)
         before = state()
         # A foreground-owned row blocks the actual relocated background update.
-        with postgres_store.connection() as foreground:
+        with postgres.connection() as foreground:
             foreground.execute('SELECT id FROM cards WHERE id=? FOR UPDATE', (identifier,))
             try:
                 postgres_queue_refresh.execute_postgres_queue_refresh_slice(task)
@@ -969,8 +969,8 @@ def test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_r
                 raise AssertionError('Interruption did not occur')
         assert state() == before
         # Reload the persisted task after closing every process-local pool.
-        postgres_store.close_pools()
-        with postgres_store.connection(read_only=True) as observer:
+        postgres.close_pools()
+        with postgres.connection(read_only=True) as observer:
             persisted = observer.execute('SELECT * FROM background_tasks WHERE id=?', (task['id'],)).fetchone()
             restarted = {**dict(persisted), 'payload': json.loads(persisted['payload_json'])}
         assert postgres_queue_refresh.execute_postgres_queue_refresh_slice(restarted)
@@ -980,7 +980,7 @@ def test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_r
         assert json.loads(after[1][2])['preserve_through_entry_id'] == 42
         assert postgres_queue_refresh.execute_postgres_queue_refresh_slice(restarted) is False
         assert state() == after
-        with postgres_store.connection() as owned_database:
+        with postgres.connection() as owned_database:
             owned_database.execute("UPDATE background_tasks SET generation=generation+1,state='leased',lease_token=? WHERE id=?", ('replacement', task['id']))
             owned_database.execute("UPDATE cards SET state='learning' WHERE id=?", (identifier,))
         replaced = state()
@@ -989,12 +989,12 @@ def test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_r
         print('PASS test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_replay')
     finally:
         if task:
-            with postgres_store.connection() as owned_database:
+            with postgres.connection() as owned_database:
                 owned_database.execute('DELETE FROM background_tasks WHERE id=?', (task['id'],))
                 owned_database.execute('DELETE FROM repertoires WHERE id=?', (identifier,))
                 if snapshot:
                     restore_queue_environment(owned_database, snapshot)
-        postgres_store.close_pools()
+        postgres.close_pools()
 
 
 if __name__ == "__main__":

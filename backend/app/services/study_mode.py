@@ -1,10 +1,10 @@
 """Durable installation-wide admission policy for emergency study isolation."""
 
-from tempo_legacy_database.connections import (
+from tempo_storage.connections import (
     read_connection,
     background_read_connection,
 )
-from tempo_legacy_database.adapters.controls import settings as storage
+from tempo_storage.controls import settings as storage
 from .activity_gate import activity_gate
 from contextlib import nullcontext
 from fastapi import HTTPException
@@ -14,27 +14,7 @@ STUDY_TASK_KINDS = ("daily_queue",)
 PAUSED_IMPORT_COMMANDS = frozenset(
     {"imports.pgn.admit", "studies.import.commit", "studies.bundle.import"}
 )
-STUDY_BACKGROUND_COMMANDS = frozenset(
-    {
-        "opening_evidence.checkpoint",
-        # Explicit one-game v3 command only. It still yields to foreground admission;
-        # this does not admit a recurring analysis/graph/provider task kind.
-        "game_evidence.receive_legacy",
-        "game_evidence.product_accept",
-        "coverage.maia.heartbeat",
-        "coverage.maia.release",
-        "coverage.maia.failure",
-        "threat.analysis.failure",
-        "threat.analysis.release",
-        "games.analysis.position.report",
-        "games.analysis.position.release",
-        "games.analysis.failure",
-        "games.analysis.heartbeat",
-        "games.analysis.release",
-        "games.analysis.finalize.admit",
-        "activity.progress",
-    }
-)
+STUDY_BACKGROUND_COMMANDS = frozenset({"opening_evidence.checkpoint", "activity.progress"})
 
 
 def study_only_enabled(database=None) -> bool:
