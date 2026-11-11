@@ -178,3 +178,41 @@ def test_foreground_receipt_denial_does_not_consume_failure_attempts(
         tasks.execute_foreground_command.run("retained-apply", command_name, {}) is None
     )
     assert observed == [("retained-apply", "fenced-attempt")]
+
+
+def test_foreground_wait_reason_on_explicit_producers(monkeypatch):
+    import io
+    from app.services import activity_gate as gate_module
+
+    gate = ApplicationActivityGate()
+    monkeypatch.setattr(redis_admission_gate, "configured", lambda: False)
+    gate.record_browser_activity(3, session_id="reason-test")
+    with pytest.raises(BackgroundAdmissionDeferred) as local:
+        gate.check_background_admission()
+    assert local.value.reason == "foreground_wait"
+
+    gate = ApplicationActivityGate()
+    monkeypatch.setattr(redis_admission_gate, "configured", lambda: True)
+    monkeypatch.setattr(redis_admission_gate, "foreground_present", lambda: True)
+    with pytest.raises(BackgroundAdmissionDeferred) as shared:
+        gate.check_background_admission()
+    assert shared.value.reason == "foreground_wait"
+
+    monkeypatch.setattr(redis_admission_gate, "configured", lambda: False)
+    monkeypatch.setenv("TEMPO_FOREGROUND_ACTIVITY_URL", "http://example.invalid")
+    monkeypatch.setattr(
+        gate_module, "urlopen", lambda *args, **kwargs: io.BytesIO(b'{"active": true}')
+    )
+    with pytest.raises(BackgroundAdmissionDeferred) as remote:
+        gate.check_background_admission()
+    assert remote.value.reason == "foreground_wait"
+
+    class DeniedLease:
+        def eval(self, *args):
+            return 0
+
+    monkeypatch.setattr(redis_admission_gate, "client", lambda: DeniedLease())
+    with pytest.raises(BackgroundAdmissionDeferred) as lease:
+        with redis_admission_gate.background_lease():
+            pytest.fail("denied lease")
+    assert lease.value.reason == "foreground_wait"

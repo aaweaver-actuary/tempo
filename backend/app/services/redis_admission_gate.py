@@ -32,6 +32,10 @@ _LOGGER = logging.getLogger("tempo.admission")
 class BackgroundAdmissionDeferred(RuntimeError):
     """Admission denied or unavailable; durable intent must be retained."""
 
+    def __init__(self, *args, reason: str | None = None):
+        super().__init__(*args)
+        self.reason = reason
+
 
 def foreground_present() -> bool:
     current_milliseconds = int(time.time() * 1000)
@@ -150,7 +154,7 @@ def background_lease() -> Iterator[None]:
             "Foreground admission is unavailable"
         ) from error
     if not admitted:
-        raise BackgroundAdmissionDeferred("Waiting for foreground activity")
+        raise BackgroundAdmissionDeferred("Waiting for foreground activity", reason="foreground_wait")
     try:
         yield
     finally:

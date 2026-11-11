@@ -481,9 +481,10 @@ async def measure_training_request(request: Request, call_next):
 
 @app.exception_handler(BackgroundAdmissionDeferred)
 async def background_waiting(_request: Request, error: BackgroundAdmissionDeferred):
-    return JSONResponse(
-        status_code=503, content={"detail": str(error)}, headers={"Retry-After": "1"}
-    )
+    content = {"detail": str(error)}
+    if error.reason == "foreground_wait":
+        content["code"] = "foreground_wait"
+    return JSONResponse(status_code=503, content=content, headers={"Retry-After": "1"})
 
 
 @app.get("/api/health")
@@ -725,205 +726,17 @@ def materialize_daily_queue(
 
 
 def _issue_returned_queue_head(queue_date: str, card: dict) -> dict | JSONResponse:
-    """Use the writer boundary without granting write credentials to the API."""
-    payload = {
-        "queue_date": queue_date,
-        "entry_id": card["queue_entry_id"],
-        "card_id": card["id"],
-        "expected_revision": card["revision"],
-    }
-    with read_connection() as database:
-        issued = queue_projection_storage.issued_head(
-            database,
-            payload["entry_id"],
-            payload["card_id"],
-            payload["expected_revision"],
-        )
-    if issued and issued["issued_as_head"]:
-        from .services.queue_next_card import prepare_queue_head
-
-        replay = prepare_queue_head(payload)
-        if replay.mode == "replay":
-            return {
-                "issued": True,
-                "position_study_mode": "position",
-                "position_presentation": replay.proposal.to_wire(),
-                "position_study_hold": None,
-            }
-        if replay.mode != "legacy":
-            return {
-                "issued": False,
-                "position_study_mode": "position",
-                "position_presentation": None,
-                "position_study_hold": replay.reason or "position_plan_missing",
-            }
-        return {"issued": True}
-    from .command_dispatch import dispatch_command
-
-    result = dispatch_command("queue.issue_head", payload, idempotency_key=None)
-    if isinstance(result, JSONResponse):
-        return result
-    if result.get("position_study_mode") == "position":
-        from .contracts.queue_issuance import immutable_issuance_conflict
-
-        conflict = immutable_issuance_conflict(result)
-        if conflict:
-            raise HTTPException(
-                409,
-                {
-                    "code": conflict,
-                    "message": "The original position attempt conflicts with its immutable plan. Check its retained evidence before retrying.",
-                },
-            )
-        if result.get('issued'):
-            # A receipt is not a queue snapshot. Re-read the retained original
-            # plan after the wait, rather than hydrating its saved raw response.
-            from .services.queue_next_card import prepare_queue_head
-
-            replay = prepare_queue_head(payload)
-            if replay.mode != "replay":
-                raise HTTPException(
-                    409, "The issued position plan is unavailable. Refresh the queue."
-                )
-            result = {
-                "issued": True,
-                "position_study_mode": "position",
-                "position_presentation": replay.proposal.to_wire(),
-                "position_study_hold": None,
-            }
-        return result
-    if not result.get("issued"):
-        raise HTTPException(
-            503,
-            "Queue changed or attempt issuance is pending. Retry loading the queue.",
-        )
-    return result
+    from .product_composition.study import issue_returned_queue_head
+    return issue_returned_queue_head(queue_date, card, read_connection=read_connection,
+                                     queue_projection_storage=queue_projection_storage)
 
 
-def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool = False):
+def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool = False, prepared: bool = False):
+    from .product_composition.study import queue_next_exercise
     from .queue_commands import current_study_day
-    from .study.queue_serving import (
-        assemble_queue_cards,
-        add_encounter_evidence,
-        finalize_queue_cards,
-        queue_payload,
-    )
-
-    with read_connection() as day_database:
-        day = current_study_day(day_database)
-    with read_connection() as db:
-        evidence_timezone = queue_projection_storage.evidence_timezone(db)[0]
-        projection_row = queue_projection_storage.queue_projection(db, day)
-        diagnostic_rows = queue_projection_storage.queue_diagnostics(db, day)
-        rows = queue_projection_storage.queue_rows(
-            db, day, limit, miss_reason=MISS_REASON
-        )
-        cards = assemble_queue_cards(rows)
-        position_modes = queue_projection_storage.position_pending_modes(db, cards)
-        for card in cards:
-            if position_modes.get(card["queue_entry_id"]):
-                card.update(
-                    position_study_mode="position",
-                    position_presentation=None,
-                    position_study_hold="position_not_issued",
-                )
-        total_count = (
-            len(cards)
-            if limit is None
-            else queue_projection_storage.available_count(
-                db, day, miss_reason=MISS_REASON
-            )
-        )
-    # Advisory Games evidence owns a separate bounded read. A failed projection
-    # must close/rollback its own transaction before core issuance proceeds.
-    encounter_by_fen = None
-    if cards:
-        try:
-            with read_connection() as evidence_database:
-                encounter_by_fen = queue_projection_storage.encounter_badges(
-                    evidence_database,
-                    cards,
-                    (datetime.now(timezone.utc) - timedelta(days=30)).isoformat(),
-                )
-        except Exception:
-            logging.getLogger(__name__).warning(
-                "Optional queue encounter evidence unavailable"
-            )
-    for card in cards:
-        add_encounter_evidence(
-            card,
-            encounter_by_fen,
-            (datetime.now(timezone.utc) - timedelta(days=7)).isoformat(),
-        )
-    if cards:
-        issuance = _issue_returned_queue_head(day, cards[0])
-        if isinstance(issuance, JSONResponse):
-            return issuance
-        if issuance.get('issued'):
-            # The command wait can span another tab's review/day rollover.
-            # Serve only a still-current head, never the stale pre-wait window.
-            with read_connection() as current_database:
-                current_day = current_study_day(current_database)
-                current_rows = queue_projection_storage.queue_rows(
-                    current_database, current_day, 1, miss_reason=MISS_REASON
-                )
-            if (
-                current_day != day
-                or not current_rows
-                or (
-                    current_rows[0]["queue_entry_id"],
-                    current_rows[0]["id"],
-                    current_rows[0]["revision"],
-                )
-                != (cards[0]["queue_entry_id"], cards[0]["id"], cards[0]["revision"])
-            ):
-                raise HTTPException(
-                    503, "The queue head changed. Retry loading the current queue."
-                )
-        if issuance.get("position_study_mode") == "position":
-            cards[0].update(
-                {
-                    key: issuance[key]
-                    for key in (
-                        "position_study_mode",
-                        "position_presentation",
-                        "position_study_hold",
-                    )
-                }
-            )
-    finalize_queue_cards(cards)
-    position_head = bool(cards and cards[0].get("position_presentation"))
-    if include_opening_evidence or position_head:
-        from .study.position_checkpoint import queue_manifests
-
-        queue_manifests(cards if include_opening_evidence else cards[:1])
-        if position_head:
-            from .study.position_checkpoint import issued_position_manifest
-            from tempo_evidence_math.position_learning import Hold
-            from app.study.position_learning.issuance import replay_exact_attempt
-
-            card = cards[0]
-            with read_connection() as database:
-                plan = replay_exact_attempt(
-                    database, card["position_presentation"]["attempt_id"]
-                )
-            try:
-                if (
-                    isinstance(plan, Hold)
-                    or plan is None
-                    or "opening_decision_manifest" not in card
-                ):
-                    raise ValueError("position_manifest_scope_unavailable")
-                card["opening_decision_manifest"] = issued_position_manifest(
-                    plan, card["opening_decision_manifest"]
-                )
-            except (TypeError, ValueError, KeyError):
-                card["position_presentation"] = None
-                card["position_study_hold"] = "position_manifest_scope_unavailable"
-        for card in cards:
-            if "opening_decision_manifest" in card:
-                card["opening_evidence_study_timezone"] = evidence_timezone or "local"
-    return queue_payload(day, cards, total_count, diagnostic_rows, projection_row)
+    return queue_next_exercise(limit, include_opening_evidence, read_connection=read_connection,
+                               current_study_day=current_study_day, queue_projection_storage=queue_projection_storage,
+                               miss_reason=MISS_REASON, prepared=prepared)
 
 
 @app.get("/api/queue/today")
@@ -935,27 +748,7 @@ def queue_today(include_opening_evidence: bool = False):
 
 @app.get("/api/queue/prepared")
 def prepared_queue(include_opening_evidence: bool = False):
-    from .study.queue_serving import exercise_snapshot
-
-    payload = _queue_payload(include_opening_evidence=include_opening_evidence)
-    if isinstance(payload, JSONResponse):
-        return payload
-    study_cards = [
-        card for card in payload["cards"] if card["content_type"] == "study_exercise"
-    ]
-    if study_cards:
-        with read_connection() as database:
-            for card in study_cards:
-                row = queue_projection_storage.exercise_revision(
-                    database, card["study_exercise_id"]
-                )
-                if not row:
-                    raise HTTPException(
-                        409,
-                        f"Study exercise {card['study_exercise_id']} has no current revision",
-                    )
-                card["study_snapshot"] = exercise_snapshot(card, row)
-    return {**payload, "prepared_at": datetime.now(timezone.utc).isoformat()}
+    return _queue_payload(include_opening_evidence=include_opening_evidence, prepared=True)
 
 
 @app.get("/api/queue/window")

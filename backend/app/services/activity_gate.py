@@ -132,13 +132,13 @@ class ApplicationActivityGate:
         if _control_section.get() or _essential_study.get():
             return
         if self.foreground_waiting:
-            raise BackgroundAdmissionDeferred("Waiting for foreground activity")
+            raise BackgroundAdmissionDeferred("Waiting for foreground activity", reason="foreground_wait")
         if redis_admission_gate.configured():
             import redis
 
             try:
                 if redis_admission_gate.foreground_present():
-                    raise BackgroundAdmissionDeferred("Waiting for foreground activity")
+                    raise BackgroundAdmissionDeferred("Waiting for foreground activity", reason="foreground_wait")
             except redis.RedisError as error:
                 raise BackgroundAdmissionDeferred(
                     "Foreground admission is unavailable"
@@ -155,7 +155,7 @@ class ApplicationActivityGate:
                     "Foreground admission is unavailable"
                 ) from error
             if active:
-                raise BackgroundAdmissionDeferred("Waiting for foreground activity")
+                raise BackgroundAdmissionDeferred("Waiting for foreground activity", reason="foreground_wait")
 
     @contextmanager
     def essential_study_progress(self, kind):
