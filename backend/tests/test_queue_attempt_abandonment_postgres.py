@@ -508,7 +508,7 @@ def test_native_schema56_without_abandonment_table(owned_postgres):
 
 def _retarget_attempt(case):
     """Retain the issued old origin while the row now projects another card."""
-    from dataclasses import replace
+    from types import SimpleNamespace
 
     plan = _new_attempt(case)
     new_card = "replacement-" + case.card_id
@@ -525,7 +525,7 @@ def _retarget_attempt(case):
             "UPDATE daily_queue SET card_id=%s,status='blocked' WHERE id=%s",
             (new_card, plan["queue_entry_id"]),
         )
-    return plan, replace(case, card_id=new_card)
+    return plan, SimpleNamespace(**(vars(case) | {"card_id": new_card}))
 
 
 def _retarget_snapshot(db, plan, new_card):
