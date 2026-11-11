@@ -6,17 +6,11 @@ State the user-visible or documentation outcome and owning issue. Preserve expli
 
 Record actual checks/results and relevant revisions; distinguish not run, failed and blocked. Do not imply hosted CI passed when it is disabled.
 
-## Architecture coverage
+## Architecture look (for code changes)
 
-Follow [the Guardian protocol](../docs/architecture/guardian.md). This template is not a passing review or an automated gate.
+For code changes, briefly note whether a Guardian-like subagent or an existing independent reviewer checked for coupling, duplicate responsibility and interface drift. State any actionable findings or material unreviewed risk. Deepen the review when the change affects component ownership, public APIs, state or dependencies. Routine documentation/media changes need no special Guardian check.
 
-- Reviewed base / head / approved policy revision:
-- Route and changed-path coverage: LIGHT_ONLY / FULL_REQUIRED / INCOMPLETE, with evidence:
-- Independent reviewer and receipt link:
-- Applicable check results, findings and dispositions:
-- Current candidate covered, or exact missing review / owner-authorized exception:
-
-`Architecture impact: none` does not waive coverage. New commits, base changes or conflict resolutions require current routing and a refreshed receipt. Policy/prompt/gate changes require full review even when they are Markdown-only.
+This is a prompt, not an automatic gate or mandatory receipt. See [Guardian guidance](../docs/architecture/guardian.md).
 
 ## Delivery state
 
