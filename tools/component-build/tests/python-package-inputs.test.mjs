@@ -67,35 +67,39 @@ test('Python bundled remediation import requires its exact declared distribution
     assert.match(f.check().stderr, /undeclared dependency tempo_unrecognized_database/);
   }
 });
-test('Centralized wheel hooks exclude qualification directories while sdist hooks retain complete database inputs', () => {
+test('Learning review wheel and sdist contain real local inputs without retired database hook', () => {
   const source = `
-from pathlib import Path
-import runpy, sys, types
-from tempfile import TemporaryDirectory
-base = types.ModuleType('hatchling.builders.hooks.plugin.interface')
-base.BuildHookInterface = object
-sys.modules['hatchling.builders.hooks.plugin.interface'] = base
-repository = Path(sys.argv[1])
-owner = 'services/learning/application'
-hook = runpy.run_path(str(repository / owner / 'hatch_build.py'))['CustomBuildHook']
-with TemporaryDirectory() as directory:
-    root = Path(directory) / owner
-    database = root / 'database/tempo_storage'
-    for category in ['tooling/learning_review', 'tests/learning_review']:
-        (database / category).mkdir(parents=True)
-    instance = hook()
-    instance.root = str(root)
-    instance.target_name = 'wheel'
-    data = {'force_include': {}}
-    instance.initialize(None, data)
-    assert data['force_include'] == {}
-    instance.target_name = 'sdist'
-    instance.initialize(None, data)
-    assert set(data['force_include'].values()) == {'database/tempo_storage/tooling/learning_review', 'database/tempo_storage/tests/learning_review'}
-    (database / 'tests/learning_review').rmdir()
+import pathlib, shutil, subprocess, sys, tarfile, tempfile, zipfile
+repository = pathlib.Path(sys.argv[1])
+with tempfile.TemporaryDirectory(prefix='tempo-review-archive-') as directory:
+    root = pathlib.Path(directory) / 'application'
+    shutil.copytree(repository / 'services/learning/application', root, ignore=shutil.ignore_patterns('__pycache__', '.pytest_cache', '.venv', 'dist'))
+    subprocess.run([sys.executable, '-m', 'build', '--no-isolation'], cwd=root, check=True, capture_output=True, text=True)
+    wheel, = (root/'dist').glob('*.whl')
+    sdist, = (root/'dist').glob('*.tar.gz')
+    with zipfile.ZipFile(wheel) as archive:
+        names = archive.namelist()
+        assert 'tempo_learning_review/__init__.py' in names
+        assert not any('database/' in name or 'hatch_build.py' in name or '/tests/' in name for name in names)
+    with tarfile.open(sdist) as archive:
+        names = archive.getnames()
+        for required in ('src/tempo_learning_review/__init__.py', 'tests/test_application.py', 'integration/test_qualification_runners.py', 'qualification.py', 'run_suite.py', 'qualify.py', 'pyproject.toml'):
+            assert any(name.endswith('/'+required) for name in names), required
+        assert not any('/database/' in name or name.endswith('/hatch_build.py') for name in names)
+    import importlib.util
+    sys.path.insert(0, str(root))
+    spec = importlib.util.spec_from_file_location('actual_qualify', root/'qualify.py')
+    qualifier = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(qualifier)
+    assert all((root/name).exists() for name in qualifier.INPUTS)
+    qualifier.HERE = root
+    qualifier.ROOT = root
+    qualifier.subprocess.check_output = lambda *args, **kwargs: 'fixture-revision'
+    (root/'pyproject.toml').unlink()
+    sys.argv = ['qualify.py', str(pathlib.Path(directory)/'evidence')]
     try:
-        instance.initialize(None, {'force_include': {}})
-        raise AssertionError('missing input accepted')
+        qualifier.main()
+        raise AssertionError('missing declared input accepted')
     except FileNotFoundError:
         pass
 `;

@@ -468,10 +468,7 @@
         "qualification.py",
         "qualify.py",
         "run_suite.py",
-        "hatch_build.py",
-        "integration",
-        "../../../database/tempo_storage/tooling/learning_review",
-        "../../../database/tempo_storage/tests/learning_review"
+        "integration"
       ],
       "buildCommand": "uv sync --locked --no-editable && uv run --locked --no-editable python -m build",
       "artifact": {
@@ -505,26 +502,27 @@
             "backend/pyproject.toml",
             "backend/requirements-test.txt",
             "backend/Dockerfile",
-            "services/learning/application/run_suite.py",
-            "services/learning/application/hatch_build.py"
+            "services/learning/application/run_suite.py"
           ]
         },
         {
           "owner": "learning-review-application",
           "kind": "postgres",
           "cwd": ".",
-          "command": "python database/tempo_storage/tooling/learning_review/run_postgres.py",
+          "command": "python services/learning/application/run_suite.py native",
           "inputs": [
+            "services/learning/application/run_suite.py",
+            "services/learning/application/qualification.py",
+            "services/learning/application/pyproject.toml",
+            "backend/tests/test_queue_attempt_abandonment_postgres.py",
+            "backend/tests/native_study_fixture.py",
             "database/tempo_storage",
             "backend/app",
             "database/tempo_storage/ddl/migrations",
             "backend/requirements.txt",
             "database/tooling/apply_postgres_migrations.py",
             "database/tooling/provision_postgres_roles.py",
-            "database/tests/check_postgres_training_transition.py",
-            "database/tests/check_postgres_daily_study_dispatch.py",
             "packages/scheduling",
-            "services/learning/application/qualification.py",
             "packages/chess-core"
           ]
         }

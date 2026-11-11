@@ -18,27 +18,34 @@ ROOT = HERE.parents[2]
 def suite_inputs(suite):
     if suite == 'application':
         return HERE, [HERE/'tests']
+    if suite == 'native':
+        return ROOT, [ROOT/'backend/tests/test_queue_attempt_abandonment_postgres.py']
     return ROOT, [HERE/'integration/test_qualification_runners.py',
-                  ROOT/'database/tempo_storage/tests/learning_review/test_native_runner.py',
                   ROOT/'backend/tests/test_learning_package_installation.py']
 
 
 def main(arguments=None):
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
-    parser.add_argument('suite', choices=('application', 'tooling'))
+    parser.add_argument('suite', choices=('application', 'tooling', 'native'))
     parser.add_argument('--junitxml', '--junit-xml', action='append', default=[])
     options = parser.parse_args(arguments)
     if len(options.junitxml) > 1:
         parser.error('Only one JUnit destination is supported')
     try:
-        junit_destination(os.environ.get('PYTEST_ADDOPTS', ''))
+        inherited_junit = junit_destination(os.environ.get('PYTEST_ADDOPTS', ''), allow_junit=options.suite == 'native')
+        if inherited_junit and options.junitxml:
+            raise ValueError('Only one JUnit destination is supported across environment and CLI')
+        if options.suite == 'native' and os.environ.get('PYTEST_PLUGINS'):
+            raise ValueError('Native qualification rejects inherited PYTEST_PLUGINS')
         if options.junitxml and not options.junitxml[0]:
             raise ValueError('JUnit destination must be a nonempty path')
     except ValueError as error:
         parser.error(str(error))
-    external_junit = Path(options.junitxml[0]).resolve() if options.junitxml else None
+    external_junit = Path(options.junitxml[0]).resolve() if options.junitxml else inherited_junit
     environment = controlled_environment()
     environment.pop('PYTHONPATH', None)
+    if options.suite == 'native':
+        environment['PYTHONPATH'] = os.pathsep.join((str(ROOT/'backend'), str(ROOT/'database')))
     evidence_root = os.environ.get('TEMPO_LEARNING_EVIDENCE_DIR')
     workspace = (nullcontext(str(Path(evidence_root).resolve()/('component-'+options.suite)/uuid.uuid4().hex))
                  if evidence_root else tempfile.TemporaryDirectory(prefix='tempo-learning-suite-'))
