@@ -799,7 +799,7 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
         from .position_queue_admission import prepare_opening_introduction
 
         activity_gate.wait_for_foreground()
-        with background_read_connection() as database:
+        with read_connection(repertoire_snapshot=True) as database:
             position_introduction = prepare_opening_introduction(
                 database, planned_introduction
             )

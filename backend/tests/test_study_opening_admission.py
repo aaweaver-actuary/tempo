@@ -284,3 +284,31 @@ def legacy_study_order_has_no_accepted_snapshot(monkeypatch):
     monkeypatch.setattr(
         worker.read_storage, "background_read_connection", metadata_compatible_reader
     )
+
+
+def test_opening_position_preparation_uses_unreserved_repertoire_snapshot(
+    phase_harness, monkeypatch
+):
+    """Large active-owner sources must not time out on the short writer budget."""
+    from app.services import position_queue_admission
+
+    reads = []
+    @contextmanager
+    def snapshot(*, repertoire_snapshot=False):
+        reads.append(repertoire_snapshot)
+        yield object()
+
+    monkeypatch.setattr(worker, 'read_connection', snapshot)
+    class Prepared(Exception):
+        pass
+    def stop_after_prepare(*_):
+        raise Prepared()
+    monkeypatch.setattr(position_queue_admission, 'prepare_opening_introduction', stop_after_prepare)
+    monkeypatch.setattr(position_queue_admission, 'fence_opening_introduction', lambda *_: None)
+    monkeypatch.setattr(worker, '_admit_one_prioritized_opening', lambda *_: False)
+    payload = {'queue_date': '2026-10-13', '_queue_phase': 'study_opening_item', '_refresh_cycle_epoch': 1,
+               'study_opening_items': [candidate(), candidate(['d2d4'])], 'study_opening_index': 0,
+               'study_opening_more': True, 'study_opening_counts': {'examined': 2, 'eligible': 2}}
+    with pytest.raises(Prepared):
+        worker.execute_postgres_queue_refresh_slice({'payload': payload})
+    assert reads == [True]
