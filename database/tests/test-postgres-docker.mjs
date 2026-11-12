@@ -1344,7 +1344,7 @@ const actions = {
       }),
     });
   },
-  'position-grade-effects': async () => {
+  ...Object.fromEntries(['position-grade-effects', 'position-introductions'].map(check => [check, async () => {
     assertDevelopmentProjectOwned(project);
     const imageReference = run('docker', [...compose, 'images', '-q', 'schema'],
       {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8'}).stdout.trim();
@@ -1358,6 +1358,7 @@ const actions = {
       '-e', `TEMPO_TEST_COMPOSE_PROJECT=${project}`,
       '-e', `TEMPO_NATIVE_CANDIDATE_REVISION=${candidateRevision}`,
       '-e', `TEMPO_NATIVE_RUNTIME_IMAGE=${imageId}`,
+      '-e', `TEMPO_NATIVE_POSITION_CHECK=${check}`,
       'schema', 'python', '/source/database/tests/position-native-pytest.py'],
     {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8'});
     const evidence = JSON.parse(result.stdout);
@@ -1366,9 +1367,9 @@ const actions = {
     assert.equal(evidence.cleanup, 'dropped');
     assert.equal(evidence.tests?.length, 1);
     assert.equal(evidence.tests[0].status, 'passed');
-    atomicJson(`test-results/native/${project}-position-grade-effects.json`, {
-      head: candidateRevision, checks: {'position-grade-effects': evidence}});
-  },
+    atomicJson(`test-results/native/${project}-${check}.json`, {
+      head: candidateRevision, checks: {[check]: evidence}});
+  }])),
   'redis-fixture-isolation': async () => {
     let evidence;
     await executeIsolatedBackgroundWorkload({
