@@ -16,7 +16,7 @@ from tempo_storage.connections import (
 )
 from tempo_storage import postgres
 from tempo_storage.durable_tasks import storage
-from tempo_storage.durable_tasks.storage import _EVENT_INSERT_SQL, _EVENT_PRUNE_SQL, _TASK_BY_KIND_SQL, _TASK_UPSERT_SQL, _TASK_BY_ID_SQL, _COMPLETE_SLICE_SQL, _QUEUE_REFRESH_STATUS_SQL, _QUEUE_REFRESH_PROGRESS_SQL
+from tempo_storage.durable_tasks.storage import _EVENT_INSERT_SQL, _EVENT_PRUNE_SQL, _TASK_BY_KIND_SQL, _TASK_UPSERT_SQL, _TASK_BY_ID_SQL
 from .background_metrics import increment, record_event_counts
 from .queue_refresh_wakeup import mark_queue_refresh_requested, wake_queue_refresh
 from .activity_gate import activity_gate
