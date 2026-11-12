@@ -34,7 +34,7 @@ def tactical_rotation():
     return _bounded_read('SELECT last_pack_id FROM tactic_rotation WHERE id=1')
 
 def admitted_tactical_puzzles():
-    return _bounded_read('SELECT puzzle_id FROM tactic_progress WHERE admitted_at IS NOT NULL')
+    return _bounded_read('SELECT puzzle_id FROM tactic_progress WHERE admitted_at IS NOT NULL UNION SELECT puzzle_id FROM tactic_introductions')
 
 def deleted_candidates(candidate_ids):
     return _bounded_read('SELECT card_id FROM deleted_cards WHERE card_id=ANY(%s::text[])', (candidate_ids,))

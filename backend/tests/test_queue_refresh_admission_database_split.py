@@ -40,7 +40,7 @@ class NativeSqlite:
         self.locks = []
 
     def execute(self, query, parameters=()):
-        return self.database.execute(query, parameters)
+        return self.execute_native(query, parameters)
 
     def execute_native(self, query, parameters=()):
         if "pg_advisory_xact_lock" in query:
@@ -60,7 +60,7 @@ def test_tactical_publication_keeps_reservation_replay_rotation_and_daily_quota(
             CREATE TABLE tactic_pack_activation(pack_id TEXT PRIMARY KEY,active INTEGER);
             CREATE TABLE tactic_progress(puzzle_id TEXT PRIMARY KEY,deck_id TEXT,card_id TEXT,
                 admitted_at TEXT,admission_mode TEXT);
-            CREATE TABLE tactic_introductions(puzzle_id TEXT,pack_id TEXT,introduction_date TEXT);
+            CREATE TABLE tactic_introductions(puzzle_id TEXT PRIMARY KEY,pack_id TEXT,introduction_date TEXT);
             CREATE TABLE repertoires(id TEXT PRIMARY KEY,name TEXT,source_name TEXT,created_at TEXT);
             CREATE TABLE cards(id TEXT PRIMARY KEY,repertoire_id TEXT,kind TEXT,start_fen TEXT,
                 moves_json TEXT,state TEXT,due_date TEXT,content_type TEXT,scheduling_mode TEXT,
