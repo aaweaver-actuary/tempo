@@ -6922,3 +6922,9 @@ Minimal Game Review request recovery (#983):
 - `tests/unit/game-review-minimal.test.tsx::surfaces an initial HTTP failure from %s and retries` covers failed saved-game and repertoire reads, visible errors, and successful retry.
 - `tests/unit/game-review-minimal.test.tsx::ignores a pending comparison after changing %s` covers repertoire, color, and PGN changes while a comparison is pending.
 - `tests/unit/game-review-minimal.test.tsx::does not let an obsolete saved-game failure clear a newer comparison's pending state` preserves the active request's error, busy state, result, and saved-player orientation.
+
+Game Review read contracts and retained integrity choices (#995):
+
+- `tests/unit/game-review-contract.test.ts::decodes the current comparison variants and saved orientation` covers current covered/unavailable/departure/coverage-end responses, optional pasted-game color, and required saved-game orientation.
+- `tests/unit/game-review-contract.test.ts::rejects malformed positions, illegal or inconsistent moves, colors and comparison bounds` keeps invalid successful responses out of board state through the independently importable contract.
+- `tests/unit/repertoire-integrity-dialog-regressions.test.tsx::changing conflicts resets selection and never requests retired personal-game evidence` preserves distinct queued choices while removing the absent optional endpoint.

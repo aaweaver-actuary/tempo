@@ -1,4 +1,4 @@
-import type { BoardTheme, PieceSet } from "../components/chessboard";
+import type { BoardTheme, PieceSet } from "@tempo/board-ui";
 import type { View } from "./shared";
 
 export enum EngineStatusEnum {

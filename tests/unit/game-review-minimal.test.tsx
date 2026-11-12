@@ -42,7 +42,7 @@ it.each([
   fireEvent.change(screen.getByLabelText("Paste PGN"), { target: { value: "1. e4" } });
   fireEvent.click(screen.getByRole("button", { name: "Review PGN" }));
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
-  await act(async () => { resolve(Response.json({ positions: [initial], moves: [], comparison: { kind: "matched" } })); });
+  await act(async () => { resolve(Response.json({ starting_fen: initial, positions: [initial], moves: [], comparison: { kind: "covered" } })); });
   expect(screen.queryByTestId("board")).toBeNull();
   expect(screen.queryByText("matched")).toBeNull();
   expect((screen.getByRole("button", { name: "Review PGN" }) as HTMLButtonElement).disabled).toBe(false);
@@ -66,7 +66,7 @@ it("does not let an obsolete saved-game failure clear a newer comparison's pendi
   await act(async () => { failOld(new Error("obsolete failure")); });
   expect(screen.queryByRole("alert")).toBeNull();
   expect((review as HTMLButtonElement).disabled).toBe(true);
-  await act(async () => { resolveNew(Response.json({ positions: [initial], moves: [], color: "black", comparison: { kind: "matched" } })); });
+  await act(async () => { resolveNew(Response.json({ starting_fen: initial, positions: [initial], moves: [], color: "black", comparison: { kind: "covered" } })); });
   expect(screen.getByTestId("board").getAttribute("data-orientation")).toBe("black");
   expect((review as HTMLButtonElement).disabled).toBe(false);
 });
@@ -77,7 +77,7 @@ it("replays a saved game with the saved player's orientation", async () => {
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
     if (url === "/api/repertoires") return Response.json({ repertoires: [{ id: "r1", name: "Main" }] });
     if (url.endsWith("/games")) return Response.json({ games: [{ id: "g1", provider: "lichess", played_at: "2026-01-01", result: "1-0", color: "black" }] });
-    return Response.json({ color: "black", positions: [initial, next], moves: ["e2e4"], comparison: { kind: "departure", ply: 1, played_uci: "e2e4", expected_uci: ["d2d4"] } });
+    return Response.json({ color: "black", starting_fen: initial, positions: [initial, next], moves: ["e2e4"], comparison: { kind: "departure", ply: 1, fen: initial, actor: "white", played_uci: "e2e4", expected_uci: ["d2d4"] } });
   }));
   render(<GameReviewView />);
   fireEvent.click(await screen.findByRole("button", { name: /lichess/ }));
@@ -85,4 +85,52 @@ it("replays a saved game with the saved player's orientation", async () => {
   expect(screen.getByText(/First departure at ply 1/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Next" }));
   expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(next);
+});
+
+it("shows a recoverable error for malformed successful detail and allows retry", async () => {
+  let malformed = true;
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    if (url === "/api/repertoires") return Response.json(authored);
+    if (url.endsWith("/games")) return Response.json(saved);
+    return Response.json(malformed ? { positions: [] } : { starting_fen: initial, positions: [initial], moves: [], comparison: { kind: "covered" } });
+  }));
+  render(<GameReviewView />);
+  await screen.findByRole("button", { name: /lichess/ });
+  fireEvent.change(screen.getByLabelText("Paste PGN"), { target: { value: "1. e4" } });
+  fireEvent.click(screen.getByRole("button", { name: "Review PGN" }));
+  expect((await screen.findByRole("alert")).textContent).toContain("Invalid Game Review");
+  expect(screen.queryByTestId("board")).toBeNull();
+  malformed = false;
+  fireEvent.click(screen.getByRole("button", { name: "Review PGN" }));
+  expect(await screen.findByTestId("board")).toBeTruthy();
+});
+
+it("ignores a stale malformed success after the review input changes", async () => {
+  let finish!: (response: Response) => void;
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    if (url === "/api/repertoires") return Response.json(authored);
+    if (url.endsWith("/games")) return Response.json(saved);
+    return new Promise<Response>(resolve => { finish = resolve; });
+  }));
+  render(<GameReviewView />);
+  await screen.findByRole("button", { name: /lichess/ });
+  fireEvent.change(screen.getByLabelText("Paste PGN"), { target: { value: "1. e4" } });
+  fireEvent.click(screen.getByRole("button", { name: "Review PGN" }));
+  fireEvent.change(screen.getByLabelText("Paste PGN"), { target: { value: "1. d4" } });
+  await act(async () => { finish(Response.json({ positions: [] })); });
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.queryByTestId("board")).toBeNull();
+});
+
+it("retries a malformed initial list response", async () => {
+  let malformed = true;
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    if (url === "/api/repertoires") return Response.json(authored);
+    return Response.json(malformed ? { games: [{}] } : saved);
+  }));
+  render(<GameReviewView />);
+  expect((await screen.findByRole("alert")).textContent).toContain("Invalid Game Review");
+  malformed = false;
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  expect(await screen.findByRole("button", { name: /lichess/ })).toBeTruthy();
 });

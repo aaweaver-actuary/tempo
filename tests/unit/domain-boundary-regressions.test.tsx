@@ -4,7 +4,6 @@ import AnalyzeOnLichessButton from "@/app/components/buttons/AnalyzeOnLichessBut
 import { STANDARD_FEN } from "../../app/const";
 import { canonicalizeMoves } from "../../app/utils/canonical-line";
 import { mapQueueCardToPracticeCard, mapPackagedPuzzleToPracticeCard } from "../../app/domain/adapters/practice-card-adapters";
-import { adaptEngineMoves, adaptExplorerMoves } from "../../app/domain/adapters/analysis-adapters";
 
 describe("validated domain boundaries", () => {
   it("application aliases resolve in the regular frontend suite", () => {
@@ -20,16 +19,6 @@ describe("validated domain boundaries", () => {
       moves: ["e2e4"], diagnostics: [{ move: "garbage", kind: "invalid" }],
     });
     expect(canonicalizeMoves("bad FEN", []).diagnostics[0].kind).toBe("invalid");
-  });
-
-  it("engine candidates validate legal UCI and PV while preserving evaluations", () => {
-    const candidates = adaptEngineMoves(STANDARD_FEN, [
-      { uci: " E2E4 ", san: "incorrect", cp: 30, score: "+0.30", probability: 0.6, pv: ["e2e4", "e7e5", "0000"] },
-      { uci: "e2e5", san: "e5" }, { uci: "0000", san: "--" },
-    ]);
-    expect(candidates).toEqual([{ uci: "e2e4", san: "e4", cp: 30, score: "+0.30", probability: 0.6, pv: ["e2e4", "e7e5"] }]);
-    expect(adaptExplorerMoves(STANDARD_FEN, [{ uci: "e2e4", san: "bad", white: 4, draws: 3, black: 2 }])[0]).toMatchObject({ san: "e4", white: 4 });
-    expect(adaptExplorerMoves(STANDARD_FEN, [{ uci: "e2e4", white: -1, draws: 0, black: 0 }])).toEqual([]);
   });
 
   it("queue mapping preserves identity and guided state and rejects illegal persisted lines", () => {

@@ -4,10 +4,6 @@ import { Chess } from "chess.js";
 import { queueCardsFromPayload } from "../../app/domain/adapters/practice-card-adapters";
 import { computeStudyTask } from "../../app/lib/study-computation";
 import {
-  adaptEngineMoves,
-  adaptExplorerMoves,
-} from "../../app/domain/adapters/analysis-adapters";
-import {
   builderSessionSchema,
   discoveryRecommendationSchema,
   discoveryTrainingEligibilitySchema,
@@ -330,25 +326,6 @@ it("published study exercise queue cards retain their nullable repertoire and st
   expect(cards).toHaveLength(1);
   expect(cards[0]).toMatchObject({ kind: "study", studyId: "study-1", studyExerciseId: "exercise-1" });
   expect(dataDiagnostics()).toEqual([]);
-});
-
-it("third-party analysis accepts new provider fields but rejects invalid counts, probabilities and illegal moves", () => {
-  const fen = new Chess().fen();
-  expect(
-    adaptExplorerMoves(fen, [
-      { uci: "e2e4", white: 4, draws: 3, black: 2, providerAddition: true },
-      { uci: "e2e5", white: 1, draws: 1, black: 1 },
-      { uci: "d2d4", white: -1, draws: 0, black: 0 },
-    ]),
-  ).toHaveLength(1);
-  expect(
-    adaptEngineMoves(fen, [
-      { uci: "e2e4", san: "e4", probability: 2 },
-      { uci: "0000", san: "" },
-      { uci: "e2e4", san: "e4", probability: 0.6, pv: ["e2e4", "e7e5"] },
-    ]),
-  ).toHaveLength(1);
-  expect(dataDiagnostics()).toHaveLength(4);
 });
 
 it("malformed stored Builder state is retained for repair while a valid default remains available", () => {
