@@ -76,8 +76,8 @@ def clocks(monkeypatch, events):
     monkeypatch.setattr(application, "datetime", SimpleNamespace(now=now))
     monkeypatch.setattr(
         application,
-        "date",
-        SimpleNamespace(today=lambda: events.append("day") or date(2026, 10, 20)),
+        "capture_study_calendar",
+        lambda db: SimpleNamespace(day=date(2026, 10, 20)),
     )
 
 
@@ -234,8 +234,7 @@ def test_repertoire_delete_keeps_shared_owner_retention_policy_and_refresh_after
         "shared",
     ) in parameters
     assert parameters[-2:] == [application.SYSTEM_REPERTOIRE_IDS, ("replacement-main",)]
-    assert events[-2:] == [
-        "day",
+    assert events[-1:] == [
         ("queue", (database, "2026-10-20")),
     ]
     assert result == dict(deleted=True, id="old")
@@ -298,9 +297,8 @@ def test_permanent_delete_reparents_occurrences_before_graph_purge_and_refresh(
     assert events.index(("many", database.batches[0][1])) < events.index(
         ("execute", 5, (["deleted"],))
     )
-    assert events[-3:] == [
+    assert events[-2:] == [
         ("purge", ["deleted"]),
-        "day",
         ("queue", (database, "2026-10-20")),
     ]
 

@@ -2,7 +2,8 @@
 
 import asyncio
 from contextlib import contextmanager
-from datetime import date
+from datetime import date, datetime, timezone
+from app.study.policy.clock import study_calendar_at
 import json
 from types import SimpleNamespace
 
@@ -22,6 +23,8 @@ class Cursor:
     def fetchone(self):
         return self.row
 
+
+CALENDAR = study_calendar_at(datetime(2026, 11, 12, 2, tzinfo=timezone.utc), "America/New_York")
 
 class Reader:
     def __init__(self, queue_row, queue_task):
@@ -51,6 +54,7 @@ def readiness(
         yield Reader(queue_row, queue_task)
 
     monkeypatch.setattr(postgres_readiness, "read_connection", reader)
+    monkeypatch.setattr(postgres_readiness, "capture_study_calendar", lambda db: CALENDAR)
     monkeypatch.setattr(
         postgres_readiness.celery_app.control,
         "inspect",
@@ -75,7 +79,7 @@ def test_postgres_health_accepts_a_durable_queue_refresh_in_progress(monkeypatch
             "state": "leased",
             "payload_json": json.dumps(
                 {
-                    "queue_date": date.today().isoformat(),
+                    "queue_date": CALENDAR.day.isoformat(),
                 }
             ),
         },
@@ -110,6 +114,11 @@ def test_postgres_startup_checks_schema_and_requests_queue(monkeypatch):
         "dispatch_command",
         lambda *_args, **_kwargs: calls.append("queue") or {"ok": True},
     )
+    @contextmanager
+    def reader():
+        yield object()
+    monkeypatch.setattr(main, "read_connection", reader)
+    monkeypatch.setattr(main, "capture_study_calendar", lambda db: CALENDAR)
     async def run_lifespan():
         async with main.lifespan(main.app):
             calls.append("serving")
