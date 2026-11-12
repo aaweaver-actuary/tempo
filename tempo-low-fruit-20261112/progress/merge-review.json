@@ -2,9 +2,9 @@
   "schema_version": 1,
   "review_date": "2026-11-12",
   "baseline_revision": "40172873fdf5d134a35b872b24858917287cb81e",
-  "reviewed_through_revision": "10c72792ff6fef1e1be690a8ff7f5bded3a3de2c",
-  "scope": "Accepted merged-source progress for the first low-hanging-fruit batch and PR #998 documentation completion. Original audit observations, acceptance criteria, source links, coverage and baseline counts remain unchanged.",
-  "installation_state": "Not assessed in this merge review. No installed recovery or human review-to-next claim.",
+  "reviewed_through_revision": "d79ae4fcc4b006985114d85b5fb9a5aca8becbf1",
+  "scope": "Original55 finding registry preserved. Six further original-acceptance closures accepted; five residual findings explicitly remain Open. Source/native/merge and independently verified installation recorded separately.",
+  "installation_state": "d79ae4fc independently verified2026-11-12T19:31:39Z: five-image receipt, schema65, services and modes; no human live cadence claim.",
   "updates": [
     {
       "finding_id": "BE017",
@@ -115,48 +115,211 @@
           "workbook_evidence": "PR #994 merged 5031cede. Schema statement fixed to 65. Remaining ownership/tooling/browser links and retired-worker guidance still need reconciliation. https://github.com/aaweaver-actuary/tempo/pull/994"
         }
       ]
+    },
+    {
+      "finding_id": "ST001",
+      "status": "Closed",
+      "scope": "full",
+      "summary": "Typed scheduling initialization owns allocated-ID/due/state construction; storage retains fences/allocation/transaction without FSRS construction. Installed package147 and introduction units7 passed; fresh introduction native1/1 proves atomic failure behavior.",
+      "merged_revision": "d79ae4fcc4b006985114d85b5fb9a5aca8becbf1",
+      "evidence": "Qualified tree3cf62fd976b2f8623f3eb88f576b30639c1d62f4. Fresh grade/introduction/admission/split native1/1 each; packaged reader noStudywrites; six browser passes, zero skips/flaky/unexpected/retries; tactic history4/4,384MiB,maxconn16,noOOM, owned cleanup. Installation independently verified 2026-11-12 19:31:39 UTC for d79ae4fc: receipt binds five images, schema65, services and modes. No human live Study cadence measurement claimed.",
+      "installed_revision": "d79ae4fcc4b006985114d85b5fb9a5aca8becbf1",
+      "installed_verified_at": "2026-11-12T19:31:39Z",
+      "remaining_acceptance": "None against original finding criteria."
+    },
+    {
+      "finding_id": "ST007",
+      "status": "Closed",
+      "scope": "full",
+      "summary": "One Rust UCI validation/replay algorithm remains; native and WASM share it. Alternate constructor removed; independent fmt/clippy/eight retained parity/null tests passed on unchanged inputs.",
+      "merged_revision": "d79ae4fcc4b006985114d85b5fb9a5aca8becbf1",
+      "evidence": "Qualified tree3cf62fd976b2f8623f3eb88f576b30639c1d62f4. Fresh grade/introduction/admission/split native1/1 each; packaged reader noStudywrites; six browser passes, zero skips/flaky/unexpected/retries; tactic history4/4,384MiB,maxconn16,noOOM, owned cleanup. Installation independently verified 2026-11-12 19:31:39 UTC for d79ae4fc: receipt binds five images, schema65, services and modes. No human live Study cadence measurement claimed.",
+      "installed_revision": "d79ae4fcc4b006985114d85b5fb9a5aca8becbf1",
+      "installed_verified_at": "2026-11-12T19:31:39Z",
+      "remaining_acceptance": "None against original finding criteria."
+    },
+    {
+      "finding_id": "BE006",
+      "status": "Closed",
+      "scope": "full",
+      "summary": "Normal review and chronological replay share opening_maturity augmentation. Actual-caller differential checks identical history/baseline facts; scheduling/unlock algorithms remain single-owned. Real opening successor acceptance passed.",
+      "merged_revision": "d79ae4fcc4b006985114d85b5fb9a5aca8becbf1",
+      "evidence": "Qualified tree3cf62fd976b2f8623f3eb88f576b30639c1d62f4. Fresh grade/introduction/admission/split native1/1 each; packaged reader noStudywrites; six browser passes, zero skips/flaky/unexpected/retries; tactic history4/4,384MiB,maxconn16,noOOM, owned cleanup. Installation independently verified 2026-11-12 19:31:39 UTC for d79ae4fc: receipt binds five images, schema65, services and modes. No human live Study cadence measurement claimed.",
+      "installed_revision": "d79ae4fcc4b006985114d85b5fb9a5aca8becbf1",
+      "installed_verified_at": "2026-11-12T19:31:39Z",
+      "remaining_acceptance": "None against original finding criteria."
+    },
+    {
+      "finding_id": "BE016",
+      "status": "Closed",
+      "scope": "full",
+      "summary": "Pure first-response codec shared by issuance, grade effects and checkpoint, with transport/storage/checkpoint-blocked import test and exact canonical-byte fixtures. Fresh grade-effects native1/1 and real position reload/offline passed.",
+      "merged_revision": "d79ae4fcc4b006985114d85b5fb9a5aca8becbf1",
+      "evidence": "Qualified tree3cf62fd976b2f8623f3eb88f576b30639c1d62f4. Fresh grade/introduction/admission/split native1/1 each; packaged reader noStudywrites; six browser passes, zero skips/flaky/unexpected/retries; tactic history4/4,384MiB,maxconn16,noOOM, owned cleanup. Installation independently verified 2026-11-12 19:31:39 UTC for d79ae4fc: receipt binds five images, schema65, services and modes. No human live Study cadence measurement claimed.",
+      "installed_revision": "d79ae4fcc4b006985114d85b5fb9a5aca8becbf1",
+      "installed_verified_at": "2026-11-12T19:31:39Z",
+      "remaining_acceptance": "None against original finding criteria."
+    },
+    {
+      "finding_id": "ST009",
+      "status": "Closed",
+      "scope": "full",
+      "summary": "Physical burial/activation prefixes absent from application code; browser adapters own shared read/write/delete encoding. Retained identity/body and reversed-pack compatibility tested; real browser recovery accepted.",
+      "merged_revision": "d79ae4fcc4b006985114d85b5fb9a5aca8becbf1",
+      "evidence": "Qualified tree3cf62fd976b2f8623f3eb88f576b30639c1d62f4. Fresh grade/introduction/admission/split native1/1 each; packaged reader noStudywrites; six browser passes, zero skips/flaky/unexpected/retries; tactic history4/4,384MiB,maxconn16,noOOM, owned cleanup. Installation independently verified 2026-11-12 19:31:39 UTC for d79ae4fc: receipt binds five images, schema65, services and modes. No human live Study cadence measurement claimed.",
+      "installed_revision": "d79ae4fcc4b006985114d85b5fb9a5aca8becbf1",
+      "installed_verified_at": "2026-11-12T19:31:39Z",
+      "remaining_acceptance": "None against original finding criteria."
+    },
+    {
+      "finding_id": "FE011",
+      "status": "Closed",
+      "scope": "full",
+      "summary": "View consumes pure validated GameReview decoder; invalid arrays/boards/comparison bounds yield recoverable errors. Independent decoder consumer and malformed200 retry tests pass; packaged reader and visible pasted/saved GameReview prove no Study writes.",
+      "merged_revision": "d79ae4fcc4b006985114d85b5fb9a5aca8becbf1",
+      "evidence": "Qualified tree3cf62fd976b2f8623f3eb88f576b30639c1d62f4. Fresh grade/introduction/admission/split native1/1 each; packaged reader noStudywrites; six browser passes, zero skips/flaky/unexpected/retries; tactic history4/4,384MiB,maxconn16,noOOM, owned cleanup. Installation independently verified 2026-11-12 19:31:39 UTC for d79ae4fc: receipt binds five images, schema65, services and modes. No human live Study cadence measurement claimed.",
+      "installed_revision": "d79ae4fcc4b006985114d85b5fb9a5aca8becbf1",
+      "installed_verified_at": "2026-11-12T19:31:39Z",
+      "remaining_acceptance": "None against original finding criteria."
+    },
+    {
+      "finding_id": "FE005",
+      "status": "Open",
+      "scope": "partial",
+      "summary": "Partial: semantic retained facts and inert factory accepted, but study-client.ts still names tempo-offline-training and interprets/casts physical offlineDatabase registry fields. Original no-database-name/storage-cast policy criterion unmet.",
+      "merged_revision": "d79ae4fcc4b006985114d85b5fb9a5aca8becbf1",
+      "evidence": "Qualified tree3cf62fd976b2f8623f3eb88f576b30639c1d62f4. Fresh grade/introduction/admission/split native1/1 each; packaged reader noStudywrites; six browser passes, zero skips/flaky/unexpected/retries; tactic history4/4,384MiB,maxconn16,noOOM, owned cleanup. Installation independently verified 2026-11-12 19:31:39 UTC for d79ae4fc: receipt binds five images, schema65, services and modes. No human live Study cadence measurement claimed.",
+      "installed_revision": "d79ae4fcc4b006985114d85b5fb9a5aca8becbf1",
+      "installed_verified_at": "2026-11-12T19:31:39Z",
+      "remaining_acceptance": "Partial: semantic retained facts and inert factory accepted, but study-client.ts still names tempo-offline-training and interprets/casts physical offlineDatabase registry fields. Original no-database-name/storage-cast policy criterion unmet."
+    },
+    {
+      "finding_id": "FE007",
+      "status": "Open",
+      "scope": "partial",
+      "summary": "Partial: shell public type direction and removed dead adapter accepted. Domain workspace adapter still imports mutable diagnostic/listener service; type-aware negative domain import-direction proof not established. Original pure dependency/guard criterion unmet.",
+      "merged_revision": "d79ae4fcc4b006985114d85b5fb9a5aca8becbf1",
+      "evidence": "Qualified tree3cf62fd976b2f8623f3eb88f576b30639c1d62f4. Fresh grade/introduction/admission/split native1/1 each; packaged reader noStudywrites; six browser passes, zero skips/flaky/unexpected/retries; tactic history4/4,384MiB,maxconn16,noOOM, owned cleanup. Installation independently verified 2026-11-12 19:31:39 UTC for d79ae4fc: receipt binds five images, schema65, services and modes. No human live Study cadence measurement claimed.",
+      "installed_revision": "d79ae4fcc4b006985114d85b5fb9a5aca8becbf1",
+      "installed_verified_at": "2026-11-12T19:31:39Z",
+      "remaining_acceptance": "Partial: shell public type direction and removed dead adapter accepted. Domain workspace adapter still imports mutable diagnostic/listener service; type-aware negative domain import-direction proof not established. Original pure dependency/guard criterion unmet."
+    },
+    {
+      "finding_id": "FE001",
+      "status": "Open",
+      "scope": "partial",
+      "summary": "Open: initial202 expected-original-operation-ID validation gap remains. Canonical decoder and passing browser journeys do not close that residual.",
+      "merged_revision": "d79ae4fcc4b006985114d85b5fb9a5aca8becbf1",
+      "evidence": "Qualified tree3cf62fd976b2f8623f3eb88f576b30639c1d62f4. Fresh grade/introduction/admission/split native1/1 each; packaged reader noStudywrites; six browser passes, zero skips/flaky/unexpected/retries; tactic history4/4,384MiB,maxconn16,noOOM, owned cleanup. Installation independently verified 2026-11-12 19:31:39 UTC for d79ae4fc: receipt binds five images, schema65, services and modes. No human live Study cadence measurement claimed.",
+      "installed_revision": "d79ae4fcc4b006985114d85b5fb9a5aca8becbf1",
+      "installed_verified_at": "2026-11-12T19:31:39Z",
+      "remaining_acceptance": "Open: initial202 expected-original-operation-ID validation gap remains. Canonical decoder and passing browser journeys do not close that residual."
+    },
+    {
+      "finding_id": "BE003",
+      "status": "Open",
+      "scope": "partial",
+      "summary": "Open: settings-zone contract and historical missing-day caller dispositions remain despite accepted captured-context/native/browser work.",
+      "merged_revision": "d79ae4fcc4b006985114d85b5fb9a5aca8becbf1",
+      "evidence": "Qualified tree3cf62fd976b2f8623f3eb88f576b30639c1d62f4. Fresh grade/introduction/admission/split native1/1 each; packaged reader noStudywrites; six browser passes, zero skips/flaky/unexpected/retries; tactic history4/4,384MiB,maxconn16,noOOM, owned cleanup. Installation independently verified 2026-11-12 19:31:39 UTC for d79ae4fc: receipt binds five images, schema65, services and modes. No human live Study cadence measurement claimed.",
+      "installed_revision": "d79ae4fcc4b006985114d85b5fb9a5aca8becbf1",
+      "installed_verified_at": "2026-11-12T19:31:39Z",
+      "remaining_acceptance": "Open: settings-zone contract and historical missing-day caller dispositions remain despite accepted captured-context/native/browser work."
+    },
+    {
+      "finding_id": "FE008",
+      "status": "Open",
+      "scope": "partial",
+      "summary": "Open: retired unused adapters removed; supported authored-exercise compatibility and retained records remain outside D01 acceptance.",
+      "merged_revision": "d79ae4fcc4b006985114d85b5fb9a5aca8becbf1",
+      "evidence": "Qualified tree3cf62fd976b2f8623f3eb88f576b30639c1d62f4. Fresh grade/introduction/admission/split native1/1 each; packaged reader noStudywrites; six browser passes, zero skips/flaky/unexpected/retries; tactic history4/4,384MiB,maxconn16,noOOM, owned cleanup. Installation independently verified 2026-11-12 19:31:39 UTC for d79ae4fc: receipt binds five images, schema65, services and modes. No human live Study cadence measurement claimed.",
+      "installed_revision": "d79ae4fcc4b006985114d85b5fb9a5aca8becbf1",
+      "installed_verified_at": "2026-11-12T19:31:39Z",
+      "remaining_acceptance": "Open: retired unused adapters removed; supported authored-exercise compatibility and retained records remain outside D01 acceptance."
     }
   ],
   "pending_prs": [
     {
-      "pr": 991,
-      "findings": [
-        "BE006"
-      ],
-      "state": "Unmerged; current-main integration and scheduling guard correction have 57 focused passing cases. Assembled saved-review-to-next proof remains pending.",
-      "code_revision": "da457a44da68ed5aefd71c41231eb76074510034"
-    },
-    {
-      "pr": 992,
-      "findings": [
-        "BE016"
-      ],
-      "state": "Unmerged; native import repaired and case collection verified. Native rollback/replay execution and assembled/browser proof remain pending.",
-      "code_revision": "1d68597b8b8da4c61bba6b9ea91793e42475540f"
-    },
-    {
-      "pr": 993,
-      "findings": [
-        "FE001",
-        "ST009"
-      ],
-      "state": "Unmerged; real-browser recovery and combined integrity behavior proof remain pending",
-      "code_revision": "9b02516ae2336714710a639b23e2a107dfe9d2db"
-    },
-    {
-      "pr": 995,
-      "findings": [
-        "FE011",
-        "FE007",
-        "FE008"
-      ],
-      "state": "Unmerged; three inventory files corrected. Game Review and combined integrity/browser qualification remain pending.",
-      "code_revision": "328ef924856ce0490c2e9dab7a1e4b42ae9eae8a"
+      "pr": 1004,
+      "code_revision": "b29c915e4bb24467bf544af0d089421b95462e5c",
+      "state": "Open draft; E02 source checkpoint only. Mixed current/retired native durability proof remains incomplete; not accepted, merged or installed as E02 repair.",
+      "findings": []
     }
   ],
   "status_counts": {
-    "Closed": 8,
+    "Closed": 14,
     "Needs decision": 4,
-    "Open": 43
-  }
+    "Open": 37
+  },
+  "historical_pending_prs": [
+    {
+      "recorded_date": "2026-11-12",
+      "reviewed_through_revision": "10c72792ff6fef1e1be690a8ff7f5bded3a3de2c",
+      "superseded_by_revision": "d79ae4fcc4b006985114d85b5fb9a5aca8becbf1",
+      "description": "Preserved prior audit snapshot, before Q0 qualification and merge; not current pending work.",
+      "records": [
+        {
+          "pr": 991,
+          "findings": [
+            "BE006"
+          ],
+          "state": "Unmerged; current-main integration and scheduling guard correction have 57 focused passing cases. Assembled saved-review-to-next proof remains pending.",
+          "code_revision": "da457a44da68ed5aefd71c41231eb76074510034"
+        },
+        {
+          "pr": 992,
+          "findings": [
+            "BE016"
+          ],
+          "state": "Unmerged; native import repaired and case collection verified. Native rollback/replay execution and assembled/browser proof remain pending.",
+          "code_revision": "1d68597b8b8da4c61bba6b9ea91793e42475540f"
+        },
+        {
+          "pr": 993,
+          "findings": [
+            "FE001",
+            "ST009"
+          ],
+          "state": "Unmerged; real-browser recovery and combined integrity behavior proof remain pending",
+          "code_revision": "9b02516ae2336714710a639b23e2a107dfe9d2db"
+        },
+        {
+          "pr": 995,
+          "findings": [
+            "FE011",
+            "FE007",
+            "FE008"
+          ],
+          "state": "Unmerged; three inventory files corrected. Game Review and combined integrity/browser qualification remain pending.",
+          "code_revision": "328ef924856ce0490c2e9dab7a1e4b42ae9eae8a"
+        }
+      ]
+    }
+  ],
+  "merged_prior_pending_prs": [
+    {
+      "pr": 991,
+      "code_revision": "da457a44da68ed5aefd71c41231eb76074510034",
+      "merge_revision": "a5b2b20d35b31daa2407af9b6588df95b816113d",
+      "state": "Merged after Q0 qualification; included in installed Q0 release 8923886e and latest independently verified d79ae4fc. Finding-specific residuals remain as recorded in updates."
+    },
+    {
+      "pr": 992,
+      "code_revision": "1d68597b8b8da4c61bba6b9ea91793e42475540f",
+      "merge_revision": "1665e4ed2671caa4483788c3fd5f7c7dec22d8c8",
+      "state": "Merged after Q0 qualification; included in installed Q0 release 8923886e and latest independently verified d79ae4fc. Finding-specific residuals remain as recorded in updates."
+    },
+    {
+      "pr": 993,
+      "code_revision": "9b02516ae2336714710a639b23e2a107dfe9d2db",
+      "merge_revision": "1763def2527b9afb49bedd6c6012fcae2ebc9314",
+      "state": "Merged after Q0 qualification; included in installed Q0 release 8923886e and latest independently verified d79ae4fc. Finding-specific residuals remain as recorded in updates."
+    },
+    {
+      "pr": 995,
+      "code_revision": "328ef924856ce0490c2e9dab7a1e4b42ae9eae8a",
+      "merge_revision": "8e7da241a728a9501e543985af74fe687bea3f98",
+      "state": "Merged after Q0 qualification; included in installed Q0 release 8923886e and latest independently verified d79ae4fc. Finding-specific residuals remain as recorded in updates."
+    }
+  ]
 }
