@@ -10,6 +10,7 @@ import json
 from typing import Any
 
 from fastapi import HTTPException
+from .study.policy.observation_summary import observation_counts
 
 from tempo_storage.authored_repertoires.card_deletion import storage
 from tempo_storage.authored_repertoires.card_deletion.storage import is_card_deleted
@@ -91,15 +92,7 @@ def _purge_opening_evidence(database, identifiers, queue_ids):
         database, affected_decisions
     ):
         observation = json.loads(serialized)
-        responded = observation.get("first_response_uci") is not None
-        counts = (
-            int(responded),
-            int(observation.get("clean", False)),
-            int(observation.get("first_response_correct") is False),
-            int(responded and bool(observation.get("assistance_before_response"))),
-            int(observation.get("manual_failure", False)),
-            int(observation.get("corrected", False)),
-        )
+        counts = observation_counts(observation)
         summary = remaining[decision_id]
         summary["counts"] = [
             left + right for left, right in zip(summary["counts"], counts)
