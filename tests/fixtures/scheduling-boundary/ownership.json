@@ -14,7 +14,8 @@
     "backend/tests/test_scheduling_boundary.py",
     "backend/tests/test_scheduling_package_adapter.py",
     "backend/tests/test_scheduling_review_application.py",
-    "backend/tests/test_opening_baseline_maturity.py"
+    "backend/tests/test_opening_baseline_maturity.py",
+    "backend/tests/test_study_calendar.py"
   ],
   "consumers": {
     "tempo_storage.scheduling_review_store": [
@@ -63,7 +64,6 @@
       "__future__",
       "datetime",
       "json",
-      "app.study.policy.clock",
       "app.services.scheduler",
       "app.study.policy.scheduling_review_contracts",
       "app.study.policy.opening_maturity"
@@ -75,9 +75,9 @@
       "typing"
     ],
     "app.study.policy.clock": [
-      "contextvars",
+      "dataclasses",
       "datetime",
-      "zoneinfo"
+      "tempo_learning_review"
     ],
     "app": [],
     "app.services": [],

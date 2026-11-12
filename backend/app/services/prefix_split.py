@@ -3,7 +3,7 @@
 from __future__ import annotations
 from tempo_storage.postgres import PostgresConnection,TempoRow
 
-from datetime import date, datetime, timezone
+from app.study.policy.clock import StudyCalendar
 import json
 
 import chess
@@ -163,6 +163,8 @@ def apply_prefix_split(
     database: PostgresConnection,
     source_card_id: str,
     expected_revision: int,
+    *,
+    calendar: StudyCalendar,
 ) -> dict:
     prior = storage.prior_split(database, source_card_id)
     source_card = storage.card_row(database, source_card_id)
@@ -181,8 +183,8 @@ def apply_prefix_split(
     if int(source_card["revision"]) != expected_revision:
         raise RuntimeError("The card changed. Refresh the queue and try again")
 
-    now = datetime.now(timezone.utc).isoformat()
-    today = date.today().isoformat()
+    now = calendar.observed_at.isoformat()
+    today = calendar.day.isoformat()
     previous_order = capture_daily_queue_order(database, today)
     shortened_card_id = split["shortened_card_id"]
     continuation_card_id = split["continuation_card_id"]

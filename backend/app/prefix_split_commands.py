@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Any
 
 from fastapi import HTTPException
+
+from .services.study_calendar import capture_study_calendar
 
 from .command_gateway import register_command
 from tempo_storage.foreground_controls import prefix_splits as storage
@@ -38,9 +39,10 @@ def accept_prefix_split(
     card_id = str(payload["card_id"])
     request = PrefixSplitRequest.model_validate(payload["request"])
     _lock_prefix_card(database, card_id)
-    lock_queue_date_for_position(database, date.today().isoformat())
+    calendar = capture_study_calendar(database)
+    lock_queue_date_for_position(database, calendar.day.isoformat())
     try:
-        result = apply_prefix_split(database, card_id, request.expected_revision)
+        result = apply_prefix_split(database, card_id, request.expected_revision, calendar=calendar)
     except KeyError as error:
         raise HTTPException(404, str(error)) from error
     except ValueError as error:
@@ -66,7 +68,7 @@ def accept_prefix_split(
             request_graph_rebuild_in_transaction(
                 database,
                 repertoire_id,
-                date.today().isoformat(),
+                calendar.day.isoformat(),
             )
     return {**result, **_shared_usage(database, card_id)}
 

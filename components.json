@@ -183,6 +183,8 @@
         "Schedule",
         "schedule_review",
         "unlock_ready",
+        "InitialPositionState",
+        "initial_position_state",
         "PositionGrade",
         "PositionSchedule",
         "clone_state",

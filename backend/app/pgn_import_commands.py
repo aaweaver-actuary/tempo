@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from datetime import date, datetime, timezone
 import hashlib
 import json
 from typing import Any, Literal
@@ -11,6 +10,8 @@ import uuid
 
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
+
+from .services.study_calendar import capture_study_calendar
 
 from .command_gateway import register_command
 from .pgn_import_validation import validate_sources
@@ -108,7 +109,8 @@ def _admit_pgn_import(
         )
     source_name = payload.source_name
     trained_color = payload.trained_color
-    now = datetime.now(timezone.utc).isoformat()
+    calendar = capture_study_calendar(database)
+    now = calendar.observed_at.isoformat()
     storage.lock_main_repertoire(database)
     existing_repertoire = storage.matching_repertoire(
         database, source_name, trained_color
@@ -222,7 +224,7 @@ def _admit_pgn_import(
     graph = request_graph_rebuild_in_transaction(
         database,
         repertoire_id,
-        date.today().isoformat(),
+        calendar.day.isoformat(),
         **({"origin_import_operation_id": payload.operation_id} if explicit else {}),
     )
     return {

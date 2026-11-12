@@ -272,8 +272,11 @@ def apply_opening_introduction(database, prepared, fenced, *, now):
         initialize_introduction,
     )
 
+    from tempo_scheduling import initial_position_state
+
     if prepared[0] == "position":
-        initialize_introduction(database, prepared[1], fenced, now=now)
+        initialize_introduction(database, prepared[1], fenced, now=now,
+                                initial_state=initial_position_state)
 
 
 def redundant_opening_introduction(prepared, fenced):
@@ -379,7 +382,10 @@ def admit_targeted_position_introduction(
         ).fetchone()
         if not admitted:
             raise ValueError("position_canonical_introduction_unproved")
-        initialize_introduction(database, prepared, fenced, now=now)
+        from tempo_scheduling import initial_position_state
+
+        initialize_introduction(database, prepared, fenced, now=now,
+                                initial_state=initial_position_state)
     elif result.status in {"already_introduced", "replayed"}:
         # This pre-fenced proposal represented unseen state, so an existing
         # physical receipt cannot authorize us to reset/replace a position.

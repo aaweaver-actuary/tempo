@@ -5,11 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from collections import defaultdict
 from bisect import bisect_left
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 import json
 from typing import Any
 
 from fastapi import HTTPException
+from .services.study_calendar import capture_study_calendar
+from .study.policy.observation_summary import observation_counts
 
 from tempo_storage.authored_repertoires.card_deletion import storage
 from tempo_storage.authored_repertoires.card_deletion.storage import is_card_deleted
@@ -91,15 +93,7 @@ def _purge_opening_evidence(database, identifiers, queue_ids):
         database, affected_decisions
     ):
         observation = json.loads(serialized)
-        responded = observation.get("first_response_uci") is not None
-        counts = (
-            int(responded),
-            int(observation.get("clean", False)),
-            int(observation.get("first_response_correct") is False),
-            int(responded and bool(observation.get("assistance_before_response"))),
-            int(observation.get("manual_failure", False)),
-            int(observation.get("corrected", False)),
-        )
+        counts = observation_counts(observation)
         summary = remaining[decision_id]
         summary["counts"] = [
             left + right for left, right in zip(summary["counts"], counts)
@@ -118,6 +112,7 @@ def delete_repertoire_data(
         raise HTTPException(400, "This system repertoire cannot be deleted")
     if learned_cards not in {"keep", "delete"}:
         raise HTTPException(422, "Choose whether to keep or delete learned cards")
+    calendar = capture_study_calendar(database)
     storage.lock_main_repertoire(database)
     cancel_repertoire_tasks(database, repertoire_id)
     repertoire = storage.locked_repertoire(database, repertoire_id)
@@ -172,7 +167,7 @@ def delete_repertoire_data(
             storage.select_main(database, replacement[0])
     from .queue_commands import request_queue_refresh_in_transaction
 
-    request_queue_refresh_in_transaction(database, date.today().isoformat())
+    request_queue_refresh_in_transaction(database, calendar.day.isoformat())
     return {"deleted": True, "id": repertoire_id}
 
 
@@ -197,6 +192,7 @@ def permanent_delete_card(
         raise HTTPException(404, "Card not found")
     if int(card["revision"]) != expected_revision:
         raise HTTPException(409, "The card changed; refresh it before deleting")
+    calendar = capture_study_calendar(database)
     # Link each child to the deleted step's predecessor within its own source
     # route, preserving all other cards and their schedules without fake reviews.
     _reparent_stored_graph_dependencies(database, identifier)
@@ -204,7 +200,7 @@ def permanent_delete_card(
     purge_card_data(database, [identifier])
     from .queue_commands import request_queue_refresh_in_transaction
 
-    request_queue_refresh_in_transaction(database, date.today().isoformat())
+    request_queue_refresh_in_transaction(database, calendar.day.isoformat())
     return {"deleted": True, "card_id": identifier}
 
 

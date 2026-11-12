@@ -128,20 +128,9 @@ def test_revision_preserves_scope_sorted_locks_history_branch_certification_and_
 
     monkeypatch.setattr(application.change_storage, "lock_sources", current_sources)
     monkeypatch.setattr(application, "card_id", lambda *args: replacement)
-    monkeypatch.setattr(
-        application,
-        "datetime",
-        SimpleNamespace(
-            now=lambda zone: (
-                events.append("clock") or SimpleNamespace(isoformat=lambda: "timestamp")
-            )
-        ),
-    )
-    monkeypatch.setattr(
-        application,
-        "date",
-        SimpleNamespace(today=lambda: events.append("day") or date(2026, 10, 20)),
-    )
+    monkeypatch.setattr(application, "capture_study_calendar", lambda db:
+        events.append("clock") or SimpleNamespace(
+            observed_at=SimpleNamespace(isoformat=lambda: "timestamp"), day=date(2026, 10, 20)))
     columns = [
         "id",
         "due_date",
@@ -218,7 +207,7 @@ def test_revision_preserves_scope_sorted_locks_history_branch_certification_and_
             (replacement, "z-source"),
         ]
     else:
-        assert events.index("clock") < events.index("day") < events.index("columns")
+        assert events.index("clock") < events.index("columns")
         assert writes[:3] == [
             (replacement, "2026-10-20", 0, None, "new", '["d2d4"]'),
             (replacement, "z-source"),
@@ -230,7 +219,8 @@ def test_revision_preserves_scope_sorted_locks_history_branch_certification_and_
         < events.index("certify")
         < events.index(("native", len(native) - 1))
     )
-    assert events[-2:] == ["day", ("refresh", (database, "rep", "2026-10-20"))]
+    assert events[-1:] == [("refresh", (database, "rep", "2026-10-20"))]
+    assert events.count("clock") == 1
     assert result == dict(
         card_id=replacement,
         replaced=branch != "same",
@@ -297,8 +287,8 @@ def test_archive_keeps_lazy_membership_queue_completion_before_refresh_and_summa
     )
     monkeypatch.setattr(
         application,
-        "date",
-        SimpleNamespace(today=lambda: events.append("day") or date(2026, 10, 20)),
+        "capture_study_calendar",
+        lambda db: events.append("calendar") or SimpleNamespace(day=date(2026, 10, 20)),
     )
     monkeypatch.setattr(
         application,
@@ -313,9 +303,8 @@ def test_archive_keeps_lazy_membership_queue_completion_before_refresh_and_summa
     result = application.archive_card(database, dict(card_id="card"))
     assert database.native_calls[1][1] == ("tempo:card-edit:card",)
     assert events.index("iterate") < events.index(("native", 5))
-    assert events[-4:] == [
+    assert events[-3:] == [
         ("native", 6),
-        "day",
         ("refresh", (database, "rep", "2026-10-20")),
         "summary",
     ]

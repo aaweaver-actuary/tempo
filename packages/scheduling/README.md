@@ -29,6 +29,14 @@ constructors, decoding, or scheduling mathematics.
 
 Position-owned cohorts use the additive public `clone_state` and
 `schedule_position_review` APIs, with `PositionSchedule` and `PositionGrade`.
+`initial_position_state(allocated_card_id, due_at)` returns `InitialPositionState`
+with the fresh serialized FSRS state and due instant. The ID must be an externally
+allocated positive integer and the due instant must be aware. The result is
+Learning step zero with no review history, stability or difficulty. Study supplies
+this pure operation to storage after admission; storage retains allocation,
+uniqueness, fences and insertion in the existing borrowed transaction. It creates
+no review and does not read a clock or persist anything.
+
 `clone_state(fsrs_json, *, allocated_new_card_id)` validates coherent complete
 FSRS 6.3.2 Card JSON through the supported decoder and roundtrip, preserving
 memory/due/state/step while rekeying. A fresh unreviewed Learning card is valid;

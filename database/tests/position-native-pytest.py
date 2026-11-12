@@ -15,6 +15,20 @@ import tomllib
 import uuid
 
 NODEID = 'database/tests/position_study/test_position_grade_effects.py::test_native_two_decisions_and_late_failure_rollback'
+NODEIDS = {
+    'position-queue-admission': 'backend/tests/test_position_queue_admission.py::test_native_refresh_admits_due_carrier_and_reuses_pending',
+    'position-grade-effects': NODEID,
+    'position-introductions': 'backend/tests/test_position_introductions.py::test_native_authorized_introduction_writes_fresh_state_only_after_admission',
+}
+
+
+def selected_nodeid(environment):
+    check = environment.get('TEMPO_NATIVE_POSITION_CHECK', 'position-grade-effects')
+    if check not in NODEIDS:
+        raise RuntimeError('Unknown native position check')
+    return NODEIDS[check]
+
+
 ROOT = Path(__file__).resolve().parents[2]
 PYTEST_PACKAGES = {'pytest', 'iniconfig', 'packaging', 'pluggy', 'pygments'}
 
@@ -43,7 +57,8 @@ def locked_requirements(lock):
 
 
 class ExactCase:
-    def __init__(self):
+    def __init__(self, nodeid=NODEID):
+        self.nodeid = nodeid
         self.collected = []
         self.reports = []
 
@@ -54,8 +69,8 @@ class ExactCase:
         self.reports.append({'id': report.nodeid, 'phase': report.when, 'status': report.outcome})
 
     def passed(self, exit_code):
-        return (exit_code == 0 and self.collected == [NODEID]
-                and self.reports == [{'id': NODEID, 'phase': phase, 'status': 'passed'}
+        return (exit_code == 0 and self.collected == [self.nodeid]
+                and self.reports == [{'id': self.nodeid, 'phase': phase, 'status': 'passed'}
                                      for phase in ('setup', 'call', 'teardown')])
 
 
@@ -86,11 +101,12 @@ def execute():
     from psycopg import sql
     import pytest
     project, revision = identity(os.environ)
+    nodeid = selected_nodeid(os.environ)
     database = 'tempo_position_test_' + uuid.uuid4().hex
     evidence = {'project': project, 'database': database, 'head': revision,
-                'expected': [NODEID], 'runtime': {'python': sys.version, 'pytest': pytest.__version__, 'image': os.environ.get('TEMPO_NATIVE_RUNTIME_IMAGE')},
+                'expected': [nodeid], 'runtime': {'python': sys.version, 'pytest': pytest.__version__, 'image': os.environ.get('TEMPO_NATIVE_RUNTIME_IMAGE')},
                 'cleanup': 'pending'}
-    recorder = ExactCase()
+    recorder = ExactCase(nodeid)
     def run_case():
         os.environ['TEMPO_POSITION_TEST_DSN'] = 'postgresql://postgres@postgres:5432/' + database
         os.environ['PYTEST_DISABLE_PLUGIN_AUTOLOAD'] = '1'
@@ -99,9 +115,9 @@ def execute():
             sys.path.insert(0, str(path))
         os.chdir(ROOT)
         with contextlib.redirect_stdout(sys.stderr):
-            code = pytest.main(['-q', '-p', 'no:cacheprovider', '-o', 'addopts=', '--rootdir=' + str(ROOT), NODEID], plugins=[recorder])
+            code = pytest.main(['-q', '-p', 'no:cacheprovider', '-o', 'addopts=', '--rootdir=' + str(ROOT), nodeid], plugins=[recorder])
         evidence.update(collected=recorder.collected, reports=recorder.reports,
-                        tests=[{'id': NODEID, 'status': 'passed' if recorder.passed(code) else 'failed', 'retries': 0}])
+                        tests=[{'id': nodeid, 'status': 'passed' if recorder.passed(code) else 'failed', 'retries': 0}])
         if not recorder.passed(code):
             raise RuntimeError('Exact native pytest case did not execute once without skips/failures')
     try:
@@ -117,6 +133,7 @@ def execute():
 
 def main():
     identity(os.environ)
+    selected_nodeid(os.environ)
     if sys.argv[1:] == ['--execute']:
         execute()
         return

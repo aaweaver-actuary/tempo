@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from .clock import date
+from datetime import date, datetime, timedelta, timezone
+from tempo_learning_review import review_day_at as _review_day
 from .opening_maturity import augment_opening_maturity
 import json
 
@@ -16,19 +16,6 @@ SCHEDULE_COLUMNS = storage.SCHEDULE_COLUMNS
 card_schedule_state = storage.card_schedule_state
 save_schedule_snapshot = storage.save_schedule_snapshot
 _write_card_state = storage.write_card_state
-
-
-def _review_day(moment: datetime, timezone_name: str) -> date:
-    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-
-    try:
-        return (
-            moment.astimezone(ZoneInfo(timezone_name)).date()
-            if timezone_name != "local"
-            else moment.astimezone().date()
-        )
-    except ZoneInfoNotFoundError:
-        return moment.astimezone().date()
 
 
 def _next_state(
@@ -108,6 +95,8 @@ def reconcile_completed_review(
     completed_at: datetime | None,
     expected_revision: int | None,
     timezone_name: str,
+    observed_at: datetime,
+    local_day: date,
     competing_review: dict | None = None,
 ) -> dict:
     prior = storage.review_attempt_receipt(database, attempt_id)
@@ -138,7 +127,7 @@ def reconcile_completed_review(
         status = "history_only"
         warning = "The card changed or was removed after this review. The phone result was saved as review evidence, but the current schedule was not changed. Review the current card again when it appears to establish a new schedule."
     else:
-        review_time = completed_at or datetime.now(timezone.utc)
+        review_time = completed_at or observed_at
         scheduled_outcome = "again" if guided else outcome
         later = [
             dict(row)
@@ -202,7 +191,7 @@ def reconcile_completed_review(
         else:
             conservative_due = min(
                 date.fromisoformat(current["due_date"]),
-                date.today() + timedelta(days=1),
+                local_day + timedelta(days=1),
             )
             storage.set_conservative_due(database, conservative_due.isoformat(), card_id)
 
@@ -210,7 +199,7 @@ def reconcile_completed_review(
         legacy_day = (
             _review_day(events[-1][3], timezone_name).isoformat()
             if status == "chronological"
-            else date.today().isoformat()
+            else local_day.isoformat()
         )
         unlock_legacy_children_after_review(
             database,

@@ -6,7 +6,6 @@ from redis import RedisError
 import time
 import uuid
 from contextlib import asynccontextmanager
-from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 
 import chess
@@ -63,6 +62,7 @@ from app.contracts.transport.tactics import (
     TacticCaptureRequest,
     TacticCaptureResponse,
 )
+from .services.study_calendar import capture_study_calendar
 from .services import queue_application, queue_ordering
 from .services.analysis_paste import PasteInputError, build_paste_preview
 from .services.activity_gate import activity_gate
@@ -88,9 +88,11 @@ async def lifespan(_: FastAPI):
     initialize()
     from .command_dispatch import dispatch_command
 
+    with read_connection() as database:
+        calendar = capture_study_calendar(database)
     startup_queue_request = dispatch_command(
         "queue.ensure_current",
-        {"queue_date": date.today().isoformat()},
+        {"queue_date": calendar.day.isoformat()},
         idempotency_key=None,
     )
     if (
@@ -543,6 +545,7 @@ _RECOVERY_TASK_KINDS = frozenset(
 def system_tasks():
     tasks = [task for task in list_tasks() if task["kind"] in _RECOVERY_TASK_KINDS]
     with read_connection() as database:
+        calendar = capture_study_calendar(database)
         projections = [
             dict(row) for row in system_storage.recent_queue_projections(database)
         ]
@@ -562,7 +565,7 @@ def system_tasks():
             ),
         },
         "queue_projections": annotate_queue_projection_workers(
-            projections, tasks, date.today().isoformat()
+            projections, tasks, calendar.day.isoformat()
         ),
     }
     return result
@@ -823,8 +826,9 @@ def list_repertoires():
     from .repertoire_settings import SYSTEM_REPERTOIRES
 
     with read_connection() as db:
+        calendar = capture_study_calendar(db)
         rows = repertoire_http_storage.repertoire_rows(
-            db, SYSTEM_REPERTOIRES, lambda: date.today().isoformat()
+            db, SYSTEM_REPERTOIRES, lambda: calendar.day.isoformat()
         )
         repertoire_items = [
             {
@@ -1171,8 +1175,6 @@ def _apply_review(identifier: str, request: ReviewRequest, *, database=None):
         identifier,
         request,
         database=database,
-        observed_at=datetime.now(timezone.utc),
-        local_day=date.today(),
         policy_provider=get_settings,
     )
 

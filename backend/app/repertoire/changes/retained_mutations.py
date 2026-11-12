@@ -3,7 +3,7 @@
 from __future__ import annotations
 from tempo_storage.postgres import PostgresConnection,TempoRow
 
-from datetime import datetime, timezone
+from datetime import date
 import hashlib
 import json
 from typing import Any
@@ -71,6 +71,7 @@ def rewrite_card(
     row: TempoRow,
     moves: list[str],
     *,
+    study_day: date,
     validated_route: dict | None = None,
     certify: bool = True,
 ) -> bool:
@@ -96,7 +97,7 @@ def rewrite_card(
                 "repertoire_id": repertoire_id,
                 "moves_json": json.dumps(moves),
                 "state": "new",
-                "due_date": datetime.now(timezone.utc).date().isoformat(),
+                "due_date": study_day.isoformat(),
                 "interval_days": 0,
                 "repetitions": 0,
                 "lapses": 0,

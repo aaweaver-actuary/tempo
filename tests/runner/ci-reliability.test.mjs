@@ -813,3 +813,16 @@ test("selected_browser_skip_is_not_passing_evidence", () => {
   report.tests[0].status = "skipped";
   assert(layerFailures(selected, "browser", "success", report).some(message => /skipped|failed/.test(message)));
 });
+
+
+test("backend verification explicitly retains finite native bridge safety suites", async () => {
+  const { verificationStages } = await import("../../scripts/verification-stages.mjs");
+  for (const tier of ["python", "ci-backend"]) {
+    const { stages, stagesByTier } = verificationStages({ python: "python", tier, outputDirectory: "test-results" });
+    assert(stagesByTier[tier].includes("backend"));
+    const args = stages.find(([name]) => name === "backend")[2];
+    for (const file of ["database/tests/test_position_native_pytest_bridge.py", "database/tests/test_native_split_pytest_bridge.py"])
+      assert(args.includes(file), `Missing explicit bridge safety suite ${file}`);
+    assert(args.includes("backend/tests"), "Retain the original backend discovery root");
+  }
+});

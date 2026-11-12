@@ -1,5 +1,10 @@
 """The capture and Study admission share the exact caller-owned writer."""
 
+from datetime import datetime, timezone
+from app.study.policy.clock import study_calendar_at
+
+CALENDAR = study_calendar_at(datetime(2026, 11, 12, 2, tzinfo=timezone.utc), "America/New_York")
+
 import json
 import uuid
 import chess
@@ -51,7 +56,8 @@ def test_tactic_capture_borrowed_admission_preserves_lock_order_and_writer(monke
         ),
     )
 
-    def place(db, card, after, state, reason):
+    def place(db, card, after, state, reason, *, queue_date):
+        assert queue_date == "2026-11-11"
         assert db is database and (after, state, reason) == (
             4,
             "guided",
@@ -75,7 +81,7 @@ def test_tactic_capture_borrowed_admission_preserves_lock_order_and_writer(monke
     request = TacticCaptureRequest(
         capture_id=uuid.uuid4(), starting_fen=chess.STARTING_FEN, moves=["e2e4"]
     )
-    result = composition.capture_tactic(database, request)
+    result = composition.capture_tactic(database, request, calendar=CALENDAR)
     assert list(result) == ["capture_id", "card_id", "reused", "queued", "introduced"]
     assert calls == [
         "daily",
@@ -106,11 +112,11 @@ def test_tactic_capture_translates_owned_validation_and_replay_conflicts(monkeyp
         capture_id=uuid.uuid4(), starting_fen=chess.STARTING_FEN, moves=["e2e4"]
     )
     with pytest.raises(HTTPException) as conflict:
-        composition.capture_tactic(database, request)
+        composition.capture_tactic(database, request, calendar=CALENDAR)
     assert conflict.value.status_code == 409
     with pytest.raises(HTTPException) as invalid:
         composition.capture_tactic(
-            database, request.model_copy(update={"moves": ["e2e5"]})
+            database, request.model_copy(update={"moves": ["e2e5"]}), calendar=CALENDAR
         )
     assert invalid.value.status_code == 422
 

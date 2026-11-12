@@ -489,24 +489,58 @@ def test_native_large_presentation_uses_bounded_reads_at_fifty_ms(case, local_ho
     print('QUEUE_PRESENTATION_BUDGET '+json.dumps(dict(rows=1024,transaction_timeout_ms=50,reads=len(observed),max_read_wall_ms=round(max(row[2] for row in observed)*1000,2))))
 
 
-def test_native_split_then_refresh_retains_verified_after_four_placement(case):
+@pytest.fixture
+def split_case():
+    identity = "split224-" + uuid.uuid4().hex
+    day = date.today().isoformat()
+    with postgres.connection() as database:
+        name, marker = database.execute_native(
+            "SELECT current_database(), shobj_description(oid, 'pg_database') "
+            "FROM pg_database WHERE datname=current_database()"
+        ).fetchone()
+        assert name.startswith('tempo_position_test_')
+        assert marker == os.environ['TEMPO_TEST_COMPOSE_PROJECT']
+        assert os.environ['TEMPO224_FIXTURE'] == 'tempo224-' + marker
+        database.execute("UPDATE daily_queue SET status='buried' WHERE status='queued'")
+        database.execute("UPDATE frozen_opening_activation SET run_id=NULL WHERE id=1")
+        database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,%s,%s,%s)",(identity,"Review extraction","fixture",day))
+        entries = []
+        for position, card_id in enumerate((identity+"-a",identity+"-b")):
+            database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,trained_color,state,due_date,content_type) VALUES(%s,%s,'prefix',%s,'[\"e2e4\"]','white','learning',%s,'opening')", (card_id,identity,FEN,day))
+            database.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(%s,%s)",(identity,card_id))
+            entries.append(database.execute("INSERT INTO daily_queue(queue_date,card_id,position,card_bucket,admission_kind,admission_repertoire_id) VALUES(%s,%s,%s,'opening','new',%s) RETURNING id",(day,card_id,-100000+position,identity)).fetchone()[0])
+        database.execute("UPDATE queue_attempt_origins SET issued_as_head=1 WHERE queue_entry_id=%s",(entries[0],))
+    yield dict(identity=identity,day=day,entries=entries)
+    postgres.close_pools()
+
+
+def test_native_split_then_refresh_retains_verified_after_four_placement(split_case):
+    case = split_case
     from app.services import queue_application
     from app.services.prefix_split import apply_prefix_split
+    from app.study.policy.clock import study_calendar_at
+
+    # This invocation-owned fixture already issued its queue on case['day'].
+    # Bind the split to that explicit day, never a later host-clock observation.
+    calendar = study_calendar_at(
+        datetime.fromisoformat(case['day'] + 'T12:00:00+00:00'), 'UTC'
+    )
+    assert calendar.day.isoformat() == case['day']
     source = case['identity']+'-a'
     with postgres.connection() as database:
-        database.execute("UPDATE daily_queue SET status='buried' WHERE id=?",(case['entries'][1],))
-        database.execute("UPDATE cards SET revision=3,moves_json='[\"e2e4\",\"e7e5\",\"g1f3\",\"b8c6\",\"f1b5\"]' WHERE id=?",(source,))
-        database.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,source_kind) VALUES(?,'again',?,0,0,'study')",(source,case['day']))
+        database.execute("UPDATE daily_queue SET status='buried' WHERE id=%s",(case['entries'][1],))
+        database.execute("UPDATE cards SET revision=3,moves_json='[\"e2e4\",\"e7e5\",\"g1f3\",\"b8c6\",\"f1b5\"]' WHERE id=%s",(source,))
+        database.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,source_kind) VALUES(%s,'again',%s,0,0,'study')",(source,case['day']))
         for index in range(30):
             identifier = case['identity']+f'-split-tactic-{index}'
-            database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type) VALUES(?,?,'prefix',?,'[\"e2e4\"]','learning',?,'tactic')",(identifier,case['identity'],FEN,case['day']))
-            database.execute('INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,?,?)',(case['day'],identifier,index+1))
+            database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type) VALUES(%s,%s,'prefix',%s,'[\"e2e4\"]','learning',%s,'tactic')",(identifier,case['identity'],FEN,case['day']))
+            database.execute('INSERT INTO daily_queue(queue_date,card_id,position) VALUES(%s,%s,%s)',(case['day'],identifier,index+1))
         queue_application.randomize_daily_queue(database,case['day'])
-        result = apply_prefix_split(database,source,3)
+        result = apply_prefix_split(database,source,3,calendar=calendar)
         parent,child = result['parent']['card_id'],result['continuation']['card_id']
-        database.execute('UPDATE cards SET pending_validation=0 WHERE id IN (?,?)',(parent,child))
+        database.execute('UPDATE cards SET pending_validation=0 WHERE id IN (%s,%s)',(parent,child))
         before = [tuple(row) for row in database.execute("SELECT id,card_id,position FROM daily_queue WHERE status='queued' ORDER BY position,id")]
         assert [row[1] for row in before[4:6]] == [parent,child]
-        assert tuple(database.execute('SELECT cycle,attempt_state FROM daily_queue WHERE card_id=? AND status=\'queued\'',(parent,)).fetchone()) == (0,'clean')
+        assert tuple(database.execute('SELECT cycle,attempt_state FROM daily_queue WHERE card_id=%s AND status=\'queued\'',(parent,)).fetchone()) == (0,'clean')
         queue_application.randomize_daily_queue(database,case['day'])
         assert [tuple(row) for row in database.execute("SELECT id,card_id,position FROM daily_queue WHERE status='queued' ORDER BY position,id")] == before

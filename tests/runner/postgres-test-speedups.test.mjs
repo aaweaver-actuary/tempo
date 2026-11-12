@@ -1397,3 +1397,71 @@ test('position native pytest selection is finite and cleanup survives failure', 
   const result = spawnSync('python3', ['database/tests/test_position_native_pytest_bridge.py'], {cwd: root, encoding: 'utf8'});
   assert.equal(result.status, 0, result.stderr);
 });
+
+
+test('position introductions selects the exact owned native bridge and cleans up on failure', async () => {
+  const stages = postgresTestStages(parse(['--mode', 'browser', '--native-check', 'position-introductions']));
+  assert(stages.indexOf('position-introductions') < stages.indexOf('browser'));
+  assert(!stages.includes('position-grade-effects'));
+  for (const args of [
+    ['--mode', 'browser', '--native-check', 'position-introductions', '--native-check', 'position-introductions'],
+    ['--mode', 'browser', '--native-check', 'backend/tests/test_position_introductions.py'],
+    ['--mode', 'full', '--native-check', 'position-introductions'],
+  ]) assert.throws(() => parse(args));
+  const observed = [];
+  const actions = Object.fromEntries(stages.map(stage => [stage, async () => {
+    observed.push(stage);
+    if (stage === 'position-introductions') throw new Error('introduction failed');
+  }]));
+  await assert.rejects(executePostgresTestPlan(stages, actions, (_stage, run) => run()), /introduction failed/);
+  assert.equal(observed.at(-1), 'cleanup');
+  assert(!observed.includes('browser'));
+  const source = readFileSync(join(root, 'database/tests/test-postgres-docker.mjs'), 'utf8');
+  assert(source.includes('TEMPO_NATIVE_POSITION_CHECK=${check}'));
+  assert(source.includes('checks: {[check]: evidence}'));
+});
+
+
+test('position queue admission selects only its exact bridge and blocks browser after failure', async () => {
+  const check = 'position-queue-admission';
+  const stages = postgresTestStages(parse(['--mode', 'browser', '--native-check', check]));
+  assert(stages.indexOf(check) < stages.indexOf('browser'));
+  assert(!stages.includes('position-introductions'));
+  assert(!stages.includes('position-grade-effects'));
+  for (const args of [
+    ['--mode', 'browser', '--native-check', check, '--native-check', check],
+    ['--mode', 'browser', '--native-check', 'backend/tests/test_position_queue_admission.py::test_native_refresh_admits_due_carrier_and_reuses_pending'],
+    ['--mode', 'full', '--native-check', check],
+  ]) assert.throws(() => parse(args));
+  const observed = [];
+  const actions = Object.fromEntries(stages.map(stage => [stage, async () => {
+    observed.push(stage);
+    if (stage === check) throw new Error('admission failed');
+  }]));
+  await assert.rejects(executePostgresTestPlan(stages, actions, (_stage, run) => run()), /admission failed/);
+  assert.equal(observed.at(-1), 'cleanup');
+  assert(!observed.includes('browser'));
+});
+
+test('prefix split uses only its full-schema bridge and stops before browser on proof failure', async () => {
+  const check = 'prefix-split-placement';
+  const stages = postgresTestStages(parse(['--mode', 'browser', '--native-check', check]));
+  assert(stages.indexOf(check) < stages.indexOf('browser'));
+  assert(!stages.includes('position-queue-admission'));
+  for (const args of [
+    ['--mode', 'browser', '--native-check', check, '--native-check', check],
+    ['--mode', 'full', '--native-check', check],
+    ['--mode', 'browser', '--native-check', 'database/tests/native_review/test_postgres.py'],
+  ]) assert.throws(() => parse(args));
+  const observed = [];
+  const actions = Object.fromEntries(stages.map(stage => [stage, async () => {
+    observed.push(stage);
+    if (stage === check) throw new Error('split failed');
+  }]));
+  await assert.rejects(executePostgresTestPlan(stages, actions, (_stage, run) => run()), /split failed/);
+  assert.equal(observed.at(-1), 'cleanup');
+  assert(!observed.includes('browser'));
+  const source = readFileSync(join(root, 'database/tests/test-postgres-docker.mjs'), 'utf8');
+  assert(source.includes("check === 'prefix-split-placement'"));
+  assert(source.includes('/source/database/tests/native-split-pytest.py'));
+});

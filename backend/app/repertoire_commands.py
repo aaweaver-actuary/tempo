@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Any
 
 from fastapi import HTTPException
+
+from .services.study_calendar import capture_study_calendar
 
 from .command_gateway import register_command
 from tempo_storage.foreground_controls import repertoires as storage
@@ -62,8 +63,9 @@ def update_repertoire_settings(
     repertoire_id = str(payload["repertoire_id"])
     settings = RepertoireSettingsRequest.model_validate(payload["settings"])
     repertoire_settings_response(database, repertoire_id)
+    calendar = capture_study_calendar(database)
     storage.store_daily_limit(database, settings.new_cards_per_day, repertoire_id)
-    request_queue_refresh_in_transaction(database, date.today().isoformat())
+    request_queue_refresh_in_transaction(database, calendar.day.isoformat())
     return repertoire_settings_response(database, repertoire_id)
 
 

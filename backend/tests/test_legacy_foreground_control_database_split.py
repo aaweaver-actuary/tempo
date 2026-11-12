@@ -2,6 +2,7 @@
 
 import ast
 from datetime import date
+from types import SimpleNamespace
 from pathlib import Path
 import sqlite3
 
@@ -27,7 +28,8 @@ class PrefixSqlite:
 
 
 @pytest.fixture
-def prefix_database():
+def prefix_database(monkeypatch):
+    monkeypatch.setattr(prefix_split_commands, "capture_study_calendar", lambda db: SimpleNamespace(day=date.today()))
     with sqlite3.connect(":memory:") as database:
         database.row_factory = sqlite3.Row
         database.executescript("""
@@ -72,7 +74,8 @@ def test_prefix_accept_retains_lock_order_linked_invalidation_and_caller_rollbac
         lambda _database, day: effects.append(("queue-lock", day)),
     )
 
-    def split(_database, card_id, revision):
+    def split(_database, card_id, revision, *, calendar):
+        assert calendar.day == date.today()
         assert (
             prefix_database.statements[0][0]
             == "SELECT id FROM cards WHERE id=? FOR UPDATE"

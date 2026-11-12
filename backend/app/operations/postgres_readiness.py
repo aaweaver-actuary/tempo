@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import date
+from contextlib import contextmanager
+from app.services.study_calendar import capture_study_calendar
 import json
 
 from fastapi import HTTPException
@@ -15,9 +16,16 @@ from tempo_storage.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 
 def postgres_health() -> dict[str, object]:
     try:
-        version_row, position_tables, settings_row, queue_row, queue_task = (
-            read_health_facts(read_connection, lambda: date.today())
-        )
+        with read_connection() as database:
+            calendar = capture_study_calendar(database)
+
+            @contextmanager
+            def borrowed_reader():
+                yield database
+
+            version_row, position_tables, settings_row, queue_row, queue_task = (
+                read_health_facts(borrowed_reader, lambda: calendar.day)
+            )
     except Exception as error:
         raise HTTPException(
             503,
@@ -69,7 +77,7 @@ def postgres_health() -> dict[str, object]:
         queue_task is not None
         and queue_task["state"] in {"queued", "leased", "retrying"}
         and json.loads(queue_task["payload_json"]).get("queue_date")
-        == date.today().isoformat()
+        == calendar.day.isoformat()
     )
     if not queue_ready and not queue_progressing:
         raise HTTPException(

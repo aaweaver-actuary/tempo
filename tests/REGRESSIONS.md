@@ -5530,6 +5530,19 @@ The final `test_queue_application_database_split.py` selection also covers compl
 
 `backend/tests/test_card_deletion_storage_boundary.py` owns seven fake boundaries for cancellation recheck,dialect locks,purge/tombstone timing,shared learned ownership,occurrence-aware ancestry and stale rejection. The original transaction and callback authority stay with the caller; native deletion/rollback and domain isolation remain unverified.
 
+## Shared opening observation counters
+
+`backend/tests/test_observation_summary.py` owns 16 cases for the shared Study
+six-counter policy: exact response/False semantics, numeric conversions and
+their errors, signed replacement deltas, and stable decision/index ordering.
+`test_actual_incremental_and_removal_rebuild_preserve_totals_and_days` exercises
+the real incremental checkpoint and removal-rebuild callers with storage fakes
+and real reducer prefixes, including exact replay, repeated clean days and
+surviving observations. Regular backend pytest discovery selects this file;
+`make python-file FILE=backend/tests/test_observation_summary.py` selects it alone.
+This is pure/fake-storage proof, not native transaction or installed acceptance.
+Study ownership of the entire purge capability remains outside this slice.
+
 
 ## Authored Studies command storage
 
@@ -6947,3 +6960,51 @@ It is not native temporal SQL proof. The real PostgreSQL integrity-recovery
 cases in `tests/browser/recovery.spec.ts` exercise this task-list query while
 preserving original repair/retry journals and operation receipts; actual
 execution is recorded separately by the coordinated browser runner.
+
+## Captured Study calendar in reconciliation (G01)
+
+`backend/tests/test_study_calendar.py` covers the existing named-zone conversion
+across midnight, both DST transitions and aware offsets; two child-process host
+zones; preserved local/unknown-zone fallback; one adapter clock/policy capture;
+original reconciliation receipt replay; and captured no-recorded-event fallback.
+The existing Learning application recorded-receipt and offline-clock regressions
+remain authoritative. `test_scheduling_boundary.py` retains its direct, deferred,
+conditional, transitive-infrastructure and unowned-consumer negative controls
+after removing the obsolete annotation-only calendar dependency.
+
+This is pure/component evidence, not native or assembled acceptance. Legacy
+scheduler omitted-day defaults and G02/G03 caller adoption remain separate;
+BE003 is not closed by this slice.
+
+## Captured calendar propagation for active commands (G02)
+
+`backend/tests/test_study_calendar.py` additionally exercises actual tactic
+attempt/capture and authored completion callers with deterministic NY-midnight
+contexts: daily locks, due dates, placement and refresh agree, while original
+issued queue dates and immutable replay receipts remain distinct. New durable
+request acceptance fills a missing day once; explicit payload dates do not
+reread settings. `test_tactic_capture_boundary.py` preserves borrowed-writer
+lock order and now asserts the explicit captured placement day.
+
+Already-accepted worker payloads missing queue_date retain their existing
+fallback pending an explicit historical disposition; this slice does not
+backfill or reinterpret them. G03 callers, compatibility scheduler defaults,
+native tactic-history/admission and assembled acceptance remain outstanding.
+No BE003 closure or installed behavior is implied by these component tests.
+
+
+## Finite native bridge safety selection
+
+The shared backend verification command in `scripts/verification-stages.mjs`
+explicitly selects `database/tests/test_position_native_pytest_bridge.py` and
+`database/tests/test_native_split_pytest_bridge.py` alongside `backend/tests`;
+backend directory discovery alone does not cover these files. This applies to
+local Python/backend tiers and the CI backend stage, retaining its original
+discovery root and existing exclusion guards. The CI reliability runner asserts
+both explicit selections. Focused execution is
+`python -m pytest database/tests/test_position_native_pytest_bridge.py database/tests/test_native_split_pytest_bridge.py -q --rootdir=.`.
+The twelve component cases cover exact selection/phase evidence, owned database
+and marker checks, cleanup failure, environment/pool restoration and retained
+split assertions. They use fakes and do not constitute native PostgreSQL,
+browser, migration or installed acceptance; those require the admitted real
+finite native selections and their non-skipped execution receipts.
