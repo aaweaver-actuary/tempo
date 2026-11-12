@@ -1344,7 +1344,7 @@ const actions = {
       }),
     });
   },
-  ...Object.fromEntries(['position-grade-effects', 'position-introductions', 'position-queue-admission'].map(check => [check, async () => {
+  ...Object.fromEntries(['position-grade-effects', 'position-introductions', 'position-queue-admission', 'prefix-split-placement'].map(check => [check, async () => {
     assertDevelopmentProjectOwned(project);
     const imageReference = run('docker', [...compose, 'images', '-q', 'schema'],
       {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8'}).stdout.trim();
@@ -1359,7 +1359,8 @@ const actions = {
       '-e', `TEMPO_NATIVE_CANDIDATE_REVISION=${candidateRevision}`,
       '-e', `TEMPO_NATIVE_RUNTIME_IMAGE=${imageId}`,
       '-e', `TEMPO_NATIVE_POSITION_CHECK=${check}`,
-      'schema', 'python', '/source/database/tests/position-native-pytest.py'],
+      'schema', 'python', check === 'prefix-split-placement'
+        ? '/source/database/tests/native-split-pytest.py' : '/source/database/tests/position-native-pytest.py'],
     {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8'});
     const evidence = JSON.parse(result.stdout);
     assert.equal(evidence.head, candidateRevision);

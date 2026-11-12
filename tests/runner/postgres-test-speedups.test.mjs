@@ -1442,3 +1442,26 @@ test('position queue admission selects only its exact bridge and blocks browser 
   assert.equal(observed.at(-1), 'cleanup');
   assert(!observed.includes('browser'));
 });
+
+test('prefix split uses only its full-schema bridge and stops before browser on proof failure', async () => {
+  const check = 'prefix-split-placement';
+  const stages = postgresTestStages(parse(['--mode', 'browser', '--native-check', check]));
+  assert(stages.indexOf(check) < stages.indexOf('browser'));
+  assert(!stages.includes('position-queue-admission'));
+  for (const args of [
+    ['--mode', 'browser', '--native-check', check, '--native-check', check],
+    ['--mode', 'full', '--native-check', check],
+    ['--mode', 'browser', '--native-check', 'database/tests/native_review/test_postgres.py'],
+  ]) assert.throws(() => parse(args));
+  const observed = [];
+  const actions = Object.fromEntries(stages.map(stage => [stage, async () => {
+    observed.push(stage);
+    if (stage === check) throw new Error('split failed');
+  }]));
+  await assert.rejects(executePostgresTestPlan(stages, actions, (_stage, run) => run()), /split failed/);
+  assert.equal(observed.at(-1), 'cleanup');
+  assert(!observed.includes('browser'));
+  const source = readFileSync(join(root, 'database/tests/test-postgres-docker.mjs'), 'utf8');
+  assert(source.includes("check === 'prefix-split-placement'"));
+  assert(source.includes('/source/database/tests/native-split-pytest.py'));
+});
