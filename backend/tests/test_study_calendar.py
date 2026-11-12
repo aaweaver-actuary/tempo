@@ -245,3 +245,117 @@ def test_issued_origin_day_wins_over_new_current_day(monkeypatch):
     monkeypatch.setattr(queue_commands,"current_study_day",no_capture)
     queue_commands.validate_available_attempt(object(),4,"card",1,current_day="2026-11-11")
     assert reads==["2020-01-02","2020-01-02"]
+
+@pytest.mark.parametrize("instant,zone,expected", [
+    ("2026-11-12T02:00:00+00:00", "America/New_York", "2026-11-11"),
+    ("2026-11-12T23:00:00+00:00", "Pacific/Auckland", "2026-11-13"),
+])
+def test_authoring_split_lock_effect_and_followups_share_one_calendar(monkeypatch, instant, zone, expected):
+    from app import prefix_split_commands as command
+    from app.study.policy.clock import study_calendar_at
+    calendar = study_calendar_at(datetime.fromisoformat(instant), zone)
+    database = object()
+    events = []
+    def capture(db):
+        assert db is database
+        assert not events, "calendar was recaptured after content effects"
+        events.append("capture")
+        return calendar
+    monkeypatch.setattr(command, "capture_study_calendar", capture)
+    monkeypatch.setattr(command, "_lock_prefix_card", lambda *a: None)
+    monkeypatch.setattr(command, "lock_queue_date_for_position", lambda db, day: events.append(("lock", day)))
+    def split(db, card, revision, *, calendar):
+        assert calendar.observed_at == datetime.fromisoformat(instant)
+        assert calendar.day.isoformat() == expected
+        events.append(("effect", calendar.day.isoformat()))
+        return {"idempotent": False, "parent": {"card_id": "parent"}, "continuation": {"card_id": "child"}}
+    monkeypatch.setattr(command, "apply_prefix_split", split)
+    monkeypatch.setattr(command.storage, "linked_repertoire_rows", lambda *a: [("b",), ("a",)])
+    monkeypatch.setattr(command.storage, "mark_split_pending_validation", lambda *a: None)
+    monkeypatch.setattr(command, "invalidate_integrity_in_transaction", lambda *a: None)
+    monkeypatch.setattr(command, "request_graph_rebuild_in_transaction", lambda db, rep, day: events.append((rep, day)))
+    monkeypatch.setattr(command, "_shared_usage", lambda *a: {})
+    command.accept_prefix_split(database, {"card_id":"parent", "request":{"expected_revision":1}})
+    assert events == ["capture", ("lock", expected), ("effect", expected), ("a", expected), ("b", expected)]
+
+
+def test_readonly_health_uses_same_captured_day_for_query_and_progress(monkeypatch):
+    from contextlib import contextmanager
+    from app.operations import postgres_readiness as health
+    from app.study.policy.clock import study_calendar_at
+    calendar = study_calendar_at(datetime(2026,11,12,2,tzinfo=timezone.utc), "America/New_York")
+    database = object()
+    calls = []
+    @contextmanager
+    def reader():
+        calls.append("reader")
+        yield database
+    def capture(db):
+        assert db is database
+        calls.append("capture")
+        return calendar
+    def facts(reader, today):
+        with reader() as db:
+            assert db is database
+            assert today() == calendar.day
+            assert today() == calendar.day
+        return ((health.POSTGRES_SCHEMA_VERSION,), (True,), (1,), None,
+            {"state":"leased", "payload_json":json.dumps({"queue_date":calendar.day.isoformat()})})
+    monkeypatch.setattr(health, "read_connection", reader)
+    monkeypatch.setattr(health, "capture_study_calendar", capture)
+    monkeypatch.setattr(health, "read_health_facts", facts)
+    monkeypatch.setattr(health.celery_app.control, "inspect", lambda **kw: SimpleNamespace(
+        active_queues=lambda: {"worker":[{"name":"foreground"},{"name":"background"}]}))
+    assert health.postgres_health()["status"] == "ok"
+    assert calls == ["reader", "capture"]
+
+
+def test_repair_replacement_due_uses_supplied_day_without_reset_policy_expansion(monkeypatch):
+    from app.repertoire.changes import retained_mutations as mutation
+    from app.services import canonical_prefix
+    monkeypatch.setattr(canonical_prefix, "certify_admitted_route", lambda *a: None)
+    monkeypatch.setattr(mutation, "card_id", lambda *a: "replacement")
+    monkeypatch.setattr(mutation, "card_columns", lambda db: ["id", "due_date"])
+    monkeypatch.setattr(mutation.edit_storage, "locked_replacement", lambda *a: None)
+    writes = []
+    monkeypatch.setattr(mutation.edit_storage, "insert_replacement", lambda db, columns, values: writes.append(values))
+    for name in ("mark_canonical", "admit_membership", "supersede"):
+        monkeypatch.setattr(mutation.edit_storage, name, lambda *a: None)
+    monkeypatch.setattr(mutation.card_storage, "delete_membership", lambda *a: None)
+    monkeypatch.setattr(mutation.card_storage, "remaining_membership", lambda *a: [])
+    row = {"id":"original", "start_fen":"fen", "due_date":"old", "fsrs_card_json":"retained", "stability":9}
+    assert mutation.rewrite_card(object(), "rep", row, ["e2e4"], study_day=date(2026,11,11), validated_route={}, certify=False)
+    assert writes[0]["due_date"] == "2026-11-11"
+    assert writes[0]["fsrs_card_json"] == "retained" and writes[0]["stability"] == 9
+    assert writes[0]["state"] == "new" and writes[0]["introduced_at"] is None
+
+
+def test_prefix_effect_uses_context_day_and_instant_but_keeps_existing_queue_origin(monkeypatch):
+    from app.services import prefix_split as split
+    from app.study.policy.clock import study_calendar_at
+    calendar = study_calendar_at(datetime(2026,11,12,2,tzinfo=timezone.utc), "America/New_York")
+    source = {"id":"source", "revision":1, "repertoire_id":"rep", "canonical_route_source":0, "start_fen":"fen", "moves_json":"[]"}
+    detail = {"shortened_card_id":"short", "continuation_card_id":"child", "shortened_moves":["e2e4"], "continuation_starting_fen":"fen2", "continuation_moves":["e7e5"]}
+    monkeypatch.setattr(split, "_trained_color_for_card", lambda *a: "white")
+    monkeypatch.setattr(split, "_legal_split", lambda *a: detail)
+    monkeypatch.setattr(split, "_response", lambda *a, **kw: kw)
+    monkeypatch.setattr(split.storage, "prior_split", lambda *a: None)
+    monkeypatch.setattr(split.storage, "card_row", lambda db, key: source if key=="source" else None)
+    monkeypatch.setattr(split.storage, "card_present", lambda *a: False)
+    monkeypatch.setattr(split.storage, "membership_rows", lambda *a: [])
+    monkeypatch.setattr(split.storage, "source_queue_entries", lambda *a: [{"queue_date":"2026-11-09", "cycle":0, "id":41}])
+    origins = []
+    monkeypatch.setattr(split.storage, "queue_collision", lambda db, key: origins.append(key) or None)
+    writes, days, stamps = [], [], []
+    monkeypatch.setattr(split, "_copy_card", lambda db, source, values: writes.append(values))
+    monkeypatch.setattr(split, "capture_daily_queue_order", lambda db, day: days.append(day) or "order")
+    monkeypatch.setattr(split, "_queue_split_followups", lambda db, a, b, day, **kw: days.append(day))
+    monkeypatch.setattr(split.storage, "insert_revision", lambda db, values: stamps.append(values[-1]))
+    monkeypatch.setattr(split.storage, "insert_split", lambda db, values: stamps.append(values[-1]))
+    for name in ("reassign_reviews", "reassign_queue_entry", "upsert_membership", "archive_source_card", "delete_source_memberships"):
+        monkeypatch.setattr(split.storage, name, lambda *a: None)
+    split.apply_prefix_split(object(), "source", 1, calendar=calendar)
+    assert days == ["2026-11-11"] * 2
+    assert stamps == [calendar.observed_at.isoformat()] * 2
+    assert writes[1]["due_date"] == writes[1]["introduced_at"] == "2026-11-11"
+    assert origins == [("2026-11-09", "short", 0)]

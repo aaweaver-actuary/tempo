@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
 import hashlib
 import json
 from typing import Any
 
 import chess
 from fastapi import HTTPException
+
+from .services.study_calendar import capture_study_calendar
 
 from .command_gateway import register_command
 from app.repertoire.changes.application import validate_source_rows
@@ -65,6 +66,7 @@ def add_repertoire_branch(
     validated_route = ensure_line_in_scope(
         database, repertoire_id, request.starting_fen, moves, remember=False
     )
+    calendar = capture_study_calendar(database)
     inserted = storage.insert_line_values(
         database,
         (
@@ -74,7 +76,7 @@ def add_repertoire_branch(
             request.trained_color,
             request.starting_fen,
             json.dumps(moves),
-            datetime.now(timezone.utc).isoformat(),
+            calendar.observed_at.isoformat(),
         ),
     )
     depth = storage.initial_training_depth(database)
@@ -97,7 +99,7 @@ def add_repertoire_branch(
         certify_admitted_route(database, repertoire_id, validated_route)
     invalidate_integrity_in_transaction(database, repertoire_id)
     request_graph_rebuild_in_transaction(
-        database, repertoire_id, date.today().isoformat()
+        database, repertoire_id, calendar.day.isoformat()
     )
     return {
         "id": line_id,
@@ -137,11 +139,12 @@ def remove_repertoire_branch(
                 matching_line_ids.append(str(stored_line["id"]))
         except (TypeError, ValueError, json.JSONDecodeError):
             continue
+    calendar = capture_study_calendar(database)
     if matching_line_ids:
         storage.delete_matching_lines(database, matching_line_ids)
         invalidate_integrity_in_transaction(database, repertoire_id)
         request_graph_rebuild_in_transaction(
-            database, repertoire_id, date.today().isoformat()
+            database, repertoire_id, calendar.day.isoformat()
         )
     return {
         "deleted_line_count": len(matching_line_ids),

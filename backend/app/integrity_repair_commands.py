@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import date
 import json
 from typing import Any
 
 from fastapi import HTTPException
 from pydantic import BaseModel
+
+from .services.study_calendar import capture_study_calendar
 
 from .command_gateway import register_command
 from app.repertoire.changes.application import validate_repair_source_rows
@@ -45,12 +46,13 @@ def resolve_integrity_issue(
 ) -> dict[str, Any]:
     prepared = PreparedIntegrityRepair.model_validate(raw_payload)
     repertoire_id = prepared.repertoire_id
+    calendar = capture_study_calendar(database)
     # Graph slices lock their task row before touching cards. Acquire that row
     # first so a repair cannot deadlock a graph slice while replacing a card.
     graph_task = request_graph_rebuild_in_transaction(
         database,
         repertoire_id,
-        date.today().isoformat(),
+        calendar.day.isoformat(),
     )
     if storage.locked_repertoire(database, repertoire_id) is None:
         raise HTTPException(404, "Repertoire not found")
@@ -145,6 +147,7 @@ def resolve_integrity_issue(
             repertoire_id,
             source_card,
             moves,
+            study_day=calendar.day,
             validated_route=validated_route,
             certify=False,
         ):

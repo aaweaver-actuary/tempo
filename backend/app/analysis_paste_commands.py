@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Any
 
 from fastapi import HTTPException
+
+from .services.study_calendar import capture_study_calendar
 
 from .command_gateway import register_command
 from app.contracts.transport.authored_lines import AnalysisPasteCommitRequest
@@ -24,6 +25,7 @@ def commit_analysis_paste(
     database: PostgresConnection,
     payload: dict[str, Any],
 ) -> dict[str, Any]:
+    calendar = capture_study_calendar(database)
     request = AnalysisPasteCommitRequest.model_validate(payload["request"])
     prepared_preview = payload["prepared_preview"]
     parsed_lines = [
@@ -48,7 +50,7 @@ def commit_analysis_paste(
     for repertoire_id in result["affected_repertoire_ids"]:
         invalidate_integrity_in_transaction(database, repertoire_id)
         request_graph_rebuild_in_transaction(
-            database, repertoire_id, date.today().isoformat()
+            database, repertoire_id, calendar.day.isoformat()
         )
     return result
 

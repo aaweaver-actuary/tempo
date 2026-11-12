@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
 import json
 from typing import Any
 
 import chess
 from fastapi import HTTPException
+
+from .services.study_calendar import capture_study_calendar
 
 from .command_gateway import register_command
 from app.repertoire.changes.application import validate_source_rows
@@ -132,7 +133,8 @@ def revise_card(
         raise HTTPException(409, "The card was replaced; refresh it and try again")
     existing = storage.locked_replacement(database, replacement_id)
     revision = request.expected_revision + 1
-    now = datetime.now(timezone.utc).isoformat()
+    calendar = capture_study_calendar(database)
+    now = calendar.observed_at.isoformat()
     storage.record_revision(
         database,
         identifier,
@@ -174,7 +176,7 @@ def revise_card(
         if request.history_mode == "reset":
             copied_fields.update(
                 {
-                    "due_date": date.today().isoformat(),
+                    "due_date": calendar.day.isoformat(),
                     "interval_days": 0,
                     "repetitions": 0,
                     "lapses": 0,
@@ -219,7 +221,7 @@ def revise_card(
         storage.mark_pending(database, replacement_id)
         for repertoire_id in repertoire_ids:
             _request_current_integrity_scan(
-                database, repertoire_id, date.today().isoformat()
+                database, repertoire_id, calendar.day.isoformat()
             )
     return {
         "card_id": replacement_id,
@@ -243,11 +245,12 @@ def archive_card(
     repertoire_ids = [
         str(row[0]) for row in storage.card_repertoires(database, identifier)
     ]
+    calendar = capture_study_calendar(database)
     storage.archive(database, identifier)
     storage.complete_queued(database, identifier)
     for repertoire_id in repertoire_ids:
         _request_current_integrity_scan(
-            database, repertoire_id, date.today().isoformat()
+            database, repertoire_id, calendar.day.isoformat()
         )
     integrity = {
         repertoire_id: integrity_summary(database, repertoire_id)

@@ -352,13 +352,8 @@ def test_import_keeps_clock_identity_lazy_reads_certification_and_callback_order
         events.append("certify")
 
     monkeypatch.setattr(batch, "executemany", executemany)
-    monkeypatch.setattr(application, "datetime", SimpleNamespace(now=now))
+    monkeypatch.setattr(application, "capture_study_calendar", lambda db: SimpleNamespace(observed_at=now(None), day=date(2026, 10, 20)))
     monkeypatch.setattr(application.uuid, "uuid4", new_id)
-    monkeypatch.setattr(
-        application,
-        "date",
-        SimpleNamespace(today=lambda: events.append("day") or date(2026, 10, 20)),
-    )
     monkeypatch.setattr(application, "ensure_batch_lines_in_scope", scope)
     monkeypatch.setattr(application, "certify_admitted_route", certify)
     monkeypatch.setattr(
@@ -432,9 +427,8 @@ def test_import_keeps_clock_identity_lazy_reads_certification_and_callback_order
         < events.index("certify")
         < events.index(("native", 6))
     )
-    assert events[-4:] == [
+    assert events[-3:] == [
         "invalidate",
-        "day",
         ("graph", (database, "repertoire", "2026-10-20")),
         "summary",
     ]
