@@ -13,6 +13,7 @@ from tempo_storage import postgres
 from tempo_storage.connections import read_connection
 from tempo_storage.opening_evidence import storage
 from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
+from .policy.observation_summary import observation_counts as _observation_counts
 from ..services.opening_decision_evidence import (
     EvidenceConflict,
     decision_manifest,
@@ -140,18 +141,6 @@ def queue_manifests(cards: list[dict]) -> None:
             card["opening_evidence_diagnostic"] = (
                 f"Opening evidence unavailable: {error}. Normal review remains available."
             )
-
-
-def _observation_counts(observation: dict) -> tuple[int, ...]:
-    responded = observation.get("first_response_uci") is not None
-    return (
-        int(responded),
-        int(observation.get("clean", False)),
-        int(observation.get("first_response_correct") is False),
-        int(responded and bool(observation.get("assistance_before_response"))),
-        int(observation.get("manual_failure", False)),
-        int(observation.get("corrected", False)),
-    )
 
 
 def _persist_observations(database, attempt_id: str, observations: list[dict]) -> None:
