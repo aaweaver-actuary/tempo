@@ -535,3 +535,47 @@ it.each(['resolve','reject'])('study_priority_bootstrap_body_%s_retains_operatio
   else expect(result).toMatchObject({kind:'transport',cachedPracticeAvailable:true});
   await vi.advanceTimersByTimeAsync(3000);expect(priority.studyInteractionActive()).toBe(false);
 });
+
+it("C02 malformed foreign training holds only affected cutover and preserves registered recovery and bytes", async () => {
+  const { client } = await connected();
+  await client.connectStudy("http://b.test", "workspace-a", credential);
+  const { offlineTrainingDatabase } = await import("../../database/browser/offline-training-storage");
+  const database = await offlineTrainingDatabase();
+  const original = { cards: [], missing_attempts: "preserve this unknown snapshot" };
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction("training", "readwrite");
+    transaction.objectStore("training").put(original, "prepared-daily-queue");
+    transaction.oncomplete = () => resolve(); transaction.onabort = () => reject(transaction.error);
+  });
+  database.close();
+  const before = await client.retainedStudyData();
+  // Same-authority inspection still succeeds; unknown facts do not become global storage failure.
+  await expect(client.assertStudyAuthority("http://b.test", "workspace-a")).resolves.toEqual(before);
+  await expect(client.assertStudyAuthority("http://learning.test:8001", "workspace-a", "recover")).resolves.toEqual(before);
+  await expect(client.assertStudyAuthority("http://c.test", "workspace-a")).rejects.toMatchObject({ kind: "authority" });
+  expect(await client.retainedStudyData()).toEqual(before);
+});
+
+it.each([
+  { state: "complete", attempt: { serverReviewId: 9 }, held: false },
+  { state: "rejected", attempt: { serverAcknowledged: true }, held: false },
+  { state: "pending", attempt: { serverReviewId: 9 }, held: true },
+  { state: "unexpected", attempt: { serverAcknowledged: true }, held: true },
+  { state: "complete", attempt: { serverReviewId: 0, serverAcknowledged: false }, held: true },
+])("C02 concrete offline facts retain terminal rules: $state/$held", async ({ state, attempt, held }) => {
+  const { client } = await connected();
+  const { offlineTrainingDatabase } = await import("../../database/browser/offline-training-storage");
+  const database = await offlineTrainingDatabase();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction(["training", "opening_attempts"], "readwrite");
+    transaction.objectStore("training").put({ cards: [], attempts: [attempt] }, "prepared-daily-queue");
+    transaction.objectStore("opening_attempts").put({ attempt_id: "original", delivery_state: state });
+    transaction.oncomplete = () => resolve(); transaction.onabort = () => reject(transaction.error);
+  });
+  database.close();
+  const before = await client.retainedStudyData();
+  const result = client.assertStudyAuthority("http://foreign.test", "workspace-a");
+  if (held) await expect(result).rejects.toMatchObject({ kind: "authority" });
+  else await expect(result).resolves.toEqual(before);
+  expect(await client.retainedStudyData()).toEqual(before);
+});

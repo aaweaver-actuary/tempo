@@ -1,4 +1,5 @@
-import { readAuthorityRegistry, readRetainedStudyData, readSessionConnection, removeSessionConnection,
+import type { RetainedAuthorityInspection, RetainedStudyExport } from "../domain/study-authority";
+import { readAuthorityRegistry, readRetainedStudyData, inspectRetainedStudyAuthority, readSessionConnection, removeSessionConnection,
   sessionConnectionAvailable, writeAuthorityRegistry, writeSessionConnection } from "../../database/browser/study-connection-storage";
 import { holdActiveStudyRequest } from "./study-priority";
 import { z } from "zod";
@@ -22,10 +23,14 @@ export class StudyConnectionError extends Error {
   }
 }
 export type StudyClientStorage = {
-  readAuthorityRegistry: typeof readAuthorityRegistry; readRetainedStudyData: typeof readRetainedStudyData;
-  readSessionConnection: typeof readSessionConnection; removeSessionConnection: typeof removeSessionConnection;
-  sessionConnectionAvailable: typeof sessionConnectionAvailable; writeAuthorityRegistry: typeof writeAuthorityRegistry;
-  writeSessionConnection: typeof writeSessionConnection;
+  readAuthorityRegistry(): string | null;
+  readRetainedStudyData(registeredOfflineDatabases: () => string[], validateStorage?: boolean): Promise<RetainedStudyExport>;
+  inspectRetainedStudyAuthority(registeredOfflineDatabases: () => string[]): Promise<RetainedAuthorityInspection>;
+  readSessionConnection(): string | null;
+  removeSessionConnection(): void;
+  sessionConnectionAvailable(): boolean;
+  writeAuthorityRegistry(value: string): void;
+  writeSessionConnection(value: string): void;
 };
 export type StudyClientConfiguration = {
   independent: boolean; baseUrl: string; storage: StudyClientStorage;
@@ -144,32 +149,17 @@ export function createStudyClient(configuration: StudyClientConfiguration) {
   type AuthorityTransition = "resume" | "recover" | "cutover";
   async function assertStudyAuthority(origin: string, workspace: string, transition: AuthorityTransition = "cutover") {
     const identity = authorityIdentity(origin, workspace);
-    let retained: Awaited<ReturnType<typeof retainedStudyData>>;
-    try { retained = await retainedStudyData(true); }
+    let inspection: RetainedAuthorityInspection;
+    try { inspection = await storage.inspectRetainedStudyAuthority(
+      () => Object.values(authorities()).map(authority => authority.offlineDatabase)); }
     catch (cause) { throw new StudyConnectionError("storage", String(cause), false, undefined, { cause }); }
     const registered = authorities();
     const recovering = transition !== "cutover" && Boolean(registered[identity]);
-    const records = retained.databases["tempo-study-intents"].intents ?? [];
-    const foreign = records.filter(value => {
-      const record = value as { workspace?: string; state?: string };
-      if (["committed", "discarded"].includes(record.state ?? "")) return false;
-      if (record.workspace === identity) return false;
-      return !recovering || !record.workspace || !registered[record.workspace];
-    });
-    const currentOffline = offlineDatabaseFor(identity);
-    const foreignOffline = Object.entries(retained.databases).some(([name, stores]) => {
-      if (!name.startsWith("tempo-offline-training") || name === currentOffline) return false;
-      if (recovering && Object.values(registered).some(authority => authority.offlineDatabase === name)) return false;
-      const attempts = stores.opening_attempts as { delivery_state?: string }[] | undefined;
-      if (attempts?.some(attempt => !["complete", "rejected"].includes(attempt.delivery_state ?? ""))) return true;
-      return stores.training?.some(value => {
-        const prepared = value as { attempts?: { serverReviewId?: number; serverAcknowledged?: boolean }[] };
-        return prepared.attempts?.some(attempt => !attempt.serverReviewId && !attempt.serverAcknowledged);
-      });
-    });
-    if (foreign.length || Object.keys(retained.legacy).length || foreignOffline)
+    const foreign = inspection.facts.some(fact => fact.disposition !== "terminal" &&
+      fact.authority !== identity && (!recovering || !fact.authority || !registered[fact.authority]));
+    if (foreign)
       throw new StudyConnectionError("authority", "Saved Study work belongs to another or unconfirmed authority. Keep browser data, inspect the retained records, and recover it with its original service before connecting here.");
-    return retained;
+    return inspection.retained;
   }
   async function connectStudy(origin: string, workspace: string, credential: string) {
     const release = holdActiveStudyRequest();
@@ -260,7 +250,7 @@ export function createStudyClient(configuration: StudyClientConfiguration) {
 
 export type StudyClient = ReturnType<typeof createStudyClient>;
 
-const browserStorage: StudyClientStorage = { readAuthorityRegistry, readRetainedStudyData, readSessionConnection,
+const browserStorage: StudyClientStorage = { readAuthorityRegistry, readRetainedStudyData, inspectRetainedStudyAuthority, readSessionConnection,
   removeSessionConnection, sessionConnectionAvailable, writeAuthorityRegistry, writeSessionConnection };
 export let LEARNING_URL = API_URL;
 export const defaultStudyClient = createStudyClient({ independent: independentStudy, baseUrl: API_URL, storage: browserStorage,

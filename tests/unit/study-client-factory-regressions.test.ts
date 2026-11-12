@@ -7,7 +7,8 @@ function storage() {
     sessionConnectionAvailable: () => true, readSessionConnection: () => session,
     writeSessionConnection: value => { session = value; }, removeSessionConnection: () => { session = null; },
     readAuthorityRegistry: () => registry, writeAuthorityRegistry: value => { registry = value; },
-    readRetainedStudyData: async () => ({ databases: { 'tempo-study-intents': {} }, legacy: {} }),
+    readRetainedStudyData: async () => ({ databases: {}, legacy: {} }),
+    inspectRetainedStudyAuthority: async () => ({ facts: [], retained: { databases: {}, legacy: {} } }),
   };
   return adapter;
 }
@@ -105,4 +106,14 @@ it('configured_client_preserves_request_signal_and_explicit_overrides', async ()
   expect(await captured.at(-1)!.text()).toBe('replacement');
   expect(captured.at(-1)!.headers.get('X-New')).toBe('new');
   expect(captured.at(-1)!.headers.has('X-Old')).toBe(false);
+});
+
+it.each(["terminal", "unresolved", "unknown"] as const)("authority policy consumes semantic %s facts without storage-shaped fakes", async disposition => {
+  const port = storage();
+  port.inspectRetainedStudyAuthority = async () => ({ facts: [{ authority: "https://foreign.example:study:foreign", disposition }],
+    retained: { databases: {}, legacy: {} } });
+  const client = createStudyClient({ independent: true, baseUrl: "", storage: port, transport: vi.fn() });
+  const decision = client.assertStudyAuthority("https://target.example", "target");
+  if (disposition === "terminal") await expect(decision).resolves.toEqual({ databases: {}, legacy: {} });
+  else await expect(decision).rejects.toMatchObject({ kind: "authority" });
 });
