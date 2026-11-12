@@ -76,8 +76,6 @@ def synthetic_package(tmp_path, additions):
         "app.authoring": "",
         "app.studies": "",
         "app.services.review_service": "",
-        "app.study.game_feedback": "",
-        "app.study.encounter_feedback": "",
         "tempo_storage.connections": "",
         "tempo_storage.scheduling_review_store": "",
     }

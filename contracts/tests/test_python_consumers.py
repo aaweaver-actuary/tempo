@@ -10,7 +10,6 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGES = [
     "game-evidence",
-    "analysis-jobs",
 ]
 
 
@@ -30,10 +29,6 @@ def test_python_v1_producers_exchange_with_independent_python_v1_consumers(packa
     consumer = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(consumer)
     decisions = {record["case"]: consumer.consume(record) for record in records}
-    if package == "game-evidence":
-        assert decisions["delivery"] == "submit_obligations_without_queue_write"
-        assert decisions["ack-accepted_pending"] == "keep_delivery_pending_or_failed"
-        assert decisions["ack-completed"] == "acknowledge_completion"
-    else:
-        assert decisions["cancel-requested"] == "termination_unconfirmed"
-        assert decisions["cancel-terminated"] == "computation_stopped"
+    assert decisions["delivery"] == "submit_obligations_without_queue_write"
+    assert decisions["ack-accepted_pending"] == "keep_delivery_pending_or_failed"
+    assert decisions["ack-completed"] == "acknowledge_completion"

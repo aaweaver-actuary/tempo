@@ -15,7 +15,6 @@ import tomllib
 ROOT = Path(__file__).resolve().parent
 PACKAGES = (
     "game-evidence",
-    "analysis-jobs",
 )
 INPUTS = (
     "src",

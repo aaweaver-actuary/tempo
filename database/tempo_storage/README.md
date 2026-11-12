@@ -48,7 +48,7 @@ polled or consumed as a new task queue. Its `source_record` preserves the exact
 row as it existed during the stopped-writer migration. Any later data disposal
 or resumption needs a separate explicit decision.
 
-The source expects schema 64; the actual runtime schema has not been queried here. Applying migrations, validating the native
+The source expects schema 65, as defined in [`ddl/schema_version.py`](ddl/schema_version.py); the actual runtime schema has not been queried here. Applying migrations, validating the native
 database and installing the branch are separate operator actions. Focused
 connection-contract tests use an injected driver and do not establish native
 PostgreSQL query, locking or migration correctness.

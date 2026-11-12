@@ -28,14 +28,7 @@
     "app.services.study_attempts": [
       "backend/tests/test_study_durability.py"
     ],
-    "app.study.game_feedback": [
-      "backend/tests/test_real_game_feedback_policy.py"
-    ],
-    "app.study.encounter_feedback": [
-      "backend/tests/test_product_encounter_integration.py"
-    ],
     "app.main": [
-      "backend/tests/test_phone_offline_training.py",
       "backend/tests/test_prepared_review_continuation.py"
     ],
     "app.services.learning_review_adapter": [
