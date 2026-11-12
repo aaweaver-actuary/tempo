@@ -13,7 +13,8 @@
   "owning_tests": [
     "backend/tests/test_scheduling_boundary.py",
     "backend/tests/test_scheduling_package_adapter.py",
-    "backend/tests/test_scheduling_review_application.py"
+    "backend/tests/test_scheduling_review_application.py",
+    "backend/tests/test_opening_baseline_maturity.py"
   ],
   "consumers": {
     "tempo_storage.scheduling_review_store": [
@@ -64,7 +65,8 @@
       "json",
       "app.study.policy.clock",
       "app.services.scheduler",
-      "app.study.policy.scheduling_review_contracts"
+      "app.study.policy.scheduling_review_contracts",
+      "app.study.policy.opening_maturity"
     ],
     "app.study.policy.scheduling_review_contracts": [
       "__future__",
@@ -78,7 +80,8 @@
       "zoneinfo"
     ],
     "app": [],
-    "app.services": []
+    "app.services": [],
+    "app.study.policy.opening_maturity": []
   },
   "native_boundaries": {
     "postgres": "Retain regular A1 rollback/concurrent-replay and review/queue durability proofs; fake stores do not qualify persistence.",
@@ -97,7 +100,8 @@
     "app.services.scheduler": "backend/app/services/scheduler.py",
     "app.study.policy.scheduling_review_application": "backend/app/study/policy/scheduling_review_application.py",
     "app.study.policy.scheduling_review_contracts": "backend/app/study/policy/scheduling_review_contracts.py",
-    "app.study.policy.clock": "backend/app/study/policy/clock.py"
+    "app.study.policy.clock": "backend/app/study/policy/clock.py",
+    "app.study.policy.opening_maturity": "backend/app/study/policy/opening_maturity.py"
   },
   "packaged_owner": "app.study.policy.scheduling_review_application"
 }
