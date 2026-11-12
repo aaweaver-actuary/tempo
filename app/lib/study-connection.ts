@@ -160,8 +160,13 @@ export function createStudyClient(configuration: StudyClientConfiguration) {
     const foreignOffline = Object.entries(retained.databases).some(([name, stores]) => {
       if (!name.startsWith("tempo-offline-training") || name === currentOffline) return false;
       if (recovering && Object.values(registered).some(authority => authority.offlineDatabase === name)) return false;
-      const attempts = stores.opening_attempts as { delivery_state?: string }[] | undefined;
+      const attempts = stores.opening_attempts as { attempt_id?: string; delivery_state?: string }[] | undefined;
       if (attempts?.some(attempt => !["complete", "rejected"].includes(attempt.delivery_state ?? ""))) return true;
+      const events = stores.opening_events as { attempt_id?: string }[] | undefined;
+      if (events?.length) {
+        const attemptIds = new Set(attempts?.map(attempt => attempt.attempt_id));
+        if (events.some(event => !event.attempt_id || !attemptIds.has(event.attempt_id))) return true;
+      }
       return stores.training?.some(value => {
         const prepared = value as { attempts?: { serverReviewId?: number; serverAcknowledged?: boolean }[] };
         return prepared.attempts?.some(attempt => !attempt.serverReviewId && !attempt.serverAcknowledged);

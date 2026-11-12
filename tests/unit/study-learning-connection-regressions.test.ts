@@ -535,3 +535,72 @@ it.each(['resolve','reject'])('study_priority_bootstrap_body_%s_retains_operatio
   else expect(result).toMatchObject({kind:'transport',cachedPracticeAvailable:true});
   await vi.advanceTimersByTimeAsync(3000);expect(priority.studyInteractionActive()).toBe(false);
 });
+
+const orphanEvent = { attempt_id: "old-attempt", sequence: 1, decision_index: 0, decision_id: "d".repeat(64), expected_uci: "e2e4", kind: "first_response", observed_at: "2026-11-04T12:00:00Z", response_uci: "e2e4", assistance: null, disposition: "expected" };
+async function seedOpening(name: string, headers: { attempt_id: string; delivery_state: string }[], event = true) {
+  await new Promise<void>((resolve, reject) => {
+    const request = indexedDB.open(name, 2);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      db.createObjectStore("training");
+      const attempts = db.createObjectStore("opening_attempts", { keyPath: "attempt_id" });
+      attempts.createIndex("delivery_state", "delivery_state");
+      const events = db.createObjectStore("opening_events", { keyPath: ["attempt_id", "sequence"] });
+      events.createIndex("attempt_id", "attempt_id");
+      headers.forEach(header => attempts.put(header));
+      if (event) events.put(orphanEvent);
+    };
+    request.onsuccess = () => { request.result.close(); resolve(); };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+it.each(["tempo-offline-training", "tempo-offline-training:foreign"])("F10 orphan opening event in %s holds a new authority before bootstrap", async name => {
+  await seedOpening(name, [{ attempt_id: "unrelated", delivery_state: "complete" }]);
+  const client = await import("../../app/lib/study-connection");
+  const fetcher = vi.fn().mockResolvedValue(Response.json(bootstrap)); vi.stubGlobal("fetch", fetcher);
+  for (let i = 0; i < 2; i++) await expect(client.connectStudy("http://new.test", "workspace-a", credential)).rejects.toMatchObject({ kind: "authority" });
+  expect(fetcher).not.toHaveBeenCalled();
+  expect(localStorage.getItem("tempo-learning-authorities-v1")).toBeNull();
+  expect(sessionStorage.getItem("tempo-learning-connection-v1")).toBeNull();
+  expect((await client.retainedStudyData()).databases[name].opening_events).toEqual([orphanEvent]);
+});
+
+it("F10 an identically named header in another database does not resolve an orphan", async () => {
+  await seedOpening("tempo-offline-training", [{ attempt_id: "unrelated", delivery_state: "rejected" }]);
+  await seedOpening("tempo-offline-training:other", [{ attempt_id: "old-attempt", delivery_state: "complete" }], false);
+  const client = await import("../../app/lib/study-connection");
+  const fetcher = vi.fn().mockResolvedValue(Response.json(bootstrap)); vi.stubGlobal("fetch", fetcher);
+  await expect(client.connectStudy("http://new.test", "workspace-a", credential)).rejects.toMatchObject({ kind: "authority" });
+  expect(fetcher).not.toHaveBeenCalled();
+});
+
+it.each(["complete", "rejected"])("F10 matching %s header allows a new authority", async state => {
+  await seedOpening("tempo-offline-training", [{ attempt_id: "old-attempt", delivery_state: state }]);
+  const { client, fetcher } = await connected();
+  expect(client.studyConnection()?.origin).toBe("http://learning.test:8001"); expect(fetcher).toHaveBeenCalledTimes(1);
+});
+
+it.each(["pending", "retained", "idle"])("F10 matching %s header holds a new authority", async state => {
+  await seedOpening("tempo-offline-training", [{ attempt_id: "old-attempt", delivery_state: state }]);
+  const client = await import("../../app/lib/study-connection");
+  const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
+  await expect(client.connectStudy("http://new.test", "workspace-a", credential)).rejects.toMatchObject({ kind: "authority" });
+  expect(fetcher).not.toHaveBeenCalled();
+});
+
+it("F10 final validation holds an orphan appearing during candidate bootstrap", async () => {
+  const { client, fetcher } = await connected();
+  const beforeRegistry = localStorage.getItem("tempo-learning-authorities-v1");
+  const beforeSession = sessionStorage.getItem("tempo-learning-connection-v1");
+  const reply = Promise.withResolvers<Response>(); fetcher.mockImplementationOnce(() => reply.promise);
+  const switching = client.connectStudy("http://new.test", "workspace-a", credential);
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+  await seedOpening("tempo-offline-training", [{ attempt_id: "unrelated", delivery_state: "complete" }]);
+  reply.resolve(Response.json(bootstrap));
+  await expect(switching).rejects.toMatchObject({ kind: "authority" });
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  expect(localStorage.getItem("tempo-learning-authorities-v1")).toBe(beforeRegistry);
+  expect(sessionStorage.getItem("tempo-learning-connection-v1")).toBe(beforeSession);
+  expect(client.studyConnection()?.origin).toBe("http://learning.test:8001");
+});
