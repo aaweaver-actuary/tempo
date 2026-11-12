@@ -6,6 +6,7 @@ import json
 from tempo_storage import postgres
 from app import queue_commands  # Registers the production bury handler.
 from app.command_gateway import execute_command
+from app.product_composition.database_infrastructure import bind_database_infrastructure
 from app.services import postgres_queue_refresh
 from app.services.review_service import preserve_daily_queue_order
 
@@ -85,5 +86,6 @@ def proof_study_burial_quota_with_worker_local_admission_isolation():
     print(json.dumps({"unrelated_order": unrelated_order, "queue_date": queue_date}))
 
 
+bind_database_infrastructure()
 with owned_admission_scope():
     proof_study_burial_quota_with_worker_local_admission_isolation()
