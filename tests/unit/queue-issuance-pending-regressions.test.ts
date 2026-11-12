@@ -184,3 +184,28 @@ it("a pending prepared-queue response retains the saved phone queue instead of p
   expect(await offline.readPreparedTraining()).toEqual(saved);
   expect(useTrainingStore.getState().queueNotice).toContain("saved queue is retained");
 });
+
+it.each(["queued", "pending", "executing", "retrying", "unknown"])("initial %s acknowledgment follows its identity before installing fresh cards", async state => {
+  const request = vi.fn().mockResolvedValueOnce(pending(state))
+    .mockResolvedValueOnce(receipt("complete", { response: { cards: [{ id: "not-a-queue" }] } }))
+    .mockResolvedValueOnce(positionQueue(issuedPositionCard()));
+  vi.stubGlobal("fetch", request);
+  const loading = fetchAndInitializeQueue(false, options);
+  await advanceStudyTimers(1500); await loading;
+  expect(request).toHaveBeenCalledTimes(3);
+  expect(String(request.mock.calls[1][0])).toContain(encodeURIComponent(operationId));
+  expect(useTrainingStore.getState().attempt.attemptId).toBe("issued-attempt-42");
+});
+
+it.each(["blocked", "complete", "failed", "unrecognized"])("initial %s is not a queue or permission for another operation", async state => {
+  useTrainingStore.getState().hydrateLocalQueue([activeCard], true, 1);
+  const attempt = useTrainingStore.getState().attempt;
+  const request = vi.fn().mockResolvedValueOnce(pending(state));
+  vi.stubGlobal("fetch", request);
+  const settled = fetchAndInitializeQueue(false, options).catch(error => error);
+  await settleStudyStorageTasks();
+  expect(await settled).toMatchObject({ message: expect.stringContaining(state === "blocked" ? "blocked" : "invalid pending") });
+  expect(request).toHaveBeenCalledTimes(1);
+  expect(useTrainingStore.getState().attempt).toEqual(attempt);
+  expect(useTrainingStore.getState().getCard().id).toBe(activeCard.id);
+});

@@ -98,3 +98,8 @@ export type StudyOperationResult =
   | { kind: "unknown"; operationId: string }
   | { kind: "malformed"; operationId: string; reason?: "identity" }
   | { kind: "unavailable"; operationId: string };
+
+/** Initial acknowledgment identifies an operation, not a completed command or queue. */
+export type StudyOperationAcceptance =
+  | { kind: "pending" | "unknown" | "blocked"; operationId: string }
+  | { kind: "malformed" };
