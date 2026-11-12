@@ -1375,3 +1375,25 @@ test("disposable volume collision check fails closed before image build", () => 
   const config = source.slice(source.indexOf("  compose_config: async () => {"), source.indexOf("  image_build: async () => {"));
   assert(config.includes("verifyDisposableVolumesAbsent"));
 });
+
+test('position native pytest selection is finite and cleanup survives failure', async () => {
+  const options = parse(['--mode', 'browser', '--native-check', 'position-grade-effects']);
+  const stages = postgresTestStages(options);
+  assert(stages.indexOf('position-grade-effects') < stages.indexOf('browser'));
+  assert.equal(stages.at(-1), 'cleanup');
+  for (const args of [
+    ['--mode', 'browser', '--native-check', 'position-grade-effects', '--native-check', 'position-grade-effects'],
+    ['--mode', 'browser', '--native-check', 'arbitrary-pytest'],
+    ['--mode', 'full', '--native-check', 'position-grade-effects'],
+  ]) assert.throws(() => parse(args));
+  const observed = [];
+  const actions = Object.fromEntries(stages.map(stage => [stage, async () => {
+    observed.push(stage);
+    if (stage === 'position-grade-effects') throw new Error('native failed');
+  }]));
+  await assert.rejects(executePostgresTestPlan(stages, actions, (_stage, run) => run()), /native failed/);
+  assert.equal(observed.at(-1), 'cleanup');
+  assert(!observed.includes('browser'));
+  const result = spawnSync('python3', ['database/tests/test_position_native_pytest_bridge.py'], {cwd: root, encoding: 'utf8'});
+  assert.equal(result.status, 0, result.stderr);
+});
