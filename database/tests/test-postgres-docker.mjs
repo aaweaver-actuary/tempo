@@ -604,7 +604,8 @@ async function readStudySnapshot() {
   const snapshot = JSON.parse(result.stdout.trim());
   assert.deepEqual(Object.keys(snapshot.tables), tables);
   for (const table of tables) assert(Array.isArray(snapshot.tables[table]));
-  return snapshot;
+  return {source: "tempo-postgres", tables: snapshot.tables,
+    counts: Object.fromEntries(tables.map(table => [table, snapshot.tables[table].length]))};
 }
 
 function readScopedPostgresRows(statement) {

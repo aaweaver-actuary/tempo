@@ -169,14 +169,24 @@ it("owned Study snapshot retains exact rows and refuses wrong target before SQL"
     body+'; return readStudySnapshot;')(assert,()=>{},project,async()=>health,'http://127.0.0.1:4181',run,()=>65,()=> '');
   vi.stubEnv('TEMPO_DEVELOPMENT_BUDGET_TOKEN','proof-owner');
   try {
-    expect(await read()).toEqual(snapshot);
-    expect(sqlCalls).toBe(1);
+    const observed = await read();
+    expect(observed).toEqual({source:'tempo-postgres',tables:snapshot.tables,
+      counts:Object.fromEntries(tables.map(table => [table,snapshot.tables[table].length]))});
+    // Preserve the durability consumer contract as well as exact-row comparisons.
+    expect(observed.source).toBe('tempo-postgres');
+    for (const table of ['reviews','teaching_states','position_annotations','prefix_splits'])
+      expect(observed.counts[table]).toBeGreaterThan(0);
+    snapshot.tables.reviews.push({id:'second-original-review',value:'unchanged'});
+    const changed = await read();
+    expect(changed.counts.reviews).toBe(2);
+    expect(changed.tables.reviews).toEqual(snapshot.tables.reviews);
+    expect(sqlCalls).toBe(2);
     health={test_instance:false,storage:'postgresql'};
     await expect(read()).rejects.toThrow();
     health={test_instance:true,storage:'postgresql'};
     metadata[1].labels['tempo.resource-owner']='other-owner';
     await expect(read()).rejects.toThrow();
-    expect(sqlCalls).toBe(1);
+    expect(sqlCalls).toBe(2);
     expect(source).not.toContain('get("migration/snapshot")');
   } finally {vi.unstubAllEnvs();}
 });
