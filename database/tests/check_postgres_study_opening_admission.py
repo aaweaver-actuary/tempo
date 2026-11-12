@@ -50,15 +50,16 @@ def claim_fixture_delivery():
     queue handler publications and contention tests retain background deadlines.
     """
 
-    def administer(operation, *, label):
-        with postgres.connection() as database:
-            return operation(database)
-    with patch.object(durable_tasks, 'submit_background_write', administer):
+    def administer(*, background=False):
+        assert background, "Only the claim's background connection is fixture-administered"
+        return postgres.connection()
+    with patch.object(durable_tasks, 'connection', administer):
         return durable_tasks.claim_task(allowed_kinds=('daily_queue',))
 
 
 def refresh(key='study-introductions'):
-    durable_tasks.warm_completion_sql()
+    # Completion now uses native storage SQL directly; no portable translation
+    # cache needs warming before the bounded worker section.
     durable_tasks.enqueue_task('daily_queue', key, {'queue_date': DAY})
     for slice_index in range(300):
         task = claim_fixture_delivery()
