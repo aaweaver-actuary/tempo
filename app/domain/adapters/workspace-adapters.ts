@@ -8,8 +8,6 @@ import {
   repertoireLineSchema,
   repertoiresResponseSchema,
   progressResponseSchema,
-  gamesSummarySchema,
-  endgameTemplatesSchema,
   tacticProgressSchema,
 } from "../schemas";
 
@@ -80,11 +78,6 @@ export function validateWorkspacePayload(url: string, raw: unknown, shouldPublis
       return parseWorkspaceData(progressResponseSchema, raw, "study progress");
     case "/api/tactics/progress":
       return parseWorkspaceData(tacticProgressSchema, raw, "tactics progress");
-    case "/api/games/summary": {
-      return parseWorkspaceData(gamesSummarySchema, raw, "games");
-    }
-    case "/api/endgames/templates":
-      return parseWorkspaceData(endgameTemplatesSchema, raw, "endgame templates");
     default:
       return raw;
   }
