@@ -1,3 +1,4 @@
+import { decodeOperationResult } from "../domain/adapters/operation-result-adapter";
 import { readPendingRepertoireDeletionRecord, writePendingRepertoireDeletionRecord, clearPendingRepertoireDeletionRecord } from "../../database/browser/adapters/authoring/repertoire-delete";
 import { z } from "zod";
 import { API_URL } from "../const";
@@ -31,14 +32,12 @@ export async function deleteRepertoireCommand(repertoireId: string, learnedCards
     const status = await fetch(`${API_URL}/api/operations/${encodeURIComponent(pending.operationId)}`);
     if (status.status !== 404) {
       if (!status.ok) throw new PendingOperationError(pending.operationId);
-      const receipt = await status.json() as {
-        state?: string; response?: unknown; error?: { message?: string };
-      };
-      if (receipt.state === "failed") {
+      const receipt = decodeOperationResult(await status.json(), pending.operationId, false);
+      if (receipt.kind === "failed") {
         clearPendingRepertoireDeletionRecord();
-        throw new FailedOperationError(receipt.error?.message ?? "The earlier repertoire deletion failed.", pending.operationId);
+        throw new FailedOperationError(receipt.error.message ?? "The earlier repertoire deletion failed.", pending.operationId);
       }
-      if (receipt.state === "complete") {
+      if (receipt.kind === "complete") {
         const result = deletedRepertoireSchema.parse(receipt.response);
         if (result.id !== repertoireId) throw new Error("The deletion receipt names a different repertoire.");
         clearPendingRepertoireDeletionRecord();

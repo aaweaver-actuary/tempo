@@ -192,3 +192,15 @@ it("inherited custom input uses the current default and preserves an edited draf
   fireEvent.change(allowance, { target: { value: "custom" } });
   expect((screen.getByLabelText("French new cards per day") as HTMLInputElement).value).toBe("5");
 });
+
+it.each([
+  ["malformed", { state: "complete" }],
+  ["foreign", { state: "complete", operation_id: "other", response: result(5) }],
+])("repertoire settings retain saved bytes for a %s receipt", async (_label, receipt) => {
+  const key = "tempo-pending-repertoire-settings-v1:rep";
+  const original = JSON.stringify({ operationId: "00000000-0000-4000-8000-000000000001", body: JSON.stringify({ new_cards_per_day: 5 }) });
+  localStorage.setItem(key, original);
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json(receipt)));
+  await expect(saveRepertoireLimit("rep", 10)).rejects.toThrow();
+  expect(localStorage.getItem(key)).toBe(original);
+});

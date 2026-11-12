@@ -529,3 +529,16 @@ it.each(["input change", "close"])("Lichess %s during fetch cancels acquisition 
   fireEvent.click(screen.getByRole("button", { name: "Capture" }));
   await waitFor(() => expect(screen.getByLabelText("Puzzle Rush PGN or Lichess puzzle ID")).toHaveProperty("value", ""));
 });
+
+it.each(["malformed", "foreign"])("capture retains saved bytes for a %s receipt", async kind => {
+  vi.stubGlobal("fetch", vi.fn().mockRejectedValueOnce(new Error("lost transport")));
+  await expect(saveTacticCapture(draft)).rejects.toThrow();
+  const key = "tempo-pending-tactic-capture-v1";
+  const original = localStorage.getItem(key);
+  const pending = pendingTacticCapture()!;
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json(kind === "malformed" ? { state: "complete" } : {
+    state: "complete", operation_id: "foreign", response: { capture_id: pending.capture_id, card_id: "card", queued: true, reused: false, introduced: true },
+  })));
+  await expect(saveTacticCapture()).rejects.toThrow();
+  expect(localStorage.getItem(key)).toBe(original);
+});
