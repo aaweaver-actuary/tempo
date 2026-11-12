@@ -16,20 +16,7 @@ from tempo_storage.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 
 ROOT = Path(__file__).resolve().parents[2]
 PROOF = ROOT / "database/tests/check_postgres_game_review_reader.py"
-RELATIONS = sorted(
-    [
-        "product_feedback_jobs",
-        "product_feedback_pages",
-        "product_feedback_sources",
-        "product_feedback_captures",
-        "product_feedback_deliveries",
-        "product_feedback_configuration",
-        "product_feedback_sync_requests",
-        "product_feedback_retry_requests",
-        "product_feedback_managed_mode",
-        "study_game_feedback",
-    ]
-)
+RELATIONS = ["imported_games", "repertoire_lines", "repertoires"]
 
 
 @pytest.fixture
@@ -58,8 +45,7 @@ def test_packaged_reader_import_is_inert_and_native_proof_is_outside_generic_bac
     assert reader.POSTGRES_SCHEMA_VERSION == POSTGRES_SCHEMA_VERSION
     for path in (
         "database/tempo_storage/ddl/schema_version.py",
-        "database/tempo_storage/ddl/migrations/052_product_game_sync.sql",
-        "database/tempo_storage/ddl/migrations/056_managed_game_feedback_mode.sql",
+        "database/tempo_storage/game_review.py",
     ):
         assert reader.RUNTIME_FILES[path] == "/app/" + path.removeprefix("database/")
         assert (ROOT / path).is_file()
@@ -124,7 +110,7 @@ def test_packaged_reader_refuses_unowned_or_wrong_project_before_external_effect
     with pytest.raises(
         pytest.fail.Exception, match="explicit existing disposable product project"
     ):
-        reader.check_packaged_game_review_reader_reads_current_receipt_without_write_privileges()
+        reader.check_packaged_game_review_reader_without_study_writes()
 
 
 @pytest.fixture
@@ -210,7 +196,7 @@ def preflight(reader, monkeypatch):
     return state, run
 
 
-def test_packaged_reader_requires_current_complete_schema_and_exact_ten_relation_acls(
+def test_packaged_reader_requires_current_complete_schema_and_current_game_relation_acls(
     preflight, capsys
 ):
     state, run = preflight
@@ -219,7 +205,7 @@ def test_packaged_reader_requires_current_complete_schema_and_exact_ten_relation
     assert json.loads(capsys.readouterr().out) == {
         "schema": POSTGRES_SCHEMA_VERSION,
         "role": "tempo_reader",
-        "select_grants": 10,
+        "select_grants": 3,
         "update_rejected": True,
     }
 
@@ -243,11 +229,11 @@ def test_packaged_reader_rejects_incomplete_or_extra_schema_inventory_and_write_
     elif change == "extra_migration":
         state.versions.append(POSTGRES_SCHEMA_VERSION + 1)
     elif change == "missing_relation":
-        state.relations.remove("product_feedback_managed_mode")
+        state.relations.remove("imported_games")
     elif change == "extra_relation":
-        state.relations.append("product_feedback_unexpected")
+        state.relations.append("unexpected_relation")
     else:
-        state.privileges["product_feedback_managed_mode"] = (
+        state.privileges["imported_games"] = (
             True,
             True,
             False,
@@ -257,3 +243,59 @@ def test_packaged_reader_rejects_incomplete_or_extra_schema_inventory_and_write_
     with pytest.raises(AssertionError):
         run()
     assert state.closed
+
+
+@pytest.mark.parametrize("fault", [None, "wrong_owner", "source_overlay", "mutable_image", "image_mismatch"])
+def test_packaged_reader_binds_owned_container_and_immutable_images(reader, monkeypatch, fault):
+    monkeypatch.setenv("TEMPO_TEST_INSTANCE", "disposable")
+    monkeypatch.setenv("TEMPO_TEST_COMPOSE_PROJECT", "tempo-pg-regressions-123-abc")
+    monkeypatch.setenv("TEMPO_DEVELOPMENT_BUDGET_TOKEN", "owned")
+    def docker(*args):
+        if args[0] == "ps":
+            return args[-1].split("=")[-1]
+        if args[0] == "image":
+            return json.dumps([{"Id": "sha256:" + ("b" if fault == "image_mismatch" else "a")*64}])
+        service = args[1]
+        return json.dumps([{"Id":service,"Image":"mutable:tag" if fault == "mutable_image" else "sha256:"+"a"*64,
+            "Config":{"Labels":{"com.docker.compose.project":"tempo-pg-regressions-123-abc",
+                "com.docker.compose.service":service,"tempo.resource-class":"development",
+                "tempo.resource-owner":"other" if fault == "wrong_owner" else "owned"}},
+            "State":{"Running":True},"Mounts":[{"Destination":"/app/app"}] if fault == "source_overlay" else []}])
+    monkeypatch.setattr(reader,"_docker",docker)
+    if fault:
+        with pytest.raises(AssertionError): reader._owned_containers()
+    else:
+        assert set(reader._owned_containers()) == {"api","foreground-worker","postgres"}
+
+
+@pytest.mark.parametrize("stage", ["seed", "proof", None])
+def test_packaged_reader_always_cleans_only_owned_fixture_after_seed_attempt(reader, monkeypatch, stage):
+    containers = {name:{"Id":name,"Image":"sha256:"+"a"*64} for name in ("api","foreground-worker")}
+    containers["postgres"]={"NetworkSettings":{"Networks":{"owned":{"IPAddress":"owned-address"}}}}
+    monkeypatch.setattr(reader,"_owned_containers",lambda:containers)
+    calls=[]
+    def execute(container,payload,body):
+        calls.append(body)
+        assert payload['identity'].startswith('game-review-reader-')
+        if body == reader.PREFLIGHT:
+            return dict(schema=POSTGRES_SCHEMA_VERSION,role='tempo_reader',select_grants=3,update_rejected=True)
+        if body == reader.CLEANUP: return {'fixture_cleanup_verified':True}
+        if body == reader.SEED:
+            if stage == 'seed': raise RuntimeError('seed acknowledgment lost')
+            return {'seeded':payload['identity']}
+        if stage == 'proof': raise RuntimeError('proof failed')
+        return dict(saved_and_pasted=True,reader_update_rejected=True,study_and_fixture_rows_unchanged=True)
+    monkeypatch.setattr(reader,'_exec_python',execute)
+    if stage:
+        with pytest.raises(RuntimeError): reader.check_packaged_game_review_reader_without_study_writes()
+    else: reader.check_packaged_game_review_reader_without_study_writes()
+    assert calls[-1] == reader.CLEANUP
+
+
+def test_packaged_reader_current_programs_compile_and_bind_only_existing_sources(reader):
+    for path in reader.RUNTIME_FILES:
+        assert (ROOT / path).is_file(), path
+    for name in ('PREFLIGHT', 'SEED', 'PROOF', 'CLEANUP'):
+        compile(reader.COMMON + getattr(reader, name), name, 'exec')
+    assert 'games/feedback' not in str(reader.RUNTIME_FILES)
+    assert 'study_game_feedback' not in reader.SEED + reader.CLEANUP
