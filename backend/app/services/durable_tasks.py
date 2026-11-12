@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import random
 from tempo_storage.postgres import PostgresConnection
@@ -269,8 +269,10 @@ def _request_current_queue_in_transaction(
     )
 
     payload = dict(payload)
-    payload["queue_date"] = payload.get("queue_date") or date.today().isoformat()
     now = _now()
+    if not payload.get("queue_date"):
+        from .study_calendar import capture_study_calendar
+        payload["queue_date"] = capture_study_calendar(database, now=now).day.isoformat()
     task, created = storage.lock_or_create_current_queue_task(
         database,
         task_id=str(uuid.uuid4()),

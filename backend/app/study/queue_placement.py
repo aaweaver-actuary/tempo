@@ -1,7 +1,5 @@
 """Place a card on the Study queue inside the caller-owned transaction."""
 
-from datetime import date
-
 from tempo_storage.study.review import storage
 from app.services.queue_presentation import presentation_rows
 from app.services.queue_ordering import _priority_queue_order
@@ -19,13 +17,13 @@ def ensure_card_queued_after(
     attempt_state: str = "gameplay",
     priority_reason: str | None = None,
     *,
-    queue_date: str | None = None,
+    queue_date: str,
     protect_presented: bool = False,
     preserve_order: bool = True,
     prepared_priority=None,
     priority_order=None,
 ) -> None:
-    day = queue_date or date.today().isoformat()
+    day = queue_date
     previous_order = (
         capture_daily_queue_order(database, day) if preserve_order else None
     )

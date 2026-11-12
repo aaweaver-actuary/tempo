@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from .services.study_calendar import capture_study_calendar
 import hashlib
 import json
 from typing import Any
@@ -116,7 +116,8 @@ def submit_study_attempt(
         for value in (request.card_id, request.queue_entry_id, request.queue_cycle)
     ):
         raise HTTPException(422, "Practice attempts cannot name a queue entry")
-    now = datetime.now(timezone.utc).isoformat()
+    calendar = capture_study_calendar(database)
+    now = calendar.observed_at.isoformat()
     storage.insert_attempt(
         database,
         (
@@ -151,8 +152,9 @@ def submit_study_attempt(
         database,
         persisted_attempt,
         "correct" if assessment["outcome"] == "correct" else "again",
+        calendar=calendar,
     )
-    request_queue_refresh_in_transaction(database, date.today().isoformat())
+    request_queue_refresh_in_transaction(database, calendar.day.isoformat())
     return result
 
 
@@ -197,8 +199,9 @@ def self_assess_study_attempt(
     assessment = json.loads(attempt["assessment_json"])
     if assessment["outcome"] not in {"unrecognized", "needs_self_assessment"}:
         raise HTTPException(409, "This attempt does not need self-assessment")
-    result = finish_study_attempt(database, attempt, request.rating)
-    request_queue_refresh_in_transaction(database, date.today().isoformat())
+    calendar = capture_study_calendar(database)
+    result = finish_study_attempt(database, attempt, request.rating, calendar=calendar)
+    request_queue_refresh_in_transaction(database, calendar.day.isoformat())
     return result
 
 

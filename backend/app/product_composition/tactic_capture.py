@@ -1,6 +1,8 @@
 """Bind Tactics capture to the existing Study writer within the supplied transaction."""
 
 from functools import partial
+from app.services.study_calendar import capture_study_calendar
+from app.study.policy.clock import StudyCalendar
 from fastapi import HTTPException
 from app.contracts.tactic_capture import (
     TacticCaptureConflict,
@@ -77,16 +79,18 @@ class BorrowedCaptureStorage:
 
 
 def capture_tactic(
-    database, request: TacticCaptureRequest, *, game_finding: bool = False
+    database, request: TacticCaptureRequest, *, game_finding: bool = False,
+    calendar: StudyCalendar | None = None
 ) -> dict[str, object]:
+    calendar = calendar if calendar is not None else capture_study_calendar(database)
     admission = CapturedTacticAdmissionOwner(
         BorrowedCaptureStorage(database),
         partial(lock_daily_tactic_admission, database),
-        partial(ensure_card_queued_after, database),
+        partial(ensure_card_queued_after, database, queue_date=calendar.day.isoformat()),
     )
     try:
         return tactic_capture.capture_tactic(
-            database, request, admission=admission, game_finding=game_finding
+            database, request, admission=admission, calendar=calendar, game_finding=game_finding
         )
     except TacticCaptureValidationError as error:
         raise HTTPException(422, str(error)) from error

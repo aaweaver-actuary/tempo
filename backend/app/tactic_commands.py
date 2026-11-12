@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import timedelta
+from .services.study_calendar import capture_study_calendar
 import json
 import uuid
 from typing import Any
@@ -27,10 +28,11 @@ from tempo_storage.tactics import attempts as storage
 def create_tactic_capture(
     database: PostgresConnection, payload: dict[str, Any]
 ) -> dict:
+    calendar = capture_study_calendar(database)
     result = capture_tactic(
-        database, TacticCaptureRequest.model_validate(payload["request"])
+        database, TacticCaptureRequest.model_validate(payload["request"]), calendar=calendar
     )
-    request_queue_refresh_in_transaction(database, date.today().isoformat())
+    request_queue_refresh_in_transaction(database, calendar.day.isoformat())
     return result
 
 
@@ -48,14 +50,15 @@ def submit_tactic_attempt(
     from .card_deletion import require_card_not_deleted
 
     require_card_not_deleted(database, tactic_card_id)
-    lock_daily_tactic_admission(database, date.today().isoformat())
+    calendar = capture_study_calendar(database)
+    lock_daily_tactic_admission(database, calendar.day.isoformat())
     storage.lock_puzzle_attempt(database, request.puzzle_id)
     if request.attempt_id:
         previous = storage.attempt_receipt(database, request.attempt_id)
         if previous:
             return json.loads(previous[0])
-    now = datetime.now(timezone.utc)
-    calendar_day = date.today()
+    now = calendar.observed_at
+    calendar_day = calendar.day
     light_days = int(storage.first_light_interval(database))
     storage.ensure_tactic_repertoire(database, now.isoformat())
     clean_at = now.isoformat() if request.correct and request.clean else None
@@ -92,7 +95,7 @@ def submit_tactic_attempt(
         if not storage.queued_attempt_card(
             database, calendar_day.isoformat(), tactic_card_id
         ):
-            ensure_card_queued_after(database, tactic_card_id, 4, "guided")
+            ensure_card_queued_after(database, tactic_card_id, 4, "guided", queue_date=calendar_day.isoformat())
     saved_card = storage.attempt_card_schedule(database, tactic_card_id)
     storage.save_admission_mode(database, saved_card[0], request.puzzle_id)
     result = {
@@ -125,7 +128,8 @@ def set_tactic_activation(
         )
     except ValueError as error:
         raise HTTPException(422, str(error)) from error
-    request_queue_refresh_in_transaction(database, date.today().isoformat())
+    calendar = capture_study_calendar(database)
+    request_queue_refresh_in_transaction(database, calendar.day.isoformat())
     return {"updated": True}
 
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from app.study.policy.clock import StudyCalendar
 import json
 
 from fastapi import HTTPException
@@ -15,8 +15,8 @@ def _json(value) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
 
 
-def finish_study_attempt(database, attempt, rating: str) -> dict:
-    now = datetime.now(timezone.utc).isoformat()
+def finish_study_attempt(database, attempt, rating: str, *, calendar: StudyCalendar) -> dict:
+    now = calendar.observed_at.isoformat()
     requested_rating = rating
     review_result = None
     if attempt["context"] == "review":
@@ -44,8 +44,8 @@ def finish_study_attempt(database, attempt, rating: str) -> dict:
             source_kind="study_exercise",
             source_ref=attempt["id"],
             light_first_interval_days=setting[0],
-            reviewed_at=datetime.fromisoformat(now),
-            review_day=date.today(),
+            reviewed_at=calendar.observed_at,
+            review_day=calendar.day,
         )
         from .queue_application import requeue
 
@@ -91,7 +91,7 @@ def finish_study_attempt(database, attempt, rating: str) -> dict:
         )
         for sibling in siblings:
             storage.bury_sibling(
-                database, sibling[0], date.today().isoformat(), "answer exposure"
+                database, sibling[0], calendar.day.isoformat(), "answer exposure"
             )
-            storage.block_sibling_queue(database, date.today().isoformat(), sibling[0])
+            storage.block_sibling_queue(database, calendar.day.isoformat(), sibling[0])
     return result
