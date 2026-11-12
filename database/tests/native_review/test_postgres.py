@@ -492,6 +492,14 @@ def test_native_large_presentation_uses_bounded_reads_at_fifty_ms(case, local_ho
 def test_native_split_then_refresh_retains_verified_after_four_placement(case):
     from app.services import queue_application
     from app.services.prefix_split import apply_prefix_split
+    from app.study.policy.clock import study_calendar_at
+
+    # This invocation-owned fixture already issued its queue on case['day'].
+    # Bind the split to that explicit day, never a later host-clock observation.
+    calendar = study_calendar_at(
+        datetime.fromisoformat(case['day'] + 'T12:00:00+00:00'), 'UTC'
+    )
+    assert calendar.day.isoformat() == case['day']
     source = case['identity']+'-a'
     with postgres.connection() as database:
         database.execute("UPDATE daily_queue SET status='buried' WHERE id=?",(case['entries'][1],))
@@ -502,7 +510,7 @@ def test_native_split_then_refresh_retains_verified_after_four_placement(case):
             database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type) VALUES(?,?,'prefix',?,'[\"e2e4\"]','learning',?,'tactic')",(identifier,case['identity'],FEN,case['day']))
             database.execute('INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,?,?)',(case['day'],identifier,index+1))
         queue_application.randomize_daily_queue(database,case['day'])
-        result = apply_prefix_split(database,source,3)
+        result = apply_prefix_split(database,source,3,calendar=calendar)
         parent,child = result['parent']['card_id'],result['continuation']['card_id']
         database.execute('UPDATE cards SET pending_validation=0 WHERE id IN (?,?)',(parent,child))
         before = [tuple(row) for row in database.execute("SELECT id,card_id,position FROM daily_queue WHERE status='queued' ORDER BY position,id")]
