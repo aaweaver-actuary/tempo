@@ -1,4 +1,15 @@
-"""Fake borrowed-driver checks for the PGN import storage split; no database startup."""
+"""Fake borrowed-driver checks for current PGN storage; no native claims.
+
+E01 dispositions of the six retired-import facade cases:
+- reverse-policy imports: rebind to current PGN storage/preparation and receipts;
+- inert public facade: retired approval facade; retain inert storage-owner import;
+- 12-field raw receipt: rebind unchanged projection to receipts.operation_status;
+- seven-field approval card preview: retired; retain current existing/deleted IDs;
+- facade INTRANS predicate: retired; retain borrowed-only storage lifecycle check;
+- original receipt lock: rebind to current opaque receipts capability directly.
+The removed approval API is not restored. Current imports.pgn.explicit admission
+and discard behavior remains covered below, including receipt identity and batches.
+"""
 
 import ast
 from datetime import date
@@ -28,10 +39,11 @@ def _retained_storage_application_imports(source):
 
 
 def test_retained_import_storage_does_not_import_application_policy():
-    from tempo_storage.authored_repertoires import product_imports
+    from tempo_storage.authored_repertoires.pgn_import import preparation
+    from tempo_storage.commands.receipts import storage as receipts
 
-    source = Path(product_imports.__file__).read_text()
-    assert _retained_storage_application_imports(source) == set()
+    for owner in (storage, preparation, receipts):
+        assert _retained_storage_application_imports(Path(owner.__file__).read_text()) == set()
 
 
 @pytest.mark.parametrize(
@@ -50,41 +62,44 @@ def test_retained_import_storage_guard_rejects_original_reverse_application_impo
     assert _retained_storage_application_imports(source)
 
 
-def test_retained_import_public_values_import_without_command_registration():
+def test_current_import_storage_imports_without_command_registration():
     script = """
 import importlib.abc, socket, sqlite3, subprocess, sys
 def forbidden(*args, **kwargs):
-    raise AssertionError('connection or process startup during retained import facade import')
+    raise AssertionError('connection or process startup during storage import')
 socket.socket.connect = forbidden
 socket.socket.connect_ex = forbidden
 socket.create_connection = forbidden
 sqlite3.connect = forbidden
 subprocess.Popen = forbidden
-denied = {'app.pgn_import_commands', 'app.command_gateway', 'app.main', 'app.tasks',
-          'tempo_storage', 'psycopg'}
+denied = {'app.pgn_import_commands', 'app.command_gateway', 'app.main', 'app.tasks'}
 class RejectImporterOrDatabase(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
         if any(fullname == name or fullname.startswith(name + '.') for name in denied):
             raise AssertionError('unexpected startup import: ' + fullname)
 sys.meta_path.insert(0, RejectImporterOrDatabase())
-from app.repertoire.changes.imports import (
-    RetainedImport, ImportPreview, retained_imports,
-    validate_approved_import, apply_approved_import,
-)
-assert RetainedImport.model_fields and ImportPreview.model_fields
+import psycopg
+psycopg.connect = forbidden
+from tempo_storage.authored_repertoires.pgn_import import storage, preparation
+from tempo_storage.commands.receipts import storage as receipts
 assert all(callable(value) for value in (
-    retained_imports, validate_approved_import, apply_approved_import,
+    storage.insert_import_rows, storage.discard_receipt, preparation.delivery,
+    receipts.operation_status, receipts.receipt_writer, receipts.lock_operation,
 ))
 assert not denied.intersection(sys.modules)
 """
-    subprocess.run(
+    root = Path(__file__).resolve().parents[2]
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = os.pathsep.join((str(root / "backend"), str(root / "database"), environment.get("PYTHONPATH", "")))
+    result = subprocess.run(
         [sys.executable, "-B", "-c", script],
-        env=os.environ.copy(),
-        check=True,
+        env=environment,
+        check=False,
         capture_output=True,
         text=True,
         timeout=20,
     )
+    assert result.returncode == 0, result.stderr
 
 
 class Rows:
@@ -160,9 +175,7 @@ class Borrowed:
 
 
 def test_retained_import_storage_preserves_full_receipt_tuple_and_raw_json():
-    from tempo_storage.authored_repertoires.product_imports import (
-        RetainedImportStorage,
-    )
+    from tempo_storage.commands.receipts import storage as receipts
     from tempo_storage.postgres import TempoRow
 
     columns = (
@@ -197,13 +210,10 @@ def test_retained_import_storage_preserves_full_receipt_tuple_and_raw_json():
     )
     events = []
     database = Borrowed(events, replies=[Rows(value=TempoRow(columns, values)), Rows()])
-    owner = RetainedImportStorage(database)
-
-    result = owner.read_operation("original-operation")
-    assert type(result) is tuple and len(result) == 12
-    assert result == values
+    result = receipts.operation_status(database, "original-operation")
+    assert tuple(result) == values and len(result) == 12
     assert result[4] == error_json and result[9] == payload_json
-    assert owner.read_operation("missing-operation") is None
+    assert receipts.operation_status(database, "missing-operation") is None
     assert [parameters for _, parameters in database.raw_calls] == [
         ("original-operation",),
         ("missing-operation",),
@@ -212,87 +222,38 @@ def test_retained_import_storage_preserves_full_receipt_tuple_and_raw_json():
     assert database.native_calls == []
 
 
-def test_retained_import_storage_card_rows_keep_exact_projection_order_and_empty_read():
-    from tempo_storage.authored_repertoires.product_imports import (
-        RetainedImportStorage,
-    )
-    from tempo_storage.postgres import TempoRow
-
-    columns = (
-        "id",
-        "revision",
-        "start_fen",
-        "moves_json",
-        "trained_color",
-        "archived",
-        "superseded_by",
-    )
-    values = [
-        ("a", 4, chess.STARTING_FEN, '["e2e4"]', "black", False, None),
-        ("z", None, chess.STARTING_FEN, "[]", "white", True, "replacement"),
-    ]
-    rows = [TempoRow(columns, row) for row in values]
-    database = Borrowed([], replies=[Rows(rows=rows)])
-    owner = RetainedImportStorage(database)
-
-    assert owner.card_rows([]) == ()
-    assert database.native_calls == []
+def test_current_import_card_identity_projections_preserve_empty_and_existing_rows():
+    # The retired approval preview's seven fields/order have no current caller.
+    # Import admission consumes existing/deleted identities, not approval previews.
+    database = Borrowed([], replies=[Rows(rows=[("a",), ("z",)]), Rows(rows=[])])
     identifiers = ["z", "a"]
-    result = owner.card_rows(identifiers)
-    assert result == tuple(dict(zip(columns, row)) for row in values)
-    assert type(result) is tuple and all(type(row) is dict for row in result)
-    assert database.native_calls == [
-        (
-            "SELECT id,revision,start_fen,moves_json,trained_color,archived,superseded_by "
-            "FROM cards WHERE id=ANY(%s::text[]) ORDER BY id",
-            (identifiers,),
-        )
-    ]
+    assert tuple(storage.existing_card_ids(database, identifiers)) == (("a",), ("z",))
+    assert tuple(storage.deleted_card_ids(database, identifiers)) == ()
+    assert [parameters for _, parameters in database.native_calls] == [(identifiers,), (identifiers,)]
     assert database.raw_calls == []
 
 
-def test_retained_import_storage_requires_exact_intrans_status_without_lifecycle_access():
-    from psycopg.pq import TransactionStatus
-    from tempo_storage.authored_repertoires.product_imports import (
-        RetainedImportStorage,
-    )
-
-    database = Borrowed([])
-    database.info = SimpleNamespace(transaction_status=None)
-    owner = RetainedImportStorage(database)
-    for status in TransactionStatus:
-        database.info.transaction_status = status
-        assert owner.in_transaction() is (status == TransactionStatus.INTRANS)
-    assert database.raw_calls == database.native_calls == database.events == []
+def test_current_import_storage_borrows_transaction_without_lifecycle_access():
+    # RetainedImportStorage.in_transaction was only an approval facade predicate.
+    # Current adapters borrow the caller's transaction; the strict double rejects
+    # opening, committing, rolling back, closing, or inspecting driver lifecycle.
+    database = Borrowed([], replies=[Rows(), Rows(), Rows()])
+    storage.lock_main_repertoire(database)
+    storage.save_repertoire(database, "r", "name", "source", "original-time")
+    storage.lock_discard_operation(database, "original-operation")
+    assert len(database.native_calls) == 2 and len(database.raw_calls) == 1
+    assert database.raw_calls[0][1] == ("original-operation",)
 
 
-def test_retained_import_storage_locks_original_using_existing_opaque_receipt_writer(
-    monkeypatch,
-):
-    from tempo_storage.authored_repertoires.product_imports import (
-        RetainedImportStorage,
-    )
+def test_current_import_receipt_lock_preserves_original_identity_and_opaque_writer():
     from tempo_storage.commands.receipts import storage as receipts
 
-    database = Borrowed([])
-    writer = object()
-    events = []
-
-    def receipt_writer(connection):
-        assert connection is database
-        events.append("writer")
-        return writer
-
-    def lock_operation(capability, operation_id):
-        assert capability is writer
-        events.append(("lock", operation_id))
-
-    monkeypatch.setattr(receipts, "receipt_writer", receipt_writer)
-    monkeypatch.setattr(receipts, "lock_operation", lock_operation)
-
-    assert RetainedImportStorage(database).lock_original("original-operation") is None
-    assert events == ["writer", ("lock", "original-operation")]
-    assert database.raw_calls == database.native_calls == database.events == []
+    database = Borrowed([], replies=[Rows()])
+    writer = receipts.receipt_writer(database)
+    assert not hasattr(writer, "commit") and not hasattr(writer, "connection")
+    assert receipts.lock_operation(writer, "original-operation") is None
+    assert [parameters for _, parameters in database.raw_calls] == [("original-operation",)]
+    assert database.native_calls == []
 
 
 @pytest.mark.parametrize(
