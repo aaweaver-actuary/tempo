@@ -7,19 +7,19 @@ Read the owning [test-selection policy](../../docs/testing.md) before running a 
 Application/contract tests that exercise storage alongside feature behavior remain in their regular backend/service suites. The [mixed-source inventory](../INVENTORY.md) describes the mechanical task's limits; [schema charts](../README.md) describe actual stored data. This PR does not introduce a new qualification framework or run a full-system suite.
 
 
-[Disposable writer benchmark](benchmarks/README.md) retains its original entry point and measurement behavior. Its one-table fixture is documented separately from production schemas; import/discovery checks do not execute the benchmark.
+The historical writer-benchmark directory is absent; its old relocation receipt is not a maintained entry point.
 
 ## Additional fixed proof operations
 
 - [Redis native proofs](redis/README.md): dedicated background wake, socket deadline and persisted readiness scripts now live entirely here; no old-path shims.
 - [CLI lifecycle fixtures](cli/README.md): existing fixed PostgreSQL setup/read operations; CLI scenario/lifecycle decisions remain in the caller.
-- [Learning browser fixtures](browser/README.md): existing serialized IndexedDB setup/inspection/fault callback expressions; qualifier scenario policy remains outside.
+- Browser acceptance lives under [tests/browser](../../tests/browser); the former separate Learning browser fixture directory is absent.
 
 These are source/discovery moves. No actual Redis, PostgreSQL, browser or resource qualification was run. Application-facing SQLite/fake-storage assertions retain their regular feature suite owners; the supplemental test-factory inventory distinguishes fixture organization from runtime storage implementation.
 
-## Packaged Games reader proof
+## Retained packaged reader proof (qualification pending)
 
-`check_postgres_game_review_reader.py` preserves the existing packaged receipt,
+[`check_postgres_game_review_reader.py`](check_postgres_game_review_reader.py) retains the historical packaged receipt,
 reader privilege, source hash and synthetic-row cleanup proof. The existing
 PostgreSQL runner invokes it once as mandatory `game_review_reader` immediately
 after service health in full and durability modes. It borrows only that runner's
@@ -33,3 +33,10 @@ Missing, skipped or failed native stage evidence cannot qualify the PostgreSQL
 layer. Native execution remains separate from these source and boundary checks.
 The [canonical verification view](../../.github/workflows/README.md#owned-postgresql-proof-lifetime)
 shows the existing runner's lifetime and cleanup owner.
+
+The retained reader script still describes historical feedback relations. Its
+registration is not evidence that it qualifies current minimal Game Review.
+Rebinding that proof is the separately assigned E03 task; use the current
+[minimal Game Review browser case](../../tests/browser/minimal-game-review-acceptance.spec.ts)
+for the present read-only product acceptance, with its documented owned stack.
+No E00/E03 selector or future repaired proof is advertised as implemented here.

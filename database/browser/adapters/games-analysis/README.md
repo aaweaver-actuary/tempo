@@ -1,8 +1,9 @@
 # Durable sync and retained practice command outboxes
 
-Current source definitions for the legacy game synchronization and
-Tactics command outboxes. Each adapter owns only its existing `localStorage`
-read, JSON write or deletion. The corresponding application module still owns
+Current source definitions for Tactics capture and retained legacy game-sync
+storage helpers. The game-sync/settings/refresh application clients are absent;
+retained helpers are not an active Games workflow. Each adapter owns only its existing `localStorage`
+read, JSON write or deletion. For active Tactics capture, the corresponding application module owns
 validation, request bytes, operation identity, receipt interpretation, replay,
 errors and when an entry is removed. There is no new shared dispatcher, store
 instance or cross-domain runtime. Existing application dependencies are unchanged;
@@ -29,14 +30,14 @@ flowchart LR
 
 `localStorage` enforces one string value per origin/key. The full browser key is
 the record identity; suffixes are parts of that key, not relational columns or
-foreign keys. JSON field shapes below come from the linked application source,
-not a browser schema constraint. Existing legacy keys are preserved; configured
-product Games uses its separate scoped recovery key below. There is no index.
+foreign keys. JSON field shapes below come from active Tactics source or the explicitly historical Games contract,
+not a browser schema constraint. Existing legacy keys are preserved; historical configured
+product Games used its separate scoped recovery key below. There is no index.
 
 | Owner / adapter | Exact key or formula | Serialized value and existing application contract |
 | --- | --- | --- |
-| Game synchronization — [game-sync.ts](game-sync.ts) | `tempo-pending-game-sync-command-v1` | JSON `{ operationId: string, body: string }`. `body` is exact request JSON from `Record<string, unknown>`; [sync command](../../../../app/lib/game-sync-command.ts). |
-| Configured product Games — [game-sync.ts](game-sync.ts) | `tempo-pending-product-game-sync-v1:${encodeURIComponent(scope)}`, where scope is the Game Review endpoint plus workspace ID | One unresolved `{kind:"save",operationId,body}` or `{kind:"run",provider,operation_id}` record; [Games settings](../../../../app/product-composition/GameSyncSettings.tsx) owns validation and recovery. Save bytes and run identity survive tab unmount/reload. Only a confirmed terminal response removes the matching operation; loading current settings does not imply success. |
+| Game synchronization — [game-sync.ts](game-sync.ts) | `tempo-pending-game-sync-command-v1` | JSON `{ operationId: string, body: string }`. `body` is exact request JSON from `Record<string, unknown>`; retired sync command client. |
+| Configured product Games — [game-sync.ts](game-sync.ts) | `tempo-pending-product-game-sync-v1:${encodeURIComponent(scope)}`, where scope is the Game Review endpoint plus workspace ID | One unresolved `{kind:"save",operationId,body}` or `{kind:"run",provider,operation_id}` record; the retired Games settings client owned validation and recovery. Historically, save bytes and run identity survived tab unmount/reload; only a confirmed terminal response removed the matching operation. Retained bytes are not current recovery evidence. |
 | Tactic capture — [tactic-capture.ts](tactic-capture.ts) | `tempo-pending-tactic-capture-v1` | JSON `{ body: string }` containing exact transport JSON. Inner request fields: `capture_id: UUID string`, `starting_fen: string`, `moves: string[]`, `source_kind: "puzzle_rush", "game", "manual" or "other"`, optional nullable `source_ref/source_url: string`, `note: string`; [capture request schema and command](../../../../app/lib/tactic-capture-command.ts). The inner `capture_id` is the operation identity. |
 
 Operation IDs, template/game/finding IDs and guided-review session IDs have only
@@ -83,11 +84,11 @@ its existing retained-practice key selection does not cover these optional keys.
 This retirement does not inspect or certify their settlement. No live browser
 data or server history was inspected or changed.
 
-## On-demand Games refresh recovery
+## Historical on-demand Games refresh records
 
 `game-sync.ts` also owns `tempo-pending-game-refresh-v1:<encoded scope>:<provider>`.
-The scope includes the full Games refresh API URL and workspace. The UI persists
-`{provider, operation_id, job_id?}` before sending a refresh, then retains the exact
-accepted job ID through uncertain responses, unmount and reload. Each provider has
-its own record. Only a confirmed rejection or terminal exact-job result clears it;
+The scope includes the full Games refresh API URL and workspace. The retired UI persisted
+`{provider, operation_id, job_id?}` before sending a refresh, then retained the exact
+accepted job ID through uncertain responses, unmount and reload. Each provider had
+its own record. That historical client cleared it only after a confirmed rejection or terminal exact-job result;
 reading an unrelated latest sync never settles the request.

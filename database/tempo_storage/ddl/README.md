@@ -1,6 +1,6 @@
 # PostgreSQL schema history
 
-[Database overview](../README.md) · [Source schema charts and dictionary](../schema/README.md)
+[Database overview](../README.md) · [Ordered source migrations](migrations/README.md)
 
 | Source | Role |
 | --- | --- |
