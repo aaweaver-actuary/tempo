@@ -1344,6 +1344,31 @@ const actions = {
       }),
     });
   },
+  'position-grade-effects': async () => {
+    assertDevelopmentProjectOwned(project);
+    const imageReference = run('docker', [...compose, 'images', '-q', 'schema'],
+      {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8'}).stdout.trim();
+    assert.match(imageReference, /^(sha256:)?[a-f0-9]{12,64}$/);
+    const image = JSON.parse(run('docker', ['image', 'inspect', imageReference],
+      {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8'}).stdout)[0];
+    const imageId = image.Id;
+    assert.match(imageId, /^sha256:[a-f0-9]{64}$/);
+    assert.equal(image.Config.Labels['org.opencontainers.image.revision'], candidateRevision);
+    const result = run('docker', [...compose, 'run', '--rm', '--no-deps',
+      '-e', `TEMPO_TEST_COMPOSE_PROJECT=${project}`,
+      '-e', `TEMPO_NATIVE_CANDIDATE_REVISION=${candidateRevision}`,
+      '-e', `TEMPO_NATIVE_RUNTIME_IMAGE=${imageId}`,
+      'schema', 'python', '/source/database/tests/position-native-pytest.py'],
+    {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8'});
+    const evidence = JSON.parse(result.stdout);
+    assert.equal(evidence.head, candidateRevision);
+    assert.equal(evidence.project, project);
+    assert.equal(evidence.cleanup, 'dropped');
+    assert.equal(evidence.tests?.length, 1);
+    assert.equal(evidence.tests[0].status, 'passed');
+    atomicJson(`test-results/native/${project}-position-grade-effects.json`, {
+      head: candidateRevision, checks: {'position-grade-effects': evidence}});
+  },
   'redis-fixture-isolation': async () => {
     let evidence;
     await executeIsolatedBackgroundWorkload({
