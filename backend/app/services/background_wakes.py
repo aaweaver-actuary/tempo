@@ -9,14 +9,7 @@ from kombu.utils.json import dumps
 import redis
 
 from tempo_storage.redis_control.wake_runtime import wakes as storage
-from tempo_storage.redis_control.wake_runtime.wakes import (
-    _KEY_PREFIX,
-    _RESERVE,
-    _PUBLISH,
-    _ABORT,
-    _CONSUME,
-    client,
-)
+from tempo_storage.redis_control.wake_runtime.wakes import _KEY_PREFIX, _RESERVE, _ABORT, client
 
 
 WAKE_TASK_NAMES = frozenset(

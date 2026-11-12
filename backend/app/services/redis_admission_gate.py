@@ -13,17 +13,7 @@ from typing import Iterator
 import redis
 
 from tempo_storage.redis_control import admission as storage
-from tempo_storage.redis_control.admission import (
-    _REGISTER_FOREGROUND,
-    _CLAIM_BACKGROUND,
-    _ADMISSION_NAMESPACE,
-    _FOREGROUND_KEY,
-    _BACKGROUND_KEY,
-    _FOREGROUND_LEASE_MS,
-    _BACKGROUND_LEASE_MS,
-    client,
-    configured,
-)
+from tempo_storage.redis_control.admission import _REGISTER_FOREGROUND, _CLAIM_BACKGROUND, _FOREGROUND_KEY, _BACKGROUND_KEY, _FOREGROUND_LEASE_MS, _BACKGROUND_LEASE_MS, client, configured
 
 
 _LOGGER = logging.getLogger("tempo.admission")
