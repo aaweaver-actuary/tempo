@@ -149,13 +149,13 @@ it("owned Study snapshot retains exact rows and refuses wrong target before SQL"
     'position_annotations','daily_queue','queue_attempt_origins','review_attempt_receipts','prefix_splits'];
   const snapshot = {tables:Object.fromEntries(tables.map(table => [table,[{id:table+'-original',value:'unchanged'}]]))};
   const project = 'tempo-pg-regressions-123-abcd';
-  const metadata = ['web','postgres'].map((service,index) => ({id:String(index+1).repeat(64),
+  const metadata = ['web','postgres','api'].map((service,index) => ({id:String(index+1).repeat(64),
     labels:{'com.docker.compose.project':project,'com.docker.compose.service':service,'tempo.resource-owner':'proof-owner'},
     ports:service==='web' ? {'80/tcp':[{HostIp:'127.0.0.1',HostPort:'4181'}]} : {}}));
   let sqlCalls=0;
-  let health = {test_instance:true,storage:'postgresql'};
+  let apiIdentity = 'TEMPO_TEST_INSTANCE=disposable\nTEMPO_DATABASE_READ_URL=postgresql://tempo_reader@postgres:5432/tempo';
   const run = (_command: string,args: string[]) => {
-    if (args[0]==='inspect') return {stdout:metadata.map(row=>JSON.stringify(row)).join('\n')};
+    if (args[0]==='inspect') return {stdout:args.length===4 ? apiIdentity : metadata.map(row=>JSON.stringify(row)).join('\n')};
     sqlCalls++;
     expect(args).toContain(metadata[1].id);
     expect(args).toContain('ON_ERROR_STOP=1');
@@ -166,7 +166,7 @@ it("owned Study snapshot retains exact rows and refuses wrong target before SQL"
     return {stdout:JSON.stringify(snapshot)};
   };
   const read = new Function('assert','assertDevelopmentProjectOwned','project','get','origin','run','schemaVersionFromSource','readFileSync',
-    body+'; return readStudySnapshot;')(assert,()=>{},project,async()=>health,'http://127.0.0.1:4181',run,()=>65,()=> '');
+    body+'; return readStudySnapshot;')(assert,()=>{},project,async()=>{throw new Error('Readiness must not substitute for identity during intentional worker stop');},'http://127.0.0.1:4181',run,()=>65,()=> '');
   vi.stubEnv('TEMPO_DEVELOPMENT_BUDGET_TOKEN','proof-owner');
   try {
     const observed = await read();
@@ -181,12 +181,29 @@ it("owned Study snapshot retains exact rows and refuses wrong target before SQL"
     expect(changed.counts.reviews).toBe(2);
     expect(changed.tables.reviews).toEqual(snapshot.tables.reviews);
     expect(sqlCalls).toBe(2);
-    health={test_instance:false,storage:'postgresql'};
+    apiIdentity='TEMPO_TEST_INSTANCE=disposable';
     await expect(read()).rejects.toThrow();
-    health={test_instance:true,storage:'postgresql'};
+    apiIdentity='TEMPO_TEST_INSTANCE=disposable\nTEMPO_DATABASE_READ_URL=postgresql://tempo_reader@postgres:5432/tempo';
     metadata[1].labels['tempo.resource-owner']='other-owner';
     await expect(read()).rejects.toThrow();
     expect(sqlCalls).toBe(2);
     expect(source).not.toContain('get("migration/snapshot")');
   } finally {vi.unstubAllEnvs();}
+});
+
+
+it("native prefix durability uses only the finite registered command and original receipt identity", () => {
+  const fixture = readFileSync('tests/fixtures/postgres-study-prefix-split.py','utf8');
+  expect(fixture).toContain("command = 'cards.prefix_split.accept'");
+  expect(fixture).toContain('request_hash=request_digest(command,payload)');
+  expect(fixture).toContain("receipt['state'] == 'complete' and receipt['response'] == result");
+  expect(fixture).toContain('assert execute_command(operation_id,command,payload) == result');
+  expect(fixture).toContain('assert after == before');
+  expect(fixture).toContain('tempo-disposable-postgres-test');
+  expect(fixture).toContain("'tempo_writer'");
+  expect(fixture).toContain('POSTGRES_SCHEMA_VERSION');
+  const runner=readFileSync('database/tests/test-postgres-docker.mjs','utf8');
+  expect(runner).toContain('assert.deepEqual(replayedSplit, split,');
+  expect(runner).toContain('native-command-durability-not-HTTP');
+  expect(runner).not.toContain('get(`cards/${splitCard.id}/prefix-split`)');
 });

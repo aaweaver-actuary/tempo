@@ -564,23 +564,26 @@ async function pollForStudyQueue(repertoireId, minimumCardCount) {
 async function readStudySnapshot() {
   assertDevelopmentProjectOwned(project);
   assert.match(project, /^tempo-pg-regressions-\d+-[a-f0-9]+$/);
-  const health = await get("health");
-  assert.equal(health.test_instance, true);
-  assert.equal(health.storage, "postgresql");
   const address = new URL(origin);
   assert.equal(address.hostname, "127.0.0.1");
   const metadata = run("docker", ["inspect", "--format",
     '{"id":{{json .Id}},"labels":{{json .Config.Labels}},"ports":{{json .NetworkSettings.Ports}}}',
-    `${project}-web-1`, `${project}-postgres-1`],
+    `${project}-web-1`, `${project}-postgres-1`, `${project}-api-1`],
     {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8'}).stdout.trim().split('\n').map(line => JSON.parse(line));
-  assert.equal(metadata.length, 2);
+  assert.equal(metadata.length, 3);
   for (const [index, container] of metadata.entries()) {
     assert.match(container.id, /^[a-f0-9]{64}$/);
     assert.equal(container.labels['com.docker.compose.project'], project);
-    assert.equal(container.labels['com.docker.compose.service'], ['web', 'postgres'][index]);
+    assert.equal(container.labels['com.docker.compose.service'], ['web', 'postgres', 'api'][index]);
     assert.equal(container.labels['tempo.resource-owner'], process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN);
   }
   assert.deepEqual(metadata[0].ports['80/tcp'], [{HostIp: '127.0.0.1', HostPort: address.port}]);
+  // Identity is independent of readiness: this proof deliberately stops workers.
+  // Inspect only these two non-secret configuration fields, never waive a 503.
+  const apiIdentity = run("docker", ["inspect", "--format",
+    '{{range .Config.Env}}{{if or (eq . "TEMPO_TEST_INSTANCE=disposable") (eq . "TEMPO_DATABASE_READ_URL=postgresql://tempo_reader@postgres:5432/tempo")}}{{println .}}{{end}}{{end}}',
+    metadata[2].id], {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8'}).stdout.trim().split('\n').sort();
+  assert.deepEqual(apiIdentity, ['TEMPO_DATABASE_READ_URL=postgresql://tempo_reader@postgres:5432/tempo', 'TEMPO_TEST_INSTANCE=disposable']);
   const schema = schemaVersionFromSource(readFileSync("database/tempo_storage/ddl/schema_version.py", "utf8"));
   const tables = ['repertoires', 'repertoire_cards', 'repertoire_lines', 'cards', 'reviews',
     'teaching_states', 'position_annotations', 'daily_queue', 'queue_attempt_origins',
@@ -753,14 +756,9 @@ async function verifyForegroundAndStudyDurability() {
   });
   assert(failedAttempt, "Guided failure command receives a confirmed response");
 
-  const splitPreview = await get(`cards/${splitCard.id}/prefix-split`);
-  const split = await postCommand(`cards/${splitCard.id}/prefix-split`, {
-    expected_revision: splitPreview.source_revision,
-  }, {
-    operationId: `pg-study-prefix-split-${randomBytes(10).toString("hex")}`,
-    label: "foreground POST prefix split",
-  });
-  assert.equal(split.applied, true);
+  const splitOperationId = `pg-study-prefix-split-${randomBytes(10).toString("hex")}`;
+  const split = await verifyNativeStudyPrefixSplit(splitCard, importedStudy.repertoire_id, splitOperationId);
+  assert.equal(split.response.applied, true);
   const queueRead = await apiRequest("queue/today", {}, "foreground GET queue/today during background backlog");
   assert.equal(queueRead.status, 200);
   const liveQueue = await queueRead.json();
@@ -832,6 +830,8 @@ async function verifyForegroundAndStudyDurability() {
   await waitForReady();
   await waitForStudyableImport(importedStudy.repertoire_id);
   await waitForStudyableImport(importedBackground.repertoire_id);
+  const replayedSplit = await verifyNativeStudyPrefixSplit(splitCard, importedStudy.repertoire_id, splitOperationId);
+  assert.deepEqual(replayedSplit, split, "Native split receipt and exact split rows survive restart and original-ID replay");
   const afterRestartSnapshot = await readStudySnapshot();
   await verifyPgnImportReplayWithoutDuplicates(pgnImportOperationId, importedStudy, "after recreation");
   await verifyDiscardedPgnReplay(discardedPgnId);
@@ -871,6 +871,27 @@ async function verifyForegroundAndStudyDurability() {
   assert.deepEqual(remainingFixtureTasks, [], "Completed study fixtures leave no active background tasks");
   console.log("PASS test_postgres_completed_study_fixtures_release_background_work_before_retention");
   activeStudyRepertoireId = null;
+}
+
+async function verifyNativeStudyPrefixSplit(card, repertoireId, operationId) {
+  await readStudySnapshot(); // Revalidate the exact owned target and schema before writing.
+  const inspected = run("docker", ["inspect", "--format",
+    '{"id":{{json .Id}},"labels":{{json .Config.Labels}}}', `${project}-foreground-worker-1`],
+    {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8'});
+  const writer = JSON.parse(inspected.stdout);
+  assert.match(writer.id, /^[a-f0-9]{64}$/);
+  assert.equal(writer.labels['com.docker.compose.project'], project);
+  assert.equal(writer.labels['com.docker.compose.service'], 'foreground-worker');
+  assert.equal(writer.labels['tempo.resource-owner'], process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN);
+  const proof = run("docker", ["exec", "-i", writer.id, "python", "-", card.id, repertoireId, operationId, String(card.revision)], {
+    input: readFileSync("tests/fixtures/postgres-study-prefix-split.py", "utf8"),
+    stdio: ['pipe', 'pipe', 'inherit'], encoding: 'utf8', env: environment,
+  });
+  const receipt = JSON.parse(proof.stdout.trim());
+  assert.equal(receipt.scope, 'native-command-durability-not-HTTP');
+  assert.equal(receipt.operation_id, operationId);
+  console.log(`PASS native prefix-split receipt/replay; UNRESOLVED HTTP transport: ${receipt.unresolved_transport}`);
+  return receipt;
 }
 
 async function verifyStudyBurialRetainsQuota() {
@@ -1403,7 +1424,8 @@ const actions = {
         verifyMaintainedBrowserReceipt(JSON.parse(readFileSync(report, 'utf8')));
         atomicJson(`test-results/native/${project}-maintained-study.json`, {revision: candidateRevision, project,
           scope: 'partial-maintained-study-not-full-E02', browser_report: report, browser_cases: 1,
-          unresolved_owner_cases: unresolvedQueueCases, historical_priority_rollback: 'not executed'});
+          unresolved_owner_cases: unresolvedQueueCases, historical_priority_rollback: 'not executed',
+          unresolved_transport: ['prefix-split HTTP GET/POST unmounted'], prefix_split_scope: 'native-command-durability-not-HTTP'});
       }
   },
   maintained_study_only: async () => {
