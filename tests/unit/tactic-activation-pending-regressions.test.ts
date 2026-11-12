@@ -30,3 +30,16 @@ it("tactic activation pending command reuses its key across retry", async () => 
   expect(postKeys[0]).toBeTruthy();
   expect(postKeys[1]).toBe(postKeys[0]);
 });
+
+it("recovers the legacy activation key with reversed pack order and removes it after completion", async () => {
+  const key = "tempo-tactics-activation-pending-v1:pack-a,pack-b:true";
+  localStorage.setItem(key, "legacy-activation");
+  vi.stubGlobal("fetch", vi.fn(async (_url: string, options: RequestInit) => {
+    expect(new Headers(options.headers).get("Idempotency-Key")).toBe("legacy-activation");
+    expect(JSON.parse(String(options.body))).toEqual({ pack_ids: ["pack-b", "pack-a"], active: true });
+    expect(localStorage.getItem(key)).toBe("legacy-activation");
+    return Response.json({ version: 1, groups: [], themes: [], packs: [] });
+  }));
+  await setPackActivation(["pack-b", "pack-a"], true);
+  expect(localStorage.getItem(key)).toBeNull();
+});
