@@ -10,6 +10,6 @@ flowchart LR
   facts --> database[Caller-selected read-only connection]
 ```
 
-The [fixed database operation](../../../database/tempo_legacy_database/adapters/postgres_readiness.py) owns the original four bound queries and connection scope. It invokes the supplied date capability for the third query after the first two reads, preserving timing. The application receives facts after the same scope closes. No SQL text is exposed to application code.
+The [fixed database operation](../../../database/tempo_storage/postgres_readiness.py) owns the schema, position-table, settings, queue and durable-task queries and connection scope. It invokes the supplied date capability for the queue query after schema, position-table and settings reads, preserving timing. The application receives facts after the same scope closes. No SQL text is exposed to application code.
 
-This is a split of existing readiness behavior, not a redesigned health or availability policy. Existing shared Celery/queue readiness coupling is preserved; native connectivity and deployment isolation remain unverified. Three existing fake-health cases pass without startup/lifespan, native reader or worker inspection. The existing startup case was not run.
+This is a split of existing readiness behavior, not a redesigned health or availability policy. Existing shared Celery/queue readiness coupling is preserved; native connectivity and deployment isolation remain unverified. The historical extraction reported three fake-health passes without startup/lifespan, native reader or worker inspection; this documentation reconciliation did not rerun them or the startup case.

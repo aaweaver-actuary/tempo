@@ -2,8 +2,8 @@
   "schema_version": 1,
   "review_date": "2026-11-12",
   "baseline_revision": "40172873fdf5d134a35b872b24858917287cb81e",
-  "reviewed_through_revision": "b679496e257bc8b72d6a99e38235d5d502c1dd27",
-  "scope": "Accepted merged-source progress for the first low-hanging-fruit batch. Original audit observations, acceptance criteria, source links, coverage and baseline counts remain unchanged.",
+  "reviewed_through_revision": "10c72792ff6fef1e1be690a8ff7f5bded3a3de2c",
+  "scope": "Accepted merged-source progress for the first low-hanging-fruit batch and PR #998 documentation completion. Original audit observations, acceptance criteria, source links, coverage and baseline counts remain unchanged.",
   "installation_state": "Not assessed in this merge review. No installed recovery or human review-to-next claim.",
   "updates": [
     {
@@ -79,16 +79,42 @@
       "workbook_evidence": "PR #994 merged 5031cede. Guide examples reconciled; component discovery and Game Evidence checks passed. https://github.com/aaweaver-actuary/tempo/pull/994"
     },
     {
-      "finding_id": "ST010",
-      "status": "Partially addressed",
+      "finding_id": "BE022",
+      "status": "Closed",
       "assignee": "Creator A / integration",
-      "pr": 994,
-      "code_revision": "3f63915ed369af701fb40ebe4dfafa69c96cd51f",
-      "merged_revision": "5031cedec7c8474a06f914c5089477fd9ddbffe9",
-      "summary": "Corrected the documented storage schema version to 65. The wider current-owner link and retained-worker documentation reconciliation is incomplete.",
-      "evidence": "Merged source and independent diff review establish the schema statement correction only.",
-      "remaining_acceptance": "Repair the remaining current storage/ownership/tooling/browser documentation links and retired-owner/worker statements against current source. Retain original ST010 file evidence until each residual is reconciled.",
-      "workbook_evidence": "PR #994 merged 5031cede. Schema statement fixed to 65. Remaining ownership/tooling/browser links and retired-worker guidance still need reconciliation. https://github.com/aaweaver-actuary/tempo/pull/994"
+      "pr": 998,
+      "code_revision": "449f458126919aa65ef09bc5fb6b25a48beb4f8b",
+      "merged_revision": "10c72792ff6fef1e1be690a8ff7f5bded3a3de2c",
+      "summary": "Reconciled backend, Learning and public-interface owner guides with current source. Retired modules are no longer advertised as current; historical narratives have explicit scope and pinned navigation.",
+      "evidence": "Creator link/source checks and independent review of exact head 449f4581: 29 assigned guides inspected, 28 changed Markdown guides have resolving local file/directory links. Current composition/transport/storage claims reconciled with source; historical sections explicitly scoped with pinned links. Diff/conflict checks passed. Documentation-only acceptance; no runtime or installation claim.",
+      "remaining_acceptance": "None for this documentation finding. Future interface changes must keep their owner guidance accurate.",
+      "workbook_evidence": "PR #998 merged 10c72792; reviewed 449f4581. Current guide links/source claims verified; historical guidance scoped. Source docs only, not installed. https://github.com/aaweaver-actuary/tempo/pull/998"
+    },
+    {
+      "finding_id": "ST010",
+      "status": "Closed",
+      "assignee": "Creator A / integration",
+      "pr": 998,
+      "code_revision": "449f458126919aa65ef09bc5fb6b25a48beb4f8b",
+      "merged_revision": "10c72792ff6fef1e1be690a8ff7f5bded3a3de2c",
+      "summary": "Completed remaining storage, browser, ownership, tooling and proof-guide reconciliation. Current links resolve, schema65 remains tied to source authority, and retired worker/package claims are corrected or explicitly historical.",
+      "evidence": "Creator link/source checks and independent review of exact head 449f4581: 29 assigned guides inspected, 28 changed Markdown guides have resolving local file/directory links. Current composition/transport/storage claims reconciled with source; historical sections explicitly scoped with pinned links. Diff/conflict checks passed. Documentation-only acceptance; no runtime or installation claim.",
+      "remaining_acceptance": "None for this documentation finding. Future interface changes must keep their owner guidance accurate.",
+      "workbook_evidence": "PR #998 merged 10c72792; reviewed 449f4581. Current guide links/source claims verified; historical guidance scoped. Source docs only, not installed. https://github.com/aaweaver-actuary/tempo/pull/998",
+      "prior_accepted_updates": [
+        {
+          "finding_id": "ST010",
+          "status": "Partially addressed",
+          "assignee": "Creator A / integration",
+          "pr": 994,
+          "code_revision": "3f63915ed369af701fb40ebe4dfafa69c96cd51f",
+          "merged_revision": "5031cedec7c8474a06f914c5089477fd9ddbffe9",
+          "summary": "Corrected the documented storage schema version to 65. The wider current-owner link and retained-worker documentation reconciliation is incomplete.",
+          "evidence": "Merged source and independent diff review establish the schema statement correction only.",
+          "remaining_acceptance": "Repair the remaining current storage/ownership/tooling/browser documentation links and retired-owner/worker statements against current source. Retain original ST010 file evidence until each residual is reconciled.",
+          "workbook_evidence": "PR #994 merged 5031cede. Schema statement fixed to 65. Remaining ownership/tooling/browser links and retired-worker guidance still need reconciliation. https://github.com/aaweaver-actuary/tempo/pull/994"
+        }
+      ]
     }
   ],
   "pending_prs": [
@@ -129,9 +155,8 @@
     }
   ],
   "status_counts": {
-    "Closed": 6,
+    "Closed": 8,
     "Needs decision": 4,
-    "Open": 44,
-    "Partially addressed": 1
+    "Open": 43
   }
 }

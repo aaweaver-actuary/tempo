@@ -119,34 +119,19 @@ its IndexedDB cache adapter and its build-asset plugin have been retired. Builds
 version 1 caches are not deleted or migrated; they contain rebuildable model
 Blobs, not Study state, and no current adapter opens them.
 
-This retirement does not remove the bundled models, Maia3 assets, inference
-scripts or the independent [Maia worker package](../../workers/maia/README.md).
-Study worker validation remains in its existing regression suite.
+The independent Maia worker package is also absent from current source. Retained
+model assets or old browser caches do not establish a serving worker. This guide
+does not authorize deleting either assets or browser data.
 
-Return to the [database index](../README.md).
+## Retired next-card preparation recovery
 
-
-## Current v1 preparation recovery candidate
-
-The application-owned [`next-card-preparation`](../../app/lib/next-card-preparation.ts)
-adapter uses the existing authority-scoped [intent package](../browser-intents/README.md);
-no object store, index or database version changes. Metadata key
-`next-card-preparation:current` retains the immutable selected envelope before its
-intent is inserted. The envelope contains its original request ID, originating
-progression, endpoint, authority, base URL and idempotency header. Atomic checkpoint
-comparison selects one envelope across tabs; existing expiring claims fence delivery.
-
-Intent kind `next-card-preparation` stores `data.started` and, after a validated
-terminal response, `data.completedAt` and the `progressed/pending/reason` receipt.
-Uncertain delivery retains the original identity and first recovers its receipt.
-A completed no-progress result requires an explicit retry after at least one
-second before a new unit; time alone does not trigger another delivery. Original
-records and unrelated intents remain retained. The receipt is operation evidence,
-not authority to display an unissued card. The current v1 origin scope exposes no
-database replacement epoch, so an unchanged origin alone cannot detect that change.
-
-Source implementation and focused synthetic browser-state checks do not establish
-installed browser recovery. See the [canonical browser view](../../app/README.md#main-study-path-and-source-gap).
+The former `app/lib/next-card-preparation.ts` client is absent. Its historical
+`next-card-preparation:current` checkpoint and intent records must not be treated
+as current issuance authority, erased or replayed by an invented replacement.
+The [intent package](../browser-intents/README.md) and
+[Study connection storage](study-connection-storage.ts) remain distinct owners.
+Current issuance/recovery behavior must be checked in its actual application
+consumer; storage presence alone proves no live recovery or settlement.
 
 ### Passive cutover journal inspection
 
