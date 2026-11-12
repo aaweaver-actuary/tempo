@@ -162,7 +162,7 @@ def test_native_two_decisions_and_late_failure_rollback():
     from psycopg import sql
     from psycopg.rows import dict_row
     from psycopg.types.json import Jsonb
-    from app.services.postgres_opening_evidence import position_first_response_envelope, _position_digest
+    from app.study.position_learning.first_response_codec import position_first_response_envelope, _position_digest
     from app.study.position_learning.issued_plan_contracts import select_and_freeze
     from tests.test_position_issued_plan_contracts import option, request_for
     from app.study.position_learning.grade_effects import CompletionAuthority, apply_in_borrowed_transaction

@@ -159,11 +159,10 @@ def test_fresh_issuance_checks_admission_and_all_witnesses_before_insert(monkeyp
 
 
 def test_clean_proof_requires_saved_review_and_all_first_response_receipts(monkeypatch):
-    from app.study import position_checkpoint as evidence
+    from app.study.position_learning.first_response_codec import position_first_response_envelope, _position_digest
     from app.study.position_learning.issuance import read_clean_presentation_proof
     work = prepared()
     plan = work.plan
-    monkeypatch.setattr(evidence, 'decode_position_first_response', lambda payload, digest, saved: payload, raising=False)
     done = dict(card_id=plan.original_card_id, card_revision=plan.original_card_revision,
         queue_entry_id=plan.queue_entry_id, repertoire_id=plan.target.key.repertoire_id,
         state='complete', contiguous_sequence=7, terminal_json={'state': 'complete', 'final_sequence': 7},
@@ -173,9 +172,10 @@ def test_clean_proof_requires_saved_review_and_all_first_response_receipts(monke
         invalidated_at=None)
     receipts = []
     for index, slot in enumerate(plan.decision_slots):
-        payload = dict(event_id='event-' + str(index), decision_index=index, disposition='expected',
-            manual_failure=False, assistance_before=False, actual_uci=slot.definition.expected_uci)
-        receipts.append(dict(payload_json=payload, payload_digest='digest', decision_index=index,
+        payload = position_first_response_envelope(plan, event_id='event-' + str(index), decision_index=index,
+            actual_uci=slot.definition.expected_uci, manual_failure=False, assistance_before=False,
+            observed_at='2026-01-01T00:00:00+00:00', classify_alternative=lambda *_: 'wrong')
+        receipts.append(dict(payload_json=payload, payload_digest=_position_digest(payload), decision_index=index,
             event_id=payload['event_id'], attempt_id=plan.attempt_id, repertoire_id=slot.definition.key.repertoire_id,
             variant=slot.definition.key.variant, position=slot.definition.key.position, owner_epoch=plan.owner_epoch))
     class Cursor(Result):
@@ -196,6 +196,7 @@ def test_clean_proof_requires_saved_review_and_all_first_response_receipts(monke
     assert read_clean_presentation_proof(db, plan.attempt_id).reason == 'position_prior_completion_unavailable'
     done['invalidated_at'] = None
     receipts[0]['payload_json']['assistance_before'] = True
+    receipts[0]['payload_digest'] = _position_digest(receipts[0]['payload_json'])
     assert read_clean_presentation_proof(db, plan.attempt_id).reason == 'position_prior_responses_not_clean'
 
 
