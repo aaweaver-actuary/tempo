@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 from importlib.metadata import version
 import json
 import math
-from typing import Literal
+from typing import Literal, NamedTuple
 
 from fsrs import Card, Rating, Scheduler, State
 
@@ -25,6 +25,27 @@ _PHYSICAL_FIELDS = {
     "requeue_after_cards", "suggest_shorter_prefix", "light_first_interval_days",
 }
 PositionGrade = Literal["good", "again"]
+
+
+class InitialPositionState(NamedTuple):
+    fsrs_card_json: str
+    due_at: datetime
+
+
+def initial_position_state(allocated_card_id: int, due_at: datetime) -> InitialPositionState:
+    """Construct fresh Learning state with the caller's allocated ID and instant.
+
+    Allocation, uniqueness, admission and persistence remain with the Study
+    transaction. No review or clock-derived identity is manufactured here.
+    """
+    if not _positive_id(allocated_card_id):
+        raise ValueError("allocated_card_id must be a positive integer")
+    if not isinstance(due_at, datetime) or due_at.utcoffset() is None:
+        raise ValueError("due_at must be timezone-aware")
+    if _FSRS_VERSION != "6.3.2":
+        raise ValueError("unsupported FSRS version; expected 6.3.2")
+    card = Card(card_id=allocated_card_id, due=due_at)
+    return InitialPositionState(card.to_json(), card.due)
 
 
 @dataclass(frozen=True)
