@@ -23,7 +23,7 @@ test("study_only_mode_preserves_foreground_review_and_queue_progression across r
   });
   try {
     await prepareUI(page);
-    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await navigate(page, "Settings");
     await expect(page.getByRole("button", { name: "Save settings" })).toBeEnabled();
     await page.getByRole("checkbox", { name: /Study-only mode/ }).check();
     expect((await (await request.get(`${api}/settings`)).json()).study_only_mode).toBe(false);
@@ -68,7 +68,7 @@ test("study_only_mode_preserves_foreground_review_and_queue_progression across r
     expect(first).toBeTruthy();
     await request.post(first.url, { headers: { "Idempotency-Key": first.key }, data: first.body });
     await expect.poll(() => fixture("verify").reviews).toBe(3);
-    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await navigate(page, "Settings");
     await expect(page.getByRole("checkbox", { name: /Study-only mode/ })).toBeChecked();
     await page.getByRole("checkbox", { name: /Study-only mode/ }).uncheck();
     await page.getByRole("button", { name: "Save settings" }).click();
