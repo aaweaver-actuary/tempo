@@ -1,3 +1,4 @@
+import { decodeOperationResult } from "../domain/adapters/operation-result-adapter";
 import { readPendingRepertoireSettingsBytes, decodePendingRepertoireSettingsRecord, writePendingRepertoireSettingsRecord, clearPendingRepertoireSettingsRecord } from "../../database/browser/adapters/authoring/repertoire-settings";
 import { z } from "zod";
 import { API_URL } from "../const";
@@ -38,17 +39,18 @@ export async function saveRepertoireLimit(repertoireId: string, limit: number | 
     return result;
   }
   if (pending) {
-    let receipt: { state?: string; response?: unknown; error?: { message?: string } } = {};
+    let receipt = decodeOperationResult({ state: "unknown" }, pending.operationId, false);
     try {
       const status = await fetch(`${API_URL}/api/operations/${encodeURIComponent(pending.operationId)}`);
-      if (status.ok) receipt = await status.json();
+      if (status.ok) receipt = decodeOperationResult(await status.json(), pending.operationId, false);
     } catch { /* Replaying the saved identity and bytes is safe after a lost receipt. */ }
-    if (receipt.state === "complete") return validateResult(receipt.response);
-    if (receipt.state === "failed") {
+    if (receipt.kind === "complete") return validateResult(receipt.response);
+    if (receipt.kind === "failed") {
       clearPendingRepertoireSettingsRecord(repertoireId);
-      throw new FailedOperationError(receipt.error?.message ?? "The repertoire save failed.", pending.operationId);
+      throw new FailedOperationError(receipt.error.message ?? "The repertoire save failed.", pending.operationId);
     }
-    if (receipt.state === "blocked") throw new PendingOperationError(pending.operationId, "The repertoire save is blocked. Resolve its operation error before retrying.", true);
+    if (receipt.kind === "blocked") throw new PendingOperationError(pending.operationId, "The repertoire save is blocked. Resolve its operation error before retrying.", true);
+    if (receipt.kind === "malformed") throw new PendingOperationError(pending.operationId);
   } else {
     const request = requestSchema.parse({ new_cards_per_day: limit });
     pending = { operationId: crypto.randomUUID(), body: JSON.stringify(request) };

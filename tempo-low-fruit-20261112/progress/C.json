@@ -1,0 +1,120 @@
+{
+  "packet": "C",
+  "baseline_revision": "a2e877d908309544eafee908c7e537149c22d169",
+  "implementation_revision": "bd187bcf",
+  "reviewed_revision": "",
+  "updates": [
+    {
+      "finding_id": "ST009",
+      "task": "C0 browser key ownership",
+      "proposed_status": "Verified on branch",
+      "scope": "full implementation; integration acceptance pending",
+      "changed_paths": [
+        "app/lib/training-bury-command.ts",
+        "app/lib/tactical-catalog.ts",
+        "database/browser/adapters/practice/training-burial-command.ts",
+        "database/browser/adapters/practice/tactical-activation.ts",
+        "tests/unit/training-burial-regressions.test.ts",
+        "tests/unit/tactic-activation-pending-regressions.test.ts"
+      ],
+      "evidence": [
+        {
+          "command_or_review": "npm run test:unit -- tests/unit/training-burial-regressions.test.ts tests/unit/training-burial-caller-regressions.test.tsx tests/unit/tactic-activation-pending-regressions.test.ts",
+          "result": "pass: 3 files, 52 tests",
+          "revision": "772b0089",
+          "cases_or_observations": [
+            "preexisting burial identity/body reused and removed",
+            "preexisting activation identity reused with reversed pack order and removed"
+          ],
+          "environment": "isolated worktree, npm ci --ignore-scripts",
+          "remaining_limit": "component tests, not installed behavior"
+        },
+        {
+          "command_or_review": "npm run typecheck:browser; rg physical prefixes in app",
+          "result": "pass; no matching application prefixes",
+          "revision": "772b0089",
+          "cases_or_observations": [],
+          "environment": "isolated worktree",
+          "remaining_limit": "integration review pending"
+        }
+      ],
+      "remaining_acceptance": "Integration owner to review and adopt; do not close on main until integrated. FE010 remains open.",
+      "next_owner": "integration owner",
+      "implementation_stage": "component-tested",
+      "merge_state": "not merged",
+      "installed_state": "not established"
+    },
+    {
+      "finding_id": "FE001",
+      "task": "C1-C3 receipt decoder adoption",
+      "proposed_status": "Partially addressed",
+      "scope": "partial pending real browser/transport proof and integrated review",
+      "changed_paths": [
+        "app/lib/analysis-paste-command.ts",
+        "app/lib/branch-command.ts",
+        "app/lib/branch-removal-command.ts",
+        "app/lib/card-revision-command.ts",
+        "app/lib/settings-save.ts",
+        "app/lib/repertoire-rename-command.ts",
+        "app/lib/repertoire-delete-command.ts",
+        "app/lib/card-delete-command.ts",
+        "app/lib/prefix-split-command.ts",
+        "app/lib/repertoire-settings-save.ts",
+        "app/lib/tactic-capture-command.ts",
+        "app/lib/pgn-import-command.ts",
+        "app/lib/integrity-repair-outbox.ts",
+        "app/utils/position-annotations.ts",
+        "tests/unit/*-pending-regressions.test.ts",
+        "tests/unit/repertoire-daily-limits.test.tsx",
+        "tests/unit/tactic-capture-regressions.test.tsx",
+        "tests/unit/integrity-repair-outbox-regressions.test.ts"
+      ],
+      "evidence": [
+        {
+          "command_or_review": "C1: four authoring pending regression files and three shared receipt tests via npm run test:unit",
+          "result": "pass: 7 files, 69 tests",
+          "revision": "20061c43",
+          "cases_or_observations": [
+            "malformed or foreign completion preserves exact journal with changed request",
+            "pending, same identity, terminal failure, valid completion"
+          ],
+          "environment": "isolated worktree",
+          "remaining_limit": "mock transport"
+        },
+        {
+          "command_or_review": "C2: eight selected ordinary consumer test files and three shared receipt files via npm run test:unit",
+          "result": "pass: 11 files, 128 tests",
+          "revision": "f0851878",
+          "cases_or_observations": [
+            "foreign and malformed completion preserves each journal"
+          ],
+          "environment": "isolated worktree",
+          "remaining_limit": "mock transport"
+        },
+        {
+          "command_or_review": "C3: six specialized test files and three shared receipt files via npm run test:unit; npm run typecheck:browser",
+          "result": "pass: 9 files, 201 tests; browser typecheck pass",
+          "revision": "bd187bcf",
+          "cases_or_observations": [
+            "PGN foreign completion retained",
+            "repair choice retained on malformed/foreign completion",
+            "annotation journal retained",
+            "legacy receipt and retry tests passed"
+          ],
+          "environment": "isolated worktree",
+          "remaining_limit": "mock transport; real browser recovery not exercised"
+        }
+      ],
+      "remaining_acceptance": "Coordinate representative real browser/transport recovery and combined integrity UI/outbox proof; review integrated diff. Queue view polls through canonical decoder and independently validates initial issuance acknowledgement. Retry endpoint calls are commands rather than receipt interpreters. Position annotation save has no current production caller but was migrated to preserve compatibility. FE001 remains partial until full acceptance is reviewed.",
+      "next_owner": "integration owner",
+      "implementation_stage": "component-tested",
+      "merge_state": "not merged",
+      "installed_state": "not established"
+    }
+  ],
+  "shared_file_requests": [
+    "No central file edits requested; integration owner to update root audit artifacts after acceptance.",
+    "Coordinate one heavy real-browser/transport recovery proof, including combined integrity UI/outbox behavior with Creator D."
+  ],
+  "notes": "No independent reviewer available in this task; proportional self-review performed, independent integrated review requested. No merge, installation, activation, live data or service operations. Hosted CI status not established (ci-disabled per repository guidance). Original audit source pin remains 40172873."
+}

@@ -482,3 +482,12 @@ it("rejected PGN discard reports the service error and retains recovery identity
   expect(fetcher).toHaveBeenCalledOnce();
   expect(localStorage.getItem(pendingKey)).toBe(stored);
 });
+
+it("a foreign PGN completion retains the original import identity", async () => {
+  const file = await rememberImport();
+  const original = localStorage.getItem(pendingKey);
+  const fetcher = receiptFetcher({ state: "complete", operation_id: "foreign", response: importResult });
+  await expect(savePgnImportCommand(file, "white", 4)).rejects.toThrow("different import operation identity");
+  expect(localStorage.getItem(pendingKey)).toBe(original);
+  expect(fetcher).toHaveBeenCalledOnce();
+});

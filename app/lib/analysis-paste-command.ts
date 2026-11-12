@@ -1,3 +1,4 @@
+import { decodeOperationResult } from "../domain/adapters/operation-result-adapter";
 import { readPendingAnalysisPasteRecord, writePendingAnalysisPasteRecord, clearPendingAnalysisPasteRecord } from "../../database/browser/adapters/authoring/analysis-paste";
 import { API_URL } from "../const";
 import { analysisPasteCommitSchema } from "../domain/schemas";
@@ -33,18 +34,17 @@ export async function saveAnalysisPasteCommand(payload: AnalysisPasteCommand) {
   if (pending) {
     const status = await fetch(`${API_URL}/api/operations/${encodeURIComponent(pending.operationId)}`);
     if (!status.ok) throw new PendingOperationError(pending.operationId);
-    const receipt = await status.json() as {
-      state?: string; response?: unknown; error?: { message?: string };
-    };
-    if (receipt.state === "failed") {
+    const receipt = decodeOperationResult(await status.json(), pending.operationId, false);
+    if (receipt.kind === "failed") {
       clearPendingAnalysisPasteRecord();
-      throw new Error(receipt.error?.message ?? "The earlier analysis save failed.");
+      throw new Error(receipt.error.message ?? "The earlier analysis save failed.");
     }
-    if (receipt.state === "complete") {
+    if (receipt.kind === "complete") {
+      const result = analysisPasteCommitSchema.parse(receipt.response);
       clearPendingAnalysisPasteRecord();
-      if (pending.body === body) return analysisPasteCommitSchema.parse(receipt.response);
+      if (pending.body === body) return result;
       pending = null;
-    } else if (receipt.state === "pending") {
+    } else if (receipt.kind === "pending") {
       if (pending.body !== body) throw new PendingOperationError(pending.operationId);
     } else throw new PendingOperationError(pending.operationId);
   }

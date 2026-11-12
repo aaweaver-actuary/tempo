@@ -13,14 +13,12 @@ export async function buryTrainingEntry(queueEntryId: number, retry = false, ide
       endpoint: `${API_URL}/api/queue/entries/${queueEntryId}/bury`, body: retained?.body ?? identity ?? {} });
     await validateTrainingBurial(response, queueEntryId); return;
   }
-  const operationKey = `tempo-bury-operation-${queueEntryId}`;
-  const existingOperationId = readBurialOperation(operationKey);
+  const existingOperationId = readBurialOperation(queueEntryId);
   const operationId = existingOperationId ?? crypto.randomUUID();
-  const identityKey = `tempo-bury-identity-${queueEntryId}`;
-  const savedIdentity = readBurialIdentity(identityKey);
+  const savedIdentity = readBurialIdentity(queueEntryId);
   const requestBody = savedIdentity ?? (!existingOperationId && identity ? JSON.stringify(identity) : undefined);
-  if (requestBody) writeBurialIdentity(identityKey, requestBody);
-  writeBurialOperation(operationKey, operationId);
+  if (requestBody) writeBurialIdentity(queueEntryId, requestBody);
+  writeBurialOperation(queueEntryId, operationId);
   writePendingBurialEntry(queueEntryId);
   try {
     if (retry) {

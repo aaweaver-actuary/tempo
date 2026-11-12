@@ -1,3 +1,4 @@
+import { decodeOperationResult } from "../domain/adapters/operation-result-adapter";
 import { readPendingPrefixSplitRecord, writePendingPrefixSplitRecord, clearPendingPrefixSplitRecord } from "../../database/browser/adapters/authoring/prefix-split";
 import { readPendingCardDeletionBytes } from "../../database/browser/adapters/authoring/card-delete";
 import { z } from "zod";
@@ -31,19 +32,20 @@ async function decidePrefixSplit(cardId: string, revision: number, decision: Dec
   if (pending) {
     const status = await fetch(`${API_URL}/api/operations/${encodeURIComponent(pending.operationId)}`);
     if (!status.ok) throw new PendingOperationError(pending.operationId);
-    const receipt = await status.json() as { state?: string; response?: unknown; error?: { message?: string } };
-    if (receipt.state === "failed") {
+    const receipt = decodeOperationResult(await status.json(), pending.operationId, false);
+    if (receipt.kind === "failed") {
       clearPendingPrefixSplitRecord();
-      throw new Error(receipt.error?.message ?? "The earlier prefix split decision failed.");
+      throw new Error(receipt.error.message ?? "The earlier prefix split decision failed.");
     }
-    if (receipt.state === "complete") {
+    if (receipt.kind === "complete") {
+      const result = pending.decision === "accept"
+        ? prefixSplitResponseSchema.parse(receipt.response)
+        : rejectionSchema.parse(receipt.response);
       clearPendingPrefixSplitRecord();
       if (pending.cardId === cardId && pending.revision === revision && pending.decision === decision && pending.queueEntryId === queueEntryId)
-        return decision === "accept"
-          ? prefixSplitResponseSchema.parse(receipt.response)
-          : rejectionSchema.parse(receipt.response);
+        return result;
       pending = null;
-    } else if (receipt.state === "pending") {
+    } else if (receipt.kind === "pending") {
       if (pending.cardId !== cardId || pending.revision !== revision || pending.decision !== decision || pending.queueEntryId !== queueEntryId)
         throw new PendingOperationError(pending.operationId);
     } else throw new PendingOperationError(pending.operationId);

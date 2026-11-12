@@ -1,3 +1,4 @@
+import { decodeOperationResult } from "../domain/adapters/operation-result-adapter";
 import { readPendingPositionAnnotation, writePendingPositionAnnotation, removePendingPositionAnnotation, writePositionAnnotations } from "../../database/browser/adapters/practice/position-annotations";
 import * as z from "zod";
 import { annotationSchema, annotationsResponseSchema } from "../domain/schemas";
@@ -83,25 +84,23 @@ export async function savePositionAnnotation(
     if (pending) {
       const status = await fetch(`${API_URL}/api/operations/${encodeURIComponent(pending.operationId)}`);
       if (!status.ok) throw new PendingOperationError(pending.operationId);
-      const receipt = await status.json() as {
-        state?: string; response?: unknown; error?: { message?: string };
-      };
-      if (receipt.state === "pending" && (pending.body !== body ||
+      const receipt = decodeOperationResult(await status.json(), pending.operationId, false);
+      if (receipt.kind === "pending" && (pending.body !== body ||
           pending.repertoireId !== normalized.repertoireId))
         throw new PendingOperationError(pending.operationId);
-      if (receipt.state === "failed") {
+      if (receipt.kind === "failed") {
         removePendingPositionAnnotation();
-        throw new Error(receipt.error?.message ?? "The earlier position note save failed.");
+        throw new Error(receipt.error.message ?? "The earlier position note save failed.");
       }
-      if (receipt.state === "complete") {
+      if (receipt.kind === "complete") {
+        const saved = annotationSchema.parse(receipt.response);
         removePendingPositionAnnotation();
         if (pending.body === body && pending.repertoireId === normalized.repertoireId) {
-          const saved = annotationSchema.parse(receipt.response);
           storeConfirmedAnnotation(saved);
           return saved;
         }
         pending = null;
-      } else if (receipt.state !== "pending") {
+      } else if (receipt.kind !== "pending") {
         throw new PendingOperationError(pending.operationId);
       }
     }

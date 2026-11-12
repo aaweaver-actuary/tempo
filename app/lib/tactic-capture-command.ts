@@ -1,3 +1,4 @@
+import { decodeOperationResult } from "../domain/adapters/operation-result-adapter";
 import { readPendingTacticCapture, storePendingTacticCapture, clearPendingTacticCapture } from "../../database/browser/adapters/games-analysis/tactic-capture";
 import { independentStudy } from "./study-connection";
 import { z } from "zod";
@@ -30,27 +31,27 @@ export async function saveTacticCapture(draft?: TacticCaptureDraft) {
   let pending = pendingTacticCapture();
   let requestBody = pending ? pendingSchema.parse(JSON.parse(readPendingTacticCapture()!)).body : "";
   if (pending) {
-    let receipt: { state?: string; response?: unknown; error?: { message?: string }; last_error?: { message?: string } } = { state: "unknown" };
+    let receipt = decodeOperationResult({ state: "unknown" }, pending.capture_id, false);
     try {
       const status = await fetch(`${API_URL}/api/operations/${encodeURIComponent(pending.capture_id)}`);
-      if (status.ok) receipt = await status.json();
+      if (status.ok) receipt = decodeOperationResult(await status.json(), pending.capture_id, false);
     } catch {
       // The receipt route may be unavailable (including SQLite compatibility).
       // Replaying the exact capture remains safe; editing stays locked.
     }
-    if (receipt.state === "complete") {
+    if (receipt.kind === "complete") {
       const result = tacticCaptureResultSchema.parse(receipt.response);
       if (result.capture_id !== pending.capture_id) throw new Error("The service returned a different capture identity. Retry to resolve this save.");
       clearPendingTacticCapture();
       return result;
     }
-    if (receipt.state === "failed") {
+    if (receipt.kind === "failed") {
       clearPendingTacticCapture();
-      throw new FailedOperationError(receipt.error?.message ?? "The capture failed. Edit it and try again.", pending.capture_id);
+      throw new FailedOperationError(receipt.error.message ?? "The capture failed. Edit it and try again.", pending.capture_id);
     }
-    if (receipt.state === "blocked") throw new PendingOperationError(pending.capture_id, receipt.last_error?.message, true);
+    if (receipt.kind === "blocked") throw new PendingOperationError(pending.capture_id, receipt.error?.message, true);
     // A pending or missing receipt can follow a lost send: resend the same ID and bytes.
-    if (receipt.state !== "unknown" && receipt.state !== "pending" && receipt.state !== "queued" && receipt.state !== "executing" && receipt.state !== "retrying")
+    if (receipt.kind !== "unknown" && receipt.kind !== "pending")
       throw new PendingOperationError(pending.capture_id);
   } else {
     if (!draft) throw new Error("There is no pending capture to resolve.");

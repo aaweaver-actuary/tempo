@@ -1,3 +1,4 @@
+import { decodeOperationResult } from "../domain/adapters/operation-result-adapter";
 import { readPendingSettingsSave, writePendingSettingsSave, removePendingSettingsSave } from "../../database/browser/adapters/practice/settings-save";
 import { API_URL } from "../const";
 import { confirmOperationResponse, PendingOperationError } from "./operation-status";
@@ -23,18 +24,18 @@ export async function saveLocalSettings(settings: Record<string, unknown>): Prom
       `${API_URL}/api/operations/${encodeURIComponent(pending.operationId)}`,
     );
     if (!response.ok) throw new PendingOperationError(pending.operationId);
-    const receipt = await response.json() as { state?: string; error?: { message?: string } };
-    if (receipt.state === "pending" && pending.body !== body)
+    const receipt = decodeOperationResult(await response.json(), pending.operationId, false);
+    if (receipt.kind === "pending" && pending.body !== body)
       throw new PendingOperationError(pending.operationId);
-    if (receipt.state === "failed") {
+    if (receipt.kind === "failed") {
       removePendingSettingsSave();
-      throw new Error(receipt.error?.message ?? "The earlier settings save failed.");
+      throw new Error(receipt.error.message ?? "The earlier settings save failed.");
     }
-    if (receipt.state === "complete") {
+    if (receipt.kind === "complete") {
       removePendingSettingsSave();
       if (pending.body === body) return;
       pending = null;
-    } else if (receipt.state !== "pending") {
+    } else if (receipt.kind !== "pending") {
       throw new PendingOperationError(pending.operationId);
     }
   }

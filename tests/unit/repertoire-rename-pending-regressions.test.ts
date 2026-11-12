@@ -28,3 +28,16 @@ it("a pending repertoire rename reuses its operation ID and waits for a receipt"
   expect(keys[0]).toBe(keys[1]);
   expect(localStorage.getItem("tempo-pending-repertoire-rename-v1")).toBeNull();
 });
+
+it.each([
+  ["malformed", { state: "complete" }],
+  ["foreign", { state: "complete", operation_id: "other", response: { id: "rep", name: "old" } }],
+])("%s receipt preserves the saved operation", async (_label, receipt) => {
+  const original = JSON.stringify({ operationId: "original", repertoireId: "rep", name: "old" });
+  localStorage.setItem("tempo-pending-repertoire-rename-v1", original);
+  const fetcher = vi.fn(async () => Response.json(receipt));
+  vi.stubGlobal("fetch", fetcher);
+  await expect(renameRepertoireCommand("rep", "new")).rejects.toThrow();
+  expect(localStorage.getItem("tempo-pending-repertoire-rename-v1")).toBe(original);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});

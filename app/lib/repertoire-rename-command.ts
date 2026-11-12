@@ -1,3 +1,4 @@
+import { decodeOperationResult } from "../domain/adapters/operation-result-adapter";
 import { readPendingRepertoireRenameRecord, writePendingRepertoireRenameRecord, clearPendingRepertoireRenameRecord } from "../../database/browser/adapters/authoring/repertoire-rename";
 import { API_URL } from "../const";
 import { confirmOperationResponse, PendingOperationError } from "./operation-status";
@@ -20,16 +21,16 @@ export async function renameRepertoireCommand(repertoireId: string, name: string
   if (pending) {
     const status = await fetch(`${API_URL}/api/operations/${encodeURIComponent(pending.operationId)}`);
     if (!status.ok) throw new PendingOperationError(pending.operationId);
-    const receipt = await status.json() as { state?: string; error?: { message?: string } };
-    if (receipt.state === "failed") {
+    const receipt = decodeOperationResult(await status.json(), pending.operationId, false);
+    if (receipt.kind === "failed") {
       clearPendingRepertoireRenameRecord();
-      throw new Error(receipt.error?.message ?? "The earlier repertoire rename failed.");
+      throw new Error(receipt.error.message ?? "The earlier repertoire rename failed.");
     }
-    if (receipt.state === "complete") {
+    if (receipt.kind === "complete") {
       clearPendingRepertoireRenameRecord();
       if (pending.repertoireId === repertoireId && pending.name === name) return;
       pending = null;
-    } else if (receipt.state === "pending") {
+    } else if (receipt.kind === "pending") {
       if (pending.repertoireId !== repertoireId || pending.name !== name)
         throw new PendingOperationError(pending.operationId);
     } else throw new PendingOperationError(pending.operationId);

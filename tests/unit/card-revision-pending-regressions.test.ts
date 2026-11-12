@@ -37,3 +37,27 @@ it("a pending card edit reuses its command ID and blocks a changed revision", as
   expect(keys).toHaveLength(1);
   expect(localStorage.getItem("tempo-pending-card-revision-v1")).toBeNull();
 });
+
+it.each([
+  ["malformed completion", { state: "complete", response: {} }],
+  ["foreign completion", { state: "complete", operation_id: "foreign", response: { card_id: "edited", replaced: true, history_mode: "preserve", revision: 7 } }],
+])("%s retains the exact earlier operation when a changed request arrives", async (_label, receipt) => {
+  const original = JSON.stringify({ operationId: "original-operation", request: JSON.stringify(revision) });
+  localStorage.setItem("tempo-pending-card-revision-v1", original);
+  const fetcher = vi.fn(async () => Response.json(receipt));
+  vi.stubGlobal("fetch", fetcher);
+  await expect(reviseCardCommand({ ...revision, expectedRevision: 4 })).rejects.toThrow();
+  expect(localStorage.getItem("tempo-pending-card-revision-v1")).toBe(original);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
+
+it("keeps changed work blocked while pending and clears a confirmed terminal failure", async () => {
+  const original = JSON.stringify({ operationId: "original-operation", request: JSON.stringify(revision) });
+  localStorage.setItem("tempo-pending-card-revision-v1", original);
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(Response.json({ state: "pending" }))
+    .mockResolvedValueOnce(Response.json({ state: "failed", error: { message: "terminal" } })));
+  await expect(reviseCardCommand({ ...revision, expectedRevision: 4 })).rejects.toBeInstanceOf(PendingOperationError);
+  expect(localStorage.getItem("tempo-pending-card-revision-v1")).toBe(original);
+  await expect(reviseCardCommand(revision)).rejects.toThrow("terminal");
+  expect(localStorage.getItem("tempo-pending-card-revision-v1")).toBeNull();
+});
