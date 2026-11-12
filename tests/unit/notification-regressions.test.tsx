@@ -38,7 +38,7 @@ describe("notification regressions", () => {
       .toEqual({ failedUrls: ["/api/repertoires"] });
     view.unmount();
     render(<WorkspaceRefreshStatus />);
-    refresh("ready", "/api/games/summary");
+    refresh("ready", "/api/settings");
     expect(notifications()[0]).toMatchObject({ id: failedId, severity: "warning", active: false, resolvedAt: null });
     expect(notificationNeedsAttention(notifications()[0])).toBe(true);
     refresh("ready", failedUrl);
@@ -51,10 +51,10 @@ describe("notification regressions", () => {
       window.dispatchEvent(new CustomEvent("tempo-workspace-data", { detail: { state, url } }));
     });
     refresh("refreshing", "/api/repertoires");
-    refresh("refreshing", "/api/games/summary");
+    refresh("refreshing", "/api/settings");
     const progressId = notifications()[0].id;
     refresh("error", "/api/repertoires");
-    refresh("ready", "/api/games/summary");
+    refresh("ready", "/api/settings");
     expect(notifications()).toHaveLength(1);
     expect(notifications()[0]).toMatchObject({ id: progressId, severity: "warning", active: false, resolvedAt: null });
     expect(notificationNeedsAttention(notifications()[0])).toBe(true);

@@ -82,8 +82,6 @@ function notifyWorkspaceData(state: "refreshing" | "ready" | "error", url: strin
 
 function clearResolvedDiagnostics(url: string) {
   const path = new URL(url, "http://tempo.local").pathname;
-  if (path === "/api/games/summary")
-    clearDataDiagnosticsForSources(["games", "game"]);
   if (path === "/api/repertoires")
     clearDataDiagnosticsForSources(["repertoire", "repertoires"]);
 }
@@ -258,7 +256,6 @@ export async function preloadView(view: View) {
   if (!usesLocalApi()) return;
   const paths: Partial<Record<View, string[]>> = {
     repertoire: ["repertoires"],
-    endgames: ["endgames/templates"],
     settings: ["settings"],
     studies: ["studies"],
   };

@@ -1,3 +1,4 @@
+import type { RetainedAuthorityInspection, RetainedStudyExport, RetainedWorkFact } from "../../app/domain/study-authority";
 /** Existing browser storage operations; connection/authority decisions stay with Study. */
 const connectionKey = "tempo-learning-connection-v1";
 const authoritiesKey = "tempo-learning-authorities-v1";
@@ -10,7 +11,7 @@ export function readAuthorityRegistry() { return localStorage.getItem(authoritie
 export function writeAuthorityRegistry(value: string) { localStorage.setItem(authoritiesKey, value); }
 
 /** Read existing stores without upgrading, rewriting or deleting retained data. */
-export async function readRetainedStudyData(registeredOfflineDatabases: () => string[], validateStorage = false) {
+export async function readRetainedStudyData(registeredOfflineDatabases: () => string[], validateStorage = false): Promise<RetainedStudyExport> {
   if (!globalThis.indexedDB) throw new Error("Durable Study storage is unavailable. Enable browser storage and retry.");
   const databases: Record<string, Record<string, unknown[]>> = {};
   const registered = registeredOfflineDatabases();
@@ -57,4 +58,48 @@ export async function readRetainedStudyData(registeredOfflineDatabases: () => st
     /^tempo-(?:pending-(?:training|teaching|endgame|burial|tactic-capture-v1$|card-delete-v1$)|bury-(?:operation|identity)|seen-moves|first-clean-passes)/.test(key))
     .map(key => [key, localStorage.getItem(key)]).filter(([,value]) => value && value !== "[]"));
   return { databases, legacy };
+}
+
+/** Translate existing formats without changing their data or terminal semantics. */
+export async function inspectRetainedStudyAuthority(registeredOfflineDatabases: () => string[]): Promise<RetainedAuthorityInspection> {
+  const retained = await readRetainedStudyData(registeredOfflineDatabases, true);
+  const facts: RetainedWorkFact[] = [];
+  const record = (value: unknown): Record<string, unknown> | undefined =>
+    value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+  for (const value of retained.databases["tempo-study-intents"].intents ?? []) {
+    const intent = record(value);
+    facts.push({ authority: typeof intent?.workspace === "string" ? intent.workspace : null,
+      disposition: (intent?.state === "committed" || intent?.state === "discarded") ? "terminal" : "unresolved" });
+  }
+  for (const [name, stores] of Object.entries(retained.databases)) {
+    if (!name.startsWith("tempo-offline-training")) continue;
+    let authority: string | null = null;
+    if (name.startsWith("tempo-offline-training:")) {
+      const encoded = name.slice("tempo-offline-training:".length);
+      try {
+        const decoded = decodeURIComponent(encoded);
+        if (decoded && encodeURIComponent(decoded) === encoded) authority = decoded;
+      } catch { /* Unrecognized authority remains unconfirmed, not empty. */ }
+    }
+    for (const value of stores.opening_attempts ?? []) {
+      const attempt = record(value);
+      facts.push({ authority, disposition: (attempt?.delivery_state === "complete" || attempt?.delivery_state === "rejected")
+        ? "terminal" : "unresolved" });
+    }
+    for (const value of stores.training ?? []) {
+      const prepared = record(value);
+      if (!Array.isArray(prepared?.attempts)) {
+        // A malformed foreign snapshot is not evidence that retained work is empty.
+        facts.push({ authority, disposition: "unknown" });
+        continue;
+      }
+      for (const value of prepared.attempts) {
+        const attempt = record(value);
+        facts.push({ authority, disposition: !attempt ? "unknown" :
+          attempt.serverReviewId || attempt.serverAcknowledged ? "terminal" : "unresolved" });
+      }
+    }
+  }
+  for (const _key of Object.keys(retained.legacy)) facts.push({ authority: null, disposition: "unresolved" });
+  return { facts, retained };
 }

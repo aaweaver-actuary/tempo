@@ -7,7 +7,8 @@ function storage() {
     sessionConnectionAvailable: () => true, readSessionConnection: () => session,
     writeSessionConnection: value => { session = value; }, removeSessionConnection: () => { session = null; },
     readAuthorityRegistry: () => registry, writeAuthorityRegistry: value => { registry = value; },
-    readRetainedStudyData: async () => ({ databases: { 'tempo-study-intents': {} }, legacy: {} }),
+    readRetainedStudyData: async () => ({ databases: {}, legacy: {} }),
+    inspectRetainedStudyAuthority: async () => ({ facts: [], retained: { databases: {}, legacy: {} } }),
   };
   return adapter;
 }
@@ -105,4 +106,72 @@ it('configured_client_preserves_request_signal_and_explicit_overrides', async ()
   expect(await captured.at(-1)!.text()).toBe('replacement');
   expect(captured.at(-1)!.headers.get('X-New')).toBe('new');
   expect(captured.at(-1)!.headers.has('X-Old')).toBe(false);
+});
+
+it.each(["terminal", "unresolved", "unknown"] as const)("authority policy consumes semantic %s facts without storage-shaped fakes", async disposition => {
+  const port = storage();
+  port.inspectRetainedStudyAuthority = async () => ({ facts: [{ authority: "https://foreign.example:study:foreign", disposition }],
+    retained: { databases: {}, legacy: {} } });
+  const client = createStudyClient({ independent: true, baseUrl: "", storage: port, transport: vi.fn() });
+  const decision = client.assertStudyAuthority("https://target.example", "target");
+  if (disposition === "terminal") await expect(decision).resolves.toEqual({ databases: {}, legacy: {} });
+  else await expect(decision).rejects.toMatchObject({ kind: "authority" });
+});
+
+it.each(['absent', 'throwing'])('C03 explicit factory import with %s browser globals does not compose browser services', async mode => {
+  vi.resetModules();
+  const forbidden = () => { throw new Error('browser composition imported'); };
+  vi.doMock('../../database/browser/study-connection-storage', forbidden);
+  vi.doMock('../../app/lib/study-priority', forbidden);
+  vi.doMock('../../app/const', forbidden);
+  const names = ['window', 'location', 'localStorage', 'sessionStorage', 'indexedDB'] as const;
+  const descriptors = names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const);
+  try {
+    for (const name of names) {
+      if (mode === "absent") Reflect.deleteProperty(globalThis, name);
+      else Object.defineProperty(globalThis, name, { configurable: true, get: () => { throw new Error(`read ${name}`); } });
+    }
+    const factory = await import('../../app/lib/study-client');
+    expect('defaultStudyClient' in factory).toBe(false);
+    const callbacks = { transport: vi.fn(), resolveBaseHref: vi.fn(() => 'https://local.example/'),
+      onAuthenticationRequired: vi.fn(), acquireActivityHold: vi.fn(() => vi.fn()) };
+    const client = factory.createStudyClient({ independent: false, baseUrl: '/', storage: storage(), ...callbacks });
+    expect(callbacks.resolveBaseHref).not.toHaveBeenCalled();
+    expect(callbacks.transport).not.toHaveBeenCalled();
+    expect(callbacks.acquireActivityHold).not.toHaveBeenCalled();
+    expect(callbacks.onAuthenticationRequired).not.toHaveBeenCalled();
+    expect(client.studyWorkspace()).toBe('https://local.example:study');
+  } finally {
+    for (const [name, descriptor] of descriptors) {
+      if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+      else Reflect.deleteProperty(globalThis, name);
+    }
+    vi.doUnmock('../../database/browser/study-connection-storage');
+    vi.doUnmock('../../app/lib/study-priority'); vi.doUnmock('../../app/const');
+  }
+});
+
+it('C03 explicit activity dependency retains foreground release and background isolation', async () => {
+  const { createStudyClient: createExplicit } = await import('../../app/lib/study-client');
+  const release = vi.fn(), hold = vi.fn(() => release), auth = vi.fn();
+  const transport = vi.fn<typeof fetch>().mockResolvedValue(new Response(null));
+  const client = createExplicit({ independent: false, baseUrl: 'https://local.example', storage: storage(), transport,
+    resolveBaseHref: () => 'https://local.example/', onAuthenticationRequired: auth, acquireActivityHold: hold });
+  await client.learningFetch('/api/queue/window');
+  expect(hold).toHaveBeenCalledTimes(1); expect(release).toHaveBeenCalledTimes(1);
+  await client.learningFetch('/api/queue/window', { headers: { 'X-Tempo-Work-Class': 'background' } });
+  expect(hold).toHaveBeenCalledTimes(1);
+  transport.mockImplementationOnce(() => { throw new Error('transport failed'); });
+  expect(() => client.learningFetch('/api/operations/original')).toThrow('transport failed');
+  expect(release).toHaveBeenCalledTimes(2); expect(auth).not.toHaveBeenCalled();
+});
+
+it('C03 explicit rejected bootstrap notifies authentication and releases its connection hold', async () => {
+  const { createStudyClient: createExplicit } = await import('../../app/lib/study-client');
+  const release = vi.fn(), hold = vi.fn(() => release), auth = vi.fn();
+  const client = createExplicit({ independent: true, baseUrl: '', storage: storage(),
+    transport: vi.fn(async () => new Response(null, { status: 401 })),
+    resolveBaseHref: () => 'https://shell.example/', onAuthenticationRequired: auth, acquireActivityHold: hold });
+  await expect(client.connectStudy('https://learning.example', 'alpha', 'a'.repeat(40))).rejects.toMatchObject({ kind: 'http' });
+  expect(auth).toHaveBeenCalledTimes(1); expect(hold).toHaveBeenCalledTimes(1); expect(release).toHaveBeenCalledTimes(1);
 });
