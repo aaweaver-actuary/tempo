@@ -966,21 +966,6 @@ export const tablebaseResponseSchema = z.looseObject({
     )
     .optional(),
 });
-export const endgameTemplatesSchema = z.strictObject({
-  templates: z.array(
-    z.strictObject({
-      id: identifierSchema,
-      card_id: cardIdSchema,
-      name: z.string(),
-      white_material: z.string(),
-      black_material: z.string(),
-      trained_color: colorSchema,
-      goal_mix: z.enum(["win", "draw", "both"]),
-      enabled: sqliteBooleanSchema,
-      created_at: isoDateSchema,
-    }),
-  ),
-});
 export const oauthTokenSchema = z.looseObject({
   access_token: z.string().min(1),
 });
