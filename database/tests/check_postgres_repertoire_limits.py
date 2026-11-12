@@ -33,11 +33,11 @@ def snapshot_queue_environment(database, queue_dates):
     ).fetchone()
     # Enqueue prunes to 100 events: an ID boundary alone cannot recover history.
     events = database.execute(
-        'SELECT * FROM background_task_events WHERE task_id=? ORDER BY id',
+        'SELECT * FROM background_task_events WHERE task_id=%s ORDER BY id',
         (task['id'],),
     ).fetchall() if task else []
     projections = database.execute(
-        'SELECT * FROM queue_projections WHERE queue_date IN (?,?) ORDER BY queue_date',
+        'SELECT * FROM queue_projections WHERE queue_date IN (%s,%s) ORDER BY queue_date',
         queue_dates,
     ).fetchall()
     # Migration 26 adds bounded diagnostic buckets. Queue commands update these
@@ -48,17 +48,17 @@ def snapshot_queue_environment(database, queue_dates):
     ).fetchall()
     stale_introductions = database.execute(
         """SELECT id,state,introduced_at FROM cards
-           WHERE content_type='opening' AND state='learning' AND introduced_at<?
+           WHERE content_type='opening' AND state='learning' AND introduced_at<%s
              AND NOT EXISTS(SELECT 1 FROM reviews review WHERE review.card_id=cards.id)
              AND NOT EXISTS(SELECT 1 FROM daily_queue queue
-                            WHERE queue.card_id=cards.id AND queue.queue_date=?)
+                            WHERE queue.card_id=cards.id AND queue.queue_date=%s)
            ORDER BY id""",
         (queue_dates[1], queue_dates[1]),
     ).fetchall()
     stale_card_ids = [card['id'] for card in stale_introductions]
     priority_epochs = []
     if stale_card_ids:
-        card_placeholders = ','.join('?' for _ in stale_card_ids)
+        card_placeholders = ','.join('%s' for _ in stale_card_ids)
         # Migration 21 bumps owners AND shared repertoire links on card updates.
         # A NULL version records an absent epoch, which restoration must delete.
         priority_epochs = database.execute(
@@ -86,7 +86,7 @@ def restore_queue_environment(database, snapshot):
     database.execute(
         "DELETE FROM background_tasks WHERE kind='daily_queue' AND deduplication_key='current'",
     )  # The task FK cascades its events; no other table references this task.
-    database.execute('DELETE FROM queue_projections WHERE queue_date IN (?,?)', snapshot['queue_dates'])
+    database.execute('DELETE FROM queue_projections WHERE queue_date IN (%s,%s)', snapshot['queue_dates'])
     database.execute("DELETE FROM background_metric_buckets WHERE kind='daily_queue'")
     for table_name, saved_rows in (
         ('background_tasks', [snapshot['task']] if snapshot['task'] else []),
@@ -97,20 +97,20 @@ def restore_queue_environment(database, snapshot):
         for saved_row in saved_rows:
             # Column names come from SELECT * on these internal tables.
             column_names = ','.join(saved_row)
-            placeholders = ','.join('?' for _ in saved_row)
+            placeholders = ','.join('%s' for _ in saved_row)
             database.execute(
                 f'INSERT INTO {table_name}({column_names}) VALUES({placeholders})',
                 tuple(saved_row.values()),
             )
     for saved_card in snapshot['stale_introductions']:
-        database.execute('UPDATE cards SET state=?,introduced_at=? WHERE id=?',
+        database.execute('UPDATE cards SET state=%s,introduced_at=%s WHERE id=%s',
                          (saved_card['state'], saved_card['introduced_at'], saved_card['id']))
     # Restore after card updates: those updates themselves fire the epoch trigger.
     for saved_epoch in snapshot['priority_epochs']:
-        database.execute('DELETE FROM priority_repertoire_source_epochs WHERE repertoire_id=?',
+        database.execute('DELETE FROM priority_repertoire_source_epochs WHERE repertoire_id=%s',
                          (saved_epoch['repertoire_id'],))
         if saved_epoch['version'] is not None:
-            database.execute('INSERT INTO priority_repertoire_source_epochs(repertoire_id,version) VALUES(?,?)',
+            database.execute('INSERT INTO priority_repertoire_source_epochs(repertoire_id,version) VALUES(%s,%s)',
                              (saved_epoch['repertoire_id'], saved_epoch['version']))
 
 

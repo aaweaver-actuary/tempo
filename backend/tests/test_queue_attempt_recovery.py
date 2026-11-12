@@ -109,3 +109,103 @@ def test_queue_recovery_selector_propagates_failure_without_completed_receipt(ca
         namespace["queue_recovery_main"](["--case-set", "maintained-six"])
     assert events == list(cases[:2])
     assert '"execution": "completed"' not in capsys.readouterr().out
+
+
+def _queue_environment_helpers():
+    import ast
+    from pathlib import Path
+
+    source = Path(__file__).resolve().parents[2] / "database/tests/check_postgres_repertoire_limits.py"
+    tree = ast.parse(source.read_text())
+    names = {"snapshot_queue_environment", "restore_queue_environment"}
+    nodes = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in names]
+    assert len(nodes) == 2
+    namespace = {}
+    exec(compile(ast.Module(body=nodes, type_ignores=[]), str(source), "exec"), namespace)
+    return namespace
+
+
+def test_queue_environment_snapshot_restore_preserves_native_parameters_and_history():
+    helpers = _queue_environment_helpers()
+    task = {"id": "original-task", "generation": 17}
+    events = [{"id": 91, "task_id": "original-task", "message": "original"}]
+    projections = [{"queue_date": "2099-01-01", "generation": 4}]
+    metrics = [{"kind": "daily_queue", "shard": 2, "slot": 3, "count": 5}]
+    cards = [{"id": "first", "state": "learning", "introduced_at": "2098-01-01"},
+             {"id": "second", "state": "learning", "introduced_at": "2098-02-01"}]
+    epochs = [{"repertoire_id": "existing", "version": 12}, {"repertoire_id": "absent", "version": None}]
+    class Database:
+        def __init__(self):
+            self.calls = []
+            self.results = [task, events, projections, metrics, cards, epochs]
+        def execute(self, statement, parameters=()):
+            assert "?" not in statement
+            assert statement.count("%s") == len(parameters)
+            self.calls.append((statement, tuple(parameters)))
+            result = self.results.pop(0) if self.results else None
+            return type("Cursor", (), {"fetchone": lambda _: result, "fetchall": lambda _: result})()
+    database = Database()
+    snapshot = helpers["snapshot_queue_environment"](database, ("2099-01-01", "2099-01-02"))
+    assert snapshot == {"queue_dates": ("2099-01-01", "2099-01-02"), "task": task,
+                        "events": events, "projections": projections, "metrics": metrics,
+                        "stale_introductions": cards, "priority_epochs": epochs}
+    assert database.calls[1][1] == ("original-task",)
+    assert database.calls[-1][1] == ("first", "second", "first", "second")
+    database.calls.clear()
+    helpers["restore_queue_environment"](database, snapshot)
+    inserts = [(sql, params) for sql, params in database.calls if sql.startswith("INSERT")]
+    for table, row in (("background_tasks", task), ("background_task_events", events[0]),
+                       ("queue_projections", projections[0]), ("background_metric_buckets", metrics[0])):
+        assert (f"INSERT INTO {table}({','.join(row)}) VALUES({','.join('%s' for _ in row)})",
+                tuple(row.values())) in inserts
+    assert ("INSERT INTO priority_repertoire_source_epochs(repertoire_id,version) VALUES(%s,%s)",
+            ("existing", 12)) in inserts
+    assert not any(params[0] == "absent" for _, params in inserts)
+    assert ("DELETE FROM priority_repertoire_source_epochs WHERE repertoire_id=%s", ("absent",)) in database.calls
+    update_index = max(i for i, (sql, _) in enumerate(database.calls) if sql.startswith("UPDATE cards"))
+    epoch_index = min(i for i, (sql, _) in enumerate(database.calls) if "priority_repertoire_source_epochs" in sql)
+    assert update_index < epoch_index
+
+
+def test_queue_environment_absent_task_and_empty_cards_do_not_invent_history():
+    helpers = _queue_environment_helpers()
+    class Database:
+        def __init__(self):
+            self.calls = []
+        def execute(self, statement, parameters=()):
+            assert "?" not in statement
+            assert statement.count("%s") == len(parameters)
+            self.calls.append((statement, parameters))
+            return type("Cursor", (), {"fetchone": lambda _: None, "fetchall": lambda _: []})()
+    database = Database()
+    snapshot = helpers["snapshot_queue_environment"](database, ("2099-01-01", "2099-01-01"))
+    assert snapshot["task"] is None
+    assert snapshot["events"] == snapshot["priority_epochs"] == snapshot["stale_introductions"] == []
+    assert not any("background_task_events" in sql or "priority_repertoire_source_epochs" in sql
+                   for sql, _ in database.calls)
+    database.calls.clear()
+    helpers["restore_queue_environment"](database, snapshot)
+    assert len(database.calls) == 3
+    assert all(sql.startswith("DELETE") for sql, _ in database.calls)
+
+
+def test_maintained_queue_cases_and_fixture_use_native_sql_markers():
+    import ast
+    from pathlib import Path
+
+    namespace, _ = _queue_selector_namespace()
+    selected = set(namespace["_QUEUE_RECOVERY_MAINTAINED_SIX"]) | {"_scheduling_adapter_fixture"}
+    source = Path(__file__).resolve().parents[2] / "database/tests/check_postgres_queue_attempt_recovery.py"
+    tree = ast.parse(source.read_text())
+    checked = 0
+    for function in tree.body:
+        if not isinstance(function, ast.FunctionDef) or function.name not in selected:
+            continue
+        for call in ast.walk(function):
+            if (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
+                    and call.func.attr in ("execute", "execute_native") and call.args):
+                for literal in ast.walk(call.args[0]):
+                    if isinstance(literal, ast.Constant) and isinstance(literal.value, str):
+                        assert "?" not in literal.value, (function.name, call.lineno)
+                checked += 1
+    assert checked > 70
