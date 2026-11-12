@@ -5530,6 +5530,19 @@ The final `test_queue_application_database_split.py` selection also covers compl
 
 `backend/tests/test_card_deletion_storage_boundary.py` owns seven fake boundaries for cancellation recheck,dialect locks,purge/tombstone timing,shared learned ownership,occurrence-aware ancestry and stale rejection. The original transaction and callback authority stay with the caller; native deletion/rollback and domain isolation remain unverified.
 
+## Shared opening observation counters
+
+`backend/tests/test_observation_summary.py` owns 16 cases for the shared Study
+six-counter policy: exact response/False semantics, numeric conversions and
+their errors, signed replacement deltas, and stable decision/index ordering.
+`test_actual_incremental_and_removal_rebuild_preserve_totals_and_days` exercises
+the real incremental checkpoint and removal-rebuild callers with storage fakes
+and real reducer prefixes, including exact replay, repeated clean days and
+surviving observations. Regular backend pytest discovery selects this file;
+`make python-file FILE=backend/tests/test_observation_summary.py` selects it alone.
+This is pure/fake-storage proof, not native transaction or installed acceptance.
+Study ownership of the entire purge capability remains outside this slice.
+
 
 ## Authored Studies command storage
 
