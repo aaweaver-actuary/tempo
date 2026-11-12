@@ -206,8 +206,8 @@ def test_scheduling_boundary_has_no_unrelated_transitive_dependencies(dependency
             dependency_graph.find_modules_directly_imported_by(module)
         ) == sorted(expected_imports), module
     for application_module, expected_app in (
-        (APPLICATION, {CONTRACTS, OPENING_MATURITY, "app.study.policy.clock", "app.services.scheduler"}),
-        (BACKEND_APPLICATION, {APPLICATION, CONTRACTS, BACKEND_CONTRACTS, OPENING_MATURITY, "app.study.policy.clock", "app.services.scheduler"}),
+        (APPLICATION, {CONTRACTS, OPENING_MATURITY, "app.services.scheduler"}),
+        (BACKEND_APPLICATION, {APPLICATION, CONTRACTS, BACKEND_CONTRACTS, OPENING_MATURITY, "app.services.scheduler"}),
     ):
         reachable = dependency_graph.find_upstream_modules(application_module)
         assert {

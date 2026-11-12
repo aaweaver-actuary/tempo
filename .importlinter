@@ -27,7 +27,6 @@ ignore_imports =
     app.services.scheduling_review_contracts -> app.study.policy.scheduling_review_contracts
     app.study.policy.scheduling_review_application -> app.study.policy.scheduling_review_contracts
     app.study.policy.scheduling_review_application -> app.services.scheduler
-    app.study.policy.scheduling_review_application -> app.study.policy.clock
     app.study.policy.scheduling_review_application -> app.study.policy.opening_maturity
 unmatched_ignore_imports_alerting = error
 

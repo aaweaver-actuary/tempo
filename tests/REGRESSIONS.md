@@ -6960,3 +6960,18 @@ It is not native temporal SQL proof. The real PostgreSQL integrity-recovery
 cases in `tests/browser/recovery.spec.ts` exercise this task-list query while
 preserving original repair/retry journals and operation receipts; actual
 execution is recorded separately by the coordinated browser runner.
+
+## Captured Study calendar in reconciliation (G01)
+
+`backend/tests/test_study_calendar.py` covers the existing named-zone conversion
+across midnight, both DST transitions and aware offsets; two child-process host
+zones; preserved local/unknown-zone fallback; one adapter clock/policy capture;
+original reconciliation receipt replay; and captured no-recorded-event fallback.
+The existing Learning application recorded-receipt and offline-clock regressions
+remain authoritative. `test_scheduling_boundary.py` retains its direct, deferred,
+conditional, transitive-infrastructure and unowned-consumer negative controls
+after removing the obsolete annotation-only calendar dependency.
+
+This is pure/component evidence, not native or assembled acceptance. Legacy
+scheduler omitted-day defaults and G02/G03 caller adoption remain separate;
+BE003 is not closed by this slice.
