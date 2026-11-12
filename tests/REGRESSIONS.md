@@ -6928,3 +6928,22 @@ Game Review read contracts and retained integrity choices (#995):
 - `tests/unit/game-review-contract.test.ts::decodes the current comparison variants and saved orientation` covers current covered/unavailable/departure/coverage-end responses, optional pasted-game color, and required saved-game orientation.
 - `tests/unit/game-review-contract.test.ts::rejects malformed positions, illegal or inconsistent moves, colors and comparison bounds` keeps invalid successful responses out of board state through the independently importable contract.
 - `tests/unit/repertoire-integrity-dialog-regressions.test.tsx::changing conflicts resets selection and never requests retired personal-game evidence` preserves distinct queued choices while removing the absent optional endpoint.
+
+### Q0 coordinated receipt and playable-successor qualification
+
+- `tests/browser/opening-progression.spec.ts` retains both viewport cases and now requires the original durable review receipt, authoritative child queue entry and an actual legal move on that next board.
+- `tests/browser/recovery.spec.ts` adds malformed/foreign PGN and settings receipt recovery against genuine operations, preserving original journals and IDs until valid settlement without duplicate submission. Settings also retains the intentional legacy missing-identity receipt contract.
+- The real PostgreSQL integrity recovery case has malformed/foreign variants for repair and retry receipts, retaining the original operation and retry journals. The existing held-training-piece case remains the unrelated board/attempt preservation proof.
+- These are executable acceptance cases, not a claim that browser/native qualification or installed human acceptance has passed.
+
+## Native task-history timestamp comparison
+
+`backend/tests/test_durable_task_enqueue_identity.py::test_visible_tasks_compares_text_timestamps_as_instants_without_rewriting_history`
+regresses the `/api/system/tasks` PostgreSQL error comparing retained TEXT
+`background_tasks.updated_at` with a timestamptz cutoff. The focused adapter
+check requires instant comparison while preserving original timestamp bytes,
+caller-owned read scope and the inclusive rolling one-day visibility rule.
+It is not native temporal SQL proof. The real PostgreSQL integrity-recovery
+cases in `tests/browser/recovery.spec.ts` exercise this task-list query while
+preserving original repair/retry journals and operation receipts; actual
+execution is recorded separately by the coordinated browser runner.

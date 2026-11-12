@@ -301,7 +301,7 @@ def interrupted_tasks(database, excluded_kinds=()):
 
 def visible_tasks(database):
     return database.execute(
-        "SELECT * FROM background_tasks\n               WHERE state!='complete' OR updated_at>=(CURRENT_TIMESTAMP - INTERVAL '1 day')\n               ORDER BY CASE state WHEN 'failed' THEN 0 WHEN 'leased' THEN 1 ELSE 2 END,\n                        priority,created_at",
+        "SELECT * FROM background_tasks\n               WHERE state!='complete' OR updated_at::timestamptz>=(CURRENT_TIMESTAMP - INTERVAL '1 day')\n               ORDER BY CASE state WHEN 'failed' THEN 0 WHEN 'leased' THEN 1 ELSE 2 END,\n                        priority,created_at",
     ).fetchall()
 
 

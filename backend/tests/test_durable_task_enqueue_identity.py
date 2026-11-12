@@ -56,3 +56,37 @@ def test_enqueue_events_and_result_use_postgres_returned_identity(
         ("database-selected-task", 23, "enqueued"),
         ("database-selected-task", 23, "generation_replaced"),
     ]
+
+
+def test_visible_tasks_compares_text_timestamps_as_instants_without_rewriting_history():
+    """Q0: /system/tasks failed with text >= timestamptz on native PostgreSQL.
+
+    This focused adapter check guards the storage type boundary and borrowed
+    read behavior; the real integrity-recovery browser case executes the SQL.
+    """
+    import re
+    from tempo_storage.durable_tasks import storage
+
+    retained = [{"id": "original-task", "state": "complete", "updated_at": "2026-11-12T09:00:00-05:00"}]
+    calls = []
+
+    class BorrowedReader:
+        def execute(self, statement):
+            calls.append(statement)
+            # The column remains TEXT for retained history. Comparing text to
+            # CURRENT_TIMESTAMP is invalid; lexicographic comparison would be
+            # wrong for offset-bearing timestamps. Keep the cast on the column.
+            assert re.search(r"updated_at\s*::\s*timestamptz\s*>=\s*\(CURRENT_TIMESTAMP\s*-\s*INTERVAL '1 day'\)", statement)
+            assert "state!='complete' OR" in statement
+            assert statement.lstrip().startswith("SELECT ")
+            return self
+
+        def fetchall(self):
+            return retained
+
+        def __getattr__(self, name):
+            raise AssertionError("Unexpected transaction/history mutation: " + name)
+
+    assert storage.visible_tasks(BorrowedReader()) is retained
+    assert len(calls) == 1
+    assert retained[0]["updated_at"] == "2026-11-12T09:00:00-05:00"

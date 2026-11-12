@@ -378,7 +378,8 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
   await testInfo.attach("position-study-disposable-schema", {
     body: Buffer.from(JSON.stringify(schema, null, 2)), contentType: "application/json",
   });
-  expect(schema.version, "Disposable runtime migration version").toBe(64);
+  // Current source contract: tempo_storage/ddl/schema_version.py requires 65.
+  expect(schema.version, "Disposable runtime migration version").toBe(65);
   let originalIdentity: WirePlan | undefined;
   let successorIdentity: WirePlan | undefined;
   const requestTimingSamples: Array<{
