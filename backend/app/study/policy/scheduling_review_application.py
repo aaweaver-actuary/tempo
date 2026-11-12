@@ -6,8 +6,7 @@ module neither acquires infrastructure nor performs queue/progression follow-ups
 
 from __future__ import annotations
 
-from datetime import datetime
-from .clock import date
+from datetime import date, datetime
 from .opening_maturity import augment_opening_maturity
 import json
 

@@ -102,13 +102,15 @@ class LearningReviewAdapter:
         self._command_time = None
         self._command_day = None
         self._command_timezone = None
+        self._command_policy = None
         self._review_attempt = None
         self.deferred_effects = []
 
     def _capture_command_day(self):
         if self._command_time is None:
             self._command_time = self.observed_at or datetime.now(timezone.utc)
-            self._command_timezone = self.policy().timezone
+            self._command_policy = self.policy()
+            self._command_timezone = self._command_policy.timezone
             self._command_day = self.local_day or learning.review_day_at(
                 self._command_time, self._command_timezone
             )
@@ -123,6 +125,8 @@ class LearningReviewAdapter:
         )
 
     def policy(self):
+        if self._command_policy is not None:
+            return self._command_policy
         if self.policy_provider:
             settings = self.policy_provider()
             return learning.ReviewPolicy(
@@ -242,7 +246,9 @@ class LearningReviewAdapter:
             guided=guided,
             completed_at=context.reviewed_at if command.recorded_at else None,
             expected_revision=revision,
-            timezone_name=self.policy().timezone,
+            timezone_name=self._command_timezone,
+            observed_at=self._command_time,
+            local_day=context.local_day,
             competing_review=competing_review,
         )
         return result
