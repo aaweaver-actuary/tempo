@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from .clock import date
+from .opening_maturity import augment_opening_maturity
 import json
 
 from app.services.scheduler import schedule_review, unlock_ready
@@ -86,17 +87,12 @@ def apply_scheduling_review(
         )
     )
     maturity = store.load_maturity_facts(card_id)
-    successful_days = maturity.successful_review_days
-    recent_outcomes = list(maturity.recent_outcomes)
-    if maturity.opening_seed is not None:
-        successful_days += maturity.opening_seed.baseline_successful_days
-        recent_outcomes.extend(
-            ["correct"]
-            * min(
-                maturity.opening_seed.baseline_recent_clean,
-                max(0, 2 - len(recent_outcomes)),
-            )
-        )
+    seed = maturity.opening_seed
+    successful_days, recent_outcomes = augment_opening_maturity(
+        maturity.successful_review_days, maturity.recent_outcomes,
+        seed.baseline_successful_days if seed is not None else 0,
+        seed.baseline_recent_clean if seed is not None else 0,
+    )
     state = (
         "mature"
         if unlock_ready_function(schedule.stability, successful_days, recent_outcomes)
