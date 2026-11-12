@@ -501,12 +501,12 @@ async function submitPgnFixture(sourceName, pgn, operationId) {
 }
 
 async function verifyPgnImportReplayWithoutDuplicates(operationId, originalResult, phase) {
-  const before = await get("migration/snapshot");
+  const before = await readStudySnapshot();
   const beforeReceipt = await get(`operations/${operationId}`);
   assert.equal(beforeReceipt.state, "complete");
   const replay = await importFixture("recovery-study.pgn", studyDurabilityPgn, operationId);
   assert.deepEqual(replay, originalResult, "PGN replay returns the original logical command result");
-  const after = await get("migration/snapshot");
+  const after = await readStudySnapshot();
   const importIdentities = (snapshot) => {
     const tables = snapshot.tables;
     const links = tables.repertoire_cards.filter(row => row.repertoire_id === originalResult.repertoire_id);
@@ -534,7 +534,7 @@ async function waitForStudyQueue(...argumentsList) {
 }
 
 async function pollForStudyQueue(repertoireId, minimumCardCount) {
-  const initialSnapshot = await get("migration/snapshot");
+  const initialSnapshot = await readStudySnapshot();
   const repertoireCardIds = new Set((initialSnapshot.tables.repertoire_cards ?? [])
     .filter((row) => row.repertoire_id === repertoireId)
     .map((row) => row.card_id));
@@ -559,6 +559,54 @@ async function pollForStudyQueue(repertoireId, minimumCardCount) {
     + `projection=${JSON.stringify(queue.projection ?? null)}`);
 }
 
+// Exact retained observation rows from this invocation's disposable authority.
+// This replaces only the retired snapshot transport, not the proof assertions.
+async function readStudySnapshot() {
+  assertDevelopmentProjectOwned(project);
+  assert.match(project, /^tempo-pg-regressions-\d+-[a-f0-9]+$/);
+  const health = await get("health");
+  assert.equal(health.test_instance, true);
+  assert.equal(health.storage, "postgresql");
+  const address = new URL(origin);
+  assert.equal(address.hostname, "127.0.0.1");
+  const metadata = run("docker", ["inspect", "--format",
+    '{"id":{{json .Id}},"labels":{{json .Config.Labels}},"ports":{{json .NetworkSettings.Ports}}}',
+    `${project}-web-1`, `${project}-postgres-1`],
+    {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8'}).stdout.trim().split('\n').map(line => JSON.parse(line));
+  assert.equal(metadata.length, 2);
+  for (const [index, container] of metadata.entries()) {
+    assert.match(container.id, /^[a-f0-9]{64}$/);
+    assert.equal(container.labels['com.docker.compose.project'], project);
+    assert.equal(container.labels['com.docker.compose.service'], ['web', 'postgres'][index]);
+    assert.equal(container.labels['tempo.resource-owner'], process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN);
+  }
+  assert.deepEqual(metadata[0].ports['80/tcp'], [{HostIp: '127.0.0.1', HostPort: address.port}]);
+  const schema = schemaVersionFromSource(readFileSync("database/tempo_storage/ddl/schema_version.py", "utf8"));
+  const tables = ['repertoires', 'repertoire_cards', 'repertoire_lines', 'cards', 'reviews',
+    'teaching_states', 'position_annotations', 'daily_queue', 'queue_attempt_origins',
+    'review_attempt_receipts', 'prefix_splits'];
+  const statement = `BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
+    DO $$ BEGIN
+      IF current_database() != 'tempo' OR
+         (SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database())
+           IS DISTINCT FROM 'tempo-disposable-postgres-test' THEN RAISE EXCEPTION 'Unowned snapshot database'; END IF;
+      IF (SELECT array_agg(version ORDER BY version) FROM tempo_schema_migrations)
+         IS DISTINCT FROM ARRAY(SELECT generate_series(1,${schema})) THEN RAISE EXCEPTION 'Snapshot schema mismatch'; END IF;
+    END $$;
+    SELECT json_build_object('tables',json_build_object(${tables.map(table =>
+      `'${table}',(SELECT COALESCE(json_agg(row_to_json(rows) ORDER BY row_to_json(rows)::text),'[]'::json) FROM ${table} rows)`).join(',')}));
+    COMMIT;`;
+  const result = run("docker", ["exec", "--interactive=false", "-e",
+    "PGOPTIONS=-c statement_timeout=10000 -c lock_timeout=1000", metadata[1].id,
+    "psql", "-X", "-w", "-h", "/var/run/postgresql", "-U", "postgres", "-d", "tempo",
+    "-v", "ON_ERROR_STOP=1", "-Atqc", statement],
+    {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8', maxBuffer: 16 * 1024 * 1024});
+  const snapshot = JSON.parse(result.stdout.trim());
+  assert.deepEqual(Object.keys(snapshot.tables), tables);
+  for (const table of tables) assert(Array.isArray(snapshot.tables[table]));
+  return snapshot;
+}
+
 function readScopedPostgresRows(statement) {
   const result = spawnSync("docker", [...compose, "exec", "-T", "postgres", "psql", "-U", "postgres",
     "-d", "tempo", "-Atqc", statement], { encoding: "utf8", env: environment });
@@ -569,7 +617,7 @@ function readScopedPostgresRows(statement) {
 async function reportStudyFixtureDiagnostics(repertoireId) {
   assert.match(repertoireId, /^[0-9a-f-]{36}$/i);
   const [snapshot, integrity, system, queue] = await Promise.all([
-    get("migration/snapshot"), get(`repertoires/${repertoireId}/integrity`),
+    readStudySnapshot(), get(`repertoires/${repertoireId}/integrity`),
     get("system/tasks"), get("queue/today"),
   ]);
   const repertoireCardIds = new Set(snapshot.tables.repertoire_cards
@@ -620,7 +668,7 @@ async function verifyDiscardedPgnReplay(operationId) {
   const replay = await apiRequest("imports/pgn", { method: "POST", body: form,
     headers: { "Idempotency-Key": operationId } });
   assert.equal(replay.status, 409, `Discard fence rejects delayed PGN admission: ${await replay.text()}`);
-  const snapshot = await get("migration/snapshot");
+  const snapshot = await readStudySnapshot();
   assert.equal(snapshot.tables.repertoires.filter(row => row.source_name === `${operationId}.pgn`).length, 0,
     "Discarded PGN cannot create repertoire data before or after recreation");
 }
@@ -751,7 +799,7 @@ async function verifyForegroundAndStudyDurability() {
   const beforeBuryQueue = await get("queue/today");
   const buriedCard = beforeBuryQueue.cards[0];
   assert(buriedCard, "Durability fixture includes an active card to bury");
-  const beforeBuryState = stableStudyState(await get("migration/snapshot"), buriedCard.repertoire_id);
+  const beforeBuryState = stableStudyState(await readStudySnapshot(), buriedCard.repertoire_id);
   const buryOperationId = `pg-study-bury-${randomBytes(12).toString("hex")}`;
   const burial = await postCommand(`queue/entries/${buriedCard.queue_entry_id}/bury`, {}, {
     operationId: buryOperationId, label: "foreground POST bury until tomorrow",
@@ -762,7 +810,7 @@ async function verifyForegroundAndStudyDurability() {
     beforeBuryQueue.cards.filter(card => card.id !== buriedCard.id).map(card => card.queue_entry_id),
     "Bury excludes all active occurrences and preserves other cards' order");
 
-  const studySnapshot = await get("migration/snapshot");
+  const studySnapshot = await readStudySnapshot();
   assert.equal(studySnapshot.source, "tempo-postgres");
   assert(studySnapshot.counts.reviews > 0 && studySnapshot.counts.teaching_states > 0
     && studySnapshot.counts.position_annotations > 0 && studySnapshot.counts.prefix_splits > 0);
@@ -783,7 +831,7 @@ async function verifyForegroundAndStudyDurability() {
   await waitForReady();
   await waitForStudyableImport(importedStudy.repertoire_id);
   await waitForStudyableImport(importedBackground.repertoire_id);
-  const afterRestartSnapshot = await get("migration/snapshot");
+  const afterRestartSnapshot = await readStudySnapshot();
   await verifyPgnImportReplayWithoutDuplicates(pgnImportOperationId, importedStudy, "after recreation");
   await verifyDiscardedPgnReplay(discardedPgnId);
   assert.deepEqual(stableStudyState(afterRestartSnapshot, importedStudy.repertoire_id), beforeRestartState,
@@ -792,7 +840,7 @@ async function verifyForegroundAndStudyDurability() {
     operationId: reviewOperationId, label: "foreground replay confirmed review after recreation",
   });
   assert(replayedReview, "Previously confirmed review command replays under its original identity");
-  const afterReplaySnapshot = await get("migration/snapshot");
+  const afterReplaySnapshot = await readStudySnapshot();
   assert.equal(stableStudyState(afterReplaySnapshot, importedStudy.repertoire_id).reviews.length,
     savedReviewCount, "Confirmed review replay does not create a duplicate business effect");
   assert.deepEqual(afterRestartSnapshot.tables.daily_queue.find(row => row.id === buriedCard.queue_entry_id),
@@ -812,7 +860,7 @@ async function verifyForegroundAndStudyDurability() {
   for (const repertoireId of completedFixtureIds) {
     await postCommand(`repertoires/${repertoireId}`, {}, { method: "DELETE" });
   }
-  const afterFixtureCleanup = await get("migration/snapshot");
+  const afterFixtureCleanup = await readStudySnapshot();
   assert(!afterFixtureCleanup.tables.repertoires.some(row => completedFixtureIds.includes(row.id)),
     "Completed study fixtures are removed before compatibility retention");
   const remainingFixtureTasks = readScopedPostgresRows(`SELECT COALESCE(json_agg(row_to_json(task)),'[]'::json)
@@ -875,7 +923,7 @@ async function verifyBlockedBurialRecovery() {
   assert(before, "Queue settings restoration settles before blocked burial recovery");
   const selected = before.cards[0];
   assert(selected, "Blocked burial fixture has an authoritative active entry");
-  const originalState = stableStudyState(await get("migration/snapshot"), selected.repertoire_id);
+  const originalState = stableStudyState(await readStudySnapshot(), selected.repertoire_id);
   const operationId = "pg-study-blocked-bury";
   const prepared = spawnSync("docker", [...compose, "exec", "-T", "foreground-worker", "python", "-",
     String(selected.queue_entry_id), operationId], {
@@ -896,7 +944,7 @@ async function verifyBlockedBurialRecovery() {
   const after = await get("queue/today");
   assert.deepEqual(after.cards.map(card => card.queue_entry_id),
     before.cards.filter(card => card.id !== selected.id).map(card => card.queue_entry_id));
-  const afterState = stableStudyState(await get("migration/snapshot"), selected.repertoire_id);
+  const afterState = stableStudyState(await readStudySnapshot(), selected.repertoire_id);
   assert.deepEqual(afterState.cards, originalState.cards, "Blocked recovery leaves scheduling unchanged");
   assert.deepEqual(afterState.reviews, originalState.reviews, "Blocked recovery creates no review");
   assert.deepEqual(await postCommand(`queue/entries/${selected.queue_entry_id}/bury`, {}, { operationId }), result);

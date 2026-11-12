@@ -140,3 +140,43 @@ it("maintained browser requires the one exact executed case without retry skip o
     {...receipt,suites:[{specs:[{...spec,tests:[{results:[{status:'passed',retry:1}]}]}]}]}])
     expect(() => verifyMaintainedBrowserReceipt(invalid)).toThrow();
 });
+
+it("owned Study snapshot retains exact rows and refuses wrong target before SQL", async () => {
+  const {default: assert} = await import('node:assert/strict');
+  const source = readFileSync('database/tests/test-postgres-docker.mjs','utf8');
+  const body = source.slice(source.indexOf('async function readStudySnapshot()'), source.indexOf('function readScopedPostgresRows('));
+  const tables = ['repertoires','repertoire_cards','repertoire_lines','cards','reviews','teaching_states',
+    'position_annotations','daily_queue','queue_attempt_origins','review_attempt_receipts','prefix_splits'];
+  const snapshot = {tables:Object.fromEntries(tables.map(table => [table,[{id:table+'-original',value:'unchanged'}]]))};
+  const project = 'tempo-pg-regressions-123-abcd';
+  const metadata = ['web','postgres'].map((service,index) => ({id:String(index+1).repeat(64),
+    labels:{'com.docker.compose.project':project,'com.docker.compose.service':service,'tempo.resource-owner':'proof-owner'},
+    ports:service==='web' ? {'80/tcp':[{HostIp:'127.0.0.1',HostPort:'4181'}]} : {}}));
+  let sqlCalls=0;
+  let health = {test_instance:true,storage:'postgresql'};
+  const run = (_command: string,args: string[]) => {
+    if (args[0]==='inspect') return {stdout:metadata.map(row=>JSON.stringify(row)).join('\n')};
+    sqlCalls++;
+    expect(args).toContain(metadata[1].id);
+    expect(args).toContain('ON_ERROR_STOP=1');
+    expect(args.at(-1)).toContain('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    expect(args.at(-1)).toContain('tempo-disposable-postgres-test');
+    expect(args.at(-1)).toContain('generate_series(1,65)');
+    expect(args.at(-1)).toContain('row_to_json(rows)');
+    return {stdout:JSON.stringify(snapshot)};
+  };
+  const read = new Function('assert','assertDevelopmentProjectOwned','project','get','origin','run','schemaVersionFromSource','readFileSync',
+    body+'; return readStudySnapshot;')(assert,()=>{},project,async()=>health,'http://127.0.0.1:4181',run,()=>65,()=> '');
+  vi.stubEnv('TEMPO_DEVELOPMENT_BUDGET_TOKEN','proof-owner');
+  try {
+    expect(await read()).toEqual(snapshot);
+    expect(sqlCalls).toBe(1);
+    health={test_instance:false,storage:'postgresql'};
+    await expect(read()).rejects.toThrow();
+    health={test_instance:true,storage:'postgresql'};
+    metadata[1].labels['tempo.resource-owner']='other-owner';
+    await expect(read()).rejects.toThrow();
+    expect(sqlCalls).toBe(1);
+    expect(source).not.toContain('get("migration/snapshot")');
+  } finally {vi.unstubAllEnvs();}
+});
