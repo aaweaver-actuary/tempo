@@ -3,7 +3,7 @@
 These are small validation entry points, not a dependency solver or replacement CI planner.
 `components.json` declares implemented artifacts and planned targets;
 `components.schema.json` describes its fields. Planned roots are not executable.
-The five merged contracts are implemented artifacts; `catalog` references their
+The Game Evidence contract is an implemented artifact; `catalog` references its
 existing contract catalog, which remains the authority for models, wire versions,
 schemas and owners. Registration does not establish production adoption.
 
@@ -21,7 +21,7 @@ From the repository root:
 - `npm ci --prefix tools/component-build --workspaces=false`: TypeScript parser only.
 - `npm ci --prefix packages/chess-line --workspaces=false` then `npm run build --prefix packages/chess-line`.
 - `node tools/component-build/check-components.mjs`: manifest, package graphs, public APIs and current consumers. Uses Python stdlib only; `TEMPO_COMPONENT_PYTHON` selects its interpreter.
-- `node tools/component-build/check-components.mjs --component learning-contracts`: only that implemented owner and declared component dependencies; no application source is needed. Repeat `--component` to select more owners. Add `--consumers` to request legacy current-source consumer checks explicitly.
+- `node tools/component-build/check-components.mjs --component game-evidence-contracts`: only that implemented owner and declared component dependencies; no application source is needed. Repeat `--component` to select more owners. Add `--consumers` to request legacy current-source consumer checks explicitly.
 - `node tools/component-build/test-node.mjs tools/component-build/tests`: deliberate negative boundary and discovery tests.
 - `node tools/component-build/test-node.mjs tools/component-build/tests 'Graph preparation'`: Study cutover launcher import guards, negative fixtures and legitimate public/injected composition. These preparation files are outside registered artifact source closures. No historical migration or old obligation preservation is required by this check.
 - `node tools/component-build/check-graph-preparation.mjs [exact/source/path ...]`: inspect present named preparation files, or require every explicitly selected path. `TEMPO_COMPONENT_ROOT` selects a disposable source tree. Missing optional sources are reported absent, never qualified. The guard reads source only; it checks public imports and backward wiring, not runtime effects, graph semantics or permission to reset/cut over. Existing runtime/component isolation qualification retains those behavior proofs.
@@ -36,8 +36,8 @@ qualification stay with that component. Selecting a worker explicitly may load
 its model for its declared proof; default library selection is unchanged. A
 worker's separate container qualification owns Docker and kernel resource-limit
 evidence. `--list` executes no qualifier or setup.
-- Restricted builds retain the existing chess-line/scheduling default. Add `--component analysis-jobs-contracts` for selected contract builds, wheel and sdist installs, versioned public namespaces and packaged schema resources on both Python runtimes. Unrelated component source is absent. This does not replace `contracts/qualify_artifacts.py` and its separate five-package synthetic-patch proof.
-- `node tools/component-build/test-lane.mjs --component learning-contracts`: execute the declared owning suite from its explicit repository-relative `cwd`, using a prepared installed-package environment selected by `TEMPO_COMPONENT_PYTHON`. Python cases use JUnit identities; Node cases retain the existing structured reporter.
+- Restricted builds retain the existing chess-line/scheduling default. Add `--component game-evidence-contracts` for selected contract builds, wheel and sdist installs, versioned public namespaces and packaged schema resources on both Python runtimes. Unrelated component source is absent. This does not replace `contracts/qualify_artifacts.py` and its separate synthetic-patch proof.
+- `node tools/component-build/test-lane.mjs --component game-evidence-contracts`: execute the declared owning suite from its explicit repository-relative `cwd`, using a prepared installed-package environment selected by `TEMPO_COMPONENT_PYTHON`. Python cases use JUnit identities; Node cases retain the existing structured reporter.
 - Add `--list` to checker, restricted-builder, component tests or an existing lane to list targets without installing, building or running producers/tests. Unknown, empty and planned executable selections fail before setup.
 - Shared suites are explicit: `test-lane.mjs --suite contract-exchange` invokes the existing Python/TypeScript exchange with genuine producers and case reporting; `--suite contract-ownership` invokes the separately owned native fixture. Repeated suite selectors execute once. Neither is an implicit per-contract prerequisite. D does not rerun unchanged native proofs.
 
@@ -46,11 +46,11 @@ Contract-only setup from the checkout root (no root web or backend runtime setup
 ```sh
 uv venv --python 3.12 contracts/.venv
 uv pip install --python contracts/.venv/bin/python --require-hashes -r contracts/requirements-test.lock
-uv pip install --python contracts/.venv/bin/python --no-deps ./contracts/learning
-TEMPO_COMPONENT_PYTHON="$PWD/contracts/.venv/bin/python" node tools/component-build/test-lane.mjs --component learning-contracts
+uv pip install --python contracts/.venv/bin/python --no-deps ./contracts/game-evidence
+TEMPO_COMPONENT_PYTHON="$PWD/contracts/.venv/bin/python" node tools/component-build/test-lane.mjs --component game-evidence-contracts
 ```
 
-For the shared exchange, install all five local contract distributions noneditably
+For the shared exchange, install the Game Evidence contract distribution noneditably
 and run `npm ci --prefix contracts/consumer-examples --workspaces=false`; this is
 the standalone consumer dependency tree. The reporting adapter delegates package
 and producer selection to `contracts/run_tests.py`; it adds JUnit output and uses

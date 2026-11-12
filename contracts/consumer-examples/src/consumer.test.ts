@@ -115,7 +115,6 @@ const timestampCases: Array<[string, string, boolean]> = [
 ];
 const timestampEnvelopes: Array<[string, string, string, string[]]> = [
   ["game-evidence", "imported-game", "ImportedGame", ["provenance", "imported_at"]],
-  ["analysis-jobs", "cancel-requested", "CancellationAcknowledgement", ["acknowledged_at"]],
 ];
 for (const [contract, name, model, fieldPath] of timestampEnvelopes) {
   for (const [caseName, timestamp, accepted] of timestampCases) {
@@ -134,28 +133,6 @@ for (const [contract, name, model, fieldPath] of timestampEnvelopes) {
         });
       }
       assert.equal(JSON.stringify(payload), originalWire, "timestamp wire spelling was rewritten");
-    });
-  }
-}
-for (const worker of ["stockfish", "maia"]) {
-  const chronologyCases: Array<[string, string, boolean]> = [
-    ["one_microsecond_earlier", "2026-10-14T12:00:00.000000Z", false],
-    ["same_instant", "2026-10-14T12:00:00.000001Z", true],
-    ["one_microsecond_later", "2026-10-14T12:00:00.000002Z", true],
-    ["offset_equivalent_instant", "2026-10-14T14:00:00.000001+02:00", true],
-  ];
-  for (const [caseName, finishedAt, accepted] of chronologyCases) {
-    test(`repair: ${worker} execution microsecond chronology / ${caseName}`, () => {
-      const payload = fixture("analysis-jobs", worker+"-result");
-      const provenance = payload.provenance as Payload;
-      provenance.started_at = "2026-10-14T12:00:00.000001Z";
-      provenance.finished_at = finishedAt;
-      const model = worker === "stockfish" ? "StockfishResult" : "MaiaResult";
-      const originalWire = JSON.stringify(payload);
-      assert.ok(schemaValidator("analysis-jobs", model)(payload));
-      if (accepted) assertSemantics(model, payload);
-      else assert.throws(() => assertSemantics(model, payload));
-      assert.equal(JSON.stringify(payload), originalWire);
     });
   }
 }

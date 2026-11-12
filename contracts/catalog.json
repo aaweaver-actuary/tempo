@@ -36,44 +36,6 @@
         2,
         3
       ]
-    },
-    {
-      "root": "analysis-jobs",
-      "distribution": "tempo-analysis-jobs-contracts",
-      "artifact_version": "1.0.0",
-      "wire_version": 1,
-      "public_namespace": "tempo_analysis_jobs_contracts.v1",
-      "authoritative_owner": "Requesting domain / worker execution",
-      "consumers": [
-        "content",
-        "game-evidence",
-        "stockfish",
-        "maia"
-      ],
-      "models": [
-        "JobStatus",
-        "CancellationRequest",
-        "CancellationAcknowledgement",
-        "StockfishJob",
-        "StockfishResult",
-        "MaiaJob",
-        "MaiaResult"
-      ],
-      "schema_exports": [
-        "schemas/v1/JobStatus.schema.json",
-        "schemas/v1/CancellationRequest.schema.json",
-        "schemas/v1/CancellationAcknowledgement.schema.json",
-        "schemas/v1/StockfishJob.schema.json",
-        "schemas/v1/StockfishResult.schema.json",
-        "schemas/v1/MaiaJob.schema.json",
-        "schemas/v1/MaiaResult.schema.json"
-      ],
-      "test_command": "python -m pytest contracts/analysis-jobs/tests",
-      "runtime_dependencies": [
-        "pydantic==2.12.5"
-      ],
-      "data_ownership": "OWNERSHIP.md",
-      "protocol_semantics": "README.md"
     }
   ]
 }

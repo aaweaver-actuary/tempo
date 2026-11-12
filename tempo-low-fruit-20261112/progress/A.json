@@ -1,0 +1,169 @@
+{
+  "packet": "A",
+  "baseline_revision": "a2e877d908309544eafee908c7e537149c22d169",
+  "implementation_revision": "cf06e59c",
+  "reviewed_revision": "",
+  "updates": [
+    {
+      "finding_id": "RT006",
+      "task": "A0",
+      "proposed_status": "Verified on branch",
+      "scope": "full",
+      "changed_paths": [
+        "tools/component-build/README.md"
+      ],
+      "evidence": [
+        {
+          "command_or_review": "node tools/component-build/check-components.mjs --component game-evidence-contracts --list",
+          "result": "passed",
+          "revision": "cf06e59c",
+          "cases_or_observations": [],
+          "environment": "isolated worktree, macOS; Python 3.12/3.14 where noted",
+          "remaining_limit": ""
+        },
+        {
+          "command_or_review": "node tools/component-build/test-lane.mjs --component game-evidence-contracts --list",
+          "result": "passed",
+          "revision": "cf06e59c",
+          "cases_or_observations": [],
+          "environment": "isolated worktree, macOS; Python 3.12/3.14 where noted",
+          "remaining_limit": ""
+        },
+        {
+          "command_or_review": "git diff --check",
+          "result": "passed",
+          "revision": "cf06e59c",
+          "cases_or_observations": [],
+          "environment": "isolated worktree, macOS; Python 3.12/3.14 where noted",
+          "remaining_limit": ""
+        }
+      ],
+      "remaining_acceptance": "Integration review and acceptance.",
+      "next_owner": "Integration owner",
+      "implementation_stage": "component-tested",
+      "merge_state": "not merged",
+      "installed_state": "not established"
+    },
+    {
+      "finding_id": "BE020",
+      "task": "A1",
+      "proposed_status": "Verified on branch",
+      "scope": "full",
+      "changed_paths": [
+        "contracts/"
+      ],
+      "evidence": [
+        {
+          "command_or_review": "python3 contracts/check_dependencies.py",
+          "result": "passed",
+          "revision": "cf06e59c",
+          "cases_or_observations": [],
+          "environment": "isolated worktree, macOS; Python 3.12/3.14 where noted",
+          "remaining_limit": ""
+        },
+        {
+          "command_or_review": "backend/.venv/bin/python contracts/export_schemas.py --check: 8 schemas",
+          "result": "passed",
+          "revision": "cf06e59c",
+          "cases_or_observations": [],
+          "environment": "isolated worktree, macOS; Python 3.12/3.14 where noted",
+          "remaining_limit": ""
+        },
+        {
+          "command_or_review": "contracts/.venv/bin/python contracts/run_tests.py --typescript: 116 package, 21 shared, 49 TypeScript cases",
+          "result": "passed",
+          "revision": "cf06e59c",
+          "cases_or_observations": [],
+          "environment": "isolated worktree, macOS; Python 3.12/3.14 where noted",
+          "remaining_limit": ""
+        },
+        {
+          "command_or_review": "node tools/component-build/check-components.mjs --component game-evidence-contracts",
+          "result": "passed",
+          "revision": "cf06e59c",
+          "cases_or_observations": [],
+          "environment": "isolated worktree, macOS; Python 3.12/3.14 where noted",
+          "remaining_limit": ""
+        },
+        {
+          "command_or_review": "contracts/qualify_artifacts.py --python 3.12 and --python 3.14: wheel/sdist, installed suite and synthetic patch passed",
+          "result": "passed",
+          "revision": "cf06e59c",
+          "cases_or_observations": [],
+          "environment": "isolated worktree, macOS; Python 3.12/3.14 where noted",
+          "remaining_limit": ""
+        }
+      ],
+      "remaining_acceptance": "Integration review and acceptance; reports in /private/tmp/tempo-creator-a-output/.",
+      "next_owner": "Integration owner",
+      "implementation_stage": "component-tested",
+      "merge_state": "not merged",
+      "installed_state": "not established"
+    },
+    {
+      "finding_id": "RT001",
+      "task": "A2",
+      "proposed_status": "Verified on branch",
+      "scope": "full",
+      "changed_paths": [
+        ".importlinter",
+        "backend/tests/test_scheduling_boundary.py",
+        "tests/fixtures/scheduling-boundary/ownership.json"
+      ],
+      "evidence": [
+        {
+          "command_or_review": "UV_CACHE_DIR=/private/tmp/tempo-a-uv-cache uv run --locked python -m pytest tests/test_scheduling_boundary.py -q: 34 passed",
+          "result": "passed",
+          "revision": "cf06e59c",
+          "cases_or_observations": [],
+          "environment": "isolated worktree, macOS; Python 3.12/3.14 where noted",
+          "remaining_limit": ""
+        }
+      ],
+      "remaining_acceptance": "Integration review; re-run after later scheduling graph changes.",
+      "next_owner": "Integration owner",
+      "implementation_stage": "component-tested",
+      "merge_state": "not merged",
+      "installed_state": "not established"
+    },
+    {
+      "finding_id": "ST010",
+      "task": "A3",
+      "proposed_status": "Partially addressed",
+      "scope": "partial",
+      "changed_paths": [
+        "database/tempo_storage/README.md"
+      ],
+      "evidence": [
+        {
+          "command_or_review": "git diff --check",
+          "result": "passed",
+          "revision": "cf06e59c",
+          "cases_or_observations": [],
+          "environment": "isolated worktree, macOS; Python 3.12/3.14 where noted",
+          "remaining_limit": ""
+        }
+      ],
+      "remaining_acceptance": "Remaining storage guide links and retained-worker statements require reconciliation.",
+      "next_owner": "Integration owner",
+      "implementation_stage": "component-tested",
+      "merge_state": "not merged",
+      "installed_state": "not established"
+    },
+    {
+      "finding_id": "BE022",
+      "task": "A3",
+      "proposed_status": "Open",
+      "scope": "none",
+      "changed_paths": [],
+      "evidence": [],
+      "remaining_acceptance": "All owner-guide reconciliation remains; inventory includes many stale links.",
+      "next_owner": "Integration owner",
+      "implementation_stage": "component-tested",
+      "merge_state": "not merged",
+      "installed_state": "not established"
+    }
+  ],
+  "shared_file_requests": [],
+  "notes": "No root audit artifacts changed. A3 is incomplete. Original audit pin retained. No merge, installation, migration, or live acceptance. Architecture look performed by author; independent integrated review remains with integration owner."
+}
