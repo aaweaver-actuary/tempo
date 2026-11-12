@@ -1,18 +1,10 @@
-"""Workspace calendar; callers choose the effective review instant explicitly."""
+"""Compatibility location for the sole explicit Study calendar conversion.
 
-from contextvars import ContextVar
-from datetime import date as CalendarDate, datetime, timezone
-from zoneinfo import ZoneInfo
+Callers supply an instant and configured timezone; no process-local mutable
+calendar or implicit today override remains. Current composition captures once
+and passes local_day separately from an original recorded review_day.
+"""
 
-workspace_timezone = ContextVar("learning_timezone", default=None)
+from tempo_learning_review import review_day_at
 
-
-class date(CalendarDate):
-    @classmethod
-    def today(cls):
-        zone = workspace_timezone.get()
-        return (
-            datetime.now(timezone.utc)
-            .astimezone(ZoneInfo(zone) if zone else None)
-            .date()
-        )
+__all__ = ["review_day_at"]
