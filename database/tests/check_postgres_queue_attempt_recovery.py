@@ -1006,12 +1006,59 @@ def test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_r
         postgres.close_pools()
 
 
+# Fixed source-owned selections. This is not an arbitrary function/stage runner.
+_QUEUE_RECOVERY_ALL = (
+    "test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_replay",
+    "test_postgres_scheduling_adapter_effects_rollback_with_receipt_failure",
+    "test_postgres_scheduling_concurrent_replay_preserves_one_history_and_queue_effect",
+    "test_retained_command_retry_preserves_immutable_identity",
+    "test_postgres_real_game_obligation_admission_restart_publication_and_remediation",
+    "test_postgres_retired_opening_evidence_reconciliation_is_atomic_and_replay_safe",
+    "test_postgres_guided_marker_locks_displayed_revision_until_commit",
+    "test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recovery",
+)
+_QUEUE_RECOVERY_MAINTAINED_SIX = (
+    "test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_replay",
+    "test_postgres_scheduling_adapter_effects_rollback_with_receipt_failure",
+    "test_postgres_scheduling_concurrent_replay_preserves_one_history_and_queue_effect",
+    "test_retained_command_retry_preserves_immutable_identity",
+    "test_postgres_guided_marker_locks_displayed_revision_until_commit",
+    "test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recovery",
+)
+_QUEUE_RECOVERY_UNRESOLVED = (
+    "test_postgres_real_game_obligation_admission_restart_publication_and_remediation",
+    "test_postgres_retired_opening_evidence_reconciliation_is_atomic_and_replay_safe",
+)
+
+
+def queue_recovery_main(argv=None):
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Owned queue recovery proof; maintained-six is partial acceptance only.")
+    parser.add_argument("--case-set", choices=("all", "maintained-six"), default="all")
+    parser.add_argument("--list", action="store_true", help="List selected cases without executing them.")
+    options = parser.parse_args(argv)
+    cases = _QUEUE_RECOVERY_ALL if options.case_set == "all" else _QUEUE_RECOVERY_MAINTAINED_SIX
+    if not cases or len(set(cases)) != len(cases):
+        raise RuntimeError("Queue recovery selection must be nonempty and unique")
+    actions = tuple(globals()[name] for name in cases)
+    if not all(callable(action) for action in actions):
+        raise RuntimeError("Queue recovery selection contains a missing action")
+    evidence = {
+        "case_set": options.case_set,
+        "cases": cases,
+        "scope": "partial" if options.case_set == "maintained-six" else "all-eight",
+        "unresolved_owner_cases": _QUEUE_RECOVERY_UNRESOLVED,
+        "excluded_cases": _QUEUE_RECOVERY_UNRESOLVED if options.case_set == "maintained-six" else (),
+        "execution": "discovery-only" if options.list else "starting",
+    }
+    print(json.dumps(evidence, sort_keys=True))
+    if options.list:
+        return
+    for action in actions:
+        action()  # Exceptions propagate; each case retains its existing owned cleanup.
+    print(json.dumps({**evidence, "execution": "completed", "executed_count": len(cases)}, sort_keys=True))
+
+
 if __name__ == "__main__":
-    test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_replay()
-    test_postgres_scheduling_adapter_effects_rollback_with_receipt_failure()
-    test_postgres_scheduling_concurrent_replay_preserves_one_history_and_queue_effect()
-    test_retained_command_retry_preserves_immutable_identity()
-    test_postgres_real_game_obligation_admission_restart_publication_and_remediation()
-    test_postgres_retired_opening_evidence_reconciliation_is_atomic_and_replay_safe()
-    test_postgres_guided_marker_locks_displayed_revision_until_commit()
-    test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recovery()
+    queue_recovery_main()
