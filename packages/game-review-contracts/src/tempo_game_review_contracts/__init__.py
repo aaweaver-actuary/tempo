@@ -1,4 +1,6 @@
 """Shared values and ports; no providers, storage, component or action imports."""
+from .snapshot_bounds import RepertoireSnapshotBoundExceeded
+
 from datetime import datetime
 from typing import Literal, Protocol
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -148,4 +150,4 @@ class ActionPort(Protocol):
 
 from .replay import ReplaySession, replay_line
 
-__all__ = ['CanonicalGame', 'ReentryAuthority', 'AuthoredRoute', 'RepertoireSnapshot', 'RouteContext', 'PositionFact', 'ComparisonReport', 'GameInput', 'GameIngester', 'RepertoireComparer', 'Unavailable', 'ClassificationPort', 'ActionRequest', 'ActionPort', 'replay_line', 'ReplaySession']
+__all__ = ['CanonicalGame', 'ReentryAuthority', 'AuthoredRoute', 'RepertoireSnapshot', 'RepertoireSnapshotBoundExceeded', 'RouteContext', 'PositionFact', 'ComparisonReport', 'GameInput', 'GameIngester', 'RepertoireComparer', 'Unavailable', 'ClassificationPort', 'ActionRequest', 'ActionPort', 'replay_line', 'ReplaySession']
