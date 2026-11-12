@@ -1420,3 +1420,13 @@ test('position introductions selects the exact owned native bridge and cleans up
   assert(source.includes('TEMPO_NATIVE_POSITION_CHECK=${check}'));
   assert(source.includes('checks: {[check]: evidence}'));
 });
+
+
+test('selected Study durability retains current history and quota proofs without retired portable imports', () => {
+  const source = readFileSync(join(root, 'database/tests/test-postgres-docker.mjs'), 'utf8');
+  const action = source.slice(source.indexOf('  study_durability: async () => {'), source.indexOf('  cleanup: async () =>'));
+  for (const proof of ['verifyForegroundAndStudyDurability', 'verifyStudyBurialRetainsQuota', 'verifyBlockedBurialRecovery'])
+    assert(action.includes(proof), `Missing retained ${proof}`);
+  assert(!action.includes('check_postgres_stalemate_swindles.py'));
+  assert(postgresTestStages({mode: 'study'}).includes('study_durability'));
+});

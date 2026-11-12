@@ -1398,8 +1398,8 @@ const actions = {
     await measureScenario.detail("foreground_study", "scenario", verifyForegroundAndStudyDurability);
     await measureScenario.detail("study_burial_quota", "scenario", verifyStudyBurialRetainsQuota);
     await measureScenario.detail("blocked_burial_recovery", "scenario", verifyBlockedBurialRecovery);
-    run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
-      "/source/database/tests/check_postgres_stalemate_swindles.py"]);
+    // Portable stalemate mining/import is retired. Current foreground history,
+    // burial quota and blocked-recovery assertions remain in the three owners above.
   },
   cleanup: async () => executeDiagnosticCleanup(() => {
     if (resourcesCreated) {
