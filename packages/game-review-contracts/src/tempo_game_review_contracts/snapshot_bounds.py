@@ -54,5 +54,3 @@ class RepertoireSnapshotBoundExceeded(ValueError):
                 for values in self._violations
             ],
         }
-
-

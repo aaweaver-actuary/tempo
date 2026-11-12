@@ -1,0 +1,156 @@
+{
+  "packet": "B",
+  "baseline_revision": "a2e877d908309544eafee908c7e537149c22d169",
+  "implementation_revision": "bf07d8ee",
+  "reviewed_revision": "",
+  "updates": [
+    {
+      "finding_id": "BE017",
+      "task": "B01",
+      "code_revision": "e1a5c3f5",
+      "proposed_status": "Verified on branch",
+      "scope": "complete",
+      "changed_paths": [
+        "backend/app/contracts/study_exercises.py",
+        "backend/tests/test_study_contract_identity.py"
+      ],
+      "evidence": [
+        {
+          "command_or_review": "Focused checks; see PR/hand-off",
+          "result": "3 contract cases passed; retained corpus executable schemas validated.",
+          "revision": "e1a5c3f5",
+          "cases_or_observations": [],
+          "environment": "Python 3.14.8, source package roots",
+          "remaining_limit": "Integration owner: merge only after review; FE009 adopts this dependency."
+        }
+      ],
+      "remaining_acceptance": "Integration owner: merge only after review; FE009 adopts this dependency.",
+      "next_owner": "Integration owner",
+      "implementation_stage": "component-tested",
+      "merge_state": "not merged",
+      "installed_state": "not established"
+    },
+    {
+      "finding_id": "ST008",
+      "task": "B02",
+      "code_revision": "89c5eb26",
+      "proposed_status": "Partially addressed",
+      "scope": "partial",
+      "changed_paths": [
+        "database/tempo_storage/http_composition/line_authoring.py"
+      ],
+      "evidence": [
+        {
+          "command_or_review": "Focused checks; see PR/hand-off",
+          "result": "Retained module import passed. Selected PGN suite: 14 passed, 6 failed; five directly reference absent product_imports, one references removed retained-import facade.",
+          "revision": "89c5eb26",
+          "cases_or_observations": [],
+          "environment": "Python 3.14.8, source package roots",
+          "remaining_limit": "Proof owner: resolve selected suite; no closure until current authoring proof passes."
+        }
+      ],
+      "remaining_acceptance": "Proof owner: resolve selected suite; no closure until current authoring proof passes.",
+      "next_owner": "Proof owner",
+      "implementation_stage": "implemented; proof incomplete",
+      "merge_state": "not merged",
+      "installed_state": "not established"
+    },
+    {
+      "finding_id": "BE014",
+      "task": "B03",
+      "code_revision": "f362579c",
+      "proposed_status": "Verified on branch",
+      "scope": "complete",
+      "changed_paths": [
+        "backend/app/repertoire/__init__.py",
+        "backend/app/repertoire/snapshot.py",
+        "backend/tests/test_repertoire_import_boundary.py",
+        "database/tempo_storage/authored_repertoires/product_snapshot.py",
+        "packages/game-review-contracts/README.md",
+        "packages/game-review-contracts/REGRESSIONS.md",
+        "packages/game-review-contracts/src/tempo_game_review_contracts/__init__.py",
+        "packages/game-review-contracts/src/tempo_game_review_contracts/snapshot_bounds.py",
+        "packages/game-review-contracts/tests/test_values.py"
+      ],
+      "evidence": [
+        {
+          "command_or_review": "Focused checks; see PR/hand-off",
+          "result": "21 shared package tests, 15 position index cases, and 2 import/identity cases passed. Component lane discovery passed.",
+          "revision": "f362579c",
+          "cases_or_observations": [],
+          "environment": "Python 3.14.8, source package roots",
+          "remaining_limit": "Integration owner: add publicExports entry; package native snapshot proof was not run."
+        }
+      ],
+      "remaining_acceptance": "Integration owner: add publicExports entry; package native snapshot proof was not run.",
+      "next_owner": "Integration owner",
+      "implementation_stage": "component-tested",
+      "merge_state": "not merged",
+      "installed_state": "not established"
+    },
+    {
+      "finding_id": "BE006",
+      "task": "B05",
+      "code_revision": "05e1c8ec",
+      "proposed_status": "Partially addressed",
+      "scope": "partial",
+      "changed_paths": [
+        "backend/app/study/policy/opening_maturity.py",
+        "backend/app/study/policy/review_reconciliation.py",
+        "backend/app/study/policy/scheduling_review_application.py",
+        "backend/tests/test_opening_baseline_maturity.py"
+      ],
+      "evidence": [
+        {
+          "command_or_review": "Focused checks; see PR/hand-off",
+          "result": "13 scheduling cases and 5 paired normal/replay cases passed. Scheduling boundary collection blocked by missing grimp.",
+          "revision": "05e1c8ec",
+          "cases_or_observations": [],
+          "environment": "Python 3.14.8, source package roots",
+          "remaining_limit": "Integration owner: scheduling guard and assembled saved-review \u2192 playable-next-card proof."
+        }
+      ],
+      "remaining_acceptance": "Integration owner: scheduling guard and assembled saved-review \u2192 playable-next-card proof.",
+      "next_owner": "Integration owner",
+      "implementation_stage": "component-tested",
+      "merge_state": "not merged",
+      "installed_state": "not established"
+    },
+    {
+      "finding_id": "BE016",
+      "task": "B06",
+      "code_revision": "bf07d8ee",
+      "proposed_status": "Partially addressed",
+      "scope": "partial",
+      "changed_paths": [
+        "backend/app/study/position_checkpoint.py",
+        "backend/app/study/position_learning/first_response_codec.py",
+        "backend/app/study/position_learning/grade_effects.py",
+        "backend/app/study/position_learning/issuance.py",
+        "backend/tests/test_position_first_response_codec.py",
+        "database/tests/position_study/test_position_issued_plans.py"
+      ],
+      "evidence": [
+        {
+          "command_or_review": "Focused checks; see PR/hand-off",
+          "result": "9 codec, 4 value and 1 named issued-plan consumer case passed; real codec and valid receipts used.",
+          "revision": "bf07d8ee",
+          "cases_or_observations": [],
+          "environment": "Python 3.14.8, source package roots",
+          "remaining_limit": "E1b: native two-decision rollback proof using disposable DSN; integration owner: position browser and assembled journey."
+        }
+      ],
+      "remaining_acceptance": "E1b: native two-decision rollback proof using disposable DSN; integration owner: position browser and assembled journey.",
+      "next_owner": "E1b",
+      "implementation_stage": "component-tested",
+      "merge_state": "not merged",
+      "installed_state": "not established"
+    }
+  ],
+  "shared_file_requests": [
+    "components.json game-review-contracts publicExports: add RepertoireSnapshotBoundExceeded",
+    "Coordinate native E1b and assembled saved-review \u2192 playable-next-card and position-study-acceptance.spec.ts; do not claim BE016 closed.",
+    "Review scheduling boundary test environment and PGN retained-import suite."
+  ],
+  "notes": "Self-reviewed architecture diff; independent review pending. No merge, install, migration or live operations. Source package paths supplied through task-owned Python wrapper. Registry updates are proposals only."
+}

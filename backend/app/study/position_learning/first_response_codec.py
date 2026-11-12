@@ -143,5 +143,3 @@ def decode_position_first_response(payload, digest, plan):
     if expected != payload:
         raise ValueError("first_response_issued_plan_mismatch")
     return expected
-
-
