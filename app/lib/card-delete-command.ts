@@ -1,3 +1,4 @@
+import { decodeOperationResult } from "../domain/adapters/operation-result-adapter";
 import { readPendingCardDeletionRecord, readPendingCardEditBytes, writePendingCardDeletionRecord, clearPendingCardDeletionRecord } from "../../database/browser/adapters/authoring/card-delete";
 import { independentStudy } from "./study-connection";
 import { z } from "zod";
@@ -24,9 +25,9 @@ export async function deleteCardCommand(cardId: string, expectedRevision: number
       const response = await fetch(`${API_URL}/api/operations/${encodeURIComponent(pending.operationId)}`);
       if (response.status !== 404) {
         if (!response.ok) throw new PendingOperationError(pending.operationId);
-        const receipt = await response.json() as { state?: string; response?: unknown; error?: { message?: string } };
-        if (receipt.state === "failed") throw new FailedOperationError(receipt.error?.message ?? "The earlier card deletion failed.", pending.operationId);
-        if (receipt.state !== "complete") throw new PendingOperationError(pending.operationId);
+        const receipt = decodeOperationResult(await response.json(), pending.operationId, false);
+        if (receipt.kind === "failed") throw new FailedOperationError(receipt.error.message ?? "The earlier card deletion failed.", pending.operationId);
+        if (receipt.kind !== "complete") throw new PendingOperationError(pending.operationId);
         const result = resultSchema.parse(receipt.response);
         if (result.card_id !== cardId) throw new Error("The deletion receipt names a different card.");
         clearPendingCardDeletionRecord();

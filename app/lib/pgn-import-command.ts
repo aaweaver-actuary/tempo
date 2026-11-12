@@ -1,3 +1,4 @@
+import { decodeOperationResult } from "../domain/adapters/operation-result-adapter";
 import { readPendingPgnImportBytes, decodePendingPgnImportRecord, writePendingPgnImportRecord, clearPendingPgnImportRecord } from "../../database/browser/adapters/authoring/pgn-import";
 import { z } from "zod";
 import { API_URL } from "../const";
@@ -8,16 +9,16 @@ import { readJsonResponse } from "./validated-data";
 const RESOLUTION_BUDGET_MS = 30_000;
 const POLL_INTERVAL_MS = 1_000;
 const pendingImportSchema = z.object({ operationId: z.string().min(1).max(128), fingerprint: z.string().min(1) });
-const receiptSchema = z.object({
-  operation_id: z.string().optional(),
-  state: z.enum(["unknown", "queued", "executing", "retrying", "pending", "blocked", "complete", "failed"]),
-  response: z.unknown().optional(),
-  error: z.object({ message: z.string().optional(), code: z.string().optional() }).nullish(),
-  last_error: z.object({ message: z.string().optional() }).nullish(),
-  message: z.string().optional(),
-});
+// Only PGN-specific metadata lives here; protocol state and identity are decoded centrally.
+const importReceiptMetadataSchema = z.object({ message: z.string().optional() });
 type PendingImport = z.infer<typeof pendingImportSchema>;
-type ImportReceipt = z.infer<typeof receiptSchema>;
+type ImportReceipt = {
+  state: "unknown" | "pending" | "blocked" | "complete" | "failed";
+  response?: unknown;
+  error?: { message?: string; code?: string };
+  last_error?: { message?: string };
+  message?: string;
+};
 type ImportResult = z.infer<typeof importResultSchema>;
 export type PgnImportCommandOptions = { signal?: AbortSignal; retryBlocked?: boolean };
 
@@ -49,12 +50,24 @@ async function inspectReceipt(pending: PendingImport, signal: AbortSignal, disca
     throw unconfirmedImport(pending.operationId);
   }
   signal.throwIfAborted();
-  const parsedReceipt = receiptSchema.safeParse(rawReceipt);
-  if (!parsedReceipt.success) throw unconfirmedImport(pending.operationId);
-  const receipt = parsedReceipt.data;
-  if (receipt.operation_id && receipt.operation_id !== pending.operationId)
-    throw new Error("The service returned a different import operation identity. Check the local service before retrying.");
-  if (!discarding && receipt.state === "pending" && receipt.message?.startsWith("Legacy receipt has no saved payload."))
+  const decoded = decodeOperationResult(rawReceipt, pending.operationId, false);
+  if (decoded.kind === "malformed") {
+    if (decoded.reason === "identity")
+      throw new Error("The service returned a different import operation identity. Check the local service before retrying.");
+    throw unconfirmedImport(pending.operationId);
+  }
+  if (decoded.kind === "unavailable") throw unconfirmedImport(pending.operationId);
+  const metadata = importReceiptMetadataSchema.safeParse(rawReceipt);
+  if (!metadata.success) throw unconfirmedImport(pending.operationId);
+  const receipt: ImportReceipt = {
+    state: decoded.kind,
+    message: metadata.data.message,
+    ...(decoded.kind === "complete" ? { response: decoded.response } : {}),
+    ...(decoded.kind === "failed" ? { error: decoded.error } : {}),
+    ...(decoded.kind === "blocked" ? { last_error: decoded.error } : {}),
+  };
+  const originalState = (rawReceipt as { state?: unknown }).state;
+  if (!discarding && originalState === "pending" && receipt.message?.startsWith("Legacy receipt has no saved payload."))
     throw new PendingOperationError(pending.operationId, `Import confirmation is unavailable. ${receipt.message}`);
   return receipt;
 }

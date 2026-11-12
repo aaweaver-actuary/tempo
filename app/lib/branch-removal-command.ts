@@ -1,3 +1,4 @@
+import { decodeOperationResult } from "../domain/adapters/operation-result-adapter";
 import { readPendingBranchRemovalRecord, writePendingBranchRemovalRecord, clearPendingBranchRemovalRecord } from "../../database/browser/adapters/authoring/branch-removal";
 import { API_URL } from "../const";
 import { removeBranchResultSchema } from "../domain/schemas";
@@ -23,18 +24,17 @@ export async function removeBranchCommand(payload: BranchRemoval) {
   if (pending) {
     const status = await fetch(`${API_URL}/api/operations/${encodeURIComponent(pending.operationId)}`);
     if (!status.ok) throw new PendingOperationError(pending.operationId);
-    const receipt = await status.json() as {
-      state?: string; response?: unknown; error?: { message?: string };
-    };
-    if (receipt.state === "failed") {
+    const receipt = decodeOperationResult(await status.json(), pending.operationId, false);
+    if (receipt.kind === "failed") {
       clearPendingBranchRemovalRecord();
-      throw new Error(receipt.error?.message ?? "The earlier branch removal failed.");
+      throw new Error(receipt.error.message ?? "The earlier branch removal failed.");
     }
-    if (receipt.state === "complete") {
+    if (receipt.kind === "complete") {
+      const result = removeBranchResultSchema.parse(receipt.response);
       clearPendingBranchRemovalRecord();
-      if (pending.body === body) return removeBranchResultSchema.parse(receipt.response);
+      if (pending.body === body) return result;
       pending = null;
-    } else if (receipt.state === "pending") {
+    } else if (receipt.kind === "pending") {
       if (pending.body !== body) throw new PendingOperationError(pending.operationId);
     } else throw new PendingOperationError(pending.operationId);
   }

@@ -45,11 +45,11 @@ export function loadTacticalCatalog() {
 export async function setPackActivation(packIds: string[], active: boolean) {
   if (independentStudy) throw new Error("Pack activation belongs to Workbench and accepted publication. Studying remains available.");
   if (usesLocalApi()) {
-    const pendingKey = `tempo-tactics-activation-pending-v1:${[...packIds].sort().join(",")}:${active}`;
+    const identity = { packIds, active };
     let operationId: string;
     try {
-      operationId = readPendingPackActivation(pendingKey) ?? crypto.randomUUID();
-      writePendingPackActivation(pendingKey, operationId);
+      operationId = readPendingPackActivation(identity) ?? crypto.randomUUID();
+      writePendingPackActivation(identity, operationId);
     } catch {
       operationId = crypto.randomUUID();
     }
@@ -67,7 +67,7 @@ export async function setPackActivation(packIds: string[], active: boolean) {
     const updatedCatalog = wasPending
       ? await loadTacticalCatalog()
       : tacticalCatalogSchema.parse(await confirmedResponse.json());
-    try { removePendingPackActivation(pendingKey); } catch { /* Storage is optional. */ }
+    try { removePendingPackActivation(identity); } catch { /* Storage is optional. */ }
     return updatedCatalog;
   }
   const current: string[] = JSON.parse(

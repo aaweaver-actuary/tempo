@@ -46,3 +46,15 @@ it("a failed note save leaves no confirmed local annotation", async () => {
   await expect(savePositionAnnotation(note, startingFen)).rejects.toThrow();
   expect(localStorage.getItem("tempo-position-annotations")).toBeNull();
 });
+
+it.each(["malformed", "foreign"])("a %s note receipt preserves the original pending bytes", async kind => {
+  const original = JSON.stringify({ operationId: "original", body: "original-body", repertoireId: "rep" });
+  localStorage.setItem("tempo-pending-position-annotation-v1", original);
+  const fetcher = vi.fn(async () => Response.json(kind === "malformed" ? { state: "complete", response: {} } : {
+    state: "complete", operation_id: "foreign", response: note,
+  }));
+  vi.stubGlobal("fetch", fetcher);
+  await expect(savePositionAnnotation({ ...note, comment: "changed" }, startingFen)).rejects.toThrow();
+  expect(localStorage.getItem("tempo-pending-position-annotation-v1")).toBe(original);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});

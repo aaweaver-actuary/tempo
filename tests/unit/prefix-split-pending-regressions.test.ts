@@ -58,3 +58,16 @@ it("legacy split callers keep their original request payload", async () => {
   }));
   expect((await acceptPrefixSplitCommand("combined", 1)).applied).toBe(true);
 });
+
+it.each([
+  ["malformed", { state: "complete" }],
+  ["foreign", { state: "complete", operation_id: "other", response: { rejected_after_review_id: 7 } }],
+])("%s receipt preserves the saved operation", async (_label, receipt) => {
+  const original = JSON.stringify({ operationId: "original", cardId: "card-1", revision: 3, decision: "reject" });
+  localStorage.setItem("tempo-pending-prefix-split-v1", original);
+  const fetcher = vi.fn(async () => Response.json(receipt));
+  vi.stubGlobal("fetch", fetcher);
+  await expect(acceptPrefixSplitCommand("card-1", 3)).rejects.toThrow();
+  expect(localStorage.getItem("tempo-pending-prefix-split-v1")).toBe(original);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});

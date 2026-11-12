@@ -448,3 +448,14 @@ it("repair confirmation reads use background admission while explicit repair wri
   for (const [, init] of environment.fetchMock.mock.calls) expect(new Headers(init?.headers).get("X-Tempo-Work-Class"))
     .toBe(init?.method === "POST" ? null : "background");
 });
+
+it.each(["foreign", "malformed"])("a %s completion retains the accepted repair choice", async kind => {
+  const environment = fixture();
+  const saved = enqueueIntegrityRepair(choice);
+  environment.receipts.set(saved.operationId, kind === "foreign"
+    ? { state: "complete", operation_id: "foreign", response: submission() }
+    : { state: "complete", operation_id: saved.operationId, response: {} });
+  await flushIntegrityRepairs();
+  expect(pendingIntegrityRepairs()[0]).toMatchObject({ operationId: saved.operationId, ...choice });
+  expect(environment.posts).toHaveLength(0);
+});

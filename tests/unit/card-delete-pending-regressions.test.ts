@@ -59,3 +59,16 @@ it("permanent deletion reports a failed durable receipt and preserves an invalid
   await expect(deleteCardCommand("shared", 2)).rejects.toThrow("different card");
   expect(localStorage.getItem("tempo-pending-card-delete-v1")).not.toBeNull();
 });
+
+it.each([
+  ["malformed", { state: "complete" }],
+  ["foreign", { state: "complete", operation_id: "other", response: { deleted: true, card_id: "shared" } }],
+])("%s receipt preserves the saved operation", async (_label, receipt) => {
+  const original = JSON.stringify({ operationId: "original", cardId: "shared", expectedRevision: 2 });
+  localStorage.setItem("tempo-pending-card-delete-v1", original);
+  const fetcher = vi.fn(async () => Response.json(receipt));
+  vi.stubGlobal("fetch", fetcher);
+  await expect(deleteCardCommand("shared", 2)).rejects.toThrow();
+  expect(localStorage.getItem("tempo-pending-card-delete-v1")).toBe(original);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});

@@ -66,3 +66,16 @@ it("repertoire deletion preserves an unconfirmed receipt and recovers a missing 
   await deleteRepertoireCommand("black", "keep");
   expect(localStorage.getItem("tempo-pending-repertoire-delete-v1")).toBeNull();
 });
+
+it.each([
+  ["malformed", { state: "complete" }],
+  ["foreign", { state: "complete", operation_id: "other", response: { deleted: true, id: "white" } }],
+])("%s receipt preserves the saved operation", async (_label, receipt) => {
+  const original = JSON.stringify({ operationId: "original", repertoireId: "white", learnedCards: "delete" });
+  localStorage.setItem("tempo-pending-repertoire-delete-v1", original);
+  const fetcher = vi.fn(async () => Response.json(receipt));
+  vi.stubGlobal("fetch", fetcher);
+  await expect(deleteRepertoireCommand("white")).rejects.toThrow();
+  expect(localStorage.getItem("tempo-pending-repertoire-delete-v1")).toBe(original);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});

@@ -237,3 +237,20 @@ it("legacy identity-free burial replay keeps its original request after an upgra
   expect(fetcher.mock.calls[0][1].body).toBeUndefined();
   expect(fetcher.mock.calls[0][1].headers["Idempotency-Key"]).toBe("original-legacy-operation");
 });
+
+it("retains legacy burial identity and body through retry and cleanup", async () => {
+  const body = JSON.stringify({ card_id: "legacy-card", expected_revision: 3 });
+  localStorage.setItem("tempo-bury-operation-42", "legacy-operation");
+  localStorage.setItem("tempo-bury-identity-42", body);
+  const fetcher = vi.fn(async (_url: string, options: RequestInit) => {
+    expect(new Headers(options.headers).get("Idempotency-Key")).toBe("legacy-operation");
+    expect(options.body).toBe(body);
+    return Response.json({ buried: true, queue_entry_id: 42 });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  await buryTrainingEntry(42, false, { card_id: "new-card" });
+  expect(localStorage.getItem("tempo-bury-identity-42")).toBe(body);
+  finishTrainingBurial(42);
+  expect(localStorage.getItem("tempo-bury-operation-42")).toBeNull();
+  expect(localStorage.getItem("tempo-bury-identity-42")).toBeNull();
+});

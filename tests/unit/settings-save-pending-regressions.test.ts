@@ -56,3 +56,16 @@ it("settings does not overtake an earlier pending save with changed values", asy
   );
   expect(writes).toEqual([JSON.stringify({ new_cards_per_day: 12 })]);
 });
+
+it.each([
+  ["malformed", { state: "complete" }],
+  ["foreign", { state: "complete", operation_id: "other", response: { new_cards_per_day: 12 } }],
+])("%s receipt preserves the saved operation", async (_label, receipt) => {
+  const original = JSON.stringify({ operationId: "original", body: JSON.stringify({ new_cards_per_day: 12 }) });
+  localStorage.setItem("tempo-pending-settings-save-v1", original);
+  const fetcher = vi.fn(async () => Response.json(receipt));
+  vi.stubGlobal("fetch", fetcher);
+  await expect(saveLocalSettings({ new_cards_per_day: 13 })).rejects.toThrow();
+  expect(localStorage.getItem("tempo-pending-settings-save-v1")).toBe(original);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
