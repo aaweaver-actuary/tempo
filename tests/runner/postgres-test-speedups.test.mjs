@@ -1397,3 +1397,26 @@ test('position native pytest selection is finite and cleanup survives failure', 
   const result = spawnSync('python3', ['database/tests/test_position_native_pytest_bridge.py'], {cwd: root, encoding: 'utf8'});
   assert.equal(result.status, 0, result.stderr);
 });
+
+
+test('position introductions selects the exact owned native bridge and cleans up on failure', async () => {
+  const stages = postgresTestStages(parse(['--mode', 'browser', '--native-check', 'position-introductions']));
+  assert(stages.indexOf('position-introductions') < stages.indexOf('browser'));
+  assert(!stages.includes('position-grade-effects'));
+  for (const args of [
+    ['--mode', 'browser', '--native-check', 'position-introductions', '--native-check', 'position-introductions'],
+    ['--mode', 'browser', '--native-check', 'backend/tests/test_position_introductions.py'],
+    ['--mode', 'full', '--native-check', 'position-introductions'],
+  ]) assert.throws(() => parse(args));
+  const observed = [];
+  const actions = Object.fromEntries(stages.map(stage => [stage, async () => {
+    observed.push(stage);
+    if (stage === 'position-introductions') throw new Error('introduction failed');
+  }]));
+  await assert.rejects(executePostgresTestPlan(stages, actions, (_stage, run) => run()), /introduction failed/);
+  assert.equal(observed.at(-1), 'cleanup');
+  assert(!observed.includes('browser'));
+  const source = readFileSync(join(root, 'database/tests/test-postgres-docker.mjs'), 'utf8');
+  assert(source.includes('TEMPO_NATIVE_POSITION_CHECK=${check}'));
+  assert(source.includes('checks: {[check]: evidence}'));
+});
