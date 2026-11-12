@@ -1,6 +1,6 @@
 """One foreground tactic ingestion seam; callers own source-specific trust."""
 
-from datetime import date, datetime, timezone
+from app.study.policy.clock import StudyCalendar
 import json
 import uuid
 
@@ -50,6 +50,7 @@ def capture_tactic(
     request: TacticCaptureRequest,
     *,
     admission: CapturedTacticAdmission,
+    calendar: StudyCalendar,
     game_finding: bool = False,
 ) -> dict:
     """Atomically materialize one capture; the caller supplies a transaction."""
@@ -64,7 +65,7 @@ def capture_tactic(
     }
     request_json = json.dumps(normalized_request, sort_keys=True, separators=(",", ":"))
     capture_id = str(request.capture_id)
-    queue_date = date.today().isoformat()
+    queue_date = calendar.day.isoformat()
     admission.lock_daily(queue_date)
     storage.lock_capture(database, capture_id)
     previous = storage.capture_receipt(database, capture_id)
@@ -90,7 +91,7 @@ def capture_tactic(
         game_finding=game_finding,
         request_json=request_json,
     )
-    now = datetime.now(timezone.utc).isoformat()
+    now = calendar.observed_at.isoformat()
     admitted = admission.admit(capture, queue_date, now)
     result = {
         "capture_id": capture_id,

@@ -1,6 +1,6 @@
 """Authoritative packaged catalog, activation, and daily introduction reservations."""
 
-from datetime import date
+from .study_calendar import capture_study_calendar
 from functools import lru_cache
 import json
 import os
@@ -49,7 +49,7 @@ def progress_pack_id(puzzle_id, legacy_deck):
 
 
 def catalog_status(db, day=None):
-    day = day or date.today().isoformat()
+    day = day if day is not None else capture_study_calendar(db).day.isoformat()
     active = {row[0] for row in storage.active_pack_rows(db)}
     progress = {row["puzzle_id"]: row for row in storage.progress_rows(db)}
     due = {row[0] for row in storage.due_tactic_rows(db, day)}

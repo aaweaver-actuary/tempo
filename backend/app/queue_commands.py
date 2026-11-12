@@ -1,6 +1,6 @@
 """Foreground queue edits with PostgreSQL row locks and durable receipts."""
 from __future__ import annotations
-from datetime import date, datetime, timezone
+from datetime import date
 import json
 from typing import Any
 from fastapi import HTTPException
@@ -20,11 +20,11 @@ _AVAILABLE_ATTEMPT_SQL = queue_application._AVAILABLE_ATTEMPT_SQL
 def available_attempt_sql() -> str:
     return queue_application.available_attempt_sql()
 
-def validate_available_attempt(database, entry_id: int, card_id=None, expected_revision=None) -> None:
+def validate_available_attempt(database, entry_id: int, card_id=None, expected_revision=None, *, current_day=None) -> None:
     """A retained, identified attempt remains operable after queue promotion."""
     identified = card_id is not None and expected_revision is not None
     read_available = queue_storage.prepare_available_attempt(database, identified, entry_id, queue_application.MISS_REASON)
-    day = (queue_storage.issued_origin_day(database, entry_id, card_id, expected_revision) if identified else None) or current_study_day(database)
+    day = (queue_storage.issued_origin_day(database, entry_id, card_id, expected_revision) if identified else None) or current_day or current_study_day(database)
     available = read_available(day)
     if not available or available['id'] != entry_id:
         raise ReviewConflict('queue_attempt_inactive', 'This queue attempt is no longer active')
@@ -38,11 +38,8 @@ def validate_available_attempt(database, entry_id: int, card_id=None, expected_r
             raise ReviewConflict('queue_attempt_inactive', 'This queue attempt was never issued as the active attempt')
 
 def current_study_day(database, *, now=None):
-    from tempo_learning_review import review_day_at
-    timezone_name = queue_storage.study_timezone(database)
-    if timezone_name is None:
-        raise HTTPException(503, 'Current Study policy is unavailable')
-    return review_day_at(now or datetime.now(timezone.utc), timezone_name).isoformat()
+    from .services.study_calendar import capture_study_calendar
+    return capture_study_calendar(database, now=now).day.isoformat()
 
 def issue_queue_head(database, payload: dict[str, Any]) -> dict[str, Any]:
     """Commit one head's issuance before returning it; never stamp prefetch."""
@@ -51,7 +48,8 @@ def issue_queue_head(database, payload: dict[str, Any]) -> dict[str, Any]:
     prepared = payload if isinstance(payload, PreparedQueueHead) else PreparedQueueHead(payload, 'legacy')
     payload = prepared.payload
     entry_id = int(payload['entry_id'])
-    if payload['queue_date'] != current_study_day(database):
+    current_day = current_study_day(database)
+    if payload['queue_date'] != current_day:
         return {'issued': False}
     position_plan = None
     if prepared.mode == 'hold':
@@ -90,7 +88,7 @@ def issue_queue_head(database, payload: dict[str, Any]) -> dict[str, Any]:
             raise ReviewConflict('position_head_changed', 'Position head changed during issuance', retryable=True)
         return {'issued': False}
     try:
-        validate_available_attempt(database, entry_id, payload['card_id'], payload['expected_revision'])
+        validate_available_attempt(database, entry_id, payload['card_id'], payload['expected_revision'], current_day=current_day)
     except ReviewConflict:
         if position_plan is not None:
             raise ReviewConflict('position_head_changed', 'Position head changed during issuance', retryable=True)
@@ -118,7 +116,7 @@ def bury_queue_entry(database: PostgresConnection, payload: dict[str, Any]) -> d
     original_day = queue_storage.issued_origin_day(database, entry_id, payload['card_id'], payload['expected_revision']) if payload.get('card_id') is not None and payload.get('expected_revision') is not None else None
     for day in sorted({queue_date, original_day or queue_date}):
         lock_queue_date_for_position(database, day)
-    validate_available_attempt(database, entry_id, payload.get('card_id'), payload.get('expected_revision'))
+    validate_available_attempt(database, entry_id, payload.get('card_id'), payload.get('expected_revision'), current_day=queue_date)
     previous_order = capture_daily_queue_order(database, queue_date)
     queue_storage.bury_attempt_card(database, queue_date, entry_id)
     preserve_daily_queue_order(database, queue_date, previous=previous_order)
