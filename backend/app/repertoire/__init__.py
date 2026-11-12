@@ -13,6 +13,8 @@ from .position_index import (
 )
 
 __all__ = [
+    "RepertoireSnapshotBoundExceeded",
+    "PreparedPublishedRepertoire",
     "Diagnostic",
     "PositionIndex",
     "PositionKey",
@@ -24,4 +26,4 @@ __all__ = [
     "position_key",
 ]
 
-from .snapshot import PreparedPublishedRepertoire
+from .snapshot import PreparedPublishedRepertoire, RepertoireSnapshotBoundExceeded

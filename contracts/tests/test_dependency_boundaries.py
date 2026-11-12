@@ -49,10 +49,9 @@ def test_installed_imports_do_not_load_application_registry_or_model_runtimes(tm
     script = """
 import sys
 from tempo_game_evidence_contracts import v1 as evidence
-from tempo_analysis_jobs_contracts import v1 as jobs
 for forbidden in ('backend', 'app', 'services', 'celery', 'psycopg', 'torch', 'numpy', 'onnxruntime', 'fastapi', 'chess'):
     assert not any(name == forbidden or name.startswith(forbidden+'.') for name in sys.modules), forbidden
-assert jobs.StockfishJob is not jobs.MaiaJob
+assert evidence.ImportedGame is not evidence.EvidenceDelivery
 print('isolated public imports passed')
 """
     result = subprocess.run(

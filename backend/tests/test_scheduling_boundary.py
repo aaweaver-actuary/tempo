@@ -22,6 +22,7 @@ CONTRACTS = METADATA["shared_contract_module"]
 BACKEND_APPLICATION = METADATA["backend_facade_module"]
 BACKEND_CONTRACTS = METADATA["backend_contract_facade_module"]
 SCHEDULER = "app.services.scheduler"
+OPENING_MATURITY = "app.study.policy.opening_maturity"
 CERTIFIED_MODULES = tuple(METADATA["source_paths"])
 PUBLIC_TYPES = (
     "CardState",
@@ -76,8 +77,6 @@ def synthetic_package(tmp_path, additions):
         "app.authoring": "",
         "app.studies": "",
         "app.services.review_service": "",
-        "app.study.game_feedback": "",
-        "app.study.encounter_feedback": "",
         "tempo_storage.connections": "",
         "tempo_storage.scheduling_review_store": "",
     }
@@ -108,7 +107,7 @@ def synthetic_package(tmp_path, additions):
         "if False:\n    from . import unrelated_analysis",
     ],
 )
-@pytest.mark.parametrize("application_module", [APPLICATION, BACKEND_APPLICATION])
+@pytest.mark.parametrize("application_module", [APPLICATION, BACKEND_APPLICATION, OPENING_MATURITY])
 def test_scheduling_boundary_rejects_forbidden_direct_and_deferred_imports(
     tmp_path, forbidden_import, application_module
 ):
@@ -207,8 +206,8 @@ def test_scheduling_boundary_has_no_unrelated_transitive_dependencies(dependency
             dependency_graph.find_modules_directly_imported_by(module)
         ) == sorted(expected_imports), module
     for application_module, expected_app in (
-        (APPLICATION, {CONTRACTS, "app.study.policy.clock", "app.services.scheduler"}),
-        (BACKEND_APPLICATION, {APPLICATION, CONTRACTS, BACKEND_CONTRACTS, "app.study.policy.clock", "app.services.scheduler"}),
+        (APPLICATION, {CONTRACTS, OPENING_MATURITY, "app.study.policy.clock", "app.services.scheduler"}),
+        (BACKEND_APPLICATION, {APPLICATION, CONTRACTS, BACKEND_CONTRACTS, OPENING_MATURITY, "app.study.policy.clock", "app.services.scheduler"}),
     ):
         reachable = dependency_graph.find_upstream_modules(application_module)
         assert {
@@ -252,7 +251,7 @@ class RejectInfrastructure(MetaPathFinder):
         if fullname.startswith('app.') and fullname not in {
             'app.services', 'app.services.scheduler',
             'app.services.scheduling_review_application', 'app.services.scheduling_review_contracts',
-            'app.study', 'app.study.policy', 'app.study.policy.clock',
+            'app.study', 'app.study.policy', 'app.study.policy.clock', 'app.study.policy.opening_maturity',
             'app.study.policy.scheduling_review_application', 'app.study.policy.scheduling_review_contracts'}:
             raise AssertionError('Unexpected application dependency: ' + fullname)
         if fullname.split('.')[0] in {'psycopg','psycopg_pool','redis','celery','fastapi','httpx','sqlite3'}:

@@ -552,6 +552,7 @@
         "ReentryAuthority",
         "AuthoredRoute",
         "RepertoireSnapshot",
+        "RepertoireSnapshotBoundExceeded",
         "RouteContext",
         "PositionFact",
         "ComparisonReport",

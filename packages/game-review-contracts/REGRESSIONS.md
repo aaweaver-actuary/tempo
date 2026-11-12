@@ -20,3 +20,4 @@ Independent parser/frontier behavior belongs to the ingestion and comparison own
   branches, terminal moves, raw and legal en passant, castling, promotion, FEN
   clocks, independent returned frames, failures, and bounded fallback. Packaged
   Study recovery remains a separate acceptance gate.
+- `test_snapshot_bound_refusal_preserves_diagnostics_and_validation`: bounded snapshot refusals retain numeric diagnostics and reject invalid observations.

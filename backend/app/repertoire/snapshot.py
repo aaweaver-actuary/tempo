@@ -6,7 +6,7 @@ transaction, graph migration and provider lifecycle authority stay in adapters.
 
 from __future__ import annotations
 
-from tempo_storage.authored_repertoires.product_snapshot import RepertoireSnapshotBoundExceeded
+from tempo_game_review_contracts import RepertoireSnapshotBoundExceeded
 
 from collections import Counter
 from functools import lru_cache

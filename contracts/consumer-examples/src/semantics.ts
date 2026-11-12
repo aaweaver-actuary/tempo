@@ -5,7 +5,6 @@ const object = (value:unknown):ObjectValue => value as ObjectValue;
 const items = (value:unknown):ObjectValue[] => value as ObjectValue[];
 const unique = (values:unknown[]) => assert.equal(new Set(values).size,values.length,"duplicate identity");
 const sum = (values:number[]) => values.reduce((total,value)=>total+value,0);
-const mass = (values:number[]) => assert.ok(Math.abs(sum(values)-1)<=1e-9,"mass must total one");
 const same = (first:unknown[], second:unknown[]) => assert.deepEqual(first,second,"identity/lineage mismatch");
 
 /** Exact Gregorian instant; the original wire spelling is never rewritten. */
@@ -58,18 +57,5 @@ export function assertSemantics(model:string,payload:ObjectValue):void {
     }
     case "EvidenceAcknowledgement":assert.equal(payload.status==="completed",payload.learning_revision!==null);unique(payload.accepted_obligation_ids as string[]);
       if(["retryable_failure","terminal_failure","conflict","stale_revision"].includes(payload.status as string)) assert.notEqual(payload.reason,null);break;
-    case "JobStatus":if(payload.retryable) assert.equal(payload.status,"failed");if(payload.status==="failed") assert.notEqual(payload.reason,null);break;
-    case "StockfishResult": {
-      const variations=items(payload.variations);
-      same(variations.map(variation=>variation.rank),variations.map((_,index)=>index+1));break;
-    }
-    case "MaiaJob":unique(payload.legal_moves as string[]);break;
-    case "MaiaResult": {
-      const predictions=items(payload.predictions);unique(predictions.map(prediction=>prediction.move));mass(predictions.map(prediction=>prediction.probability as number));break;
-    }
-  }
-  if("provenance" in payload && !Array.isArray(payload.provenance)) {
-    const provenance=object(payload.provenance);
-    if("finished_at" in provenance && "started_at" in provenance) assert.ok(timestampMicroseconds(provenance.finished_at as string)>=timestampMicroseconds(provenance.started_at as string),"execution time reversed");
   }
 }

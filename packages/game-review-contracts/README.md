@@ -99,3 +99,7 @@ fresh frame dictionaries with the same facts and errors as `replay_line`, and
 falls back to ordinary replay after 16,384 cached nodes and for promoted-piece
 markers or promotion moves, preserving their legality semantics. It holds no durable
 state or authority; callers retain their existing input bounds and validation.
+
+`RepertoireSnapshotBoundExceeded` is the shared pure refusal for bounded
+snapshot reads and projections. Its numeric diagnostics preserve the source
+stage, completeness, dimension, limit and observation kind.

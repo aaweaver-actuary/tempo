@@ -13,7 +13,8 @@
   "owning_tests": [
     "backend/tests/test_scheduling_boundary.py",
     "backend/tests/test_scheduling_package_adapter.py",
-    "backend/tests/test_scheduling_review_application.py"
+    "backend/tests/test_scheduling_review_application.py",
+    "backend/tests/test_opening_baseline_maturity.py"
   ],
   "consumers": {
     "tempo_storage.scheduling_review_store": [
@@ -28,14 +29,7 @@
     "app.services.study_attempts": [
       "backend/tests/test_study_durability.py"
     ],
-    "app.study.game_feedback": [
-      "backend/tests/test_real_game_feedback_policy.py"
-    ],
-    "app.study.encounter_feedback": [
-      "backend/tests/test_product_encounter_integration.py"
-    ],
     "app.main": [
-      "backend/tests/test_phone_offline_training.py",
       "backend/tests/test_prepared_review_continuation.py"
     ],
     "app.services.learning_review_adapter": [
@@ -71,7 +65,8 @@
       "json",
       "app.study.policy.clock",
       "app.services.scheduler",
-      "app.study.policy.scheduling_review_contracts"
+      "app.study.policy.scheduling_review_contracts",
+      "app.study.policy.opening_maturity"
     ],
     "app.study.policy.scheduling_review_contracts": [
       "__future__",
@@ -85,7 +80,8 @@
       "zoneinfo"
     ],
     "app": [],
-    "app.services": []
+    "app.services": [],
+    "app.study.policy.opening_maturity": []
   },
   "native_boundaries": {
     "postgres": "Retain regular A1 rollback/concurrent-replay and review/queue durability proofs; fake stores do not qualify persistence.",
@@ -104,7 +100,8 @@
     "app.services.scheduler": "backend/app/services/scheduler.py",
     "app.study.policy.scheduling_review_application": "backend/app/study/policy/scheduling_review_application.py",
     "app.study.policy.scheduling_review_contracts": "backend/app/study/policy/scheduling_review_contracts.py",
-    "app.study.policy.clock": "backend/app/study/policy/clock.py"
+    "app.study.policy.clock": "backend/app/study/policy/clock.py",
+    "app.study.policy.opening_maturity": "backend/app/study/policy/opening_maturity.py"
   },
   "packaged_owner": "app.study.policy.scheduling_review_application"
 }
