@@ -16,8 +16,8 @@ import { recordBoardEvent } from "../../lib/board-diagnostics";
 import { installTempoDragCapture, measureTempoOperation, measureTempoDragPhase } from "../../lib/performance";
 import { playChessMoveSound, playMoveSound } from "../../lib/move-sound";
 
-export type BoardTheme = "brown" | "blue" | "green";
-export type PieceSet = "cburnett" | "merida";
+import type { BoardTheme, PieceSet } from "@tempo/board-ui";
+export type { BoardTheme, PieceSet } from "@tempo/board-ui";
 export type PromotionPiece = "q" | "r" | "b" | "n";
 const EMPTY_SHAPES: DrawShape[] = [];
 const DRAW_BRUSHES = {
