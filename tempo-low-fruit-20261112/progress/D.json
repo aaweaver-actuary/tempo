@@ -1,0 +1,130 @@
+{
+  "packet": "D",
+  "baseline_revision": "a2e877d908309544eafee908c7e537149c22d169",
+  "implementation_revision": "3038e1b2268a0efac9104f105a715a330ebb98bd",
+  "reviewed_revision": "",
+  "updates": [
+    {
+      "finding_id": "FE011",
+      "task": "D1",
+      "proposed_status": "Verified on branch",
+      "scope": "full",
+      "changed_paths": [
+        "app/features/game-review/GameReviewView.tsx",
+        "app/features/game-review/contracts.ts",
+        "tests/unit/game-review-contract.test.ts",
+        "tests/unit/game-review-minimal.test.tsx"
+      ],
+      "evidence": [
+        {
+          "command_or_review": "npm run test:unit -- tests/unit/game-review-minimal.test.tsx tests/unit/game-review-contract.test.ts tests/unit/domain-boundary-regressions.test.tsx tests/unit/validated-data-regressions.test.ts tests/unit/shared-board-shell-mount-regressions.test.tsx tests/unit/repertoire-integrity-dialog-regressions.test.tsx",
+          "result": "passed: 54 tests across six files; Game Review rerun after additional tests: 12 passed",
+          "revision": "3038e1b2268a0efac9104f105a715a330ebb98bd",
+          "cases_or_observations": [
+            "Current producer variants, retry and orientation; domain and board; integrity selection and repairs"
+          ],
+          "environment": "local isolated worktree, npm ci --ignore-scripts",
+          "remaining_limit": "component proof only; browser integration not run"
+        },
+        {
+          "command_or_review": "npx tsc --noEmit --incremental false; npx tsc -p app/features/game-review/tsconfig.json --noEmit --incremental false",
+          "result": "passed after correcting test mock type",
+          "revision": "3038e1b2268a0efac9104f105a715a330ebb98bd",
+          "cases_or_observations": [
+            "frontend types"
+          ],
+          "environment": "local worktree",
+          "remaining_limit": "no independent reviewer"
+        }
+      ],
+      "remaining_acceptance": "Integration owner to review, register test, and coordinate browser proof; no independent review performed.",
+      "next_owner": "Integration owner",
+      "implementation_stage": "component-tested on branch",
+      "merge_state": "not merged",
+      "installed_state": "not established"
+    },
+    {
+      "finding_id": "FE007",
+      "task": "D2/D3",
+      "proposed_status": "Partially addressed",
+      "scope": "partial",
+      "changed_paths": [
+        "app/domain/shell.ts",
+        "app/components/board/chessboard.tsx",
+        "app/domain/adapters/analysis-adapters.ts",
+        "tests/unit/domain-boundary-regressions.test.tsx",
+        "tests/unit/validated-data-regressions.test.ts"
+      ],
+      "evidence": [
+        {
+          "command_or_review": "npm run test:unit -- tests/unit/game-review-minimal.test.tsx tests/unit/game-review-contract.test.ts tests/unit/domain-boundary-regressions.test.tsx tests/unit/validated-data-regressions.test.ts tests/unit/shared-board-shell-mount-regressions.test.tsx tests/unit/repertoire-integrity-dialog-regressions.test.tsx",
+          "result": "passed: 54 tests across six files; Game Review rerun after additional tests: 12 passed",
+          "revision": "3038e1b2268a0efac9104f105a715a330ebb98bd",
+          "cases_or_observations": [
+            "Current producer variants, retry and orientation; domain and board; integrity selection and repairs"
+          ],
+          "environment": "local isolated worktree, npm ci --ignore-scripts",
+          "remaining_limit": "component proof only; browser integration not run"
+        },
+        {
+          "command_or_review": "npx tsc --noEmit --incremental false; npx tsc -p app/features/game-review/tsconfig.json --noEmit --incremental false",
+          "result": "passed after correcting test mock type",
+          "revision": "3038e1b2268a0efac9104f105a715a330ebb98bd",
+          "cases_or_observations": [
+            "frontend types"
+          ],
+          "environment": "local worktree",
+          "remaining_limit": "no independent reviewer"
+        }
+      ],
+      "remaining_acceptance": "Remove stale CI inventory entry; verify overall type-level import checks and acceptance before full closure.",
+      "next_owner": "Integration owner",
+      "implementation_stage": "component-tested on branch",
+      "merge_state": "not merged",
+      "installed_state": "not established"
+    },
+    {
+      "finding_id": "FE008",
+      "task": "D4",
+      "proposed_status": "Partially addressed",
+      "scope": "partial",
+      "changed_paths": [
+        "app/components/repertoire-integrity-dialog.tsx",
+        "tests/unit/repertoire-integrity-dialog-regressions.test.tsx"
+      ],
+      "evidence": [
+        {
+          "command_or_review": "npm run test:unit -- tests/unit/game-review-minimal.test.tsx tests/unit/game-review-contract.test.ts tests/unit/domain-boundary-regressions.test.tsx tests/unit/validated-data-regressions.test.ts tests/unit/shared-board-shell-mount-regressions.test.tsx tests/unit/repertoire-integrity-dialog-regressions.test.tsx",
+          "result": "passed: 54 tests across six files; Game Review rerun after additional tests: 12 passed",
+          "revision": "3038e1b2268a0efac9104f105a715a330ebb98bd",
+          "cases_or_observations": [
+            "Current producer variants, retry and orientation; domain and board; integrity selection and repairs"
+          ],
+          "environment": "local isolated worktree, npm ci --ignore-scripts",
+          "remaining_limit": "component proof only; browser integration not run"
+        },
+        {
+          "command_or_review": "npx tsc --noEmit --incremental false; npx tsc -p app/features/game-review/tsconfig.json --noEmit --incremental false",
+          "result": "passed after correcting test mock type",
+          "revision": "3038e1b2268a0efac9104f105a715a330ebb98bd",
+          "cases_or_observations": [
+            "frontend types"
+          ],
+          "environment": "local worktree",
+          "remaining_limit": "no independent reviewer"
+        }
+      ],
+      "remaining_acceptance": "Retained authored-study recovery and endpoint obligations remain; coordinate combined integrity UI proof with C3.",
+      "next_owner": "Integration owner",
+      "implementation_stage": "component-tested on branch",
+      "merge_state": "not merged",
+      "installed_state": "not established"
+    }
+  ],
+  "shared_file_requests": [
+    "Register tests/unit/game-review-contract.test.ts in applicable test inventories and regression index.",
+    "Remove app/domain/adapters/analysis-adapters.ts from scripts/ci-fast-lane-inventory.json.",
+    "Coordinate make ui-file FILE=minimal-game-review-acceptance.spec.ts and combined integrity UI proof after C3; one heavy-run owner."
+  ],
+  "notes": "Original audit pin retained. Architecture self-review: pure contract imports chess.js only; no React/storage side effects; board types remain public reexports; no retained runtime adapter callers found in scoped search. No independent reviewer available. Browser proof, hosted CI, merge, installation and activation not established. Initial test launch failed because shared node_modules was read-only; local isolated installation resolved it. Full tsc initially found a test mock tuple error, corrected and rerun passed."
+}

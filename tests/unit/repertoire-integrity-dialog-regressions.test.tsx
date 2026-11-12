@@ -82,28 +82,19 @@ it("unchanged repair status refresh preserves selection and all queued choices s
   expect(screen.getByRole("button", { name: "Return to study" })).not.toBeNull();
 });
 
-it("late repair evidence from the previous conflict cannot populate the next conflict", async () => {
-  let finishPersonal: (response: Response) => void = () => undefined;
-  let personalRequests = 0;
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-    if (String(input).includes("position-summary")) {
-      if (++personalRequests === 1) return new Promise<Response>(resolve => { finishPersonal = resolve; });
-      return Response.json({ moves: [] });
-    }
-    return Response.json(integrity);
-  }));
+it("changing conflicts resets selection and never requests retired personal-game evidence", async () => {
+  const fetcher = vi.fn(async (_input: RequestInfo | URL) => Response.json(integrity));
+  vi.stubGlobal("fetch", fetcher);
   render(<RepertoireIntegrityDialog repertoireId="rep" theme="brown" pieceSet="cburnett" onClose={vi.fn()} />);
   await screen.findByText(/line first-source/);
   fireEvent.click(screen.getByRole("button", { name: "Choose e4" }));
   fireEvent.click(screen.getByRole("button", { name: "Keep this response" }));
   await screen.findByText(/line second-source/);
+  expect(screen.getByText("Choose a legal move")).not.toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Choose e4" }));
-  await act(async () => {
-    finishPersonal(Response.json({ moves: [{ move_uci: "d2d4", games: 99, score_percentage: 70 }] }));
-
-  });
-  expect(screen.queryByText(/99 games/)).toBeNull();
-  expect(screen.getByText("e2e4")).not.toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Keep this response" }));
+  expect(pendingIntegrityRepairs()).toHaveLength(2);
+  expect(fetcher.mock.calls.every(([url]) => !String(url).includes("position-summary"))).toBe(true);
 });
 
 it.each(["queued", "running", "retrying", "failed"])("empty repair issues during a %s scan never claim the repertoire is clean", async scanStatus => {

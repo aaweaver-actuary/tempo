@@ -6,9 +6,7 @@ import { Chess } from "chess.js";
 import "@tempo/board-ui/styles.css";
 import { LEARNING_URL as API_URL, learningFetch } from "../../lib/study-connection";
 
-type SavedGame = { id: string; provider: string; played_at: string; color: string; result: string };
-type Comparison = { kind: string; reason?: string; ply?: number; played_uci?: string; expected_uci?: string[]; actor?: string };
-type Detail = { positions: string[]; moves: string[]; comparison: Comparison; color?: string };
+import { decodeGameReview, decodeRepertoires, decodeSavedGames, type Detail, type SavedGame } from "./contracts";
 
 export function GameReviewView() {
   const [games, setGames] = useState<SavedGame[]>([]);
@@ -34,8 +32,9 @@ export function GameReviewView() {
       return response.json();
     })).then(([saved, authored]) => {
       if (abort.signal.aborted) return;
-      setGames(saved.games ?? []);
-      const items = Array.isArray(authored) ? authored : authored.repertoires ?? [];
+      const games = decodeSavedGames(saved);
+      const items = decodeRepertoires(authored);
+      setGames(games);
       setRepertoires(items); setRepertoire(items[0]?.id ?? "");
     }).catch(error => { if (!abort.signal.aborted) setInitialError(String(error)); });
     return () => abort.abort();
@@ -55,8 +54,9 @@ export function GameReviewView() {
       const data = await response.json();
       if (request !== reviewRequest.current) return;
       if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : `Review failed (${response.status})`);
-      setDetail(data); setPly(Math.max(0, (data.comparison.ply ?? 1) - 1));
-      if (game) setColor(data.color === "black" ? "black" : "white");
+      const decoded = decodeGameReview(data, Boolean(game));
+      setDetail(decoded); setPly("ply" in decoded.comparison ? decoded.comparison.ply - 1 : 0);
+      if (game) setColor(decoded.color!);
     } catch (error) {
       if (request === reviewRequest.current) setError(String(error));
     } finally {
@@ -79,7 +79,7 @@ export function GameReviewView() {
       <button disabled={ply === 0} onClick={() => setPly(value => value - 1)}>Previous</button>
       <span> Move {ply} / {detail.moves.length} </span>
       <button disabled={ply === detail.moves.length} onClick={() => setPly(value => value + 1)}>Next</button>
-      <p>{detail.comparison.kind === "departure" ? `First departure at ply ${detail.comparison.ply}: ${detail.comparison.played_uci}; repertoire: ${detail.comparison.expected_uci?.join(", ")}.` : detail.comparison.reason ?? detail.comparison.kind.replaceAll("_", " ")}</p>
+      <p>{detail.comparison.kind === "departure" ? `First departure at ply ${detail.comparison.ply}: ${detail.comparison.played_uci}; repertoire: ${detail.comparison.expected_uci?.join(", ")}.` : detail.comparison.kind === "unavailable" ? detail.comparison.reason : detail.comparison.kind.replaceAll("_", " ")}</p>
     </div>}
     <h3>Saved games</h3>
     <ul>{games.map(game => <li key={game.id}><button disabled={busy || !repertoire} onClick={() => void load(game)}>{game.provider} · {game.played_at} · {game.result}</button></li>)}</ul>

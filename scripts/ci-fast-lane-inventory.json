@@ -1789,26 +1789,6 @@
     },
     {
       "paths": [
-        "app/domain/adapters/analysis-adapters.ts"
-      ],
-      "tier": "FAST",
-      "frontend": [
-        "tests/unit/domain-boundary-regressions.test.tsx",
-        "tests/unit/opening-evidence-home-lifecycle.test.tsx",
-        "tests/unit/opponent-reply-diagnostics-regressions.test.tsx",
-        "tests/unit/popup-shortcuts-regressions.test.tsx",
-        "tests/unit/repertoire-alternative-home-regressions.test.tsx",
-        "tests/unit/repertoire-integrity-dialog-regressions.test.tsx",
-        "tests/unit/review-attempt-confirmation-regressions.test.tsx",
-        "tests/unit/study-regressions.test.tsx",
-        "tests/unit/training-builder-handoff-regressions.test.tsx",
-        "tests/unit/training-burial-caller-regressions.test.tsx",
-        "tests/unit/validated-data-regressions.test.ts"
-      ],
-      "backend": []
-    },
-    {
-      "paths": [
         "app/domain/adapters/practice-card-adapters.ts"
       ],
       "tier": "STUDY",

@@ -29,9 +29,6 @@ export function RepertoireIntegrityDialog({
   const [payload, setPayload] =
     useState<ReturnType<typeof repertoireIntegritySchema.parse>>();
   const [selectedChoice, setSelectedChoice] = useState<{ identity: string; move: string }>();
-  const [personal, setPersonal] = useState<
-    { move_uci: string; games: number; score_percentage: number }[]
-  >([]);
   const [error, setError] = useState("");
   const [integrityLoadError, setIntegrityLoadError] = useState("");
   const [repairs, setRepairs] = useState<PendingIntegrityRepair[]>([]);
@@ -115,20 +112,9 @@ export function RepertoireIntegrityDialog({
     queueMicrotask(() => {
       if (controller.signal.aborted) return;
       setSelectedChoice(current => current?.identity === issueIdentity ? current : undefined);
-      setPersonal([]);
     });
-    if (issue?.fen) {
-      const fen = issue.fen;
-      void fetch(`${API_URL}/api/games/position-summary?fen=${encodeURIComponent(fen)}`, { signal: controller.signal })
-        .then(async response => {
-          if (!response.ok) return;
-          const games = await response.json() as { moves?: { move_uci: string; games: number; score_percentage: number }[] };
-          if (!controller.signal.aborted) setPersonal(games.moves ?? []);
-        }).catch(() => { /* Optional evidence remains unavailable; selection is independent. */ });
-
-    }
     return () => controller.abort();
-  }, [issueIdentity, issue?.fen]);
+  }, [issueIdentity]);
 
   function resolve() {
     if (!issue || !selected) return;
@@ -235,18 +221,6 @@ export function RepertoireIntegrityDialog({
                       return legal ? <Button key={move.uci} onClick={() => setSelected(move.uci)}>Choose {legal.san}</Button> : null;
                     } catch { return null; }
                   })}
-                  <p className="source-status">
-                    Personal games:{" "}
-                    {personal.length
-                      ? personal
-                          .map(
-                            (move) =>
-                              `${move.move_uci} · ${move.games} games · ${move.score_percentage}%`,
-                          )
-                          .join(" · ")
-                      : "unavailable"}{" "}
-
-                  </p>
                   <p>
                     Selected response:{" "}
                     <strong>{selected ?? "Choose a legal move"}</strong>

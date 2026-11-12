@@ -16,6 +16,7 @@
       "tests/controlled-browser/unit/storage-probes.test.ts"
     ],
     "frontend": [
+      "tests/unit/game-review-contract.test.ts",
       "tests/unit/game-review-minimal.test.tsx",
       "tests/unit/operation-result-decoder.test.ts",
       "tests/unit/study-controller-boundary.test.ts",
