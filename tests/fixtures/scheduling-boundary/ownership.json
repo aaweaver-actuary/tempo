@@ -75,6 +75,8 @@
       "typing"
     ],
     "app.study.policy.clock": [
+      "dataclasses",
+      "datetime",
       "tempo_learning_review"
     ],
     "app": [],

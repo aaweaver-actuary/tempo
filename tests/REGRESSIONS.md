@@ -6975,3 +6975,19 @@ after removing the obsolete annotation-only calendar dependency.
 This is pure/component evidence, not native or assembled acceptance. Legacy
 scheduler omitted-day defaults and G02/G03 caller adoption remain separate;
 BE003 is not closed by this slice.
+
+## Captured calendar propagation for active commands (G02)
+
+`backend/tests/test_study_calendar.py` additionally exercises actual tactic
+attempt/capture and authored completion callers with deterministic NY-midnight
+contexts: daily locks, due dates, placement and refresh agree, while original
+issued queue dates and immutable replay receipts remain distinct. New durable
+request acceptance fills a missing day once; explicit payload dates do not
+reread settings. `test_tactic_capture_boundary.py` preserves borrowed-writer
+lock order and now asserts the explicit captured placement day.
+
+Already-accepted worker payloads missing queue_date retain their existing
+fallback pending an explicit historical disposition; this slice does not
+backfill or reinterpret them. G03 callers, compatibility scheduler defaults,
+native tactic-history/admission and assembled acceptance remain outstanding.
+No BE003 closure or installed behavior is implied by these component tests.
