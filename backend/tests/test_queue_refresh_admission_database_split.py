@@ -40,7 +40,7 @@ class NativeSqlite:
         self.locks = []
 
     def execute(self, query, parameters=()):
-        return self.database.execute(query, parameters)
+        return self.execute_native(query, parameters)
 
     def execute_native(self, query, parameters=()):
         if "pg_advisory_xact_lock" in query:
