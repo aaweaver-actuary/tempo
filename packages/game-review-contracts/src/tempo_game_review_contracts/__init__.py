@@ -1,4 +1,6 @@
 """Shared values and ports; no providers, storage, component or action imports."""
+from .snapshot_bounds import RepertoireSnapshotBoundExceeded
+
 from datetime import datetime
 from typing import Literal, Protocol
 from pydantic import BaseModel, ConfigDict, Field, field_validator

@@ -171,3 +171,16 @@ def test_replay_session_preserves_promoted_marker_legality():
     start = "4k3/P7/8/8/8/8/8/4K3 w - - 3 7"
     moves = ("a7a8q", "e8d7", "a8a7")
     assert session.replay_line(start, moves) == replay_line(start, moves)
+
+
+def test_snapshot_bound_refusal_preserves_diagnostics_and_validation():
+    from tempo_game_review_contracts import RepertoireSnapshotBoundExceeded
+
+    violation = {"dimension": "source_rows", "observed": 11, "limit": 10, "observation": "exact"}
+    error = RepertoireSnapshotBoundExceeded(stage="read", sample_complete=True, violations=[violation])
+    assert str(error) == "repertoire_snapshot_exceeds_bound"
+    assert error.diagnostic() == {"code": "repertoire_snapshot_exceeds_bound", "stage": "read", "sample_complete": True, "violations": [violation]}
+    violation["observed"] = 1
+    assert error.diagnostic()["violations"][0]["observed"] == 11
+    with pytest.raises(ValueError, match="invalid_repertoire_snapshot_bound_diagnostic"):
+        RepertoireSnapshotBoundExceeded(stage="read", sample_complete=True, violations=[violation])
