@@ -18,7 +18,7 @@ export function verificationStages({ python, tier, outputDirectory }) {
 const stages = [
   ["capabilities", "node", ["scripts/check-test-capabilities.mjs", "--docker", "--loopback", "--workspace-mount"]],
   ["unit", "npm", ["run", "test:unit", "--", "--reporter=default", "--reporter=json", `--outputFile.json=${unitProfilePath}`]],
-  ["backend", python, ["-m", "pytest", "backend/tests", "-q", "-o", "cache_dir=.pytest_cache", "--rootdir=.", ...(tier === "ci-backend" ? ["--junitxml=test-results/ci/backend-tests.xml"] : [])]],
+  ["backend", python, ["-m", "pytest", "backend/tests", "database/tests/test_position_native_pytest_bridge.py", "database/tests/test_native_split_pytest_bridge.py", "-q", "-o", "cache_dir=.pytest_cache", "--rootdir=.", ...(tier === "ci-backend" ? ["--junitxml=test-results/ci/backend-tests.xml"] : [])]],
   ["rust_format", "cargo", ["fmt", "--all", "--", "--check"]],
   ["rust_lint", "cargo", ["clippy", "--all-targets", "--", "-D", "warnings"]],
   ["rust_test", "cargo", ["test", "--workspace"]],

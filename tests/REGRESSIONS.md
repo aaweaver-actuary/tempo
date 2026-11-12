@@ -6991,3 +6991,20 @@ fallback pending an explicit historical disposition; this slice does not
 backfill or reinterpret them. G03 callers, compatibility scheduler defaults,
 native tactic-history/admission and assembled acceptance remain outstanding.
 No BE003 closure or installed behavior is implied by these component tests.
+
+
+## Finite native bridge safety selection
+
+The shared backend verification command in `scripts/verification-stages.mjs`
+explicitly selects `database/tests/test_position_native_pytest_bridge.py` and
+`database/tests/test_native_split_pytest_bridge.py` alongside `backend/tests`;
+backend directory discovery alone does not cover these files. This applies to
+local Python/backend tiers and the CI backend stage, retaining its original
+discovery root and existing exclusion guards. The CI reliability runner asserts
+both explicit selections. Focused execution is
+`python -m pytest database/tests/test_position_native_pytest_bridge.py database/tests/test_native_split_pytest_bridge.py -q --rootdir=.`.
+The twelve component cases cover exact selection/phase evidence, owned database
+and marker checks, cleanup failure, environment/pool restoration and retained
+split assertions. They use fakes and do not constitute native PostgreSQL,
+browser, migration or installed acceptance; those require the admitted real
+finite native selections and their non-skipped execution receipts.
