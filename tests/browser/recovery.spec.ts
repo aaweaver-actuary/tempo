@@ -435,14 +435,21 @@ for (const fault of ["malformed", "foreign"] as const) {
     await expect.poll(() => corruptReads).toBeGreaterThan(0);
     const original = await page.evaluate(() => localStorage.getItem("tempo-pending-settings-save-v1"));
     expect(JSON.parse(original!)).toMatchObject({ operationId });
-    await expect(page.getByText("Saved.", { exact: true })).toHaveCount(0);
+    const settingsMessages = () => page.evaluate(() =>
+      (JSON.parse(localStorage.getItem("tempo-notifications-v1") ?? "[]") as { source: string; message: string }[])
+        .filter(record => record.source === "settings").map(record => record.message));
+    await expect.poll(settingsMessages).toContain("Settings save is pending. Retry with the same changes to check it.");
+    expect(await settingsMessages()).not.toContain("Saved.");
     await page.reload();
     await navigate(page, "Settings");
     expect(await page.evaluate(() => localStorage.getItem("tempo-pending-settings-save-v1"))).toBe(original);
     const before = await (await request.get(`${api}/operations/${operationId}`)).json();
     corrupt = false;
     await page.getByRole("button", { name: "Save settings", exact: true }).click();
-    await expect(page.getByText("Saved.", { exact: true })).toBeVisible();
+    await expect.poll(settingsMessages).toContain("Saved.");
+    await page.getByRole("button", { name: "Notifications", exact: true }).click();
+    await page.getByRole("region", { name: "Notifications", exact: true }).getByRole("button", { name: "All", exact: true }).click();
+    await expect(page.getByRole("region", { name: "Notifications", exact: true }).getByText("Saved.", { exact: true })).toBeVisible();
     expect(postedKeys).toEqual([operationId]);
     expect(await page.evaluate(() => localStorage.getItem("tempo-pending-settings-save-v1"))).toBeNull();
     expect(await (await request.get(`${api}/operations/${operationId}`)).json()).toEqual(before);
@@ -578,18 +585,26 @@ for (const fault of ["malformed", "foreign"] as const) {
           : { ...receipt, state: "invalid-state" } });
       } else await route.fulfill({ response });
     });
-    await navigate(page, "Repertoire");
+    await page.getByRole("button", { name: "Repertoire", exact: true }).click();
     await page.getByRole("button", { name: /Import PGN/ }).click();
     const file = { name: `receipt-${fault}.pgn`, mimeType: "application/x-chess-pgn",
       buffer: Buffer.from('[Event "Receipt recovery"]\n\n1. e4 e5 2. Nf3 *') };
     await page.locator('input[type="file"]').setInputFiles(file);
     await page.getByRole("button", { name: "Import repertoire", exact: true }).click();
     await expect.poll(() => corruptReads).toBeGreaterThan(0);
+    const dialog = page.getByRole("dialog");
+    // Observe the consumer's rejection, not merely delivery of a corrupt response.
+    if (fault === "foreign") await expect(dialog.getByRole("alert")).toHaveText(
+      "The service returned a different import operation identity. Check the local service before retrying.");
+    else await expect(dialog.getByRole("status")).toContainText("Import confirmation is unavailable");
+    const commandConfirmation = () => dialog.getByText("Import confirmed", { exact: true })
+      .or(dialog.getByRole("heading", { name: /^(Imported|PGN saved)$/ }));
+    await expect(commandConfirmation()).toHaveCount(0);
     const original = await page.evaluate(() => localStorage.getItem("tempo-pending-pgn-import-v1"));
     expect(JSON.parse(original!)).toMatchObject({ operationId });
     await expect(page.getByRole("heading", { name: "Imported", exact: true })).toHaveCount(0);
     await page.reload();
-    await navigate(page, "Repertoire");
+    await page.getByRole("button", { name: "Repertoire", exact: true }).click();
     await page.getByRole("button", { name: /Import PGN/ }).click();
     await page.locator('input[type="file"]').setInputFiles(file);
     expect(await page.evaluate(() => localStorage.getItem("tempo-pending-pgn-import-v1"))).toBe(original);
@@ -597,7 +612,9 @@ for (const fault of ["malformed", "foreign"] as const) {
     expect(actualReceipt).toMatchObject({ operation_id: operationId, state: "complete" });
     corrupt = false;
     await page.getByRole("button", { name: "Check again", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "Imported", exact: true })).toBeVisible();
+    // Command confirmation precedes graph/queue publication. A truthful
+    // "Import confirmed" while preparation runs is not a claim of ready cards.
+    await expect(commandConfirmation()).toBeVisible();
     expect(postedKeys).toEqual([operationId]);
     expect(await page.evaluate(() => localStorage.getItem("tempo-pending-pgn-import-v1"))).toBeNull();
     expect(await (await request.get(`${api}/operations/${operationId}`)).json()).toEqual(actualReceipt);
@@ -797,10 +814,11 @@ productTest(receiptFault === "none" ? "repair choices advance before a delayed s
   let savedOnServer = false;
   let corruptReceipts = receiptFault !== "none";
   let corruptedReads = 0;
+  let corruptedOperationId = "";
   await page.route("**/api/operations/*", async route => {
     const response = await route.fetch();
     const receipt = await response.json();
-    if (corruptReceipts && receipt.state === "complete") {
+    if (corruptReceipts && receipt.operation_id === corruptedOperationId && receipt.state === "complete") {
       corruptedReads++;
       await route.fulfill({ response, json: receiptFault === "foreign"
         ? { ...receipt, operation_id: `foreign-${receipt.operation_id}` }
@@ -810,6 +828,7 @@ productTest(receiptFault === "none" ? "repair choices advance before a delayed s
   const submittedKeys: string[] = [];
   await page.route("**/integrity/issues/*/resolve", async route => {
     submittedKeys.push(route.request().headers()["idempotency-key"]);
+    corruptedOperationId = submittedKeys.at(-1)!;
     const response = await route.fetch();
     if (receiptFault !== "none") {
       const operationId = submittedKeys.at(-1)!;
@@ -820,6 +839,26 @@ productTest(receiptFault === "none" ? "repair choices advance before a delayed s
     if (submittedKeys.length === 1) await saveHold;
     await route.fulfill({ response }).catch(() => { /* Reload intentionally loses the first response. */ });
   });
+  // Wait for the consumer's durable rejection, not merely route delivery. A
+  // retained record alone could already have advanced incorrectly to validation.
+  const assertRejectedWithoutAdvancing = async (original: Record<string, unknown>) => {
+    const operationId = String(original.operationId);
+    const readSaved = () => page.evaluate(id => {
+      const raw = localStorage.getItem(`tempo-pending-integrity-repairs-v3:${id}`);
+      return raw === null ? null : JSON.parse(raw);
+    }, operationId);
+    const rejection = receiptFault === "foreign"
+      ? "The repair receipt has an unrelated identity." : "Invalid repair receipt data.";
+    await expect.poll(async () => (await readSaved())?.error).toBe(rejection);
+    const rejected = await readSaved();
+    expect(rejected.attempts).toBeGreaterThan(Number(original.attempts ?? 0));
+    expect(rejected.nextAttemptAt).toBeGreaterThan(0);
+    // Only retry accounting/error may advance. Choice, original operation,
+    // validation task and pending retry authority must all remain unchanged.
+    for (const key of ["operationId", "repertoireId", "issueId", "signature", "selectedMoveUci",
+      "queuedAt", "phase", "taskId", "taskGeneration", "retryTaskId", "retryOperationId", "retry"])
+      expect(rejected[key], `Rejected receipt changed ${key}`).toEqual(original[key]);
+  };
   try {
     await page.goto("/");
     await page.getByRole("button", { name: "Repertoire", exact: true }).click();
@@ -838,8 +877,7 @@ productTest(receiptFault === "none" ? "repair choices advance before a delayed s
     await page.reload(); releaseSave?.();
     if (receiptFault !== "none") {
       await expect.poll(() => corruptedReads).toBeGreaterThan(0);
-      const retained = await page.evaluate(id => localStorage.getItem(`tempo-pending-integrity-repairs-v3:${id}`), savedChoices[0].operationId);
-      expect(JSON.parse(retained!)).toMatchObject({ operationId: savedChoices[0].operationId });
+      await assertRejectedWithoutAdvancing(savedChoices[0]);
       expect(submittedKeys).toHaveLength(1);
       corruptReceipts = false;
       await page.reload();
@@ -879,10 +917,16 @@ productTest(receiptFault === "none" ? "repair choices advance before a delayed s
       localStorage.setItem(`tempo-pending-integrity-repairs-v3:${repair.operationId}`, JSON.stringify(restored));
     }, { repair: savedChoices[0], graphTask: graph });
     let retryId = "";
+    let pendingRetry: Record<string, unknown> | undefined;
     if (receiptFault !== "none") {
       corruptReceipts = true;
       corruptedReads = 0;
       await page.route(`**/api/system/tasks/${graph.id}/retry`, async route => {
+        corruptedOperationId = route.request().headers()["idempotency-key"];
+        pendingRetry = await page.evaluate(id => JSON.parse(localStorage.getItem(
+          `tempo-pending-integrity-repairs-v3:${id}`)!), savedChoices[0].operationId);
+        expect(pendingRetry).toMatchObject({ retryOperationId: corruptedOperationId,
+          retry: { kind: "task", taskId: graph.id, taskResetConfirmed: false } });
         const response = await route.fetch();
         expect(response.ok()).toBe(true);
         const originalRetryId = route.request().headers()["idempotency-key"];
@@ -907,9 +951,9 @@ productTest(receiptFault === "none" ? "repair choices advance before a delayed s
     const receiptBefore = await (await request.get(`${api}/operations/${retryId}`)).json();
     if (receiptFault !== "none") {
       await expect.poll(() => corruptedReads).toBeGreaterThan(0);
-      const retained = await page.evaluate(id => localStorage.getItem(`tempo-pending-integrity-repairs-v3:${id}`), savedChoices[0].operationId);
-      expect(JSON.parse(retained!)).toMatchObject({ operationId: savedChoices[0].operationId });
-      expect(retained).toContain(retryId);
+      expect(pendingRetry).toBeDefined();
+      expect(pendingRetry!.retryOperationId).toBe(retryId);
+      await assertRejectedWithoutAdvancing(pendingRetry!);
       corruptReceipts = false;
       await page.reload();
     }
