@@ -204,6 +204,8 @@ it("native prefix durability uses only the finite registered command and origina
   expect(fixture).toContain('POSTGRES_SCHEMA_VERSION');
   const runner=readFileSync('database/tests/test-postgres-docker.mjs','utf8');
   expect(runner).toContain('assert.deepEqual(replayedSplit, split,');
+  expect(runner).toContain('["exec", "-i", "-e", "TEMPO_TEST_INSTANCE=disposable", writer.id, "python"');
+  expect(runner).toContain('measureScenario("failure_diagnostics",');
   expect(runner).toContain('native-command-durability-not-HTTP');
   expect(runner).not.toContain('get(`cards/${splitCard.id}/prefix-split`)');
 });

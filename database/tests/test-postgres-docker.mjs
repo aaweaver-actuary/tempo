@@ -883,7 +883,7 @@ async function verifyNativeStudyPrefixSplit(card, repertoireId, operationId) {
   assert.equal(writer.labels['com.docker.compose.project'], project);
   assert.equal(writer.labels['com.docker.compose.service'], 'foreground-worker');
   assert.equal(writer.labels['tempo.resource-owner'], process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN);
-  const proof = run("docker", ["exec", "-i", writer.id, "python", "-", card.id, repertoireId, operationId, String(card.revision)], {
+  const proof = run("docker", ["exec", "-i", "-e", "TEMPO_TEST_INSTANCE=disposable", writer.id, "python", "-", card.id, repertoireId, operationId, String(card.revision)], {
     input: readFileSync("tests/fixtures/postgres-study-prefix-split.py", "utf8"),
     stdio: ['pipe', 'pipe', 'inherit'], encoding: 'utf8', env: environment,
   });
@@ -1580,7 +1580,8 @@ try {
   await executePostgresTestPlan(stages, actions, measureScenario, async () => {
     // Capture failure diagnostics before the executor tears down this test stack.
     try {
-      if (activeStudyRepertoireId) await reportStudyFixtureDiagnostics(activeStudyRepertoireId);
+      if (activeStudyRepertoireId) await measureScenario("failure_diagnostics",
+        () => reportStudyFixtureDiagnostics(activeStudyRepertoireId));
     } finally {
       if (resourcesCreated) spawnSync("docker", [...compose, "logs", "--tail=80"],
         { stdio: "inherit", env: environment });
