@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from app.contracts import studies as legacy
-from app.services.study_portable import validate_bundle
+from pydantic import TypeAdapter, ValidationError
 from app.contracts import study_exercises as owned
 
 
@@ -67,11 +67,20 @@ def test_checked_in_stalemate_corpus_validates_with_legacy_learning_contract_bou
     corpus,
 ):
     bundle = json.loads(corpus.read_text())
-    tables = validate_bundle(bundle)
-    assert (
-        len(tables["study_exercises"]) == len(bundle["tables"]["study_exercises"]) > 0
-    )
-    assert (
-        tables["study_exercise_revisions"]
-        == bundle["tables"]["study_exercise_revisions"]
-    )
+    revisions = bundle["tables"]["study_exercise_revisions"]
+    assert revisions
+    adapter = TypeAdapter(owned.ExerciseSpecification)
+    for revision in revisions:
+        specification = json.loads(revision["specification_json"])
+        assert adapter.validate_python(specification) == TypeAdapter(legacy.ExerciseSpecification).validate_python(specification)
+
+
+def test_study_envelopes_keep_defaults_and_reject_extra_fields():
+    assert legacy.StudyCreate(title="Study").model_dump() == {"title": "Study", "description": "", "source": {}}
+    assert legacy.StudyImportCommitRequest(chapter_id="c", raw_pgn="p", preview_digest="d", selected_records=[]).mode == "append"
+    for name in REQUEST_ENVELOPES:
+        model = getattr(legacy, name)
+        assert model.model_config["extra"] == "forbid"
+        assert model.model_json_schema()
+    with pytest.raises(ValidationError):
+        legacy.StudyCreate(title="Study", unexpected=True)
