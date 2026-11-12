@@ -589,8 +589,13 @@ def test_native_refresh_admits_due_carrier_and_reuses_pending(monkeypatch):
                 "prepare_queue_head",
                 lambda *a: lambda d: {"id": entry},
             )
+            def validate_available_attempt(database, entry_id, card_id, revision, *, current_day):
+                assert database is port
+                assert (entry_id, card_id, revision) == (entry, "card", 1)
+                assert current_day == day
+
             monkeypatch.setattr(
-                queue_commands, "validate_available_attempt", lambda *a: None
+                queue_commands, "validate_available_attempt", validate_available_attempt
             )
             monkeypatch.setattr(
                 legacy_study_remediation, "bind_first_issuance", lambda *a: None

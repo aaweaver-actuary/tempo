@@ -16,6 +16,7 @@ import uuid
 
 NODEID = 'database/tests/position_study/test_position_grade_effects.py::test_native_two_decisions_and_late_failure_rollback'
 NODEIDS = {
+    'position-queue-admission': 'backend/tests/test_position_queue_admission.py::test_native_refresh_admits_due_carrier_and_reuses_pending',
     'position-grade-effects': NODEID,
     'position-introductions': 'backend/tests/test_position_introductions.py::test_native_authorized_introduction_writes_fresh_state_only_after_admission',
 }

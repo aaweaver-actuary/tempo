@@ -1420,3 +1420,25 @@ test('position introductions selects the exact owned native bridge and cleans up
   assert(source.includes('TEMPO_NATIVE_POSITION_CHECK=${check}'));
   assert(source.includes('checks: {[check]: evidence}'));
 });
+
+
+test('position queue admission selects only its exact bridge and blocks browser after failure', async () => {
+  const check = 'position-queue-admission';
+  const stages = postgresTestStages(parse(['--mode', 'browser', '--native-check', check]));
+  assert(stages.indexOf(check) < stages.indexOf('browser'));
+  assert(!stages.includes('position-introductions'));
+  assert(!stages.includes('position-grade-effects'));
+  for (const args of [
+    ['--mode', 'browser', '--native-check', check, '--native-check', check],
+    ['--mode', 'browser', '--native-check', 'backend/tests/test_position_queue_admission.py::test_native_refresh_admits_due_carrier_and_reuses_pending'],
+    ['--mode', 'full', '--native-check', check],
+  ]) assert.throws(() => parse(args));
+  const observed = [];
+  const actions = Object.fromEntries(stages.map(stage => [stage, async () => {
+    observed.push(stage);
+    if (stage === check) throw new Error('admission failed');
+  }]));
+  await assert.rejects(executePostgresTestPlan(stages, actions, (_stage, run) => run()), /admission failed/);
+  assert.equal(observed.at(-1), 'cleanup');
+  assert(!observed.includes('browser'));
+});

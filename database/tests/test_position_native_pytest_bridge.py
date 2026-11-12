@@ -63,6 +63,28 @@ class BridgeTests(unittest.TestCase):
         record.collected = [bridge.NODEID]
         self.assertFalse(record.passed(0))
 
+    def test_admission_selection_requires_its_exact_non_skipped_three_phase_case(self):
+        nodeid = bridge.selected_nodeid({'TEMPO_NATIVE_POSITION_CHECK': 'position-queue-admission'})
+        self.assertEqual(nodeid, 'backend/tests/test_position_queue_admission.py::test_native_refresh_admits_due_carrier_and_reuses_pending')
+        with self.assertRaisesRegex(RuntimeError, 'Unknown native position check'):
+            bridge.selected_nodeid({'TEMPO_NATIVE_POSITION_CHECK': nodeid})
+        record = bridge.ExactCase(nodeid)
+        record.collected = [nodeid]
+        for phase in ('setup', 'call', 'teardown'):
+            record.pytest_runtest_logreport(SimpleNamespace(nodeid=nodeid, when=phase, outcome='passed'))
+        self.assertTrue(record.passed(0))
+        for phase in range(3):
+            for outcome in ('skipped', 'failed'):
+                record.reports[phase]['status'] = outcome
+                self.assertFalse(record.passed(0))
+            record.reports[phase]['status'] = 'passed'
+        for collected in ([], [nodeid, nodeid], [bridge.NODEIDS['position-introductions']]):
+            record.collected = collected
+            self.assertFalse(record.passed(0))
+        record.collected = [nodeid]
+        record.reports.pop()
+        self.assertFalse(record.passed(0))
+
     def test_refuse_foreign_environment(self):
         env = {'TEMPO_TEST_INSTANCE': 'disposable', 'TEMPO_TEST_COMPOSE_PROJECT': 'tempo-pg-regressions-123-abcdef12', 'TEMPO_NATIVE_CANDIDATE_REVISION': 'a' * 40}
         self.assertEqual(bridge.identity(env)[0], env['TEMPO_TEST_COMPOSE_PROJECT'])

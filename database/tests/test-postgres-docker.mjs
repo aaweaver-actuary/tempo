@@ -1344,7 +1344,7 @@ const actions = {
       }),
     });
   },
-  ...Object.fromEntries(['position-grade-effects', 'position-introductions'].map(check => [check, async () => {
+  ...Object.fromEntries(['position-grade-effects', 'position-introductions', 'position-queue-admission'].map(check => [check, async () => {
     assertDevelopmentProjectOwned(project);
     const imageReference = run('docker', [...compose, 'images', '-q', 'schema'],
       {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8'}).stdout.trim();
