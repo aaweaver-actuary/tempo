@@ -397,6 +397,58 @@ test("failed settings reads cannot overwrite authoritative settings with default
   ).toBeVisible();
 });
 
+for (const fault of ["malformed", "foreign"] as const) {
+  productTest(`${fault} settings receipt retains the original save across reload without duplicate mutation`, async ({ page, request }) => {
+    productTest.setTimeout(120_000);
+    await prepareUI(page);
+    let operationId = "";
+    let corrupt = true;
+    let corruptReads = 0;
+    const postedKeys: string[] = [];
+    await page.route("**/api/settings", async route => {
+      if (route.request().method() !== "PUT") return route.continue();
+      operationId = route.request().headers()["idempotency-key"];
+      postedKeys.push(operationId);
+      const response = await route.fetch();
+      expect(response.ok(), await response.text()).toBe(true);
+      await expect.poll(async () => (await (await request.get(`${api}/operations/${operationId}`)).json()).state,
+        { timeout: 30_000 }).toBe("complete");
+      await route.fulfill({ status: 202, json: { operation_id: operationId, state: "pending" } });
+    });
+    await page.route("**/api/operations/*", async route => {
+      const response = await route.fetch();
+      const receipt = await response.json();
+      if (receipt.operation_id !== operationId) return route.fulfill({ response });
+      if (corrupt) {
+        corruptReads++;
+        return route.fulfill({ response, json: fault === "foreign"
+          ? { ...receipt, operation_id: `foreign-${operationId}` }
+          : { ...receipt, state: "invalid-state" } });
+      }
+      // The local settings owner intentionally accepts old receipts without an
+      // identity field. The foreign case instead settles with its matching ID.
+      if (fault === "malformed") delete receipt.operation_id;
+      return route.fulfill({ response, json: receipt });
+    });
+    await navigate(page, "Settings");
+    await page.getByRole("button", { name: "Save settings", exact: true }).click();
+    await expect.poll(() => corruptReads).toBeGreaterThan(0);
+    const original = await page.evaluate(() => localStorage.getItem("tempo-pending-settings-save-v1"));
+    expect(JSON.parse(original!)).toMatchObject({ operationId });
+    await expect(page.getByText("Saved.", { exact: true })).toHaveCount(0);
+    await page.reload();
+    await navigate(page, "Settings");
+    expect(await page.evaluate(() => localStorage.getItem("tempo-pending-settings-save-v1"))).toBe(original);
+    const before = await (await request.get(`${api}/operations/${operationId}`)).json();
+    corrupt = false;
+    await page.getByRole("button", { name: "Save settings", exact: true }).click();
+    await expect(page.getByText("Saved.", { exact: true })).toBeVisible();
+    expect(postedKeys).toEqual([operationId]);
+    expect(await page.evaluate(() => localStorage.getItem("tempo-pending-settings-save-v1"))).toBeNull();
+    expect(await (await request.get(`${api}/operations/${operationId}`)).json()).toEqual(before);
+  });
+}
+
 test("frontend errors show a redacted copyable debug bundle", async ({ page }) => {
   await prepareUI(page);
   await page.evaluate(() => {
@@ -499,6 +551,60 @@ test("unknown PGN receipt recovers the same operation after reload and matching 
   }
   expect(await page.evaluate(() => localStorage.getItem("tempo-pending-pgn-import-v1"))).toBeNull();
 });
+
+for (const fault of ["malformed", "foreign"] as const) {
+  productTest(`${fault} PGN receipt preserves the original import journal until genuine settlement`, async ({ page, request }) => {
+    productTest.setTimeout(120_000);
+    await prepareUI(page);
+    let operationId = "";
+    let corrupt = true;
+    let corruptReads = 0;
+    const postedKeys: string[] = [];
+    await page.route("**/api/imports/pgn", async route => {
+      operationId = route.request().headers()["idempotency-key"];
+      postedKeys.push(operationId);
+      const response = await route.fetch();
+      expect(response.ok(), await response.text()).toBe(true);
+      // Preserve the real import. Lose only its immediate acknowledgment.
+      await route.fulfill({ status: 202, json: { operation_id: operationId, state: "pending" } });
+    });
+    await page.route("**/api/operations/*", async route => {
+      const response = await route.fetch();
+      const receipt = await response.json();
+      if (corrupt && receipt.operation_id === operationId && receipt.state === "complete") {
+        corruptReads++;
+        await route.fulfill({ response, json: fault === "foreign"
+          ? { ...receipt, operation_id: `foreign-${operationId}` }
+          : { ...receipt, state: "invalid-state" } });
+      } else await route.fulfill({ response });
+    });
+    await navigate(page, "Repertoire");
+    await page.getByRole("button", { name: /Import PGN/ }).click();
+    const file = { name: `receipt-${fault}.pgn`, mimeType: "application/x-chess-pgn",
+      buffer: Buffer.from('[Event "Receipt recovery"]\n\n1. e4 e5 2. Nf3 *') };
+    await page.locator('input[type="file"]').setInputFiles(file);
+    await page.getByRole("button", { name: "Import repertoire", exact: true }).click();
+    await expect.poll(() => corruptReads).toBeGreaterThan(0);
+    const original = await page.evaluate(() => localStorage.getItem("tempo-pending-pgn-import-v1"));
+    expect(JSON.parse(original!)).toMatchObject({ operationId });
+    await expect(page.getByRole("heading", { name: "Imported", exact: true })).toHaveCount(0);
+    await page.reload();
+    await navigate(page, "Repertoire");
+    await page.getByRole("button", { name: /Import PGN/ }).click();
+    await page.locator('input[type="file"]').setInputFiles(file);
+    expect(await page.evaluate(() => localStorage.getItem("tempo-pending-pgn-import-v1"))).toBe(original);
+    const actualReceipt = await (await request.get(`${api}/operations/${operationId}`)).json();
+    expect(actualReceipt).toMatchObject({ operation_id: operationId, state: "complete" });
+    corrupt = false;
+    await page.getByRole("button", { name: "Check again", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Imported", exact: true })).toBeVisible();
+    expect(postedKeys).toEqual([operationId]);
+    expect(await page.evaluate(() => localStorage.getItem("tempo-pending-pgn-import-v1"))).toBeNull();
+    expect(await (await request.get(`${api}/operations/${operationId}`)).json()).toEqual(actualReceipt);
+    const repertoires = (await (await request.get(`${api}/repertoires`)).json()).repertoires;
+    expect(repertoires.filter((item: { id: string }) => item.id === actualReceipt.response.repertoire_id)).toHaveLength(1);
+  });
+}
 
 test("legacy pending PGN import promptly shows its diagnostic and Check again only inspects the original operation", async ({ page }) => {
   await page.clock.install();
@@ -626,7 +732,9 @@ test("discarding an unknown PGN import permits a different file after reload", a
   expect(submittedKeys[0]).not.toBe(oldOperationId);
 });
 
-productTest("repair choices advance before a delayed save and survive reload through real PostgreSQL receipts", async ({ page, request }) => {
+for (const receiptFault of ["none", "malformed", "foreign"] as const) {
+productTest(receiptFault === "none" ? "repair choices advance before a delayed save and survive reload through real PostgreSQL receipts"
+  : `${receiptFault} integrity receipts preserve original repair and retry journals through real PostgreSQL recovery`, async ({ page, request }) => {
   // Allow setup plus the full eventual-recovery poll below.
   productTest.setTimeout(240_000);
   await prepareUI(page);
@@ -687,10 +795,27 @@ productTest("repair choices advance before a delayed save and survive reload thr
   let releaseSave: (() => void) | undefined;
   const saveHold = new Promise<void>(resolve => { releaseSave = resolve; });
   let savedOnServer = false;
+  let corruptReceipts = receiptFault !== "none";
+  let corruptedReads = 0;
+  await page.route("**/api/operations/*", async route => {
+    const response = await route.fetch();
+    const receipt = await response.json();
+    if (corruptReceipts && receipt.state === "complete") {
+      corruptedReads++;
+      await route.fulfill({ response, json: receiptFault === "foreign"
+        ? { ...receipt, operation_id: `foreign-${receipt.operation_id}` }
+        : { ...receipt, state: "not-a-receipt-state" } });
+    } else await route.fulfill({ response });
+  });
   const submittedKeys: string[] = [];
   await page.route("**/integrity/issues/*/resolve", async route => {
     submittedKeys.push(route.request().headers()["idempotency-key"]);
     const response = await route.fetch();
+    if (receiptFault !== "none") {
+      const operationId = submittedKeys.at(-1)!;
+      await expect.poll(async () => (await (await request.get(`${api}/operations/${operationId}`)).json()).state,
+        { timeout: 60_000 }).toBe("complete");
+    }
     savedOnServer = true;
     if (submittedKeys.length === 1) await saveHold;
     await route.fulfill({ response }).catch(() => { /* Reload intentionally loses the first response. */ });
@@ -711,6 +836,14 @@ productTest("repair choices advance before a delayed save and survive reload thr
       .map(key => JSON.parse(localStorage.getItem(key)!)));
     expect(savedChoices).toHaveLength(1);
     await page.reload(); releaseSave?.();
+    if (receiptFault !== "none") {
+      await expect.poll(() => corruptedReads).toBeGreaterThan(0);
+      const retained = await page.evaluate(id => localStorage.getItem(`tempo-pending-integrity-repairs-v3:${id}`), savedChoices[0].operationId);
+      expect(JSON.parse(retained!)).toMatchObject({ operationId: savedChoices[0].operationId });
+      expect(submittedKeys).toHaveLength(1);
+      corruptReceipts = false;
+      await page.reload();
+    }
     await expect(page.getByRole("dialog", { name: "Choose one response per position" })).toHaveCount(0);
     // Prove eventual recovery through graph and integrity publication, not a
     // 20-second performance SLO for the asynchronous background pipeline.
@@ -746,6 +879,22 @@ productTest("repair choices advance before a delayed save and survive reload thr
       localStorage.setItem(`tempo-pending-integrity-repairs-v3:${repair.operationId}`, JSON.stringify(restored));
     }, { repair: savedChoices[0], graphTask: graph });
     let retryId = "";
+    if (receiptFault !== "none") {
+      corruptReceipts = true;
+      corruptedReads = 0;
+      await page.route(`**/api/system/tasks/${graph.id}/retry`, async route => {
+        const response = await route.fetch();
+        expect(response.ok()).toBe(true);
+        const originalRetryId = route.request().headers()["idempotency-key"];
+        await expect.poll(async () => (await (await request.get(`${api}/operations/${originalRetryId}`)).json()).state,
+          { timeout: 60_000 }).toBe("complete");
+        // The mutation is genuine; only its acknowledgment is delayed so that
+        // the browser must inspect the original durable operation receipt.
+        await route.fulfill({ status: 202, json: {
+          operation_id: route.request().headers()["idempotency-key"], state: "pending",
+        } });
+      });
+    }
     page.on("request", requestEvent => {
       if (requestEvent.method() === "POST" && new URL(requestEvent.url()).pathname === `/api/system/tasks/${graph.id}/retry`)
         retryId = requestEvent.headers()["idempotency-key"] ?? "";
@@ -756,6 +905,14 @@ productTest("repair choices advance before a delayed save and survive reload thr
     await expect.poll(async () => (await (await request.get(`${api}/operations/${retryId}`)).json()).state,
       { timeout: 60_000 }).toBe("complete");
     const receiptBefore = await (await request.get(`${api}/operations/${retryId}`)).json();
+    if (receiptFault !== "none") {
+      await expect.poll(() => corruptedReads).toBeGreaterThan(0);
+      const retained = await page.evaluate(id => localStorage.getItem(`tempo-pending-integrity-repairs-v3:${id}`), savedChoices[0].operationId);
+      expect(JSON.parse(retained!)).toMatchObject({ operationId: savedChoices[0].operationId });
+      expect(retained).toContain(retryId);
+      corruptReceipts = false;
+      await page.reload();
+    }
     const replay = await request.post(`${api}/system/tasks/${graph.id}/retry`, { headers: { "Idempotency-Key": retryId } });
     expect(replay.ok()).toBe(true);
     expect(await (await request.get(`${api}/operations/${retryId}`)).json()).toMatchObject({
@@ -767,6 +924,7 @@ productTest("repair choices advance before a delayed save and survive reload thr
     expect(recovered).toMatchObject({ state: "complete", generation: graph.generation });
   } finally { releaseSave?.(); }
 });
+}
 
 test("repair confirmation during a held training piece preserves the drag and active attempt", async ({ page }, testInfo) => {
   let releaseIntegrity: (() => void) | undefined;

@@ -24,7 +24,7 @@ for (const width of [390, 1280]) {
     const repertoireId = imported.repertoire_id as string;
     await confirmed(request, await request.put(`${api}/repertoires/${repertoireId}/settings`, { data: { new_cards_per_day: 2 } }));
     const queue = async () => (await (await request.get(`${api}/queue/window?limit=20`)).json()).cards as
-      { id: string; moves: string[]; repertoire_id?: string }[];
+      { id: string; queue_entry_id: number; moves: string[]; repertoire_id?: string }[];
     let rootId = "";
     await expect.poll(async () => {
       const cards = await queue();
@@ -38,7 +38,14 @@ for (const width of [390, 1280]) {
     await move(page, "e2", "e4");
     await expect(page.locator(".board-frame").first()).toHaveAttribute("data-fen", /4p3\/4P3/);
     await move(page, "g1", "f3");
-    await reviewSent;
+    const submitted = await reviewSent;
+    const operationId = submitted.headers()["idempotency-key"];
+    expect(operationId).toMatch(/^review-attempt:/);
+    let durableReceipt: Record<string, unknown> = {};
+    await expect.poll(async () => {
+      durableReceipt = await (await request.get(`${api}/operations/${encodeURIComponent(operationId)}`)).json();
+      return durableReceipt;
+    }, { timeout: 30_000 }).toMatchObject({ operation_id: operationId, state: "complete", response: { persisted: true } });
     await expect.poll(async () => (await queue()).some(card => card.moves.join(",") === "b8c6,f1b5"),
       { timeout: 30_000, message: "A saved practice opens the immediate child without a maturity wait" }).toBe(true);
     const summary = await (await request.get(`${api}/repertoires/${repertoireId}/statistics?window=all`)).json();
@@ -46,5 +53,14 @@ for (const width of [390, 1280]) {
     expect(summary.cards.learning).toBe(2);
     expect(summary.cards.locked).toBe(1);
     expect((await queue()).some(card => card.moves.join(",") === "a7a6,b5a4")).toBe(false);
+    const child = (await queue()).find(card => card.moves.join(",") === "b8c6,f1b5")!;
+    await expect(page.locator("#train")).toHaveAttribute("data-queue-entry-id", String(child.queue_entry_id));
+    await expect(page.locator(".board-frame").first()).toHaveAttribute("data-input-enabled", "true");
+    // The opponent's Nc6 is automatic; a real legal bishop move proves this is
+    // an authoritative playable successor, not merely a queued/painted card.
+    await expect(page.locator(".board-frame").first()).toHaveAttribute("data-fen", /2n5/);
+    await move(page, "f1", "b5");
+    await expect(page.locator(".board-frame").first()).toHaveAttribute("data-fen", /1B2p3/);
+    expect(await (await request.get(`${api}/operations/${encodeURIComponent(operationId)}`)).json()).toEqual(durableReceipt);
   });
 }
