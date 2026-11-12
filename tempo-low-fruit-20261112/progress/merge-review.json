@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "review_date": "2026-11-12",
+  "baseline_revision": "40172873fdf5d134a35b872b24858917287cb81e",
+  "reviewed_through_revision": "b679496e257bc8b72d6a99e38235d5d502c1dd27",
+  "scope": "Accepted merged-source progress for the first low-hanging-fruit batch. Original audit observations, acceptance criteria, source links, coverage and baseline counts remain unchanged.",
+  "installation_state": "Not assessed in this merge review. No installed recovery or human review-to-next claim.",
+  "updates": [
+    {
+      "finding_id": "BE017",
+      "status": "Closed",
+      "assignee": "Creator B / integration",
+      "pr": 988,
+      "code_revision": "313bfbd1650fcfb71e444297043090bfd39998bb",
+      "merged_revision": "d3b71226590ee64bb6bee9eeec0795377cb61878",
+      "summary": "Removed the ten unused duplicate request envelopes. Actual callers retain app.contracts.studies; shared executable-model identity and schemas are preserved.",
+      "evidence": "Independent source/caller review and test_study_contract_identity.py: 3 passed, including the real checked-in exercise corpus. No remaining callers of the removed envelopes.",
+      "remaining_acceptance": "None for BE017. Cross-language grading parity remains separately tracked in FE009.",
+      "workbook_evidence": "PR #988 merged d3b71226. Three contract/corpus tests passed; no removed-envelope callers. https://github.com/aaweaver-actuary/tempo/pull/988"
+    },
+    {
+      "finding_id": "ST008",
+      "status": "Closed",
+      "assignee": "Creator B / integration",
+      "pr": 989,
+      "code_revision": "60c97bef04f4c334643fc318091fcb086ec4f529",
+      "merged_revision": "7f76576f50c9cbe1566818fa0c7b4c833bb5841d",
+      "summary": "Removed 17 uncalled authoring helper definitions. The remaining initial_depth reader and its single live caller are unchanged; current authoring adapters retain ownership.",
+      "evidence": "Independent full-source scan and unchanged initial_depth AST. Current PGN selection: 10 passed. Full selected file remains 14 passed/6 failed on both base and head; the same six failures import already removed retained-import modules and are separate proof debt.",
+      "remaining_acceptance": "None for ST008. The six pre-existing stale retained-import test failures remain with BE021/ST012/ST013 proof cleanup; they are not counted as passes.",
+      "workbook_evidence": "PR #989 merged 7f76576f. Ten current PGN cases passed. Six stale retained-import failures reproduced on base/head; separate proof debt. https://github.com/aaweaver-actuary/tempo/pull/989"
+    },
+    {
+      "finding_id": "BE014",
+      "status": "Closed",
+      "assignee": "Creator B / integration",
+      "pr": 990,
+      "code_revision": "85fcaf485d64dfc3f8df8b3d874a32a44e8a6a54",
+      "merged_revision": "b679496e257bc8b72d6a99e38235d5d502c1dd27",
+      "summary": "Moved the unchanged snapshot-bound exception into the shared pure contracts package; both producers use the same class. Added the public exception to package __all__ and the component export inventory.",
+      "evidence": "Independent review confirms identical exception AST and storage compatibility identity. Shared contracts, position-index and storage-blocked public-import checks: 38 passed. Owning Python component boundary/export check passed after the two-list correction.",
+      "remaining_acceptance": "None for the pure contract extraction. Native snapshot and installed-artifact proof were not run and are not claimed; no SQL or transaction semantics changed.",
+      "workbook_evidence": "PR #990 merged b679496e. Thirty-eight focused tests and owning export/boundary check passed; both export lists corrected. Native snapshot unclaimed. https://github.com/aaweaver-actuary/tempo/pull/990"
+    },
+    {
+      "finding_id": "BE020",
+      "status": "Closed",
+      "assignee": "Creator A / integration",
+      "pr": 994,
+      "code_revision": "3f63915ed369af701fb40ebe4dfafa69c96cd51f",
+      "merged_revision": "5031cedec7c8474a06f914c5089477fd9ddbffe9",
+      "summary": "Removed retired Analysis Jobs selection and exclusive fixtures from the current contract catalog/qualification. Corrected pytest discovery to collect retained contract tests.",
+      "evidence": "Independent dependency check: one retained package passed. Eight schemas verified. Correctly installed producer/consumer exchange: 116 package Python tests, 21 shared Python tests and 49 TypeScript cases passed. Default pytest discovery selects 137 Python cases. Game Evidence component check passed.",
+      "remaining_acceptance": "None for BE020. This does not close unrelated native-proof drift or component/CI redesign findings.",
+      "workbook_evidence": "PR #994 merged 5031cede. Dependency/schema checks, 137 Python tests and 49 TS cases passed; default discovery repaired. https://github.com/aaweaver-actuary/tempo/pull/994"
+    },
+    {
+      "finding_id": "RT001",
+      "status": "Closed",
+      "assignee": "Creator A / integration",
+      "pr": 994,
+      "code_revision": "3f63915ed369af701fb40ebe4dfafa69c96cd51f",
+      "merged_revision": "5031cedec7c8474a06f914c5089477fd9ddbffe9",
+      "summary": "Reconciled the scheduling import guard with current storage roots and retained consumers, preserving its forbidden-dependency negative controls.",
+      "evidence": "Independent scheduling boundary suite: 34 tests passed. Integrated review confirmed that retired roots are not required and the current graph remains enforced.",
+      "remaining_acceptance": "None for RT001. Future unmerged scheduling changes must update the affected graph and pass the guard; PR #991 remains pending.",
+      "workbook_evidence": "PR #994 merged 5031cede. Scheduling graph/negative-control suite: 34 passed. PR #991 remains separately pending. https://github.com/aaweaver-actuary/tempo/pull/994"
+    },
+    {
+      "finding_id": "RT006",
+      "status": "Closed",
+      "assignee": "Creator A / integration",
+      "pr": 994,
+      "code_revision": "3f63915ed369af701fb40ebe4dfafa69c96cd51f",
+      "merged_revision": "5031cedec7c8474a06f914c5089477fd9ddbffe9",
+      "summary": "Current component guide examples use the retained Game Evidence package and supported current component IDs/entry points.",
+      "evidence": "Independent guide/source reconciliation, component discovery and Game Evidence component check passed. Contract execution selects the retained catalog.",
+      "remaining_acceptance": "None for RT006. Broader backend/storage guide reconciliation remains separately open under BE022/ST010.",
+      "workbook_evidence": "PR #994 merged 5031cede. Guide examples reconciled; component discovery and Game Evidence checks passed. https://github.com/aaweaver-actuary/tempo/pull/994"
+    },
+    {
+      "finding_id": "ST010",
+      "status": "Partially addressed",
+      "assignee": "Creator A / integration",
+      "pr": 994,
+      "code_revision": "3f63915ed369af701fb40ebe4dfafa69c96cd51f",
+      "merged_revision": "5031cedec7c8474a06f914c5089477fd9ddbffe9",
+      "summary": "Corrected the documented storage schema version to 65. The wider current-owner link and retained-worker documentation reconciliation is incomplete.",
+      "evidence": "Merged source and independent diff review establish the schema statement correction only.",
+      "remaining_acceptance": "Repair the remaining current storage/ownership/tooling/browser documentation links and retired-owner/worker statements against current source. Retain original ST010 file evidence until each residual is reconciled.",
+      "workbook_evidence": "PR #994 merged 5031cede. Schema statement fixed to 65. Remaining ownership/tooling/browser links and retired-worker guidance still need reconciliation. https://github.com/aaweaver-actuary/tempo/pull/994"
+    }
+  ],
+  "pending_prs": [
+    {
+      "pr": 991,
+      "findings": [
+        "BE006"
+      ],
+      "state": "Unmerged; current-main integration and scheduling guard correction have 57 focused passing cases. Assembled saved-review-to-next proof remains pending.",
+      "code_revision": "da457a44da68ed5aefd71c41231eb76074510034"
+    },
+    {
+      "pr": 992,
+      "findings": [
+        "BE016"
+      ],
+      "state": "Unmerged; native import repaired and case collection verified. Native rollback/replay execution and assembled/browser proof remain pending.",
+      "code_revision": "1d68597b8b8da4c61bba6b9ea91793e42475540f"
+    },
+    {
+      "pr": 993,
+      "findings": [
+        "FE001",
+        "ST009"
+      ],
+      "state": "Unmerged; real-browser recovery and combined integrity behavior proof remain pending",
+      "code_revision": "9b02516ae2336714710a639b23e2a107dfe9d2db"
+    },
+    {
+      "pr": 995,
+      "findings": [
+        "FE011",
+        "FE007",
+        "FE008"
+      ],
+      "state": "Unmerged; three inventory files corrected. Game Review and combined integrity/browser qualification remain pending.",
+      "code_revision": "328ef924856ce0490c2e9dab7a1e4b42ae9eae8a"
+    }
+  ],
+  "status_counts": {
+    "Closed": 6,
+    "Needs decision": 4,
+    "Open": 44,
+    "Partially addressed": 1
+  }
+}
