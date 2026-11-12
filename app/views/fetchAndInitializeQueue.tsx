@@ -17,7 +17,7 @@ import { hydrateNotifications, notifications, publishNotification, resolveNotifi
 import { attemptEntryKey } from "../domain/attempt";
 import { queueCardSchema, queueEnvelopeSchema } from "../domain/schemas";
 import { studyWorkspace } from "../lib/study-connection";
-import { decodeOperationResult } from "../domain/adapters/operation-result-adapter";
+import { decodeOperationAcceptance, decodeOperationResult } from "../domain/adapters/operation-result-adapter";
 import type { StudyNextExerciseOutcome } from "../domain/transport";
 
 export function rememberConfirmedQueueEntry(card: PracticeCard): void {
@@ -215,17 +215,15 @@ function waitForQueueRetry(milliseconds: number, signal: AbortSignal): Promise<v
   });
 }
 
-const pendingIssuanceStates = new Set(["unknown", "queued", "pending", "executing", "retrying"]);
 const transientPositionHolds = new Set(["position_card_busy", "position_attempt_busy", "position_source_graph_busy",
   "position_owner_busy", "position_original_admission_unavailable"]);
 
 async function followQueueIssuance(response: Response, payload: unknown, signal: AbortSignal): Promise<void> {
-  const pending = payload as { operation_id?: unknown; state?: unknown } | null;
-  if (!pending || typeof pending.operation_id !== "string" || !/^[A-Za-z0-9:._-]{1,128}$/.test(pending.operation_id) ||
-      typeof pending.state !== "string" || ![...pendingIssuanceStates, "blocked"].includes(pending.state))
+  const pending = decodeOperationAcceptance(payload);
+  if (pending.kind === "malformed")
     throw new QueueProcessingError("The local queue returned an invalid pending operation. Retry loading the queue.");
-  const operationId = pending.operation_id;
-  if (pending.state === "blocked") throw new QueueProcessingError("Queue issuance is blocked. Check the operation status before retrying.");
+  const operationId = pending.operationId;
+  if (pending.kind === "blocked") throw new QueueProcessingError("Queue issuance is blocked. Check the operation status before retrying.");
   const retryAfter = Number(response.headers.get("Retry-After"));
   const delay = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.max(250, retryAfter * 1000) : 1000;
   for (let poll = 0; poll < 20; poll += 1) {

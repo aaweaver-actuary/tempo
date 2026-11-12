@@ -1,4 +1,4 @@
-import type { StudyOperationFailure, StudyOperationReceiptWire, StudyOperationResult } from "../transport";
+import type { StudyOperationAcceptance, StudyOperationFailure, StudyOperationReceiptWire, StudyOperationResult } from "../transport";
 
 function failure(value: unknown): StudyOperationFailure | undefined | null {
   if (value === undefined || value === null) return undefined;
@@ -35,4 +35,19 @@ export function decodeOperationResult(value: unknown, operationId: string, requi
     }
     default: return malformed();
   }
+}
+
+/** Validate the initial 202 identity before any status URL is constructed.
+ * An acknowledgment owns only identity/state; receipt details belong to polls.
+ */
+export function decodeOperationAcceptance(value: unknown): StudyOperationAcceptance {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return { kind: "malformed" };
+  const acknowledgment = value as StudyOperationReceiptWire;
+  if (typeof acknowledgment.operation_id !== "string" ||
+      !/^[A-Za-z0-9:._-]{1,128}$/.test(acknowledgment.operation_id)) return { kind: "malformed" };
+  const result = decodeOperationResult({ operation_id: acknowledgment.operation_id, state: acknowledgment.state },
+    acknowledgment.operation_id, true);
+  if (result.kind === "pending" || result.kind === "unknown" || result.kind === "blocked")
+    return { kind: result.kind, operationId: result.operationId };
+  return { kind: "malformed" };
 }
