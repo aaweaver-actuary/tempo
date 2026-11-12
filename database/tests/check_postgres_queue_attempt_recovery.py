@@ -48,14 +48,14 @@ def test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recov
     try:
         with postgres.connection() as database:
             snapshot = snapshot_queue_environment(database, (today, today))
-            queue_positions = [tuple(row) for row in database.execute("SELECT id,position FROM daily_queue WHERE queue_date=?", (today,))]
-            database.execute("INSERT INTO repertoires(id,name,source_name,created_at,new_cards_per_day) VALUES(?,?,'synthetic',?,0)", (identifier, "Queue recovery proof", today))
+            queue_positions = [tuple(row) for row in database.execute("SELECT id,position FROM daily_queue WHERE queue_date=%s", (today,))]
+            database.execute("INSERT INTO repertoires(id,name,source_name,created_at,new_cards_per_day) VALUES(%s,%s,'synthetic',%s,0)", (identifier, "Queue recovery proof", today))
             entries = []
             for index, card_id in enumerate(card_ids):
-                database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,introduced_at) VALUES(?,?,'prefix',?,'[\"e2e4\"]','learning',?,?)",
+                database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,introduced_at) VALUES(%s,%s,'prefix',%s,'[\"e2e4\"]','learning',%s,%s)",
                                  (card_id, identifier, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", today, today))
-                database.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)", (identifier, card_id))
-                entries.append(database.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id) VALUES(?,?,?,'new',?) RETURNING id", (today, card_id, -100 + index, identifier)).fetchone()[0])
+                database.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(%s,%s)", (identifier, card_id))
+                entries.append(database.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id) VALUES(%s,%s,%s,'new',%s) RETURNING id", (today, card_id, -100 + index, identifier)).fetchone()[0])
         payloads = [{"card_id": card_id, "review": {"outcome": "correct", "guided": False,
                     "queue_entry_id": entry_id, "attempt_id": f"{identifier}-attempt-{index}",
                     "expected_revision": 1, "recorded_at": datetime.now(timezone.utc).isoformat()}}
@@ -95,15 +95,15 @@ def test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recov
         operations.append(replay_operation)
         assert execute_command(replay_operation, "cards.review.reconcile", payloads[0]) == saved
         with postgres.connection() as database:
-            assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id=?", (card_ids[0],)).fetchone()[0] == 1
-            assert database.execute("SELECT introduced_at FROM cards WHERE id=?", (card_ids[0],)).fetchone()[0] == today
-            assert database.execute("SELECT admission_repertoire_id FROM queue_attempt_origins WHERE queue_entry_id=?", (entries[0],)).fetchone()[0] == identifier
-            completed_origin = database.execute("SELECT last_status,review_result_json FROM queue_attempt_origins WHERE queue_entry_id=? AND card_id=?", (entries[0], card_ids[0])).fetchone()
+            assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id=%s", (card_ids[0],)).fetchone()[0] == 1
+            assert database.execute("SELECT introduced_at FROM cards WHERE id=%s", (card_ids[0],)).fetchone()[0] == today
+            assert database.execute("SELECT admission_repertoire_id FROM queue_attempt_origins WHERE queue_entry_id=%s", (entries[0],)).fetchone()[0] == identifier
+            completed_origin = database.execute("SELECT last_status,review_result_json FROM queue_attempt_origins WHERE queue_entry_id=%s AND card_id=%s", (entries[0], card_ids[0])).fetchone()
             assert completed_origin["last_status"] == "complete"
             assert json.loads(completed_origin["review_result_json"])["review_id"] == saved["review_id"]
-            database.execute("DELETE FROM daily_queue WHERE id=?", (entries[2],))
-            database.execute("DELETE FROM daily_queue WHERE id=?", (entries[3],))
-            database.execute("UPDATE cards SET moves_json='[\"d2d4\"]',revision=2 WHERE id=?", (card_ids[2],))
+            database.execute("DELETE FROM daily_queue WHERE id=%s", (entries[2],))
+            database.execute("DELETE FROM daily_queue WHERE id=%s", (entries[3],))
+            database.execute("UPDATE cards SET moves_json='[\"d2d4\"]',revision=2 WHERE id=%s", (card_ids[2],))
         failed_operation = f"{identifier}-classified-conflict"
         operations.append(failed_operation)
         assert execute_command(failed_operation, "cards.review", payloads[2]) is None
@@ -129,7 +129,7 @@ def test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recov
         assert recovered["persisted"] and recovered["reconciliation"] == "queue_origin"
         assert execute_command(recovery_operation, "cards.review.reconcile", payloads[3]) == recovered
         with postgres.connection(read_only=True) as database:
-            assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id=?", (card_ids[3],)).fetchone()[0] == 1
+            assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id=%s", (card_ids[3],)).fetchone()[0] == 1
         conflict_operation = f"{identifier}-retained-conflict"
         operations.append(conflict_operation)
         conflict = execute_command(conflict_operation, "cards.review.reconcile", payloads[2])
@@ -140,9 +140,9 @@ def test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recov
         # A stale guided marker must not poison content reassigned to the same
         # projection ID. The production foreground handler receives displayed identity.
         with postgres.connection() as database:
-            database.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id) VALUES(?,?,-200,'review',?) RETURNING id", (today, card_ids[2], identifier))
-            reassigned_entry = database.execute("SELECT id FROM daily_queue WHERE card_id=? AND position=-200", (card_ids[2],)).fetchone()[0]
-            database.execute("UPDATE daily_queue SET card_id=? WHERE id=?", (card_ids[3], reassigned_entry))
+            database.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id) VALUES(%s,%s,-200,'review',%s) RETURNING id", (today, card_ids[2], identifier))
+            reassigned_entry = database.execute("SELECT id FROM daily_queue WHERE card_id=%s AND position=-200", (card_ids[2],)).fetchone()[0]
+            database.execute("UPDATE daily_queue SET card_id=%s WHERE id=%s", (card_ids[3], reassigned_entry))
         for suffix, marker_payload in (("legacy", {"entry_id": reassigned_entry}),
                                        ("identified", {"entry_id": reassigned_entry, "card_id": card_ids[2], "expected_revision": 2})):
             marker_operation = f"{identifier}-stale-marker-{suffix}"
@@ -150,7 +150,7 @@ def test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recov
             assert execute_command(marker_operation, "queue.attempt_failed", marker_payload) is None
             assert read_operation(marker_operation)["error"]["code"] == "queue_attempt_unprovable"
         with postgres.connection(read_only=True) as database:
-            assert database.execute("SELECT attempt_failed FROM daily_queue WHERE id=?", (reassigned_entry,)).fetchone()[0] == 0
+            assert database.execute("SELECT attempt_failed FROM daily_queue WHERE id=%s", (reassigned_entry,)).fetchone()[0] == 0
         current_marker_operation = f"{identifier}-current-marker"
         operations.append(current_marker_operation)
         current_marker = {"entry_id": reassigned_entry, "card_id": card_ids[3], "expected_revision": 1}
@@ -163,18 +163,18 @@ def test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recov
         postgres.close_pools()
         with postgres.connection() as database:
             for operation_id in operations:
-                database.execute("DELETE FROM operation_receipts WHERE operation_id=?", (operation_id,))
+                database.execute("DELETE FROM operation_receipts WHERE operation_id=%s", (operation_id,))
             for card_id in card_ids:
-                database.execute("DELETE FROM review_schedule_snapshots WHERE review_id IN (SELECT id FROM reviews WHERE card_id=?)", (card_id,))
-                database.execute("DELETE FROM review_attempt_receipts WHERE card_id=?", (card_id,))
-            database.execute("DELETE FROM background_tasks WHERE deduplication_key=?", (identifier,))
-            database.execute("DELETE FROM repertoires WHERE id=?", (identifier,))
+                database.execute("DELETE FROM review_schedule_snapshots WHERE review_id IN (SELECT id FROM reviews WHERE card_id=%s)", (card_id,))
+                database.execute("DELETE FROM review_attempt_receipts WHERE card_id=%s", (card_id,))
+            database.execute("DELETE FROM background_tasks WHERE deduplication_key=%s", (identifier,))
+            database.execute("DELETE FROM repertoires WHERE id=%s", (identifier,))
             # Cascading queue deletion can fire the origin trigger: remove the
             # deliberately retained fixture evidence only after content teardown.
             for card_id in card_ids:
-                database.execute("DELETE FROM queue_attempt_origins WHERE card_id=?", (card_id,))
+                database.execute("DELETE FROM queue_attempt_origins WHERE card_id=%s", (card_id,))
             for queue_id, position in queue_positions:
-                database.execute("UPDATE daily_queue SET position=? WHERE id=?", (position, queue_id))
+                database.execute("UPDATE daily_queue SET position=%s WHERE id=%s", (position, queue_id))
             if snapshot is not None:
                 restore_queue_environment(database, snapshot)
         postgres.close_pools()
@@ -199,13 +199,13 @@ def test_postgres_guided_marker_locks_displayed_revision_until_commit():
     marker_pid = []
     try:
         with postgres.connection() as database:
-            database.execute("INSERT INTO repertoires(id,name,source_name,created_at,new_cards_per_day) VALUES(?,?,'synthetic',?,0)", (identifier, "Guided revision proof", today))
+            database.execute("INSERT INTO repertoires(id,name,source_name,created_at,new_cards_per_day) VALUES(%s,%s,'synthetic',%s,0)", (identifier, "Guided revision proof", today))
             entries = []
             for index, card_id in enumerate(card_ids):
-                database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,introduced_at,first_correct_at) VALUES(?,?,'prefix',?,'[\"e2e4\"]','learning',?,?,?)",
+                database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,introduced_at,first_correct_at) VALUES(%s,%s,'prefix',%s,'[\"e2e4\"]','learning',%s,%s,%s)",
                     (card_id, identifier, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", today, today, today))
-                database.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)", (identifier, card_id))
-                entries.append(database.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id) VALUES(?,?,?,'review',?) RETURNING id", (today, card_id, -1000000 + index, identifier)).fetchone()[0])
+                database.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(%s,%s)", (identifier, card_id))
+                entries.append(database.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id) VALUES(%s,%s,%s,'review',%s) RETURNING id", (today, card_id, -1000000 + index, identifier)).fetchone()[0])
 
         def pause_after_validation(database, entry_id, card_id=None, expected_revision=None):
             original_validation(database, entry_id, card_id, expected_revision)
@@ -240,9 +240,9 @@ def test_postgres_guided_marker_locks_displayed_revision_until_commit():
             assert marker_future.result(timeout=5)["attempt_failed"]
             editor_future.result(timeout=5)
         with postgres.connection(read_only=True) as database:
-            origins = [tuple(row) for row in database.execute("SELECT revision,attempt_failed FROM queue_attempt_origins WHERE queue_entry_id=? ORDER BY revision", (entries[0],))]
+            origins = [tuple(row) for row in database.execute("SELECT revision,attempt_failed FROM queue_attempt_origins WHERE queue_entry_id=%s ORDER BY revision", (entries[0],))]
             assert origins == [(1, 1), (2, 0)], origins
-            projection = database.execute("SELECT attempt_failed,status,admission_kind,admission_repertoire_id,cycle FROM daily_queue WHERE id=?", (entries[0],)).fetchone()
+            projection = database.execute("SELECT attempt_failed,status,admission_kind,admission_repertoire_id,cycle FROM daily_queue WHERE id=%s", (entries[0],)).fetchone()
             assert tuple(projection) == (0, "queued", "review", identifier, 0)
         review_operation = f"{identifier}-review"
         operations.append(review_operation)
@@ -256,16 +256,16 @@ def test_postgres_guided_marker_locks_displayed_revision_until_commit():
         operations.append(replay_operation)
         assert execute_command(replay_operation, "cards.review.reconcile", payload) == saved
         with postgres.connection() as database:
-            assert [tuple(row) for row in database.execute("SELECT rating,guided FROM reviews WHERE card_id=?", (card_ids[0],))] == [("correct", 0)]
+            assert [tuple(row) for row in database.execute("SELECT rating,guided FROM reviews WHERE card_id=%s", (card_ids[0],))] == [("correct", 0)]
             # Opposite ordering: editing commits before the stale marker arrives.
-            database.execute("UPDATE cards SET revision=2,moves_json='[\"d2d4\"]' WHERE id=?", (card_ids[1],))
+            database.execute("UPDATE cards SET revision=2,moves_json='[\"d2d4\"]' WHERE id=%s", (card_ids[1],))
         stale_operation = f"{identifier}-edit-first-marker"
         operations.append(stale_operation)
         assert execute_command(stale_operation, "queue.attempt_failed", {"entry_id": entries[1], "card_id": card_ids[1], "expected_revision": 1}) is None
         assert read_operation(stale_operation)["error"]["code"] == "queue_attempt_unprovable"
         with postgres.connection(read_only=True) as database:
-            assert database.execute("SELECT attempt_failed FROM daily_queue WHERE id=?", (entries[1],)).fetchone()[0] == 0
-            assert [tuple(row) for row in database.execute("SELECT revision,attempt_failed FROM queue_attempt_origins WHERE queue_entry_id=? ORDER BY revision", (entries[1],))] == [(1, 0), (2, 0)]
+            assert database.execute("SELECT attempt_failed FROM daily_queue WHERE id=%s", (entries[1],)).fetchone()[0] == 0
+            assert [tuple(row) for row in database.execute("SELECT revision,attempt_failed FROM queue_attempt_origins WHERE queue_entry_id=%s ORDER BY revision", (entries[1],))] == [(1, 0), (2, 0)]
         print("PASS test_postgres_guided_marker_locks_displayed_revision_until_commit (marker-first and edit-first)")
     finally:
         release_marker.set()
@@ -275,13 +275,13 @@ def test_postgres_guided_marker_locks_displayed_revision_until_commit():
         postgres.close_pools()
         with postgres.connection() as database:
             for operation_id in operations:
-                database.execute("DELETE FROM operation_receipts WHERE operation_id=?", (operation_id,))
+                database.execute("DELETE FROM operation_receipts WHERE operation_id=%s", (operation_id,))
             for card_id in card_ids:
-                database.execute("DELETE FROM review_schedule_snapshots WHERE review_id IN (SELECT id FROM reviews WHERE card_id=?)", (card_id,))
-                database.execute("DELETE FROM review_attempt_receipts WHERE card_id=?", (card_id,))
-            database.execute("DELETE FROM repertoires WHERE id=?", (identifier,))
+                database.execute("DELETE FROM review_schedule_snapshots WHERE review_id IN (SELECT id FROM reviews WHERE card_id=%s)", (card_id,))
+                database.execute("DELETE FROM review_attempt_receipts WHERE card_id=%s", (card_id,))
+            database.execute("DELETE FROM repertoires WHERE id=%s", (identifier,))
             for card_id in card_ids:
-                database.execute("DELETE FROM queue_attempt_origins WHERE card_id=?", (card_id,))
+                database.execute("DELETE FROM queue_attempt_origins WHERE card_id=%s", (card_id,))
         postgres.close_pools()
 
 
@@ -621,14 +621,14 @@ def test_retained_command_retry_preserves_immutable_identity():
     try:
         with postgres.connection() as database:
             saved_positions = [tuple(row) for row in database.execute(
-                "SELECT id,position FROM daily_queue WHERE queue_date=?", (today,))]
-            database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,'synthetic',?)",
+                "SELECT id,position FROM daily_queue WHERE queue_date=%s", (today,))]
+            database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,%s,'synthetic',%s)",
                              (identifier, identifier, today))
             for index, card_id in enumerate(card_ids):
                 database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type) "
-                    "VALUES(?,?,'prefix',?,'[\"e2e4\"]','learning',?,'tactic')",
+                    "VALUES(%s,%s,'prefix',%s,'[\"e2e4\"]','learning',%s,'tactic')",
                     (card_id, identifier, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", today))
-                entry_ids.append(database.execute("INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,?,?) RETURNING id",
+                entry_ids.append(database.execute("INSERT INTO daily_queue(queue_date,card_id,position) VALUES(%s,%s,%s) RETURNING id",
                     (today, card_id, -2000000000 + index)).fetchone()[0])
 
         def command(suffix, name, entry_index, *, identified=True):
@@ -658,10 +658,10 @@ def test_retained_command_retry_preserves_immutable_identity():
         postgres.close_pools()
         with postgres.connection(read_only=True) as observer:
             assert [tuple(row) for row in observer.execute(
-                "SELECT queue_entry_id,issued_as_head FROM queue_attempt_origins WHERE card_id IN (?,?,?) ORDER BY queue_entry_id",
+                "SELECT queue_entry_id,issued_as_head FROM queue_attempt_origins WHERE card_id IN (%s,%s,%s) ORDER BY queue_entry_id",
                 tuple(card_ids))] == list(zip(entry_ids, (1, 0, 0)))
             assert [tuple(row) for row in observer.execute(
-                "SELECT status,attempt_failed FROM daily_queue WHERE id IN (?,?,?) ORDER BY id", tuple(entry_ids))] == [('queued', 0)] * 3
+                "SELECT status,attempt_failed FROM daily_queue WHERE id IN (%s,%s,%s) ORDER BY id", tuple(entry_ids))] == [('queued', 0)] * 3
 
         original_validation = queue_attempt_origins.validate_failure_marker
         def pause_head_validation(*args, **kwargs):
@@ -678,10 +678,10 @@ def test_retained_command_retry_preserves_immutable_identity():
             with postgres.connection() as database:
                 database.execute_native("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
                                         (f"tempo:card-edit:{card_ids[2]}",))
-                database.execute("SELECT id FROM cards WHERE id=? FOR UPDATE", (card_ids[2],))
+                database.execute("SELECT id FROM cards WHERE id=%s FOR UPDATE", (card_ids[2],))
                 promotion_waiting.set()
                 lock_queue_date_for_position(database, today)
-                database.execute("UPDATE daily_queue SET position=-2000000001 WHERE id=?", (entry_ids[2],))
+                database.execute("UPDATE daily_queue SET position=-2000000001 WHERE id=%s", (entry_ids[2],))
                 preserve_daily_queue_order(database, today)
         with patch.object(queue_attempt_origins, 'validate_failure_marker', pause_head_validation):
             issuance_future = executor.submit(execute_command, issuance_operation, 'queue.issue_head', issuance_payload)
@@ -689,7 +689,7 @@ def test_retained_command_retry_preserves_immutable_identity():
             promotion_future = executor.submit(promote_ahead)
             assert promotion_waiting.wait(5), "Promotion did not begin contention"
             with postgres.connection(read_only=True) as observer:
-                assert observer.execute("SELECT card_id FROM daily_queue WHERE queue_date=? AND status='queued' ORDER BY position,id LIMIT 1", (today,)).fetchone()[0] == card_ids[0]
+                assert observer.execute("SELECT card_id FROM daily_queue WHERE queue_date=%s AND status='queued' ORDER BY position,id LIMIT 1", (today,)).fetchone()[0] == card_ids[0]
             release_issuance.set()
             assert issuance_future.result(timeout=5) == {"issued": True}
             promotion_future.result(timeout=5)
@@ -713,24 +713,24 @@ def test_retained_command_retry_preserves_immutable_identity():
         _, _, head_result = command('legacy-head', 'queue.attempt_failed', 2, identified=False)
         assert head_result == {'attempt_failed': True}
         with postgres.connection(read_only=True) as observer:
-            assert tuple(observer.execute("SELECT status,attempt_failed FROM daily_queue WHERE id=?", (entry_ids[1],)).fetchone()) == ('queued', 0)
-            assert observer.execute("SELECT COUNT(*) FROM reviews WHERE card_id IN (?,?,?)", tuple(card_ids)).fetchone()[0] == 0
+            assert tuple(observer.execute("SELECT status,attempt_failed FROM daily_queue WHERE id=%s", (entry_ids[1],)).fetchone()) == ('queued', 0)
+            assert observer.execute("SELECT COUNT(*) FROM reviews WHERE card_id IN (%s,%s,%s)", tuple(card_ids)).fetchone()[0] == 0
         print('PASS test_retained_command_retry_preserves_immutable_identity')
     finally:
         release_issuance.set()
         executor.shutdown(wait=True)
         with postgres.connection() as database:
             for operation_id in operation_ids:
-                database.execute("DELETE FROM operation_receipts WHERE operation_id=?", (operation_id,))
+                database.execute("DELETE FROM operation_receipts WHERE operation_id=%s", (operation_id,))
             # Include the API's task-owned issuance receipt, whose key is server-generated.
             for entry_id in entry_ids:
                 database.execute_native("DELETE FROM operation_receipts WHERE command_name='queue.issue_head' "
                                         "AND payload_json::jsonb->>'entry_id'=%s", (str(entry_id),))
-            database.execute("DELETE FROM repertoires WHERE id=?", (identifier,))
+            database.execute("DELETE FROM repertoires WHERE id=%s", (identifier,))
             for card_id in card_ids:
-                database.execute("DELETE FROM queue_attempt_origins WHERE card_id=?", (card_id,))
+                database.execute("DELETE FROM queue_attempt_origins WHERE card_id=%s", (card_id,))
             for entry_id, position in saved_positions:
-                database.execute("UPDATE daily_queue SET position=? WHERE id=?", (position, entry_id))
+                database.execute("UPDATE daily_queue SET position=%s WHERE id=%s", (position, entry_id))
         postgres.close_pools()
 
 @contextmanager
@@ -749,13 +749,13 @@ def _scheduling_adapter_fixture():
     try:
         with postgres.connection() as database:
             saved_positions = [tuple(row) for row in database.execute(
-                "SELECT id,position FROM daily_queue WHERE queue_date=?", (date.today().isoformat(),))]
-            database.execute("INSERT INTO repertoires(id,name,source_name,created_at,new_cards_per_day) VALUES(?,?,'synthetic',?,0)",
+                "SELECT id,position FROM daily_queue WHERE queue_date=%s", (date.today().isoformat(),))]
+            database.execute("INSERT INTO repertoires(id,name,source_name,created_at,new_cards_per_day) VALUES(%s,%s,'synthetic',%s,0)",
                              (identifier, "Scheduling store proof", date.today().isoformat()))
-            database.execute("INSERT INTO cards(id,repertoire_id,kind,content_type,start_fen,moves_json,state,due_date) VALUES(?,?,'prefix','tactic',?,'[\"e2e4\"]','learning',?)",
+            database.execute("INSERT INTO cards(id,repertoire_id,kind,content_type,start_fen,moves_json,state,due_date) VALUES(%s,%s,'prefix','tactic',%s,'[\"e2e4\"]','learning',%s)",
                              (card_id, identifier, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", date.today().isoformat()))
-            database.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)", (identifier, card_id))
-            entry_id = database.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id) VALUES(?,?,-100000,'due',?) RETURNING id",
+            database.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(%s,%s)", (identifier, card_id))
+            entry_id = database.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id) VALUES(%s,%s,-100000,'due',%s) RETURNING id",
                                         (date.today().isoformat(), card_id, identifier)).fetchone()[0]
         issue_operation = str(uuid.uuid4())
         operation_ids.append(issue_operation)
@@ -770,15 +770,15 @@ def _scheduling_adapter_fixture():
         postgres.close_pools()
         with postgres.connection() as database:
             for operation_id in operation_ids:
-                database.execute("DELETE FROM operation_receipts WHERE operation_id=?", (operation_id,))
-            database.execute("DELETE FROM review_schedule_snapshots WHERE review_id IN (SELECT id FROM reviews WHERE card_id=?)", (card_id,))
-            database.execute("DELETE FROM review_attempt_receipts WHERE card_id=?", (card_id,))
-            database.execute("DELETE FROM repertoires WHERE id=?", (identifier,))
-            database.execute("DELETE FROM queue_attempt_origins WHERE card_id=?", (card_id,))
+                database.execute("DELETE FROM operation_receipts WHERE operation_id=%s", (operation_id,))
+            database.execute("DELETE FROM review_schedule_snapshots WHERE review_id IN (SELECT id FROM reviews WHERE card_id=%s)", (card_id,))
+            database.execute("DELETE FROM review_attempt_receipts WHERE card_id=%s", (card_id,))
+            database.execute("DELETE FROM repertoires WHERE id=%s", (identifier,))
+            database.execute("DELETE FROM queue_attempt_origins WHERE card_id=%s", (card_id,))
             for entry_id, position in saved_positions:
-                database.execute("UPDATE daily_queue SET position=? WHERE id=?", (position, entry_id))
-            assert database.execute("SELECT COUNT(*) FROM cards WHERE id=?", (card_id,)).fetchone()[0] == 0
-            assert database.execute("SELECT COUNT(*) FROM queue_attempt_origins WHERE card_id=?", (card_id,)).fetchone()[0] == 0
+                database.execute("UPDATE daily_queue SET position=%s WHERE id=%s", (position, entry_id))
+            assert database.execute("SELECT COUNT(*) FROM cards WHERE id=%s", (card_id,)).fetchone()[0] == 0
+            assert database.execute("SELECT COUNT(*) FROM queue_attempt_origins WHERE card_id=%s", (card_id,)).fetchone()[0] == 0
         postgres.close_pools()
 
 
@@ -786,12 +786,15 @@ def test_postgres_scheduling_adapter_effects_rollback_with_receipt_failure():
     """Fail after schedule/history/queue writes, inside and outside the savepoint."""
     from app.services.review_reconciliation import card_schedule_state
     from tempo_storage.scheduling_review_store import OwnedConnectionSchedulingReviewStore
+    from tempo_storage.commands.receipts import storage as receipt_storage
 
     with _scheduling_adapter_fixture() as (card_id, entry_id, payload, operations):
         with postgres.connection(read_only=True) as database:
             original_schedule = card_schedule_state(database, card_id)
         original_execute = postgres.PostgresConnection.execute
-        original_raw_execute = postgres._TimingConnection.execute
+        original_receipt_writer = receipt_storage.receipt_writer
+        original_complete = receipt_storage.complete_operation
+        receipt_connections = {}
         original_save = OwnedConnectionSchedulingReviewStore.save_card_state
         saved_connections = []
         def observe_save(store, saved_card_id, state):
@@ -804,17 +807,23 @@ def test_postgres_scheduling_adapter_effects_rollback_with_receipt_failure():
                 assert database is saved_connections[-1]
                 raise RuntimeError("injected logical receipt failure")
             return original_execute(database, statement, parameters)
-        def fail_operation_receipt(database, statement, parameters=None, *args, **kwargs):
-            if "UPDATE operation_receipts SET state='complete'" in statement and parameters[-1] == operation:
-                assert database is saved_connections[-1].raw
+        def observe_receipt_writer(database):
+            writer = original_receipt_writer(database)
+            receipt_connections[writer] = database
+            return writer
+        def fail_operation_receipt(writer, response_json, operation_id):
+            if operation_id == operation:
+                assert receipt_connections[writer] is saved_connections[-1]
+                assert receipt_connections[writer].raw.info.transaction_status == psycopg.pq.TransactionStatus.INTRANS
                 raise RuntimeError("injected operation receipt failure")
-            return original_raw_execute(database, statement, parameters, *args, **kwargs)
+            return original_complete(writer, response_json, operation_id)
         for boundary in ("logical", "operation"):
             operation = str(uuid.uuid4())
             operations.append(operation)
             with patch.object(OwnedConnectionSchedulingReviewStore, "save_card_state", observe_save), \
                  patch.object(postgres.PostgresConnection, "execute", fail_logical_receipt if boundary == "logical" else original_execute), \
-                 patch.object(postgres._TimingConnection, "execute", fail_operation_receipt if boundary == "operation" else original_raw_execute), \
+                 patch.object(receipt_storage, "receipt_writer", observe_receipt_writer), \
+                 patch.object(receipt_storage, "complete_operation", fail_operation_receipt if boundary == "operation" else original_complete), \
                  patch("app.services.queue_refresh_wakeup.wake_queue_refresh") as wake:
                 if boundary == "logical":
                     assert execute_command(operation, "cards.review", payload) is None
@@ -830,13 +839,13 @@ def test_postgres_scheduling_adapter_effects_rollback_with_receipt_failure():
                 wake.assert_not_called()
             with postgres.connection(read_only=True) as observer:
                 if boundary == "operation":
-                    assert observer.execute("SELECT COUNT(*) FROM operation_receipts WHERE operation_id=?", (operation,)).fetchone()[0] == 0
+                    assert observer.execute("SELECT COUNT(*) FROM operation_receipts WHERE operation_id=%s", (operation,)).fetchone()[0] == 0
                 assert card_schedule_state(observer, card_id) == original_schedule
-                assert observer.execute("SELECT COUNT(*) FROM reviews WHERE card_id=?", (card_id,)).fetchone()[0] == 0
-                assert observer.execute("SELECT COUNT(*) FROM review_attempt_receipts WHERE card_id=?", (card_id,)).fetchone()[0] == 0
-                assert observer.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id=?", (card_id,)).fetchone()[0] == 1
-                assert tuple(observer.execute("SELECT status,review_result_json FROM daily_queue WHERE id=?", (entry_id,)).fetchone()) == ("queued", None)
-                assert observer.execute("SELECT last_status FROM queue_attempt_origins WHERE queue_entry_id=?", (entry_id,)).fetchone()[0] == "queued"
+                assert observer.execute("SELECT COUNT(*) FROM reviews WHERE card_id=%s", (card_id,)).fetchone()[0] == 0
+                assert observer.execute("SELECT COUNT(*) FROM review_attempt_receipts WHERE card_id=%s", (card_id,)).fetchone()[0] == 0
+                assert observer.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id=%s", (card_id,)).fetchone()[0] == 1
+                assert tuple(observer.execute("SELECT status,review_result_json FROM daily_queue WHERE id=%s", (entry_id,)).fetchone()) == ("queued", None)
+                assert observer.execute("SELECT last_status FROM queue_attempt_origins WHERE queue_entry_id=%s", (entry_id,)).fetchone()[0] == "queued"
         assert len(saved_connections) == 2
         print("PASS test_postgres_scheduling_adapter_effects_rollback_with_receipt_failure")
 
@@ -898,14 +907,14 @@ def test_postgres_scheduling_concurrent_replay_preserves_one_history_and_queue_e
         assert execute_command(conflicting_operation,"cards.review",conflicting) is None
         assert read_operation(conflicting_operation)["error"]["code"] == "review_attempt_reused"
         with postgres.connection(read_only=True) as database:
-            assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id=?", (card_id,)).fetchone()[0] == 1
-            history = database.execute("SELECT rating,internal_rating,guided,reviewed_at,previous_interval,next_interval,source_kind,source_ref FROM reviews WHERE card_id=?", (card_id,)).fetchone()
+            assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id=%s", (card_id,)).fetchone()[0] == 1
+            history = database.execute("SELECT rating,internal_rating,guided,reviewed_at,previous_interval,next_interval,source_kind,source_ref FROM reviews WHERE card_id=%s", (card_id,)).fetchone()
             assert tuple(history) == ("correct","good",0,payload["review"]["recorded_at"],0,0,"study",f"attempt:{payload['review']['attempt_id']}")
-            assert database.execute("SELECT COUNT(*) FROM review_attempt_receipts WHERE card_id=?", (card_id,)).fetchone()[0] == 1
-            assert database.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id=? AND status='complete'", (card_id,)).fetchone()[0] == 1
-            assert database.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id=? AND cycle=1 AND status='queued'", (card_id,)).fetchone()[0] == 1
-            assert database.execute("SELECT COUNT(*) FROM review_schedule_snapshots WHERE review_id=?", (result["review_id"],)).fetchone()[0] == 1
-            assert json.loads(database.execute("SELECT review_result_json FROM queue_attempt_origins WHERE queue_entry_id=?", (entry_id,)).fetchone()[0])["review_id"] == result["review_id"]
+            assert database.execute("SELECT COUNT(*) FROM review_attempt_receipts WHERE card_id=%s", (card_id,)).fetchone()[0] == 1
+            assert database.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id=%s AND status='complete'", (card_id,)).fetchone()[0] == 1
+            assert database.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id=%s AND cycle=1 AND status='queued'", (card_id,)).fetchone()[0] == 1
+            assert database.execute("SELECT COUNT(*) FROM review_schedule_snapshots WHERE review_id=%s", (result["review_id"],)).fetchone()[0] == 1
+            assert json.loads(database.execute("SELECT review_result_json FROM queue_attempt_origins WHERE queue_entry_id=%s", (entry_id,)).fetchone()[0])["review_id"] == result["review_id"]
         print("PASS test_postgres_scheduling_concurrent_replay_preserves_one_history_and_queue_effect")
 
 
@@ -934,31 +943,31 @@ def test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_r
     try:
         with postgres.connection() as owned_database:
             snapshot = snapshot_queue_environment(owned_database, (day, day))
-            owned_database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,'synthetic',?)", (identifier, identifier, now))
-            owned_database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES(?,?,'prefix',?,'[\"e2e4\"]','learning',?)", (identifier, identifier, 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', day))
+            owned_database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,%s,'synthetic',%s)", (identifier, identifier, now))
+            owned_database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES(%s,%s,'prefix',%s,'[\"e2e4\"]','learning',%s)", (identifier, identifier, 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', day))
             task = durable_tasks.enqueue_task_in_transaction(owned_database, 'daily_queue', identifier, payload)
             # This synthetic task uses a non-singleton key, so record its real
             # request after task creation, then persist the current owner fences.
             payload['_refresh_cycle_epoch'] = refresh_requests.signal_queue_refresh_in_transaction(owned_database, day)
             payload['frozen_token'] = list(frozen_opening_order.activation(owned_database))
-            owned_database.execute("UPDATE background_tasks SET payload_json=?,state='leased',lease_token=?,lease_expires_at=? WHERE id=?", (json.dumps(payload), identifier, '2099-10-13T00:00:00+00:00', task['id']))
+            owned_database.execute("UPDATE background_tasks SET payload_json=%s,state='leased',lease_token=%s,lease_expires_at=%s WHERE id=%s", (json.dumps(payload), identifier, '2099-10-13T00:00:00+00:00', task['id']))
             task = {**task, 'payload': payload, 'lease_token': identifier}
         def state():
             with postgres.connection(read_only=True) as observer:
-                card_state = observer.execute('SELECT state FROM cards WHERE id=?', (identifier,)).fetchone()[0]
-                checkpoint = observer.execute('SELECT state,phase,payload_json,generation,lease_token FROM background_tasks WHERE id=?', (task['id'],)).fetchone()
+                card_state = observer.execute('SELECT state FROM cards WHERE id=%s', (identifier,)).fetchone()[0]
+                checkpoint = observer.execute('SELECT state,phase,payload_json,generation,lease_token FROM background_tasks WHERE id=%s', (task['id'],)).fetchone()
                 return card_state, tuple(checkpoint)
         before = state()
         # A foreground-owned row blocks the actual relocated background update.
         with postgres.connection() as foreground:
-            foreground.execute('SELECT id FROM cards WHERE id=? FOR UPDATE', (identifier,))
+            foreground.execute('SELECT id FROM cards WHERE id=%s FOR UPDATE', (identifier,))
             try:
                 postgres_queue_refresh.execute_postgres_queue_refresh_slice(task)
             except (LockNotAvailable, TransactionTimeout):
                 pass
             else:
                 raise AssertionError('Background reset did not yield to foreground lock')
-            assert foreground.execute('SELECT state FROM cards WHERE id=?', (identifier,)).fetchone()[0] == 'learning'
+            assert foreground.execute('SELECT state FROM cards WHERE id=%s', (identifier,)).fetchone()[0] == 'learning'
         assert state() == before
         with patch.object(postgres_queue_refresh, 'advance_task_slice_in_transaction', interrupted_checkpoint):
             try:
@@ -971,7 +980,7 @@ def test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_r
         # Reload the persisted task after closing every process-local pool.
         postgres.close_pools()
         with postgres.connection(read_only=True) as observer:
-            persisted = observer.execute('SELECT * FROM background_tasks WHERE id=?', (task['id'],)).fetchone()
+            persisted = observer.execute('SELECT * FROM background_tasks WHERE id=%s', (task['id'],)).fetchone()
             restarted = {**dict(persisted), 'payload': json.loads(persisted['payload_json'])}
         assert postgres_queue_refresh.execute_postgres_queue_refresh_slice(restarted)
         after = state()
@@ -981,8 +990,8 @@ def test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_r
         assert postgres_queue_refresh.execute_postgres_queue_refresh_slice(restarted) is False
         assert state() == after
         with postgres.connection() as owned_database:
-            owned_database.execute("UPDATE background_tasks SET generation=generation+1,state='leased',lease_token=? WHERE id=?", ('replacement', task['id']))
-            owned_database.execute("UPDATE cards SET state='learning' WHERE id=?", (identifier,))
+            owned_database.execute("UPDATE background_tasks SET generation=generation+1,state='leased',lease_token=%s WHERE id=%s", ('replacement', task['id']))
+            owned_database.execute("UPDATE cards SET state='learning' WHERE id=%s", (identifier,))
         replaced = state()
         assert postgres_queue_refresh.execute_postgres_queue_refresh_slice(restarted) is False
         assert state() == replaced
@@ -990,19 +999,66 @@ def test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_r
     finally:
         if task:
             with postgres.connection() as owned_database:
-                owned_database.execute('DELETE FROM background_tasks WHERE id=?', (task['id'],))
-                owned_database.execute('DELETE FROM repertoires WHERE id=?', (identifier,))
+                owned_database.execute('DELETE FROM background_tasks WHERE id=%s', (task['id'],))
+                owned_database.execute('DELETE FROM repertoires WHERE id=%s', (identifier,))
                 if snapshot:
                     restore_queue_environment(owned_database, snapshot)
         postgres.close_pools()
 
 
+# Fixed source-owned selections. This is not an arbitrary function/stage runner.
+_QUEUE_RECOVERY_ALL = (
+    "test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_replay",
+    "test_postgres_scheduling_adapter_effects_rollback_with_receipt_failure",
+    "test_postgres_scheduling_concurrent_replay_preserves_one_history_and_queue_effect",
+    "test_retained_command_retry_preserves_immutable_identity",
+    "test_postgres_real_game_obligation_admission_restart_publication_and_remediation",
+    "test_postgres_retired_opening_evidence_reconciliation_is_atomic_and_replay_safe",
+    "test_postgres_guided_marker_locks_displayed_revision_until_commit",
+    "test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recovery",
+)
+_QUEUE_RECOVERY_MAINTAINED_SIX = (
+    "test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_replay",
+    "test_postgres_scheduling_adapter_effects_rollback_with_receipt_failure",
+    "test_postgres_scheduling_concurrent_replay_preserves_one_history_and_queue_effect",
+    "test_retained_command_retry_preserves_immutable_identity",
+    "test_postgres_guided_marker_locks_displayed_revision_until_commit",
+    "test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recovery",
+)
+_QUEUE_RECOVERY_UNRESOLVED = (
+    "test_postgres_real_game_obligation_admission_restart_publication_and_remediation",
+    "test_postgres_retired_opening_evidence_reconciliation_is_atomic_and_replay_safe",
+)
+
+
+def queue_recovery_main(argv=None):
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Owned queue recovery proof; maintained-six is partial acceptance only.")
+    parser.add_argument("--case-set", choices=("all", "maintained-six"), default="all")
+    parser.add_argument("--list", action="store_true", help="List selected cases without executing them.")
+    options = parser.parse_args(argv)
+    cases = _QUEUE_RECOVERY_ALL if options.case_set == "all" else _QUEUE_RECOVERY_MAINTAINED_SIX
+    if not cases or len(set(cases)) != len(cases):
+        raise RuntimeError("Queue recovery selection must be nonempty and unique")
+    actions = tuple(globals()[name] for name in cases)
+    if not all(callable(action) for action in actions):
+        raise RuntimeError("Queue recovery selection contains a missing action")
+    evidence = {
+        "case_set": options.case_set,
+        "cases": cases,
+        "scope": "partial" if options.case_set == "maintained-six" else "all-eight",
+        "unresolved_owner_cases": _QUEUE_RECOVERY_UNRESOLVED,
+        "excluded_cases": _QUEUE_RECOVERY_UNRESOLVED if options.case_set == "maintained-six" else (),
+        "execution": "discovery-only" if options.list else "starting",
+    }
+    print(json.dumps(evidence, sort_keys=True))
+    if options.list:
+        return
+    for action in actions:
+        action()  # Exceptions propagate; each case retains its existing owned cleanup.
+    print(json.dumps({**evidence, "execution": "completed", "executed_count": len(cases)}, sort_keys=True))
+
+
 if __name__ == "__main__":
-    test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_replay()
-    test_postgres_scheduling_adapter_effects_rollback_with_receipt_failure()
-    test_postgres_scheduling_concurrent_replay_preserves_one_history_and_queue_effect()
-    test_retained_command_retry_preserves_immutable_identity()
-    test_postgres_real_game_obligation_admission_restart_publication_and_remediation()
-    test_postgres_retired_opening_evidence_reconciliation_is_atomic_and_replay_safe()
-    test_postgres_guided_marker_locks_displayed_revision_until_commit()
-    test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recovery()
+    queue_recovery_main()

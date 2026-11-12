@@ -51,18 +51,22 @@ def prove_settings_descriptor_original_identity():
         with postgres.connection() as database:
             settings_value = database.execute('SELECT new_cards_per_day FROM settings WHERE id=1').fetchone()[0]
             task = database.execute("SELECT id,generation,state,payload_json FROM background_tasks WHERE kind='daily_queue' AND deduplication_key='current'").fetchone()
-            receipt = database.execute('SELECT command_name,request_hash,state,response_json FROM operation_receipts WHERE operation_id=?', (operation,)).fetchone()
-            return settings_value, tuple(task) if task else None, tuple(receipt) if receipt else None
-    before_task = snapshot()[1]
+            receipt = database.execute('SELECT command_name,request_hash,state,response_json FROM operation_receipts WHERE operation_id=%s', (operation,)).fetchone()
+            epoch = database.execute('SELECT requested_refresh_epoch,published_refresh_epoch FROM queue_projections WHERE queue_date=%s',
+                                     (date.today().isoformat(),)).fetchone()
+            return settings_value, tuple(task) if task else None, tuple(receipt) if receipt else None, tuple(epoch) if epoch else None
+    before = snapshot()
+    before_task = before[1]
+    # Earlier mode saves queued this same-day singleton; no worker serves this
+    # private database. Current refresh requests coalesce into its identity.
+    assert before_task is not None and before_task[2] == 'queued' and before[3] is not None
     with patch.object(settings_commands.storage, 'store_settings', wraps=settings_commands.storage.store_settings) as write:
         first = execute_command(operation, 'settings.update', original)
         baseline = snapshot()
         assert baseline[0] == values['new_cards_per_day'] and baseline[1] is not None
         assert baseline[1][2] == 'queued'
-        if before_task is None:
-            assert baseline[1][1] == 1
-        else:
-            assert baseline[1][0] == before_task[0] and baseline[1][1] == before_task[1] + 1
+        assert baseline[1] == before_task, 'Coalesced settings request changed its queued singleton'
+        assert baseline[3] == (before[3][0] + 1, before[3][1]), 'First write must request exactly one refresh'
         assert baseline[2][:3] == ('settings.update', request_digest('settings.update', original), 'complete')
         assert json.loads(baseline[2][3]) == first
         with patch.dict(command_gateway._preparers, {'settings.update': changed_preparation}):
@@ -134,31 +138,40 @@ def proof():
             with patch.object(tasks, 'execute_command', side_effect=AssertionError('Paused import executed')):
                 assert tasks._execute_foreground_command(worker, import_operation, 'imports.pgn.admit', {'saved_source': 'preserve'}) is None
             assert read_operation(import_operation)['state'] == 'retrying'
-            accepted_operation = uuid4().hex
-            with patch.object(tasks, 'execute_command', side_effect=AssertionError('Paused aggregation executed')):
-                assert tasks.execute_background_command.run(accepted_operation, 'coverage.maia.submit',
-                    {'accepted_report': {'preserve': True}}) is None
+            # Coverage/Maia is retired, not an accepted optional workflow. Its
+            # current tombstone rejects delivery before creating a receipt.
+            # Preserved accepted intent is proved by the paused import above.
+            retired_operation = uuid4().hex
+            from app.contracts.command_registry import is_retired_command
+            assert is_retired_command('coverage.maia.submit')
+            with patch.object(tasks, 'execute_command', side_effect=AssertionError('Retired aggregation executed')):
+                assert tasks.execute_background_command.run(retired_operation, 'coverage.maia.submit',
+                    {'retired_report': {'must_not_admit': True}}) is None
             postgres.close_pools()
             with postgres.connection() as database:
-                assert database.execute('SELECT payload_json FROM operation_receipts WHERE operation_id=?',
-                    (accepted_operation,)).fetchone()[0] == '{"accepted_report":{"preserve":true}}'
+                assert database.execute('SELECT COUNT(*) FROM operation_receipts WHERE operation_id=%s',
+                    (retired_operation,)).fetchone()[0] == 0
+                imported = database.execute('SELECT command_name,state,payload_json FROM operation_receipts WHERE operation_id=%s',
+                    (import_operation,)).fetchone()
+                assert (imported[0], imported[1]) == ('imports.pgn.admit', 'retrying')
+                assert json.loads(imported[2]) == {'saved_source': 'preserve'}
             assert claim_recoverable_operation(allowed_background_commands=study_mode.STUDY_BACKGROUND_COMMANDS,
                 paused_commands=study_mode.PAUSED_IMPORT_COMMANDS) is None
 
             today = date.today().isoformat()
             with postgres.connection() as database:
-                database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('mode-proof','Mode proof','synthetic',?)", (today,))
+                database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('mode-proof','Mode proof','synthetic',%s)", (today,))
                 database.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) "
-                    "VALUES('mode-line','mode-proof','Saved source','white',?,'[\"d2d4\"]',?)",
+                    "VALUES('mode-line','mode-proof','Saved source','white',%s,'[\"d2d4\"]',%s)",
                     ('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', today))
                 entries = []
                 for index, card_id in enumerate(('superseded', 'deleted', 'eligible-a', 'eligible-b')):
-                    database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type) VALUES(?,'mode-proof','prefix',?,'[\"e2e4\"]','learning',?,'tactic')",
+                    database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type) VALUES(%s,'mode-proof','prefix',%s,'[\"e2e4\"]','learning',%s,'tactic')",
                         (card_id, 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', today))
-                    entries.append(database.execute('INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,?,?) RETURNING id', (today, card_id, index)).fetchone()[0])
+                    entries.append(database.execute('INSERT INTO daily_queue(queue_date,card_id,position) VALUES(%s,%s,%s) RETURNING id', (today, card_id, index)).fetchone()[0])
                 database.execute("UPDATE cards SET superseded_by='eligible-a' WHERE id='superseded'")
-                database.execute("INSERT INTO deleted_cards(card_id,deleted_at) VALUES('deleted',?)", (today,))
-                database.execute("INSERT INTO queue_projections(queue_date,state,generation,refresh_pending) VALUES(?,'ready',1,0) ON CONFLICT(queue_date) DO UPDATE SET state='ready',refresh_pending=0", (today,))
+                database.execute("INSERT INTO deleted_cards(card_id,deleted_at) VALUES('deleted',%s)", (today,))
+                database.execute("INSERT INTO queue_projections(queue_date,state,generation,refresh_pending) VALUES(%s,'ready',1,0) ON CONFLICT(queue_date) DO UPDATE SET state='ready',refresh_pending=0", (today,))
             from app.services.repertoire_move_verification import verify_repertoire_move
             source_fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
             assert verify_repertoire_move('mode-proof', source_fen, 'd2d4')['verified'] is True
@@ -187,8 +200,8 @@ def proof():
             with postgres.connection() as database:
                 assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id='eligible-a'").fetchone()[0] == 1
                 assert database.execute("SELECT COUNT(*) FROM review_attempt_receipts WHERE attempt_id='mode-proof-review'").fetchone()[0] == 1
-                assert database.execute('SELECT COUNT(*) FROM daily_queue WHERE id IN (?,?,?,?)', entries).fetchone()[0] == 4
-                assert database.execute('SELECT COUNT(*) FROM queue_attempt_origins WHERE queue_entry_id IN (?,?,?,?)', entries).fetchone()[0] == 4
+                assert database.execute('SELECT COUNT(*) FROM daily_queue WHERE id IN (%s,%s,%s,%s)', entries).fetchone()[0] == 4
+                assert database.execute('SELECT COUNT(*) FROM queue_attempt_origins WHERE queue_entry_id IN (%s,%s,%s,%s)', entries).fetchone()[0] == 4
             print('PASS superseded_queue_head_does_not_block_eligible_successor')
             print('PASS deleted_queue_head_is_excluded_from_payload_and_count')
             print('PASS study_only_mode_preserves_foreground_review_and_queue_progression')

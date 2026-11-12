@@ -11,7 +11,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { createIsolatedTestEnvironment } from "../../scripts/test-environment.mjs";
 import { resolvePython } from "../../scripts/resolve-python.mjs";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "./postgres-test-options.mjs";
-import { assertDisposableVolumes, backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "./postgres-test-plan.mjs";
+import { assertDisposableVolumes, verifyMaintainedQueueReceipt, verifyMaintainedBrowserReceipt, unresolvedQueueCases, backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "./postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   readStudyQueuePublication, repertoireLimitRecreationPgn, studyDurabilityPgn } from "./postgres-test-fixture.mjs";
 import { createScenarioTimer, isTimingPublicationFailure, postgresCommandTiming } from "../../scripts/test-scenario-timings.mjs";
@@ -29,7 +29,9 @@ const stages = staleOnly
   : postgresTestStages(options);
 if (options.list) {
   console.log(JSON.stringify({ mode: options.mode, stages,
-    browser_file: options.browserFile, browser_grep: options.browserGrep }, null, 2));
+    browser_file: options.browserFile, browser_grep: options.browserGrep,
+    acceptance_scope: options.maintainedStudyProof ? "partial-maintained-study-not-full-E02" : options.mode,
+    unresolved_owner_cases: options.maintainedStudyProof ? unresolvedQueueCases : [] }, null, 2));
   process.exit(0);
 }
 
@@ -138,6 +140,7 @@ const measureScenario = createScenarioTimer(timingPath, {
   runner: "postgres", mode: options.mode,
   commit: commitResult.status === 0 ? commitResult.stdout.trim() : null,
   plan_hash: process.env.TEMPO_CI_PLAN_HASH ?? null,
+  acceptance_scope: options.maintainedStudyProof ? "partial-maintained-study-not-full-E02" : options.mode,
   native_checks: options.nativeChecks ?? [],
   browser_file: options.browserFile, browser_grep: options.browserGrep,
   planned_stages: stages,
@@ -200,7 +203,7 @@ async function runAllocatedNativeProof(scriptPath, proofName, containerOptions =
       "run", "--rm", "--no-deps", ...containerOptions, "schema", "python", "-c", proof]));
 }
 
-async function verifyStudyPriorityMaintenance() {
+async function verifyStudyPriorityMaintenance(currentOnly = false) {
   await withPriorityMaintenanceAllocation(async () => {
     await measureScenario.detail('study_priority_read_only_source_evidence', 'scenario', async () => {
       const evidenceParent = join(process.env.TEMPO_TEST_TIMING_DIR ?? 'test-results/performance', 'study-priority');
@@ -209,14 +212,40 @@ async function verifyStudyPriorityMaintenance() {
       mkdirSync(evidenceDirectory, {mode: 0o700});
       run('docker',[...compose,'-f',priorityResourceLimits,'run','--rm','--no-deps',
         '--volume', `${evidenceDirectory}:/evidence`, 'schema','python',
-        '/source/database/tests/check_postgres_study_priority.py','--owned-stack','--evidence','/evidence']);
+        '/source/database/tests/check_postgres_study_priority.py','--owned-stack','--evidence','/evidence',
+        ...(currentOnly ? ['--current-only'] : [])]);
       const receipt = JSON.parse(readFileSync(join(evidenceDirectory, 'native.json'), 'utf8'));
       assert.equal(receipt.complete, true, 'Read-only-source priority proof did not retain complete evidence');
-      assert.equal(Object.keys(receipt.cases).length, 6, 'Priority proof omitted native cases');
+      assert.equal(Object.keys(receipt.cases).length, currentOnly ? 5 : 6, 'Priority proof omitted native cases');
+      if (currentOnly) assert.equal(receipt.current_only, true);
       atomicJson(join(evidenceDirectory, 'assembly.json'), {revision: candidateRevision, project,
-        source_mount: 'read-only', evidence_mount: '/evidence', complete: true});
+        source_mount: 'read-only', evidence_mount: '/evidence', complete: true,
+        scope: currentOnly ? 'current-five-historical-rollback-unexecuted' : 'all-six'});
     });
   });
+}
+
+async function verifyStudyQueueReceipts(maintained = false) {
+    await executeIsolatedBackgroundWorkload({
+      stopConsumers: () => {
+        run("docker", [...compose, "stop", ...workloadConsumers]);
+        verifyWorkloadConsumers("exited");
+      },
+      measureWorkload: () => {
+        const result = run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
+          "/source/database/tests/check_postgres_queue_attempt_recovery.py", ...(maintained ? ["--case-set", "maintained-six"] : [])],
+          {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, echoCapturedOutput: true});
+        if (!maintained) return;
+        const records = result.stdout.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line));
+        const receipt = records.findLast(record => record.execution === 'completed');
+        verifyMaintainedQueueReceipt(receipt);
+        atomicJson(`test-results/native/${project}-maintained-queue.json`, {revision: candidateRevision, project, ...receipt});
+      },
+      restoreConsumers: () => restoreBackgroundWorkloadConsumers({
+        startConsumers: services => run("docker", [...compose, "up", "--no-build", "-d", "--no-deps", ...services]),
+        waitForReady: () => waitForReady({requireContainerHealthy: true}), verifyConsumers: verifyWorkloadConsumers,
+      }),
+    });
 }
 
 function verifyDisposableVolumesAbsent(names) {
@@ -263,9 +292,11 @@ function removeOwnedMaintenanceHelpContainer() {
 }
 
 function run(command, argumentsList, options = {}) {
+  const { echoCapturedOutput = false, ...spawnOptions } = options;
   const { label, category } = postgresCommandTiming(argumentsList);
   const execute = () => measureScenario.syncDetail(label, category, () => {
-    const result = spawnSync(command, argumentsList, { stdio: "inherit", env: environment, ...options });
+    const result = spawnSync(command, argumentsList, { stdio: "inherit", env: environment, ...spawnOptions });
+    if (echoCapturedOutput && result.stdout) process.stdout.write(result.stdout);
     measureScenario.processResult(result);
     if (result.error || result.status !== 0) throw new Error(`${command} ${argumentsList.join(" ")} failed`);
     return result;
@@ -470,12 +501,12 @@ async function submitPgnFixture(sourceName, pgn, operationId) {
 }
 
 async function verifyPgnImportReplayWithoutDuplicates(operationId, originalResult, phase) {
-  const before = await get("migration/snapshot");
+  const before = await readStudySnapshot();
   const beforeReceipt = await get(`operations/${operationId}`);
   assert.equal(beforeReceipt.state, "complete");
   const replay = await importFixture("recovery-study.pgn", studyDurabilityPgn, operationId);
   assert.deepEqual(replay, originalResult, "PGN replay returns the original logical command result");
-  const after = await get("migration/snapshot");
+  const after = await readStudySnapshot();
   const importIdentities = (snapshot) => {
     const tables = snapshot.tables;
     const links = tables.repertoire_cards.filter(row => row.repertoire_id === originalResult.repertoire_id);
@@ -503,7 +534,7 @@ async function waitForStudyQueue(...argumentsList) {
 }
 
 async function pollForStudyQueue(repertoireId, minimumCardCount) {
-  const initialSnapshot = await get("migration/snapshot");
+  const initialSnapshot = await readStudySnapshot();
   const repertoireCardIds = new Set((initialSnapshot.tables.repertoire_cards ?? [])
     .filter((row) => row.repertoire_id === repertoireId)
     .map((row) => row.card_id));
@@ -528,6 +559,58 @@ async function pollForStudyQueue(repertoireId, minimumCardCount) {
     + `projection=${JSON.stringify(queue.projection ?? null)}`);
 }
 
+// Exact retained observation rows from this invocation's disposable authority.
+// This replaces only the retired snapshot transport, not the proof assertions.
+async function readStudySnapshot() {
+  assertDevelopmentProjectOwned(project);
+  assert.match(project, /^tempo-pg-regressions-\d+-[a-f0-9]+$/);
+  const address = new URL(origin);
+  assert.equal(address.hostname, "127.0.0.1");
+  const metadata = run("docker", ["inspect", "--format",
+    '{"id":{{json .Id}},"labels":{{json .Config.Labels}},"ports":{{json .NetworkSettings.Ports}}}',
+    `${project}-web-1`, `${project}-postgres-1`, `${project}-api-1`],
+    {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8'}).stdout.trim().split('\n').map(line => JSON.parse(line));
+  assert.equal(metadata.length, 3);
+  for (const [index, container] of metadata.entries()) {
+    assert.match(container.id, /^[a-f0-9]{64}$/);
+    assert.equal(container.labels['com.docker.compose.project'], project);
+    assert.equal(container.labels['com.docker.compose.service'], ['web', 'postgres', 'api'][index]);
+    assert.equal(container.labels['tempo.resource-owner'], process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN);
+  }
+  assert.deepEqual(metadata[0].ports['80/tcp'], [{HostIp: '127.0.0.1', HostPort: address.port}]);
+  // Identity is independent of readiness: this proof deliberately stops workers.
+  // Inspect only these two non-secret configuration fields, never waive a 503.
+  const apiIdentity = run("docker", ["inspect", "--format",
+    '{{range .Config.Env}}{{if or (eq . "TEMPO_TEST_INSTANCE=disposable") (eq . "TEMPO_DATABASE_READ_URL=postgresql://tempo_reader@postgres:5432/tempo")}}{{println .}}{{end}}{{end}}',
+    metadata[2].id], {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8'}).stdout.trim().split('\n').sort();
+  assert.deepEqual(apiIdentity, ['TEMPO_DATABASE_READ_URL=postgresql://tempo_reader@postgres:5432/tempo', 'TEMPO_TEST_INSTANCE=disposable']);
+  const schema = schemaVersionFromSource(readFileSync("database/tempo_storage/ddl/schema_version.py", "utf8"));
+  const tables = ['repertoires', 'repertoire_cards', 'repertoire_lines', 'cards', 'reviews',
+    'teaching_states', 'position_annotations', 'daily_queue', 'queue_attempt_origins',
+    'review_attempt_receipts', 'prefix_splits'];
+  const statement = `BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
+    DO $$ BEGIN
+      IF current_database() != 'tempo' OR
+         (SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database())
+           IS DISTINCT FROM 'tempo-disposable-postgres-test' THEN RAISE EXCEPTION 'Unowned snapshot database'; END IF;
+      IF (SELECT array_agg(version ORDER BY version) FROM tempo_schema_migrations)
+         IS DISTINCT FROM ARRAY(SELECT generate_series(1,${schema})) THEN RAISE EXCEPTION 'Snapshot schema mismatch'; END IF;
+    END $$;
+    SELECT json_build_object('tables',json_build_object(${tables.map(table =>
+      `'${table}',(SELECT COALESCE(json_agg(row_to_json(rows) ORDER BY row_to_json(rows)::text),'[]'::json) FROM ${table} rows)`).join(',')}));
+    COMMIT;`;
+  const result = run("docker", ["exec", "--interactive=false", "-e",
+    "PGOPTIONS=-c statement_timeout=10000 -c lock_timeout=1000", metadata[1].id,
+    "psql", "-X", "-w", "-h", "/var/run/postgresql", "-U", "postgres", "-d", "tempo",
+    "-v", "ON_ERROR_STOP=1", "-Atqc", statement],
+    {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8', maxBuffer: 16 * 1024 * 1024});
+  const snapshot = JSON.parse(result.stdout.trim());
+  assert.deepEqual(Object.keys(snapshot.tables), tables);
+  for (const table of tables) assert(Array.isArray(snapshot.tables[table]));
+  return {source: "tempo-postgres", tables: snapshot.tables,
+    counts: Object.fromEntries(tables.map(table => [table, snapshot.tables[table].length]))};
+}
+
 function readScopedPostgresRows(statement) {
   const result = spawnSync("docker", [...compose, "exec", "-T", "postgres", "psql", "-U", "postgres",
     "-d", "tempo", "-Atqc", statement], { encoding: "utf8", env: environment });
@@ -538,7 +621,7 @@ function readScopedPostgresRows(statement) {
 async function reportStudyFixtureDiagnostics(repertoireId) {
   assert.match(repertoireId, /^[0-9a-f-]{36}$/i);
   const [snapshot, integrity, system, queue] = await Promise.all([
-    get("migration/snapshot"), get(`repertoires/${repertoireId}/integrity`),
+    readStudySnapshot(), get(`repertoires/${repertoireId}/integrity`),
     get("system/tasks"), get("queue/today"),
   ]);
   const repertoireCardIds = new Set(snapshot.tables.repertoire_cards
@@ -589,7 +672,7 @@ async function verifyDiscardedPgnReplay(operationId) {
   const replay = await apiRequest("imports/pgn", { method: "POST", body: form,
     headers: { "Idempotency-Key": operationId } });
   assert.equal(replay.status, 409, `Discard fence rejects delayed PGN admission: ${await replay.text()}`);
-  const snapshot = await get("migration/snapshot");
+  const snapshot = await readStudySnapshot();
   assert.equal(snapshot.tables.repertoires.filter(row => row.source_name === `${operationId}.pgn`).length, 0,
     "Discarded PGN cannot create repertoire data before or after recreation");
 }
@@ -673,14 +756,9 @@ async function verifyForegroundAndStudyDurability() {
   });
   assert(failedAttempt, "Guided failure command receives a confirmed response");
 
-  const splitPreview = await get(`cards/${splitCard.id}/prefix-split`);
-  const split = await postCommand(`cards/${splitCard.id}/prefix-split`, {
-    expected_revision: splitPreview.source_revision,
-  }, {
-    operationId: `pg-study-prefix-split-${randomBytes(10).toString("hex")}`,
-    label: "foreground POST prefix split",
-  });
-  assert.equal(split.applied, true);
+  const splitOperationId = `pg-study-prefix-split-${randomBytes(10).toString("hex")}`;
+  const split = await verifyNativeStudyPrefixSplit(splitCard, importedStudy.repertoire_id, splitOperationId);
+  assert.equal(split.response.applied, true);
   const queueRead = await apiRequest("queue/today", {}, "foreground GET queue/today during background backlog");
   assert.equal(queueRead.status, 200);
   const liveQueue = await queueRead.json();
@@ -720,7 +798,7 @@ async function verifyForegroundAndStudyDurability() {
   const beforeBuryQueue = await get("queue/today");
   const buriedCard = beforeBuryQueue.cards[0];
   assert(buriedCard, "Durability fixture includes an active card to bury");
-  const beforeBuryState = stableStudyState(await get("migration/snapshot"), buriedCard.repertoire_id);
+  const beforeBuryState = stableStudyState(await readStudySnapshot(), buriedCard.repertoire_id);
   const buryOperationId = `pg-study-bury-${randomBytes(12).toString("hex")}`;
   const burial = await postCommand(`queue/entries/${buriedCard.queue_entry_id}/bury`, {}, {
     operationId: buryOperationId, label: "foreground POST bury until tomorrow",
@@ -731,7 +809,7 @@ async function verifyForegroundAndStudyDurability() {
     beforeBuryQueue.cards.filter(card => card.id !== buriedCard.id).map(card => card.queue_entry_id),
     "Bury excludes all active occurrences and preserves other cards' order");
 
-  const studySnapshot = await get("migration/snapshot");
+  const studySnapshot = await readStudySnapshot();
   assert.equal(studySnapshot.source, "tempo-postgres");
   assert(studySnapshot.counts.reviews > 0 && studySnapshot.counts.teaching_states > 0
     && studySnapshot.counts.position_annotations > 0 && studySnapshot.counts.prefix_splits > 0);
@@ -752,7 +830,9 @@ async function verifyForegroundAndStudyDurability() {
   await waitForReady();
   await waitForStudyableImport(importedStudy.repertoire_id);
   await waitForStudyableImport(importedBackground.repertoire_id);
-  const afterRestartSnapshot = await get("migration/snapshot");
+  const replayedSplit = await verifyNativeStudyPrefixSplit(splitCard, importedStudy.repertoire_id, splitOperationId);
+  assert.deepEqual(replayedSplit, split, "Native split receipt and exact split rows survive restart and original-ID replay");
+  const afterRestartSnapshot = await readStudySnapshot();
   await verifyPgnImportReplayWithoutDuplicates(pgnImportOperationId, importedStudy, "after recreation");
   await verifyDiscardedPgnReplay(discardedPgnId);
   assert.deepEqual(stableStudyState(afterRestartSnapshot, importedStudy.repertoire_id), beforeRestartState,
@@ -761,7 +841,7 @@ async function verifyForegroundAndStudyDurability() {
     operationId: reviewOperationId, label: "foreground replay confirmed review after recreation",
   });
   assert(replayedReview, "Previously confirmed review command replays under its original identity");
-  const afterReplaySnapshot = await get("migration/snapshot");
+  const afterReplaySnapshot = await readStudySnapshot();
   assert.equal(stableStudyState(afterReplaySnapshot, importedStudy.repertoire_id).reviews.length,
     savedReviewCount, "Confirmed review replay does not create a duplicate business effect");
   assert.deepEqual(afterRestartSnapshot.tables.daily_queue.find(row => row.id === buriedCard.queue_entry_id),
@@ -781,7 +861,7 @@ async function verifyForegroundAndStudyDurability() {
   for (const repertoireId of completedFixtureIds) {
     await postCommand(`repertoires/${repertoireId}`, {}, { method: "DELETE" });
   }
-  const afterFixtureCleanup = await get("migration/snapshot");
+  const afterFixtureCleanup = await readStudySnapshot();
   assert(!afterFixtureCleanup.tables.repertoires.some(row => completedFixtureIds.includes(row.id)),
     "Completed study fixtures are removed before compatibility retention");
   const remainingFixtureTasks = readScopedPostgresRows(`SELECT COALESCE(json_agg(row_to_json(task)),'[]'::json)
@@ -791,6 +871,27 @@ async function verifyForegroundAndStudyDurability() {
   assert.deepEqual(remainingFixtureTasks, [], "Completed study fixtures leave no active background tasks");
   console.log("PASS test_postgres_completed_study_fixtures_release_background_work_before_retention");
   activeStudyRepertoireId = null;
+}
+
+async function verifyNativeStudyPrefixSplit(card, repertoireId, operationId) {
+  await readStudySnapshot(); // Revalidate the exact owned target and schema before writing.
+  const inspected = run("docker", ["inspect", "--format",
+    '{"id":{{json .Id}},"labels":{{json .Config.Labels}}}', `${project}-foreground-worker-1`],
+    {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8'});
+  const writer = JSON.parse(inspected.stdout);
+  assert.match(writer.id, /^[a-f0-9]{64}$/);
+  assert.equal(writer.labels['com.docker.compose.project'], project);
+  assert.equal(writer.labels['com.docker.compose.service'], 'foreground-worker');
+  assert.equal(writer.labels['tempo.resource-owner'], process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN);
+  const proof = run("docker", ["exec", "-i", "-e", "TEMPO_TEST_INSTANCE=disposable", writer.id, "python", "-", card.id, repertoireId, operationId, String(card.revision)], {
+    input: readFileSync("tests/fixtures/postgres-study-prefix-split.py", "utf8"),
+    stdio: ['pipe', 'pipe', 'inherit'], encoding: 'utf8', env: environment,
+  });
+  const receipt = JSON.parse(proof.stdout.trim());
+  assert.equal(receipt.scope, 'native-command-durability-not-HTTP');
+  assert.equal(receipt.operation_id, operationId);
+  console.log(`PASS native prefix-split receipt/replay; UNRESOLVED HTTP transport: ${receipt.unresolved_transport}`);
+  return receipt;
 }
 
 async function verifyStudyBurialRetainsQuota() {
@@ -844,7 +945,7 @@ async function verifyBlockedBurialRecovery() {
   assert(before, "Queue settings restoration settles before blocked burial recovery");
   const selected = before.cards[0];
   assert(selected, "Blocked burial fixture has an authoritative active entry");
-  const originalState = stableStudyState(await get("migration/snapshot"), selected.repertoire_id);
+  const originalState = stableStudyState(await readStudySnapshot(), selected.repertoire_id);
   const operationId = "pg-study-blocked-bury";
   const prepared = spawnSync("docker", [...compose, "exec", "-T", "foreground-worker", "python", "-",
     String(selected.queue_entry_id), operationId], {
@@ -865,7 +966,7 @@ async function verifyBlockedBurialRecovery() {
   const after = await get("queue/today");
   assert.deepEqual(after.cards.map(card => card.queue_entry_id),
     before.cards.filter(card => card.id !== selected.id).map(card => card.queue_entry_id));
-  const afterState = stableStudyState(await get("migration/snapshot"), selected.repertoire_id);
+  const afterState = stableStudyState(await readStudySnapshot(), selected.repertoire_id);
   assert.deepEqual(afterState.cards, originalState.cards, "Blocked recovery leaves scheduling unchanged");
   assert.deepEqual(afterState.reviews, originalState.reviews, "Blocked recovery creates no review");
   assert.deepEqual(await postCommand(`queue/entries/${selected.queue_entry_id}/bury`, {}, { operationId }), result);
@@ -1311,12 +1412,29 @@ const actions = {
   },
   browser: async () => {
       const browserArguments = buildPostgresPlaywrightArguments(options);
+      const report = options.maintainedStudyProof
+        ? resolve(process.env.TEMPO_CI_REPORT ?? `test-results/ci/${project}-maintained-study.json`) : process.env.TEMPO_CI_REPORT;
       run("npx", browserArguments, { env: { ...environment,
+        ...(report ? {TEMPO_CI_REPORT: report} : {}),
         TEMPO_DOCKER_URL: origin,
         TEMPO_TEST_COMPOSE_PROJECT: project,
         TEMPO_TEST_OUTPUT_DIR: join(process.cwd(), "test-results", `browser-postgres-${process.pid}`),
       } });
+      if (options.maintainedStudyProof) {
+        verifyMaintainedBrowserReceipt(JSON.parse(readFileSync(report, 'utf8')));
+        atomicJson(`test-results/native/${project}-maintained-study.json`, {revision: candidateRevision, project,
+          scope: 'partial-maintained-study-not-full-E02', browser_report: report, browser_cases: 1,
+          unresolved_owner_cases: unresolvedQueueCases, historical_priority_rollback: 'not executed',
+          unresolved_transport: ['prefix-split HTTP GET/POST unmounted'], prefix_split_scope: 'native-command-durability-not-HTTP'});
+      }
   },
+  maintained_study_only: async () => {
+    run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+      "/source/database/tests/check_postgres_study_only.py"]);
+    await verifyStudyPriorityMaintenance(true);
+    await verifyStudyOpeningAdmission();
+  },
+  maintained_study_queue_receipts: () => verifyStudyQueueReceipts(true),
   study_isolation: async () => {
     run("docker", [...compose, "down", "-v"]);
     run("docker", [...compose, "up", "--no-build", "-d"]);
@@ -1330,20 +1448,7 @@ const actions = {
     await verifyStudyPriorityMaintenance();
     await verifyStudyOpeningAdmission();
   },
-  study_queue_receipts: async () => {
-    await executeIsolatedBackgroundWorkload({
-      stopConsumers: () => {
-        run("docker", [...compose, "stop", ...workloadConsumers]);
-        verifyWorkloadConsumers("exited");
-      },
-      measureWorkload: () => run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
-        "/source/database/tests/check_postgres_queue_attempt_recovery.py"]),
-      restoreConsumers: () => restoreBackgroundWorkloadConsumers({
-        startConsumers: services => run("docker", [...compose, "up", "--no-build", "-d", "--no-deps", ...services]),
-        waitForReady: () => waitForReady({ requireContainerHealthy: true }), verifyConsumers: verifyWorkloadConsumers,
-      }),
-    });
-  },
+  study_queue_receipts: () => verifyStudyQueueReceipts(),
   ...Object.fromEntries(['position-grade-effects', 'position-introductions', 'position-queue-admission', 'prefix-split-placement'].map(check => [check, async () => {
     assertDevelopmentProjectOwned(project);
     const imageReference = run('docker', [...compose, 'images', '-q', 'schema'],
@@ -1399,8 +1504,8 @@ const actions = {
     await measureScenario.detail("foreground_study", "scenario", verifyForegroundAndStudyDurability);
     await measureScenario.detail("study_burial_quota", "scenario", verifyStudyBurialRetainsQuota);
     await measureScenario.detail("blocked_burial_recovery", "scenario", verifyBlockedBurialRecovery);
-    run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
-      "/source/database/tests/check_postgres_stalemate_swindles.py"]);
+    // Portable stalemate mining/import is retired. Current foreground history,
+    // burial quota and blocked-recovery assertions remain in the three owners above.
   },
   cleanup: async () => executeDiagnosticCleanup(() => {
     if (resourcesCreated) {
@@ -1475,7 +1580,8 @@ try {
   await executePostgresTestPlan(stages, actions, measureScenario, async () => {
     // Capture failure diagnostics before the executor tears down this test stack.
     try {
-      if (activeStudyRepertoireId) await reportStudyFixtureDiagnostics(activeStudyRepertoireId);
+      if (activeStudyRepertoireId) await measureScenario("failure_diagnostics",
+        () => reportStudyFixtureDiagnostics(activeStudyRepertoireId));
     } finally {
       if (resourcesCreated) spawnSync("docker", [...compose, "logs", "--tail=80"],
         { stdio: "inherit", env: environment });

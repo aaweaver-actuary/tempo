@@ -95,3 +95,117 @@ it("PostgreSQL schema fixtures share the queue workers calendar across UTC midni
     expect(service, `${serviceName} must use the same queue day when UTC midnight has passed`).toContain("TZ: America/New_York");
   }
 });
+
+it("maintained Study proof selects a fixed partial plan without changing default study or full", async () => {
+  const {postgresTestStages} = await import('../../database/tests/postgres-test-plan.mjs');
+  const options = parsePostgresTestOptions(['--mode', 'study', '--maintained-study-proof'], cleanEnvironment);
+  expect(options.browserGrep).toBe('study_only_mode_preserves_foreground_review_and_queue_progression across reload and resumption$');
+  expect(postgresTestStages(options)).toEqual(['compose_config','image_build','startup','service_health',
+    'maintained_study_queue_receipts','maintained_study_only','study_durability','study_isolation','browser','cleanup']);
+  expect(postgresTestStages({mode:'study'})).toContain('study_queue_receipts');
+  expect(postgresTestStages({mode:'study'})).not.toContain('maintained_study_queue_receipts');
+  expect(postgresTestStages({mode:'full'})).toContain('deployment_lifecycle');
+  expect(postgresTestStages({mode:'full'})).not.toContain('maintained_study_only');
+});
+
+it("maintained Study misuse fails before resource admission", () => {
+  for (const args of [[], ['--mode','full'], ['--mode','browser'], ['--mode','study','--skip-browser'],
+    ['--mode','study','--browser-grep','.*'], ['--mode','study','--browser-file','study-only-mode.spec.ts'],
+    ['--mode','study','--native-check','position-grade-effects'], ['--mode','study','--maintained-study-proof']])
+    expect(() => parsePostgresTestOptions([...args,'--maintained-study-proof'],cleanEnvironment)).toThrow();
+  for (const environment of [{TEMPO_PG_STALE_DELIVERY_ONLY:'1'}, {TEMPO_RELEASE_CANDIDATE_MODE:'borrow'}])
+    expect(() => parsePostgresTestOptions(['--mode','study','--maintained-study-proof'],environment)).toThrow();
+});
+
+it("maintained queue receipt fails closed on partial, wrong, missing or duplicate completion", async () => {
+  const {maintainedQueueCases,unresolvedQueueCases,verifyMaintainedQueueReceipt} = await import('../../database/tests/postgres-test-plan.mjs');
+  const receipt = {case_set:'maintained-six',scope:'partial',execution:'completed',executed_count:6,
+    cases:maintainedQueueCases,excluded_cases:unresolvedQueueCases,unresolved_owner_cases:unresolvedQueueCases};
+  expect(() => verifyMaintainedQueueReceipt(receipt)).not.toThrow();
+  for (const invalid of [undefined, {...receipt,execution:'discovery-only'}, {...receipt,executed_count:0},
+    {...receipt,cases:[]}, {...receipt,cases:[...maintainedQueueCases.slice(1),maintainedQueueCases[1]]},
+    {...receipt,scope:'all-eight'}, {...receipt,excluded_cases:[]}])
+    expect(() => verifyMaintainedQueueReceipt(invalid)).toThrow();
+});
+
+it("maintained browser requires the one exact executed case without retry skip or empty success", async () => {
+  const {verifyMaintainedBrowserReceipt} = await import('../../database/tests/postgres-test-plan.mjs');
+  const spec = {title:'study_only_mode_preserves_foreground_review_and_queue_progression across reload and resumption',
+    tests:[{results:[{status:'passed',retry:0}]}]};
+  const receipt = {stats:{expected:1,skipped:0,unexpected:0,flaky:0},suites:[{specs:[spec]}]};
+  expect(() => verifyMaintainedBrowserReceipt(receipt)).not.toThrow();
+  for (const invalid of [{...receipt,suites:[]}, {...receipt,stats:{...receipt.stats,skipped:1}},
+    {...receipt,stats:{...receipt.stats,flaky:1}}, {...receipt,suites:[{specs:[spec,spec]}]},
+    {...receipt,suites:[{specs:[{...spec,title:'unrelated'}]}]},
+    {...receipt,suites:[{specs:[{...spec,tests:[{results:[{status:'passed',retry:1}]}]}]}]}])
+    expect(() => verifyMaintainedBrowserReceipt(invalid)).toThrow();
+});
+
+it("owned Study snapshot retains exact rows and refuses wrong target before SQL", async () => {
+  const {default: assert} = await import('node:assert/strict');
+  const source = readFileSync('database/tests/test-postgres-docker.mjs','utf8');
+  const body = source.slice(source.indexOf('async function readStudySnapshot()'), source.indexOf('function readScopedPostgresRows('));
+  const tables = ['repertoires','repertoire_cards','repertoire_lines','cards','reviews','teaching_states',
+    'position_annotations','daily_queue','queue_attempt_origins','review_attempt_receipts','prefix_splits'];
+  const snapshot = {tables:Object.fromEntries(tables.map(table => [table,[{id:table+'-original',value:'unchanged'}]]))};
+  const project = 'tempo-pg-regressions-123-abcd';
+  const metadata = ['web','postgres','api'].map((service,index) => ({id:String(index+1).repeat(64),
+    labels:{'com.docker.compose.project':project,'com.docker.compose.service':service,'tempo.resource-owner':'proof-owner'},
+    ports:service==='web' ? {'80/tcp':[{HostIp:'127.0.0.1',HostPort:'4181'}]} : {}}));
+  let sqlCalls=0;
+  let apiIdentity = 'TEMPO_TEST_INSTANCE=disposable\nTEMPO_DATABASE_READ_URL=postgresql://tempo_reader@postgres:5432/tempo';
+  const run = (_command: string,args: string[]) => {
+    if (args[0]==='inspect') return {stdout:args.length===4 ? apiIdentity : metadata.map(row=>JSON.stringify(row)).join('\n')};
+    sqlCalls++;
+    expect(args).toContain(metadata[1].id);
+    expect(args).toContain('ON_ERROR_STOP=1');
+    expect(args.at(-1)).toContain('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    expect(args.at(-1)).toContain('tempo-disposable-postgres-test');
+    expect(args.at(-1)).toContain('generate_series(1,65)');
+    expect(args.at(-1)).toContain('row_to_json(rows)');
+    return {stdout:JSON.stringify(snapshot)};
+  };
+  const read = new Function('assert','assertDevelopmentProjectOwned','project','get','origin','run','schemaVersionFromSource','readFileSync',
+    body+'; return readStudySnapshot;')(assert,()=>{},project,async()=>{throw new Error('Readiness must not substitute for identity during intentional worker stop');},'http://127.0.0.1:4181',run,()=>65,()=> '');
+  vi.stubEnv('TEMPO_DEVELOPMENT_BUDGET_TOKEN','proof-owner');
+  try {
+    const observed = await read();
+    expect(observed).toEqual({source:'tempo-postgres',tables:snapshot.tables,
+      counts:Object.fromEntries(tables.map(table => [table,snapshot.tables[table].length]))});
+    // Preserve the durability consumer contract as well as exact-row comparisons.
+    expect(observed.source).toBe('tempo-postgres');
+    for (const table of ['reviews','teaching_states','position_annotations','prefix_splits'])
+      expect(observed.counts[table]).toBeGreaterThan(0);
+    snapshot.tables.reviews.push({id:'second-original-review',value:'unchanged'});
+    const changed = await read();
+    expect(changed.counts.reviews).toBe(2);
+    expect(changed.tables.reviews).toEqual(snapshot.tables.reviews);
+    expect(sqlCalls).toBe(2);
+    apiIdentity='TEMPO_TEST_INSTANCE=disposable';
+    await expect(read()).rejects.toThrow();
+    apiIdentity='TEMPO_TEST_INSTANCE=disposable\nTEMPO_DATABASE_READ_URL=postgresql://tempo_reader@postgres:5432/tempo';
+    metadata[1].labels['tempo.resource-owner']='other-owner';
+    await expect(read()).rejects.toThrow();
+    expect(sqlCalls).toBe(2);
+    expect(source).not.toContain('get("migration/snapshot")');
+  } finally {vi.unstubAllEnvs();}
+});
+
+
+it("native prefix durability uses only the finite registered command and original receipt identity", () => {
+  const fixture = readFileSync('tests/fixtures/postgres-study-prefix-split.py','utf8');
+  expect(fixture).toContain("command = 'cards.prefix_split.accept'");
+  expect(fixture).toContain('request_hash=request_digest(command,payload)');
+  expect(fixture).toContain("receipt['state'] == 'complete' and receipt['response'] == result");
+  expect(fixture).toContain('assert execute_command(operation_id,command,payload) == result');
+  expect(fixture).toContain('assert after == before');
+  expect(fixture).toContain('tempo-disposable-postgres-test');
+  expect(fixture).toContain("'tempo_writer'");
+  expect(fixture).toContain('POSTGRES_SCHEMA_VERSION');
+  const runner=readFileSync('database/tests/test-postgres-docker.mjs','utf8');
+  expect(runner).toContain('assert.deepEqual(replayedSplit, split,');
+  expect(runner).toContain('["exec", "-i", "-e", "TEMPO_TEST_INSTANCE=disposable", writer.id, "python"');
+  expect(runner).toContain('measureScenario("failure_diagnostics",');
+  expect(runner).toContain('native-command-durability-not-HTTP');
+  expect(runner).not.toContain('get(`cards/${splitCard.id}/prefix-split`)');
+});

@@ -1,6 +1,8 @@
 import { existsSync } from "node:fs";
 import { basename, join } from "node:path";
 
+export const maintainedStudyBrowser = "study_only_mode_preserves_foreground_review_and_queue_progression across reload and resumption$";
+
 export function parsePostgresTestOptions(argumentsList, environment = process.env, root = process.cwd()) {
   if (environment.TEMPO_PG_BROWSER_GREP || environment.TEMPO_PG_BROWSER_FILE) {
     throw new Error("PostgreSQL browser focus must be passed as runner arguments; clear inherited TEMPO_PG_BROWSER_* filters");
@@ -9,7 +11,11 @@ export function parsePostgresTestOptions(argumentsList, environment = process.en
   const options = { list: false, skipBrowser: false, browserFile: null, browserGrep: null, mode: null };
   for (let argumentIndex = 0; argumentIndex < argumentsList.length; argumentIndex += 1) {
     const argument = argumentsList[argumentIndex];
-    if (argument === "--list") options.list = true;
+    if (argument === "--maintained-study-proof") {
+      if (options.maintainedStudyProof) throw new Error("Duplicate maintained Study proof option");
+      options.maintainedStudyProof = true;
+    }
+    else if (argument === "--list") options.list = true;
     else if (argument === '--native-check') {
       const check = argumentsList[++argumentIndex];
       if (!['redis-fixture-isolation', 'position-grade-effects', 'position-introductions', 'position-queue-admission', 'prefix-split-placement', 'game-review-reader'].includes(check) || options.nativeChecks?.includes(check)) throw new Error('Unknown or duplicate native check');
@@ -30,6 +36,11 @@ export function parsePostgresTestOptions(argumentsList, environment = process.en
     }
   }
 
+  if (options.maintainedStudyProof) {
+    if (environment.TEMPO_PG_STALE_DELIVERY_ONLY === "1" || environment.TEMPO_RELEASE_CANDIDATE_MODE || options.mode !== "study" || options.skipBrowser || options.browserFile || options.browserGrep || options.nativeChecks?.length)
+      throw new Error("Maintained Study proof requires explicit study mode and no alternate selections");
+    options.browserGrep = maintainedStudyBrowser;
+  }
   if (options.browserFile && options.browserGrep) {
     throw new Error("Choose one browser focus: --browser-file or --browser-grep");
   }

@@ -1492,3 +1492,13 @@ test("game review reader alias is finite and preserves prefix selection and clea
     assert.throws(() => postgresTestStages({ mode: "browser", nativeChecks: checks }));
   }
 });
+
+
+test('selected Study durability retains current history and quota proofs without retired portable imports', () => {
+  const source = readFileSync(join(root, 'database/tests/test-postgres-docker.mjs'), 'utf8');
+  const action = source.slice(source.indexOf('  study_durability: async () => {'), source.indexOf('  cleanup: async () =>'));
+  for (const proof of ['verifyForegroundAndStudyDurability', 'verifyStudyBurialRetainsQuota', 'verifyBlockedBurialRecovery'])
+    assert(action.includes(proof), `Missing retained ${proof}`);
+  assert(!action.includes('check_postgres_stalemate_swindles.py'));
+  assert(postgresTestStages({mode: 'study'}).includes('study_durability'));
+});
