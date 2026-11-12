@@ -13,6 +13,12 @@ The five `SchedulerTests` method names are preserved from `backend/tests/test_se
 
 No persistence or atomic-review proof moves here. Those remain Learning's owning native tests.
 
+Fresh position construction: `test_fresh_position_state_preserves_allocated_identity_and_due_without_review`
+checks identity/aware offset roundtrip, untouched Learning defaults and compatibility
+with the existing review operation. `test_fresh_position_requires_allocated_positive_integer`
+and `test_fresh_position_requires_explicit_aware_instant` reject invalid inputs.
+The existing unsupported-version and no-ambient-API cases include fresh construction.
+
 Consumer parity: `tests/unit/scheduling-producer-parity-regressions.test.ts` runs the installed Python producer in isolated mode and compares the serialized golden fixture. It belongs to the producer-parity lane, not frontend-only collection.
 
 #200 strict-boundary regressions (same regular owning suite):

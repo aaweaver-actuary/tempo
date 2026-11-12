@@ -6,6 +6,7 @@ from types import SimpleNamespace as NS
 import pytest
 from tempo_evidence_math.position_learning import Hold, PositionDefinition, PositionKey
 from tempo_storage.study import position_introductions as intro
+from tempo_scheduling import initial_position_state
 
 FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -"
 DEF = PositionDefinition(PositionKey("r", FEN), "e2e4", "p1")
@@ -118,7 +119,8 @@ def test_only_authorized_unseen_position_gets_fresh_state_without_history(fences
     fenced = intro.fence_introduction(db, proposal)
     assert isinstance(fenced, intro.IntroductionFence)
     now = datetime(2026, 11, 2, tzinfo=timezone.utc)
-    intro.initialize_introduction(db, proposal, fenced, now=now)
+    intro.initialize_introduction(db, proposal, fenced, now=now,
+                                  initial_state=initial_position_state)
     statement, params = db.calls[-1]
     assert "INSERT INTO study_position_states" in statement
     assert params[7] == 4503599627370496 and params[-2:] == (now, now)
@@ -157,8 +159,38 @@ def test_unseen_proof_fails_closed_on_ambiguous_or_changed_history(fences):
     )
     with pytest.raises(ValueError, match="fence_required"):
         intro.initialize_introduction(
-            Writer(), prepared(), ("e1", (DEF,)), now=datetime.now(timezone.utc)
+            Writer(), prepared(), ("e1", (DEF,)), now=datetime.now(timezone.utc),
+            initial_state=initial_position_state
         )
+
+
+def test_initial_state_capability_runs_after_allocation_and_failure_propagates(fences):
+    db, proposal = Writer(), prepared()
+    fenced = intro.fence_introduction(db, proposal)
+    now = datetime(2026, 11, 2, tzinfo=timezone.utc)
+    def fail(allocated, due):
+        assert allocated == 4503599627370496 and due is now
+        assert "nextval" in db.calls[-1][0]
+        raise ValueError("construction_failed")
+    with pytest.raises(ValueError, match="construction_failed"):
+        intro.initialize_introduction(db, proposal, fenced, now=now, initial_state=fail)
+    assert not any("INSERT INTO study_position_states" in sql for sql, _ in db.calls)
+    # The exception escapes to the existing borrowed transaction owner. A fake
+    # cannot establish PostgreSQL rollback; the native introduction gate owns it.
+
+
+def test_regular_introduction_supplies_scheduling_capability(monkeypatch):
+    from app.services import position_queue_admission as admission
+    proposal, fence, database = object(), object(), object()
+    now = datetime(2026, 11, 2, tzinfo=timezone.utc)
+    calls = []
+    monkeypatch.setattr(intro, 'initialize_introduction',
+        lambda *args, **kwargs: calls.append((args, kwargs)))
+    admission.apply_opening_introduction(database, ('position', proposal), fence, now=now)
+    assert calls == [((database, proposal, fence),
+        {'now': now, 'initial_state': initial_position_state})]
+    admission.apply_opening_introduction(database, ('legacy', 'r'), None, now=now)
+    assert len(calls) == 1
 
 
 def test_native_authorized_introduction_writes_fresh_state_only_after_admission(
@@ -395,6 +427,31 @@ def test_native_authorized_introduction_writes_fresh_state_only_after_admission(
             assert (held["target_card_id"], held["history_card_id"], held["history_card_revision"]) == ("card", "card", 1)
             assert raw.execute("SELECT count(*) FROM opening_evidence_attempts").fetchone()[0] == 1
             raw.execute("DELETE FROM opening_evidence_attempts WHERE card_id='card'")
+            # Either pure construction or insertion failure must escape the
+            # borrowed transaction and roll back the already admitted card/queue.
+            for failure in ('construction', 'insertion'):
+                with monkeypatch.context() as patch:
+                    if failure == 'construction':
+                        import tempo_scheduling
+                        def fail_construction(allocated, due):
+                            raise ValueError('initial_state_construction_failed')
+                        patch.setattr(tempo_scheduling, 'initial_position_state', fail_construction)
+                    else:
+                        original_execute = port.execute_native
+                        def fail_insert(query, params=()):
+                            if 'INSERT INTO study_position_states' in query:
+                                raise ValueError('initial_state_insertion_failed')
+                            return original_execute(query, params)
+                        patch.setattr(port, 'execute_native', fail_insert)
+                    raw.execute('BEGIN')
+                    try:
+                        with pytest.raises(ValueError, match='initial_state_'):
+                            refresh.execute_postgres_queue_refresh_slice(task)
+                    finally:
+                        raw.execute('ROLLBACK')
+                assert raw.execute('SELECT count(*) FROM study_position_states').fetchone()[0] == 0
+                assert raw.execute('SELECT count(*) FROM daily_queue').fetchone()[0] == 0
+                assert raw.execute("SELECT introduced_at FROM cards WHERE id='card'").fetchone()[0] is None
             raw.execute("BEGIN")
             assert refresh.execute_postgres_queue_refresh_slice(task)
             raw.execute("COMMIT")
@@ -521,7 +578,7 @@ def test_targeted_game_intro_uses_exact_source_occurrence_and_real_admission(
     monkeypatch.setattr(
         intro,
         "initialize_introduction",
-        lambda *a, **kw: calls.append(("initialize", a[1])),
+        lambda *a, **kw: calls.append(("initialize", a[1], kw['initial_state'])),
     )
 
     class Canonical:
@@ -546,6 +603,7 @@ def test_targeted_game_intro_uses_exact_source_occurrence_and_real_admission(
     assert result.status == "introduced"
     assert [call[0] for call in calls] == ["prepare", "admit", "initialize"]
     assert calls[1][2]["target"] is target
+    assert calls[2][2] is initial_position_state
 
 
 def test_targeted_game_intro_does_not_initialize_on_rejected_admission(monkeypatch):

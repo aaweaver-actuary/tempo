@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from fsrs import Card, Rating, Scheduler, State
-from tempo_scheduling import clone_state, schedule_position_review, schedule_review
+from tempo_scheduling import initial_position_state, InitialPositionState, clone_state, schedule_position_review, schedule_review
 
 
 ACCEPTED_AT = datetime(2026, 11, 2, 23, 30, tzinfo=timezone.utc)
@@ -13,6 +13,35 @@ DONOR = dict(card_id=81, state=2, step=None, stability=12.5, difficulty=5.2,
              due='2026-11-01T12:00:00+00:00', last_review='2026-10-20T12:00:00+00:00')
 INITIAL = dict(card_id=82, state=1, step=0, stability=None, difficulty=None,
                due='2026-11-01T12:00:00+00:00', last_review=None)
+
+
+@pytest.mark.parametrize('offset', [0, -7, 5.5])
+def test_fresh_position_state_preserves_allocated_identity_and_due_without_review(offset):
+    due = ACCEPTED_AT.astimezone(timezone(timedelta(hours=offset)))
+    state = initial_position_state(4503599627370496, due)
+    assert isinstance(state, InitialPositionState)
+    expected = Card(card_id=4503599627370496, due=due)
+    assert state.fsrs_card_json == expected.to_json()
+    card = Card.from_json(state.fsrs_card_json)
+    assert card.card_id == 4503599627370496 and card.due == due == state.due_at
+    assert card.state == State.Learning and card.step == 0
+    assert card.last_review is card.stability is card.difficulty is None
+    scheduled = schedule_position_review('good', fsrs_card_json=state.fsrs_card_json,
+        accepted_at=due, review_day=STUDY_DAY)
+    assert Card.from_json(scheduled.fsrs_card_json).card_id == card.card_id
+    assert Card.from_json(scheduled.fsrs_card_json).last_review == due
+
+
+@pytest.mark.parametrize('identity', [None, True, False, 0, -1, '1', 1.0])
+def test_fresh_position_requires_allocated_positive_integer(identity):
+    with pytest.raises(ValueError, match='allocated_card_id'):
+        initial_position_state(identity, ACCEPTED_AT)
+
+
+@pytest.mark.parametrize('due', [None, ACCEPTED_AT.replace(tzinfo=None), '2026-11-02'])
+def test_fresh_position_requires_explicit_aware_instant(due):
+    with pytest.raises(ValueError, match='due_at'):
+        initial_position_state(901, due)
 
 
 def blob(**changes):
@@ -94,6 +123,8 @@ def test_unsupported_fsrs_version_is_held(monkeypatch):
         clone_state(blob(), allocated_new_card_id=901)
     with pytest.raises(ValueError, match='unsupported FSRS version'):
         transition()
+    with pytest.raises(ValueError, match='unsupported FSRS version'):
+        initial_position_state(901, ACCEPTED_AT)
 
 
 @pytest.mark.parametrize('grade,rating', [('good', Rating.Good), ('again', Rating.Again)])
@@ -144,6 +175,7 @@ def test_position_operations_do_not_call_legacy_scheduler_or_environment(monkeyp
     monkeypatch.setattr('tempo_scheduling._scheduler._scheduler', forbidden)
     cloned = clone_state(blob(), allocated_new_card_id=901)
     assert transition(fsrs_card_json=cloned) == transition(fsrs_card_json=cloned)
+    assert initial_position_state(902, ACCEPTED_AT) == initial_position_state(902, ACCEPTED_AT)
 
 
 def test_position_transition_is_pure_and_preserves_legacy_behavior():

@@ -6,6 +6,7 @@ Seed outcomes remain immutable historical evidence.
 """
 from dataclasses import dataclass
 from datetime import datetime
+from collections.abc import Callable
 
 from tempo_evidence_math.position_learning import Hold
 
@@ -209,9 +210,9 @@ def record_history_hold(database, prepared, held):
          prepared.card_id, held.detail, next(iter(revisions)), held.reason))
 
 
-def initialize_introduction(database, prepared, fenced, *, now):
+def initialize_introduction(database, prepared, fenced, *, now,
+                            initial_state: Callable[[int, datetime], tuple[str, datetime]]):
     """Create fresh FSRS state after the real introduction was admitted."""
-    from fsrs import Card
     if (not isinstance(now, datetime) or now.utcoffset() is None
             or not isinstance(fenced, IntroductionFence) or fenced._seal is not _FENCE_SEAL
             or fenced.prepared is not prepared):
@@ -219,11 +220,11 @@ def initialize_introduction(database, prepared, fenced, *, now):
     token = prepared.source.authored_token
     for definition in fenced.definitions:
         allocated = database.execute_native("SELECT nextval('study_position_fsrs_id_seq')").fetchone()[0]
-        card = Card(card_id=allocated, due=now)
+        fsrs_json, due_at = initial_state(allocated, now)
         database.execute_native('''INSERT INTO study_position_states
             (repertoire_id,variant,position,expected_uci,policy_version,owner_epoch,source_digest,
              fsrs_internal_card_id,fsrs_json,due_at,introduced_at)
             VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
             (definition.key.repertoire_id, definition.key.variant, definition.key.position,
              definition.expected_uci, definition.policy_version, fenced.epoch, token.authored_digest,
-             allocated, card.to_json(), now, now))
+             allocated, fsrs_json, due_at, now))
