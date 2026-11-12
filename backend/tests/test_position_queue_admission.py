@@ -338,8 +338,10 @@ def test_native_refresh_admits_due_carrier_and_reuses_pending(monkeypatch):
                 def __init__(self, raw):
                     self.raw = raw
 
-                def execute_native(self, query, params=()):
+                def execute(self, query, params=()):
                     return self.raw.execute(query, params)
+
+                execute_native = execute
 
             port = Port(raw)
             prepared = _source_preparation.prepare_position_source(port, "r")
@@ -381,8 +383,8 @@ def test_native_refresh_admits_due_carrier_and_reuses_pending(monkeypatch):
             def borrowed(*args, **kwargs):
                 yield port
 
-            monkeypatch.setattr(refresh.read_storage, "native_configured", lambda: True)
             monkeypatch.setattr(refresh, "background_read_connection", borrowed)
+            monkeypatch.setattr(refresh, "read_connection", borrowed)
             monkeypatch.setattr(refresh, "connection", borrowed)
             monkeypatch.setattr(
                 refresh.frozen_opening_order, "activation", lambda *a, **k: (None, 0)
@@ -400,7 +402,8 @@ def test_native_refresh_admits_due_carrier_and_reuses_pending(monkeypatch):
             )
             raw.execute("BEGIN")
             assert refresh.execute_postgres_queue_refresh_slice(
-                {"payload": {"queue_date": day, "_queue_phase": "admit_position_due"}}
+                {"payload": {"queue_date": day, "_queue_phase": "admit_position_due",
+                             "_refresh_cycle_epoch": 1}}
             )
             raw.execute("COMMIT")
             assert [
@@ -579,9 +582,6 @@ def test_native_refresh_admits_due_carrier_and_reuses_pending(monkeypatch):
             monkeypatch.setattr(queue_commands, "current_study_day", lambda db: day)
             monkeypatch.setattr(queue_commands, "_lock_attempt_card", lambda *a: None)
             monkeypatch.setattr(
-                queue_commands.queue_storage, "is_postgres_connection", lambda db: False
-            )
-            monkeypatch.setattr(
                 queue_commands.queue_storage, "issued_origin", lambda *a: True
             )
             monkeypatch.setattr(
@@ -705,7 +705,8 @@ def test_native_refresh_admits_due_carrier_and_reuses_pending(monkeypatch):
             )
             raw.execute("BEGIN")
             assert refresh.execute_postgres_queue_refresh_slice(
-                {"payload": {"queue_date": day, "_queue_phase": "admit_position_due"}}
+                {"payload": {"queue_date": day, "_queue_phase": "admit_position_due",
+                             "_refresh_cycle_epoch": 1}}
             )
             raw.execute("COMMIT")
             assert [
