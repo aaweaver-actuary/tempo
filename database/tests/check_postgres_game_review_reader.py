@@ -5,7 +5,7 @@ TEMPO_TEST_COMPOSE_PROJECT=tempo-pg-regressions-<digits>-<hex>, and that stack's
 TEMPO_DEVELOPMENT_BUDGET_TOKEN. API, foreground-worker and PostgreSQL must already
 be running with the current schema and provisioned reader/writer profiles. Nothing here
 creates a container, credential, role, grant, image, or application instance.
-Only three uniquely named synthetic receipt rows are seeded/removed by the
+Only three uniquely named synthetic game/repertoire/line rows are seeded/removed by the
 existing writer. Import performs no Docker, HTTP, database or fixture work.
 """
 import hashlib
@@ -24,18 +24,13 @@ from tempo_storage.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 ROOT = Path(__file__).resolve().parents[2]
 RUNTIME_FILES = {
     "backend/app/main.py": "/app/app/main.py",
-    "backend/app/product_composition/game_review.py": "/app/app/product_composition/game_review.py",
-    "backend/app/games/feedback/http.py": "/app/app/games/feedback/http.py",
-    "backend/app/games/feedback/review.py": "/app/app/games/feedback/review.py",
-    "backend/app/contracts/product_v02/learning.py": "/app/app/contracts/product_v02/learning.py",
-    "backend/app/contracts/product_v02/presentation.py": "/app/app/contracts/product_v02/presentation.py",
-    "backend/app/study/encounter_feedback.py": "/app/app/study/encounter_feedback.py",
-    "database/tempo_storage/adapters/games/product_review.py": "/app/tempo_storage/adapters/games/product_review.py",
-    "database/tempo_storage/adapters/study/game_feedback.py": "/app/tempo_storage/adapters/study/game_feedback.py",
+    "backend/app/games/review.py": "/app/app/games/review.py",
+    "backend/app/games/comparison.py": "/app/app/games/comparison.py",
+    "database/tempo_storage/game_review.py": "/app/tempo_storage/game_review.py",
+    "database/tempo_storage/connections.py": "/app/tempo_storage/connections.py",
     "database/tempo_storage/ddl/schema_version.py": "/app/tempo_storage/ddl/schema_version.py",
-    "database/tempo_storage/ddl/migrations/052_product_game_sync.sql": "/app/tempo_storage/ddl/migrations/052_product_game_sync.sql",
-    "database/tempo_storage/ddl/migrations/056_managed_game_feedback_mode.sql": "/app/tempo_storage/ddl/migrations/056_managed_game_feedback_mode.sql",
 }
+READ_RELATIONS = ("imported_games", "repertoire_lines", "repertoires")
 
 
 def _docker(*args, source=None):
@@ -64,12 +59,16 @@ def _owned_containers():
         assert labels["tempo.resource-owner"] == token
         assert info["State"]["Running"] is True
         containers[service] = info
-    api = containers["api"]
-    # A source overlay is not evidence about the packaged application.
-    for mount in api["Mounts"]:
-        destination = mount["Destination"].rstrip("/")
-        assert not any(destination == root or destination.startswith(root + "/")
-                       for root in ("/app", "/packages", "/contracts", "/services"))
+    for service in ("api", "foreground-worker"):
+        container = containers[service]
+        assert re.fullmatch(r"sha256:[a-f0-9]{64}", container["Image"]), "Immutable image ID required"
+        image, = json.loads(_docker("image", "inspect", container["Image"]))
+        assert image["Id"] == container["Image"], "Packaged image identity mismatch"
+        # Neither reader nor writer may execute a mounted source overlay.
+        for mount in container["Mounts"]:
+            destination = mount["Destination"].rstrip("/")
+            assert not any(destination == root or destination.startswith(root + "/")
+                           for root in ("/app", "/packages", "/contracts", "/services"))
     return containers
 
 
@@ -112,12 +111,8 @@ with connect("tempo_reader") as database:
     assert role == (False, False, False, False)
     assert database.execute("SHOW transaction_read_only").fetchone()[0] == "on"
     relations = database.execute("""SELECT tablename FROM pg_tables WHERE schemaname='public'
-        AND (tablename LIKE 'product_feedback_%' OR tablename='study_game_feedback') ORDER BY tablename""").fetchall()
-    assert [row[0] for row in relations] == sorted([
-        'product_feedback_jobs','product_feedback_pages','product_feedback_sources',
-        'product_feedback_captures','product_feedback_deliveries','product_feedback_configuration',
-        'product_feedback_sync_requests','product_feedback_retry_requests',
-        'product_feedback_managed_mode','study_game_feedback'])
+        AND tablename IN ('imported_games','repertoire_lines','repertoires') ORDER BY tablename""").fetchall()
+    assert [row[0] for row in relations] == ['imported_games','repertoire_lines','repertoires']
     for relation, in relations:
         privileges = database.execute("""SELECT has_table_privilege(current_user,%s,'SELECT'),
             has_table_privilege(current_user,%s,'INSERT'),has_table_privilege(current_user,%s,'UPDATE'),
@@ -128,7 +123,7 @@ with connect("tempo_reader") as database:
     try:
         with database.transaction():
             database.execute("SET TRANSACTION READ WRITE")
-            database.execute("UPDATE product_feedback_sources SET version=version WHERE false")
+            database.execute("UPDATE imported_games SET id=id WHERE false")
     except psycopg.errors.InsufficientPrivilege:
         pass
     else:
@@ -137,92 +132,87 @@ print(json.dumps({"schema":POSTGRES_SCHEMA_VERSION,"role":"tempo_reader","select
 '''
 
 SEED = r'''
-from datetime import datetime
-from app.study.interfaces.game_priority import GameEncounter,GameEffectControl
-from app.study.game_feedback import Effect,effect_id
-from app.study.encounter_feedback import encounter_digest
-from tempo_storage.postgres import PostgresConnection
-from tempo_storage.study.game_feedback import PostgresGameFeedbackStore
-command = GameEncounter.model_validate_json(json.dumps(payload["command"]))
-now = datetime.fromisoformat(command.detected_at.replace("Z","+00:00"))
-effect = Effect(key=command.key,source_revision=command.source.source_revision,received_at=now,
-    status="held",encounter=command,payload_hash=encounter_digest(command),
-    reason="reanalysis",disposition="first_introduction",admission_status="pending",
-    deferred_reason="authority_unavailable",observation_recorded=True,
-    control=GameEffectControl(key=command.key,source_revision=command.source.source_revision,
-                              action="hold",reason="reanalysis"))
+from chess import STARTING_FEN
 with connect("tempo_writer") as database:
     with database.transaction():
-        database.execute("SET LOCAL transaction_timeout='250ms'")
         database.execute("SET LOCAL statement_timeout='250ms'")
         database.execute("SET LOCAL lock_timeout='100ms'")
-        database.execute("INSERT INTO product_feedback_sources(source_key,version,payload) VALUES(%s,1,%s::jsonb)",
-                         (payload["source_key"],json.dumps(payload["source"])))
-        database.execute("""INSERT INTO product_feedback_deliveries(operation_id,source_key,effect_key,
-            command_kind,state,next_attempt_at,payload) VALUES(%s,%s,%s,'encounter','acknowledged',0,%s::jsonb)""",
-            (payload["operation_id"],payload["source_key"],command.key.logical_id(),json.dumps(payload["delivery"])))
-        PostgresGameFeedbackStore(PostgresConnection(database)).save(effect,now)
-print(json.dumps({"effect_id":effect_id(command.key)}))
+        database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,%s,%s,'2026-01-01')",
+                         (payload["identity"],payload["identity"],payload["identity"]))
+        database.execute("""INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
+            VALUES(%s,%s,%s,'white',%s,%s,'2026-01-01')""",
+            (payload["identity"],payload["identity"],payload["identity"],STARTING_FEN,json.dumps(['e2e4','e7e5','g1f3','b8c6'])))
+        database.execute("""INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json)
+            VALUES(%s,'fixture',%s,'2099-01-01','rapid',0,'white','1-0',%s,%s)""",
+            (payload["identity"],payload["identity"],STARTING_FEN,json.dumps(['e2e4','e7e5','f1c4'])))
+print(json.dumps({"seeded":payload["identity"]}))
 '''
 
 PROOF = r'''
 from urllib.request import Request,urlopen
 from urllib.error import HTTPError
+from urllib.parse import quote
+
 def request(path,body=None):
     data = None if body is None else json.dumps(body).encode()
-    request = Request("http://127.0.0.1:8000"+path,data=data,headers={"Content-Type":"application/json"})
+    query = Request("http://127.0.0.1:8000"+path,data=data,headers={"Content-Type":"application/json"})
     try:
-        with urlopen(request,timeout=5) as response:
+        with urlopen(query,timeout=5) as response:
             return response.status,json.load(response)
     except HTTPError as response:
         return response.code,json.load(response)
+
 with connect("tempo_reader") as database:
     def snapshot():
-        return [database.execute(sql,(value,)).fetchone()[0] for sql,value in (
-            ("SELECT payload::text FROM product_feedback_sources WHERE source_key=%s",payload["source_key"]),
-            ("SELECT payload::text FROM product_feedback_deliveries WHERE operation_id=%s",payload["operation_id"]),
-            ("SELECT row_to_json(f)::text FROM study_game_feedback f WHERE effect_key=%s",payload["effect_id"]))]
+        tables = ('cards','daily_queue','queue_attempt_origins','reviews','review_attempt_receipts',
+                  'study_position_issued_plans','study_position_grades','study_position_states',
+                  'imported_games','repertoires','repertoire_lines')
+        return {table:database.execute("SELECT COALESCE(json_agg(t ORDER BY t::text),'[]'::json)::text FROM (SELECT * FROM "+table+") t").fetchone()[0]
+                for table in tables}
     before = snapshot()
     status,health = request("/api/health")
     assert status == 200 and health["test_instance"] is True
-    status,detail = request("/api/product/game-review/games/lichess/"+payload["identity"])
-    assert status == 200, detail
-    receipt, = detail["receipts"]
-    assert receipt["owner_receipt_id"] == payload["effect_id"]
-    assert receipt["key"] == payload["command"]["key"]
-    assert receipt["status"] == "held" and receipt["disposition"] == "first_introduction"
-    assert receipt["admission_status"] == "pending" and receipt["available_by"] is None
-    assert receipt["deferred_reason"] == "authority_unavailable" and receipt["observation_recorded"] is True
-    assert receipt["source_digest"] == payload["command"]["source"]["source_digest"]
-    # HTTP writer dispatch is adopted; test the actual reader's SQL authority.
+    status,listing = request("/api/product/game-review/games")
+    assert status == 200 and any(game['id'] == payload['identity'] for game in listing['games'])
+    status,saved = request("/api/product/game-review/games/"+quote(payload['identity'],safe='')+"?repertoire_id="+quote(payload['identity'],safe=''))
+    assert status == 200, saved
+    status,pasted = request("/api/product/game-review/compare", {
+        "pgn": '[Event "Owned reader fixture"]\n\n1. e4 e5 2. Bc4 *',
+        "repertoire_id":payload['identity'],"color":"white"})
+    assert status == 200, pasted
+    for detail in (saved,pasted):
+        assert detail['moves'] == ['e2e4','e7e5','f1c4'] and len(detail['positions']) == 4
+        comparison = detail['comparison']
+        assert comparison['kind'] == 'departure' and comparison['ply'] == 3
+        assert comparison['played_uci'] == 'f1c4' and comparison['expected_uci'] == ['g1f3']
+        assert comparison['actor'] == 'white'
+        assert 'receipts' not in detail  # retired feedback contract is not restored
+    assert saved['comparison'] == pasted['comparison'] and saved['positions'] == pasted['positions']
     try:
         with database.transaction():
-            database.execute("UPDATE study_game_feedback SET status='settled' WHERE effect_key=%s",
-                             (payload["effect_id"],))
-            raise AssertionError("Reader unexpectedly updated the synthetic receipt")
+            database.execute("UPDATE imported_games SET result='*' WHERE id=%s", (payload['identity'],))
     except (psycopg.errors.ReadOnlySqlTransaction, psycopg.errors.InsufficientPrivilege):
         pass
+    else:
+        raise AssertionError("Reader unexpectedly updated fixture game")
     assert snapshot() == before
-print(json.dumps({"http_receipt":receipt,"reader_update_rejected":True,"fixture_rows_unchanged":True}))
+print(json.dumps({"saved_and_pasted":True,"reader_update_rejected":True,"study_and_fixture_rows_unchanged":True}))
 '''
 
 CLEANUP = r'''
 with connect("tempo_writer") as database:
     with database.transaction():
         database.execute("SET LOCAL statement_timeout='250ms'")
-        # Exact command/source predicates preserve every other fixture's rows,
-        # including if seed acknowledgement was lost after its commit.
-        database.execute("""DELETE FROM study_game_feedback WHERE effect_key=%s
-            AND identity_json::jsonb->>'game_id'=%s""",(payload["effect_id"],payload["identity"]))
-        database.execute("""DELETE FROM product_feedback_deliveries WHERE operation_id=%s AND source_key=%s
-            AND payload->'encounter'->'key'->>'game_id'=%s""",
-            (payload["operation_id"],payload["source_key"],payload["identity"]))
-        database.execute("""DELETE FROM product_feedback_sources WHERE source_key=%s
-            AND payload->'normalized'->>'game_id'=%s""",(payload["source_key"],payload["identity"]))
-        for table,column,value in (("study_game_feedback","effect_key",payload["effect_id"]),
-                ("product_feedback_deliveries","operation_id",payload["operation_id"]),
-                ("product_feedback_sources","source_key",payload["source_key"])):
-            assert database.execute("SELECT COUNT(*) FROM "+table+" WHERE "+column+"=%s",(value,)).fetchone()[0] == 0
+        database.execute("SET LOCAL lock_timeout='100ms'")
+        # Independent exact predicates also clean up a lost seed acknowledgment.
+        database.execute("DELETE FROM imported_games WHERE id=%s AND username=%s AND provider='fixture'",
+                         (payload['identity'],payload['identity']))
+        database.execute("DELETE FROM repertoire_lines WHERE id=%s AND repertoire_id=%s AND name=%s",
+                         (payload['identity'],)*3)
+        database.execute("DELETE FROM repertoires WHERE id=%s AND source_name=%s AND name=%s",
+                         (payload['identity'],)*3)
+        for table in ('imported_games','repertoire_lines','repertoires'):
+            assert database.execute("SELECT COUNT(*) FROM "+table+" WHERE id=%s",(payload['identity'],)).fetchone()[0] == 0
 print(json.dumps({"fixture_cleanup_verified":True}))
 '''
 
@@ -234,44 +224,24 @@ def _exec_python(container, payload, body):
                               source=source).strip().splitlines()[-1])
 
 
-def check_packaged_game_review_reader_reads_current_receipt_without_write_privileges():
-    containers = _owned_containers()  # Reject ambient/live targets before any connection or seed.
-    from app.games.feedback.coordinator import delivery_for
-    from app.games.feedback.ports import SourceState
-    from app.study.game_feedback import effect_id
-    from test_product_game_review_receipts import scenario
-
-    case = scenario()
-    identity = "game-review-reader-" + uuid.uuid4().hex
-    replacements = {case.source.normalized.workspace_id:"legacy",case.source.normalized.game_id:identity,
-        case.source.original.source_game_id:identity,case.source.source_key:identity+"-source",
-        case.command.key.decision_id:identity+"-decision",case.command.decision.presentation_id:identity+"-card"}
-    def namespace(value):
-        if isinstance(value,dict): return {key:namespace(item) for key,item in value.items()}
-        if isinstance(value,list): return [namespace(item) for item in value]
-        return replacements.get(value,value) if isinstance(value,str) else value
-    source = SourceState.model_validate_json(json.dumps(namespace(case.source.model_dump(mode="json"))))
-    source = source.model_copy(update={"version":1})
-    command, = source.encounters
-    cached = type(case.delivery.receipt).model_validate_json(json.dumps(namespace(case.delivery.receipt.model_dump(mode="json"))))
-    assert cached.admission_status == "available"  # The API must read past this stale producer receipt.
-    delivery = delivery_for(source.source_key,command).model_copy(update={"state":"acknowledged","receipt":cached})
+def check_packaged_game_review_reader_without_study_writes():
+    containers = _owned_containers()
     addresses = [network["IPAddress"] for network in containers["postgres"]["NetworkSettings"]["Networks"].values()]
     assert addresses and all(addresses)
-    payload = dict(identity=identity,source_key=source.source_key,operation_id=delivery.operation_id,
-        source=source.model_dump(mode="json"),delivery=delivery.model_dump(mode="json"),
-        command=command.model_dump(mode="json"),effect_id=effect_id(command.key),postgres_addresses=addresses,
+    payload = dict(identity="game-review-reader-"+uuid.uuid4().hex,postgres_addresses=addresses,
         runtime_hashes={target:hashlib.sha256((ROOT/path).read_bytes()).hexdigest() for path,target in RUNTIME_FILES.items()})
     preflight = _exec_python(containers["api"],payload,PREFLIGHT)
-    assert preflight == dict(schema=POSTGRES_SCHEMA_VERSION,role="tempo_reader",select_grants=10,update_rejected=True)
+    assert preflight == dict(schema=POSTGRES_SCHEMA_VERSION,role="tempo_reader",select_grants=3,update_rejected=True)
+    print(json.dumps({"packaged_images": {service: containers[service]["Image"] for service in ("api", "foreground-worker")},
+                      "runtime_hashes": payload["runtime_hashes"]}))
     try:
-        assert _exec_python(containers["foreground-worker"],payload,SEED)["effect_id"] == payload["effect_id"]
+        assert _exec_python(containers["foreground-worker"],payload,SEED) == {"seeded":payload["identity"]}
         proof = _exec_python(containers["api"],payload,PROOF)
-        assert proof["reader_update_rejected"] and proof["fixture_rows_unchanged"]
+        assert proof == dict(saved_and_pasted=True,reader_update_rejected=True,study_and_fixture_rows_unchanged=True)
     finally:
         assert _exec_python(containers["foreground-worker"],payload,CLEANUP) == {"fixture_cleanup_verified":True}
 
 
 if __name__ == "__main__":
-    check_packaged_game_review_reader_reads_current_receipt_without_write_privileges()
-    print("PASS packaged Games reader reads the current receipt without write privileges; fixture cleanup verified")
+    check_packaged_game_review_reader_without_study_writes()
+    print("PASS packaged saved/pasted Game Review with no Study writes; task fixture cleanup verified")
