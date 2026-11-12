@@ -4,8 +4,7 @@ Existing explicit maintenance commands, physically relocated from `scripts/`. No
 
 | Tool | Purpose |
 | --- | --- |
-| [Learning-owned bootstrap tooling](../tempo_learning_database/tooling/README.md#persistent-target-bootstrap) | Explicit disposable/persistent target preparation contracts; persistent quarantine is separate from serving admission and cutover. |
-| [apply_postgres_migrations.py](apply_postgres_migrations.py) | Legacy owner's ordered migration discovery and pinned installed remediation resource inclusion. |
+| [apply_postgres_migrations.py](apply_postgres_migrations.py) | Ordered PostgreSQL migration discovery and checksum-bound historical remediation SQL inclusion. |
 | [check-migration-inventory.mjs](check-migration-inventory.mjs) | Read-only source inventory/version correspondence check; run from the repository root. |
 | [verify_postgres_backup.py](verify_postgres_backup.py) | Existing PostgreSQL backup/restore table/row comparison. |
 | [verify_postgres_cli_state.py](verify_postgres_cli_state.py) | Existing CLI migration guard snapshots and comparison. |
@@ -21,3 +20,8 @@ backup/restore commands. The caller retains target selection, ownership,
 lifecycle, deadlines, reporting and cleanup decisions. Commands/arguments and
 credential handling are unchanged; importing the fixed helpers runs no probe or
 backup. No command in this category was executed against a service in this task.
+The independent Learning/remediation bootstrap tooling is retired. Migration 050
+uses the retained checksum-bound SQL resource under
+[storage historical DDL](../tempo_storage/ddl/historical), not an installed
+remediation distribution. Do not restore removed bootstrap packages to run the
+current registered CLI.

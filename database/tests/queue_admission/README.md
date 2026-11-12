@@ -1,10 +1,10 @@
-# Queue adapter native window: awaiting explicit parent go
+# Queue adapter native proof and historical window
 
-**Current source after file relocation; no native rerun occurred.** This directory
+**Historical October 20 proof receipt; not current qualification.** This directory
 and its exact target guard moved together into the root database tree. Existing
 SQL, fixture markers/endpoint validation, receipt identity checks, assertions and
-cleanup requirements are unchanged. [Queue stored fields and relationships](../../schema/study-queue-review-1/README.md)
-remain canonical; these tests create no schema or new storage ownership. Historical
+cleanup requirements are unchanged. [Queue source migration history](../../tempo_storage/ddl/migrations/README.md)
+records stored definitions; these tests create no schema or new storage ownership. Historical
 window results below remain historical and are not upgraded by source collection.
 
 This is a four-case source-adapter proof on actual PostgreSQL. It is not an
@@ -18,7 +18,13 @@ That harness correction still needs a coordinated rerun. Container, process grou
 staging and volume absence were verified before releasing the slot. The failed
 window is retained and is not native qualification.
 
-## Safety prerequisites before any fixture write
+## Historical window procedure (revalidate before reuse)
+
+The following instructions describe the earlier window, not a fresh assignment.
+Read [current test selection](../../../docs/testing.md), inspect actual fixture
+guards and obtain the integration owner's resource slot before execution.
+
+### Safety prerequisites before any fixture write
 
 1. Parent grants the reserved serial slot after inspecting the guard repairs and
    source rejection regressions. Discovery has released its earlier slot.

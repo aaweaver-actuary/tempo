@@ -1,3 +1,9 @@
-# Disposable PostgreSQL fixtures
+# Disposable PostgreSQL fixture ownership
 
-[The remediation test runner](../tempo_remediation_database/tooling/run_postgres.py) creates a temporary Learning database with separate owner and runtime roles. [The PostgreSQL backup comparison](../tests/check_postgres_backup_batching.py) creates source and restored databases in a bounded fixture. Both callers use [fixture.py](fixture.py) for container ownership checks and teardown.
+[fixture.py](fixture.py) allocates a fresh uniquely named PostgreSQL fixture; it
+does not accept an external/live database URL. Its container, role and cleanup
+methods are test infrastructure, not a serving Learning/remediation database.
+[Backup batching proof](../tests/check_postgres_backup_batching.py) loads this
+fixture for bounded source/restore comparisons. The former remediation bootstrap
+runner is retired. Do not infer a current runnable bootstrap from historical
+fixture helper names; actual target admission and cleanup remain required.
