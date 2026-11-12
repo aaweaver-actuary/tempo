@@ -90,7 +90,7 @@ def _advance_unlock_checkpoint_attempt(*, force_timeout=False):
             database.execute_native('SELECT pg_sleep(0.3)')
         cursor=queue_application._unlock_eligible_opening_cards(database,date.today().isoformat(),after_card_id=payload.get('after_card_id',''),batch_size=8)
         payload={'queue_date':date.today().isoformat(),'_queue_phase':'unlock_opening' if cursor else _ELIGIBILITY_PHASES[1],**({'after_card_id':cursor} if cursor else {})}
-        assert database.execute("UPDATE background_tasks SET payload_json=?,phase=? WHERE id='priority-unlock-checkpoint' AND generation=1 AND lease_token='priority-proof' AND state='leased'",(json.dumps(payload),payload['_queue_phase'])).rowcount==1
+        assert database.execute("UPDATE background_tasks SET payload_json=%s,phase=%s WHERE id='priority-unlock-checkpoint' AND generation=1 AND lease_token='priority-proof' AND state='leased'",(json.dumps(payload),payload['_queue_phase'])).rowcount==1
         return cursor
 
 
@@ -389,7 +389,7 @@ def stop_owned_writers(processes, loader, stop_load):
     processes.clear()
 
 
-def run_proof(parent_url, redis_url, evidence, *, graph_rows=1_400_000, receipt_rows=415_000, postgres_container=None):
+def run_proof(parent_url, redis_url, evidence, *, graph_rows=1_400_000, receipt_rows=415_000, postgres_container=None, current_only=False):
     from database.tooling.apply_postgres_migrations import apply_migrations
     with private_database(parent_url) as owned_url:
         apply_migrations(owned_url)
@@ -612,8 +612,9 @@ def run_proof(parent_url, redis_url, evidence, *, graph_rows=1_400_000, receipt_
                 results[CASES[4]] = {'independent_devices':2,'expired_policy_denies_optional':True}
             stop_owned_writers(processes, loader, stop_load)
             postgres.close_pools()
-            results[CASES[5]] = historical_rollback_proof(parent_url, owned_url, receipt_ids)
-            assert set(results) == set(CASES)
+            if not current_only:
+                results[CASES[5]] = historical_rollback_proof(parent_url, owned_url, receipt_ids)
+            assert set(results) == set(CASES[:5] if current_only else CASES)
             return results
         finally:
             stop_load.set()
@@ -654,22 +655,24 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--list',action='store_true')
     parser.add_argument('--quick',action='store_true')
+    parser.add_argument('--current-only', action='store_true',
+                        help='Select the five current invariants; leave historical 49→48→49 proof unchanged and unexecuted')
     parser.add_argument('--owned-stack',action='store_true')
     parser.add_argument('--evidence',type=Path,default=ROOT/'test-results/study-priority-native')
     args = parser.parse_args()
-    if args.list: print(json.dumps(CASES)); return
+    if args.list: print(json.dumps(CASES[:5] if args.current_only else CASES)); return
     args.evidence.mkdir(parents=True,exist_ok=True)
     if args.owned_stack:
         if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
             raise RuntimeError('The owning disposable runner is required')
         result = run_proof('postgresql://postgres@postgres:5432/tempo','redis://redis:6379/0',args.evidence,
-            graph_rows=10_000 if args.quick else 1_400_000,receipt_rows=20_000 if args.quick else 415_000)
-        (args.evidence/'native.json').write_text(json.dumps({'complete':True,'cases':result},indent=2)+'\n')
+            graph_rows=10_000 if args.quick else 1_400_000,receipt_rows=20_000 if args.quick else 415_000, current_only=args.current_only)
+        (args.evidence/'native.json').write_text(json.dumps({'complete':True,'current_only':args.current_only,'cases':result},indent=2)+'\n')
         print(json.dumps(result,indent=2)); return
     owner = 'tempo-study-priority-'+secrets.token_hex(8)
     password = secrets.token_urlsafe(32)
     names = [owner+'-postgres',owner+'-redis']
-    report = {'owner':owner,'complete':False,'cleanup':False,'cases':{},'quick':args.quick,
+    report = {'owner':owner,'complete':False,'cleanup':False,'cases':{},'quick':args.quick,'current_only':args.current_only,
               'source_sha256': {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest() for path in [Path(__file__), * (ROOT/'backend/app').rglob('*.py')]},
               'revision':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()}
     attempted = []
@@ -695,7 +698,7 @@ def main():
                 assert time.monotonic()<deadline,'Owned PostgreSQL did not become ready'; time.sleep(0.1)
         report['cases'] = run_proof(parent_url,f'redis://127.0.0.1:{redis_port}/0',args.evidence,
             graph_rows=10_000 if args.quick else 1_400_000,receipt_rows=20_000 if args.quick else 415_000,
-            postgres_container=names[0])
+            postgres_container=names[0], current_only=args.current_only)
         report['complete'] = True
     finally:
         cleanup_errors=[]
