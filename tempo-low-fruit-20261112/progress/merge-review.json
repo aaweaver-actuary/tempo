@@ -240,44 +240,86 @@
   ],
   "pending_prs": [
     {
-      "pr": 991,
-      "findings": [
-        "BE006"
-      ],
-      "state": "Unmerged; current-main integration and scheduling guard correction have 57 focused passing cases. Assembled saved-review-to-next proof remains pending.",
-      "code_revision": "da457a44da68ed5aefd71c41231eb76074510034"
-    },
-    {
-      "pr": 992,
-      "findings": [
-        "BE016"
-      ],
-      "state": "Unmerged; native import repaired and case collection verified. Native rollback/replay execution and assembled/browser proof remain pending.",
-      "code_revision": "1d68597b8b8da4c61bba6b9ea91793e42475540f"
-    },
-    {
-      "pr": 993,
-      "findings": [
-        "FE001",
-        "ST009"
-      ],
-      "state": "Unmerged; real-browser recovery and combined integrity behavior proof remain pending",
-      "code_revision": "9b02516ae2336714710a639b23e2a107dfe9d2db"
-    },
-    {
-      "pr": 995,
-      "findings": [
-        "FE011",
-        "FE007",
-        "FE008"
-      ],
-      "state": "Unmerged; three inventory files corrected. Game Review and combined integrity/browser qualification remain pending.",
-      "code_revision": "328ef924856ce0490c2e9dab7a1e4b42ae9eae8a"
+      "pr": 1004,
+      "code_revision": "b29c915e4bb24467bf544af0d089421b95462e5c",
+      "state": "Open draft; E02 source checkpoint only. Mixed current/retired native durability proof remains incomplete; not accepted, merged or installed as E02 repair.",
+      "findings": []
     }
   ],
   "status_counts": {
     "Closed": 14,
     "Needs decision": 4,
     "Open": 37
-  }
+  },
+  "historical_pending_prs": [
+    {
+      "recorded_date": "2026-11-12",
+      "reviewed_through_revision": "10c72792ff6fef1e1be690a8ff7f5bded3a3de2c",
+      "superseded_by_revision": "d79ae4fcc4b006985114d85b5fb9a5aca8becbf1",
+      "description": "Preserved prior audit snapshot, before Q0 qualification and merge; not current pending work.",
+      "records": [
+        {
+          "pr": 991,
+          "findings": [
+            "BE006"
+          ],
+          "state": "Unmerged; current-main integration and scheduling guard correction have 57 focused passing cases. Assembled saved-review-to-next proof remains pending.",
+          "code_revision": "da457a44da68ed5aefd71c41231eb76074510034"
+        },
+        {
+          "pr": 992,
+          "findings": [
+            "BE016"
+          ],
+          "state": "Unmerged; native import repaired and case collection verified. Native rollback/replay execution and assembled/browser proof remain pending.",
+          "code_revision": "1d68597b8b8da4c61bba6b9ea91793e42475540f"
+        },
+        {
+          "pr": 993,
+          "findings": [
+            "FE001",
+            "ST009"
+          ],
+          "state": "Unmerged; real-browser recovery and combined integrity behavior proof remain pending",
+          "code_revision": "9b02516ae2336714710a639b23e2a107dfe9d2db"
+        },
+        {
+          "pr": 995,
+          "findings": [
+            "FE011",
+            "FE007",
+            "FE008"
+          ],
+          "state": "Unmerged; three inventory files corrected. Game Review and combined integrity/browser qualification remain pending.",
+          "code_revision": "328ef924856ce0490c2e9dab7a1e4b42ae9eae8a"
+        }
+      ]
+    }
+  ],
+  "merged_prior_pending_prs": [
+    {
+      "pr": 991,
+      "code_revision": "da457a44da68ed5aefd71c41231eb76074510034",
+      "merge_revision": "a5b2b20d35b31daa2407af9b6588df95b816113d",
+      "state": "Merged after Q0 qualification; included in installed Q0 release 8923886e and latest independently verified d79ae4fc. Finding-specific residuals remain as recorded in updates."
+    },
+    {
+      "pr": 992,
+      "code_revision": "1d68597b8b8da4c61bba6b9ea91793e42475540f",
+      "merge_revision": "1665e4ed2671caa4483788c3fd5f7c7dec22d8c8",
+      "state": "Merged after Q0 qualification; included in installed Q0 release 8923886e and latest independently verified d79ae4fc. Finding-specific residuals remain as recorded in updates."
+    },
+    {
+      "pr": 993,
+      "code_revision": "9b02516ae2336714710a639b23e2a107dfe9d2db",
+      "merge_revision": "1763def2527b9afb49bedd6c6012fcae2ebc9314",
+      "state": "Merged after Q0 qualification; included in installed Q0 release 8923886e and latest independently verified d79ae4fc. Finding-specific residuals remain as recorded in updates."
+    },
+    {
+      "pr": 995,
+      "code_revision": "328ef924856ce0490c2e9dab7a1e4b42ae9eae8a",
+      "merge_revision": "8e7da241a728a9501e543985af74fe687bea3f98",
+      "state": "Merged after Q0 qualification; included in installed Q0 release 8923886e and latest independently verified d79ae4fc. Finding-specific residuals remain as recorded in updates."
+    }
+  ]
 }
