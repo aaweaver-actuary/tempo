@@ -1,5 +1,26 @@
 # One imported game to ordinary Study (#488)
 
+Current composition consists of [Study queue issuance](study.py),
+[Tactics capture](tactic_capture.py) and [database infrastructure binding](database_infrastructure.py).
+[`app/main.py`](../main.py) calls the Study composition; it adapts the
+[`next_exercise`](../study/next_exercise.py) policy to actual queue storage,
+command dispatch and HTTP outcomes. Tactics capture injects the borrowed Study
+admission capability. Database infrastructure binds the process admission gate.
+There is no current `feedback.py`, `retained_game.py`, repertoire-review assembly
+or Feedback/Coverage worker in this directory. These source facts do not establish
+whole-product isolation or installed behavior. The diagrams below describe past
+assemblies, not the current dependency graph.
+
+## Historical extraction and proposal record
+
+The material below is a dated historical record, retained as of November 12, 2026.
+Its implementation, test counts, open-issue instructions and proposed interfaces
+are **not a current runtime inventory or commands to execute**. Removed paths are
+identified as historical names, not replacement implementations. The
+[immutable pre-reconciliation guide](https://github.com/aaweaver-actuary/tempo/blob/799b66234b8be386a33d980df10b8b1d9a9d8b36/backend/app/product_composition/README.md)
+preserves the original text and evidence. Use the current owners above for navigation.
+
+
 ## Durable Game Review commands and Settings recovery (#590)
 
 The goal is to compare retained/provider games with the user's repertoire and
@@ -197,15 +218,15 @@ conflict features are excluded from this first-release candidate.
 
 ## Implemented ownership and transactions
 
-[`feedback.py`](feedback.py) composes the shared game/finding values, real
+`feedback.py` (historical path: `feedback.py`) composes the shared game/finding values, real
 index/comparer and `LearningFeedbackPort`; it owns no scheduling policy.
-[`retained_game.py`](retained_game.py) projects retained canonical moves and their
+`retained_game.py` (historical path: `retained_game.py`) projects retained canonical moves and their
 exact source fingerprint without reconstructing original PGN. The provider is
 the canonical source namespace; the original provider/game IDs remain unchanged
 in the retained capture. Revision 1 is this slice's initial retained source;
 changed bytes under that identity are quarantined, not treated as another lapse.
 
-[`feedback_commands.py`](feedback_commands.py) prepares one explicit game/ply
+`feedback_commands.py` (historical path: `feedback_commands.py`) prepares one explicit game/ply
 through the existing read-only capture owner, then passes that exact canonical
 game to `project_capture`. Day-only introduction evidence stays a scoped boolean;
 it never becomes an invented timestamp. Partial/UTC-midnight retained game times
@@ -222,7 +243,7 @@ Study-compatible while still yielding to foreground admission. A 202 operation
 response does not establish an admitted Study effect. Resolve uncertain outcomes
 through the original operation and receipt, using the same payload/identity.
 
-[`feedback_maintenance.py`](feedback_maintenance.py) performs one durable cursor
+`feedback_maintenance.py` (historical path: `feedback_maintenance.py`) performs one durable cursor
 slice per invocation, closes read/capture work before the writer, fences the
 current task lease and source, and borrows the Study receiver transaction.
 Pending effects retry current owner facts; changed source is held. Applied
@@ -313,7 +334,7 @@ obtain evidence. Store raw private captures and receipt/source digests outside
 tracked source, and publish no private game payloads or machine paths.
 
 Installation requires additive migration
-[`051_study_game_feedback.sql`](../../../database/tempo_legacy_database/ddl/migrations/051_study_game_feedback.sql)
+`051_study_game_feedback.sql` (historical path: `../../../database/tempo_legacy_database/ddl/migrations/051_study_game_feedback.sql`)
 and schema readiness 51, the five local pure-library backend dependencies
 already registered in `pyproject.toml`, `uv.lock` and Dockerfile, root command and
 router wiring, and the bounded Celery wake. The offline lock check previously
@@ -334,21 +355,21 @@ The focused browser pass qualifies the synthetic local product boundary only.
 ## C repertoire conflict audit — #501
 
 C is an independently reviewable continuation through the retained Repertoire
-workspace. The [mount](../../../app/features/product-api/RepertoireAuditMount.tsx)
+workspace. The mount (historical path: `../../../app/features/product-api/RepertoireAuditMount.tsx`)
 keeps its supplied existing library available and lazily opens #500 after an
 explicit repertoire choice. It does not query an optional provider or engine.
-[The client](../../../app/features/product-api/repertoire-review-api.ts) preserves
+The client (historical path: `../../../app/features/product-api/repertoire-review-api.ts`) preserves
 shared proposals/receipts; a 202 is pending, never approval success. Its session
 retains exact retry identity across tab changes.
 
-[repertoire.py](repertoire.py) adapts #492's exact conflict report and complete
+repertoire.py (historical path: `repertoire.py`) adapts #492's exact conflict report and complete
 manual alternatives to #500. GETs and choice generation are inert. Actual Study
 block facts must come from the current Study owner under the exact source fence;
 without those facts the UI says unknown. The explicit audit POST requires the
 owning scoped block/suspend/restore operation and fails unavailable when absent.
 No detector success is described as a persisted block.
 
-[repertoire_commands.py](repertoire_commands.py) supplies `CurrentSnapshots`,
+repertoire_commands.py (historical path: `repertoire_commands.py`) supplies `CurrentSnapshots`,
 `DispatchedChanges`, `create_current_repertoire_http` and explicit command
 registration. Snapshot reads release the borrowed reader before returning.
 Writes use the existing durable foreground gateway and its borrowed writer
@@ -357,13 +378,13 @@ approval receipts. Stable payload-bound command identities preserve uncertain
 acknowledgments across retry/remount. No SQL, second writer, conflict decision,
 queue policy or automatic job is owned by composition.
 
-[repertoire_runtime.py](repertoire_runtime.py) binds #492 `09548df7` retained
+repertoire_runtime.py (historical path: `repertoire_runtime.py`) binds #492 `09548df7` retained
 changes and complete current-card definitions to #483's sole current snapshot
 reader, with the existing read connection and durable dispatch resources. The
 display rereads its source fence after the card facts; changed source refuses the
 display. Every proposed physical-card update comes from Repertoire's policy.
 
-[repertoire_study.py](repertoire_study.py) injects the actual shared reader/index
+repertoire_study.py (historical path: `repertoire_study.py`) injects the actual shared reader/index
 and #492 eligibility into #487's `SnapshotConflictAuthority` and
 `current_study_conflicts`. Commands contain at most 16 exact route/ply/card/revision
 targets. Unmapped targets remain pending. Persisted block reads require the
@@ -412,7 +433,7 @@ settings, service operation, installation, deployment or merge occurs here.
 
 Untested extraction of #580 preparation onto the exact #593 recovery source;
 runtime integration and deployment remain unverified. The independent feedback sweep uses
-the [canonical prepared-introduction sequence](../study/introductions/README.md#prepared-independent-study-sweep--558-repair)
+the canonical prepared-introduction sequence (historical path: `../study/introductions/README.md`)
 and [claimed-task connection recovery](../study/README.md#feedback-sweep-connection-recovery-558-repair).
 Queue due-work requests occur after effect locks close and reuse active Learning
 queue generations. Games availability is never a serving prerequisite.
@@ -478,7 +499,7 @@ discovery hints do not filter physical authority.
 
 Repertoire's public `PreparedFirstBoundaryRepertoire` owns detached source bytes,
 complete authored routes and exact-game immutable legal execution. The selector
-consumes only [Repertoire's declared first-boundary interface](../repertoire/interfaces/first_boundary.py)
+consumes only Repertoire's declared first-boundary interface (historical path: `../repertoire/interfaces/first_boundary.py`)
 for that capability while independently repeating all
 frontier, end, own-response conflict and mapping policy. Applicable route tails
 remain validated; proven opposite-color scope remains excluded and fenced.
@@ -493,7 +514,7 @@ header/shared-graph fences. Its MVCC read is the candidate freshness point;
 subsequent independent changes may order after acceptance. No all-card lock set,
 schema change, provider call, cross-command proof cache or alternate writer is
 introduced. See the [Repertoire preparation view](../repertoire/README.md#game-bound-first-boundary-preparation)
-and [database read contract](../../../database/tempo_legacy_database/adapters/authored_repertoires/README.md#game-bound-publication-reads).
+and database read contract (historical path: `../../../database/tempo_legacy_database/adapters/authored_repertoires/README.md`).
 
 Other full-snapshot consumers retain `read_repertoire`,
 `PreparedPublishedRepertoire` and their existing snapshot read profile.

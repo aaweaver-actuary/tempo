@@ -1,26 +1,24 @@
 # Explicit backend contracts
 
-**Current unmerged source; deployment unverified.** These modules define request/fact/interface types with their existing owners and semantics. They contain no sibling domain implementation or runtime composition. This is an explicit contract directory, not a wildcard public barrel or a new architecture framework; the package initializer performs no registration or eager imports.
+Use named contract modules, not a wildcard public barrel or composition import.
+The [initializer](__init__.py) performs no runtime registration. Current owners:
 
-| Module | Existing contract owner / purpose |
-| --- | --- |
-| [transport](transport/README.md) | All 62 former `app.models` classes in 17 owner groups; exact validation, defaults, aliases and schemas. |
-| [next_opponent.py](next_opponent.py) | Opponent profile immutable values. |
-| [opening_evidence.py](opening_evidence.py) | Opening manifests, decision events and attempt checkpoints. |
-| [opening_move_probability.py](opening_move_probability.py) | Existing probability evidence, fusion and summaries over supplied facts. |
-| [prefix_diagnostics.py](prefix_diagnostics.py) | Prefix diagnostic response values. |
-| [prefix_evaluation.py](prefix_evaluation.py) | Prefix evaluation requests and structural comparison results. |
-| [prefix_transition.py](prefix_transition.py) | Frozen transition requests/plans/results. |
-| [studies.py](studies.py) | Authored Studies request envelopes and identical installed Learning executable aliases. |
-| [review_conflicts.py](review_conflicts.py) | Existing HTTP-aware review conflict exception; retains its FastAPI dependency/status/payload. |
-| [defense.py](defense.py) | The existing canonical Learning defense aliases, unchanged by identity. |
-| [opening_graph.py](opening_graph.py) | One frozen 13-field GraphStep fact declaration; old workflow uses this same class. |
-| [runtime_timing.py](runtime_timing.py) | One existing response-timing ContextVar/getter, shared by application measurement and PostgreSQL instrumentation. |
+- [Transport requests](transport/README.md).
+- [Opening evidence](opening_evidence.py) and [graph facts](opening_graph.py).
+- [Authored Studies](studies.py) and [canonical exercise contracts](study_exercises.py).
+- [Queue issuance](queue_issuance.py) and [Tactics capture](tactic_capture.py).
+- [Command identity](command_identity.py), [command registry facts](command_registry.py),
+  [review identity](review_command_identity.py),
+  [analysis-paste identity](analysis_paste_identity.py) and
+  [retained discovery identity](discovery_command_identity.py).
+- [Review conflicts](review_conflicts.py) and [runtime timing](runtime_timing.py).
+- [Retained product values](product_v02).
 
-Some established contract modules contain their existing pure validation/calculation helpers; this move does not consolidate or redesign them. Contracts are not all framework-free: request models use Pydantic and ReviewConflict is the existing HTTP exception. The probability contract uses the unchanged neutral position-identity function, whose `chess.Board(...).fen()` normalization differs from other similarly named helpers. None is substituted.
-
-The `organized-contracts` local import-linter contract forbids imports of sibling implementation, composition and the compatibility `models.py` facade; only explicit contracts and neutral chess support are allowed within `app`. External packages retain their declared ownership. Consumers import the named module/symbol they need. Models compatibility exports are the same canonical objects, not duplicate implementations. Cross-domain implementations are connected only by outer composition.
-
-The timing extraction preserves one ContextVar/getter object, nesting/reset/error semantics and PostgreSQL instrumentation. It does not move admission policy, create a registry, change writer-thread propagation or alter default gates. Those remaining technical seams stay in the [database/backend checklist](../../../database/INVENTORY.md#additional-storage-candidates-found-after-the-baseline).
-
-See [the backend progress and validation limits](../../ORGANIZATION.md) and the one [proposal-only simplification list](../../../database/SIMPLIFICATION.md). No runtime-schema/data change or deployment is implied.
+Some contracts contain pure validation helpers; framework dependencies such as
+Pydantic and the existing HTTP-aware review conflict remain explicit. Retained
+command identity does not imply an active endpoint or producer. The independent
+Learning runtime and its former defense/exercise alias authority are gone;
+`studies.py` now aliases the local `study_exercises.py` definitions. The removed
+next-opponent, move-probability, prefix diagnostic/evaluation/transition and
+defense modules are not current interfaces. These source facts are not a claim
+that all contracts are framework-free or all consumers are isolated.

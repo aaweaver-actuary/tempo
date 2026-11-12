@@ -1,123 +1,57 @@
 # Tempo backend
 
-This directory contains the authoritative local product backend: FastAPI,
-Python domain services, and PostgreSQL persistence in Docker. SQLite remains a
-compatibility path for focused tests and verified historical import. Docker runs this backend at
-`http://localhost:8000`; the static browser demo does not use it.
+The current backend is the local FastAPI/Celery product with PostgreSQL storage.
+This is a source navigation guide, not an installed-health receipt. The independent
+Learning service, optional feedback/analysis assemblies and SQLite runtime routing
+are retired; retained tables/contracts do not reactivate them.
 
-## Architecture drawings
+## Current owners
 
-These are the canonical drawings for the views below. Edit the blocks here;
-peer documents link to them instead of maintaining copies. See the
-[diagram index and source/status baseline](../docs/architecture/diagrams/README.md) and
-[maintenance procedure](../docs/architecture/diagrams/README.md#maintenance-and-review-procedure).
-
-### Legacy assembly and existing coupling
-
-**MAIN / LEGACY:** the full app and legacy backend still combine domain concerns.
-The independent Learning runtime has been retired. Retained Study policy lives
-in [`app/study/policy`](app/study/policy/README.md), while the existing review
-application and remediation libraries borrow the serving transaction. The declared
-PostgreSQL Compose stack below is source configuration, **deployment unverified**.
-SQLite compatibility paths also exist; see [storage](../docs/STORAGE.md).
+- [main.py](app/main.py): HTTP routes and application composition.
+- [product composition](app/product_composition/README.md): Study queue issuance,
+  borrowed Tactics capture and process database admission binding.
+- [Study](app/study): issuance, position learning, review and scheduling policy.
+  [Pure policy helpers](app/study/policy/README.md) and the retained
+  [review application library](../services/learning/application/README.md) are not
+  independent services.
+- [Transport contracts](app/contracts/transport/README.md): named request models.
+  `app/models.py` is removed; import the actual owning contract module.
+- [Repertoire projections](app/repertoire/README.md) and
+  [source changes](app/repertoire/changes/README.md): supplied-source policy.
+- [PostgreSQL storage](../database/tempo_storage/README.md): concrete persistence;
+  [connections](../database/tempo_storage/connections.py) borrow admission and
+  [postgres.py](../database/tempo_storage/postgres.py) owns pools/transactions.
+- [Command gateway](app/command_gateway.py), [dispatch](app/command_dispatch.py)
+  and [Celery root](app/celery_app.py): durable command/worker composition.
+- [Operational readiness](app/operations/README.md): schema, worker and queue facts.
 
 ```mermaid
-flowchart TB
-  Home["Full legacy entry + optional workspace composition"] -->|"feature imports / shared<br/>browser state"| Views["Retained optional workspace<br/>surfaces and dialogs"]
-  Home -->|"queue/review and feature<br/>HTTP"| API["backend/app/main.py -<br/>all-domain composition"]
-  API -->|"durable command dispatch"| Broker["Redis / Celery"]
-  Broker -->|"foreground and background<br/>workers"| Commands["Legacy command gateway and<br/>handlers"]
-  Commands -->|"borrow caller transaction"| Policy["Queue/review/feedback<br/>policies and storage<br/>adapters"]
-  Policy -->|"same database: game<br/>projections and Study state"| DB[("Legacy tempo PostgreSQL<br/>database")]
-  API -->|"SQLite prefix wake capability"| Compat["Compatibility coordinator"]
-  API -->|"Games selection / source facts"| Facts["Public Games contracts and<br/>pure retained source facts"]
-  API -->|"reader capabilities"| ReadStorage["Root database read adapters"]
-  ReadStorage -->|"existing shared database"| DB
-  Compose["docker-compose.yml"] -->|"declares startup health<br/>dependencies"| API
-  Compose -->|"declares shared<br/>infrastructure"| Broker
+flowchart LR
+  HTTP[FastAPI main] --> Composition[Study / Tactics composition]
+  HTTP --> Dispatch[Durable command dispatch]
+  Dispatch --> Workers[Celery foreground / background workers]
+  Composition --> Study[Study policies and issuance]
+  Workers --> Storage[tempo_storage]
+  Composition --> Storage
+  Storage --> PG[(PostgreSQL)]
 ```
 
-The extracted feedback/queue ports improve local decision/effect ownership; they
-do not split this database, broker or application root. The legacy
-[`QueueAdmissionAdapter`](app/services/queue_admission_adapter.py) composes
-bounded candidate reads through [queue admission storage](../database/tempo_legacy_database/adapters/queue_refresh/application/admission.py),
-frozen-order annotation and the existing miss-feedback capability. Stored gameplay
-priorities, active non-analysis weak-decision opportunities and saved introduction
-scores remain inputs; removed opportunity/adaptive producers are not serving
-prerequisites. [`BorrowedFeedbackStore`](app/services/real_game_feedback_store.py)
-maps facts and invokes existing queue/remediation choices over the caller
-transaction; [feedback SQL](../database/tempo_legacy_database/adapters/real_game_feedback.py),
-[miss projection](../database/tempo_legacy_database/adapters/real_game_miss_projection.py)
-and [accepted-scope storage](../database/tempo_legacy_database/adapters/legacy_game_evidence_scope.py)
-retain their persistence responsibilities. Queue admission still appends the
-existing queue entry and resolves a saved opportunity; no second writer or commit
-authority is introduced.
+This source view does not claim complete isolation: the shared broker, application
+root and storage still need their applicable integration proof. Study owns learning
+and receipts; an optional producer is not a second scheduling writer. Preserve
+original issued attempts, durable journals and receipts across retries.
 
-The legacy [evidence command](app/game_evidence_commands.py)
-also borrows the existing [command gateway](app/command_gateway.py)
-transaction. It remains a local bridge over serving records; no independent
-Learning receiver or second transaction owner is installed.
-[legacy workspace](../app/views/legacy-workspace.tsx),
-[legacy root](app/main.py), [command dispatch](app/command_dispatch.py),
-[Celery root](app/celery_app.py) and
-[Compose](../docker-compose.yml) are the source anchors for the graph.
+## Operate and verify
 
-These are scoped legacy backend gaps, not a claim that Games can fail
-independently throughout the full local app. The merged PR324
-[Study composition](../app/README.md#main-study-path-and-source-gap) uses a physical
-entry without the legacy optional workspace root; the full local/demo entry owns
-that root and supplies narrow capabilities to the shared core shell. The
-[canonical build view](../static/README.md#conditional-study-build-and-offline-assets-main)
-retains PR324's actual emitted-artifact and synthetic offline proof, without
-qualifying a combined deployment or repairing the backend's shared broker/data
-assembly. No live cutover is authorized.
+Use the [registered Tempo CLI](../docs/TEMPO-CLI.md) for the live installation,
+not ad hoc Compose commands. Use [focused test selection](../docs/testing.md)
+and [contribution/resource rules](../CONTRIBUTING.md) for isolated checks. A source
+checkout or component pass is not evidence of a live update or playable successor.
 
-## Start and test
+## Historical assembly
 
-From the repository root:
-
-```bash
-docker compose up --build
-python -m pytest backend/tests
-```
-
-The backend can also be run through the repository launchers. Use the root
-`README.md` and `docs/STORAGE.md` for Docker data, backups, and restore rules.
-
-## Map
-
-- `app/main.py` — current FastAPI application and route registration. It is a
-  known extraction target; see [the organization audit](../docs/CODE-ORGANIZATION-AUDIT.md).
-- [Root database connections](../database/tempo_legacy_database/connections.py)
-  and [PostgreSQL adapter](../database/tempo_legacy_database/adapters/postgres_store.py)
-  — current PostgreSQL/SQLite routing and compatibility; there is no
-  `app/database.py` implementation. Schema/migration and persistence owners are
-  indexed in [database/README.md](../database/README.md). Source routing is not a
-  live cutover claim.
-- `app/models.py` — explicit compatibility re-exports of
-  [owner-specific transport contracts](app/contracts/transport/README.md), not
-  the canonical model implementation.
-- `app/services/` — business logic, provider clients, and durable derived-data
-  handlers. See its local README for the service clusters.
-- `tests/` — backend unit and integration coverage, including concurrency,
-  restart, idempotency, and provider failure behavior.
-
-## Boundary rules
-
-Route handlers should translate transport data and call domain/application
-functions. Services must report real provider and storage failures; they must
-not substitute sample records or claim success. Background work follows the
-bounded-slice contract in `docs/BACKGROUND-WORK.md`: claim one item, close
-SQLite before computation or network I/O, then publish one idempotent result.
-
-
-### Removed on-demand endgame calculation
-
-Probe, generated-template admission and new generated-attempt routes return 410.
-Their provider/cache/generation paths and generator implementation are removed;
-queued template-generation commands also decline without calculation. Existing
-immutable attempt receipts retain template binding and canonical status/result
-recovery. Saved cards, attempts, history and ordinary review storage are not
-migrated or deleted. See the canonical
-[Learning request/resource drawing](../services/learning/runtime/README.md#shared-learning-request-execution-gaps-main)
-and [saved browser practice policy](../app/README.md#saved-endgame-practice-after-calculation-removal).
+The [pre-reconciliation guide](https://github.com/aaweaver-actuary/tempo/blob/799b66234b8be386a33d980df10b8b1d9a9d8b36/backend/README.md)
+records earlier feedback/evidence bridges and legacy architecture drawings.
+`BorrowedFeedbackStore`, `game_evidence_commands.py`, the old
+`tempo_legacy_database` namespace and independent Learning runtime are not current
+navigation targets. Their historical evidence is not an instruction to restore them.

@@ -1,5 +1,27 @@
 # Product v0.2 contracts — first-departure checkpoint 0.2.2
 
+The retained Python contract modules are
+[repertoire](../../backend/app/contracts/product_v02/repertoire.py) and
+[learning](../../backend/app/contracts/product_v02/learning.py), with their
+[package initializer](../../backend/app/contracts/product_v02/__init__.py).
+The former analysis/presentation modules and browser `product-api/contracts.ts`
+are absent. In particular, Analysis Jobs is not an active dependency to install
+for this directory. The historical checkpoint descriptions below preserve wire
+and rollout evidence, not a current feature catalog, dependency setup or test
+selection. Consult [test selection](../../docs/testing.md) and the actual current
+consumer before running a retained contract test. Retaining a DTO does not activate
+feedback, a producer or a retired endpoint.
+
+## Historical extraction and proposal record
+
+The material below is a dated historical record, retained as of November 12, 2026.
+Its implementation, test counts, open-issue instructions and proposed interfaces
+are **not a current runtime inventory or commands to execute**. Removed paths are
+identified as historical names, not replacement implementations. The
+[immutable pre-reconciliation guide](https://github.com/aaweaver-actuary/tempo/blob/799b66234b8be386a33d980df10b8b1d9a9d8b36/contracts/product-v02/README.md)
+preserves the original text and evidence. Use the current owners above for navigation.
+
+
 [#618](https://github.com/aaweaver-actuary/tempo/issues/618) releases the typed
 first-departure qualification and application/issuance vocabulary below. It is a
 source contract, not proof that #619–#624 consumers, installed feedback or actual
@@ -82,7 +104,7 @@ contradictory history identities. Omitted new fields still parse to null/unknown
 | Pure rejoining policy → Study | `Presentation`, `JoinPlan`, `PresentationChangePort.apply_join` | Study owns safe-boundary revalidation, schedule, lineage and obligation remapping. |
 
 Python contracts live in [`backend/app/contracts/product_v02`](../../backend/app/contracts/product_v02).
-TypeScript schemas and types live in [`contracts.ts`](../../app/features/product-api/contracts.ts).
+TypeScript schemas and types live in `contracts.ts` (historical path: `../../app/features/product-api/contracts.ts`).
 Python ports are synchronous semantic capabilities; the TypeScript API boundary
 returns promises. Wiring and any transport belong to the integration owner.
 
@@ -352,7 +374,7 @@ or second feedback ledger is introduced by this contract change.
 
 ## Later analysis and presentation checkpoint
 
-[`analysis.py`](../../backend/app/contracts/product_v02/analysis.py) reuses public
+`analysis.py` (historical path: `../../backend/app/contracts/product_v02/analysis.py`) reuses public
 `tempo_evidence_math.PositionMoveUniverse`, `MoveProbabilityDistribution` and
 `CountEvidence`: every legal move is retained, partial mass stays unknown, and
 absent counts remain null. The small wrapper supplies provider/model, observation
@@ -384,7 +406,7 @@ the stored preview before accepting. Hash matching alone is no permission to
 publish; the Repertoire owner still rechecks current invariants and versions.
 An edit returns a fresh preview; it cannot publish directly.
 
-[`presentation.py`](../../backend/app/contracts/product_v02/presentation.py) keeps
+`presentation.py` (historical path: `../../backend/app/contracts/product_v02/presentation.py`) keeps
 existing decision IDs and actual presentation IDs, exact route/repertoire/variant
 scope, component response positions, opponent cues, expected participant/Study
 revisions and lineage. `JoinPlan` preserves component order, exact connecting

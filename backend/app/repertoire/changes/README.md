@@ -1,5 +1,23 @@
 # Approved repertoire changes — #492
 
+Current [application.py](application.py) computes conflict reports and validates
+proposed source rows using the existing public repertoire index.
+[ports.py](ports.py) defines its facts/errors; [retained_mutations.py](retained_mutations.py)
+coordinates retained source changes through supplied storage capabilities.
+The concrete [authoring storage owner](../../../../database/tempo_storage/authored_repertoires)
+retains SQL and the caller's transaction boundary. No new import/edit authority
+is granted by the historical release instructions below.
+
+## Historical extraction and proposal record
+
+The material below is a dated historical record, retained as of November 12, 2026.
+Its implementation, test counts, open-issue instructions and proposed interfaces
+are **not a current runtime inventory or commands to execute**. Removed paths are
+identified as historical names, not replacement implementations. The
+[immutable pre-reconciliation guide](https://github.com/aaweaver-actuary/tempo/blob/799b66234b8be386a33d980df10b8b1d9a9d8b36/backend/app/repertoire/changes/README.md)
+preserves the original text and evidence. Use the current owners above for navigation.
+
+
 Implemented source, unmerged. #501 supplies the separate C1 assembled product
 proof; live/installed behavior remains unverified.
 Repertoire owns approved moves, conflicts, proposals and approval receipts. Study
@@ -251,7 +269,7 @@ still retain the existing integrity-report owner rather than a second snapshot.
 
 **Owner checkpoint; explicit-command hook implemented, changed-hook native proof pending.**
 `imports.py` owns `RetainedImportApplication` and is the public facade; the borrowed PostgreSQL adapter is
-[`product_imports.py`](../../../../database/tempo_legacy_database/adapters/authored_repertoires/product_imports.py).
+`product_imports.py` (historical path: `../../../../database/tempo_legacy_database/adapters/authored_repertoires/product_imports.py`).
 The application owns retained receipt interpretation, preview construction,
 current-source/card fencing, validation and apply orchestration. There is no
 new table, importer, worker, connection factory or Study writer.

@@ -1,5 +1,25 @@
 # Read-only repertoire index and capture projection
 
+Current retained source is [the exact-position index](position_index.py),
+[bounded snapshot projections](snapshot.py), [position Study source facts](position_study_source.py),
+[position scheduling occurrences](position_schedule_occurrences.py) and
+[guarded source changes](changes/README.md). [The public initializer](__init__.py)
+defines the retained exports; [the scheduling occurrence interface](interfaces/position_schedule_occurrences.py)
+is a named contract. Snapshot projection receives supplied bounded facts; storage
+and transaction ownership remain outside it. There is no current `feedback_scope.py`
+or `interfaces/first_boundary.py`; historical feedback assembly below is not a
+serving interface. These guides do not qualify installed behavior.
+
+## Historical extraction and proposal record
+
+The material below is a dated historical record, retained as of November 12, 2026.
+Its implementation, test counts, open-issue instructions and proposed interfaces
+are **not a current runtime inventory or commands to execute**. Removed paths are
+identified as historical names, not replacement implementations. The
+[immutable pre-reconciliation guide](https://github.com/aaweaver-actuary/tempo/blob/799b66234b8be386a33d980df10b8b1d9a9d8b36/backend/app/repertoire/README.md)
+preserves the original text and evidence. Use the current owners above for navigation.
+
+
 This is the source implementation for #483 / T02, SPEC v0.2 P01/P02, G01 and
 C02's route facts. It is not wired into the live product. No Study effect,
 conflict resolution, content edit, migration, provider or engine runs here.
@@ -274,13 +294,13 @@ registration; #492 owns its approval/publication transaction and callback.
 ## Game-bound first-boundary preparation
 
 The recovery path uses public `PreparedFirstBoundaryRepertoire(facts, game=...)`
-from [feedback_scope.py](feedback_scope.py), retaining the full snapshot API
+from feedback_scope.py (historical path: `feedback_scope.py`), retaining the full snapshot API
 above for its other consumers. Construction accepts the complete authored owner
 read, including full-source card/membership counts, and the exact canonical game.
 It never accepts caller-supplied execution frames or a readiness assertion.
 
 Games consumes only the declared
-[`app.repertoire.interfaces.first_boundary`](interfaces/first_boundary.py)
+`app.repertoire.interfaces.first_boundary` (historical path: `interfaces/first_boundary.py`)
 surface, whose literal export list contains exactly
 `PreparedFirstBoundaryRepertoire`. This facade re-exports the same owner
 constructor; package-root and private sibling implementation imports are not
@@ -342,7 +362,7 @@ graph-count or aggregate-byte limit is added. Actual preparation service,
 background progress, full-writer duration and browser responsiveness require the
 assembled acceptance. There is no persistent proof cache or schema change.
 
-[The focused owner cases](../../tests/test_game_bound_repertoire_preparation.py)
+The focused owner cases (historical path: `../../tests/test_game_bound_repertoire_preparation.py`)
 compare policy with the full selector, including illegal tails, conflicts,
 coverage/end, unavailable mappings, complete versus omitted candidates, exact
 EP/castling/clocks, source ownership, wrong games, read-only alias frames and
