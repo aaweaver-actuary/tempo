@@ -12,10 +12,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from tempo_storage.authored_repertoires.card_deletion import storage
-from tempo_storage.authored_repertoires.card_deletion.storage import (
-    is_card_deleted,
-    _delete_matching,
-)
+from tempo_storage.authored_repertoires.card_deletion.storage import is_card_deleted
 
 RETAINED_REPERTOIRE_ID = "__retained_cards__"
 SYSTEM_REPERTOIRE_IDS = (

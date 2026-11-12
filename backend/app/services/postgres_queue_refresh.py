@@ -26,18 +26,6 @@ from tempo_storage.queue_refresh import (
     presentation as presentation_storage,
 )
 from tempo_storage.queue_refresh import foreground as refresh_requests
-from tempo_storage.queue_refresh.openings import (
-    _STUDY_OPENING_ORDER,
-    _STUDY_OPENING_ROUTES,
-)
-from tempo_storage.queue_refresh.presentation import (
-    _QUARANTINE_OPENING_ELIGIBILITY,
-    _PROJECTION_BLOCKED_COUNT_SQL,
-)
-from tempo_storage.queue_refresh.eligibility import (
-    _DUE_CARD_ELIGIBILITY,
-    _STUDY_NEW_ELIGIBILITY,
-)
 from tempo_storage.queue_position_lock import (
     lock_queue_date_for_position,
 )
