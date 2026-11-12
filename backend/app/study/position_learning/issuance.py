@@ -288,7 +288,7 @@ def read_clean_presentation_proof(database, attempt_id, *, lock=False):
     from tempo_evidence_math.position_learning import DecisionOccurrence
     from app.study.position_learning.prefix_eligibility import CleanFirstResponse, CleanPresentationProof
     try:
-        from app.study.position_checkpoint import decode_position_first_response
+        from app.study.position_learning.first_response_codec import decode_position_first_response
     except ImportError:
         return Hold("position_response_decoder_unavailable")
     plan = replay_exact_attempt(database, attempt_id)
