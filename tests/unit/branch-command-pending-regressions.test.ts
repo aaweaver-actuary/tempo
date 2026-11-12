@@ -38,3 +38,27 @@ it("a pending branch save keeps its operation ID and cannot appear saved", async
   expect(keys[0]).toBe(keys[1]);
   expect(localStorage.getItem("tempo-pending-repertoire-branch-v1")).toBeNull();
 });
+
+it.each([
+  ["malformed completion", { state: "complete", response: {} }],
+  ["foreign completion", { state: "complete", operation_id: "foreign", response: completed }],
+])("%s retains the exact earlier operation when a changed request arrives", async (_label, receipt) => {
+  const original = JSON.stringify({ operationId: "original-operation", body: JSON.stringify(payload) });
+  localStorage.setItem("tempo-pending-repertoire-branch-v1", original);
+  const fetcher = vi.fn(async () => Response.json(receipt));
+  vi.stubGlobal("fetch", fetcher);
+  await expect(saveBranchCommand({ ...payload, name: "changed" })).rejects.toThrow();
+  expect(localStorage.getItem("tempo-pending-repertoire-branch-v1")).toBe(original);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
+
+it("keeps changed work blocked while pending and clears a confirmed terminal failure", async () => {
+  const original = JSON.stringify({ operationId: "original-operation", body: JSON.stringify(payload) });
+  localStorage.setItem("tempo-pending-repertoire-branch-v1", original);
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(Response.json({ state: "pending" }))
+    .mockResolvedValueOnce(Response.json({ state: "failed", error: { message: "terminal" } })));
+  await expect(saveBranchCommand({ ...payload, name: "changed" })).rejects.toBeInstanceOf(PendingOperationError);
+  expect(localStorage.getItem("tempo-pending-repertoire-branch-v1")).toBe(original);
+  await expect(saveBranchCommand(payload)).rejects.toThrow("terminal");
+  expect(localStorage.getItem("tempo-pending-repertoire-branch-v1")).toBeNull();
+});

@@ -1,3 +1,4 @@
+import { decodeOperationResult } from "../domain/adapters/operation-result-adapter";
 import { readPendingCardRevisionRecord, writePendingCardRevisionRecord, clearPendingCardRevisionRecord } from "../../database/browser/adapters/authoring/card-revision";
 import { readPendingCardDeletionBytes } from "../../database/browser/adapters/authoring/card-delete";
 import { API_URL } from "../const";
@@ -32,18 +33,17 @@ export async function reviseCardCommand(revision: CardRevision) {
   if (pending) {
     const status = await fetch(`${API_URL}/api/operations/${encodeURIComponent(pending.operationId)}`);
     if (!status.ok) throw new PendingOperationError(pending.operationId);
-    const receipt = await status.json() as {
-      state?: string; response?: unknown; error?: { message?: string };
-    };
-    if (receipt.state === "failed") {
+    const receipt = decodeOperationResult(await status.json(), pending.operationId, false);
+    if (receipt.kind === "failed") {
       clearPendingCardRevisionRecord();
-      throw new Error(receipt.error?.message ?? "The earlier card revision failed.");
+      throw new Error(receipt.error.message ?? "The earlier card revision failed.");
     }
-    if (receipt.state === "complete") {
+    if (receipt.kind === "complete") {
+      const result = cardRevisionResultSchema.parse(receipt.response);
       clearPendingCardRevisionRecord();
-      if (pending.request === request) return cardRevisionResultSchema.parse(receipt.response);
+      if (pending.request === request) return result;
       pending = null;
-    } else if (receipt.state === "pending") {
+    } else if (receipt.kind === "pending") {
       if (pending.request !== request) throw new PendingOperationError(pending.operationId);
     } else throw new PendingOperationError(pending.operationId);
   }
