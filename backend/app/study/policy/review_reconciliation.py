@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from .clock import date
+from .opening_maturity import augment_opening_maturity
 import json
 
 from tempo_storage.opening_progression import unlock_legacy_children_after_review
@@ -73,13 +74,11 @@ def _next_state(
         {row["reviewed_at"][:10] for row in history if row["rating"] == "correct"}
     )
     seed = storage.baseline_schedule_seed(database, card_id)
-    successful_days += int(seed["baseline_successful_days"] if seed else 0)
-    recent_outcomes = [row["rating"] for row in reversed(history[-2:])]
-    if seed:
-        recent_outcomes.extend(
-            ["correct"]
-            * min(int(seed["baseline_recent_clean"]), max(0, 2 - len(recent_outcomes)))
-        )
+    successful_days, recent_outcomes = augment_opening_maturity(
+        successful_days, [row["rating"] for row in reversed(history[-2:])],
+        int(seed["baseline_successful_days"] if seed else 0),
+        int(seed["baseline_recent_clean"] if seed else 0),
+    )
     state = {
         "due_date": schedule.due_date.isoformat(),
         "interval_days": schedule.interval_days,
