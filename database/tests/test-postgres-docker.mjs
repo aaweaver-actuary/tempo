@@ -11,7 +11,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { createIsolatedTestEnvironment } from "../../scripts/test-environment.mjs";
 import { resolvePython } from "../../scripts/resolve-python.mjs";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "./postgres-test-options.mjs";
-import { assertDisposableVolumes, backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "./postgres-test-plan.mjs";
+import { assertDisposableVolumes, verifyMaintainedQueueReceipt, verifyMaintainedBrowserReceipt, unresolvedQueueCases, backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "./postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   readStudyQueuePublication, repertoireLimitRecreationPgn, studyDurabilityPgn } from "./postgres-test-fixture.mjs";
 import { createScenarioTimer, isTimingPublicationFailure, postgresCommandTiming } from "../../scripts/test-scenario-timings.mjs";
@@ -29,7 +29,9 @@ const stages = staleOnly
   : postgresTestStages(options);
 if (options.list) {
   console.log(JSON.stringify({ mode: options.mode, stages,
-    browser_file: options.browserFile, browser_grep: options.browserGrep }, null, 2));
+    browser_file: options.browserFile, browser_grep: options.browserGrep,
+    acceptance_scope: options.maintainedStudyProof ? "partial-maintained-study-not-full-E02" : options.mode,
+    unresolved_owner_cases: options.maintainedStudyProof ? unresolvedQueueCases : [] }, null, 2));
   process.exit(0);
 }
 
@@ -138,6 +140,7 @@ const measureScenario = createScenarioTimer(timingPath, {
   runner: "postgres", mode: options.mode,
   commit: commitResult.status === 0 ? commitResult.stdout.trim() : null,
   plan_hash: process.env.TEMPO_CI_PLAN_HASH ?? null,
+  acceptance_scope: options.maintainedStudyProof ? "partial-maintained-study-not-full-E02" : options.mode,
   native_checks: options.nativeChecks ?? [],
   browser_file: options.browserFile, browser_grep: options.browserGrep,
   planned_stages: stages,
@@ -200,7 +203,7 @@ async function runAllocatedNativeProof(scriptPath, proofName, containerOptions =
       "run", "--rm", "--no-deps", ...containerOptions, "schema", "python", "-c", proof]));
 }
 
-async function verifyStudyPriorityMaintenance() {
+async function verifyStudyPriorityMaintenance(currentOnly = false) {
   await withPriorityMaintenanceAllocation(async () => {
     await measureScenario.detail('study_priority_read_only_source_evidence', 'scenario', async () => {
       const evidenceParent = join(process.env.TEMPO_TEST_TIMING_DIR ?? 'test-results/performance', 'study-priority');
@@ -209,14 +212,40 @@ async function verifyStudyPriorityMaintenance() {
       mkdirSync(evidenceDirectory, {mode: 0o700});
       run('docker',[...compose,'-f',priorityResourceLimits,'run','--rm','--no-deps',
         '--volume', `${evidenceDirectory}:/evidence`, 'schema','python',
-        '/source/database/tests/check_postgres_study_priority.py','--owned-stack','--evidence','/evidence']);
+        '/source/database/tests/check_postgres_study_priority.py','--owned-stack','--evidence','/evidence',
+        ...(currentOnly ? ['--current-only'] : [])]);
       const receipt = JSON.parse(readFileSync(join(evidenceDirectory, 'native.json'), 'utf8'));
       assert.equal(receipt.complete, true, 'Read-only-source priority proof did not retain complete evidence');
-      assert.equal(Object.keys(receipt.cases).length, 6, 'Priority proof omitted native cases');
+      assert.equal(Object.keys(receipt.cases).length, currentOnly ? 5 : 6, 'Priority proof omitted native cases');
+      if (currentOnly) assert.equal(receipt.current_only, true);
       atomicJson(join(evidenceDirectory, 'assembly.json'), {revision: candidateRevision, project,
-        source_mount: 'read-only', evidence_mount: '/evidence', complete: true});
+        source_mount: 'read-only', evidence_mount: '/evidence', complete: true,
+        scope: currentOnly ? 'current-five-historical-rollback-unexecuted' : 'all-six'});
     });
   });
+}
+
+async function verifyStudyQueueReceipts(maintained = false) {
+    await executeIsolatedBackgroundWorkload({
+      stopConsumers: () => {
+        run("docker", [...compose, "stop", ...workloadConsumers]);
+        verifyWorkloadConsumers("exited");
+      },
+      measureWorkload: () => {
+        const result = run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
+          "/source/database/tests/check_postgres_queue_attempt_recovery.py", ...(maintained ? ["--case-set", "maintained-six"] : [])],
+          {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, echoCapturedOutput: true});
+        if (!maintained) return;
+        const records = result.stdout.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line));
+        const receipt = records.findLast(record => record.execution === 'completed');
+        verifyMaintainedQueueReceipt(receipt);
+        atomicJson(`test-results/native/${project}-maintained-queue.json`, {revision: candidateRevision, project, ...receipt});
+      },
+      restoreConsumers: () => restoreBackgroundWorkloadConsumers({
+        startConsumers: services => run("docker", [...compose, "up", "--no-build", "-d", "--no-deps", ...services]),
+        waitForReady: () => waitForReady({requireContainerHealthy: true}), verifyConsumers: verifyWorkloadConsumers,
+      }),
+    });
 }
 
 function verifyDisposableVolumesAbsent(names) {
@@ -263,9 +292,11 @@ function removeOwnedMaintenanceHelpContainer() {
 }
 
 function run(command, argumentsList, options = {}) {
+  const { echoCapturedOutput = false, ...spawnOptions } = options;
   const { label, category } = postgresCommandTiming(argumentsList);
   const execute = () => measureScenario.syncDetail(label, category, () => {
-    const result = spawnSync(command, argumentsList, { stdio: "inherit", env: environment, ...options });
+    const result = spawnSync(command, argumentsList, { stdio: "inherit", env: environment, ...spawnOptions });
+    if (echoCapturedOutput && result.stdout) process.stdout.write(result.stdout);
     measureScenario.processResult(result);
     if (result.error || result.status !== 0) throw new Error(`${command} ${argumentsList.join(" ")} failed`);
     return result;
@@ -1311,12 +1342,28 @@ const actions = {
   },
   browser: async () => {
       const browserArguments = buildPostgresPlaywrightArguments(options);
+      const report = options.maintainedStudyProof
+        ? resolve(process.env.TEMPO_CI_REPORT ?? `test-results/ci/${project}-maintained-study.json`) : process.env.TEMPO_CI_REPORT;
       run("npx", browserArguments, { env: { ...environment,
+        ...(report ? {TEMPO_CI_REPORT: report} : {}),
         TEMPO_DOCKER_URL: origin,
         TEMPO_TEST_COMPOSE_PROJECT: project,
         TEMPO_TEST_OUTPUT_DIR: join(process.cwd(), "test-results", `browser-postgres-${process.pid}`),
       } });
+      if (options.maintainedStudyProof) {
+        verifyMaintainedBrowserReceipt(JSON.parse(readFileSync(report, 'utf8')));
+        atomicJson(`test-results/native/${project}-maintained-study.json`, {revision: candidateRevision, project,
+          scope: 'partial-maintained-study-not-full-E02', browser_report: report, browser_cases: 1,
+          unresolved_owner_cases: unresolvedQueueCases, historical_priority_rollback: 'not executed'});
+      }
   },
+  maintained_study_only: async () => {
+    run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+      "/source/database/tests/check_postgres_study_only.py"]);
+    await verifyStudyPriorityMaintenance(true);
+    await verifyStudyOpeningAdmission();
+  },
+  maintained_study_queue_receipts: () => verifyStudyQueueReceipts(true),
   study_isolation: async () => {
     run("docker", [...compose, "down", "-v"]);
     run("docker", [...compose, "up", "--no-build", "-d"]);
@@ -1330,20 +1377,7 @@ const actions = {
     await verifyStudyPriorityMaintenance();
     await verifyStudyOpeningAdmission();
   },
-  study_queue_receipts: async () => {
-    await executeIsolatedBackgroundWorkload({
-      stopConsumers: () => {
-        run("docker", [...compose, "stop", ...workloadConsumers]);
-        verifyWorkloadConsumers("exited");
-      },
-      measureWorkload: () => run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
-        "/source/database/tests/check_postgres_queue_attempt_recovery.py"]),
-      restoreConsumers: () => restoreBackgroundWorkloadConsumers({
-        startConsumers: services => run("docker", [...compose, "up", "--no-build", "-d", "--no-deps", ...services]),
-        waitForReady: () => waitForReady({ requireContainerHealthy: true }), verifyConsumers: verifyWorkloadConsumers,
-      }),
-    });
-  },
+  study_queue_receipts: () => verifyStudyQueueReceipts(),
   ...Object.fromEntries(['position-grade-effects', 'position-introductions', 'position-queue-admission', 'prefix-split-placement'].map(check => [check, async () => {
     assertDevelopmentProjectOwned(project);
     const imageReference = run('docker', [...compose, 'images', '-q', 'schema'],

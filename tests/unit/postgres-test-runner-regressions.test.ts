@@ -95,3 +95,48 @@ it("PostgreSQL schema fixtures share the queue workers calendar across UTC midni
     expect(service, `${serviceName} must use the same queue day when UTC midnight has passed`).toContain("TZ: America/New_York");
   }
 });
+
+it("maintained Study proof selects a fixed partial plan without changing default study or full", async () => {
+  const {postgresTestStages} = await import('../../database/tests/postgres-test-plan.mjs');
+  const options = parsePostgresTestOptions(['--mode', 'study', '--maintained-study-proof'], cleanEnvironment);
+  expect(options.browserGrep).toBe('study_only_mode_preserves_foreground_review_and_queue_progression across reload and resumption$');
+  expect(postgresTestStages(options)).toEqual(['compose_config','image_build','startup','service_health',
+    'maintained_study_queue_receipts','maintained_study_only','study_durability','study_isolation','browser','cleanup']);
+  expect(postgresTestStages({mode:'study'})).toContain('study_queue_receipts');
+  expect(postgresTestStages({mode:'study'})).not.toContain('maintained_study_queue_receipts');
+  expect(postgresTestStages({mode:'full'})).toContain('deployment_lifecycle');
+  expect(postgresTestStages({mode:'full'})).not.toContain('maintained_study_only');
+});
+
+it("maintained Study misuse fails before resource admission", () => {
+  for (const args of [[], ['--mode','full'], ['--mode','browser'], ['--mode','study','--skip-browser'],
+    ['--mode','study','--browser-grep','.*'], ['--mode','study','--browser-file','study-only-mode.spec.ts'],
+    ['--mode','study','--native-check','position-grade-effects'], ['--mode','study','--maintained-study-proof']])
+    expect(() => parsePostgresTestOptions([...args,'--maintained-study-proof'],cleanEnvironment)).toThrow();
+  for (const environment of [{TEMPO_PG_STALE_DELIVERY_ONLY:'1'}, {TEMPO_RELEASE_CANDIDATE_MODE:'borrow'}])
+    expect(() => parsePostgresTestOptions(['--mode','study','--maintained-study-proof'],environment)).toThrow();
+});
+
+it("maintained queue receipt fails closed on partial, wrong, missing or duplicate completion", async () => {
+  const {maintainedQueueCases,unresolvedQueueCases,verifyMaintainedQueueReceipt} = await import('../../database/tests/postgres-test-plan.mjs');
+  const receipt = {case_set:'maintained-six',scope:'partial',execution:'completed',executed_count:6,
+    cases:maintainedQueueCases,excluded_cases:unresolvedQueueCases,unresolved_owner_cases:unresolvedQueueCases};
+  expect(() => verifyMaintainedQueueReceipt(receipt)).not.toThrow();
+  for (const invalid of [undefined, {...receipt,execution:'discovery-only'}, {...receipt,executed_count:0},
+    {...receipt,cases:[]}, {...receipt,cases:[...maintainedQueueCases.slice(1),maintainedQueueCases[1]]},
+    {...receipt,scope:'all-eight'}, {...receipt,excluded_cases:[]}])
+    expect(() => verifyMaintainedQueueReceipt(invalid)).toThrow();
+});
+
+it("maintained browser requires the one exact executed case without retry skip or empty success", async () => {
+  const {verifyMaintainedBrowserReceipt} = await import('../../database/tests/postgres-test-plan.mjs');
+  const spec = {title:'study_only_mode_preserves_foreground_review_and_queue_progression across reload and resumption',
+    tests:[{results:[{status:'passed',retry:0}]}]};
+  const receipt = {stats:{expected:1,skipped:0,unexpected:0,flaky:0},suites:[{specs:[spec]}]};
+  expect(() => verifyMaintainedBrowserReceipt(receipt)).not.toThrow();
+  for (const invalid of [{...receipt,suites:[]}, {...receipt,stats:{...receipt.stats,skipped:1}},
+    {...receipt,stats:{...receipt.stats,flaky:1}}, {...receipt,suites:[{specs:[spec,spec]}]},
+    {...receipt,suites:[{specs:[{...spec,title:'unrelated'}]}]},
+    {...receipt,suites:[{specs:[{...spec,tests:[{results:[{status:'passed',retry:1}]}]}]}]}])
+    expect(() => verifyMaintainedBrowserReceipt(invalid)).toThrow();
+});

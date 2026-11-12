@@ -1,10 +1,14 @@
 // The executable plan is also the read-only --list output; keep one source of truth.
-export function postgresTestStages({ mode, nativeChecks = [] }) {
+export function postgresTestStages({ mode, nativeChecks = [], maintainedStudyProof = false }) {
   if (!Array.isArray(nativeChecks) || new Set(nativeChecks).size !== nativeChecks.length
     || nativeChecks.some(check => !['redis-fixture-isolation', 'position-grade-effects', 'position-introductions', 'position-queue-admission', 'prefix-split-placement', 'game-review-reader'].includes(check))
     || nativeChecks.length && !['study','browser'].includes(mode)) throw new Error('Invalid native PostgreSQL selection');
   if (!["full", "browser", "study", "durability", "lifecycle", "lifecycle-current"].includes(mode)) throw new Error(`Unknown PostgreSQL test mode: ${mode}`);
   const nativeStages = nativeChecks.map(check => check === "game-review-reader" ? "game_review_reader" : check);
+  if (maintainedStudyProof) {
+    if (mode !== "study" || nativeChecks.length) throw new Error("Invalid maintained Study proof selection");
+    return ["compose_config", "image_build", "startup", "service_health", "maintained_study_queue_receipts", "maintained_study_only", "study_durability", "study_isolation", "browser", "cleanup"];
+  }
   if (mode === "study") return ["compose_config", "image_build", "startup", "service_health", "study_queue_receipts", "study_only", "study_durability", "study_isolation", ...nativeStages, "browser", "cleanup"];
   if (mode === "lifecycle") {
     return ["compose_config", "image_build", "maintenance_cli", "deployment_lifecycle", "cleanup"];
@@ -110,4 +114,40 @@ export function assertDisposableVolumes(stack, project, volumes, mounts) {
     if (entries.length !== 1 || entries[0].type !== "volume" || entries[0].source !== source)
       throw new Error(`Unsafe disposable mount: ${service}:${target}`);
   }
+}
+
+// Fixed partial acceptance contract, not a configurable case-selection framework.
+export const maintainedQueueCases = [
+  'test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_replay',
+  'test_postgres_scheduling_adapter_effects_rollback_with_receipt_failure',
+  'test_postgres_scheduling_concurrent_replay_preserves_one_history_and_queue_effect',
+  'test_retained_command_retry_preserves_immutable_identity',
+  'test_postgres_guided_marker_locks_displayed_revision_until_commit',
+  'test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recovery',
+];
+export const unresolvedQueueCases = [
+  'test_postgres_real_game_obligation_admission_restart_publication_and_remediation',
+  'test_postgres_retired_opening_evidence_reconciliation_is_atomic_and_replay_safe',
+];
+export function verifyMaintainedQueueReceipt(receipt) {
+  if (receipt?.case_set !== 'maintained-six' || receipt.scope !== 'partial'
+      || receipt.execution !== 'completed' || receipt.executed_count !== 6
+      || JSON.stringify(receipt.cases) !== JSON.stringify(maintainedQueueCases)
+      || JSON.stringify(receipt.excluded_cases) !== JSON.stringify(unresolvedQueueCases)
+      || JSON.stringify(receipt.unresolved_owner_cases) !== JSON.stringify(unresolvedQueueCases))
+    throw new Error('Maintained queue proof requires all six exact cases and unresolved-owner disposition');
+}
+export function verifyMaintainedBrowserReceipt(receipt) {
+  const stats = receipt?.stats;
+  const results = [];
+  function visit(node) {
+    for (const suite of node.suites ?? []) visit(suite);
+    for (const spec of node.specs ?? []) for (const test of spec.tests ?? [])
+      for (const result of test.results ?? []) results.push({title: spec.title, ...result});
+  }
+  visit(receipt ?? {});
+  if (stats?.expected !== 1 || stats.skipped !== 0 || stats.unexpected !== 0 || stats.flaky !== 0
+      || results.length !== 1 || results[0].status !== 'passed' || results[0].retry !== 0
+      || results[0].title !== 'study_only_mode_preserves_foreground_review_and_queue_progression across reload and resumption')
+    throw new Error('Maintained Study browser proof requires exactly one real passing case without skips or retries');
 }
