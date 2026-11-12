@@ -69,6 +69,31 @@ flowchart LR
 This is a source-level dependency boundary; packaged and live behavior remain
 unverified.
 
+### Explicit Study client and browser composition
+
+[`study-client.ts`](./study-client.ts) is the independent client factory. Importing
+it is inert: it does not construct the default client, read browser storage,
+restore a session, start transport, or install interaction listeners. Creating a
+client requires explicit storage and transport, base URL/mode, and runtime
+callbacks for base-href resolution, authentication notification and activity
+holds. Session restoration is opt-in through `persistSession`; when enabled,
+construction may read the supplied session storage.
+
+[`study-connection.ts`](./study-connection.ts) remains the browser composition
+and compatibility entry point. Its wrapper supplies browser runtime defaults;
+its exported singleton supplies the existing browser storage and fetch transport,
+enables session restoration, and preserves `LEARNING_URL` plus the existing
+connection-function exports. Consumers needing an inert import boundary should
+import the independent factory rather than this composed entry point.
+
+Importing the browser composition does not itself install priority listeners.
+[`study-priority.ts`](./study-priority.ts) installs those only when
+`installStudyInteractionPriority` is explicitly called. Client construction,
+request activity holds and listener installation are distinct lifecycle steps.
+
+This describes the reviewed source split, not installed behavior or a claim that
+all existing consumers have migrated to independent client instances.
+
 ### Study client authority and transport (proposed J2)
 
 `createStudyClient` owns one connection, generation and injected transport per

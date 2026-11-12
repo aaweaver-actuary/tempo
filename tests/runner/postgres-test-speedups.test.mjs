@@ -591,10 +591,11 @@ test("packaged Games reader runs once on the host after ready owned services and
     process: { env: { TEMPO_DEVELOPMENT_BUDGET_TOKEN: "owned-token" } },
     run: (command, args, options) => calls.push({ command, args: Array.from(args), env: options.env }),
   }).game_review_reader;
-  for (const mode of ["full", "durability"]) {
+  for (const mode of ["full", "durability", "browser", "study"]) {
     calls.length = 0;
-    const stages = postgresTestStages({ mode });
-    assert.equal(stages[stages.indexOf("service_health") + 1], "game_review_reader");
+    const stages = postgresTestStages({ mode, nativeChecks: ["browser", "study"].includes(mode) ? ["game-review-reader"] : [] });
+    assert(stages.indexOf("game_review_reader") > stages.indexOf("service_health"));
+    assert.equal(stages.filter(stage => stage === "game_review_reader").length, 1);
     const events = [];
     const actions = Object.fromEntries(stages.map(stage => [stage, () => events.push(stage)]));
     actions.game_review_reader = async () => { events.push("game_review_reader"); await action(); };
@@ -1419,6 +1420,77 @@ test('position introductions selects the exact owned native bridge and cleans up
   const source = readFileSync(join(root, 'database/tests/test-postgres-docker.mjs'), 'utf8');
   assert(source.includes('TEMPO_NATIVE_POSITION_CHECK=${check}'));
   assert(source.includes('checks: {[check]: evidence}'));
+});
+
+
+test('position queue admission selects only its exact bridge and blocks browser after failure', async () => {
+  const check = 'position-queue-admission';
+  const stages = postgresTestStages(parse(['--mode', 'browser', '--native-check', check]));
+  assert(stages.indexOf(check) < stages.indexOf('browser'));
+  assert(!stages.includes('position-introductions'));
+  assert(!stages.includes('position-grade-effects'));
+  for (const args of [
+    ['--mode', 'browser', '--native-check', check, '--native-check', check],
+    ['--mode', 'browser', '--native-check', 'backend/tests/test_position_queue_admission.py::test_native_refresh_admits_due_carrier_and_reuses_pending'],
+    ['--mode', 'full', '--native-check', check],
+  ]) assert.throws(() => parse(args));
+  const observed = [];
+  const actions = Object.fromEntries(stages.map(stage => [stage, async () => {
+    observed.push(stage);
+    if (stage === check) throw new Error('admission failed');
+  }]));
+  await assert.rejects(executePostgresTestPlan(stages, actions, (_stage, run) => run()), /admission failed/);
+  assert.equal(observed.at(-1), 'cleanup');
+  assert(!observed.includes('browser'));
+});
+
+test('prefix split uses only its full-schema bridge and stops before browser on proof failure', async () => {
+  const check = 'prefix-split-placement';
+  const stages = postgresTestStages(parse(['--mode', 'browser', '--native-check', check]));
+  assert(stages.indexOf(check) < stages.indexOf('browser'));
+  assert(!stages.includes('position-queue-admission'));
+  for (const args of [
+    ['--mode', 'browser', '--native-check', check, '--native-check', check],
+    ['--mode', 'full', '--native-check', check],
+    ['--mode', 'browser', '--native-check', 'database/tests/native_review/test_postgres.py'],
+  ]) assert.throws(() => parse(args));
+  const observed = [];
+  const actions = Object.fromEntries(stages.map(stage => [stage, async () => {
+    observed.push(stage);
+    if (stage === check) throw new Error('split failed');
+  }]));
+  await assert.rejects(executePostgresTestPlan(stages, actions, (_stage, run) => run()), /split failed/);
+  assert.equal(observed.at(-1), 'cleanup');
+  assert(!observed.includes('browser'));
+  const source = readFileSync(join(root, 'database/tests/test-postgres-docker.mjs'), 'utf8');
+  assert(source.includes("check === 'prefix-split-placement'"));
+  assert(source.includes('/source/database/tests/native-split-pytest.py'));
+});
+
+test("game review reader alias is finite and preserves prefix selection and cleanup", async () => {
+  for (const mode of ["browser", "study"]) {
+    const options = parse(["--mode", mode, "--browser-grep", "Q0", "--native-check", "prefix-split-placement", "--native-check", "game-review-reader"]);
+    const stages = postgresTestStages(options);
+    assert(stages.indexOf("prefix-split-placement") < stages.indexOf("game_review_reader"));
+    assert(stages.indexOf("game_review_reader") < stages.indexOf("browser"));
+    assert(!stages.includes("game-review-reader"));
+    const called = [];
+    const actions = Object.fromEntries(stages.map(stage => [stage, () => {
+      called.push(stage);
+      if (stage === "game_review_reader") throw new Error("reader proof failed");
+    }]));
+    await assert.rejects(executePostgresTestPlan(stages, actions, directMeasurement), /reader proof failed/);
+    assert.deepEqual(called, [...stages.slice(0, stages.indexOf("game_review_reader") + 1), "cleanup"]);
+  }
+  for (const mode of ["full", "durability", "lifecycle", "lifecycle-current"]) {
+    assert.throws(() => parse(["--mode", mode, "--native-check", "game-review-reader"]));
+    assert.throws(() => postgresTestStages({ mode, nativeChecks: ["game-review-reader"] }));
+  }
+  for (const checks of [["game-review-reader", "game-review-reader"], ["game_review_reader"],
+    ["database/tests/check_postgres_game_review_reader.py"], ["arbitrary-stage"]]) {
+    assert.throws(() => parse(["--mode", "browser", ...checks.flatMap(check => ["--native-check", check])]));
+    assert.throws(() => postgresTestStages({ mode: "browser", nativeChecks: checks }));
+  }
 });
 
 

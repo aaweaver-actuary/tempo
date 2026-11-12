@@ -7,7 +7,8 @@ function storage(): StudyClientStorage {
   return { sessionConnectionAvailable: () => false, readSessionConnection: () => null,
     writeSessionConnection: () => {}, removeSessionConnection: () => {},
     readAuthorityRegistry: () => registry, writeAuthorityRegistry: value => { registry = value; },
-    readRetainedStudyData: async () => ({ databases: { 'tempo-study-intents': {} }, legacy: {} }) };
+    readRetainedStudyData: async () => ({ databases: {}, legacy: {} }),
+    inspectRetainedStudyAuthority: async () => ({ facts: [], retained: { databases: {}, legacy: {} } }) };
 }
 const bootstrap = (workspace: string) => ({ schema_version:1, workspace_id:workspace, timezone:'UTC', local_date:'2026-11-01',
   settings:{ study_only_mode:false, new_cards_per_day:1, study_new_per_day:1, tactics_new_per_day:1,

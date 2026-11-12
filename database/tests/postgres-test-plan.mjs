@@ -1,10 +1,11 @@
 // The executable plan is also the read-only --list output; keep one source of truth.
 export function postgresTestStages({ mode, nativeChecks = [] }) {
   if (!Array.isArray(nativeChecks) || new Set(nativeChecks).size !== nativeChecks.length
-    || nativeChecks.some(check => !['redis-fixture-isolation', 'position-grade-effects', 'position-introductions'].includes(check))
+    || nativeChecks.some(check => !['redis-fixture-isolation', 'position-grade-effects', 'position-introductions', 'position-queue-admission', 'prefix-split-placement', 'game-review-reader'].includes(check))
     || nativeChecks.length && !['study','browser'].includes(mode)) throw new Error('Invalid native PostgreSQL selection');
   if (!["full", "browser", "study", "durability", "lifecycle", "lifecycle-current"].includes(mode)) throw new Error(`Unknown PostgreSQL test mode: ${mode}`);
-  if (mode === "study") return ["compose_config", "image_build", "startup", "service_health", "study_queue_receipts", "study_only", "study_durability", "study_isolation", ...nativeChecks, "browser", "cleanup"];
+  const nativeStages = nativeChecks.map(check => check === "game-review-reader" ? "game_review_reader" : check);
+  if (mode === "study") return ["compose_config", "image_build", "startup", "service_health", "study_queue_receipts", "study_only", "study_durability", "study_isolation", ...nativeStages, "browser", "cleanup"];
   if (mode === "lifecycle") {
     return ["compose_config", "image_build", "maintenance_cli", "deployment_lifecycle", "cleanup"];
   }
@@ -19,7 +20,7 @@ export function postgresTestStages({ mode, nativeChecks = [] }) {
   return [
     "compose_config", "image_build", ...(mode === "browser" ? [] : ["maintenance_cli"]),
     "startup", "service_health", ...(mode === "browser" ? [] : ["game_review_reader", ...durabilityStages]),
-    ...nativeChecks, ...(mode === "durability" ? [] : ["browser"]),
+    ...nativeStages, ...(mode === "durability" ? [] : ["browser"]),
     ...(mode === "full" ? ["study_isolation"] : []),
     ...(mode === "browser" ? [] : ["study_durability"]), "cleanup",
   ];
