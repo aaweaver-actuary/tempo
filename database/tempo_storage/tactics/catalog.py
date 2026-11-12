@@ -27,7 +27,7 @@ def rotation_cursor(database):
 
 
 def introduced_puzzle_rows(database):
-    return database.execute('SELECT puzzle_id FROM tactic_progress WHERE admitted_at IS NOT NULL').fetchall()
+    return database.execute('SELECT puzzle_id FROM tactic_progress WHERE admitted_at IS NOT NULL UNION SELECT puzzle_id FROM tactic_introductions').fetchall()
 
 
 def last_queue_position(database, day):
@@ -43,7 +43,7 @@ def save_introduction_progress(database, puzzle_id, pack_id, card_id, day, mode)
 
 
 def save_introduction(database, puzzle_id, pack_id, day):
-    database.execute('INSERT INTO tactic_introductions(puzzle_id,pack_id,introduction_date) VALUES(%s,%s,%s)', (puzzle_id, pack_id, day))
+    return database.execute('INSERT INTO tactic_introductions(puzzle_id,pack_id,introduction_date) VALUES(%s,%s,%s) ON CONFLICT(puzzle_id) DO NOTHING RETURNING puzzle_id', (puzzle_id, pack_id, day)).fetchone() is not None
 
 
 def existing_queue_entry(database, day, card_id):

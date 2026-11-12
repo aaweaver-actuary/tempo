@@ -117,13 +117,15 @@ def seed_tactical_introductions(db, day):
         if is_card_deleted(db, cid):
             seen.add(record["PuzzleId"])
             continue
+        if not storage.save_introduction(db, record["PuzzleId"], pack, day):
+            seen.add(record["PuzzleId"])
+            continue
         storage.create_introduction_card(
             db, cid, fen, json.dumps(solution), day, record["PuzzleId"], record["FEN"]
         )
         storage.save_introduction_progress(
             db, record["PuzzleId"], pack, cid, day, "light"
         )
-        storage.save_introduction(db, record["PuzzleId"], pack, day)
         if not storage.existing_queue_entry(db, day, cid):
             maximum += 1
             storage.append_queue_entry(db, day, cid, maximum)

@@ -65,9 +65,10 @@ def upsert_tactical_progress(database, puzzle_id, pack_id, card_id, queue_date):
 
 def insert_tactical_introduction(database, puzzle_id, pack_id, queue_date):
     return database.execute_native(
-        "INSERT INTO tactic_introductions(puzzle_id,pack_id,introduction_date) VALUES(%s,%s,%s)",
+        "INSERT INTO tactic_introductions(puzzle_id,pack_id,introduction_date) VALUES(%s,%s,%s) "
+        "ON CONFLICT(puzzle_id) DO NOTHING RETURNING puzzle_id",
         (puzzle_id, pack_id, queue_date),
-    )
+    ).fetchone() is not None
 
 
 def queued_card(database, queue_date, card_id):

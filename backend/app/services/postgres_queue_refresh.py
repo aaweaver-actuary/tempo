@@ -323,6 +323,10 @@ def _publish_tactical_introduction(
     progress = admissions.locked_puzzle_progress(database, prepared["puzzle_id"])
     if progress is not None and progress[0] is not None:
         return True
+    if not admissions.insert_tactical_introduction(
+        database, prepared["puzzle_id"], prepared["pack_id"], queue_date
+    ):
+        return True
     admissions.ensure_tactics_repertoire(database, queue_date)
     admissions.insert_tactical_card(
         database,
@@ -340,9 +344,6 @@ def _publish_tactical_introduction(
         prepared["pack_id"],
         prepared["card_id"],
         queue_date,
-    )
-    admissions.insert_tactical_introduction(
-        database, prepared["puzzle_id"], prepared["pack_id"], queue_date
     )
     queued = admissions.queued_card(database, queue_date, prepared["card_id"])
     if queued is None:
