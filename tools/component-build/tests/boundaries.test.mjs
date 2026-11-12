@@ -96,7 +96,7 @@ test("M02 Python public API policy rejects private and unavailable consumer expo
 });
 for (const { id, packageName, publicExports } of [
   { id: "learning-review-application", packageName: "tempo_learning_review", publicExports: ["apply_review", "review_context", "review_day_at", "submit_review", "register_review_commands", "ReviewConflict", "ReviewFailure", "AttemptReceipt", "CardFacts", "ContinuationFacts", "EvidenceCompletion", "PreparedNext", "QueueAttempt", "ReviewCommand", "ReviewContext", "ReviewPolicy", "ReviewResult", "ReviewStore", "ReviewSubmissionStore"] },
-  { id: "game-review-contracts", packageName: "tempo_game_review_contracts", publicExports: ["CanonicalGame", "ReentryAuthority", "AuthoredRoute", "RepertoireSnapshot", "RouteContext", "PositionFact", "ComparisonReport", "GameInput", "GameIngester", "RepertoireComparer", "Unavailable", "ClassificationPort", "ActionRequest", "ActionPort", "replay_line", "ReplaySession"] },
+  { id: "game-review-contracts", packageName: "tempo_game_review_contracts", publicExports: ["CanonicalGame", "ReentryAuthority", "AuthoredRoute", "RepertoireSnapshot", "RepertoireSnapshotBoundExceeded", "RouteContext", "PositionFact", "ComparisonReport", "GameInput", "GameIngester", "RepertoireComparer", "Unavailable", "ClassificationPort", "ActionRequest", "ActionPort", "replay_line", "ReplaySession"] },
 ]) test(`M02 ${id} registration matches its existing public package exports`, () => {
   const component = manifest.components.find(candidate => candidate.id === id);
   assert.equal(component.status, "implemented");
