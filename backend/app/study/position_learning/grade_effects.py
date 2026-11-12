@@ -102,7 +102,7 @@ def _load_plan(database, attempt_id, authored_digest):
 def _load_events(database, plan, event_ids):
     """Revalidate each durable G3 receipt against the original decoded plan."""
     from datetime import datetime
-    from app.study.position_checkpoint import decode_position_first_response
+    from app.study.position_learning.first_response_codec import decode_position_first_response
     from tempo_evidence_math.position_learning import FirstResponse
 
     if not event_ids or len(event_ids) > len(plan.decision_slots) or len(set(event_ids)) != len(event_ids):
