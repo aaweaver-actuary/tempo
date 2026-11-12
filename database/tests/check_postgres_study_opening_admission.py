@@ -38,7 +38,7 @@ from database.tests.check_postgres_opening_capacity import seed, snapshot, DAY
 def enable(limit=2):
     steps = seed()
     with postgres.connection() as database:
-        database.execute('UPDATE settings SET study_only_mode=1,new_cards_per_day=? WHERE id=1', (limit,))
+        database.execute('UPDATE settings SET study_only_mode=1,new_cards_per_day=%s WHERE id=1', (limit,))
     return steps
 
 
@@ -72,15 +72,16 @@ def test_postgres_study_only_introduces_openings_without_analysis():
     enable()
     before = snapshot()
     assert not before['queue']
-    with patch.object(worker, '_prepare_prioritized_openings', side_effect=AssertionError('Optional ranking ran')):
-        slices = refresh()
+    # Current refresh owns ordinary bounded graph admission; the removed
+    # optional ranking function must not be recreated as a mock seam.
+    slices = refresh()
     after = snapshot()
     assert len(after['queue']) == 2, f"Expected two fresh openings, got {len(after['queue'])}"
     assert after['reviews'] == before['reviews']
     assert all(card[3:] == dict((row[0], row[3:]) for row in before['cards'])[card[0]]
                for card in after['cards'])
     with postgres.connection(read_only=True) as database:
-        assert database.execute("SELECT state FROM queue_projections WHERE queue_date=?", (DAY,)).fetchone()[0] == 'ready'
+        assert database.execute("SELECT state FROM queue_projections WHERE queue_date=%s", (DAY,)).fetchone()[0] == 'ready'
     refresh('study-introductions-replay')
     assert snapshot() == after
     print(json.dumps({'before_candidates': len(before['cards']), 'before_admissions': 0,
@@ -94,7 +95,7 @@ def test_postgres_study_only_review_unlocks_child_preserves_fsrs_and_receipts():
     assert len(queued) == 2
     root_id = queued[0][0]
     with postgres.connection(read_only=True) as database:
-        entry_id = database.execute('SELECT id FROM daily_queue WHERE card_id=?', (root_id,)).fetchone()[0]
+        entry_id = database.execute('SELECT id FROM daily_queue WHERE card_id=%s', (root_id,)).fetchone()[0]
     assert execute_command(uuid4().hex, 'queue.issue_head',
         {'entry_id': entry_id, 'queue_date': DAY, 'card_id': root_id, 'expected_revision': 1})['issued']
     assert main.queue_window(1)['cards'][0]['id'] == root_id
@@ -123,6 +124,7 @@ def test_postgres_study_only_daily_limits_and_empty_sets(limit):
     refresh()
     assert len(snapshot()['queue']) == min(limit, 2)
     before = snapshot()
+    assert not before['reviews'], 'Ordinary admission must not manufacture reviews'
     refresh('limit-replay')
     assert snapshot() == before
     with postgres.connection() as database:
@@ -135,18 +137,18 @@ def test_postgres_study_only_safety_exclusions_do_not_starve_later_roots(exclusi
     root = next(step.card_id for step in steps if step.parent_card_id is None)
     with postgres.connection() as database:
         if exclusion in ('archived', 'pending_validation'):
-            database.execute(f'UPDATE cards SET {exclusion}=1 WHERE id=?', (root,))
+            database.execute(f'UPDATE cards SET {exclusion}=1 WHERE id=%s', (root,))
         elif exclusion == 'deleted':
-            database.execute('INSERT INTO deleted_cards(card_id,deleted_at) VALUES(?,?)', (root, DAY))
+            database.execute('INSERT INTO deleted_cards(card_id,deleted_at) VALUES(%s,%s)', (root, DAY))
         elif exclusion == 'superseded':
-            database.execute("UPDATE cards SET superseded_by='replacement' WHERE id=?", (root,))
+            database.execute("UPDATE cards SET superseded_by='replacement' WHERE id=%s", (root,))
         elif exclusion == 'invalid':
-            database.execute("UPDATE cards SET moves_json='[\"e2e5\"]' WHERE id=?", (root,))
+            database.execute("UPDATE cards SET moves_json='[\"e2e5\"]' WHERE id=%s", (root,))
         elif exclusion == 'trained_color':
-            database.execute("UPDATE cards SET trained_color='black' WHERE id=?", (root,))
+            database.execute("UPDATE cards SET trained_color='black' WHERE id=%s", (root,))
         elif exclusion == 'integrity':
-            database.execute("INSERT INTO repertoire_integrity_issues(id,repertoire_id,kind,signature,created_at,updated_at) VALUES('block','rep','invalid_source','block',?,?)", (DAY, DAY))
-            database.execute("INSERT INTO repertoire_integrity_card_blocks(repertoire_id,card_id,issue_id,scan_generation,published_at) VALUES('rep',?,'block','proof',?)", (root, DAY))
+            database.execute("INSERT INTO repertoire_integrity_issues(id,repertoire_id,kind,signature,created_at,updated_at) VALUES('block','rep','invalid_source','block',%s,%s)", (DAY, DAY))
+            database.execute("INSERT INTO repertoire_integrity_card_blocks(repertoire_id,card_id,issue_id,scan_generation,published_at) VALUES('rep',%s,'block','proof',%s)", (root, DAY))
     refresh()
     admitted_ids = {row[0] for row in snapshot()['queue']}
     assert root not in admitted_ids
@@ -213,11 +215,11 @@ def test_postgres_study_only_shared_memberships_and_route_recheck():
     assert snapshot() == before
     with postgres.connection() as database:
         database.execute("UPDATE opening_graph_publications SET generation=1 WHERE repertoire_id='rep'")
-        database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('shared','Shared','proof',?)", (DAY,))
+        database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('shared','Shared','proof',%s)", (DAY,))
         database.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) SELECT 'shared-line','shared',name,trained_color,start_fen,moves_json,created_at FROM repertoire_lines ORDER BY id LIMIT 1")
         database.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) SELECT 'shared',card_id FROM repertoire_cards WHERE repertoire_id='rep'")
         database.execute("INSERT INTO opening_graph_steps SELECT 'shared',generation,'shared-line',decision_index,card_id,parent_card_id,decision_fen_key,starting_fen,moves_json,trained_color,segment_kind,first_decision_index,last_decision_index,decision_fen_keys_json FROM opening_graph_steps WHERE line_id=(SELECT id FROM repertoire_lines WHERE repertoire_id='rep' ORDER BY id LIMIT 1)")
-        database.execute("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES('shared',1,'ready',?)", (DAY,))
+        database.execute("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES('shared',1,'ready',%s)", (DAY,))
     refresh()
     assert len(snapshot()['queue']) == 2
     assert len({row[0] for row in snapshot()['queue']}) == 2
@@ -227,12 +229,12 @@ def test_postgres_study_only_blocked_pages_advance_in_stable_graph_order():
     enable(1)
     with postgres.connection() as database:
         root = database.execute("SELECT card_id FROM opening_graph_steps WHERE parent_card_id IS NULL ORDER BY line_id LIMIT 1").fetchone()[0]
-        database.execute("UPDATE cards SET moves_json='[\"e2e5\"]' WHERE id=?", (root,))
+        database.execute("UPDATE cards SET moves_json='[\"e2e5\"]' WHERE id=%s", (root,))
         original_line = database.execute('SELECT id FROM repertoire_lines ORDER BY id LIMIT 1').fetchone()[0]
         for index in range(20):
             line_id = f'aaa-blocked-{index:02}'
-            database.execute("INSERT INTO repertoire_lines SELECT ?,repertoire_id,name,trained_color,start_fen,moves_json,created_at FROM repertoire_lines WHERE id=?", (line_id, original_line))
-            database.execute("INSERT INTO opening_graph_steps SELECT repertoire_id,generation,?,decision_index,card_id,parent_card_id,decision_fen_key,starting_fen,moves_json,trained_color,segment_kind,first_decision_index,last_decision_index,decision_fen_keys_json FROM opening_graph_steps WHERE line_id=?", (line_id, original_line))
+            database.execute("INSERT INTO repertoire_lines SELECT %s,repertoire_id,name,trained_color,start_fen,moves_json,created_at FROM repertoire_lines WHERE id=%s", (line_id, original_line))
+            database.execute("INSERT INTO opening_graph_steps SELECT repertoire_id,generation,%s,decision_index,card_id,parent_card_id,decision_fen_key,starting_fen,moves_json,trained_color,segment_kind,first_decision_index,last_decision_index,decision_fen_keys_json FROM opening_graph_steps WHERE line_id=%s", (line_id, original_line))
     first_page = worker._prepare_study_opening_page(DAY, {})
     assert first_page['examined'] == 16 and not first_page['items'] and first_page['has_more']
     refresh()
@@ -240,22 +242,16 @@ def test_postgres_study_only_blocked_pages_advance_in_stable_graph_order():
     assert snapshot()['queue'][0][0] != root
 
 
-def test_postgres_study_only_real_game_miss_retains_quota_exception():
-    steps = enable(0)
-    descendant = next(step.card_id for step in steps if step.decision_index == 2)
-    with postgres.connection() as database:
-        database.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json) VALUES('game','lichess','proof',?,'rapid',1,'white','1-0',?,'[]')", (DAY + 'T00:00:00+00:00', 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'))
-        database.execute("INSERT INTO repertoire_decision_events_legacy(id,game_id,repertoire_id,card_id,ply,fen_key,expected_uci,actual_uci,outcome,played_at,updated_at) VALUES('miss','game','rep',?,1,'proof','e2e4','d2d4','miss',?,?)", (descendant, DAY + 'T00:00:00+00:00', DAY))
-    refresh()
-    assert [row[0] for row in snapshot()['queue']] == [descendant]
-    assert not snapshot()['reviews']
+# Retired: legacy real-game-miss quota bypass belonged exclusively to the
+# removed automatic Feedback phase. Current ordinary quota 0/1/2 and no-review
+# guarantees remain in daily_limits_and_empty_sets and the admission cases.
 
 
 def test_postgres_study_only_already_queued_card_does_not_consume_planned_allowance():
     enable(1)
     first = worker._prepare_study_opening_page(DAY, {})['items'][0]
     with postgres.connection() as database:
-        database.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind) VALUES(?,?,0,'explicit')",
+        database.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind) VALUES(%s,%s,0,'explicit')",
                          (DAY, first['card_id']))
     remaining = worker._prepare_study_opening_page(DAY, {})['items']
     assert len(remaining) == 1 and remaining[0]['card_id'] != first['card_id'], \
@@ -263,8 +259,8 @@ def test_postgres_study_only_already_queued_card_does_not_consume_planned_allowa
     refresh()
     assert len(snapshot()['queue']) == 2
     with postgres.connection(read_only=True) as database:
-        assert database.execute('SELECT introduced_at FROM cards WHERE id=?', (first['card_id'],)).fetchone()[0] is None
-        assert database.execute('SELECT COUNT(*) FROM cards WHERE introduced_at=?', (DAY,)).fetchone()[0] == 1
+        assert database.execute('SELECT introduced_at FROM cards WHERE id=%s', (first['card_id'],)).fetchone()[0] is None
+        assert database.execute('SELECT COUNT(*) FROM cards WHERE introduced_at=%s', (DAY,)).fetchone()[0] == 1
 
 
 def test_postgres_study_only_foreground_contention_rolls_back_and_resumes():
@@ -312,7 +308,7 @@ def restart_proof(admin_url, database_name, stage):
                 marker = durable_tasks.enqueue_task('daily_queue', 'native-restart-marker',
                     {'queue_date': DAY, 'expected_native_restart_state': expected})
                 with postgres.connection() as database:
-                    database.execute("UPDATE background_tasks SET state='complete' WHERE id=?", (marker['id'],))
+                    database.execute("UPDATE background_tasks SET state='complete' WHERE id=%s", (marker['id'],))
             else:
                 with postgres.connection(read_only=True) as database:
                     marker = database.execute("SELECT payload_json FROM background_tasks WHERE deduplication_key='native-restart-marker'").fetchone()
@@ -419,7 +415,6 @@ def run():
              (test_postgres_study_only_concurrent_refreshes_share_last_allowance, [None]),
              (test_postgres_study_only_shared_memberships_and_route_recheck, [None]),
              (test_postgres_study_only_blocked_pages_advance_in_stable_graph_order, [None]),
-             (test_postgres_study_only_real_game_miss_retains_quota_exception, [None]),
              (test_postgres_study_only_already_queued_card_does_not_consume_planned_allowance, [None]),
              (test_postgres_study_only_foreground_contention_rolls_back_and_resumes, [None])]
     selected = [(test, parameters) for test, parameters in tests if not arguments.case or test.__name__ == arguments.case]

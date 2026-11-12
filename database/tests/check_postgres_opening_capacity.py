@@ -41,7 +41,7 @@ ADMIN_DSN = 'postgresql://postgres@postgres:5432/postgres'
 def seed():
     with postgres.connection() as database:
         database.execute("INSERT INTO settings(id,new_cards_per_day,tactics_new_per_day,study_new_per_day) VALUES(1,10,0,0)")
-        database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('rep','Capacity','proof',?)", (DAY,))
+        database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('rep','Capacity','proof',%s)", (DAY,))
         lines = []
         for prefix_move in ('e2e4', 'd2d4'):
             prefix_board = chess.Board()
@@ -57,13 +57,13 @@ def seed():
                 line_id = f'{prefix_move}-{reply_index}'
                 line = dict(id=line_id, start_fen=chess.STARTING_FEN, moves_json=json.dumps(moves), trained_color='white')
                 lines.append(line)
-                database.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,'rep',?,'white',?,?,?)", (line_id, line_id, line['start_fen'], line['moves_json'], DAY))
+                database.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(%s,'rep',%s,'white',%s,%s,%s)", (line_id, line_id, line['start_fen'], line['moves_json'], DAY))
         steps = build_graph(GraphInput('rep', tuple(lines), 1))
         for step in steps:
-            database.execute("INSERT OR IGNORE INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type) VALUES(?,'rep',?,?,?,'locked',?,'opening')", (step.card_id, 'prefix' if step.segment_kind == 'prefix' else 'response', step.starting_fen, json.dumps(step.moves), DAY))
-            database.execute("INSERT OR IGNORE INTO repertoire_cards(repertoire_id,card_id) VALUES('rep',?)", (step.card_id,))
-            database.execute("INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,parent_card_id,decision_fen_key,starting_fen,moves_json,trained_color,segment_kind,first_decision_index,last_decision_index,decision_fen_keys_json) VALUES('rep',1,?,?,?,?,?,?,?,'white',?,?,?,?)", (step.line_id, step.decision_index, step.card_id, step.parent_card_id, step.decision_fen_key, step.starting_fen, json.dumps(step.moves), step.segment_kind, step.first_decision_index, step.last_decision_index, json.dumps(step.decision_fen_keys)))
-        database.execute("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES('rep',1,'ready',?)", (DAY,))
+            database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type) VALUES(%s,'rep',%s,%s,%s,'locked',%s,'opening') ON CONFLICT (id) DO NOTHING", (step.card_id, 'prefix' if step.segment_kind == 'prefix' else 'response', step.starting_fen, json.dumps(step.moves), DAY))
+            database.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('rep',%s) ON CONFLICT (repertoire_id,card_id) DO NOTHING", (step.card_id,))
+            database.execute("INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,parent_card_id,decision_fen_key,starting_fen,moves_json,trained_color,segment_kind,first_decision_index,last_decision_index,decision_fen_keys_json) VALUES('rep',1,%s,%s,%s,%s,%s,%s,%s,'white',%s,%s,%s,%s)", (step.line_id, step.decision_index, step.card_id, step.parent_card_id, step.decision_fen_key, step.starting_fen, json.dumps(step.moves), step.segment_kind, step.first_decision_index, step.last_decision_index, json.dumps(step.decision_fen_keys)))
+        database.execute("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES('rep',1,'ready',%s)", (DAY,))
         main._unlock_eligible_opening_cards(database, DAY)
     return steps
 
