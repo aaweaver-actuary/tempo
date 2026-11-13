@@ -586,6 +586,31 @@ export function validateStudyCensusResource(manifest, root = repository) {
   return {resources:tracked.length};
 }
 
+export function validateSchemaOperatorWrappers(manifest, root = repository) {
+  const listed=spawnSync("git",["ls-files","-z","database/tooling"],{cwd:root,encoding:"utf8"});
+  if(listed.error || listed.status!==0) throw new Error("Cannot enumerate schema operator resources");
+  const tracked=listed.stdout.split("\0").filter(p=>/^database\/tooling\/(?:upgrade-postgres-schema|tempo-schema-update)[^/]*\.(?:sh|py|js|jsx|mjs|cjs|ts|tsx)$/.test(p));
+  const owners=["postgres-schema-cli-wrapper","postgres-schema-interactive-wrapper"].map(id=>manifest.components.find(c=>c.id===id));
+  if(owners.some(c=>!c || c.status!=="mapped" || !Array.isArray(c.ownedFiles) || !Array.isArray(c.resourceRoles))) throw new Error("Missing schema operator owner");
+  const files=owners.flatMap(c=>c.ownedFiles),mapped=manifest.components.filter(c=>c.status==="mapped" && c.ownedFiles);
+  if(new Set(files).size!==files.length || files.length!==tracked.length || files.some(p=>!tracked.includes(p))) throw new Error("Schema operator inventory missing, duplicate or stale");
+  for(const owner of owners) {
+    const role=owner.id==="postgres-schema-cli-wrapper" ? "cli-migration-wrapper" : "operator-interactive-wrapper", seen=new Set();
+    for(const value of owner.resourceRoles){const parts=typeof value==="string" ? value.split("#") : [];if(parts.length!==2 || !owner.ownedFiles.includes(parts[0]) || parts[1]!==role || seen.has(parts[0])) throw new Error("Invalid schema operator role");seen.add(parts[0]);}
+    if(seen.size!==owner.ownedFiles.length) throw new Error("Invalid schema operator role");
+    for(const path of owner.ownedFiles) {
+      if(!path.endsWith(".sh") || path.split("/").some(x=>!x || x==="." || x==="..") || !existsSync(resolve(root,path)) || !inside(realpathSync(root),realpathSync(resolve(root,path))) || mapped.filter(c=>c.ownedFiles.includes(path)).length!==1) throw new Error("Invalid or overlapping schema operator source");
+      const expected=owner.id==="postgres-schema-cli-wrapper" ? "#!/bin/sh" : "#!/usr/bin/env zsh";
+      if(readFileSync(resolve(root,path),"utf8").split("\n",1)[0]!==expected) throw new Error("Schema operator shebang mismatch");
+    }
+  }
+  const cli="database/tooling/upgrade-postgres-schema.sh", interactive="database/tooling/tempo-schema-update.sh";
+  if(!owners[0].ownedFiles.includes(cli) || !owners[1].ownedFiles.includes(interactive) || !owners[0].dependencies.includes("tempo-cli") || !owners[1].dependencies.includes("postgres-schema-cli-wrapper")) throw new Error("Missing schema operator capability or dependency");
+  const cliSource=readFileSync(resolve(root,cli),"utf8"), source=readFileSync(resolve(root,interactive),"utf8");
+  if(!cliSource.includes('exec "$tempo_directory/tempo" migrate --plan "$@"') || !cliSource.includes('exec "$tempo_directory/tempo" migrate "$@"') || !/^cd \/Users\/andy\/tempo$/m.test(source) || !/^fi\s*\n\s*docker compose down\s*$/m.test(source)) throw new Error("Schema operator byte witness changed");
+  return {sources:tracked.length};
+}
+
 export function checkComponents(root = repository, python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3", options = {}) {
   const manifest = readManifest(root);
   const selected = selectComponents(manifest, options.componentIds);
@@ -605,6 +630,7 @@ export function checkComponents(root = repository, python = process.env.TEMPO_CO
     validateManagedCutSources(manifest, root, python);
     validatePostgresQualificationSources(manifest, root, python);
     validateStudyCensusResource(manifest, root);
+    validateSchemaOperatorWrappers(manifest, root);
     validateContractTooling(manifest, root, python);
   }
   validateManifest(manifest, root, { componentIds: selected.map(component => component.id), suiteIds: options.componentIds === undefined ? manifest.suites?.map(suite => suite.id) : undefined });
@@ -650,6 +676,7 @@ if (process.argv[1] && resolve(process.argv[1]) === new URL(import.meta.url).pat
         validateManagedCutSources(manifest, root);
         validatePostgresQualificationSources(manifest, root);
         validateStudyCensusResource(manifest, root);
+        validateSchemaOperatorWrappers(manifest, root);
         validateContractTooling(manifest, root);
       }
       validateManifest(manifest, root, { componentIds: options.suiteIds ? [] : selected.map(component => component.id), suiteIds: options.suiteIds });

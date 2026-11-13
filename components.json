@@ -9392,6 +9392,70 @@
       "resourceRoles": [
         "database/tooling/study_census.sql#inspection-sql"
       ]
+    },
+    {
+      "id": "postgres-schema-cli-wrapper",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tooling",
+      "publicExports": [],
+      "dependencies": [
+        "tempo-cli"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tooling/upgrade-postgres-schema.sh"
+      ],
+      "ownershipRole": "cli-migration-wrapper",
+      "dependencyNotes": [
+        "POSIX wrapper delegates --plan and --apply to the root Tempo CLI; caller retains target and migration authorization.",
+        "Operator resource only; this census reads bytes without invoking the wrapper or any service."
+      ],
+      "resourceRoles": [
+        "database/tooling/upgrade-postgres-schema.sh#cli-migration-wrapper"
+      ]
+    },
+    {
+      "id": "postgres-schema-interactive-wrapper",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tooling",
+      "publicExports": [],
+      "dependencies": [
+        "postgres-schema-cli-wrapper"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tooling/tempo-schema-update.sh"
+      ],
+      "ownershipRole": "operator-interactive-wrapper",
+      "dependencyNotes": [
+        "Operator-specific zsh wrapper hard-codes /Users/andy/tempo, asks for approval before --apply, and places docker compose down after the response branch; source mapping does not establish safety.",
+        "Operator resource only; this census reads bytes without invoking the wrapper or any service."
+      ],
+      "resourceRoles": [
+        "database/tooling/tempo-schema-update.sh#operator-interactive-wrapper"
+      ]
     }
   ],
   "suites": [
