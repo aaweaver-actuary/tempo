@@ -1,363 +1,142 @@
-"""Original synthetic regression fixtures for the offline corpus pipeline."""
-
+"""Read-only verification of the checked-in historical Study corpus artifacts."""
 from collections import Counter
-from copy import deepcopy
-from contextlib import contextmanager
 import hashlib
-import importlib.util
-import io
 import json
-import os
 from pathlib import Path
 
 import chess
-import chess.pgn
-import pytest
+from pydantic import TypeAdapter
+from app.contracts.study_exercises import ExerciseSpecification
+from app.study.policy.study_grading import validate_exercise
 
-from app.services import stalemate_swindles as swindles
-from app.services.study_grading import evaluate_answer
-from app.services.study_portable import validate_bundle
-from app.contracts.studies import MoveAnswer
-
-
-TRAP_FEN = "8/4p3/8/3k4/7R/1q6/8/K7 w - - 0 1"
-FORCED_FEN = "8/8/2ppp3/2pkp3/7R/1q6/8/K7 w - - 0 1"
-ONLY_MOVE_FEN = "8/8/8/8/7R/1q6/6k1/K6r w - - 0 1"
-BLACK_FEN = "k7/8/1Q6/7r/3K4/8/4P3/8 b - - 0 1"
 ROOT = Path(__file__).resolve().parents[2]
+TABLES = ("studies", "study_chapters", "study_sources", "study_positions",
+          "study_exercises", "study_exercise_revisions", "study_links")
+SPECIFICATION = TypeAdapter(ExerciseSpecification)
+
+def _historical_candidate_key(puzzle_fen: str, swindle_move_uci: str) -> str:
+    canonical_fen = " ".join(chess.Board(puzzle_fen).fen().split()[:4])
+    return hashlib.sha256(f"{canonical_fen}\n{swindle_move_uci}".encode()).hexdigest()
 
 
-def synthetic_pgn(fen=TRAP_FEN, moves=("h4d4", "d5d4"), **headers):
-    game = chess.pgn.Game()
-    game.setup(chess.Board(fen))
-    game.headers.update(
-        {
-            "Event": "Rated Blitz game",
-            "Site": "https://lichess.org/synthet1",
-            "White": "Private white account",
-            "Black": "Private black account",
-            "UTCDate": "2026.09.12",
-            "Result": "1/2-1/2",
-            "WhiteElo": "1500",
-            "BlackElo": "1600",
-            "TimeControl": "300+3",
-            "Termination": "Normal",
-        }
-    )
-    game.headers.update(headers)
-    current_node = game
-    for move in moves:
-        current_node = current_node.add_variation(chess.Move.from_uci(move))
-    return game.accept(chess.pgn.StringExporter(headers=True, comments=False)) + "\n\n"
-
-
-def mined(raw_pgn=None, **options):
-    counts = swindles.new_counts()
-    candidates = list(
-        swindles.mine_candidates(
-            io.StringIO(raw_pgn or synthetic_pgn()),
-            "2026-09",
-            options.pop("filters", swindles.MiningFilters()),
-            counts,
-            **options,
-        )
-    )
-    return candidates, counts
-
-
-@pytest.mark.parametrize(
-    "fen,moves,color",
-    [(TRAP_FEN, ("h4d4", "d5d4"), "white"), (BLACK_FEN, ("h5d5", "d4d5"), "black")],
-)
-def test_stalemate_swindle_starts_on_defenders_trap_move_not_opponents_stalemating_blunder(
-    fen, moves, color
-):
-    candidates, _ = mined(synthetic_pgn(fen, moves))
-    assert len(candidates) == 1
-    candidate = candidates[0]
-    assert candidate["puzzle_fen"] == fen
-    assert candidate["defender_color"] == color
-    assert candidate["swindle_move_uci"] == moves[0]
-    assert candidate["opponent_reply_uci"] == moves[1]
-    terminal = chess.Board(fen)
-    for move in moves:
-        terminal.push_uci(move)
-    assert terminal.is_stalemate() and candidate["terminal_fen"] == terminal.fen()
-
-
-@pytest.mark.parametrize("moves", [(), ("h4h5",)])
-def test_stalemate_swindle_rejects_non_stalemate_draws(moves):
-    assert mined(synthetic_pgn(moves=moves))[0] == []
-
-
-@pytest.mark.parametrize(
-    "headers",
-    [
-        {"WhiteTitle": "BOT"},
-        {"BlackTitle": "BOT"},
-        {"Event": "Rated Bullet game"},
-        {"WhiteElo": "999"},
-        {"BlackElo": "?"},
-        {"Termination": "Time forfeit"},
-        {"Variant": "Chess960"},
-    ],
-)
-def test_stalemate_swindle_default_filters_bots_bullet_low_ratings_and_small_material_deficits(
-    headers,
-):
-    assert mined(synthetic_pgn(**headers))[0] == []
-    assert mined(filters=swindles.MiningFilters(min_material_deficit=6))[0] == []
-
-
-def test_stalemate_swindle_configurable_filters_allow_bots_bullet_and_rating_changes():
-    candidates, _ = mined(
-        synthetic_pgn(WhiteTitle="BOT", Event="Rated Bullet game", WhiteElo="900"),
-        filters=swindles.MiningFilters(
-            min_rating=900, speeds=("bullet",), include_bots=True
-        ),
-    )
-    assert candidates[0]["is_bot"] and candidates[0]["speed"] == "bullet"
-
-
-def test_stalemate_swindle_excludes_positions_with_only_one_legal_defender_move():
-    candidates, counts = mined(synthetic_pgn(ONLY_MOVE_FEN, ("h4h1", "g2h1")))
-    assert candidates == [] and counts["excluded_forced_single_move"] == 1
-
-
-def test_stalemate_swindle_classifies_immediate_forced_stalemate_separately_from_historical_trap():
-    trap = mined()[0][0]
-    forced = mined(synthetic_pgn(FORCED_FEN))[0][0]
-    assert trap["swindle_kind"] == "historical_trap"
-    assert trap["opponent_reply_count"] == 5 and trap["stalemating_replies_uci"] == [
-        "d5d4"
-    ]
-    assert forced["swindle_kind"] == "immediate_forced_stalemate"
-    assert forced["opponent_reply_count"] == 3
-    assert forced["stalemating_replies_uci"] == ["c5d4", "d5d4", "e5d4"]
-    assert (
-        "all 3 legal opponent replies"
-        in swindles.exercise_specification(forced).further_analysis
-    )
-    assert "forces" not in swindles.exercise_specification(trap).prompt
-
-
-def test_stalemate_swindle_deduplication_is_deterministic_and_not_input_order_dependent():
-    candidates = [
-        mined(
-            synthetic_pgn(Site=f"https://lichess.org/synthet{index}", WhiteElo=rating)
-        )[0][0]
-        for index, rating in [(1, "1000"), (2, "2000"), (3, "2000")]
-    ]
-    forward = swindles.select_candidates(candidates)
-    assert forward == swindles.select_candidates(reversed(candidates))
-    assert (
-        forward[0][0]["game_id"] == "synthet2" and forward[1]["unique_candidates"] == 1
-    )
-
-
-def test_stalemate_swindle_selection_balances_motifs_and_preserves_cap_during_shortfall():
-    candidates = [
-        mined(synthetic_pgn(fen, moves))[0][0]
-        for fen, moves in [
-            (TRAP_FEN, ("h4d4", "d5d4")),
-            (BLACK_FEN, ("h5d5", "d4d5")),
-            (FORCED_FEN, ("h4d4", "d5d4")),
+def validate_bundle(bundle: object) -> dict[str, list[dict]]:
+    if (
+        not isinstance(bundle, dict)
+        or bundle.get("format") != "tempo-study"
+        or bundle.get("schema_version") != 1
+    ):
+        raise ValueError("Unsupported Tempo study format or major version")
+    tables = bundle.get("tables")
+    if not isinstance(tables, dict) or set(tables) != set(TABLES):
+        raise ValueError("Study bundle table set is incomplete")
+    if any(
+        not isinstance(tables[name], list) or len(tables[name]) > 20_000
+        for name in TABLES
+    ):
+        raise ValueError("Study bundle exceeds its table limits")
+    if len(tables["studies"]) != 1:
+        raise ValueError("A content bundle must contain one study")
+    ids = {}
+    for name in TABLES:
+        rows = tables[name]
+        if any(not isinstance(row, dict) for row in rows):
+            raise ValueError(f"Invalid {name} row")
+        key = "exercise_id" if name == "study_exercise_revisions" else "id"
+        identities = [
+            (row.get(key), row.get("revision"))
+            if name == "study_exercise_revisions"
+            else row.get(key)
+            for row in rows
         ]
-    ]
-    selected, counts = swindles.select_candidates(candidates, max_per_motif=1)
-    assert len(selected) == 2
-    assert (
-        max(Counter(candidate["motif_signature"] for candidate in selected).values())
-        == 1
-    )
-    assert counts["shortfall_insufficient_candidates"] == 297
-    assert counts["shortfall_motif_cap"] == 1
-
-
-def test_stalemate_swindle_identity_ignores_fen_clocks_and_features_describe_material():
-    assert swindles.candidate_key(TRAP_FEN, "h4d4") == swindles.candidate_key(
-        TRAP_FEN.replace("0 1", "17 50"), "h4d4"
-    )
-    for fen, material_class in [
-        ("8/8/8/8/8/1q6/2k5/K7 w - - 0 1", "lone_king"),
-        ("8/8/8/8/8/1q6/2k5/KP6 w - - 0 1", "pawns_only"),
-        ("8/8/8/8/8/1q6/2k5/KN6 w - - 0 1", "trapped_piece"),
-        ("8/8/8/8/8/1q6/2k5/KNP5 w - - 0 1", "mixed_residue"),
-    ]:
-        features = swindles.pattern_features(
-            chess.Board(fen), chess.WHITE, "historical_trap"
+        if any(
+            not identity or (isinstance(identity, tuple) and not identity[0])
+            for identity in identities
+        ) or len(set(identities)) != len(identities):
+            raise ValueError(f"Duplicate or missing {name} IDs")
+        ids[name] = {row[key] for row in rows}
+    study_id = tables["studies"][0]["id"]
+    if any(
+        row.get("study_id") != study_id
+        for row in tables["study_chapters"]
+        + tables["study_exercises"]
+        + tables["study_links"]
+    ):
+        raise ValueError("Bundle references another study")
+    if any(
+        row.get("chapter_id") not in ids["study_chapters"]
+        for row in tables["study_sources"]
+    ):
+        raise ValueError("Source references a missing chapter")
+    positions = {row["id"]: row for row in tables["study_positions"]}
+    for row in positions.values():
+        if row.get("source_id") not in ids["study_sources"]:
+            raise ValueError("Position references a missing source")
+        parent = positions.get(row.get("parent_id"))
+        if row.get("parent_id") and (
+            not parent or parent["source_id"] != row["source_id"]
+        ):
+            raise ValueError("Position parent is missing or in another tree")
+        try:
+            board = chess.Board(row["fen"])
+            if not board.is_valid():
+                raise ValueError("Invalid FEN")
+            if parent:
+                parent_board = chess.Board(parent["fen"])
+                move = chess.Move.from_uci(row["move_uci"])
+                if move not in parent_board.legal_moves:
+                    raise ValueError("Illegal move edge")
+                parent_board.push(move)
+                if parent_board.fen() != board.fen():
+                    raise ValueError("Move edge FEN mismatch")
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError(f"Invalid position {row.get('id')}: {error}") from error
+    revisions = {}
+    for row in tables["study_exercise_revisions"]:
+        if row.get("exercise_id") not in ids["study_exercises"]:
+            raise ValueError("Revision references a missing exercise")
+        revisions.setdefault(row["exercise_id"], set()).add(row["revision"])
+        exercise = next(
+            item
+            for item in tables["study_exercises"]
+            if item["id"] == row["exercise_id"]
         )
-        assert features["final_material_class"] == material_class
-        assert features["king_zone"] == "corner"
+        position = positions.get(exercise.get("position_id"))
+        if not position:
+            raise ValueError("Exercise references a missing position")
+        try:
+            specification = SPECIFICATION.validate_python(
+                json.loads(row["specification_json"])
+            )
+            validate_exercise(specification, position["fen"])
+        except (ValueError, TypeError) as error:
+            raise ValueError(f"Invalid exercise rubric: {error}") from error
+    for exercise in tables["study_exercises"]:
+        if exercise.get("current_revision") not in revisions.get(exercise["id"], set()):
+            raise ValueError("Exercise current revision is missing")
+    for link in tables["study_links"]:
+        if link.get("source_position_id") not in positions:
+            raise ValueError("Link source is missing")
+        if bool(link.get("target_position_id")) == bool(link.get("target_exercise_id")):
+            raise ValueError("Link must have one target")
+        if (
+            link.get("target_position_id")
+            and link["target_position_id"] not in positions
+        ):
+            raise ValueError("Link target position is missing")
+        if (
+            link.get("target_exercise_id")
+            and link["target_exercise_id"] not in ids["study_exercises"]
+        ):
+            raise ValueError("Link target exercise is missing")
+    return tables
 
-
-def test_stalemate_study_bundle_is_byte_stable_for_identical_candidates():
-    candidates = mined()[0] + mined(synthetic_pgn(FORCED_FEN))[0]
-    selected = swindles.select_candidates(candidates)[0]
-    bundle_bytes = swindles.json_bytes(swindles.build_bundle(selected, "synthetic-v1"))
-    assert bundle_bytes == swindles.json_bytes(
-        swindles.build_bundle(
-            swindles.select_candidates(reversed(candidates))[0], "synthetic-v1"
-        )
-    )
-    assert (
-        b"Private white account" not in bundle_bytes
-        and b"Private black account" not in bundle_bytes
-    )
-
-
-def test_stalemate_swindle_uses_existing_open_judgment_grading():
-    candidate = mined()[0][0]
-    specification = swindles.exercise_specification(candidate)
-    for move, expected in [
-        ("h4d4", "correct"),
-        ("h4h5", "unrecognized"),
-        ("a1a8", "invalid_submission"),
-    ]:
-        assert (
-            evaluate_answer(
-                specification,
-                MoveAnswer(type="move_line", moves=[move]),
-                candidate["puzzle_fen"],
-            )["outcome"]
-            == expected
-        )
-
-
-def test_stalemate_miner_prefilters_non_draws_before_chess_parsing(monkeypatch):
-    def unexpected_parse(*_args, **_kwargs):
-        raise AssertionError("Rejected headers must not reach the chess parser")
-
-    monkeypatch.setattr(chess.pgn, "read_game", unexpected_parse)
-    for headers in [
-        {"Result": "1-0"},
-        {"WhiteElo": "?"},
-        {"Event": "Rated Bullet game"},
-    ]:
-        assert mined(synthetic_pgn(**headers))[0] == []
-
-
-def test_stalemate_miner_malformed_records_continue_or_fail_strictly_and_resynchronize():
-    invalid = synthetic_pgn().replace("1. Rd4+ Kxd4", "1. Rh9 Kxd4")
-    candidates, counts = mined(invalid + synthetic_pgn())
-    assert len(candidates) == 1 and counts["parse_errors"] == 1
-    with pytest.raises(ValueError, match="Malformed game"):
-        mined(invalid, strict=True)
-    oversized = synthetic_pgn().replace("1. Rd4+", "{" + "x" * 1200 + "}\n1. Rd4+")
-    candidates, counts = mined(oversized + synthetic_pgn(), max_record_bytes=1024)
-    assert len(candidates) == 1 and counts["parse_errors"] == 1
-
-
-def test_stalemate_miner_preserves_multiline_comments_crlf_and_final_record_without_blank_line():
-    raw_pgn = (
-        synthetic_pgn()
-        .replace("1. Rd4+", '1. Rd4+ {\n[Event "comment, not a new game"]\n}\n')
-        .strip()
-        .replace("\n", "\r\n")
-    )
-    candidates, counts = mined(raw_pgn)
-    assert len(candidates) == 1 and counts["games_scanned"] == 1
-
-
-@pytest.mark.parametrize(
-    "proof_name",
-    [
-        "test_postgres_stalemate_bundle_import_reimport_preserves_draft_content",
-        "test_postgres_checked_in_stalemate_corpora_import_reimport_preserves_draft_content",
-    ],
-)
-@pytest.mark.parametrize(
-    "previous_configuration", [None, "postgresql://previous-proof.invalid/unused"]
-)
-def test_stalemate_postgres_proofs_configure_and_restore_database_environment(
-    monkeypatch, proof_name, previous_configuration
-):
-    specification = importlib.util.spec_from_file_location(
-        "stalemate_postgres_proof",
-        ROOT / "database/tests/check_postgres_stalemate_swindles.py",
-    )
-    proof_module = importlib.util.module_from_spec(specification)
-    specification.loader.exec_module(proof_module)
-    monkeypatch.setenv("TEMPO_TEST_INSTANCE", "disposable")
-    database_variables = ("TEMPO_DATABASE_WRITE_URL", "TEMPO_DATABASE_READ_URL")
-    for variable in database_variables:
-        if previous_configuration is None:
-            monkeypatch.delenv(variable, raising=False)
-        else:
-            monkeypatch.setenv(variable, previous_configuration)
-    pool_closures = []
-    monkeypatch.setattr(
-        proof_module.postgres, "close_pools", lambda: pool_closures.append(True)
-    )
-
-    @contextmanager
-    def failed_database_operation():
-        assert pool_closures, "Pools must reset before the proof opens a connection"
-        assert all(
-            os.getenv(variable) == "postgresql://postgres@postgres:5432/tempo"
-            for variable in database_variables
-        )
-        raise RuntimeError("database proof sentinel")
-        yield  # pragma: no cover - context manager deliberately fails on entry
-
-    monkeypatch.setattr(
-        proof_module.postgres, "connection", failed_database_operation
-    )
-    with pytest.raises(RuntimeError, match="database proof sentinel"):
-        getattr(proof_module, proof_name)()
-    assert all(
-        os.getenv(variable) == previous_configuration for variable in database_variables
-    )
-    assert len(pool_closures) >= 2, "Pools must also close after failed proof work"
-
-
-def test_stalemate_postgres_configuration_closes_pools_after_success_and_rejects_live_instances(
-    monkeypatch,
-):
-    specification = importlib.util.spec_from_file_location(
-        "stalemate_postgres_context",
-        ROOT / "database/tests/check_postgres_stalemate_swindles.py",
-    )
-    proof_module = importlib.util.module_from_spec(specification)
-    specification.loader.exec_module(proof_module)
-    pool_closures = []
-    monkeypatch.setattr(
-        proof_module.postgres, "close_pools", lambda: pool_closures.append(True)
-    )
-    monkeypatch.delenv("TEMPO_DATABASE_WRITE_URL", raising=False)
-    monkeypatch.delenv("TEMPO_DATABASE_READ_URL", raising=False)
-    monkeypatch.setenv("TEMPO_TEST_INSTANCE", "disposable")
-    with proof_module.disposable_postgres_configuration():
-        assert len(pool_closures) == 1
-        assert (
-            os.environ["TEMPO_DATABASE_WRITE_URL"]
-            == os.environ["TEMPO_DATABASE_READ_URL"]
-            == "postgresql://postgres@postgres:5432/tempo"
-        )
-    assert len(pool_closures) == 2
-    assert (
-        "TEMPO_DATABASE_WRITE_URL" not in os.environ
-        and "TEMPO_DATABASE_READ_URL" not in os.environ
-    )
-    monkeypatch.delenv("TEMPO_TEST_INSTANCE")
-    with pytest.raises(RuntimeError, match="disposable PostgreSQL runner"):
-        with proof_module.disposable_postgres_configuration():
-            pytest.fail("A live instance must never reach proof work")
-    assert len(pool_closures) == 2
-
-
-def test_stalemate_build_rejects_chess_metadata_drift():
-    candidate = deepcopy(mined()[0][0])
-    candidate["stalemating_reply_count"] = 9
-    with pytest.raises(ValueError, match="disagrees"):
-        swindles.select_candidates([candidate])
 
 
 def test_checked_in_stalemate_corpora_have_unique_legal_single_moves_and_verified_terminal_sources():
     # No raw-source scan in CI; validate every real artifact present in the checkout.
-    for bundle_path in sorted(
-        (ROOT / "public/data/studies").glob("stalemate-swindles-*.tempo-study.json")
-    ):
+    corpus_paths = sorted((ROOT / "public/data/studies").glob("stalemate-swindles-*.tempo-study.json"))
+    assert corpus_paths, "The real checked-in corpora must remain present"
+    for bundle_path in corpus_paths:
         bundle = json.loads(bundle_path.read_text())
         manifest = json.loads(
             bundle_path.with_name(
@@ -419,7 +198,7 @@ def test_checked_in_stalemate_corpora_have_unique_legal_single_moves_and_verifie
             )
             identities.add(identity)
             candidate_keys.add(metadata["candidate_key"])
-            assert metadata["candidate_key"] == swindles.candidate_key(
+            assert metadata["candidate_key"] == _historical_candidate_key(
                 root["fen"], identity[1]
             )
             source_nodes = sorted(
