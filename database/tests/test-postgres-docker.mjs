@@ -11,7 +11,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { createIsolatedTestEnvironment } from "../../scripts/test-environment.mjs";
 import { resolvePython } from "../../scripts/resolve-python.mjs";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "./postgres-test-options.mjs";
-import { verifyOwnerTrioReceipt, requireOriginalOperationReceipt, originalPrefixSplitRows, assertDisposableVolumes, verifyMaintainedQueueReceipt, verifyMaintainedBrowserReceipt, verifyCheckpoint1QueueReceipt, verifyCheckpoint1BrowserReceipt, checkpoint1BrowserCases, unresolvedQueueCases, backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "./postgres-test-plan.mjs";
+import { verifyOwnedRedisIdentity, verifyRedisResidualReceipt, verifyRedisRestartIdentity, verifyOwnerTrioReceipt, requireOriginalOperationReceipt, originalPrefixSplitRows, assertDisposableVolumes, verifyMaintainedQueueReceipt, verifyMaintainedBrowserReceipt, verifyCheckpoint1QueueReceipt, verifyCheckpoint1BrowserReceipt, checkpoint1BrowserCases, unresolvedQueueCases, backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "./postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   readStudyQueuePublication, repertoireLimitRecreationPgn, studyDurabilityPgn } from "./postgres-test-fixture.mjs";
 import { createScenarioTimer, isTimingPublicationFailure, postgresCommandTiming } from "../../scripts/test-scenario-timings.mjs";
@@ -1638,6 +1638,81 @@ const actions = {
     atomicJson(`test-results/native/${project}-${check}.json`, {
       head: candidateRevision, checks: {[check]: evidence}});
   }])),
+  'redis-residual': async () => {
+    assertDevelopmentProjectOwned(project);
+    const proofPath = '/source/database/tests/redis/check_redis_admission_leases.py';
+    const evidenceDirectory = join(secretsDirectory, 'redis-residual-evidence');
+    mkdirSync(evidenceDirectory, {mode: 0o700});
+    const evidenceMount = `${evidenceDirectory}:/evidence`;
+    const invoke = phase => run('docker', [...compose, 'run', '--rm', '--no-deps',
+      '-e', `TEMPO_TEST_COMPOSE_PROJECT=${project}`, '-e', `TEMPO_NATIVE_CANDIDATE_REVISION=${candidateRevision}`,
+      '-e', 'TEMPO_REDIS_URL=redis://redis:6379/0', '--volume', evidenceMount,
+      'schema', 'python', proofPath, phase], {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8'}).stdout;
+    const captureRedis = () => {
+      const containers = assertDevelopmentProjectOwned(project);
+      const matches = containers.filter(container => container.Config?.Labels?.['com.docker.compose.service'] === 'redis');
+      assert.equal(matches.length, 1, 'Expected exactly one owned Redis container');
+      const container = matches[0];
+      const mounts = container.Mounts.filter(mount => mount.Destination === '/data');
+      assert.equal(mounts.length, 1, 'Expected one Redis data mount');
+      const info = run('docker', [...compose, 'exec', '-T', 'redis', 'redis-cli', 'INFO', 'server'],
+        {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8'}).stdout;
+      const runId = /^run_id:([a-f0-9]{40})\r?$/m.exec(info)?.[1];
+      return {project: container.Config.Labels['com.docker.compose.project'], service: container.Config.Labels['com.docker.compose.service'],
+        id: container.Id, image: container.Image, volume: mounts[0].Name, startedAt: container.State.StartedAt,
+        healthy: container.State.Health?.Status === 'healthy', runId};
+    };
+    let evidence;
+    const clients = ['api', 'foreground-worker', 'background-worker', 'background-scheduler', 'web'];
+    await executeIsolatedBackgroundWorkload({
+      stopConsumers: () => {
+        run('docker', [...compose, 'stop', ...clients]);
+        const owned = assertDevelopmentProjectOwned(project);
+        for (const service of clients) {
+          const matches = owned.filter(container => container.Config?.Labels?.['com.docker.compose.service'] === service);
+          assert.equal(matches.length, 1, `Expected one owned ${service}`);
+          assert.equal(matches[0].State.Status, 'exited', `${service} was not stopped`);
+        }
+      },
+      measureWorkload: async () => {
+      const before = captureRedis();
+      verifyOwnedRedisIdentity(before, project);
+      const lease = JSON.parse(invoke('lease'));
+      assert.deepEqual(lease, {project, revision: candidateRevision, case: 'redis_admission_real_lease_interference', cleanup: 'completed'});
+      const prepared = JSON.parse(invoke('prepare'));
+      assert.equal(prepared.restart_proof, 'prepared');
+      assert.match(prepared.queue, /^tempo-wake-proof-[a-f0-9]{32}$/);
+      assert.equal(prepared.persistence, 'AOF appendfsync everysec');
+      // SIGTERM-based Docker restart gives Redis its normal AOF shutdown path.
+      withDevelopmentStartup(['redis'], project, () => run('docker', [...compose, 'restart', 'redis']));
+      const deadline = Date.now() + 30000;
+      let after;
+      while (Date.now() < deadline) {
+        const owned = assertDevelopmentProjectOwned(project).filter(container => container.Config?.Labels?.['com.docker.compose.service'] === 'redis');
+        if (owned.length === 1 && owned[0].State.Health?.Status === 'healthy') { after = captureRedis(); break; }
+        await new Promise(resolve => setTimeout(resolve, 250));
+      }
+      verifyRedisRestartIdentity(before, after, project);
+      const lines = invoke('verify').trim().split('\n');
+      assert.equal(lines.length, 2);
+      const wake = JSON.parse(lines[0]), verified = JSON.parse(lines[1]);
+      assert.equal(wake.test, 'test_real_broker_persistent_wake_survives_aof_restart');
+      assert.equal(wake.persistent_owner_and_message_preserved, true);
+      assert.equal(wake.pop_gap_owner_recovered_after_restart, true);
+      assert.deepEqual(verified, {project, revision: candidateRevision, case: wake.test, cleanup: 'completed'});
+      evidence = {project, revision: candidateRevision, completed: [lease.case, wake.test], cleanup: 'completed',
+        restart: {container_id: before.id, image: before.image, volume: before.volume,
+          before_started_at: before.startedAt, after_started_at: after.startedAt, before_run_id: before.runId, after_run_id: after.runId}};
+      verifyRedisResidualReceipt(evidence, project, candidateRevision);
+      },
+      restoreConsumers: async () => {
+        run('docker', [...compose, 'up', '--no-build', '-d']);
+        await waitForReady();
+        verifyRestoredPostgresConsumers(run, compose, clients);
+      },
+    });
+    atomicJson(`test-results/native/${project}-redis-residual.json`, evidence);
+  },
   'owner-trio': async () => {
     assertDevelopmentProjectOwned(project);
     let evidence;

@@ -8,7 +8,7 @@ import { runInNewContext } from "node:vm";
 import { test } from "node:test";
 import { Chess } from "chess.js";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "../../database/tests/postgres-test-options.mjs";
-import { verifyOwnerTrioReceipt, maintainedQueueCases, unresolvedQueueCases, excludedQueueCases, verifyMaintainedQueueReceipt, verifyCheckpoint1QueueReceipt, verifyCheckpoint1BrowserReceipt, checkpoint1BrowserCases, checkpoint1NativeChecks, checkpoint1QueueCases, assertDisposableVolumes, backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "../../database/tests/postgres-test-plan.mjs";
+import { verifyRedisResidualReceipt, verifyRedisRestartIdentity, verifyOwnerTrioReceipt, maintainedQueueCases, unresolvedQueueCases, excludedQueueCases, verifyMaintainedQueueReceipt, verifyCheckpoint1QueueReceipt, verifyCheckpoint1BrowserReceipt, checkpoint1BrowserCases, checkpoint1NativeChecks, checkpoint1QueueCases, assertDisposableVolumes, backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "../../database/tests/postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   readStudyQueuePublication, repertoireLimitRecreationPgn, studyDurabilityPgn } from "../../database/tests/postgres-test-fixture.mjs";
 import { createScenarioTimer, postgresCommandTiming } from "../../scripts/test-scenario-timings.mjs";
@@ -1807,5 +1807,37 @@ for change in ({'TEMPO_TEST_INSTANCE':'live'},{'TEMPO_TEST_COMPOSE_PROJECT':'for
  except RuntimeError: pass
  else: raise AssertionError(change)`;
   const result = spawnSync(resolvePython(), ['-c', probe], { cwd: root, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test("Redis residual selection and evidence reject partial or foreign completion", () => {
+  const options = parse(['--mode', 'browser', '--browser-file', 'redis-admission-recovery.spec.ts', '--native-check', 'redis-residual']);
+  assert(postgresTestStages(options).includes('redis-residual'));
+  assert.throws(() => parse(['--mode', 'durability', '--native-check', 'redis-residual']));
+  assert.throws(() => parse(['--mode', 'browser', '--native-check', 'redis-residual', '--native-check', 'redis-residual']));
+  const project = 'tempo-pg-regressions-12-12345678', revision = 'a'.repeat(40);
+  const receipt = { project, revision, cleanup: 'completed', completed: ['redis_admission_real_lease_interference', 'test_real_broker_persistent_wake_survives_aof_restart'] };
+  verifyRedisResidualReceipt(receipt, project, revision);
+  for (const change of [{ project: 'foreign' }, { revision: 'b'.repeat(40) }, { cleanup: 'unknown' }, { completed: [receipt.completed[0]] }])
+    assert.throws(() => verifyRedisResidualReceipt({...receipt, ...change}, project, revision));
+});
+test("Redis restart requires the same owned volume and a new process", () => {
+  const project = 'tempo-pg-regressions-12-12345678';
+  const before = { project, service: 'redis', id: 'a'.repeat(64), image: 'sha256:' + 'b'.repeat(64), volume: project + '_redis-test-data', startedAt: 'before', healthy: true, runId: 'c'.repeat(40) };
+  const after = { ...before, startedAt: 'after', runId: 'd'.repeat(40) };
+  verifyRedisRestartIdentity(before, after, project);
+  for (const change of [{ project: 'foreign' }, { service: 'api' }, { id: 'e'.repeat(64) }, { image: 'sha256:' + 'e'.repeat(64) }, { volume: 'foreign' }, { startedAt: 'before' }, { runId: before.runId }, { healthy: false }])
+    assert.throws(() => verifyRedisRestartIdentity(before, {...after, ...change}, project));
+});
+test("Redis residual rejects non-owned target before connecting", () => {
+  const probe = `import runpy
+m=runpy.run_path('database/tests/redis/check_redis_admission_leases.py'); f=m['validate_environment']
+base={'TEMPO_TEST_INSTANCE':'disposable','TEMPO_TEST_COMPOSE_PROJECT':'tempo-pg-regressions-1-12345678','TEMPO_NATIVE_CANDIDATE_REVISION':'a'*40,'TEMPO_REDIS_URL':'redis://redis:6379/0'}
+assert f(base)==(base['TEMPO_TEST_COMPOSE_PROJECT'],base['TEMPO_NATIVE_CANDIDATE_REVISION'])
+for change in ({'TEMPO_TEST_INSTANCE':'live'},{'TEMPO_TEST_COMPOSE_PROJECT':'foreign'},{'TEMPO_REDIS_URL':'redis://localhost:6379/0'},{'TEMPO_NATIVE_CANDIDATE_REVISION':'foreign'}):
+ try: f({**base,**change})
+ except RuntimeError: pass
+ else: raise AssertionError(change)`;
+  const result = spawnSync(resolvePython(), ['-c', probe], { cwd: root, encoding: 'utf8', env: {...process.env, PYTHONPATH: 'backend:database'} });
   assert.equal(result.status, 0, result.stderr);
 });

@@ -42,7 +42,7 @@ export function verifyCheckpoint1BrowserReceipt(receipt) {
 // The executable plan is also the read-only --list output; keep one source of truth.
 export function postgresTestStages({ mode, nativeChecks = [], maintainedStudyProof = false }) {
   if (!Array.isArray(nativeChecks) || new Set(nativeChecks).size !== nativeChecks.length
-    || nativeChecks.some(check => !['owner-trio', 'redis-fixture-isolation', 'position-grade-effects', 'position-review-atomicity', 'position-introductions', 'position-queue-admission', 'frozen-requeue-cycle', 'prefix-split-placement', 'game-review-reader'].includes(check))
+    || nativeChecks.some(check => !['redis-residual', 'owner-trio', 'redis-fixture-isolation', 'position-grade-effects', 'position-review-atomicity', 'position-introductions', 'position-queue-admission', 'frozen-requeue-cycle', 'prefix-split-placement', 'game-review-reader'].includes(check))
     || nativeChecks.length && !['study','browser'].includes(mode)) throw new Error('Invalid native PostgreSQL selection');
   if (!["full", "browser", "study", "durability", "lifecycle", "lifecycle-current", "priority-historical"].includes(mode)) throw new Error(`Unknown PostgreSQL test mode: ${mode}`);
   const nativeStages = nativeChecks.map(check => check === "game-review-reader" ? "game_review_reader" : check);
@@ -227,4 +227,24 @@ export function verifyOwnerTrioReceipt(receipt, project, revision) {
   if (receipt?.project !== project || receipt?.revision !== revision || receipt?.cleanup !== 'completed'
       || JSON.stringify(receipt?.completed) !== JSON.stringify(['deletion', 'monotonic_renewal', 'broker_wakes']))
     throw new Error('Owner trio requires exact completed proof identities and cleanup');
+}
+
+export function verifyRedisResidualReceipt(receipt, project, revision) {
+  if (receipt?.project !== project || receipt?.revision !== revision || receipt?.cleanup !== 'completed'
+      || JSON.stringify(receipt?.completed) !== JSON.stringify(['redis_admission_real_lease_interference', 'test_real_broker_persistent_wake_survives_aof_restart']))
+    throw new Error('Redis residual requires exact completed cases and cleanup');
+}
+
+export function verifyOwnedRedisIdentity(value, project) {
+  if (!(value && value.project === project && value.service === 'redis'
+    && value.volume === `${project}_redis-test-data` && /^[a-f0-9]{64}$/.test(value.id ?? '')
+    && /^sha256:[a-f0-9]{64}$/.test(value.image ?? '') && /^[a-f0-9]{40}$/.test(value.runId ?? '')
+    && value.startedAt && value.healthy === true)) throw new Error('Redis is not the healthy owned project container and volume');
+}
+export function verifyRedisRestartIdentity(before, after, project) {
+  verifyOwnedRedisIdentity(before, project);
+  verifyOwnedRedisIdentity(after, project);
+  if (before.id !== after.id || before.image !== after.image || before.volume !== after.volume
+      || before.startedAt === after.startedAt || before.runId === after.runId)
+    throw new Error('Redis restart must preserve the exact owned container, image and volume and replace its process');
 }
