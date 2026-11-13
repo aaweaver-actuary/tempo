@@ -51,7 +51,7 @@ with psycopg.connect('postgresql://postgres@postgres:5432/tempo') as db:
             digest = hashlib.sha256(encoded.encode()).hexdigest()
             db.execute("INSERT INTO study_exercises(id,study_id,position_id,current_revision,status,created_at,updated_at) VALUES(%s,%s,%s,1,'published','2000-01-01','2000-01-01')", (exercise,prefix,prefix+'-position'))
             db.execute("INSERT INTO study_exercise_revisions(exercise_id,revision,specification_json,specification_hash,created_at) VALUES(%s,1,%s,%s,'2000-01-01')", (exercise,encoded,digest))
-            db.execute("INSERT INTO cards(id,repertoire_id,kind,content_type,study_exercise_id,start_fen,moves_json,state,due_date,revision,trained_color,introduced_at,first_correct_at) VALUES(%s,NULL,'exercise','study_exercise',%s,%s,'[]','learning',%s,1,'white','2000-01-01','2000-01-01')", (card,exercise,fen,day))
+            db.execute("INSERT INTO cards(id,repertoire_id,kind,content_type,study_exercise_id,start_fen,moves_json,state,due_date,revision,trained_color,introduced_at,first_correct_at) VALUES(%s,NULL,'exercise','study_exercise',%s,%s,'[]','learning',%s,1,'white','2000-01-01','2000-01-01T00:00:00+00:00')", (card,exercise,fen,day))
             entry = db.execute("INSERT INTO daily_queue(queue_date,card_id,position,cycle,admission_kind) VALUES(%s,%s,%s,0,'explicit') RETURNING id", (day,card,index)).fetchone()[0]
             entries.append(entry)
         if action == 'seed-requeue':
