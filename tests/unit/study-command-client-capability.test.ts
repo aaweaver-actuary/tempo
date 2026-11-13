@@ -260,7 +260,7 @@ it('FE23 checks original command authority inside the delayed started journal up
   const { record, store } = fixture(); let release!: () => void, entered!: () => void;
   const waiting = new Promise<void>(done => { entered = done; }); const gate = new Promise<void>(done => { release = done; });
   const selected = client(vi.fn());
-  vi.mocked(store.update).mockImplementation(async (_key, change) => { entered(); await gate; return change(record); });
+  vi.mocked(store.update).mockImplementation(async (_key, change) => { entered(); await gate; return { ...record, ...change(record) }; });
   const delivery = createStudyCommandDelivery(selected, async () => store);
   const pending = delivery.deliver(record, new AbortController().signal); await waiting;
   Object.defineProperty(selected, 'generation', { value: 2 }); release();
