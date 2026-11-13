@@ -54,3 +54,13 @@ it.each(["missing", "foreign"])("%s teaching acknowledgment preserves the origin
   expect(pendingTeachingStates()).toEqual([state]);
   expect(fetcher).toHaveBeenCalledOnce();
 });
+
+it('FE23 teaching delivery imports and constructs without storage or session registration', async () => {
+  vi.resetModules(); const touch = vi.fn(() => { throw new Error('composition must remain inert'); });
+  vi.doMock('../../database/browser/study-intent-storage', touch); vi.doMock('../../app/lib/study-session-runtime', touch);
+  try {
+    const { createTeachingDelivery } = await import('../../app/lib/teaching-delivery');
+    const factory = createTeachingDelivery({} as Parameters<typeof createTeachingDelivery>[0], touch, {} as Parameters<typeof createTeachingDelivery>[2]);
+    expect(typeof factory.deliver).toBe('function'); expect(typeof factory.checkReceipt).toBe('function'); expect(touch).not.toHaveBeenCalled();
+  } finally { vi.doUnmock('../../database/browser/study-intent-storage'); vi.doUnmock('../../app/lib/study-session-runtime'); vi.resetModules(); }
+});

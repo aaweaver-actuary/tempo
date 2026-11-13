@@ -245,3 +245,13 @@ it("C21 holds an unknown retained endpoint without posting its original body", a
   expect(String(fetcher.mock.calls[0][0])).toContain("/api/operations/original");
   expect(record.payload).toEqual(original);
 });
+
+it('FE23 command delivery imports and constructs without storage or session registration', async () => {
+  vi.resetModules(); const touch = vi.fn(() => { throw new Error('composition must remain inert'); });
+  vi.doMock('../../database/browser/study-intent-storage', touch); vi.doMock('../../app/lib/study-session-runtime', touch);
+  try {
+    const { createStudyCommandDelivery: createDelivery } = await import('../../app/lib/study-command-delivery');
+    const factory = createDelivery({} as Parameters<typeof createDelivery>[0], touch, {} as Parameters<typeof createDelivery>[2]);
+    expect(typeof factory.deliver).toBe('function'); expect(typeof factory.checkReceipt).toBe('function'); expect(touch).not.toHaveBeenCalled();
+  } finally { vi.doUnmock('../../database/browser/study-intent-storage'); vi.doUnmock('../../app/lib/study-session-runtime'); vi.resetModules(); }
+});
