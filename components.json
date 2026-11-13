@@ -1921,7 +1921,8 @@
       "ownershipRole": "Named transport and command-identity contracts; Pydantic and HTTP-aware conflicts remain explicit",
       "dependencyNotes": [
         "Framework and other contract dependencies remain as source imports; this is not a framework-free package."
-      ]
+      ],
+      "censusScope": "retained"
     },
     {
       "id": "study-next-core",
@@ -1955,7 +1956,8 @@
       "ownershipRole": "Study queue selection and flat response shaping via caller-supplied capabilities; mutates detached cards",
       "dependencyNotes": [
         "The current next-exercise callback boundary remains untyped in main; B12/B13 are not represented as released."
-      ]
+      ],
+      "censusScope": "retained"
     },
     {
       "id": "study-queue-composition",
@@ -1990,7 +1992,8 @@
       "ownershipRole": "HTTP response bridge that opens read scopes and dispatches the existing queue issue command",
       "dependencyNotes": [
         "Additional queue projection, dispatcher and manifest capabilities remain outside this finite map."
-      ]
+      ],
+      "censusScope": "retained"
     },
     {
       "id": "study-queue-preparation",
@@ -2024,7 +2027,8 @@
       "ownershipRole": "Bounded queue-head preparation opens a reader and maintains a small source cache; writer publication remains elsewhere",
       "dependencyNotes": [
         "Position source, due-reader, planner and queue admission collaborators remain outside this finite map."
-      ]
+      ],
+      "censusScope": "retained"
     },
     {
       "id": "study-next-storage",
@@ -2057,7 +2061,8 @@
       "ownershipRole": "Detached next-exercise facts read through the caller-provided PostgreSQL connection; no commit or issue",
       "dependencyNotes": [
         "Caller owns connection lifetime and transaction; physical query implementation belongs here."
-      ]
+      ],
+      "censusScope": "retained"
     },
     {
       "id": "study-position-issuance",
@@ -2091,7 +2096,8 @@
       "ownershipRole": "Replays and issues immutable position plans using the caller-owned writer and existing fences",
       "dependencyNotes": [
         "Owner epoch, due-candidate and plan policy collaborators remain outside this finite map; no transaction or commit is opened here."
-      ]
+      ],
+      "censusScope": "retained"
     },
     {
       "id": "study-position-storage",
@@ -2123,7 +2129,8 @@
       "ownershipRole": "Native SQL for position plan identity, writer fences, receipts and first-response reads on the borrowed connection",
       "dependencyNotes": [
         "SQL effects and locks are controlled by the caller transaction; this module is not a connection owner."
-      ]
+      ],
+      "censusScope": "retained"
     },
     {
       "id": "game-review-policy",
@@ -2153,7 +2160,8 @@
       "ownershipRole": "Pure minimal first-departure comparison over supplied game and authored line facts",
       "dependencyNotes": [
         "Uses chess and the retained chess-core public API; does not call providers or write Study."
-      ]
+      ],
+      "censusScope": "retained"
     },
     {
       "id": "game-review-http",
@@ -2188,7 +2196,8 @@
       "ownershipRole": "Minimal read-only Game Review router and legal replay; opens a reader but creates no Study effect",
       "dependencyNotes": [
         "The FastAPI router and psycopg reader are explicit side effects; no provider synchronization is implied."
-      ]
+      ],
+      "censusScope": "retained"
     },
     {
       "id": "game-review-storage",
@@ -2220,7 +2229,8 @@
       "ownershipRole": "Native saved-game and authored-line reads on a borrowed connection",
       "dependencyNotes": [
         "Reads imported_games and repertoire_lines; no insert or queue mutation."
-      ]
+      ],
+      "censusScope": "retained"
     },
     {
       "id": "backend-command-dispatch",
@@ -2251,7 +2261,8 @@
       "ownershipRole": "Dispatch commands through the existing broker and return operation state",
       "dependencyNotes": [
         "Imports Celery, broker exceptions and command gateway; other worker and HTTP consumers remain outside this subset."
-      ]
+      ],
+      "censusScope": "review"
     },
     {
       "id": "backend-command-gateway",
@@ -2284,7 +2295,8 @@
       "ownershipRole": "Register and execute commands with durable operation receipts",
       "dependencyNotes": [
         "Owns transaction and receipt lifecycle for multiple domains; imported handlers and worker recovery remain outside this subset."
-      ]
+      ],
+      "censusScope": "review"
     },
     {
       "id": "operation-receipt-storage",
@@ -2309,12 +2321,14 @@
         "migrations": []
       },
       "ownedFiles": [
-        "database/tempo_storage/commands/receipts/storage.py"
+        "database/tempo_storage/commands/receipts/storage.py",
+        "database/tempo_storage/commands/receipts/__init__.py"
       ],
       "ownershipRole": "Persist operation receipt, lease and attempt state",
       "dependencyNotes": [
         "Writer scope and foreground reader own connections; other methods require a supplied writer or database."
-      ]
+      ],
+      "censusScope": "review"
     },
     {
       "id": "study-review-command",
@@ -2348,7 +2362,8 @@
       "ownershipRole": "Prepare and register Study review commands",
       "dependencyNotes": [
         "Registers handlers at import time; preparation reads before the writer and reconciliation uses a savepoint."
-      ]
+      ],
+      "censusScope": "review"
     },
     {
       "id": "study-review-adapter",
@@ -2381,7 +2396,8 @@
       "ownershipRole": "Adapt retained review commands to the learning owner",
       "dependencyNotes": [
         "Existing apply_legacy_review compatibility entry remains present; reader and writer dependencies extend beyond this subset."
-      ]
+      ],
+      "censusScope": "review"
     },
     {
       "id": "study-review-scheduling",
@@ -2411,7 +2427,8 @@
       "ownershipRole": "Apply scheduling review using the supplied writer",
       "dependencyNotes": [
         "Calls scheduling and queue storage owners and legacy child unlock; not a pure policy module."
-      ]
+      ],
+      "censusScope": "review"
     },
     {
       "id": "study-review-reconciliation",
@@ -2442,7 +2459,8 @@
       "ownershipRole": "Reconcile completed review through the current facade and policy",
       "dependencyNotes": [
         "The policy directly imports storage and scheduler services; the facade forwards to it."
-      ]
+      ],
+      "censusScope": "review"
     },
     {
       "id": "study-review-bridge-storage",
@@ -2472,7 +2490,8 @@
       "ownershipRole": "Operate review identity, card locks and retained receipts using the supplied writer",
       "dependencyNotes": [
         "Lock order and transaction scope belong to the calling review owner."
-      ]
+      ],
+      "censusScope": "review"
     },
     {
       "id": "study-review-storage",
@@ -2497,12 +2516,14 @@
         "migrations": []
       },
       "ownedFiles": [
-        "database/tempo_storage/study/review/storage.py"
+        "database/tempo_storage/study/review/storage.py",
+        "database/tempo_storage/study/review/__init__.py"
       ],
       "ownershipRole": "Store review and queue presentation facts using the supplied writer",
       "dependencyNotes": [
         "Imports queue refresh presentation and dynamically references admission SQL; these dependencies are not isolated here."
-      ]
+      ],
+      "censusScope": "review"
     },
     {
       "id": "study-review-reconciliation-storage",
@@ -2532,7 +2553,8 @@
       "ownershipRole": "Persist review reconciliation facts in the supplied transaction",
       "dependencyNotes": [
         "The reconciliation owner controls transaction and rollback."
-      ]
+      ],
+      "censusScope": "review"
     },
     {
       "id": "study-review-savepoint-storage",
@@ -2562,7 +2584,8 @@
       "ownershipRole": "Control the reconciliation savepoint in the supplied transaction",
       "dependencyNotes": [
         "Does not own the enclosing transaction."
-      ]
+      ],
+      "censusScope": "review"
     },
     {
       "id": "durable-task-application",
@@ -2596,7 +2619,8 @@
       "ownershipRole": "Coordinate durable task identity, claims, leases, checkpoints and holds",
       "dependencyNotes": [
         "Some paths own connections and transactions; others borrow caller transactions. Imports private SQL constants from durable task storage. Workers and task-specific effects remain outside this selection."
-      ]
+      ],
+      "censusScope": "durable"
     },
     {
       "id": "queue-refresh-wakeup",
@@ -2625,7 +2649,8 @@
       "ownershipRole": "Capture refresh requests and publish advisory bounded queue wakes",
       "dependencyNotes": [
         "Celery is imported lazily for a broker publish; failure is logged and durable work relies on periodic recovery outside this selection."
-      ]
+      ],
+      "censusScope": "durable"
     },
     {
       "id": "durable-task-storage",
@@ -2659,7 +2684,8 @@
       "ownershipRole": "Persist and query durable tasks, leases, checkpoints and hold state using supplied connections",
       "dependencyNotes": [
         "SQL preparation also exposes private constants currently imported by the application. Transaction and worker execution belong to callers."
-      ]
+      ],
+      "censusScope": "durable"
     },
     {
       "id": "background-claim-sql",
@@ -2688,7 +2714,8 @@
       "ownershipRole": "Build shared background claim ordering and eligibility SQL fragments",
       "dependencyNotes": [
         "Also consumed by background activity and authored PGN preparation outside this selection; these helpers do not claim tasks."
-      ]
+      ],
+      "censusScope": "durable"
     }
   ],
   "suites": [

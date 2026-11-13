@@ -307,7 +307,7 @@ and selected dependencies; notes identify out-of-scope collaborators. The
 checker tests exact ownership only within this named set and fails unowned,
 overlapping, stale, or nonexistent named entrypoints.
 
-A second explicit selection maps 12 review and command files: dispatch, gateway,
+A second explicit selection maps 14 review and command files (including two package initializers): dispatch, gateway,
 review command, adapter, scheduling and reconciliation, and their receipt,
 review and savepoint storage. The gateway spans multiple domains; dispatch imports
 Celery and the review command registers handlers at import. Review policy imports
@@ -327,8 +327,10 @@ also consumed by command gateway, activity commands, and tasks. `main.py` reads
 task storage and the task service directly. These are observed source edges, not
 a complete runtime dependency or isolation proof.
 
-At this base revision, 237 of 291 tracked Python files in those trees remain
-outside the combined 54-file selections. The T02 delivery owner should select and inspect the next
+At this base revision, 235 of 291 tracked Python files in those trees remain
+outside the combined 56-file selections. The registry alone assigns owners;
+independent bounded path predicates discover new tracked inputs within each
+selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover
 new siblings automatically.
 Known existing edges remain visible rather than being called pure isolation:
