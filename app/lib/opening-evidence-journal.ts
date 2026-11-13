@@ -221,6 +221,7 @@ export class OpeningAttemptJournal {
   terminal: OpeningEvidenceCheckpoint["terminal"] = null;
   storageError: string | undefined;
   rebindHeld = false;
+  retireRequested = false;
   constructor(readonly header: AttemptHeader,
     private readonly append: (journal: OpeningAttemptJournal, event?: OpeningDecisionEvent) => Promise<void>,
     readonly positionPlan?: unknown,
@@ -305,7 +306,8 @@ async function storeAppend(journal: OpeningAttemptJournal, event?: OpeningDecisi
     for (const pendingEvent of pendingEvents) journal.uncommittedEvents.delete(pendingEvent.sequence);
     if (!journal.uncommittedEvents.size) journal.storageError = undefined;
     if (snapshot.terminal) releaseLeases.get(snapshot.attempt_id)?.();
-    if (snapshot.terminal?.state === "partial" && captures.get(snapshot.attempt_id) === journal)
+    if ((snapshot.terminal?.state === "partial" || (snapshot.terminal?.state === "complete" && journal.retireRequested)) &&
+        !journal.uncommittedEvents.size && captures.get(snapshot.attempt_id) === journal)
       captures.delete(snapshot.attempt_id);
     if (scheduleFlush && attempt.delivery_state === "pending")
       for (const listener of appendListeners) listener();
@@ -374,9 +376,15 @@ export function partialOpeningAttempt(attemptId: string | undefined): void {
     return;
   }
   if (journal && !journal.terminal && journal.events.length) journal.finish("partial");
-  // Keep failed partial appends reachable until their local transaction commits.
-  if (!journal?.events.length || journal.terminal?.state === "complete") captures.delete(attemptId);
-  if (!journal?.events.length) releaseLeases.get(attemptId)?.();
+  // A completed capture may still have an uncommitted terminal snapshot.
+  // Retire it only after that exact snapshot commits.
+  if (journal?.terminal?.state === "complete") {
+    journal.retireRequested = true;
+    void storeAppend(journal).catch(error => journal.reportStorageError(error));
+  } else if (!journal?.events.length && !journal?.terminal) {
+    captures.delete(attemptId);
+    releaseLeases.get(attemptId)?.();
+  }
 }
 
 export function completeOpeningAttempt(attemptId: string | undefined, endedAt?: string): OpeningEvidenceCheckpoint | undefined {

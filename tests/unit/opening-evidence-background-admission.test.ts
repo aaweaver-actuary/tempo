@@ -430,3 +430,28 @@ it.each(['original', 'foreign', 'conflicting'])('FE25 reconnect %s authority pre
     else { expect(capture.rebindHeld).toBe(true); expect(capture.storageError).toContain('remains held'); }
   }
 });
+
+it.each(['partial', 'complete'])('FE25 %s capture survives a failed terminal append until its exact snapshot commits', async terminal => {
+  const { openingEvidenceStorage } = await import('../fixtures/opening-evidence-storage');
+  const state = await openingEvidenceStorage();
+  vi.stubGlobal('navigator', { onLine: false });
+  const journal = await import('../../app/lib/opening-evidence-journal');
+  const { mapQueueCardToPracticeCard } = await import('../../app/domain/adapters/practice-card-adapters');
+  const card = mapQueueCardToPracticeCard({ id: manifest.card_id, revision: manifest.card_revision, queue_entry_id: 101,
+    start_fen: manifest.decisions[0].fen, moves: ['e2e4','e7e5','g1f3','b8c6','f1b5'], content_type: 'opening',
+    repertoire_name: 'Held', repertoire_source: 'PGN', opening_decision_manifest: manifest });
+  const capture = journal.beginOpeningAttempt(card, `terminal-${terminal}`)!;
+  state.controls.beforePut = () => new DOMException('quota', 'QuotaExceededError');
+  capture.response(0, manifest.decisions[0].expected_uci, 'expected');
+  if (terminal === 'complete') journal.completeOpeningAttempt(`terminal-${terminal}`);
+  journal.partialOpeningAttempt(`terminal-${terminal}`);
+  await vi.waitFor(() => expect(capture.storageError).toContain('quota'));
+  const original = structuredClone(capture.snapshot());
+  expect(journal.beginOpeningAttempt(card, `terminal-${terminal}`)).toBe(capture);
+  expect(capture.uncommittedEvents.get(1)).toEqual(original.events[0]);
+  state.controls.beforePut = undefined;
+  if (terminal === 'complete') journal.partialOpeningAttempt(`terminal-${terminal}`);
+  else { vi.stubGlobal('navigator', { onLine: true }); await journal.recoverOpeningEvidence().catch(() => undefined); }
+  await vi.waitFor(() => expect((state.stores.opening_attempts.get(`terminal-${terminal}`) as { terminal?: unknown })?.terminal).toEqual(original.terminal));
+  expect([...state.stores.opening_events.values()]).toContainEqual({ ...original.events[0], attempt_id: `terminal-${terminal}` });
+});
