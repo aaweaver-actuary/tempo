@@ -70,3 +70,22 @@ def test_retained_cleanup_requires_confirmed_absence_and_creation(existed, creat
             statements.append((statement, parameters))
     fixture.remove_owned_retained_repertoire(Database(), retained_existed=existed, retained_created=created)
     assert statements == ([('DELETE FROM repertoires WHERE id=%s', (fixture.RETAINED_REPERTOIRE_ID,))] if should_remove else [])
+
+
+def test_tactical_cleanup_failure_retains_original_proof_failure():
+    original = RuntimeError('controlled tactical proof failure')
+    cleanup = ValueError('controlled tactical cleanup failure')
+    invoked = []
+    def fail_cleanup():
+        invoked.append(True)
+        raise cleanup
+    with pytest.raises(RuntimeError, match='controlled tactical proof failure') as caught:
+        try:
+            raise original
+        finally:
+            fixture.preserve_tactical_cleanup_failure(fail_cleanup)
+    assert caught.value is original and invoked == [True]
+    assert any('controlled tactical cleanup failure' in note for note in caught.value.__notes__)
+    with pytest.raises(ValueError, match='controlled tactical cleanup failure') as caught_cleanup:
+        fixture.preserve_tactical_cleanup_failure(fail_cleanup)
+    assert caught_cleanup.value is cleanup

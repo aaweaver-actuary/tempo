@@ -55,6 +55,17 @@ def remove_owned_retained_repertoire(database, *, retained_existed, retained_cre
         database.execute("DELETE FROM repertoires WHERE id=%s", (RETAINED_REPERTOIRE_ID,))
 
 
+def preserve_tactical_cleanup_failure(cleanup):
+    """Run all tactical cleanup while preserving an active proof exception."""
+    original_error = sys.exception()
+    try:
+        cleanup()
+    except Exception as cleanup_error:
+        if original_error is None:
+            raise
+        original_error.add_note(f"Tactical proof cleanup failed: {type(cleanup_error).__name__}: {cleanup_error}")
+
+
 def main_check():
     if os.getenv("TEMPO_TEST_INSTANCE") != "disposable":
         raise RuntimeError("Deletion proof requires runner-owned disposable PostgreSQL")
@@ -137,13 +148,15 @@ def main_check():
                 assert postgres_queue_refresh._prepare_tactical_introduction(today) is None
                 assert lookup_batches == [identifiers, identifiers]
         finally:
-            with postgres.connection() as database:
-                purge_card_data(database, identifiers)
-                database.execute("DELETE FROM tactic_introductions WHERE pack_id=%s", (pack_id,))
-                database.execute("DELETE FROM tactic_pack_activation WHERE pack_id=%s", (pack_id,))
-                database.execute_native("UPDATE tactic_pack_activation SET active=CASE WHEN pack_id=ANY(%s) THEN 1 ELSE 0 END", (active_before,))
-                database.execute("UPDATE settings SET tactics_new_per_day=%s WHERE id=1", (limit_before,))
-                database.execute("UPDATE tactic_rotation SET last_pack_id=%s WHERE id=1", (rotation_before,))
+            def cleanup_tactics():
+                with postgres.connection() as database:
+                    purge_card_data(database, identifiers)
+                    database.execute("DELETE FROM tactic_introductions WHERE pack_id=%s", (pack_id,))
+                    database.execute("DELETE FROM tactic_pack_activation WHERE pack_id=%s", (pack_id,))
+                    database.execute_native("UPDATE tactic_pack_activation SET active=CASE WHEN pack_id=ANY(%s) THEN 1 ELSE 0 END", (active_before,))
+                    database.execute("UPDATE settings SET tactics_new_per_day=%s WHERE id=1", (limit_before,))
+                    database.execute("UPDATE tactic_rotation SET last_pack_id=%s WHERE id=1", (rotation_before,))
+            preserve_tactical_cleanup_failure(cleanup_tactics)
         print("PASS test_postgres_tactical_deletion_batches_and_publication_race; unrelated exclusions, real deletion after prepare, no spent allowance and next eligible admission")
 
     def prove_shared_admission_history_and_review_fallback():
