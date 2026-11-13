@@ -1,11 +1,26 @@
 import { learningFetch as fetch, type StudyClient } from "./study-connection";
 import type { OpeningEvidenceCheckpoint } from "../domain/opening-evidence";
-import { confirmOriginalOperationResponse, FailedOperationError, readOperationResponse } from "./operation-status";
+import { confirmOriginalOperationResponse, FailedOperationError, PendingOperationError, readOperationResponse } from "./operation-status";
 import { rejectOpeningEvidence } from "./opening-evidence-journal";
 import { createReviewTransport } from "./review-transport";
 
+const fallbackEvidenceCodes = new Set(["opening_evidence_conflict", "opening_evidence_unavailable"]);
+
 function definitiveEvidenceFailure(error: unknown): string | undefined {
-  if (error instanceof FailedOperationError && /opening_evidence_(conflict|unavailable)/.test(error.message)) return error.message;
+  if (!(error instanceof FailedOperationError) || error.retryable === true) return;
+  // The receipt owner persisted status_code even before structured detail was
+  // added. A message that merely resembles a 409 is not authoritative status.
+  if (error.status !== 409) return;
+  const detail = error.detail !== null && typeof error.detail === "object" && !Array.isArray(error.detail)
+    ? error.detail as Record<string, unknown> : undefined;
+  if (error.detail !== undefined && !detail) return;
+  if (detail && ((Object.hasOwn(detail, "aggregate_review_allowed") && detail.aggregate_review_allowed !== true) ||
+      (Object.hasOwn(detail, "retryable") && detail.retryable !== false))) return;
+  const structuredCode = detail?.code ?? error.code;
+  if (structuredCode !== undefined) {
+    if (typeof structuredCode !== "string" || !fallbackEvidenceCodes.has(structuredCode)) return;
+  } else if (!/\bopening_evidence_(?:conflict|unavailable)\b/.test(error.message)) return;
+  return error.message;
 }
 
 type ReviewEvidenceOptions = {
@@ -18,6 +33,8 @@ type ReviewEvidenceOptions = {
   /** The exact command whose terminal response was returned, including fallback suffix. */
   onConfirmedOperation?: (operationId: string) => void;
   onRejectedOperation?: (operationId: string, evidence: unknown) => Promise<void>;
+  /** Only an already frozen fallback delivery may be resent while base proof is unavailable. */
+  canRetryRetainedFallback?: (operationId: string) => Promise<boolean>;
   onEvidenceRejected: (message: string) => void | Promise<void>;
   request?: (url: string, options: RequestInit) => Promise<Response>;
 } & (
@@ -33,21 +50,29 @@ export async function saveEvidenceAwareReview(options: ReviewEvidenceOptions): P
   let rejection = options.evidenceRejected;
   // Older retained fallback state carries a message, not an authoritative
   // base receipt. Re-read the original operation before disposing its journal.
+  let baseRejectionUnconfirmed = false;
   if (rejection && options.completion && !options.positionStudy && !options.aggregateOnly && options.onRejectedOperation) {
     try {
-      await readOperationResponse(options.operationKey, { signal: options.signal, allowMissing: true, ...(options.client ? { client: options.client } : {}) });
+      const original = await readOperationResponse(options.operationKey, { signal: options.signal, allowMissing: true, ...(options.client ? { client: options.client } : {}) });
+      requireCurrent();
+      if (original.status !== 404) {
+        if (original.ok) options.onConfirmedOperation?.(options.operationKey);
+        return original;
+      }
+      baseRejectionUnconfirmed = true;
     } catch (error) {
       requireCurrent();
       if (options.signal?.aborted) throw error;
-      if (error instanceof FailedOperationError && error.status === 409 && error.retryable !== true && definitiveEvidenceFailure(error))
+      if (error instanceof FailedOperationError && definitiveEvidenceFailure(error))
         await options.onRejectedOperation(options.operationKey, { state: "failed", error: { message: error.message, status_code: error.status, code: error.code, retryable: error.retryable, detail: error.detail } });
+      else baseRejectionUnconfirmed = true;
     }
     requireCurrent();
   }
   const send = async (): Promise<Response> => {
     requireCurrent();
     const sentOperationId = `${options.operationKey}${rejection || options.aggregateOnly ? ":aggregate-only" : ""}`;
-    if (options.verifyReceiptFirst) {
+    if (options.verifyReceiptFirst || baseRejectionUnconfirmed) {
       const receipt = await readOperationResponse(sentOperationId,
         { signal: options.signal, allowMissing: true, ...(options.client ? { client: options.client } : {}) });
       requireCurrent();
@@ -55,6 +80,10 @@ export async function saveEvidenceAwareReview(options: ReviewEvidenceOptions): P
         if (receipt.ok) options.onConfirmedOperation?.(sentOperationId);
         return receipt;
       }
+      if (baseRejectionUnconfirmed && !await options.canRetryRetainedFallback?.(sentOperationId))
+        throw new PendingOperationError(options.operationKey,
+          "The original evidence rejection is unconfirmed. Keep the original review and retry its receipt.");
+      requireCurrent();
     }
     requireCurrent();
     return request(options.endpoint, { method: "POST", signal: options.signal,
@@ -87,10 +116,12 @@ export async function saveEvidenceAwareReview(options: ReviewEvidenceOptions): P
   }
   if (!options.positionStudy && options.completion && !rejection && response.status === 409) {
     const result = await response.clone().json().catch(() => ({})) as {
-      detail?: { code?: string; message?: string; aggregate_review_allowed?: boolean };
+      detail?: { code?: string; message?: string; aggregate_review_allowed?: boolean; retryable?: boolean };
     };
     requireCurrent();
-    if (result.detail?.aggregate_review_allowed && result.detail.code?.startsWith("opening_evidence_")) {
+    if (result.detail?.aggregate_review_allowed === true &&
+        (result.detail.retryable === undefined || result.detail.retryable === false) &&
+        typeof result.detail.code === "string" && fallbackEvidenceCodes.has(result.detail.code)) {
       rejection = result.detail.message ?? "The opening evidence was rejected.";
       // Persist fallback identity before submitting it; a reload cannot switch delivery keys.
       await options.onEvidenceRejected(rejection);

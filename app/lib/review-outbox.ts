@@ -255,8 +255,13 @@ async function withReviewSaveDeadline(url: string, review: PendingReview,
 
 async function responseError(response: Response, endpoint: string, review: PendingReview): Promise<ReviewReplayError> {
   const body = await response.json().catch(() => ({})) as { detail?: unknown; code?: string; retryable?: boolean };
-  return new ReviewReplayError(typeof body.detail === "string" ? body.detail : `Local service returned HTTP ${response.status}.`,
-    endpoint, review, response.status, body.code, body.retryable ?? response.status >= 500);
+  const detail = body.detail !== null && typeof body.detail === "object" && !Array.isArray(body.detail)
+    ? body.detail as { message?: unknown; code?: unknown; retryable?: unknown } : undefined;
+  const message = typeof body.detail === "string" ? body.detail : typeof detail?.message === "string"
+    ? detail.message : `Local service returned HTTP ${response.status}.`;
+  const code = typeof detail?.code === "string" ? detail.code : body.code;
+  const retryable = typeof detail?.retryable === "boolean" ? detail.retryable : body.retryable;
+  return new ReviewReplayError(message, endpoint, review, response.status, code, retryable ?? response.status >= 500);
 }
 
 async function sendReview(review: PendingReview, transport: ReturnType<typeof createReviewTransport>, store: Awaited<ReturnType<typeof studyIntentStore>>, requireCurrent: () => void, verifyReceiptFirst = false, parentSignal?: AbortSignal): Promise<Response> {
@@ -312,6 +317,21 @@ async function sendReview(review: PendingReview, transport: ReturnType<typeof cr
     verifyReceiptFirst,
     onConfirmedOperation: operationId => { confirmedOperationId = operationId; },
     onRejectedOperation: (operationId, evidence) => settleExistingReviewDelivery(store, operationId, attemptId, evidence, requireCurrent, "discarded"),
+    canRetryRetainedFallback: async operationId => {
+      requireCurrent();
+      const retained = await store.get(`review-delivery:${operationId}`);
+      requireCurrent();
+      const payload = retained?.payload as { parentKey?: unknown; headers?: Record<string, unknown>; body?: unknown } | undefined;
+      const expectedBody = { outcome: review.outcome, guided: review.guided,
+        queue_entry_id: review.queueEntryId, attempt_id: attemptId,
+        ...(review.completedAt ? { recorded_at: review.completedAt } : {}),
+        ...(review.expectedRevision ? { expected_revision: review.expectedRevision } : {}),
+        ...(review.preparedNext ? { prepared_next: review.preparedNext } : {}),
+      };
+      return retained?.kind === "review-delivery" && retained.requestId === operationId && retained.attemptId === attemptId &&
+        retained.endpoint === endpoint && retained.state === "pending" && payload?.parentKey === `review:${attemptId}` &&
+        payload.headers?.["Idempotency-Key"] === operationId && JSON.stringify(payload.body) === JSON.stringify(expectedBody);
+    },
     aggregateOnly: review.evidenceFallbackReason === "local_storage_quota",
     onEvidenceRejected: async (message) => {
       requireCurrent();
@@ -391,6 +411,11 @@ async function deliverLegacyReview(record: IntentRecord, signal: AbortSignal) {
       return { state: "conflicted" as const, data: { ...review, state: "conflicted", conflict: {
         code: error.code ?? "position_attempt_conflict", message: error.message, retryable: false } } };
     }
+    // An evidence rejection without an authorized aggregate fallback must not
+    // be converted into a different reconciliation operation. Its original
+    // command and evidence remain available for explicit recovery.
+    if (error instanceof ReviewReplayError &&
+        (error.code?.startsWith("opening_evidence_") || /\bopening_evidence_(?:conflict|unavailable)\b/.test(error.message))) throw error;
     if (!(error instanceof ReviewReplayError) || error.status !== 409 || error.retryable || review.state === "reconciling") throw error;
     requireCurrent();
     review = { ...savedReviews().find(item => logicalAttemptId(item) === attemptId)!, state: "reconciling", reconciliationSequence: 1 };
