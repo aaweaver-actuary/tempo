@@ -15,7 +15,7 @@ import { Chess } from "chess.js";
 import { createHash } from 'node:crypto';
 import { verifyPersistedRedisReadiness } from "../database/tests/redis/check-redis-readiness.mjs";
 import { forgetMigrationSuffix, markHistoryIncorrect, markHistoryCorrect, readLatestMigration } from "../database/tests/cli/lifecycle-storage.mjs";
-import { assertBridgePreparedBinding, assertBridgeTargetIdentity, checkLifecycleSource, readSchema62Bridge, renderInterruptedLifecycle } from "./lifecycle-source-preflight.mjs";
+import { assertBridgePreparedBinding, assertBridgeTargetIdentity, checkLifecycleSource, readSchema62Bridge, readSchema65Baseline, renderInterruptedLifecycle } from "./lifecycle-source-preflight.mjs";
 import { resolvePython } from './resolve-python.mjs';
 
 // The cold probe may start missing dependencies without replacing them; the
@@ -44,7 +44,11 @@ export async function handoffOwnedSchema62({ oldRuntime, snapshotVolumes, readEv
 }
 
 export function validateLifecycleProfile(profile, schema, environment) {
-  if (!["full", "current63"].includes(profile)) throw new Error("Unknown lifecycle profile");
+  if (!["full", "current63", "current65"].includes(profile)) throw new Error("Unknown lifecycle profile");
+  if (profile === "current65") {
+    if (schema !== 66 || ["TEMPO_LIFECYCLE_P0_59_ONLY", "TEMPO_PG_STALE_DELIVERY_ONLY", "TEMPO_LIFECYCLE_MANAGED_REHEARSAL", "TEMPO_LIFECYCLE_SHIPPING_REHEARSAL"].some(name => environment[name] === "1")) throw new Error("Current65 lifecycle requires schema 66 without scenario overrides");
+    return;
+  }
   if (schema >= 64) throw new Error(`Schema-${schema} lifecycle upgrade is not qualified; the historical schema-63 profile cannot qualify it.`);
   if (profile === "current63" && (schema !== 63 || environment.TEMPO_LIFECYCLE_P0_59_ONLY === "1" ||
       environment.TEMPO_PG_STALE_DELIVERY_ONLY === "1"))
@@ -56,6 +60,88 @@ export function assertCurrent63Guard(guard) {
   assert.equal(guard.intended_schema, 63); assert.equal(guard.backup?.verified, true);
 }
 
+export function assertLifecycleOperationIdentity(value, expected) {
+  if (!value || typeof value.operation_id !== "string" || !value.operation_id || (expected && value.operation_id !== expected)) throw new Error("Lifecycle operation identity differs from the original request");
+  return value.operation_id;
+}
+export function classifyLifecycleOperation(value, expected) {
+  assertLifecycleOperationIdentity(value, expected);
+  if (value.state === "complete") return "complete";
+  if (["unknown", "pending", "queued", "executing", "retrying"].includes(value.state)) return "pending";
+  if (["failed", "blocked"].includes(value.state)) throw new Error(`Lifecycle operation ${value.state}: ${value.code ?? "no code"}`);
+  throw new Error("Unknown lifecycle operation state");
+}
+export async function pollLifecycleOperation(operationId, read, pause, limit = 120) {
+  for (let attempt = 0; attempt < limit; attempt++) {
+    await pause();
+    const result = await read(operationId);
+    if (classifyLifecycleOperation(result, operationId) === "complete") return result.response;
+  }
+  throw new Error("Operation did not settle within the bounded poll limit");
+}
+
+// The caller supplies the owned target and authentic saved-review receipt.
+// All mutations below go through the same lifecycle owner used by the CLI.
+export async function verifyCurrent65Transition({ makeCandidate, lifecycle, snapshot, readGuard, readGuardBytes, writeGuardBytes, readDeployment, readVersions, commandLog }) {
+  const original = await snapshot();
+  assert(original.review?.review_id && original.review?.queue_entry_id && original.receipt?.state === "complete", "A committed original review and receipt are required");
+  assert.deepEqual(await readVersions(), Array.from({ length: 65 }, (_, index) => index + 1));
+  const prewrite = makeCandidate(); await prewrite.inspectTarget();
+  prewrite.preflightSchema = async () => { throw new Error("injected before write"); };
+  const before = commandLog.length;
+  await assert.rejects(lifecycle("current65_before_write", { recreate: true }, prewrite), /injected before write/);
+  assert(!commandLog.slice(before).some(call => call.args.includes("stop") || (call.args.includes("database/tooling/apply_postgres_migrations.py") && !call.args.includes("--check"))));
+  assert.deepEqual(await snapshot(), original);
+  assert.deepEqual(await readVersions(), Array.from({ length: 65 }, (_, index) => index + 1));
+
+  let interrupted = false;
+  const candidate = makeCandidate({ intercept: async (execute, command, args, options) => {
+    const result = await execute(command, args, options);
+    if (!interrupted && args.includes("database/tooling/apply_postgres_migrations.py") && !args.includes("--check")) {
+      interrupted = true; throw new Error("injected after migration");
+    }
+    return result;
+  } });
+  await candidate.inspectTarget();
+  await assert.rejects(lifecycle("current65_interrupted", { recreate: true }, candidate), /injected after migration/);
+  assert(interrupted, "The real migration command must complete before interruption");
+  const pending = readGuard();
+  assert.equal(pending.state, "pending"); assert.equal(pending.starting_schema, 65); assert.equal(pending.intended_schema, 66);
+  assert.deepEqual(pending.starting_versions, Array.from({ length: 65 }, (_, index) => index + 1));
+  assert(pending.attempt_id && pending.backup?.verified && pending.backup.restore_removed && pending.backup.filename);
+  assert.deepEqual(await readVersions(), Array.from({ length: 66 }, (_, index) => index + 1));
+  assert.deepEqual(await snapshot(), original);
+  const refused = makeCandidate(); await refused.inspectTarget();
+  const refusal = commandLog.length;
+  await assert.rejects(lifecycle("current65_unresolved_refusal", { recreate: false }, refused), /migration|guard|retry/i);
+  assert(!commandLog.slice(refusal).some(call => call.args.includes("up") && call.args.includes("api")), "Unresolved verification must not start applications");
+  assert.deepEqual(readGuard(), pending);
+  const originalGuardBytes = readGuardBytes();
+  try {
+    writeGuardBytes(Buffer.from(JSON.stringify({ ...pending, target: "foreign-target" })));
+    const foreign = makeCandidate({ retry: true }); await foreign.inspectTarget();
+    const foreignStart = commandLog.length;
+    await assert.rejects(lifecycle("current65_mismatched_guard", { recreate: false }, foreign), /guard|target|database/i);
+    assert(!commandLog.slice(foreignStart).some(call => call.args.includes("up") && call.args.includes("api")), "A foreign guard must not start applications");
+  } finally { writeGuardBytes(originalGuardBytes); }
+  assert.deepEqual(readGuardBytes(), originalGuardBytes);
+  const retry = makeCandidate({ retry: true }); await retry.inspectTarget();
+  await lifecycle("current65_retry_original", { recreate: true }, retry);
+  const settled = readGuard(), deployment = readDeployment();
+  assert.equal(settled.state, "verified"); assert.equal(settled.attempt_id, pending.attempt_id);
+  assert.deepEqual(settled.backup, pending.backup); assert.equal(deployment.schema, 66);
+  assert.deepEqual(await snapshot(), original);
+  const repeat = makeCandidate({ previous: deployment }); await repeat.inspectTarget();
+  const repeatStart = commandLog.length;
+  await lifecycle("current65_repeat", { recreate: false }, repeat);
+  assert(!commandLog.slice(repeatStart).some(call => call.args.includes("build") || call.args.includes("stop") || (call.args.includes("database/tooling/apply_postgres_migrations.py") && !call.args.includes("--check"))));
+  assert.deepEqual(await snapshot(), original);
+  const recreate = makeCandidate({ previous: readDeployment() }); await recreate.inspectTarget();
+  await lifecycle("current65_recreate", { recreate: true }, recreate);
+  assert.deepEqual(await snapshot(), original);
+  return { pending, settled, deployment };
+}
+
 export async function verifyTempoCliLifecycle({ project, environment, composeFiles, revision: currentRevision, measure = null, profile = "full" }) {
   const currentRoot = process.cwd();
   checkLifecycleSource({ root: currentRoot, environment, profile });
@@ -63,22 +149,28 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
   const schemaFile = existsSync(nativeSchema) ? nativeSchema : join(currentRoot, "database/tempo_legacy_database/ddl/schema_version.py");
   const currentSchema = schemaVersionFromSource(readFileSync(schemaFile, "utf8"));
   validateLifecycleProfile(profile, currentSchema, environment);
+  const baseline65 = profile === "current65" ? readSchema65Baseline(environment) : null;
   const bridge = currentSchema === 63 ? readSchema62Bridge(environment) : null;
-  const root = bridge?.root ?? currentRoot;
-  const revision = bridge?.manifest.revision ?? currentRevision;
+  const root = baseline65?.root ?? bridge?.root ?? currentRoot;
+  const revision = baseline65?.manifest.revision ?? bridge?.manifest.revision ?? currentRevision;
   // Exercise the current runtime with the historical checkout and images.
   // Only the real historical CLI/generated interruption child runs old code.
   const { applicationServices, configurationFingerprint, createRuntime, executeLifecycle, releaseComposeFiles } = {
     applicationServices: currentApplicationServices, configurationFingerprint: currentFingerprint, createRuntime: currentCreateRuntime,
     executeLifecycle: currentExecuteLifecycle, releaseComposeFiles: currentReleaseComposeFiles };
   const currentComposeFiles = currentReleaseComposeFiles({ root: currentRoot, composeFiles });
-  composeFiles = bridge ? composeFiles.map(file => ["docker-compose.postgres.test.yml", "docker-compose.games-feedback.yml"].includes(basename(file))
+  composeFiles = (bridge || baseline65) ? composeFiles.map(file => ["docker-compose.postgres.test.yml", "docker-compose.games-feedback.yml"].includes(basename(file))
     ? join(root, basename(file)) : file) : composeFiles;
   composeFiles = releaseComposeFiles({ root, composeFiles });
   const childProject = `${project}-cli`;
   const directory = join(currentRoot, "test-results", "tempo-cli", childProject +
     (environment.W08_CAPTURE_ONLY === '1' ? '-capture' : environment.W08_COPY_ONLY === '1' ? '-copy' : ''));
   mkdirSync(directory, { recursive: true });
+  if (baseline65) {
+    const fixtureOverride = join(directory, "schema65-fixture.json");
+    atomicJson(fixtureOverride, { services: { migration: { volumes: [{ type: "bind", source: join(currentRoot, "database/tests/check_postgres_cli_lifecycle.py"), target: "/work/database/tests/check_postgres_cli_lifecycle.py", read_only: true, bind: { create_host_path: false } }] } } });
+    composeFiles.push(fixtureOverride);
+  }
   if (environment.TEMPO_LIFECYCLE_MANAGED_REHEARSAL === '1' || environment.TEMPO_LIFECYCLE_SHIPPING_REHEARSAL === '1') {
     // The disposable test stack supplies a locally built migration image as an
     // image-only service. Declare its real build inputs to the normal launcher
@@ -181,11 +273,23 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
 
     const tag = service.image ?? `${project}-${name}`;
     const inspected = JSON.parse((await docker(["image", "inspect", tag])).stdout)[0];
+    if (baseline65 && (service.build || name === "migration")) assert.equal(inspected.Config?.Labels?.["org.opencontainers.image.revision"], currentRevision, `Candidate image revision differs for ${name}`);
     if ((environment.TEMPO_LIFECYCLE_MANAGED_REHEARSAL === '1' || environment.TEMPO_LIFECYCLE_SHIPPING_REHEARSAL === '1') && name === 'migration')
       assert.equal(inspected.Config?.Labels?.['org.opencontainers.image.revision'], currentRevision);
     images[name] = inspected.Id;
   }
   const currentImages = { ...images };
+  if (baseline65) {
+    for (const [name, service] of Object.entries(config.services)) {
+      if ((service.build || name === "migration") && !baseline65.manifest.images[name]) throw new Error(`Schema-65 manifest lacks configured role ${name}`);
+    }
+    for (const [name, id] of Object.entries(baseline65.manifest.images)) {
+      const inspected = JSON.parse((await docker(["image", "inspect", id])).stdout);
+      if (!Array.isArray(inspected) || inspected.length !== 1 || inspected[0].Id !== id || inspected[0].Os !== "linux" || inspected[0].Architecture !== "arm64" || inspected[0].Config?.Labels?.["org.opencontainers.image.revision"] !== revision)
+        throw new Error(`Schema-65 image identity differs for ${name}`);
+      if (name in config.services) images[name] = id;
+    }
+  }
   if (bridge) {
     const oldBuildLabels = join(directory, "schema62-build-labels.json");
     atomicJson(oldBuildLabels, { services: Object.fromEntries(Object.entries(config.services).filter(([, service]) => service.build)
@@ -211,11 +315,11 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
   const schema59Only = environment.TEMPO_LIFECYCLE_P0_59_ONLY === "1";
   const schema61Revision = schema59Only ? "5d879ffce599af7a2eaf9627e9e1c7ea82e9af5a" : "4aa0ad1b731402365c1b866a6ba7bed484d2b6ac";
   const imageFile = schema59Only ? environment.TEMPO_LIFECYCLE_SCHEMA59_IMAGES : environment.TEMPO_LIFECYCLE_SCHEMA61_IMAGES;
-  if (!imageFile) throw new Error("Provide the task-owned historical image manifest before lifecycle mutation.");
-  const schema61 = JSON.parse(readFileSync(imageFile, "utf8"));
-  if (schema61.revision !== schema61Revision) throw new Error("Unexpected historical image revision.");
+  if (!baseline65 && !imageFile) throw new Error("Provide the task-owned historical image manifest before lifecycle mutation.");
+  const schema61 = baseline65 ? null : JSON.parse(readFileSync(imageFile, "utf8"));
+  if (!baseline65 && schema61.revision !== schema61Revision) throw new Error("Unexpected historical image revision.");
   const schema61Images = { ...images };
-  for (const [name, service] of Object.entries(config.services)) {
+  for (const [name, service] of baseline65 ? [] : Object.entries(config.services)) {
     if (!service.build && name !== "migration") continue;
     const file = service.build?.dockerfile;
     const kind = name === "migration" || file === "Dockerfile.postgres-maintenance" ? "migration"
@@ -243,6 +347,76 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
         "--label", `com.docker.compose.volume=${key}`, volume.name]);
     }
     await compose(["up", "-d", "--no-build", "--no-deps", "--wait", "postgres", "redis"], { echo: true });
+    if (baseline65) {
+      await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "-e", `TEMPO_TEST_COMPOSE_PROJECT=${childProject}`, "migration", "database/tests/check_postgres_cli_lifecycle.py", "--seed65"], { echo: true });
+      const prepared65 = { revision, images, configFingerprint: configurationFingerprint(config) };
+      const old = makeRuntime(target, { run, stateDirectory, revision, evidence, preparedImages: prepared65 });
+      await old.inspectTarget(); await lifecycle("current65_baseline", { recreate: false }, old);
+      const oldDeployment = JSON.parse(readFileSync(join(stateDirectory, "deployment.json"), "utf8"));
+      assert.equal(oldDeployment.revision, revision); assert.equal(oldDeployment.schema, 65);
+      const request = async (path, options = {}) => {
+        let response = await fetch(`${target.webUrl}/api/${path}`, options);
+        if (response.status === 202) {
+          const pending = await response.json();
+          const operationId = assertLifecycleOperationIdentity(pending, options.headers?.["Idempotency-Key"]);
+          return pollLifecycleOperation(operationId, async id => {
+            response = await fetch(`${target.webUrl}/api/operations/${encodeURIComponent(id)}`);
+            if (!response.ok) throw new Error(`Operation polling failed: HTTP ${response.status}`);
+            return response.json();
+          }, () => new Promise(resolve => setTimeout(resolve, 250)));
+        }
+        if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`);
+        return response.json();
+      };
+      const settings = await request("settings");
+      await request("settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...settings, new_cards_per_day: 100, study_new_per_day: 100 }) });
+      const form = new FormData(); form.set("file", new Blob([studyDurabilityPgn], { type: "application/x-chess-pgn" }), "current65.pgn"); form.set("trained_color", "white"); form.set("initial_depth", "6");
+      const imported = await request("imports/pgn", { method: "POST", body: form });
+      let card;
+      for (let attempt = 0; attempt < 120; attempt++) {
+        const queue = await request("queue/today"); card = queue.cards.find(item => item.repertoire_id === imported.repertoire_id);
+        if (card?.queue_entry_id && card.moves?.length) break;
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      assert(card?.moves?.length && new Chess(card.start_fen).move(card.moves[0]), "The baseline must issue an authentic legal card");
+      const post = (path, body, id) => request(path, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": id }, body: JSON.stringify(body) });
+      await post(`cards/${card.id}/teaching`, { revision: card.revision, ply: 0 }, "current65-teaching");
+      const reviewBody = { outcome: "correct", queue_entry_id: card.queue_entry_id, expected_revision: card.revision, attempt_id: "current65-original-attempt" };
+      const review = await post(`cards/${card.id}/review`, reviewBody, "current65-original-review");
+      assert.equal(review.persisted, true); assert(Number.isInteger(review.review_id)); assert.equal(review.queue_entry_id, card.queue_entry_id);
+      const receipt = await request("operations/current65-original-review");
+      assertLifecycleOperationIdentity(receipt, "current65-original-review");
+      assert.equal(receipt.state, "complete"); assert.deepEqual(receipt.response, review);
+      const currentArgs = ["compose", "--project-directory", currentRoot, "-p", childProject, ...currentComposeFiles.flatMap(file => ["-f", file])];
+      const currentConfig = JSON.parse((await docker([...currentArgs, "--profile", "maintenance", "--profile", "games-feedback", "config", "--format", "json"])).stdout);
+      assert.deepEqual(Object.keys(currentConfig.services).sort(), Object.keys(currentImages).sort());
+      const currentTarget = { ...target, root: currentRoot, composeFiles: currentComposeFiles, daemonId: (await docker(["info", "--format", "{{.ID}}"])).stdout.trim(),
+        volumes: Object.fromEntries(Object.entries(currentConfig.volumes).map(([key, volume]) => [key, { name: volume.name, external: Boolean(volume.external) }])), ports: portsFromConfig(currentConfig), postgresImage: currentConfig.services.postgres.image };
+      assertBridgeTargetIdentity(target, currentTarget, { previousRoot: root, currentRoot });
+      assert.equal(targetKey(target), targetKey(currentTarget));
+      const prepared = { revision: currentRevision, images: currentImages, configFingerprint: currentFingerprint(currentConfig) };
+      assertBridgePreparedBinding(prepared, currentRevision, currentImages, currentFingerprint(currentConfig));
+      const executeCandidate = commandExecutor({ root: currentRoot, environment: childEnvironment, secretValues, output: message => { output.push(message); console.log(message); } });
+      const makeCandidate = ({ intercept, retry = false, previous = oldDeployment } = {}) => {
+        const candidateRun = async (command, args, options) => { commandLog.push({ command, args }); return intercept ? intercept(executeCandidate, command, args, options) : executeCandidate(command, args, options); };
+        return currentCreateRuntime(currentTarget, { run: candidateRun, stateDirectory, revision: currentRevision, evidence: { commit: currentRevision, disposable_runner: childProject }, previous, preparedImages: prepared, retry });
+      };
+      const readVersions = async () => JSON.parse((await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration", "-c", "import json,os,psycopg\nwith psycopg.connect(os.environ['TEMPO_POSTGRES_ADMIN_URL']) as db: print(json.dumps([r[0] for r in db.execute('select version from tempo_schema_migrations order by version')]))"])).stdout);
+      const snapshot = async () => {
+        const raw = JSON.parse((await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration", "-c", "import json,os,sys,psycopg\nwith psycopg.connect(os.environ['TEMPO_POSTGRES_ADMIN_URL']) as db:\n print(json.dumps({'receipt':db.execute(\"select row_to_json(t) from (select * from operation_receipts where operation_id='current65-original-review') t\").fetchone()[0], 'review':db.execute('select row_to_json(t) from (select id,card_id,rating,reviewed_at,previous_interval,next_interval from reviews where id=%s) t',(int(sys.argv[1]),)).fetchone()[0], 'queue':db.execute('select row_to_json(t) from (select * from daily_queue where id=%s) t',(int(sys.argv[2]),)).fetchone()[0]},default=str))", String(review.review_id), String(card.queue_entry_id)])).stdout);
+        const history = JSON.parse((await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "-e", "TEMPO_CLI_CURRENT65_SNAPSHOT=1", "migration", "database/tests/check_postgres_cli_lifecycle.py", "--history"])).stdout);
+        return { review: { review_id: review.review_id, queue_entry_id: card.queue_entry_id, row: raw.review }, receipt: raw.receipt, queue: raw.queue, history };
+      };
+      const guardPath = join(stateDirectory, "migration-guard.json");
+      await verifyCurrent65Transition({ makeCandidate, lifecycle, snapshot, readVersions, commandLog,
+        readGuard: () => JSON.parse(readFileSync(guardPath, "utf8")), readGuardBytes: () => readFileSync(guardPath),
+        writeGuardBytes: bytes => writeFileSync(guardPath, bytes, { mode: 0o600 }),
+        readDeployment: () => JSON.parse(readFileSync(join(stateDirectory, "deployment.json"), "utf8")) });
+      assert.deepEqual(await request("operations/current65-original-review"), receipt);
+      const replay = await measured("current65_original_replay", "scenario", () => post(`cards/${card.id}/review`, reviewBody, "current65-original-review"));
+      assert.deepEqual(replay, review, "The exact original review operation must replay its original result");
+      console.log("PASS owned schema65-to-66 original review, backup, interruption and retry lifecycle");
+    } else {
     if (environment.TEMPO_LIFECYCLE_SHIPPING_REHEARSAL === '1') {
       if (!target.disposable || !/^tempo-pg-regressions-[a-z0-9-]+-cli$/.test(childProject) ||
           config.services.postgres.environment.POSTGRES_DB !== 'tempo') throw new Error('Owned shipping database identity differs');
@@ -985,6 +1159,7 @@ m.apply_migrations(os.environ["TEMPO_POSTGRES_ADMIN_URL"], target_version=61)`;
     assert.deepEqual(await readHistory(), expected, "restart preserves original study history");
     console.log("PASS Tempo CLI historical and schema-62 guarded migration lifecycle preserves retained history and verified backups");
     await finishCurrentSchema();
+    }
 
   } catch (error) { failure = error; }
   finally {

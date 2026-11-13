@@ -272,7 +272,7 @@ test("current lifecycle has its own complete plan and cannot qualify the full hi
   assert.throws(() => validatePostgresScenarios("lifecycle", plan, report), /missing, failed or mismatched/);
 });
 
-test("current lifecycle invokes the explicitly bounded current63 checker profile", async () => {
+test("current lifecycle invokes the explicitly bounded current65 checker profile", async () => {
   const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
   const start = source.indexOf("  deployment_lifecycle_current: async () => {");
   const end = source.indexOf("  deployment_lifecycle: async () => {", start);
@@ -282,7 +282,7 @@ test("current lifecycle invokes the explicitly bounded current63 checker profile
     process: { cwd: () => root }, measureScenario: {}, verifyTempoCliLifecycle: async args => calls.push(args),
   });
   await action.deployment_lifecycle_current();
-  assert.equal(calls.length, 1); assert.equal(calls[0].profile, "current63");
+  assert.equal(calls.length, 1); assert.equal(calls[0].profile, "current65");
 });
 
 test("current lifecycle rejects unsupported source and fixture overrides before admission", () => {
@@ -290,11 +290,11 @@ test("current lifecycle rejects unsupported source and fixture overrides before 
   const start = source.indexOf('if (options.mode === "lifecycle-current") {');
   const end = source.indexOf('if (process.env.TEMPO_RELEASE_CANDIDATE_MODE)', start);
   assert(start >= 0 && end < source.indexOf("process.exit(await runWithDevelopmentBudget"));
-  for (const [version, environment, staleOnly] of [[62, {}, false], [64, {}, false], [63, { TEMPO_LIFECYCLE_P0_59_ONLY: "1" }, false], [63, {}, true]]) {
+  for (const [version, environment, staleOnly] of [[62, {}, false], [65, {}, false], [66, { TEMPO_LIFECYCLE_P0_59_ONLY: "1" }, false], [66, {}, true]]) {
     assert.throws(() => runInNewContext(source.slice(start, end), {
       options: { mode: "lifecycle-current" }, process: { env: environment }, staleOnly,
       readFileSync: () => "source", schemaVersionFromSource: () => version,
-    }), /requires schema 63/);
+    }), /requires schema 66/);
   }
 });
 

@@ -315,18 +315,29 @@ Schema version 2 adds start-ordered `details` beneath the unchanged required sta
 
 ## Deployment lifecycle selection
 
-The schema-64 native-storage reduction has no qualified 63-to-64 lifecycle
-rehearsal yet. Both lifecycle modes refuse this source before image acquisition,
-resource admission, or lifecycle mutation. The historical PR #982 evidence does
-not qualify schema 64. Candidate artifact reuse and historical image acquisition
-remain available for applicable non-lifecycle checks; neither implies an upgrade
-pass. Implement and demonstrate the 63-to-64 transition before enabling a current
-schema-64 profile.
+The current candidate requires schema 66; the observed installed predecessor is
+schema 65. `make docker-lifecycle-current` selects the dedicated 65-to-66
+disposable rehearsal. It requires `TEMPO_LIFECYCLE_SCHEMA65_ROOT` to identify a
+clean detached worktree at d79ae4fcc4b006985114d85b5fb9a5aca8becbf1 and
+`TEMPO_LIFECYCLE_SCHEMA65_IMAGES` to identify an absolute local immutable image
+manifest for that exact source and tree. Candidate source must also be clean.
+The manifest uses `version: 1`, `kind: "local-seed"`, `platform: "linux/arm64"`,
+the exact revision and tree, an `images` map for `schema`, `api`,
+`foreground-worker`, `background-worker`, `background-scheduler`, `web` and
+`migration`, and `provenance` containing `source_root` and the verified build
+materials for `backend`, `web` and `migration`. The three corresponding
+`*-build.json` BuildKit metadata files must be beside the manifest. The schema
+and worker roles use the same backend image ID. The runner validates the metadata
+against the pinned Dockerfiles and inspects every immutable image before use.
+The preflight rejects historical scenario overrides before acquiring resources.
+The rehearsal initializes an empty owned predecessor database, preserves original
+Study/Tactics rows and an authentic saved-review receipt, and exercises backup,
+interruption, guard refusal, retry, repeat, and recreation through the lifecycle
+owner. A successful local run qualifies only its exact source, images and target
+configuration; it does not install or qualify a live release.
 
-For historical schema-63 source only, the explicit current-upgrade profile uses
-`make docker-lifecycle-current` / `--mode lifecycle-current`, with the pinned
-schema-62 source/artifact prerequisites below. Its distinct
-`deployment_lifecycle_current` stage performs a real historical upgrade to 61,
+The historical schema-63 verifier remains in source with its pinned
+schema-62 source/artifact prerequisites below. Its historical path performs an upgrade to 61,
 the destructive cut to 62 with history/backup/witness checks, then the supported
 62-to-63 upgrade with an exact saved receipt, legal next card and compatible
 repeat. It excludes the deep historical fault matrix; reuse of its separately
@@ -335,7 +346,7 @@ matrix. A current-profile report cannot qualify the full historical mode or
 replace an existing complete CI plan. No 30-transition recovery assertions,
 workload, timeout or resource limits change.
 
-`schema_migrations`, `priority_recovery` and `background_diagnostics` run in ordinary durability and full mode. `deployment_lifecycle` invokes the unchanged complete `verifyTempoCliLifecycle()` rehearsal in full mode and independent `--mode lifecycle` / `make docker-lifecycle`. Full mode still quiesces and restores its parent applications around the child rehearsal. The ordinary durability mode and legacy `--skip-browser` alias omit this deployment rehearsal; they retain every direct database proof. Historical timing reports may still use the former combined `schema_upgrade` name.
+The historical full mode continues to reject newer schemas before acquiring resources; a current-profile result cannot qualify it. `schema_migrations`, `priority_recovery` and `background_diagnostics` run in ordinary durability and full mode. `deployment_lifecycle` invokes the unchanged complete `verifyTempoCliLifecycle()` rehearsal in full mode and independent `--mode lifecycle` / `make docker-lifecycle`. Full mode still quiesces and restores its parent applications around the child rehearsal. The ordinary durability mode and legacy `--skip-browser` alias omit this deployment rehearsal; they retain every direct database proof. Historical timing reports may still use the former combined `schema_upgrade` name.
 
 Within that existing child lifetime, `test_tempo_cli_abandon_orphan_exact_plan_apply_retry_preserves_history` uses the registered Node abandonment command after the real upgrade reaches readiness. When executed, its fixed synthetic orphan checks default plan, checked apply, exact retry and specific stale-hash, revision, target-registration and changed-payload refusals, while retaining origin/receipt bytes, FSRS, reviews and snapshots with zero grades. Only the disposable historical fixture seeds the orphan; normal whole-stack teardown removes its retained data. This synthetic case does not authorize abandonment of a user attempt or replace native owner and visual qualification.
 

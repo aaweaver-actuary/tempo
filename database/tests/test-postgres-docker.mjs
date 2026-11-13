@@ -33,15 +33,16 @@ if (options.list) {
     acceptance_scope: options.maintainedStudyProof ? "partial-maintained-study-not-full-E02" : options.mode,
     unresolved_owner_cases: stages.includes("study_durability") ? unresolvedQueueCases : [],
     historical_priority_rollback: stages.includes("study_durability") ? "not executed" : undefined,
-    study_durability_cases: stages.includes("study_durability") ? ["foreground_study", "prefix_split_http_accept_replay", "prefix_split_http_restart_replay", "study_burial_quota", "blocked_burial_recovery"] : [] }, null, 2));
+    study_durability_cases: stages.includes("study_durability") ? ["foreground_study", "prefix_split_http_accept_replay", "prefix_split_http_restart_replay", "study_burial_quota", "blocked_burial_recovery"] : [],
+    lifecycle_current_cases: options.mode === "lifecycle-current" ? ["current65_baseline", "current65_before_write", "current65_interrupted", "current65_unresolved_refusal", "current65_mismatched_guard", "current65_retry_original", "current65_repeat", "current65_recreate", "current65_original_replay"] : [] }, null, 2));
   process.exit(0);
 }
 
 // Reject invalid opt-in inputs before budget admission or temporary secrets.
 if (options.mode === "lifecycle-current") {
   if (staleOnly || process.env.TEMPO_LIFECYCLE_P0_59_ONLY === "1"
-      || schemaVersionFromSource(readFileSync("database/tempo_storage/ddl/schema_version.py", "utf8")) !== 63)
-    throw new Error("Current lifecycle profile requires schema 63 and the schema-61 predecessor fixture without other scenario overrides");
+      || schemaVersionFromSource(readFileSync("database/tempo_storage/ddl/schema_version.py", "utf8")) !== 66)
+    throw new Error("Current lifecycle profile requires schema 66 and its schema-65 predecessor without scenario overrides");
 }
 if (process.env.TEMPO_RELEASE_CANDIDATE_MODE) {
   const mode = process.env.TEMPO_RELEASE_CANDIDATE_MODE, owner = process.env.TEMPO_RELEASE_CANDIDATE_OWNER;
@@ -68,7 +69,7 @@ if (stages.includes("deployment_lifecycle") || stages.includes("deployment_lifec
   if (process.env.TEMPO_LIFECYCLE_P0_59_ONLY !== "1" && !process.env.TEMPO_LIFECYCLE_SCHEMA61_IMAGES
       && ["DOCKER_HOST", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH"].some(name => process.env[name]))
     throw new Error("Automatic historical image preparation does not support inherited Docker host or TLS overrides; supply an explicit historical manifest or use a named context.");
-  checkLifecycleSource({ profile: options.mode === "lifecycle-current" ? "current63" : "full" });
+  checkLifecycleSource({ profile: options.mode === "lifecycle-current" ? "current65" : "full" });
 }
 
 // Docker Desktop only shares the project checkout, so the short-lived secret
@@ -1148,7 +1149,7 @@ const actions = {
         context: environment.DOCKER_CONTEXT, images: bridge.images, acquisition: "borrowed-local", builds: 0, pulls: 0,
       });
     }
-    if ((stages.includes("deployment_lifecycle") || stages.includes("deployment_lifecycle_current")) && environment.TEMPO_LIFECYCLE_P0_59_ONLY !== "1"
+    if (stages.includes("deployment_lifecycle") && environment.TEMPO_LIFECYCLE_P0_59_ONLY !== "1"
       && !environment.TEMPO_LIFECYCLE_SCHEMA61_IMAGES) {
       const context = spawnSync("docker", ["context", "show"], { encoding: "utf8", env: environment, timeout: 15_000 });
       assert.equal(context.status, 0, "Cannot select historical image Docker context");
@@ -1285,7 +1286,7 @@ const actions = {
       "/source/database/tests/check_postgres_background_diagnostics.py"]);
   },
   deployment_lifecycle_current: async () => {
-    await verifyTempoCliLifecycle({ project, environment, revision: candidateRevision, profile: "current63",
+    await verifyTempoCliLifecycle({ project, environment, revision: candidateRevision, profile: "current65",
       composeFiles: [join(process.cwd(), "docker-compose.postgres.test.yml"), resourceLimits, buildLabels], measure: measureScenario });
   },
   deployment_lifecycle: async () => {

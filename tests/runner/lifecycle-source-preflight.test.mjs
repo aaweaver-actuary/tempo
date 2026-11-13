@@ -4,7 +4,49 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
-import { assertBridgePreparedBinding, assertBridgeTargetIdentity, checkLifecycleSource, readSchema62Bridge, schema62BridgeRevision, schema62BridgeTree, renderInterruptedLifecycle } from "../../scripts/lifecycle-source-preflight.mjs";
+import { assertBridgePreparedBinding, assertBridgeTargetIdentity, checkLifecycleSource, readSchema62Bridge, schema62BridgeRevision, schema62BridgeTree, readSchema65Baseline, schema65BaselineRevision, schema65BaselineTree, renderInterruptedLifecycle } from "../../scripts/lifecycle-source-preflight.mjs";
+
+test("schema65 baseline requires exact detached source and complete immutable image roles", t => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "tempo-schema65-source-")));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, "database/tempo_storage/ddl"), { recursive: true });
+  writeFileSync(join(root, "database/tempo_storage/ddl/schema_version.py"), "POSTGRES_SCHEMA_VERSION = 65\n");
+  const file = join(root, "images.json"), roles = ["schema", "api", "foreground-worker", "background-worker", "background-scheduler", "web", "migration"];
+  const manifest = { version: 1, kind: "local-seed", revision: schema65BaselineRevision, tree: schema65BaselineTree, platform: "linux/arm64", images: Object.fromEntries(roles.map(role => [role, `sha256:${"a".repeat(64)}`])), provenance: { source_root: root, metadata: { backend: {}, web: {}, migration: {} } } };
+  mkdirSync(join(root, "backend"));
+  for (const file of ["backend/Dockerfile", "Dockerfile.web", "Dockerfile.postgres-maintenance"]) writeFileSync(join(root, file), "FROM example\n");
+  for (const name of ["backend", "web", "migration"]) writeFileSync(join(root, `${name}-build.json`), "{}");
+  const environment = { TEMPO_LIFECYCLE_SCHEMA65_ROOT: root, TEMPO_LIFECYCLE_SCHEMA65_IMAGES: file };
+  const runGit = (_command, args) => ({ status: 0, stdout: args.includes("HEAD^{tree}") ? schema65BaselineTree : args.includes("HEAD") ? schema65BaselineRevision : args.includes("worktree") ? `worktree ${root}\nHEAD ${schema65BaselineRevision}\ndetached\n` : "" });
+  writeFileSync(file, JSON.stringify(manifest));
+  const options = { runGit, verifyBuildMaterials: () => ({}) };
+  assert.equal(readSchema65Baseline(environment, options).root, root);
+  for (const change of [{ revision: "bad" }, { tree: "bad" }, { images: { ...manifest.images, api: "sha256:" + "b".repeat(64) } }, { images: {} }]) {
+    writeFileSync(file, JSON.stringify({ ...manifest, ...change }));
+    assert.throws(() => readSchema65Baseline(environment, options), /manifest/);
+  }
+  writeFileSync(file, JSON.stringify(manifest));
+  assert.throws(() => readSchema65Baseline(environment, { runGit, verifyBuildMaterials: () => ({ unexpected: "digest" }) }), /build materials differ/);
+  rmSync(join(root, "backend-build.json"));
+  assert.throws(() => readSchema65Baseline(environment, options), /build metadata is unavailable/);
+  assert.throws(() => readSchema65Baseline({ ...environment, DOCKER_HOST: "override" }, { runGit }), /without overrides/);
+  assert.throws(() => readSchema65Baseline(environment, { runGit: () => ({ status: 0, stdout: "wrong" }) }), /stale or dirty/);
+});
+
+test("current65 source refuses wrong schema and historical overrides before reading baseline", t => {
+  const root = mkdtempSync(join(tmpdir(), "tempo-current65-preflight-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const ddl = join(root, "database/tempo_storage/ddl"); mkdirSync(ddl, { recursive: true });
+  const path = join(ddl, "schema_version.py");
+  for (const version of [63, 65, 67]) {
+    writeFileSync(path, `POSTGRES_SCHEMA_VERSION = ${version}\n`);
+    assert.throws(() => checkLifecycleSource({ root, profile: "current65", environment: {} }), /candidate schema 66/);
+  }
+  writeFileSync(path, "POSTGRES_SCHEMA_VERSION = 66\n");
+  for (const name of ["TEMPO_LIFECYCLE_P0_59_ONLY", "TEMPO_PG_STALE_DELIVERY_ONLY", "TEMPO_LIFECYCLE_MANAGED_REHEARSAL", "TEMPO_LIFECYCLE_SHIPPING_REHEARSAL", "TEMPO_LIFECYCLE_SCHEMA62_ROOT", "TEMPO_LIFECYCLE_SCHEMA61_IMAGES"])
+    assert.throws(() => checkLifecycleSource({ root, profile: "current65", environment: { [name]: "1" } }), /without historical/);
+  assert.throws(() => checkLifecycleSource({ root, profile: "current65", environment: {} }), /absolute source and image/);
+});
 
 const revision = "4aa0ad1b731402365c1b866a6ba7bed484d2b6ac";
 test("lifecycle preflight parses rendered interruption harness before resources", () => {
