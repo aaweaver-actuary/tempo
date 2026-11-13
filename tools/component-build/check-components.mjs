@@ -159,32 +159,37 @@ export function validateCompositionOwnership(manifest, paths) {
   if (new Set(declared).size !== declared.length || declared.length !== paths.length || declared.some(path => !paths.includes(path))) throw new Error("Composition inventory contains duplicate or untracked source");
 }
 
-// Named retained seams only. This is a selected source set, not a claim that
-// all backend/storage files have been classified or isolated.
-export const retainedBackendOwnerIds = ["backend-contracts", "study-next-core", "study-queue-composition", "study-queue-preparation", "study-next-storage", "study-position-issuance", "study-position-storage", "game-review-policy", "game-review-http", "game-review-storage"];
-export function retainedBackendPaths(root = repository) {
+// Scope predicates enumerate tracked inputs independently of ownership. The
+// component registry is the only mapping from an input to its owner.
+const censusPredicates = {
+  retained: path => /^(backend\/app\/(contracts|games)\/.*|backend\/app\/study\/(next_exercise|queue_serving|position_learning\/issuance)[^/]*|backend\/app\/product_composition\/study[^/]*|backend\/app\/services\/queue_next_card[^/]*|database\/tempo_storage\/study\/(next_exercise_reads|position_issued_plans)[^/]*|database\/tempo_storage\/game_review[^/]*)\.py$/.test(path),
+  review: path => /^(backend\/app\/(command_dispatch|command_gateway|review_commands)[^/]*|backend\/app\/services\/(learning_review_adapter|review_service|review_reconciliation)[^/]*|backend\/app\/study\/policy\/review_reconciliation[^/]*|database\/tempo_storage\/(commands\/receipts\/.*|study\/review\/.*|learning_bridge\/review[^/]*|controls\/review_reconciliation[^/]*|review_reconciliation[^/]*))\.py$/.test(path),
+  durable: path => /^(backend\/app\/services\/(durable_tasks|queue_refresh_wakeup)[^/]*|database\/tempo_storage\/(durable_tasks\/.*|controls\/claim_sql[^/]*))\.py$/.test(path),
+};
+export function censusPaths(scope, root = repository) {
+  const predicate = censusPredicates[scope];
+  if (!predicate) throw new Error("Unknown census scope: " + scope);
   const result = spawnSync("git", ["ls-files", "-z"], { cwd: root, encoding: "utf8" });
   if (result.error || result.status !== 0) throw new Error("Cannot enumerate tracked backend seams");
-  const exact = new Set([
-    "backend/app/study/next_exercise.py", "backend/app/study/queue_serving.py",
-    "backend/app/product_composition/study.py", "backend/app/services/queue_next_card.py",
-    "backend/app/study/position_learning/issuance.py", "database/tempo_storage/study/next_exercise_reads.py",
-    "database/tempo_storage/study/position_issued_plans.py", "database/tempo_storage/game_review.py",
-  ]);
-  return result.stdout.split("\0").filter(path => exact.has(path) ||
-    ((path.startsWith("backend/app/contracts/") || path.startsWith("backend/app/games/")) && path.endsWith(".py")));
+  return result.stdout.split("\0").filter(predicate);
 }
-export function validateRetainedBackendOwnership(manifest, paths) {
-  validateOwnedPaths(manifest, paths, retainedBackendOwnerIds);
-  const declared = manifest.components.filter(component => retainedBackendOwnerIds.includes(component.id)).flatMap(component => component.ownedFiles ?? []);
-  if (new Set(declared).size !== declared.length || declared.length !== paths.length || declared.some(path => !paths.includes(path))) throw new Error("Retained backend seam inventory contains duplicate or untracked source");
+export function validateCensusOwnership(manifest, scope, paths) {
+  const scoped = manifest.components.filter(component => component.censusScope === scope);
+  if (!scoped.length) throw new Error("Census scope lacks owners: " + scope);
+  const all = manifest.components.filter(component => component.status === "mapped" && component.ownedFiles);
+  for (const path of paths) {
+    const owners = all.filter(component => component.ownedFiles.includes(path));
+    if (owners.length !== 1 || owners[0].censusScope !== scope) throw new Error(`Expected one scoped owner for ${path}; found ${owners.length}`);
+  }
+  const declared = scoped.flatMap(component => component.ownedFiles ?? []);
+  if (new Set(declared).size !== declared.length || declared.length !== paths.length || declared.some(path => !paths.includes(path))) throw new Error("Census inventory contains duplicate or untracked source");
 }
-export function validateRetainedBackendInterfaces(manifest, root = repository, python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3", ownerIds = retainedBackendOwnerIds) {
-  const owners = manifest.components.filter(component => ownerIds.includes(component.id));
-  if (owners.length !== ownerIds.length || owners.some(owner => !owner.publicExports?.length)) throw new Error("Retained backend owner lacks named interfaces");
+export function validateCensusInterfaces(manifest, scope, root = repository, python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3") {
+  const owners = manifest.components.filter(component => component.censusScope === scope);
+  if (!owners.length || owners.some(owner => !owner.publicExports?.length)) throw new Error("Census owner lacks named interfaces");
   const references = owners.flatMap(owner => owner.publicExports.map(value => {
     const parts = value.split("#");
-    if (parts.length !== 2 || !owner.ownedFiles?.includes(parts[0]) || parts[0].split("/").some(part => !part || part === "." || part === "..") || !inside(resolve(root), resolve(root, parts[0])) || !/^[A-Za-z_][A-Za-z_0-9]*$/.test(parts[1])) throw new Error("Invalid retained interface: " + value);
+    if (parts.length !== 2 || !owner.ownedFiles?.includes(parts[0]) || parts[0].split("/").some(part => !part || part === "." || part === "..") || !inside(resolve(root), resolve(root, parts[0])) || !/^[A-Za-z_][A-Za-z_0-9]*$/.test(parts[1])) throw new Error("Invalid census interface: " + value);
     return { path: parts[0], symbol: parts[1] };
   }));
   const code = `import ast,json,pathlib,sys
@@ -192,23 +197,9 @@ root=pathlib.Path(sys.argv[1])
 for ref in json.loads(sys.argv[2]):
  tree=ast.parse((root/ref["path"]).read_text(),filename=ref["path"])
  names={node.name for node in tree.body if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef,ast.ClassDef))}
- if ref["symbol"] not in names: raise SystemExit("Missing retained interface: "+ref["path"]+"#"+ref["symbol"])`;
+ if ref["symbol"] not in names: raise SystemExit("Missing census interface: "+ref["path"]+"#"+ref["symbol"])`;
   const result = spawnSync(python, ["-c", code, root, JSON.stringify(references)], { encoding: "utf8" });
   if (result.error || result.status !== 0) throw new Error(result.error?.message ?? result.stdout + result.stderr);
-}
-
-// Selected review/command seams only; this is not a backend-wide inventory.
-export const reviewCommandOwnerIds = ["backend-command-dispatch", "backend-command-gateway", "operation-receipt-storage", "study-review-command", "study-review-adapter", "study-review-scheduling", "study-review-reconciliation", "study-review-bridge-storage", "study-review-storage", "study-review-reconciliation-storage", "study-review-savepoint-storage"];
-export const reviewCommandFiles = ["backend/app/command_dispatch.py", "backend/app/command_gateway.py", "database/tempo_storage/commands/receipts/storage.py", "backend/app/review_commands.py", "backend/app/services/learning_review_adapter.py", "backend/app/services/review_service.py", "backend/app/services/review_reconciliation.py", "backend/app/study/policy/review_reconciliation.py", "database/tempo_storage/learning_bridge/review.py", "database/tempo_storage/study/review/storage.py", "database/tempo_storage/review_reconciliation.py", "database/tempo_storage/controls/review_reconciliation.py"];
-export function reviewCommandPaths(root = repository) {
-  const result = spawnSync("git", ["ls-files", "-z"], { cwd: root, encoding: "utf8" });
-  if (result.error || result.status !== 0) throw new Error("Cannot enumerate tracked review seams");
-  return result.stdout.split("\0").filter(path => reviewCommandFiles.includes(path));
-}
-export function validateReviewCommandOwnership(manifest, paths) {
-  validateOwnedPaths(manifest, paths, [...retainedBackendOwnerIds, ...reviewCommandOwnerIds]);
-  const declared = manifest.components.filter(component => reviewCommandOwnerIds.includes(component.id)).flatMap(component => component.ownedFiles ?? []);
-  if (new Set(declared).size !== declared.length || declared.length !== paths.length || declared.some(path => !paths.includes(path))) throw new Error("Review seam inventory contains duplicate or untracked source");
 }
 
 export function checkComponents(root = repository, python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3", options = {}) {
@@ -216,10 +207,10 @@ export function checkComponents(root = repository, python = process.env.TEMPO_CO
   const selected = selectComponents(manifest, options.componentIds);
   if (root === repository && options.componentIds === undefined) {
     validateCompositionOwnership(manifest, compositionPaths(root));
-    validateRetainedBackendOwnership(manifest, retainedBackendPaths(root));
-    validateRetainedBackendInterfaces(manifest, root, python);
-    validateReviewCommandOwnership(manifest, reviewCommandPaths(root));
-    validateRetainedBackendInterfaces(manifest, root, python, reviewCommandOwnerIds);
+    for (const scope of Object.keys(censusPredicates)) {
+      validateCensusOwnership(manifest, scope, censusPaths(scope, root));
+      validateCensusInterfaces(manifest, scope, root, python);
+    }
   }
   validateManifest(manifest, root, { componentIds: selected.map(component => component.id), suiteIds: options.componentIds === undefined ? manifest.suites?.map(suite => suite.id) : undefined });
   const results = [];

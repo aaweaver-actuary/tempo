@@ -4,7 +4,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync,
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { checkComponents, repository, validateManifest, compositionPaths, validateCompositionOwnership, retainedBackendPaths, validateRetainedBackendOwnership, validateRetainedBackendInterfaces, reviewCommandOwnerIds, reviewCommandPaths, validateReviewCommandOwnership } from "../check-components.mjs";
+import { checkComponents, repository, validateManifest, compositionPaths, validateCompositionOwnership, censusPaths, validateCensusOwnership, validateCensusInterfaces } from "../check-components.mjs";
 import { validateOwnedPaths, selectComponents } from "../selection.mjs";
 
 const python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3.12";
@@ -49,71 +49,54 @@ test("T02 mapped composition rejects unowned, duplicate and untracked files", ()
   stale.components.find(item => item.id === "study-web").ownedFiles.push("app/not-tracked.tsx");
   assert.throws(() => validateCompositionOwnership(stale, paths), /untracked source/);
 });
-test("T02 selected backend seams have exact owners and source-backed entrypoints", () => {
-  const paths = retainedBackendPaths(repository);
-  assert.equal(paths.length, 37);
-  assert.ok(paths.includes("backend/app/study/next_exercise.py"));
-  assert.ok(paths.includes("database/tempo_storage/study/next_exercise_reads.py"));
-  validateRetainedBackendOwnership(original, paths);
-  validateRetainedBackendInterfaces(original, repository, python);
-  for (const id of ["study-next-core", "study-next-storage", "study-position-issuance", "study-position-storage", "game-review-http"]) {
-    const owner = original.components.find(item => item.id === id);
-    assert.equal(owner.status, "mapped"); assert.equal(owner.artifact, null);
-    assert.throws(() => selectComponents(original, [id]), /mapped, not implemented/);
-  }
-});
-test("T02 discovers a newly tracked unowned backend contract", context => {
-  const root = mkdtempSync(join(tmpdir(), "tempo-backend-map-"));
-  context.after(() => rmSync(root, { recursive: true, force: true }));
-  assert.equal(spawnSync("git", ["init", "-q", root]).status, 0);
-  mkdirSync(join(root, "backend/app/contracts"), { recursive: true });
-  writeFileSync(join(root, "backend/app/contracts/new_contract.py"), "class NewContract: pass\n");
-  assert.equal(spawnSync("git", ["-C", root, "add", "backend/app/contracts/new_contract.py"]).status, 0);
-  const paths = retainedBackendPaths(root);
-  assert.deepEqual(paths, ["backend/app/contracts/new_contract.py"]);
-  assert.throws(() => validateRetainedBackendOwnership(original, paths), /found 0/);
-});
-test("T02 backend seam guards reject unowned, overlap, stale and false entrypoint claims", () => {
-  const paths = retainedBackendPaths(repository);
-  assert.throws(() => validateRetainedBackendOwnership(original, [...paths, "backend/app/contracts/new_tracked_contract.py"]), /found 0/);
-  const overlap = structuredClone(original);
-  overlap.components.find(item => item.id === "study-next-storage").ownedFiles.push("backend/app/study/next_exercise.py");
-  assert.throws(() => validateRetainedBackendOwnership(overlap, paths), /found 2/);
-  const stale = structuredClone(original);
-  stale.components.find(item => item.id === "study-next-storage").ownedFiles.push("database/tempo_storage/study/not_tracked.py");
-  assert.throws(() => validateRetainedBackendOwnership(stale, paths), /untracked source/);
-  const empty = structuredClone(original);
-  empty.components.find(item => item.id === "study-next-core").publicExports = [];
-  assert.throws(() => validateRetainedBackendInterfaces(empty, repository, python), /lacks named interfaces/);
-  const falseInterface = structuredClone(original);
-  falseInterface.components.find(item => item.id === "study-next-core").publicExports.push("backend/app/study/next_exercise.py#not_an_entrypoint");
-  assert.throws(() => validateRetainedBackendInterfaces(falseInterface, repository, python), /Missing retained interface/);
-  const escaping = structuredClone(original);
-  const escapedOwner = escaping.components.find(item => item.id === "study-next-core");
-  escapedOwner.ownedFiles.push("../outside.py");
-  escapedOwner.publicExports.push("../outside.py#read");
-  assert.throws(() => validateRetainedBackendInterfaces(escaping, repository, python), /Invalid retained interface/);
-});
-test("T02 selected review command seams retain exact owners and named interfaces", () => {
-  const paths = reviewCommandPaths(repository);
-  assert.equal(paths.length, 12);
-  validateReviewCommandOwnership(original, paths);
-  validateRetainedBackendInterfaces(original, repository, python, reviewCommandOwnerIds);
-  for (const id of reviewCommandOwnerIds) assert.throws(() => selectComponents(original, [id]), /mapped, not implemented/);
-});
-test("T02 review command scope rejects unowned, overlapping, stale and false interfaces", () => {
-  const paths = reviewCommandPaths(repository);
-  assert.throws(() => validateReviewCommandOwnership(original, [...paths, "backend/app/unowned-review.py"]), /found 0/);
-  const overlap = structuredClone(original);
-  overlap.components.find(item => item.id === "backend-contracts").ownedFiles.push(paths[0]);
-  assert.throws(() => validateReviewCommandOwnership(overlap, paths), /found 2/);
-  const stale = structuredClone(original);
-  stale.components.find(item => item.id === "study-review-command").ownedFiles.push("backend/app/untracked-review.py");
-  assert.throws(() => validateReviewCommandOwnership(stale, paths), /untracked source/);
-  const wrong = structuredClone(original);
-  wrong.components.find(item => item.id === "study-review-command").publicExports.push("backend/app/review_commands.py#missing");
-  assert.throws(() => validateRetainedBackendInterfaces(wrong, repository, python, reviewCommandOwnerIds), /Missing retained interface/);
-});
+for (const [scope, expected] of [["retained", 37], ["review", 14], ["durable", 5]]) {
+  test(`T02 ${scope} census derives ownership and entrypoints from registry`, () => {
+    const paths = censusPaths(scope, repository);
+    assert.equal(paths.length, expected);
+    validateCensusOwnership(original, scope, paths);
+    validateCensusInterfaces(original, scope, repository, python);
+    for (const owner of original.components.filter(item => item.censusScope === scope))
+      assert.throws(() => selectComponents(original, [owner.id]), /mapped, not implemented/);
+  });
+  test(`T02 ${scope} census rejects unowned, overlap, stale and false interface`, () => {
+    const paths = censusPaths(scope, repository);
+    const unowned = structuredClone(original);
+    const owner = unowned.components.find(item => item.ownedFiles?.includes(paths[0]));
+    owner.ownedFiles = owner.ownedFiles.filter(path => path !== paths[0]);
+    assert.throws(() => validateCensusOwnership(unowned, scope, paths), /found 0/);
+    const overlap = structuredClone(original);
+    overlap.components.find(item => item.status === "mapped" && item.id !== owner.id).ownedFiles.push(paths[0]);
+    assert.throws(() => validateCensusOwnership(overlap, scope, paths), /found 2/);
+    const stale = structuredClone(original);
+    stale.components.find(item => item.id === owner.id).ownedFiles.push("backend/app/untracked-task.py");
+    assert.throws(() => validateCensusOwnership(stale, scope, paths), /untracked source/);
+    const empty = structuredClone(original);
+    empty.components.find(item => item.censusScope === scope).publicExports = [];
+    assert.throws(() => validateCensusInterfaces(empty, scope, repository, python), /lacks named interfaces/);
+    const escaping = structuredClone(original);
+    const escapedOwner = escaping.components.find(item => item.censusScope === scope);
+    escapedOwner.ownedFiles.push("../outside.py");
+    escapedOwner.publicExports.push("../outside.py#read");
+    assert.throws(() => validateCensusInterfaces(escaping, scope, repository, python), /Invalid census interface/);
+    const wrong = structuredClone(original);
+    const target = wrong.components.find(item => item.censusScope === scope);
+    target.publicExports.push(target.ownedFiles[0] + "#missing");
+    assert.throws(() => validateCensusInterfaces(wrong, scope, repository, python), /Missing census interface/);
+  });
+}
+for (const [scope, path] of [["retained", "backend/app/contracts/new_contract.py"], ["review", "database/tempo_storage/study/review/new_storage.py"], ["durable", "database/tempo_storage/durable_tasks/new_task.py"]]) {
+  test(`T02 discovers newly tracked ${scope} sibling without an owner`, context => {
+    const root = mkdtempSync(join(tmpdir(), "tempo-census-map-"));
+    context.after(() => rmSync(root, { recursive: true, force: true }));
+    assert.equal(spawnSync("git", ["init", "-q", root]).status, 0);
+    mkdirSync(join(root, path, ".."), { recursive: true });
+    writeFileSync(join(root, path), "pass\n");
+    assert.equal(spawnSync("git", ["-C", root, "add", path]).status, 0);
+    const paths = censusPaths(scope, root);
+    assert.deepEqual(paths, [path]);
+    assert.throws(() => validateCensusOwnership(original, scope, paths), /found 0/);
+  });
+}
 test("Learning review registers its actual application, tooling and native suites", () => {
   const componentIds = ["learning-review-application"];
   validateManifest(original, repository, { componentIds });

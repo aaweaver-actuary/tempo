@@ -148,6 +148,14 @@
             "items": {
               "type": "string"
             }
+          },
+          "censusScope": {
+            "type": "string",
+            "enum": [
+              "retained",
+              "review",
+              "durable"
+            ]
           }
         }
       }
