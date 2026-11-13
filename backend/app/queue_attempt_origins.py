@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 
 from tempo_storage.lifecycle import queue_attempt_origins as storage
 from tempo_storage.lifecycle.queue_attempt_origins import (
-    retain_recovered_completion,
+    retain_recovered_completion as retain_recovered_completion,
 )
 
 
