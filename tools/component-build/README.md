@@ -327,8 +327,15 @@ also consumed by command gateway, activity commands, and tasks. `main.py` reads
 task storage and the task service directly. These are observed source edges, not
 a complete runtime dependency or isolation proof.
 
-At this base revision, 235 of 291 tracked Python files in those trees remain
-outside the combined 56-file selections. The registry alone assigns owners;
+A fourth selection maps two Study calendar files: the explicit instant and zone
+conversion policy and the caller-transaction capture adapter. The latter reads
+the configured zone through the existing multi-purpose queue storage owner and
+fails closed if that setting is absent. Commands and other consumers remain
+outside this selected map; this records existing dependencies rather than a new
+ownership boundary.
+
+At this base revision, 233 of 291 tracked Python files in those trees remain
+outside the combined 58-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover
