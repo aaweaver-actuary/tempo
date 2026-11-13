@@ -43,7 +43,7 @@ def latest_review_id(database, card_id, valid_only):
 def retain_introduction(database: postgres.PostgresConnection, queue_day: str, card_id: str) -> None:
     database.execute('UPDATE cards SET introduced_at=COALESCE(introduced_at,%s) WHERE id=%s', (queue_day, card_id))
 
-def has_later_review(database, card_id, reviewed_at):
+def has_later_review(database: postgres.PostgresConnection, card_id: str, reviewed_at: str) -> bool:
     return database.execute('SELECT id FROM reviews WHERE card_id=%s AND invalidated_at IS NULL AND reviewed_at>%s LIMIT 1', (card_id, reviewed_at)).fetchone() is not None
 
 def restore_receipt_outcome(database: postgres.PostgresConnection, outcome: str, guided: int, attempt_id: str | None) -> None:
@@ -64,7 +64,7 @@ def complete_first_attempt(database: postgres.PostgresConnection, day: str, card
 def mark_clean_tactic(database: postgres.PostgresConnection, reviewed_at: str, card_id: str) -> None:
     database.execute('UPDATE tactic_progress SET clean_pass_at=COALESCE(clean_pass_at,%s) WHERE card_id=%s', (reviewed_at, card_id))
 
-def insert_receipt(database, attempt_id, card_id, entry_id, outcome, guided, completed_at, review_id, scheduling_status, warning, result_json):
+def insert_receipt(database: postgres.PostgresConnection, attempt_id: str | None, card_id: str, entry_id: int | None, outcome: str, guided: int, completed_at: str | None, review_id: int | None, scheduling_status: str, warning: str | None, result_json: str) -> None:
     database.execute('INSERT INTO review_attempt_receipts(attempt_id,card_id,queue_entry_id,outcome,guided,completed_at,review_id,scheduling_status,warning,result_json) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)', (attempt_id, card_id, entry_id, outcome, guided, completed_at, review_id, scheduling_status, warning, result_json))
 
 def retain_completion(database: postgres.PostgresConnection, result_json: str, entry_id: int, card_id: str) -> None:
