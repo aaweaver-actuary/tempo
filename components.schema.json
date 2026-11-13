@@ -169,7 +169,8 @@
               "canonical_prefix",
               "repertoire_changes",
               "card_branch_edits",
-              "repertoire_controls"
+              "repertoire_controls",
+              "tactics"
             ]
           }
         }

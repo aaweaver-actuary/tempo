@@ -431,8 +431,16 @@ within the caller transaction. Task/main composition, transport, calendar and
 queue consumers remain external. This is a source map, not native qualification.
 The three PGN, three legacy and one retained mutation fixture failures remain open.
 
-At this base revision, 177 of 291 tracked Python files in those trees remain
-outside the combined 114-file selections. The registry alone assigns owners;
+A nineteenth selection maps Tactics capture, attempt, activation and catalog
+services and SQL. Capture replay binds the original capture ID and request to its
+receipt; attempt storage retains its supplied identity. Existing Study admission
+and queue placement own scheduling, while Tactics supplies capture and catalog
+facts. Assets, calendar, queue locks and task/main composition remain visible
+edges. This source map is not native or runtime qualification. The three PGN,
+three legacy and one retained mutation fixture failures remain unresolved.
+
+At this base revision, 168 of 291 tracked Python files in those trees remain
+outside the combined 123-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover

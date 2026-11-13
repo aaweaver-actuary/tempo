@@ -2,6 +2,275 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "tactics-command",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/tactic_commands.py#create_tactic_capture",
+        "backend/app/tactic_commands.py#submit_tactic_attempt",
+        "backend/app/tactic_commands.py#set_tactic_activation"
+      ],
+      "dependencies": [
+        "backend-command-gateway",
+        "tactics-capture-composition",
+        "tactics-catalog-service",
+        "tactics-attempt-storage",
+        "tactics-daily-admission",
+        "study-calendar-capture"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/tactic_commands.py"
+      ],
+      "ownershipRole": "Register and apply Tactics commands",
+      "dependencyNotes": [
+        "Task composition imports three capture, attempt and activation registrations. Uses Tactics transport, Study queue placement and refresh, queue position locks, card identity and caller transaction; original supplied attempt IDs are replayed."
+      ],
+      "censusScope": "tactics"
+    },
+    {
+      "id": "tactics-catalog-service",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/tactical_catalog.py#catalog",
+        "backend/app/services/tactical_catalog.py#catalog_status",
+        "backend/app/services/tactical_catalog.py#activate",
+        "backend/app/services/tactical_catalog.py#seed_tactical_introductions"
+      ],
+      "dependencies": [
+        "tactics-catalog-storage",
+        "tactics-daily-admission",
+        "study-calendar-capture"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/tactical_catalog.py"
+      ],
+      "ownershipRole": "Read Tactics catalog and seed introductions",
+      "dependencyNotes": [
+        "Uses cached packaged catalog/pack assets and puzzle validation, caller database and daily admission; queue application invokes introduction seeding and main consumes catalog projections."
+      ],
+      "censusScope": "tactics"
+    },
+    {
+      "id": "tactics-capture-service",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/tactic_capture.py#game_capture_id",
+        "backend/app/services/tactic_capture.py#validate_tactic_line",
+        "backend/app/services/tactic_capture.py#capture_tactic"
+      ],
+      "dependencies": [
+        "tactics-capture-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/tactic_capture.py"
+      ],
+      "ownershipRole": "Validate and record tactic captures",
+      "dependencyNotes": [
+        "Uses python-chess, Tactics contracts and injected Study admission in caller transaction; locks and replays exact capture ID/request receipt before admission."
+      ],
+      "censusScope": "tactics"
+    },
+    {
+      "id": "tactics-capture-composition",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/product_composition",
+      "publicExports": [
+        "backend/app/product_composition/tactic_capture.py#BorrowedCaptureStorage",
+        "backend/app/product_composition/tactic_capture.py#capture_tactic"
+      ],
+      "dependencies": [
+        "tactics-capture-service",
+        "tactics-daily-admission",
+        "study-calendar-capture"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/product_composition/tactic_capture.py"
+      ],
+      "ownershipRole": "Bind capture to Study admission",
+      "dependencyNotes": [
+        "Injects existing Study captured-tactic admission and queue placement using borrowed Study storage in caller transaction; Study owns queue admission and scheduling."
+      ],
+      "censusScope": "tactics"
+    },
+    {
+      "id": "tactics-attempt-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/tactics",
+      "publicExports": [
+        "database/tempo_storage/tactics/attempts.py#lock_puzzle_attempt",
+        "database/tempo_storage/tactics/attempts.py#attempt_receipt",
+        "database/tempo_storage/tactics/attempts.py#save_attempt_receipt",
+        "database/tempo_storage/tactics/attempts.py#save_progress"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/tactics/attempts.py",
+        "database/tempo_storage/tactics/__init__.py"
+      ],
+      "ownershipRole": "Persist tactic attempts and progress",
+      "dependencyNotes": [
+        "Caller-transaction SQL locks puzzle and card, reads and saves original attempt receipts, progress and admission facts; application owns attempt decisions."
+      ],
+      "censusScope": "tactics"
+    },
+    {
+      "id": "tactics-capture-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/tactics",
+      "publicExports": [
+        "database/tempo_storage/tactics/captures.py#lock_capture",
+        "database/tempo_storage/tactics/captures.py#capture_receipt",
+        "database/tempo_storage/tactics/captures.py#save_capture_receipt"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/tactics/captures.py"
+      ],
+      "ownershipRole": "Persist tactic capture receipts",
+      "dependencyNotes": [
+        "Caller-transaction SQL locks capture identity and reads/writes request and result receipt; capture service owns validation and replay decisions."
+      ],
+      "censusScope": "tactics"
+    },
+    {
+      "id": "tactics-catalog-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/tactics",
+      "publicExports": [
+        "database/tempo_storage/tactics/catalog.py#active_pack_rows",
+        "database/tempo_storage/tactics/catalog.py#set_activation",
+        "database/tempo_storage/tactics/catalog.py#create_introduction_card",
+        "database/tempo_storage/tactics/catalog.py#append_queue_entry"
+      ],
+      "dependencies": [
+        "tactics-attempt-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/tactics/catalog.py"
+      ],
+      "ownershipRole": "Persist Tactics catalog and introduction facts",
+      "dependencyNotes": [
+        "Caller-transaction SQL reads activation/progress, creates introduction cards and queue entries and advances rotation; application owns selection and admission policy."
+      ],
+      "censusScope": "tactics"
+    },
+    {
+      "id": "tactics-daily-admission",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage",
+      "publicExports": [
+        "database/tempo_storage/tactic_admission.py#count_daily_tactic_introductions",
+        "database/tempo_storage/tactic_admission.py#lock_daily_tactic_admission"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/tactic_admission.py"
+      ],
+      "ownershipRole": "Lock and count daily tactic admission",
+      "dependencyNotes": [
+        "Caller-transaction SQL takes per-day advisory lock and counts active introduced tactic cards; Study admission and Tactics callers own decisions."
+      ],
+      "censusScope": "tactics"
+    },
+    {
       "id": "repertoire-control-command",
       "type": "integration",
       "maintainer": "Tempo",
