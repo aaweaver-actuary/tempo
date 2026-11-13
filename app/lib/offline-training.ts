@@ -1,4 +1,4 @@
-import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy } from "./study-connection";
+import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy, defaultStudyClient } from "./study-connection";
 import { confirmOriginalOperationResponse, FailedOperationError } from "./operation-status";
 import { queueRecordWithCompatibleOpeningEvidence } from "../domain/adapters/practice-card-adapters";
 import { queueCardSchema, queueEnvelopeSchema } from "../domain/schemas";
@@ -259,13 +259,53 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
       hold(attempt, "The computer did not issue a repeat for this saved parent review.");
       continue;
     }
-    // The retained review receipt gives the new entry ID, but not its cycle.
-    // A locally guessed parent+1 cycle is not proof of the server-issued origin.
+    let repeatBinding = attempt.repeatBinding;
     if (parent && attempt.studyId && attempt.exerciseId) {
-      hold(attempt, "The computer's repeat cycle is not proven for this saved exercise.");
-      continue;
+      if (!parent.attemptId || parent.studyId !== attempt.studyId || parent.exerciseId !== attempt.exerciseId ||
+          parent.cardId !== attempt.cardId || !parent.serverReviewId || !parent.serverRepeatEntryId) {
+        hold(attempt, "The original review and saved repeat do not have a proven shared identity.");
+        continue;
+      }
+      const generation = defaultStudyClient.generation;
+      const origin = defaultStudyClient.origin;
+      const authority = defaultStudyClient.studyWorkspace();
+      const stillBound = () => defaultStudyClient.generation === generation && defaultStudyClient.origin === origin && defaultStudyClient.studyWorkspace() === authority;
+      const matches = (value: OfflineAttempt["repeatBinding"]) => value && value.authority === authority &&
+        value.parentAttemptId === parent.attemptId && value.reviewId === parent.serverReviewId &&
+        value.entryId === parent.serverRepeatEntryId && value.cardId === attempt.cardId && value.revision === attempt.expectedRevision &&
+        Number.isSafeInteger(value.cycle) && value.cycle >= 0;
+      if (!repeatBinding) {
+        try {
+          const endpoint = `${origin}/api/studies/${encodeURIComponent(attempt.studyId)}/exercises/${encodeURIComponent(attempt.exerciseId)}/attempts/${encodeURIComponent(parent.attemptId)}/requeue`;
+          const response = await fetch(endpoint, { signal: AbortSignal.timeout(5_000) });
+          if (!response.ok || !stillBound()) throw new Error("Original repeat unavailable");
+          const value = await response.json() as Record<string, unknown>;
+          if (!stillBound()) throw new Error("Original authority changed");
+          const candidate = { authority, parentAttemptId: value.parent_attempt_id, reviewId: value.review_id,
+            entryId: value.queue_entry_id, cardId: value.card_id, cycle: value.cycle, revision: value.revision } as OfflineAttempt["repeatBinding"];
+          if (!matches(candidate)) throw new Error("Original repeat identity differs");
+          current = await updatePreparedTraining((saved) => {
+            const child = saved?.attempts.find((item) => item.localEntryId === attempt.localEntryId);
+            const savedParent = saved?.attempts.find((item) => item.localEntryId === parent.localEntryId);
+            if (!stillBound() || !child || JSON.stringify(child) !== JSON.stringify(attempt) ||
+                !savedParent || JSON.stringify(savedParent) !== JSON.stringify(parent))
+              throw new Error("Saved repeat changed before binding");
+            return { ...saved!, attempts: saved!.attempts.map((item) => item.localEntryId === attempt.localEntryId ? { ...item, repeatBinding: candidate } : item) };
+          });
+          if (!stillBound()) throw new Error("Original authority changed");
+          repeatBinding = candidate;
+        } catch (error) {
+          if (!stillBound()) throw new OfflineReplayError("Study authority changed while resolving the original repeat.", "queue repeat identity", { cause: error });
+          hold(attempt, "The computer's original repeat identity is unavailable; the saved answer is retained.");
+          continue;
+        }
+      }
+      if (!matches(repeatBinding) || !stillBound()) {
+        hold(attempt, "The saved repeat is bound to a different original authority or review.");
+        continue;
+      }
     }
-    const serverEntryId = parent?.serverRepeatEntryId ?? parent?.serverEntryId ?? attempt.localEntryId;
+    const serverEntryId = repeatBinding?.entryId ?? parent?.serverRepeatEntryId ?? parent?.serverEntryId ?? attempt.localEntryId;
     const expectedReviewId = parent?.serverReviewId ?? attempt.expectedReviewId;
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 5_000);
@@ -281,7 +321,7 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
             "Idempotency-Key": `phone-study:${attempt.attemptId}` }, signal: controller.signal,
           body: JSON.stringify({ attempt_id: attempt.attemptId, revision: attempt.expectedRevision,
             answer: attempt.answer, context: "review", card_id: attempt.cardId,
-            queue_entry_id: serverEntryId, queue_cycle: attempt.queueCycle ?? 0,
+            queue_entry_id: serverEntryId, queue_cycle: repeatBinding?.cycle ?? attempt.queueCycle ?? 0,
             expected_review_id: expectedReviewId, hint_seen: attempt.guided }),
         });
         response = await confirmOriginalOperationResponse(response, `phone-study:${attempt.attemptId}`, { signal: controller.signal, requireReceiptIdentity: true });
@@ -364,7 +404,7 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
             "Idempotency-Key": `phone-assessment:${attempt.attemptId}` },
           body: JSON.stringify({ rating: attempt.selfRating }),
         });
-        assessed = await confirmOriginalOperationResponse(assessed, `phone-assessment:${attempt.attemptId}`);
+        assessed = await confirmOriginalOperationResponse(assessed, `phone-assessment:${attempt.attemptId}`, { requireReceiptIdentity: true });
       } catch (error) {
         throw new OfflineReplayError(`Could not sync study self-assessment. ${String(error)}`, assessmentEndpoint, { cause: error });
       }

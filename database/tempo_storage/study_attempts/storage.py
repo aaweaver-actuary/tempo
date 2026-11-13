@@ -272,3 +272,39 @@ def issued_review_source_state(database, exercise_id, card_id, entry_id, cycle, 
 def study_is_active(database, study_id):
     row = database.execute('SELECT archived FROM studies WHERE id=%s', (study_id,)).fetchone()
     return row is not None and row[0] == 0
+
+
+def completed_review_requeue(database, study_id, exercise_id, attempt_id):
+    """Read an exact finalized parent and its current queued repeat; never issue."""
+    import json
+
+    parent = database.execute(
+        """SELECT a.id,a.card_id,a.revision,a.result_json
+           FROM study_attempts a JOIN study_exercises e ON e.id=a.exercise_id
+           WHERE a.id=%s AND a.exercise_id=%s AND e.study_id=%s
+             AND a.context='review' AND a.finalized_at IS NOT NULL""",
+        (attempt_id, exercise_id, study_id),
+    ).fetchone()
+    if not parent or not parent['result_json']:
+        return None
+    try:
+        result = json.loads(parent['result_json'])
+        review = result['review']
+        entry_id, review_id = review['requeue_entry_id'], review['review_id']
+        if (result['attempt_id'] != attempt_id or result['persisted'] is not True or
+            type(entry_id) is not int or entry_id <= 0 or type(review_id) is not int or review_id <= 0):
+            return None
+    except (TypeError, ValueError, KeyError):
+        return None
+    entry = database.execute(
+        """SELECT q.id,q.card_id,q.cycle,c.revision
+           FROM daily_queue q JOIN cards c ON c.id=q.card_id
+           WHERE q.id=%s AND q.card_id=%s AND q.status='queued'
+             AND c.revision=%s AND c.study_exercise_id=%s""",
+        (entry_id, parent['card_id'], parent['revision'], exercise_id),
+    ).fetchone()
+    if not entry:
+        return None
+    return {'parent_attempt_id': attempt_id, 'review_id': review_id,
+            'queue_entry_id': entry['id'], 'card_id': entry['card_id'],
+            'cycle': entry['cycle'], 'revision': entry['revision']}

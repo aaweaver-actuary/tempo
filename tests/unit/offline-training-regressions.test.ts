@@ -229,3 +229,97 @@ it.each(['terminal', 'terminal_false', 'foreign', 'missing', 'pending', 'retryab
     expect(calls[0].body).not.toContain('gradingProvenance');
   } finally { vi.unstubAllGlobals(); vi.restoreAllMocks(); }
 });
+
+it.each(['missing', 'foreign', 'own'] as const)('C24 self-assessment receipt %s cannot settle another identity', async (receipt) => {
+  const { vi } = await import('vitest'); const { openingEvidenceStorage } = await import('../fixtures/opening-evidence-storage');
+  const browserStorage = localStorage; const storage = await openingEvidenceStorage(); vi.stubGlobal('localStorage', browserStorage);
+  const attempt = { localEntryId: 1, cardId: 'study-card', outcome: 'correct', guided: false, completedAt: '2026-09-26T12:05:00Z', expectedReviewId: 0, expectedRevision: 1, studyId: 'study', exerciseId: 'exercise', attemptId: 'original', answer: { type: 'explanation', text: 'answer', ready: true }, selfRating: 'correct' };
+  storage.stores.training.set('prepared-daily-queue', { localDate: '2026-09-26', preparedAt: attempt.completedAt, cards: [], nextTemporaryId: 100, attempts: [attempt] });
+  const calls: { url: string; key: string | null; body: string }[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input); calls.push({ url, key: new Headers(init?.headers).get('Idempotency-Key'), body: String(init?.body) });
+    if (url.includes('/api/operations/')) return Response.json({ ...(receipt === 'missing' ? {} : { operation_id: receipt === 'foreign' ? 'foreign' : 'phone-assessment:original' }), state: 'complete', response: { attempt_id: 'original', assessment: { outcome: 'needs_self_assessment', feedback: 'compare' }, rating: 'correct', requested_rating: 'correct', persisted: true, review: { review_id: 42, requeue_entry_id: null } } });
+    if (url.includes('/self-assess')) return Response.json({ operation_id: 'phone-assessment:original', state: 'queued' }, { status: 202 });
+    return Response.json({ attempt_id: 'original', assessment: { outcome: 'needs_self_assessment', feedback: 'compare' }, pending_self_assessment: true });
+  }));
+  try {
+    const offline = await import('../../app/lib/offline-training');
+    if (receipt === 'own') {
+      const result = await offline.replayOfflineAttempts(); expect(result?.attempts[0]).toMatchObject({ ...attempt, serverReviewId: 42 });
+    } else {
+      await expect(offline.replayOfflineAttempts()).rejects.toThrow();
+      expect((await offline.readPreparedTraining())?.attempts).toEqual([{ ...attempt, serverAssessment: { outcome: 'needs_self_assessment', feedback: 'compare' } }]);
+    }
+    const child = calls.find(call => call.url.includes('/self-assess'))!;
+    expect(child.key).toBe('phone-assessment:original'); expect(JSON.parse(child.body)).toEqual({ rating: 'correct' });
+  } finally { vi.unstubAllGlobals(); vi.restoreAllMocks(); }
+});
+
+it('C24 recovers an unavailable repeat with the actual nonconsecutive cycle and stable child request', async () => {
+  const { vi } = await import('vitest'); const { openingEvidenceStorage } = await import('../fixtures/opening-evidence-storage');
+  const browserStorage = localStorage; const storage = await openingEvidenceStorage(); vi.stubGlobal('localStorage', browserStorage);
+  const base = { cardId: 'card', outcome: 'correct', guided: false, completedAt: '2026-09-26T12:05:00Z', expectedReviewId: 0, expectedRevision: 1, studyId: 'study', exerciseId: 'exercise', answer: { type: 'choice', option_ids: ['a'] } } as const;
+  const parent = { ...base, localEntryId: 1, attemptId: 'parent', serverReviewId: 41, serverAcknowledged: true, serverRepeatEntryId: 77 };
+  const child = { ...base, localEntryId: 2, parentLocalEntryId: 1, attemptId: 'child', queueCycle: 1 };
+  const other = { localEntryId: 3, cardId: 'opening', outcome: 'correct', guided: false, completedAt: base.completedAt, expectedReviewId: 0, expectedRevision: 1, attemptId: 'opening-original' };
+  storage.stores.training.set('prepared-daily-queue', { localDate: '2026-09-26', preparedAt: base.completedAt, cards: [], nextTemporaryId: 100, attempts: [parent, child, other] });
+  let available = false, lost = true; const sends: string[] = []; let reads = 0;
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes('/requeue')) { reads++; return available ? Response.json({ parent_attempt_id: 'parent', review_id: 41, queue_entry_id: 77, card_id: 'card', cycle: 4, revision: 1 }) : new Response(null, { status: 404 }); }
+    if (url.includes('/cards/opening/')) return Response.json({ review_id: 43, requeue_entry_id: null });
+    sends.push(String(init?.body)); if (lost) { lost = false; throw new Error('lost acknowledgment'); }
+    return Response.json({ attempt_id: 'child', assessment: { outcome: 'correct', feedback: 'ok' }, rating: 'correct', requested_rating: 'correct', persisted: true, review: { review_id: 42, requeue_entry_id: null } });
+  }));
+  try {
+    const offline = await import('../../app/lib/offline-training'); const first = await offline.replayOfflineAttempts();
+    expect(first?.attempts[1]).toEqual(child); expect(first?.attempts[2]).toMatchObject({ serverReviewId: 43 });
+    available = true; await expect(offline.replayOfflineAttempts()).rejects.toThrow('lost acknowledgment');
+    const retained = (await offline.readPreparedTraining())!.attempts[1];
+    expect(retained).toMatchObject({ ...child, repeatBinding: { parentAttemptId: 'parent', reviewId: 41, entryId: 77, cycle: 4, cardId: 'card', revision: 1 } });
+    const done = await offline.replayOfflineAttempts(); expect(done?.attempts[1]).toMatchObject({ serverReviewId: 42 });
+    expect(reads).toBe(2); expect(sends).toHaveLength(2); expect(sends[0]).toBe(sends[1]);
+    expect(JSON.parse(sends[0])).toMatchObject({ attempt_id: 'child', queue_entry_id: 77, queue_cycle: 4, expected_review_id: 41, answer: child.answer });
+  } finally { vi.unstubAllGlobals(); vi.restoreAllMocks(); }
+});
+
+it.each(['parent', 'review', 'entry', 'card', 'revision', 'cycle'] as const)('C24 refuses a repeat owner response with foreign %s', async (fault) => {
+  const { vi } = await import('vitest'); const { openingEvidenceStorage } = await import('../fixtures/opening-evidence-storage');
+  const browserStorage = localStorage; const storage = await openingEvidenceStorage(); vi.stubGlobal('localStorage', browserStorage);
+  const base = { cardId: 'card', outcome: 'correct', guided: false, completedAt: '2026-09-26T12:05:00Z', expectedReviewId: 0, expectedRevision: 1, studyId: 'study', exerciseId: 'exercise', answer: { type: 'choice', option_ids: ['a'] } } as const;
+  const parent = { ...base, localEntryId: 1, attemptId: 'parent', serverReviewId: 41, serverAcknowledged: true, serverRepeatEntryId: 77 };
+  const child = { ...base, localEntryId: 2, parentLocalEntryId: 1, attemptId: 'child', queueCycle: 1 };
+  const other = { localEntryId: 3, cardId: 'opening', outcome: 'correct', guided: false, completedAt: base.completedAt, expectedReviewId: 0, expectedRevision: 1, attemptId: 'opening-original' };
+  storage.stores.training.set('prepared-daily-queue', { localDate: '2026-09-26', preparedAt: base.completedAt, cards: [], nextTemporaryId: 100, attempts: [parent, child, other] });
+  const owner: Record<string, unknown> = { parent_attempt_id: 'parent', review_id: 41, queue_entry_id: 77, card_id: 'card', cycle: 4, revision: 1 };
+  const changes = { parent: ['parent_attempt_id', 'foreign'], review: ['review_id', 42], entry: ['queue_entry_id', 78], card: ['card_id', 'foreign'], revision: ['revision', 2], cycle: ['cycle', -1] } as const;
+  const [key, value] = changes[fault]; owner[key] = value; const calls: string[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => { const url = String(input); calls.push(url);
+    if (url.includes('/requeue')) return Response.json(owner);
+    if (url.includes('/cards/opening/')) return Response.json({ review_id: 43, requeue_entry_id: null });
+    throw new Error(`unexpected ${url}`);
+  }));
+  try { const result = await (await import('../../app/lib/offline-training')).replayOfflineAttempts();
+    expect(result?.attempts[1]).toEqual(child); expect(result?.attempts[2]).toMatchObject({ serverReviewId: 43 });
+    expect(calls).toHaveLength(2); expect(calls.some(url => url.endsWith('/attempts'))).toBe(false);
+  } finally { vi.unstubAllGlobals(); vi.restoreAllMocks(); }
+});
+
+it('C24 holds the original repeat across an authority change during owner read', async () => {
+  const { vi } = await import('vitest'); const { openingEvidenceStorage } = await import('../fixtures/opening-evidence-storage');
+  const browserStorage = localStorage; const storage = await openingEvidenceStorage(); vi.stubGlobal('localStorage', browserStorage);
+  const base = { cardId: 'card', outcome: 'correct', guided: false, completedAt: '2026-09-26T12:05:00Z', expectedReviewId: 0, expectedRevision: 1, studyId: 'study', exerciseId: 'exercise', answer: { type: 'choice', option_ids: ['a'] } } as const;
+  const parent = { ...base, localEntryId: 1, attemptId: 'parent', serverReviewId: 41, serverAcknowledged: true, serverRepeatEntryId: 77 };
+  const child = { ...base, localEntryId: 2, parentLocalEntryId: 1, attemptId: 'child', queueCycle: 1 };
+  storage.stores.training.set('prepared-daily-queue', { localDate: '2026-09-26', preparedAt: base.completedAt, cards: [], nextTemporaryId: 100, attempts: [parent, child] });
+  let resolve!: (value: Response) => void; let started!: () => void;
+  const waiting = new Promise<void>(done => { started = done; });
+  const fetcher = vi.fn(() => { started(); return new Promise<Response>(done => { resolve = done; }); }); vi.stubGlobal('fetch', fetcher);
+  try {
+    const offline = await import('../../app/lib/offline-training'); const connection = await import('../../app/lib/study-connection');
+    const pending = offline.replayOfflineAttempts(); await waiting; connection.defaultStudyClient.disconnectStudy();
+    resolve(Response.json({ parent_attempt_id: 'parent', review_id: 41, queue_entry_id: 77, card_id: 'card', cycle: 4, revision: 1 }));
+    await expect(pending).rejects.toThrow('authority changed');
+    expect((await offline.readPreparedTraining())?.attempts).toEqual([parent, child]); expect(fetcher).toHaveBeenCalledOnce();
+  } finally { vi.unstubAllGlobals(); vi.restoreAllMocks(); }
+});
