@@ -2576,7 +2576,9 @@
         "queue-ordering-facade",
         "tactics-catalog-service",
         "durable-task-application",
-        "opening-progression-storage"
+        "opening-progression-storage",
+        "opening-admission-policy",
+        "opening-admission-adapter"
       ],
       "buildInputs": [],
       "buildCommand": null,
@@ -8383,6 +8385,125 @@
         "Computes bounded supplied-input prioritized admissions and expansion proposals; existing queue admission, capacity service and main consumers remain outside census. Mapping does not decide disputed capacity behavior."
       ],
       "censusScope": "opening_kernels"
+    },
+    {
+      "id": "opening-admission-policy",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/queue_admission.py#OpeningCapacityRoutePayload",
+        "backend/app/services/queue_admission.py#AdmittedOpeningProposal",
+        "backend/app/services/queue_admission.py#OpeningCandidateFacts",
+        "backend/app/services/queue_admission.py#UnseenOpeningFacts",
+        "backend/app/services/queue_admission.py#OpeningCandidatePage",
+        "backend/app/services/queue_admission.py#IntroductionCountPage",
+        "backend/app/services/queue_admission.py#QueueAdmissionStore",
+        "backend/app/services/queue_admission.py#read_opening_candidates",
+        "backend/app/services/queue_admission.py#read_introduction_counts",
+        "backend/app/services/queue_admission.py#reconcile_unseen_queue",
+        "backend/app/services/queue_admission.py#plan_opening_admissions",
+        "backend/app/services/queue_admission.py#admit_prioritized_opening_cards",
+        "backend/app/services/queue_admission.py#remaining_opening_allowances",
+        "backend/app/services/queue_admission.py#propose_capacity_expansion_from_priority_rows",
+        "backend/app/services/queue_admission.py#capacity_proposal_payload",
+        "backend/app/services/queue_admission.py#plan_frozen_with_capacity"
+      ],
+      "dependencies": [
+        "opening-capacity-frontier"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/queue_admission.py"
+      ],
+      "ownershipRole": "Plan existing opening admissions",
+      "dependencyNotes": [
+        "Consumes bounded supplied candidate facts and frontier proposals; this maps current policy without deciding disputed capacity behavior."
+      ],
+      "censusScope": "opening_admission"
+    },
+    {
+      "id": "opening-capacity-adapter",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/opening_capacity_admission.py#capacity_expansion_enabled",
+        "backend/app/services/opening_capacity_admission.py#read_capacity_routes",
+        "backend/app/services/opening_capacity_admission.py#capacity_routes_from_rows",
+        "backend/app/services/opening_capacity_admission.py#capacity_route_still_valid"
+      ],
+      "dependencies": [
+        "opening-capacity-frontier",
+        "opening-admission-policy",
+        "queue-refresh-capacity-storage",
+        "study-mode-policy"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/opening_capacity_admission.py"
+      ],
+      "ownershipRole": "Read and revalidate capacity routes",
+      "dependencyNotes": [
+        "Reads bounded route facts and revalidates existing feature, Study-only and route fences; compatibility exports refer to admission policy."
+      ],
+      "censusScope": "opening_admission"
+    },
+    {
+      "id": "opening-admission-adapter",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/queue_admission_adapter.py#QueueAdmissionAdapter"
+      ],
+      "dependencies": [
+        "opening-admission-policy",
+        "opening-capacity-adapter",
+        "frozen-order-composition",
+        "queue-application-admission-storage",
+        "study-mode-policy"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/queue_admission_adapter.py"
+      ],
+      "ownershipRole": "Adapt borrowed queue admission storage",
+      "dependencyNotes": [
+        "Uses caller connection, bounded pages, frozen-order and capacity fences and existing storage operations; creates no transaction.",
+        "Imports private storage _PRIORITY_OPENING_CANDIDATE_BODY; queue_application re-exports this compatibility escape to main. This is not a clean public boundary."
+      ],
+      "censusScope": "opening_admission"
     }
   ],
   "suites": [

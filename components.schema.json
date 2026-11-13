@@ -201,7 +201,8 @@
               "opening_progression",
               "puzzle_helpers",
               "lifecycle_projection",
-              "opening_kernels"
+              "opening_kernels",
+              "opening_admission"
             ]
           }
         }
