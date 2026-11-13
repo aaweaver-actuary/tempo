@@ -4,6 +4,14 @@ import { resolve } from "node:path";
 export function readManifest(root) {
   return JSON.parse(readFileSync(resolve(root, "components.json"), "utf8"));
 }
+// Apply the registry to a caller-supplied finite source set; no second owner map.
+export function validateOwnedPaths(manifest, paths, ownerIds) {
+  const owners = manifest.components.filter(component => ownerIds.includes(component.id));
+  for (const path of paths) {
+    const matched = owners.filter(owner => owner.ownedFiles ? owner.ownedFiles.includes(path) : path === owner.root || path.startsWith(owner.root + "/"));
+    if (matched.length !== 1) throw new Error(`Expected one owner for ${path}; found ${matched.length}`);
+  }
+}
 export function parseSelection(argumentsList) {
   const options = { positional: [] };
   for (let index = 0; index < argumentsList.length; index++) {
@@ -27,7 +35,7 @@ export function selectComponents(manifest, componentIds, defaults) {
   function include(id) {
     const component = manifest.components.find(candidate => candidate.id === id);
     if (!component) throw new Error("Unknown component: " + id);
-    if (component.status !== "implemented") throw new Error("Component is planned, not implemented: " + id);
+    if (component.status !== "implemented") throw new Error("Component is " + component.status + ", not implemented: " + id);
     if (selected.has(id)) return;
     selected.set(id, component);
     for (const dependency of component.dependencies) {

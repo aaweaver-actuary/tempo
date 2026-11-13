@@ -8,7 +8,6 @@ import re
 import pytest
 
 from app.services import queue_application
-from app.services.legacy_game_evidence_scope import BRIDGE_MISS_REASON
 from tempo_storage.queue_refresh import reads
 
 
@@ -71,7 +70,7 @@ def test_study_query_preparation_captures_route_identity_before_read_callbacks(
 
     monkeypatch.setattr(reads, "read_connection", snapshot)
     assert read_last() == []
-    size = 8 if frozen_active else 6
+    size = 7 if frozen_active else 6
     after, upper = tuple(range(size)), tuple(range(10, 10 + size))
     assert read_page(after, upper, 16) == []
     assert len(statements) == 2
@@ -108,7 +107,7 @@ def test_ordered_opening_occurrences_use_closed_snapshot_readers_with_original_c
         lambda *args, **kwargs: pytest.fail("occurrences must use snapshot reader"),
     )
     last, page = reads.study_opening_queries(frozen_active)
-    size = 8 if frozen_active else 6
+    size = 7 if frozen_active else 6
     after, upper = tuple(range(size)), tuple(range(10, 10 + size))
     assert last() == [("result",)]
     assert page(after, upper, 16) == [("result",)]
@@ -165,331 +164,51 @@ def _priority_presentation_row(number, reason, **values):
     )
 
 
-def _presentation_reader(rows, *, owed=(), reviewed=(), eligible=(), failure=None):
+def _presentation_reader(rows, *, reviewed=(), eligible=()):
     calls = []
 
     def read(statement, parameters=()):
         assert not re.match(r"\s*(INSERT|UPDATE|DELETE)\b", statement, re.IGNORECASE)
         calls.append((statement, parameters))
-        if "FROM study_game_feedback" in statement:
-            if failure is not None:
-                raise failure
-            return [(identity,) for identity in owed if identity in parameters]
         if statement.startswith("SELECT q.id,q.card_id"):
             return rows
         if statement.startswith("SELECT DISTINCT card_id FROM reviews"):
             return [(identity,) for identity in reviewed]
+        if statement.startswith("SELECT presentation_id FROM study_recombination_presentations"):
+            return []
         return [(identity,) for identity in eligible]
 
     return read, calls
 
 
-def _ready_priority_capability(monkeypatch, identities):
-    # This suite owns bounded-reader plumbing. The native #622 owner case proves
-    # the real ready/reset receipt query; a pending receipt alone is not ready.
-    from tempo_storage.study import game_feedback
-
-    def ready(database, requested, *, read=None, include_regrouped=False):
-        assert database is None and callable(read)
-        return {
-            identity: dict(
-                urgent_stream="forward",
-                urgent_determined_at="2026-10-28T00:00:00Z",
-                urgent_effect_id="effect-" + identity,
-            )
-            for identity in identities
-            if identity in requested
-        }
-
-    monkeypatch.setattr(game_feedback, "feedback_queue_priorities", ready)
-
-
-def test_game_priority_bounded_presentation_keeps_owed_labels_without_connection(
-    monkeypatch,
-):
-    monkeypatch.setattr(reads.postgres, "configured", lambda: False)
-    _ready_priority_capability(monkeypatch, ("card-1", "card-2"))
-    rows = [
-        _priority_presentation_row(1, "product_game_lapse"),
-        _priority_presentation_row(2, "product_game_encounter", cycle=1),
-        _priority_presentation_row(3, None, admission_kind="explicit"),
-    ]
-    reader, calls = _presentation_reader(
-        rows, owed=("card-1", "card-2"), reviewed=("card-1",), eligible=(1, 2)
-    )
-    result = queue_application.presentation_rows(
-        None, "2026-10-28", read=reader, after_entry_id=0, limit=16
-    )
-    assert [row["id"] for row in result] == [1, 2, 3]
-    assert [row["card_id"] for row in result] == ["card-1", "card-2", "card-3"]
-    assert [row["gameplay_priority_reason"] for row in result] == [
-        "product_game_lapse",
-        "product_game_encounter",
-        None,
-    ]
-    assert [row["admission_kind"] for row in result] == ["review", "review", "explicit"]
-    assert [row["eligible"] for row in result] == [True, True, False]
-    assert [row["position"] for row in result] == [1, 2, 3]
-    assert result[2] == {**rows[2], "eligible": False}
-    assert result[0]["urgent_stream"] == result[1]["urgent_stream"] == "forward"
-    owed_calls = [(sql, ids) for sql, ids in calls if "FROM study_game_feedback" in sql]
-    assert len(owed_calls) == 1 and owed_calls[0][1] == ("card-1", "card-2")
-    assert "?" in owed_calls[0][0] and all(
-        identity not in owed_calls[0][0] for identity in ("card-1", "card-2")
-    )
-
-
-def test_game_priority_bounded_presentation_clears_only_unowed_labels(monkeypatch):
-    monkeypatch.setattr(reads.postgres, "configured", lambda: False)
-    _ready_priority_capability(monkeypatch, ("card-1", "card-2"))
-    rows = [
-        _priority_presentation_row(
-            number, "product_game_lapse" if number % 2 else "product_game_encounter"
-        )
-        for number in range(1, 16)
-    ]
-    for number, row in enumerate(rows):
-        row["card_id"] = f"card-{number % 4 + 1}"
-    rows.append(_priority_presentation_row(16, "unrelated-priority"))
-    reader, calls = _presentation_reader(
-        rows, owed=("card-1", "card-2"), eligible=range(1, 17)
-    )
-    result = queue_application.presentation_rows(
-        None, "2026-10-28", read=reader, limit=16
-    )
-    assert [row["id"] for row in result] == list(range(1, 17))
-    for original, projected in zip(rows[:-1], result[:-1]):
-        assert projected["gameplay_priority_reason"] == (
-            original["gameplay_priority_reason"]
-            if original["card_id"] in {"card-1", "card-2"}
-            else None
-        )
-    assert result[-1]["gameplay_priority_reason"] == "unrelated-priority"
-    owed_calls = [(sql, ids) for sql, ids in calls if "FROM study_game_feedback" in sql]
-    assert len(owed_calls) == 1 and owed_calls[0][1] == (
-        "card-1",
-        "card-2",
-        "card-3",
-        "card-4",
-    )
-    assert "status IN ('pending','applied')" in owed_calls[0][0]
-
-
-def test_owed_priority_only_receipt_is_not_ready_urgent_queue_authority(monkeypatch):
-    monkeypatch.setattr(reads.postgres, "configured", lambda: False)
-    _ready_priority_capability(monkeypatch, ())
-    rows = [_priority_presentation_row(1, "product_game_encounter")]
-    reader, _ = _presentation_reader(rows, owed=("card-1",), eligible=(1,))
-    (projected,) = queue_application.presentation_rows(
-        None, "2026-10-28", read=reader, limit=16
-    )
-    assert projected["eligible"] and projected["gameplay_priority_reason"] is None
-
-
-def test_game_priority_native_presentation_uses_borrowed_connection():
-    from tempo_storage.study.game_feedback import (
-        owed_feedback_card_ids,
-        has_owed_feedback,
-    )
-
-    calls = []
-    statuses = {
-        "pending-card": "pending",
-        "applied-card": "applied",
-        "settled-card": "settled",
-        "controlled-card": "held",
-    }
-
-    class Borrowed:
-        def execute_native(self, statement, parameters):
-            calls.append((statement, parameters))
-            assert "%s::text[]" in statement and "?" not in statement
-            assert "status IN ('pending','applied')" in statement
-            matched = [
-                (identity,)
-                for identity in parameters[0]
-                if statuses.get(identity) in {"pending", "applied"}
-            ]
-
-            class Cursor:
-                def fetchall(self):
-                    return matched
-
-            return Cursor()
-
-        def close(self):
-            pytest.fail("The helper must not close a borrowed connection")
-
-        def commit(self):
-            pytest.fail("The helper must not commit a borrowed connection")
-
-    borrowed = Borrowed()
-    ids = (
-        "pending-card",
-        "applied-card",
-        "pending-card",
-        "settled-card",
-        "controlled-card",
-        "absent-card",
-    )
-    assert owed_feedback_card_ids(borrowed, ids) == {"pending-card", "applied-card"}
-    assert len(calls) == 1 and calls[0][1] == (list(dict.fromkeys(ids)),)
-    assert has_owed_feedback(borrowed, "pending-card") and not has_owed_feedback(
-        borrowed, "settled-card"
-    )
-
-    def forbidden(*args):
-        pytest.fail("An empty batch must not perform a read")
-
-    assert owed_feedback_card_ids(None, (), read=forbidden) == set()
-    assert owed_feedback_card_ids(borrowed, ()) == set()
-    with pytest.raises(RuntimeError, match="borrowed connection or bounded reader"):
-        owed_feedback_card_ids(None, ("pending-card",))
-    reader, callback_calls = _presentation_reader([], owed=("pending-card",))
-    assert owed_feedback_card_ids(object(), ("pending-card",), read=reader) == {
-        "pending-card"
-    }
-    assert len(callback_calls) == 1
-
-
-def test_game_priority_lookup_failure_propagates_without_fabricating_settlement(
-    monkeypatch,
-):
-    from psycopg import OperationalError
-
-    monkeypatch.setattr(reads.postgres, "configured", lambda: False)
-    rows = [
-        _priority_presentation_row(1, "product_game_lapse"),
-        _priority_presentation_row(2, "product_game_encounter"),
-    ]
-    failure = OperationalError("owed-feedback-read-unavailable")
-    reader, calls = _presentation_reader(rows, failure=failure)
-    with pytest.raises(
-        OperationalError, match="owed-feedback-read-unavailable"
-    ) as error:
-        queue_application.presentation_rows(None, "2026-10-28", read=reader, limit=16)
-    assert error.value is failure
-    assert [row["gameplay_priority_reason"] for row in rows] == [
-        "product_game_lapse",
-        "product_game_encounter",
-    ]
-    assert sum("FROM study_game_feedback" in sql for sql, _ in calls) == 1
-
-
-@pytest.mark.parametrize("reason", [None, BRIDGE_MISS_REASON])
-def test_nonpriority_presentation_does_not_read_owed_feedback(monkeypatch, reason):
+@pytest.mark.parametrize("reason", [None, "historical-priority"])
+def test_nonpriority_presentation_keeps_row_and_inerts_historical_priority(monkeypatch, reason):
     monkeypatch.setattr(reads.postgres, "configured", lambda: False)
     rows = [_priority_presentation_row(1, reason)]
     reader, calls = _presentation_reader(rows, eligible=(1,))
     result = queue_application.presentation_rows(
         None, "2026-10-28", read=reader, limit=16
     )
-    assert result[0]["gameplay_priority_reason"] == reason and result[0]["eligible"]
+    assert result[0]["gameplay_priority_reason"] is None and result[0]["eligible"]
     assert not any("FROM study_game_feedback" in sql for sql, _ in calls)
 
 
-@pytest.mark.parametrize(
-    "lookup,expected_paths",
-    [
-        (
-            "ready",
-            {
-                ("owner", "progress", "target", "card_id"),
-                ("owner", "admission_status"),
-                ("owner", "progress"),
-            },
-        ),
-        (
-            "regrouped_ready",
-            {
-                ("owner", "progress", "target", "card_id"),
-                ("owner", "progress"),
-                ("finding", "repertoire_id"),
-                ("command", "finding", "repertoire_id"),
-                ("presentation", "repertoire_id"),
-                ("presentation", "presentation_id"),
-                ("presentation", "revision"),
-            },
-        ),
-        (
-            "regrouped",
-            {
-                ("presentation", "repertoire_id"),
-                ("finding", "repertoire_id"),
-                ("command", "finding", "repertoire_id"),
-                ("command", "decision", "repertoire_id"),
-            },
-        ),
-    ],
-)
-def test_feedback_priority_paths_survive_bounded_sql_translation(
-    lookup, expected_paths
-):
-    from sqlglot import exp, parse_one
-    from tempo_storage.postgres import postgres_sql
-    from tempo_storage.study.game_feedback import (
-        feedback_queue_priorities,
-        owed_feedback_card_ids,
-    )
-
-    statements = []
-
-    def bounded(statement, parameters):
-        statements.append(postgres_sql(statement))
-        assert parameters == (
-            ("card-1",) * (3 if lookup == "regrouped_ready" else 2)
-            if lookup in {"ready", "regrouped_ready"}
-            else ("card-1",)
-        )
-        return []
-
-    if lookup in {"ready", "regrouped_ready"}:
-        assert (
-            feedback_queue_priorities(
-                None,
-                ("card-1",),
-                read=bounded,
-                include_regrouped=lookup == "regrouped_ready",
-            )
-            == {}
-        )
-    else:
-        assert (
-            owed_feedback_card_ids(
-                None, ("card-1",), read=bounded, include_regrouped=True
-            )
-            == set()
-        )
-    assert len(statements) == 1
-
-    def path(node):
-        if not isinstance(node, (exp.JSONExtract, exp.JSONExtractScalar)):
-            return ()
-        return path(node.this) + tuple(
-            part.this
-            for part in node.expression.expressions
-            if isinstance(part, exp.JSONPathKey)
-        )
-
-    # Scalar terminal extraction also preserves SQL NULL for absent/JSON-null
-    # legacy progress; JSON object extraction would change that fallback.
-    scalar_paths = {
-        path(node)
-        for node in parse_one(statements[0], read="postgres").find_all(
-            exp.JSONExtractScalar
-        )
-    }
-    assert expected_paths <= scalar_paths, statements[0]
-    if lookup == "ready":
-        assert "study_recombination_" not in statements[0]
-    if lookup == "regrouped_ready":
-        tree = parse_one(statements[0], read="postgres")
-        assert len(list(tree.find_all(exp.Union))) == 1
-        assert not list(tree.find_all(exp.Min)) and not list(tree.find_all(exp.Limit))
-        assert not any(
-            isinstance(node, (exp.Insert, exp.Update, exp.Delete))
-            for node in tree.walk()
-        )
+def test_bounded_presentation_preserves_order_protection_and_ordinary_admissions(monkeypatch):
+    monkeypatch.setattr(reads.postgres, "configured", lambda: False)
+    rows = [_priority_presentation_row(1, None),
+            _priority_presentation_row(2, "historical-priority", cycle=1),
+            _priority_presentation_row(3, None, admission_kind="explicit")]
+    rows[0]["issued"] = True
+    rows[1]["presented"] = True
+    reader, calls = _presentation_reader(rows, reviewed=("card-1",), eligible=(1, 2))
+    result = queue_application.presentation_rows(None, "2026-10-28", read=reader, after_entry_id=0, limit=16)
+    assert [(row["id"], row["card_id"], row["position"]) for row in result] == [(1, "card-1", 1), (2, "card-2", 2), (3, "card-3", 3)]
+    assert [row["admission_kind"] for row in result] == ["review", "review", "explicit"]
+    assert [row["eligible"] for row in result] == [True, True, False]
+    assert result[0]["issued"] and result[1]["presented"]
+    assert all(row["gameplay_priority_reason"] is None for row in result)
+    assert len(calls) == 4 and all("study_game_feedback" not in sql for sql, _ in calls)
+    assert calls[0][1] == ("2026-10-28", 0, 16)
 
 
 def test_presentation_protection_sets_match_correlated_facts_with_historical_and_null_evidence(
@@ -547,8 +266,8 @@ def test_presentation_protection_sets_match_correlated_facts_with_historical_and
 
         def read(statement, parameters):
             if statement.startswith("SELECT q.id,q.card_id"):
-                return database.execute(statement, parameters).fetchall()
-            if statement.startswith("SELECT DISTINCT card_id FROM reviews"):
+                return database.execute(statement.replace("%s", "?"), parameters).fetchall()
+            if statement.startswith("SELECT DISTINCT card_id FROM reviews") or statement.startswith("SELECT presentation_id FROM study_recombination_presentations"):
                 return []
             return [(n,) for n in range(575)]
 

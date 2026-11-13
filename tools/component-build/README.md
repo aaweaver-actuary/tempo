@@ -1,18 +1,18 @@
 # Component build and discovery tools
 
 These are small validation entry points, not a dependency solver or replacement CI planner.
-`components.json` declares implemented artifacts and planned targets;
-`components.schema.json` describes its fields. Planned roots are not executable.
+`components.json` declares implemented artifacts, mapped composition owners and
+planned targets; `components.schema.json` describes its fields. Mapped and
+planned owners are not executable artifact selections.
 The Game Evidence contract is an implemented artifact; `catalog` references its
 existing contract catalog, which remains the authority for models, wire versions,
 schemas and owners. Registration does not establish production adoption.
 
 For implementation discovery, also inspect current package READMEs, public APIs
 and consumers using the [discovery guide](../../docs/architecture/component-reconstruction.md#discover-before-building).
-For example, `packages/board-ui` is a merged standalone package although its
-shared registry target remains planned; use its package-local instructions until
-registration is reconciled. Do not treat that status as permission to duplicate
-the implementation, or change it merely to make an executable selection pass.
+For example, `packages/board-ui` is an implemented package with a registered
+owner-local qualifier. A mapped composition is an ownership record, not a
+standalone artifact or permission to duplicate its implementation.
 
 ## Setup and commands
 
@@ -202,7 +202,7 @@ Use an environment containing installed tempo-scheduling, FSRS, pytest, import-l
 and grimp. No PostgreSQL proof is claimed by these pure/seam tests.
 
 Python public APIs are policy-enforced, not a language sandbox: `__all__` defines
-exports, consumers may import only the package root and declared names, and the
+exports, consumers may import the package root and declared names, and the
 validator rejects private/deferred imports. Python technically permits importing
 internal modules; the validation policy rejects that usage. Unresolved dynamic
 loaders are prohibited in the selected packages. Local transitive sources are all
@@ -250,3 +250,82 @@ undeclared namespaces remain errors. The regular
 negative controls; `tests/boundaries.test.mjs` retains the original guards.
 This checker correction changes no application API, packaging hook, schema,
 provider or runtime lifecycle.
+
+## Pure package owner qualification
+
+`board-ui` declares its package exports, React peer and published asset subpaths;
+`evidence-math` declares its root exports and the public
+`tempo_evidence_math.position_learning` module. The module declaration checks
+existence; it does not yet enforce Python consumer imports. Backend consumer
+boundary enforcement belongs to the later backend/storage ownership batch. Their tests select through
+`test-lane.mjs --component <id>`. Evidence-math's suite expects its wheel and
+locked test dependencies installed in the interpreter selected by
+`TEMPO_COMPONENT_PYTHON`.
+
+`restricted-build.mjs --component board-ui --component evidence-math REPORT`
+invokes each package's existing isolated qualifier from declared inputs and rejects
+missing, failed, skipped, or empty qualification evidence. Set `npm_config_cache`
+to a populated task-owned npm cache. For evidence-math provide
+`TEMPO_EVIDENCE_BUILD_PYTHON` (with its locked build dependencies),
+`TEMPO_EVIDENCE_PYTHON_312`, `TEMPO_EVIDENCE_PYTHON_314`, and
+`TEMPO_EVIDENCE_WHEELHOUSE` (all absolute paths). The package qualifier tests both
+wheel forms with both interpreters after removing producer sources. These package
+proofs do not establish browser acceptance, application assembly, or coverage of
+other runtime owners. Ownership reconciliation in this batch covers only tracked
+source files in these two packages; composition and backend/storage are later
+batches.
+
+## Browser and CLI composition map
+
+`study-web`, `tempo-cli`, and `integration` are **mapped**, not separately
+implemented artifacts. Their exact tracked `ownedFiles` record the browser application runtime, the local lifecycle command, and development/qualification tooling.
+The CLI depends on the integration owner for shared budget and timing helpers;
+that dependency does not transfer their ownership. These mappings expose no new
+package, deployment or public service and cannot be selected as restricted builds.
+
+The default checker compares the declared files with the tracked browser source, static entrypoints and assets, root executable configs, `tempo`
+launchers, direct scripts and component-build executable tooling. An added tracked
+source must be assigned once; duplicate, stale and unowned entries fail. Script test fixtures, backend/storage and remaining package ownership are
+outside this finite batch. Static-file assignment is an ownership map, not a
+data or asset qualification. This map does not by itself qualify browser behavior,
+CLI installation, or complete T02 runtime ownership.
+
+`affected.mjs` remains an independently tested pure planning utility over its
+own supplied snapshot format. It does not currently consume this registry or
+select production checks, and this batch does not adopt it as an authoritative
+planner. Its synthetic ownership rules are test inputs, not a second live map.
+
+## Retained backend seam map
+
+The next finite map records 37 tracked Python files across backend contracts,
+Study queue selection/composition and position issuance, their borrowed SQL
+adapters, and minimal Game Review. Named `path#symbol` entries are source
+navigation points, checked against Python AST without importing modules; they do
+not assert a frozen public package API. `mapped` continues to mean no standalone
+artifact or executable selection. Each entry records the observed effect boundary
+and selected dependencies; notes identify out-of-scope collaborators. The
+checker tests exact ownership only within this named set and fails unowned,
+overlapping, stale, or nonexistent named entrypoints.
+
+A second explicit selection maps 12 review and command files: dispatch, gateway,
+review command, adapter, scheduling and reconciliation, and their receipt,
+review and savepoint storage. The gateway spans multiple domains; dispatch imports
+Celery and the review command registers handlers at import. Review policy imports
+storage and scheduling, and review storage depends on queue-refresh presentation
+and admission. The existing legacy review adapter remains present. These are
+source facts, not claims of import purity or a complete dependency closure.
+
+This is not a whole-backend or storage ownership proof: at the base revision,
+242 of 291 tracked Python files in those trees remain outside the combined
+49-file selections. The T02 delivery owner should select and inspect the next
+coherent owners before expanding the map; exact-file selection does not discover
+new siblings automatically.
+Known existing edges remain visible rather than being called pure isolation:
+`study/queue_placement.py` imports the private service helper
+`queue_ordering._priority_queue_order`, `study/policy/review_reconciliation.py`
+imports storage and scheduling services, and `tempo_storage/commands/queue.py`
+imports the private queue-refresh projection SQL constant. These edges are not resolved by
+this map and this change neither authorizes nor performs their extraction. The
+current next-exercise main branch still has its existing untyped callbacks;
+unmerged B12/B13 are not represented as released. Native, browser, package and
+assembled behavior are not established by these source checks.

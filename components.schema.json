@@ -53,7 +53,8 @@
           "status": {
             "enum": [
               "planned",
-              "implemented"
+              "implemented",
+              "mapped"
             ]
           },
           "root": {
@@ -106,6 +107,47 @@
           "testInventory": {
             "type": "string",
             "minLength": 1
+          },
+          "qualification": {
+            "type": "string",
+            "enum": [
+              "board-ui",
+              "evidence-math"
+            ]
+          },
+          "peerDependencies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "publicSubpaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "publicModules": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ownedFiles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ownershipRole": {
+            "type": "string",
+            "minLength": 1
+          },
+          "dependencyNotes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       }
