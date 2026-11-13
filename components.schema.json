@@ -181,7 +181,8 @@
               "frozen_order",
               "queue_attempt_origin",
               "opening_evidence",
-              "position_first_response"
+              "position_first_response",
+              "position_grade_effect"
             ]
           }
         }

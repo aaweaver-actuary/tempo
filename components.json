@@ -2,6 +2,112 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "position-daily-credit-policy",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/study/position_learning",
+      "publicExports": [
+        "backend/app/study/position_learning/daily_credit.py#CurrentPositionState",
+        "backend/app/study/position_learning/daily_credit.py#AcceptedGradeReceipt",
+        "backend/app/study/position_learning/daily_credit.py#GradeAcceptance",
+        "backend/app/study/position_learning/daily_credit.py#accept_grade"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study/position_learning/daily_credit.py"
+      ],
+      "ownershipRole": "Accept position grade from supplied facts",
+      "dependencyNotes": [
+        "Pure reducer retains exact replay, first-response identity and one Good per Study day using caller-supplied authoritative receipts and state; no I/O, clock or scheduler."
+      ],
+      "censusScope": "position_grade_effect"
+    },
+    {
+      "id": "position-grade-effect-application",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/study/position_learning",
+      "publicExports": [
+        "backend/app/study/position_learning/grade_effects.py#CompletionAuthority",
+        "backend/app/study/position_learning/grade_effects.py#GradeReceipt",
+        "backend/app/study/position_learning/grade_effects.py#GradeEffectError",
+        "backend/app/study/position_learning/grade_effects.py#apply_in_borrowed_transaction"
+      ],
+      "dependencies": [
+        "position-daily-credit-policy",
+        "position-first-response-policy",
+        "position-first-response-codec",
+        "position-grade-effect-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study/position_learning/grade_effects.py"
+      ],
+      "ownershipRole": "Apply accepted position grade effects",
+      "dependencyNotes": [
+        "Uses original immutable issued plan and accepted events, completion authority, owner epoch and scheduling package in caller transaction; checkpoint and Learning review are existing consumers."
+      ],
+      "censusScope": "position_grade_effect"
+    },
+    {
+      "id": "position-grade-effect-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/study",
+      "publicExports": [
+        "database/tempo_storage/study/position_grade_effects.py#locked_owner",
+        "database/tempo_storage/study/position_grade_effects.py#locked_state",
+        "database/tempo_storage/study/position_grade_effects.py#issued_plan",
+        "database/tempo_storage/study/position_grade_effects.py#first_response",
+        "database/tempo_storage/study/position_grade_effects.py#saved_completion",
+        "database/tempo_storage/study/position_grade_effects.py#prior_grade",
+        "database/tempo_storage/study/position_grade_effects.py#daily_good_grades",
+        "database/tempo_storage/study/position_grade_effects.py#update_schedule",
+        "database/tempo_storage/study/position_grade_effects.py#insert_grade"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/study/position_grade_effects.py"
+      ],
+      "ownershipRole": "Persist position grade and schedule facts",
+      "dependencyNotes": [
+        "Caller-owned native transaction locks owner/state, reads original plan, evidence and canonical completion/grade receipts, then writes version-fenced schedule and grade; application owns decisions."
+      ],
+      "censusScope": "position_grade_effect"
+    },
+    {
       "id": "position-first-response-policy",
       "type": "integration",
       "maintainer": "Tempo",

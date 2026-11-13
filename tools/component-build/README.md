@@ -519,8 +519,14 @@ acceptance clock and caller-owned source/queue/owner fences remain visible. Grad
 ledger uniqueness and scheduling remain with their existing owner. This is a source
 map, not native proof; nineteen previously reported fixture failures remain open.
 
-At this base revision, 114 of 291 tracked Python files in those trees remain
-outside the combined 177-file selections. The registry alone assigns owners;
+A thirty-first selection maps position daily credit acceptance, borrowed-transaction
+grade effects and SQL. Existing original plan/event, owner epoch, completion receipt,
+one-Good-per-day and version-fenced schedule boundaries remain visible; checkpoint
+and Learning review are callers. This source map is not native qualification. The
+nineteen previously reported fixture failures remain unresolved.
+
+At this base revision, 111 of 291 tracked Python files in those trees remain
+outside the combined 180-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover
