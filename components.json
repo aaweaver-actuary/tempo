@@ -6048,7 +6048,9 @@
       ],
       "dependencies": [
         "integration",
-        "postgres-migration-tooling"
+        "postgres-migration-tooling",
+        "database-cli-backup-operations",
+        "database-cli-probes"
       ],
       "buildInputs": [],
       "buildCommand": null,
@@ -9048,6 +9050,75 @@
         "contracts/consumer-examples/src/consumer.test.ts#consumer-test",
         "contracts/consumer-examples/src/expectations.ts#consumer-expectations",
         "contracts/consumer-examples/src/semantics.ts#consumer-semantics"
+      ]
+    },
+    {
+      "id": "database-cli-backup-operations",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tooling/cli",
+      "publicExports": [
+        "database/tooling/cli/backup.mjs#createPostgresBackup",
+        "database/tooling/cli/backup.mjs#createBackupRestoreDatabase",
+        "database/tooling/cli/backup.mjs#restorePostgresBackup",
+        "database/tooling/cli/backup.mjs#removeBackupRestoreDatabase"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tooling/cli/backup.mjs"
+      ],
+      "ownershipRole": "cli-backup-operations",
+      "dependencyNotes": [
+        "Existing injected Compose calls perform dump, restore database creation, restore and removal; caller owns target, lifecycle, receipts and cleanup.",
+        "Source map only; importing these declarations does not run the supplied Compose operations."
+      ],
+      "resourceRoles": [
+        "database/tooling/cli/backup.mjs#cli-backup-operations"
+      ]
+    },
+    {
+      "id": "database-cli-probes",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tooling/cli",
+      "publicExports": [
+        "database/tooling/cli/probes.mjs#readMigrationLedger",
+        "database/tooling/cli/probes.mjs#probeDiagnosticRedis",
+        "database/tooling/cli/probes.mjs#probeLifecycleRedis"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tooling/cli/probes.mjs"
+      ],
+      "ownershipRole": "cli-diagnostic-probes",
+      "dependencyNotes": [
+        "Existing injected Compose calls read the ordered migration ledger or ping Redis; caller owns target, timing and classification.",
+        "Source map only; importing these declarations does not run the supplied Compose operations."
+      ],
+      "resourceRoles": [
+        "database/tooling/cli/probes.mjs#cli-diagnostic-probes"
       ]
     }
   ],

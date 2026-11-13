@@ -711,3 +711,12 @@ TypeScript files outside implemented package roots to tooling, tests, or the
 independent TypeScript consumer. The existing contract-exchange suite remains
 unchanged. This is source-role inventory and syntax inspection only; it does not
 execute tooling or establish artifact, runtime, native, or whole-repository coverage.
+
+## Fixed database CLI operation sources
+
+The database CLI backup and probe adapters are mapped separately with their
+existing exports. Backup and restore calls perform effects through caller-supplied
+Compose; probes read the migration ledger or ping Redis. The caller retains target
+selection, lifecycle ordering and cleanup. This source census neither performs
+those operations nor qualifies backup, native, runtime or installed behavior. Other
+database tooling and previously recorded fixture/test-selection gaps remain open.

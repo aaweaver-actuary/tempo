@@ -4,7 +4,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync,
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { checkComponents, repository, validateManifest, compositionPaths, validateCompositionOwnership, censusPaths, validateCensusOwnership, validateCensusInterfaces, validateStartupFacts, validateDdlResources, validateReductionTools, validateContractTooling } from "../check-components.mjs";
+import { checkComponents, repository, validateManifest, compositionPaths, validateCompositionOwnership, censusPaths, validateCensusOwnership, validateCensusInterfaces, validateStartupFacts, validateDdlResources, validateReductionTools, validateContractTooling, validateDatabaseCliTools } from "../check-components.mjs";
 import { validateOwnedPaths, selectComponents } from "../selection.mjs";
 import { validateMigrationInventory } from "../../../database/tooling/check-migration-inventory.mjs";
 
@@ -98,6 +98,41 @@ for (const [scope, path] of [["retained", "backend/app/contracts/new_contract.py
     assert.throws(() => validateCensusOwnership(original, scope, paths), /found 0/);
   });
 }
+test("T02 database CLI source owners reject missing, duplicate, stale, role, export and overlap", () => {
+  assert.deepEqual(validateDatabaseCliTools(original,repository),{sources:2});
+  const change=(fn)=>{const bad=structuredClone(original),owner=bad.components.find(c=>c.id==="database-cli-probes");fn(bad,owner);return bad;};
+  assert.throws(()=>validateDatabaseCliTools(change((_,o)=>o.ownedFiles.pop()),repository),/missing, duplicate or stale/);
+  assert.throws(()=>validateDatabaseCliTools(change((_,o)=>o.ownedFiles.push(o.ownedFiles[0])),repository),/missing, duplicate or stale/);
+  assert.throws(()=>validateDatabaseCliTools(change((_,o)=>o.ownedFiles[0]="../foreign.mjs"),repository),/missing, duplicate or stale/);
+  assert.throws(()=>validateDatabaseCliTools(change((_,o)=>o.resourceRoles[0]+="-wrong"),repository),/CLI role/);
+  assert.throws(()=>validateDatabaseCliTools(change((_,o)=>o.publicExports.pop()),repository),/interface mismatch/);
+  assert.throws(()=>validateDatabaseCliTools(change((b,o)=>b.components.find(c=>c.id==="integration").ownedFiles.push(o.ownedFiles[0])),repository),/overlapping/);
+  const revised=change((_,o)=>{const [p]=o.resourceRoles[0].split("#");o.resourceRoles[0]=p+"#cli-backup-operations";});
+  assert.deepEqual(validateDatabaseCliTools(revised,repository),{sources:2});
+});
+test("T02 database CLI guard parses JS without invoking operations and discovers siblings", context => {
+  const root=mkdtempSync(join(tmpdir(),"tempo-db-cli-source-"));context.after(()=>rmSync(root,{recursive:true,force:true}));
+  assert.equal(spawnSync("git",["-C",root,"init","-q"],{cwd:root}).status,0);
+  const files=original.components.filter(c=>["database-cli-probes","database-cli-backup-operations"].includes(c.id)).flatMap(c=>c.ownedFiles);
+  for(const file of files){mkdirSync(join(root,file,".."),{recursive:true});cpSync(join(repository,file),join(root,file));}
+  assert.equal(spawnSync("git",["-C",root,"add","database/tooling/cli"],{cwd:root}).status,0);
+  assert.deepEqual(validateDatabaseCliTools(original,root),{sources:2});
+  const target=join(root,files[0]);writeFileSync(target,"export function broken( {\n");
+  assert.throws(()=>validateDatabaseCliTools(original,root),/syntax invalid/);
+  writeFileSync(target,'throw new Error("must not execute");\n');
+  assert.throws(()=>validateDatabaseCliTools(original,root),/top-level effect/);cpSync(join(repository,files[0]),target);
+  const added="database/tooling/cli/extra.mjs";writeFileSync(join(root,added),"export function extra() {}\n");
+  assert.equal(spawnSync("git",["-C",root,"add",added],{cwd:root}).status,0);
+  assert.throws(()=>validateDatabaseCliTools(original,root),/missing, duplicate or stale/);
+  const registered=structuredClone(original),owner=registered.components.find(c=>c.id==="database-cli-probes");
+  owner.ownedFiles.push(added);owner.resourceRoles.push(added+"#cli-diagnostic-probes");owner.publicExports.push(added+"#extra");
+  assert.deepEqual(validateDatabaseCliTools(registered,root),{sources:3});
+  const jsx="database/tooling/cli/extra.jsx";writeFileSync(join(root,jsx),"export default null;\n");
+  assert.equal(spawnSync("git",["-C",root,"add",jsx],{cwd:root}).status,0);
+  assert.throws(()=>validateDatabaseCliTools(registered,root),/missing, duplicate or stale/);
+  owner.ownedFiles.push(jsx);owner.resourceRoles.push(jsx+"#cli-diagnostic-probes");owner.publicExports.push(jsx+"#default");
+  assert.throws(()=>validateDatabaseCliTools(registered,root),/Invalid or overlapping database CLI source/);
+});
 test("T02 historical reduction tools reject missing, duplicate, stale, role and overlap", () => {
   assert.deepEqual(validateReductionTools(original,repository,python),{files:3});
   const change=(fn)=>{const bad=structuredClone(original),owner=bad.components.find(c=>c.id==="historical-reduction-audit-tooling");fn(bad,owner);return bad;};
