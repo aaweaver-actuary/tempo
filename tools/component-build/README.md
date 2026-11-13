@@ -537,8 +537,14 @@ revision, admission identity and borrowed-writer checks remain visible; prepared
 claims do not authorize settlement or activate an owner. This source map is not
 native proof. Nineteen previously reported fixture failures remain unresolved.
 
-At this base revision, 100 of 291 tracked Python files in those trees remain
-outside the combined 191-file selections. The registry alone assigns owners;
+A thirty-fourth selection maps the Study captured-tactic admission interface,
+owner and borrowed storage. Study validates card identity and owns admission and
+queue placement; the Tactics capture owner retains the original receipt. Existing
+daily and queue locks and caller transaction remain visible. This source map is
+not native proof. Nineteen previously reported fixture failures remain unresolved.
+
+At this base revision, 97 of 291 tracked Python files in those trees remain
+outside the combined 194-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover

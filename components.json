@@ -2,6 +2,106 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "study-capture-interface",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/study/interfaces",
+      "publicExports": [
+        "backend/app/study/interfaces/captured_tactic.py#CaptureAdmissionResult",
+        "backend/app/study/interfaces/captured_tactic.py#CapturedTacticAdmission"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study/interfaces/captured_tactic.py"
+      ],
+      "ownershipRole": "Describe borrowed Study capture admission",
+      "dependencyNotes": [
+        "Typed capability consumes validated Tactics capture and returns card identity/admission facts; it does not own transaction or receipt."
+      ],
+      "censusScope": "captured_tactic"
+    },
+    {
+      "id": "study-capture-admission",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/study",
+      "publicExports": [
+        "backend/app/study/captured_tactic.py#CaptureCardFacts",
+        "backend/app/study/captured_tactic.py#CaptureAdmissionStorage",
+        "backend/app/study/captured_tactic.py#CapturedTacticAdmissionOwner"
+      ],
+      "dependencies": [
+        "study-capture-interface"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study/captured_tactic.py"
+      ],
+      "ownershipRole": "Admit validated captures through Study",
+      "dependencyNotes": [
+        "Checks existing card identity, content and eligibility, creates or reopens and places guided card using injected borrowed storage, daily lock and placement. Study owns admission and scheduling; Tactics capture owns original receipt."
+      ],
+      "censusScope": "captured_tactic"
+    },
+    {
+      "id": "study-capture-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/study",
+      "publicExports": [
+        "database/tempo_storage/study/captured_tactic.py#ensure_capture_repertoire",
+        "database/tempo_storage/study/captured_tactic.py#create_capture_card",
+        "database/tempo_storage/study/captured_tactic.py#capture_card",
+        "database/tempo_storage/study/captured_tactic.py#link_capture_card",
+        "database/tempo_storage/study/captured_tactic.py#reopen_capture_card",
+        "database/tempo_storage/study/captured_tactic.py#lock_capture_queue",
+        "database/tempo_storage/study/captured_tactic.py#mark_capture_guided"
+      ],
+      "dependencies": [
+        "study-queue-position-lock"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/study/captured_tactic.py"
+      ],
+      "ownershipRole": "Persist Study capture card and queue facts",
+      "dependencyNotes": [
+        "Caller-transaction SQL creates/locks/reopens card, links membership and marks queued attempt guided; queue-date lock is the existing shared capability and application owns decisions."
+      ],
+      "censusScope": "captured_tactic"
+    },
+    {
       "id": "position-source-preparation",
       "type": "integration",
       "maintainer": "Tempo",
