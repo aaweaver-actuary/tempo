@@ -95,8 +95,9 @@ def client(broker_url):
                                socket_connect_timeout=1, socket_timeout=1)
 
 
-def ownership_keys(task_name: str, key_prefix: str):
-    ownership_key = key_prefix + task_name
+def ownership_keys(task_name: str):
+    """Return the persisted owner and publication keys for a task."""
+    ownership_key = _KEY_PREFIX + task_name
     return ownership_key, ownership_key + ':publication'
 
 

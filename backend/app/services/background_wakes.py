@@ -9,7 +9,7 @@ from kombu.utils.json import dumps
 import redis
 
 from tempo_storage.redis_control.wake_runtime import wakes as storage
-from tempo_storage.redis_control.wake_runtime.wakes import _KEY_PREFIX, _RESERVE, _ABORT, client
+from tempo_storage.redis_control.wake_runtime.wakes import client
 
 
 WAKE_TASK_NAMES = frozenset(
@@ -30,7 +30,7 @@ _PUBLICATION_HEADER = "tempo-wake-publication"
 
 
 def ownership_keys(task_name):
-    return storage.ownership_keys(task_name, _KEY_PREFIX)
+    return storage.ownership_keys(task_name)
 
 
 def consume_wake(broker_url, task_name, ownership_token, request_headers=None):

@@ -14,6 +14,7 @@ from celery.exceptions import Retry
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'backend'))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'database'))
+from tempo_storage.redis_control.wake_runtime import wakes as wake_storage
 from app import tasks
 from app.celery_app import celery_app
 from app.services import background_wakes
@@ -119,7 +120,7 @@ def proof_background_wakes():
         assert not deliver(slow_token)
 
     try:
-        with patch.object(background_wakes, '_KEY_PREFIX', ownership_prefix), \
+        with patch.object(wake_storage, '_KEY_PREFIX', ownership_prefix), \
              patch.object(tasks.poll_background_tasks, 'run',
                           lambda: useful_executions.append(tasks.poll_background_tasks.request.id) or True):
             with ThreadPoolExecutor(max_workers=8) as producers:
@@ -277,16 +278,16 @@ def proof_background_wakes():
                 assert effective_headers[-1]['queue_refresh_wake'] is True
 
             # Reserve-only crash recovery and aborted-publication resurrection.
-            server.eval(background_wakes._RESERVE, 2, ownership_key, publication_key, 'crashed-publisher')
+            wake_storage.reserve_wake(server, (ownership_key, publication_key), 'crashed-publisher', '0')
             assert publish() == 'crashed-publisher'
             server.pexpire(ownership_key, 0)
             recovered_token = publish(1)
             assert recovered_token != 'crashed-publisher'
             execute_pending(recovered_token)
             aborted_token = uuid.uuid4().hex
-            server.eval(background_wakes._RESERVE, 2, ownership_key, publication_key, aborted_token)
+            wake_storage.reserve_wake(server, (ownership_key, publication_key), aborted_token, '0')
             assert publish(headers={'queue_refresh_wake': True}) == aborted_token
-            assert server.eval(background_wakes._ABORT, 2, ownership_key, publication_key, aborted_token)
+            assert wake_storage.abort_wake(server, (ownership_key, publication_key), aborted_token)
             publish(task_id=aborted_token, headers={background_wakes.WAKE_HEADER: aborted_token,
                                                    background_wakes._PUBLICATION_HEADER: True})
             assert pending_count() == 0 and server.get(ownership_key) is None
@@ -316,7 +317,7 @@ def prepare_restart_proof(evidence_path):
     ownership_prefix = queue_name + ':owner:'
     task_name = tasks.poll_background_tasks.name
     try:
-        with patch.object(background_wakes, '_KEY_PREFIX', ownership_prefix):
+        with patch.object(wake_storage, '_KEY_PREFIX', ownership_prefix):
             token = celery_app.send_task(task_name, queue=queue_name, ignore_result=True).id
             assert celery_app.send_task(task_name, queue=queue_name, ignore_result=True,
                                         headers={'queue_refresh_wake': True}).id == token
@@ -355,7 +356,7 @@ def verify_restart_proof(evidence_path):
     ownership_prefix = queue_name + ':owner:'
     task_name = tasks.poll_background_tasks.name
     try:
-        with patch.object(background_wakes, '_KEY_PREFIX', ownership_prefix):
+        with patch.object(wake_storage, '_KEY_PREFIX', ownership_prefix):
             assert server.get(ownership_prefix + task_name) == evidence['token']
             assert server.pttl(ownership_prefix + task_name) == -1
             assert server.llen(queue_name) == 1
