@@ -157,24 +157,43 @@ def _issued_before_archive_remounts_and_saves_original_attempt(frozen, monkeypat
             receipt = db.execute("SELECT state,error_json,last_error_json FROM operation_receipts WHERE operation_id=%s", ('original-issued-head',)).fetchone()
             raise AssertionError(f"Original issuance failed; durable receipt: {dict(receipt) if receipt else None}")
     assert issued['issued'] is True
+    # Preserve a second earlier issued head and an unrelated later card. This
+    # discriminates existing queue position from archive-specific promotion.
+    with transaction() as db:
+        db.execute("INSERT INTO study_exercises(id,study_id,position_id,current_revision,status,created_at,updated_at) VALUES('earlier','frozen','position',1,'published','2026-01-01','2026-01-01')")
+        db.execute("INSERT INTO study_exercise_revisions(exercise_id,revision,specification_json,specification_hash,created_at) VALUES('earlier',1,%s,'original','2026-01-01')", (json.dumps(SPEC),))
+        db.execute("INSERT INTO cards(id,repertoire_id,kind,content_type,study_exercise_id,start_fen,moves_json,state,due_date,revision) VALUES('card-earlier',NULL,'exercise','study_exercise','earlier',%s,'[]','learning',%s,1)", (FEN, day))
+        earlier = db.execute("INSERT INTO daily_queue(queue_date,card_id,position,cycle) VALUES(%s,'card-earlier',-1001,0) RETURNING id", (day,)).fetchone()[0]
+        db.execute("INSERT INTO cards(id,repertoire_id,kind,content_type,start_fen,moves_json,state,due_date,revision) VALUES('unrelated','white','prefix','tactic',%s,'[]','learning',%s,1)", (FEN, day))
+        unrelated = db.execute("INSERT INTO daily_queue(queue_date,card_id,position,cycle) VALUES(%s,'unrelated',-998,0) RETURNING id", (day,)).fetchone()[0]
+    earlier_issue = command_gateway.execute_command('earlier-issued-head', 'queue.issue_head',
+        {'queue_date': day, 'entry_id': earlier, 'card_id': 'card-earlier', 'expected_revision': 1})
+    if earlier_issue is None:
+        with transaction() as db:
+            receipt = db.execute("SELECT state,error_json,last_error_json FROM operation_receipts WHERE operation_id=%s", ('earlier-issued-head',)).fetchone()
+            raise AssertionError(f"Earlier issuance failed; durable receipt: {dict(receipt) if receipt else None}")
+    assert earlier_issue['issued'] is True
     parent = {'attempt_id': 'pending-practice', 'revision': 1, 'context': 'practice', 'answer': {'type': 'explanation', 'text': 'original'}}
     assert client.post(BASE + 'explain/attempts', json=parent, headers={'Idempotency-Key': 'pending-practice-parent'}).json()['pending_self_assessment'] is True
     with transaction() as db:
         origin = dict(db.execute("SELECT * FROM queue_attempt_origins WHERE queue_entry_id=%s AND card_id='card-retained' AND revision=1", (retained,)).fetchone())
         assert origin['issued_as_head'] == 1
         db.execute("UPDATE studies SET archived=1 WHERE id='frozen'")
-        db.execute("UPDATE study_exercises SET status='archived' WHERE id IN ('retained','unissued','explain')")
+        db.execute("UPDATE study_exercises SET status='archived' WHERE id IN ('retained','earlier','unissued','explain')")
     # A reload must find the issued row first, without admitting the unissued
     # archive or dispatching another issuance; exact origin survives unchanged.
     with transaction() as db:
         rows = queue_projection.queue_rows(db, day, 20, miss_reason='')
-        assert rows and rows[0]['queue_entry_id'] == retained
-        assert all(row['queue_entry_id'] != unissued for row in rows)
+        ids = [row['queue_entry_id'] for row in rows]
+        assert ids[:2] == [earlier, retained] and unrelated in ids[2:] and unissued not in ids
+        assert queue_projection.available_head(db, lambda: day, miss_reason='')['id'] == earlier
+        from tempo_storage.commands import queue as queue_storage
+        assert queue_storage.prepare_queue_head(db, '')(day)['id'] == earlier
     monkeypatch.setattr(connections, 'read_connection', transaction)
     def no_dispatch(*args, **kwargs):
         raise AssertionError('reload must replay the issued head, not dispatch another issuance')
     monkeypatch.setattr(command_dispatch, 'dispatch_command', no_dispatch)
-    outcome, result, transport = composition._issue_facts(day, {'queue_entry_id': retained, 'id': 'card-retained', 'revision': 1},
+    outcome, result, transport = composition._issue_facts(day, {'queue_entry_id': earlier, 'id': 'card-earlier', 'revision': 1},
         read_connection=transaction, queue_projection_storage=queue_projection)
     assert outcome is None and transport is None and result == {'issued': True}
     with transaction() as db:
@@ -185,13 +204,33 @@ def _issued_before_archive_remounts_and_saves_original_attempt(frozen, monkeypat
     query = f'?card_id=card-retained&queue_entry_id={retained}&queue_cycle=0&revision=1'
     assert client.get(BASE + 'retained/present' + query).status_code == 200
     assert client.get(BASE + f'unissued/present?card_id=card-unissued&queue_entry_id={unissued}&queue_cycle=0&revision=1').status_code == 404
-    assert client.get(BASE + 'explain/present?attempt_id=pending-practice').status_code == 200
-    assert client.get(BASE + 'explain/present?attempt_id=other').status_code == 404
-    child = client.post(BASE + 'explain/attempts/pending-practice/self-assess', json={'rating': 'correct'}, headers={'Idempotency-Key': 'pending-practice-child'})
-    assert child.json()['persisted'] is True and child.json()['review'] is None
+    # No immutable original FEN exists for practice; keep it held.
     assert client.get(BASE + 'explain/present?attempt_id=pending-practice').status_code == 404
+    assert client.get(BASE + 'explain/present?attempt_id=other').status_code == 404
+    # Even a retained child delivery stays retryable without a proven FEN;
+    # neither the original parent nor the self-assessment is discarded.
+    client.post(BASE + 'explain/attempts/pending-practice/self-assess', json={'rating': 'correct'},
+                headers={'Idempotency-Key': 'pending-practice-child'})
+    with transaction() as db:
+        pending = db.execute("SELECT result_json,revision,assessment_json FROM study_attempts WHERE id='pending-practice'").fetchone()
+        child = db.execute("SELECT state,last_error_json FROM operation_receipts WHERE operation_id='pending-practice-child'").fetchone()
+        assert pending and pending['result_json'] is None and pending['revision'] == 1
+        assert child and child['state'] == 'retrying' and json.loads(child['last_error_json'])['code'] == 'prerequisite_pending'
     body = {'attempt_id': 'issued-original', 'revision': 1, 'context': 'review', 'queue_entry_id': retained,
             'queue_cycle': 0, 'card_id': 'card-retained', 'answer': {'type': 'choice', 'option_ids': ['a']}}
+    # A mutable source FEN can change without a card revision. Neither the
+    # retained projection nor writer may treat that as the original position.
+    with transaction() as db:
+        db.execute("UPDATE study_positions SET fen=%s WHERE id='position'", ('8/8/8/8/8/8/8/8 w - - 0 1',))
+    assert client.get(BASE + 'retained/present' + query).status_code == 404
+    with transaction() as db:
+        assert retained not in [row['queue_entry_id'] for row in queue_projection.queue_rows(db, day, 20, miss_reason='')]
+    bad = client.post(BASE + 'retained/attempts', json={**body, 'attempt_id': 'changed-source'}, headers={'Idempotency-Key': 'changed-source-operation'})
+    with transaction() as db:
+        failure = db.execute("SELECT state,error_json FROM operation_receipts WHERE operation_id='changed-source-operation'").fetchone()
+        assert failure and failure['state'] == 'failed' and json.loads(failure['error_json'])['status_code'] == 409
+        assert db.execute("SELECT count(*) FROM study_attempts WHERE id='changed-source'").fetchone()[0] == 0
+        db.execute("UPDATE study_positions SET fen=%s WHERE id='position'", (FEN,))
     first = client.post(BASE + 'retained/attempts', json=body, headers={'Idempotency-Key': 'issued-original-operation'})
     assert first.json()['persisted'] is True
     assert client.post(BASE + 'retained/attempts', json=body, headers={'Idempotency-Key': 'issued-original-operation'}).json() == first.json()

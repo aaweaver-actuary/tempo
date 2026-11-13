@@ -314,3 +314,13 @@ it('B31 issued Study reload supplies its exact queue identity only after ordinar
   const query = new URL(requests[1], 'http://localhost').searchParams;
   expect(Object.fromEntries(query)).toEqual({ card_id: 'retained-card', queue_entry_id: '17', queue_cycle: '3', revision: '2' });
 });
+
+it('B31 issued Study refuses a changed presentation FEN even at the same revision', async () => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+  const card: PracticeCard = { id: asCardId('fen-retained'), kind: 'study', title: 'Study', subtitle: '', startingFen: asFenString(new Chess().fen()),
+    moves: [], userMoveTarget: 1, backendId: asCardId('fen-card'), queueEntryId: asQueueEntryId(21), queueCycle: 0, revision: 1 };
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ id: 'exercise', revision: 1, type: 'explanation', prompt: 'Changed source', hint: '', fen: '8/8/8/8/8/8/8/8 w - - 0 1' })));
+  render(<StudyExerciseRunner studyId="study" exerciseId="exercise" card={card} boardTheme="brown" pieceSet="cburnett" />);
+  await screen.findByText(/original exercise identity or revision changed/i);
+  expect(screen.queryByText('Changed source')).toBeNull();
+});

@@ -127,7 +127,8 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
       .then(async (response) => {
         const body = await response.json() as PresentedStudyExercise & { detail?: string };
         if (!response.ok) throw new Error(responseError(response.status, body.detail));
-        if (body.id !== exerciseId || (card?.revision !== undefined && body.revision !== card.revision))
+        if (body.id !== exerciseId || (card?.revision !== undefined && body.revision !== card.revision) ||
+            (card?.startingFen !== undefined && body.fen !== card.startingFen))
           throw new Error("The original exercise identity or revision changed. Restore the original attempt before continuing.");
         if (generation === generationRef.current) setExercise(body);
       })
