@@ -649,8 +649,13 @@ consumers. This source map does not decide the disputed capacity behavior or
 qualify runtime; previous fixture gaps remain open. The existing lazy cycle
 between position queue admission and next-card preparation remains unresolved.
 
-At this base revision, 29 of 289 tracked Python files in those trees remain
-outside the combined 260-file selections. The registry alone assigns owners;
+A fifty-first selection maps existing opening admission planning and borrowed
+storage/capacity adapters, including current frozen and Study-only fences. This
+source map does not decide the disputed capacity behavior or qualify runtime;
+previous fixture gaps and the position-admission lazy cycle remain open.
+
+At this base revision, 26 of 289 tracked Python files in those trees remain
+outside the combined 263-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover
