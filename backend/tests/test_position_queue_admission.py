@@ -832,3 +832,9 @@ def test_due_preparation_consumes_semantic_owner_facts_and_retains_cursor(monkey
     assert result["cursor"] == {"position_repertoire": "r", "position_epoch": "epoch", "position_digest": "digest",
         "position_instant": instant.isoformat(), "position_after": [instant.isoformat(), "standard", "position"]}
     assert seen[0][0] is db and seen[0][1]["owner_epoch"] == "epoch" and seen[0][1]["source_digest"] == "digest"
+
+
+def test_carrier_policy_keeps_legacy_admission_export():
+    from app.study.position_learning.position_carrier import select_carrier as owner
+
+    assert select_carrier is owner
