@@ -114,8 +114,8 @@ def _frozen_practice_has_no_queue_or_review_effect(frozen):
         client.post(BASE + 'choice/attempts', json=invalid, headers={'Idempotency-Key': 'invalid-operation-' + field})
     with transaction() as db:
         assert db.execute("SELECT count(*) FROM reviews WHERE source_ref='practice-hint'").fetchone()[0] == 0
-        assert db.execute("SELECT count(*) FROM study_attempts WHERE id LIKE 'invalid-%'").fetchone()[0] == 0
-        assert db.execute("SELECT count(*) FROM operation_receipts WHERE operation_id LIKE 'invalid-operation-%' AND state='failed'").fetchone()[0] == 3
+        assert db.execute("SELECT count(*) FROM study_attempts WHERE id LIKE %s", ("invalid-%",)).fetchone()[0] == 0
+        assert db.execute("SELECT count(*) FROM operation_receipts WHERE operation_id LIKE %s AND state='failed'", ("invalid-operation-%",)).fetchone()[0] == 3
 
 
 def test_frozen_study_native_attempts_and_recovery(frozen):
