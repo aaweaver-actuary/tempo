@@ -1816,9 +1816,9 @@ test("Redis residual selection and evidence reject partial or foreign completion
   assert.throws(() => parse(['--mode', 'durability', '--native-check', 'redis-residual']));
   assert.throws(() => parse(['--mode', 'browser', '--native-check', 'redis-residual', '--native-check', 'redis-residual']));
   const project = 'tempo-pg-regressions-12-12345678', revision = 'a'.repeat(40);
-  const receipt = { project, revision, cleanup: 'completed', completed: ['redis_admission_real_lease_interference', 'test_real_broker_persistent_wake_survives_aof_restart'] };
+  const receipt = { project, revision, cleanup: 'completed', completed: ['redis_admission_real_lease_interference', 'test_real_broker_persistent_wake_survives_aof_restart'], restart: {kind: 'clean', sync: {project, revision, sync: 'WAITAOF', local_fsynced: 1, timeout_ms: 5000}} };
   verifyRedisResidualReceipt(receipt, project, revision);
-  for (const change of [{ project: 'foreign' }, { revision: 'b'.repeat(40) }, { cleanup: 'unknown' }, { completed: [receipt.completed[0]] }])
+  for (const change of [{ project: 'foreign' }, { revision: 'b'.repeat(40) }, { cleanup: 'unknown' }, { completed: [receipt.completed[0]] }, { restart: {kind: 'clean', sync: {...receipt.restart.sync, local_fsynced: 0}} }, { restart: {...receipt.restart, kind: 'crash'} }])
     assert.throws(() => verifyRedisResidualReceipt({...receipt, ...change}, project, revision));
 });
 test("Redis restart requires the same owned volume and a new process", () => {
@@ -1838,6 +1838,26 @@ for change in ({'TEMPO_TEST_INSTANCE':'live'},{'TEMPO_TEST_COMPOSE_PROJECT':'for
  try: f({**base,**change})
  except RuntimeError: pass
  else: raise AssertionError(change)`;
+  const result = spawnSync(resolvePython(), ['-c', probe], { cwd: root, encoding: 'utf8', env: {...process.env, PYTHONPATH: 'backend:database'} });
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test("Redis AOF barrier requires same-connection local fsync acknowledgment", () => {
+  const probe = `import runpy
+m=runpy.run_path('database/tests/redis/check_redis_admission_leases.py'); f=m['require_local_aof_sync']
+class Pipe:
+ def __init__(self,result): self.result=result; self.calls=[]
+ def set(self,*a,**k): self.calls.append(('set',a,k)); return self
+ def execute_command(self,*a): self.calls.append(('command',a)); return self
+ def execute(self): return self.result
+class Server:
+ def __init__(self,result): self.p=Pipe(result)
+ def pipeline(self,transaction): assert transaction is False; return self.p
+s=Server([True,[1,0]]); f(s,'owned:barrier','token'); assert s.p.calls==[('set',('owned:barrier','token'),{'nx':True}),('command',('WAITAOF',1,0,5000))]
+for value in ([True,[0,0]], [None,[1,0]], [True,[0,1]]):
+ try: f(Server(value),'owned:barrier','token')
+ except RuntimeError: pass
+ else: raise AssertionError(value)`;
   const result = spawnSync(resolvePython(), ['-c', probe], { cwd: root, encoding: 'utf8', env: {...process.env, PYTHONPATH: 'backend:database'} });
   assert.equal(result.status, 0, result.stderr);
 });

@@ -231,6 +231,9 @@ export function verifyOwnerTrioReceipt(receipt, project, revision) {
 
 export function verifyRedisResidualReceipt(receipt, project, revision) {
   if (receipt?.project !== project || receipt?.revision !== revision || receipt?.cleanup !== 'completed'
+      || receipt?.restart?.kind !== 'clean' || receipt?.restart?.sync?.project !== project
+      || receipt?.restart?.sync?.revision !== revision || receipt?.restart?.sync?.sync !== 'WAITAOF'
+      || receipt?.restart?.sync?.local_fsynced !== 1 || receipt?.restart?.sync?.timeout_ms !== 5000
       || JSON.stringify(receipt?.completed) !== JSON.stringify(['redis_admission_real_lease_interference', 'test_real_broker_persistent_wake_survives_aof_restart']))
     throw new Error('Redis residual requires exact completed cases and cleanup');
 }

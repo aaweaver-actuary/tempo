@@ -89,6 +89,16 @@ def proof():
     return {'project': project, 'revision': revision, 'case': 'redis_admission_real_lease_interference', 'cleanup': 'completed'}
 
 
+def require_local_aof_sync(server, barrier_key, token):
+    """Fence all earlier AOF writes on one connection; fail closed if unsupported."""
+    pipeline = server.pipeline(transaction=False)
+    pipeline.set(barrier_key, token, nx=True)
+    pipeline.execute_command('WAITAOF', 1, 0, 5000)
+    result = pipeline.execute()
+    if len(result) != 2 or result[0] is not True or list(result[1]) != [1, 0]:
+        raise RuntimeError('Local Redis AOF fsync was not acknowledged')
+
+
 def restart_phase(phase):
     project, revision = validate_environment(os.environ)
     evidence = Path('/evidence/restart.json')
@@ -99,14 +109,41 @@ def restart_phase(phase):
             raise RuntimeError('Restart evidence already exists')
         prepare_restart_proof(evidence)
         return
-    if phase != 'verify':
-        raise RuntimeError('Unknown Redis proof phase')
     value = json.loads(evidence.read_text())
     queue = value['queue']
     if not re.fullmatch(r'tempo-wake-proof-[a-f0-9]{32}', queue):
         raise RuntimeError('Foreign Redis restart evidence')
-    verify_restart_proof(evidence)
+    barrier_key = queue + ':fsync-barrier'
+    if phase == 'sync':
+        import redis
+        server = redis.Redis.from_url(os.environ['TEMPO_REDIS_URL'], decode_responses=True,
+                                      socket_connect_timeout=1, socket_timeout=7)
+        try:
+            require_local_aof_sync(server, barrier_key, value['token'])
+        finally:
+            server.close()
+        print(json.dumps({'project': project, 'revision': revision, 'sync': 'WAITAOF',
+                          'local_fsynced': 1, 'timeout_ms': 5000}))
+        return
+    if phase != 'verify':
+        raise RuntimeError('Unknown Redis proof phase')
     server = background_wakes.client(os.environ['TEMPO_REDIS_URL'])
+    try:
+        if server.get(barrier_key) != value['token']:
+            raise RuntimeError('Synced AOF barrier did not survive the clean restart')
+        verify_restart_proof(evidence)
+    finally:
+        error = sys.exception()
+        try:
+            if server.get(barrier_key) != value['token']:
+                raise RuntimeError('AOF barrier ownership changed')
+            server.delete(barrier_key)
+            if server.exists(barrier_key):
+                raise RuntimeError('AOF barrier remains')
+        except Exception as cleanup_error:
+            if error is None:
+                raise
+            error.add_note(f'AOF barrier cleanup failed: {cleanup_error}')
     prefix = queue + ':owner:'
     keys = [*queue_keys(queue), '_kombu.binding.' + queue,
             *(prefix + name + suffix for name in background_wakes.WAKE_TASK_NAMES for suffix in ('', ':publication'))]
@@ -119,7 +156,7 @@ def restart_phase(phase):
 if __name__ == '__main__':
     if sys.argv[1:] == ['lease']:
         print(json.dumps(proof()))
-    elif sys.argv[1:] in (['prepare'], ['verify']):
+    elif sys.argv[1:] in (['prepare'], ['sync'], ['verify']):
         restart_phase(sys.argv[1])
     else:
         raise RuntimeError('Unknown Redis residual selection')

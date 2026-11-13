@@ -1683,6 +1683,9 @@ const actions = {
       assert.equal(prepared.restart_proof, 'prepared');
       assert.match(prepared.queue, /^tempo-wake-proof-[a-f0-9]{32}$/);
       assert.equal(prepared.persistence, 'AOF appendfsync everysec');
+      const sync = JSON.parse(invoke('sync'));
+      assert.deepEqual(sync, {project, revision: candidateRevision, sync: 'WAITAOF', local_fsynced: 1, timeout_ms: 5000});
+      // This proves a clean restart, not abrupt crash durability.
       // SIGTERM-based Docker restart gives Redis its normal AOF shutdown path.
       withDevelopmentStartup(['redis'], project, () => run('docker', [...compose, 'restart', 'redis']));
       const deadline = Date.now() + 30000;
@@ -1701,7 +1704,7 @@ const actions = {
       assert.equal(wake.pop_gap_owner_recovered_after_restart, true);
       assert.deepEqual(verified, {project, revision: candidateRevision, case: wake.test, cleanup: 'completed'});
       evidence = {project, revision: candidateRevision, completed: [lease.case, wake.test], cleanup: 'completed',
-        restart: {container_id: before.id, image: before.image, volume: before.volume,
+        restart: {kind: 'clean', sync, container_id: before.id, image: before.image, volume: before.volume,
           before_started_at: before.startedAt, after_started_at: after.startedAt, before_run_id: before.runId, after_run_id: after.runId}};
       verifyRedisResidualReceipt(evidence, project, candidateRevision);
       },
