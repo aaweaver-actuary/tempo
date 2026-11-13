@@ -2,6 +2,1188 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "card-deletion-application",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/card_deletion.py#require_card_not_deleted",
+        "backend/app/card_deletion.py#card_deletion_preview",
+        "backend/app/card_deletion.py#permanent_delete_card",
+        "backend/app/card_deletion.py#delete_repertoire_data",
+        "backend/app/card_deletion.py#omit_deleted_graph_steps"
+      ],
+      "dependencies": [
+        "card-deletion-storage",
+        "study-calendar-capture"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/card_deletion.py"
+      ],
+      "ownershipRole": "Coordinate explicit deletion and retained ownership",
+      "dependencyNotes": [
+        "Uses calendar, observation summary and caller database; main, card and repertoire commands, Study, tactic, review and graph consumers call this owner. Existing receipt and admission proof preservation remains application policy."
+      ],
+      "censusScope": "card_deletion"
+    },
+    {
+      "id": "card-deletion-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/authored_repertoires/card_deletion",
+      "publicExports": [
+        "database/tempo_storage/authored_repertoires/card_deletion/storage.py#is_card_deleted",
+        "database/tempo_storage/authored_repertoires/card_deletion/storage.py#record_tombstones",
+        "database/tempo_storage/authored_repertoires/card_deletion/storage.py#purge_queue_and_cards",
+        "database/tempo_storage/authored_repertoires/card_deletion/storage.py#retain_membership",
+        "database/tempo_storage/authored_repertoires/card_deletion/storage.py#reparent_dependencies"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/authored_repertoires/card_deletion/__init__.py",
+        "database/tempo_storage/authored_repertoires/card_deletion/storage.py"
+      ],
+      "ownershipRole": "Persist deletion and retained ownership operations",
+      "dependencyNotes": [
+        "Caller-transaction SQL locks and rechecks, records tombstones, retains or reassigns cards, cancels tasks and mutates queue, training, graph and evidence data; application owns decisions and transaction."
+      ],
+      "censusScope": "card_deletion"
+    },
+    {
+      "id": "pgn-import-command",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/pgn_import_commands.py#prepare_import_payload",
+        "backend/app/pgn_import_commands.py#admit_pgn_import",
+        "backend/app/pgn_import_commands.py#explicit_pgn_import",
+        "backend/app/pgn_import_commands.py#discard_pgn_import"
+      ],
+      "dependencies": [
+        "backend-command-gateway",
+        "study-calendar-capture",
+        "pgn-import-validation",
+        "pgn-import-storage",
+        "opening-graph-builder",
+        "opening-graph-rebuild",
+        "integrity-scan-service",
+        "integrity-source-service"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/pgn_import_commands.py"
+      ],
+      "ownershipRole": "Prepare and apply PGN import commands",
+      "dependencyNotes": [
+        "Registers imports.pgn.admit, imports.pgn.explicit and imports.pgn.discard at import; task composition imports it and main calls payload preparation. Uses canonical prefix, card identity and caller transaction."
+      ],
+      "censusScope": "pgn_import"
+    },
+    {
+      "id": "pgn-import-validation",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/pgn_import_validation.py#validate_sources"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/pgn_import_validation.py"
+      ],
+      "ownershipRole": "Validate bounded PGN source and conflicts",
+      "dependencyNotes": [
+        "Uses python-chess legality and existing repertoire conflict owner; bounded diagnostics preserve source/conflict decision behavior."
+      ],
+      "censusScope": "pgn_import"
+    },
+    {
+      "id": "explicit-import-delivery",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/explicit_repertoire_import.py#permitted_delivery",
+        "backend/app/services/explicit_repertoire_import.py#require_delivery"
+      ],
+      "dependencies": [
+        "pgn-import-preparation-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/explicit_repertoire_import.py"
+      ],
+      "ownershipRole": "Check explicit import task delivery provenance",
+      "dependencyNotes": [
+        "Task composition and durable task service invoke this receipt-bound graph/integrity delivery filter; uses authoritative background reader and existing Redis admission defer exception."
+      ],
+      "censusScope": "pgn_import"
+    },
+    {
+      "id": "pgn-import-preparation-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/authored_repertoires/pgn_import",
+      "publicExports": [
+        "database/tempo_storage/authored_repertoires/pgn_import/preparation.py#receipt_scope",
+        "database/tempo_storage/authored_repertoires/pgn_import/preparation.py#predicate",
+        "database/tempo_storage/authored_repertoires/pgn_import/preparation.py#delivery"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/authored_repertoires/pgn_import/preparation.py"
+      ],
+      "ownershipRole": "Read receipt-bound import preparation delivery",
+      "dependencyNotes": [
+        "Native SQL binds original complete import receipt, graph identity and generation to leased graph or integrity task; uses existing claimability predicate, durable tasks owns lease writes."
+      ],
+      "censusScope": "pgn_import"
+    },
+    {
+      "id": "pgn-import-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/authored_repertoires/pgn_import",
+      "publicExports": [
+        "database/tempo_storage/authored_repertoires/pgn_import/storage.py#lock_main_repertoire",
+        "database/tempo_storage/authored_repertoires/pgn_import/storage.py#insert_import_rows",
+        "database/tempo_storage/authored_repertoires/pgn_import/storage.py#insert_discard_receipt",
+        "database/tempo_storage/authored_repertoires/pgn_import/storage.py#discard_receipt"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/authored_repertoires/pgn_import/storage.py",
+        "database/tempo_storage/authored_repertoires/pgn_import/__init__.py"
+      ],
+      "ownershipRole": "Persist PGN import and discard facts",
+      "dependencyNotes": [
+        "Caller-transaction SQL locks repertoires, stores import rows and discard operation receipts; application owns import and discard decisions."
+      ],
+      "censusScope": "pgn_import"
+    },
+    {
+      "id": "opening-graph-builder",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/opening_graph.py#build_graph",
+        "backend/app/services/opening_graph.py#decision_segments"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/opening_graph.py"
+      ],
+      "ownershipRole": "Build opening graph and decision segments",
+      "dependencyNotes": [
+        "Uses python-chess, card identity and the existing GraphStep contract; source preparation and publication remain outside."
+      ],
+      "censusScope": "opening_graph"
+    },
+    {
+      "id": "opening-graph-rebuild",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/postgres_opening_graph.py#request_graph_rebuild_in_transaction",
+        "backend/app/services/postgres_opening_graph.py#execute_postgres_opening_graph_slice"
+      ],
+      "dependencies": [
+        "opening-graph-builder",
+        "opening-graph-storage",
+        "durable-task-application"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/postgres_opening_graph.py"
+      ],
+      "ownershipRole": "Prepare and publish bounded graph rebuild slices",
+      "dependencyNotes": [
+        "Uses background reads, PostgreSQL writers, durable task slice fences, Redis background lease and deleted-card filtering. Task composition dispatches opening_graph_rebuild; authoring and integrity repair request generations."
+      ],
+      "censusScope": "opening_graph"
+    },
+    {
+      "id": "opening-graph-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/opening_graph",
+      "publicExports": [
+        "database/tempo_storage/opening_graph/worker.py#lock_graph_rebuild",
+        "database/tempo_storage/opening_graph/worker.py#publish_generation",
+        "database/tempo_storage/opening_graph/worker.py#protected_queue_entry",
+        "database/tempo_storage/opening_graph/worker.py#cleanup_candidates"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/opening_graph/__init__.py",
+        "database/tempo_storage/opening_graph/worker.py"
+      ],
+      "ownershipRole": "Persist graph generation and cleanup facts",
+      "dependencyNotes": [
+        "Native SQL owns graph staging, publication, card and membership changes, queue retirement, integrity block updates and advisory locks under caller-managed operations; exposes the existing writer connection capability."
+      ],
+      "censusScope": "opening_graph"
+    },
+    {
+      "id": "integrity-repair-command",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/integrity_repair_commands.py#resolve_integrity_issue"
+      ],
+      "dependencies": [
+        "backend-command-gateway",
+        "study-calendar-capture",
+        "integrity-scan-service",
+        "integrity-source-service",
+        "integrity-repair-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/integrity_repair_commands.py"
+      ],
+      "ownershipRole": "Register and apply guided integrity repair",
+      "dependencyNotes": [
+        "Registers integrity.issue.resolve at import; task composition imports it. Uses retained mutation and source validation, graph rebuild, calendar and caller transaction with graph/card lock ordering."
+      ],
+      "censusScope": "integrity"
+    },
+    {
+      "id": "integrity-scan-service",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/postgres_integrity.py#current_integrity_certificate",
+        "backend/app/services/postgres_integrity.py#request_integrity_scan_in_transaction",
+        "backend/app/services/postgres_integrity.py#execute_postgres_integrity_slice"
+      ],
+      "dependencies": [
+        "integrity-native-storage",
+        "integrity-certificate",
+        "integrity-source-service",
+        "durable-task-application"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/postgres_integrity.py"
+      ],
+      "ownershipRole": "Prepare and publish bounded integrity scan slices",
+      "dependencyNotes": [
+        "Uses background reader, PostgreSQL writer, durable-task slice fences and Redis background lease; graph and feedback callers consume readiness and certificate facts."
+      ],
+      "censusScope": "integrity"
+    },
+    {
+      "id": "integrity-source-service",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/repertoire_integrity.py#integrity_summary",
+        "backend/app/services/repertoire_integrity.py#list_integrity_issues",
+        "backend/app/services/repertoire_integrity.py#prepare_issue_resolution"
+      ],
+      "dependencies": [
+        "integrity-issue-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/repertoire_integrity.py"
+      ],
+      "ownershipRole": "Inspect source integrity and prepare repairs",
+      "dependencyNotes": [
+        "Uses python-chess, position identity and card helpers, read connection and SQL adapter; existing private scan helpers are consumed by scan and repair services."
+      ],
+      "censusScope": "integrity"
+    },
+    {
+      "id": "integrity-repair-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/authored_repertoires",
+      "publicExports": [
+        "database/tempo_storage/authored_repertoires/integrity_commands.py#insert_replacement_line",
+        "database/tempo_storage/authored_repertoires/integrity_commands.py#locked_issue_signature",
+        "database/tempo_storage/authored_repertoires/integrity_commands.py#locked_source_card"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/authored_repertoires/integrity_commands.py"
+      ],
+      "ownershipRole": "Read and mutate repair source rows",
+      "dependencyNotes": [
+        "Caller-transaction SQL and the existing branches repertoire lock support source checks and line replacement; application owns repair decisions."
+      ],
+      "censusScope": "integrity"
+    },
+    {
+      "id": "integrity-certificate",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/authored_repertoires/integrity",
+      "publicExports": [
+        "database/tempo_storage/authored_repertoires/integrity/certificate.py#integrity_certificate_from_row"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/authored_repertoires/integrity/certificate.py"
+      ],
+      "ownershipRole": "Validate published integrity certificate facts",
+      "dependencyNotes": [
+        "Converts supplied persisted facts and payload to a certificate only when publication, generation, scan and graph predicates agree."
+      ],
+      "censusScope": "integrity"
+    },
+    {
+      "id": "integrity-native-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/authored_repertoires/integrity",
+      "publicExports": [
+        "database/tempo_storage/authored_repertoires/integrity/native.py#certificate_facts",
+        "database/tempo_storage/authored_repertoires/integrity/native.py#stage_source",
+        "database/tempo_storage/authored_repertoires/integrity/native.py#publish_issues",
+        "database/tempo_storage/authored_repertoires/integrity/native.py#complete_scan_state"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/authored_repertoires/integrity/native.py",
+        "database/tempo_storage/authored_repertoires/integrity/__init__.py"
+      ],
+      "ownershipRole": "Store bounded scan and publication facts",
+      "dependencyNotes": [
+        "Native SQL reads and stages scan sources and positions, publishes issues and card blocks, and updates scan state on caller-owned database operations."
+      ],
+      "censusScope": "integrity"
+    },
+    {
+      "id": "integrity-issue-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/authored_repertoires/integrity",
+      "publicExports": [
+        "database/tempo_storage/authored_repertoires/integrity/storage.py#summary_state",
+        "database/tempo_storage/authored_repertoires/integrity/storage.py#issue_details",
+        "database/tempo_storage/authored_repertoires/integrity/storage.py#active_card_authority",
+        "database/tempo_storage/authored_repertoires/integrity/storage.py#archive_unsupported_card"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/authored_repertoires/integrity/storage.py"
+      ],
+      "ownershipRole": "Read integrity issues and card authority",
+      "dependencyNotes": [
+        "SQL reads integrity issues and source/card membership facts and performs existing card and membership mutations under caller-owned transaction."
+      ],
+      "censusScope": "integrity"
+    },
+    {
+      "id": "activity-control-command",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/activity_commands.py#control_activity",
+        "backend/app/activity_commands.py#retry_failed_task"
+      ],
+      "dependencies": [
+        "backend-command-gateway",
+        "activity-retry-storage",
+        "durable-task-application",
+        "queue-refresh-wakeup"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/activity_commands.py"
+      ],
+      "ownershipRole": "Register and apply activity controls",
+      "dependencyNotes": [
+        "Registers activity.control and activity.task.retry at import; task composition imports the module. Uses background activity control, retired task kinds, UTC clock and caller-provided PostgreSQL connection."
+      ],
+      "censusScope": "activity"
+    },
+    {
+      "id": "activity-retry-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/commands",
+      "publicExports": [
+        "database/tempo_storage/commands/activity.py#failed_task_for_update",
+        "database/tempo_storage/commands/activity.py#reset_failed_task",
+        "database/tempo_storage/commands/activity.py#record_retry_activity",
+        "database/tempo_storage/commands/activity.py#record_manual_retry"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/commands/activity.py"
+      ],
+      "ownershipRole": "Persist caller-transaction manual task retry",
+      "dependencyNotes": [
+        "Native SQL locks the failed task, resets retry state and writes activity and generation event rows on the caller transaction; policy and transaction ownership remain outside."
+      ],
+      "censusScope": "activity"
+    },
+    {
+      "id": "position-annotation-command",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/annotation_commands.py#save_position_annotation"
+      ],
+      "dependencies": [
+        "backend-command-gateway",
+        "position-annotation-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/annotation_commands.py"
+      ],
+      "ownershipRole": "Register and apply position annotation command",
+      "dependencyNotes": [
+        "Registers repertoires.annotation.save at import; task composition imports this module. Uses authored-repertoire transport, python-chess FEN validation, UTC clock and caller-provided PostgreSQL connection."
+      ],
+      "censusScope": "annotation"
+    },
+    {
+      "id": "position-annotation-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/commands",
+      "publicExports": [
+        "database/tempo_storage/commands/annotations.py#repertoire_for_update",
+        "database/tempo_storage/commands/annotations.py#delete_position_annotation",
+        "database/tempo_storage/commands/annotations.py#save_position_annotation"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/commands/annotations.py"
+      ],
+      "ownershipRole": "Lock repertoire and persist position annotation",
+      "dependencyNotes": [
+        "Caller-transaction SQL locks the repertoire and deletes or upserts its position annotation; transaction and annotation decisions remain caller-owned."
+      ],
+      "censusScope": "annotation"
+    },
+    {
+      "id": "teaching-state-command",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/teaching_commands.py#record_teaching_state"
+      ],
+      "dependencies": [
+        "backend-command-gateway",
+        "teaching-state-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/teaching_commands.py"
+      ],
+      "ownershipRole": "Register and apply teaching-state command",
+      "dependencyNotes": [
+        "Registers cards.teaching.record at import; task composition imports this module. Uses the Study transport request, UTC clock and caller-provided PostgreSQL connection."
+      ],
+      "censusScope": "teaching"
+    },
+    {
+      "id": "teaching-state-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/commands",
+      "publicExports": [
+        "database/tempo_storage/commands/teaching.py#active_card_for_update",
+        "database/tempo_storage/commands/teaching.py#record_teaching_timestamp"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/commands/teaching.py"
+      ],
+      "ownershipRole": "Lock card and persist teaching-state timestamp",
+      "dependencyNotes": [
+        "Caller-transaction SQL locks an active card and inserts or replays the timestamp keyed by card, revision and ply; no transaction ownership is transferred."
+      ],
+      "censusScope": "teaching"
+    },
+    {
+      "id": "settings-command",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/settings_commands.py#decode_settings_request",
+        "backend/app/settings_commands.py#apply_settings",
+        "backend/app/settings_commands.py#update_settings"
+      ],
+      "dependencies": [
+        "backend-command-gateway",
+        "settings-foreground-storage",
+        "study-calendar-capture"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/settings_commands.py"
+      ],
+      "ownershipRole": "Apply and register settings updates",
+      "dependencyNotes": [
+        "Registers settings.update at import; uses the existing transport schema, PostgreSQL connection, queue refresh transaction and post-commit Study priority policy."
+      ],
+      "censusScope": "settings"
+    },
+    {
+      "id": "settings-control-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/controls",
+      "publicExports": [
+        "database/tempo_storage/controls/settings.py#effective_opening_limit_rows",
+        "database/tempo_storage/controls/settings.py#repertoire_limit_row",
+        "database/tempo_storage/controls/settings.py#study_mode_setting"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/controls/settings.py"
+      ],
+      "ownershipRole": "Read settings facts for control decisions",
+      "dependencyNotes": [
+        "Caller-connection SQL reads settings and repertoire limits; admission policy remains outside this adapter."
+      ],
+      "censusScope": "settings"
+    },
+    {
+      "id": "settings-foreground-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/foreground_controls",
+      "publicExports": [
+        "database/tempo_storage/foreground_controls/settings.py#locked_settings",
+        "database/tempo_storage/foreground_controls/settings.py#store_settings"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/foreground_controls/settings.py"
+      ],
+      "ownershipRole": "Lock and update global settings",
+      "dependencyNotes": [
+        "Caller-connection SQL locks and updates the global settings row; transaction and supplied columns remain caller-owned."
+      ],
+      "censusScope": "settings"
+    },
+    {
+      "id": "settings-http-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/http_composition",
+      "publicExports": [
+        "database/tempo_storage/http_composition/settings.py#public_settings"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/http_composition/settings.py"
+      ],
+      "ownershipRole": "Read product settings",
+      "dependencyNotes": [
+        "Caller-connection SQL selects the current public settings projection; HTTP decisions remain outside this adapter."
+      ],
+      "censusScope": "settings"
+    },
+    {
+      "id": "postgres-readiness-composition",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/operations",
+      "publicExports": [
+        "backend/app/operations/postgres_readiness.py#postgres_health"
+      ],
+      "dependencies": [
+        "postgres-readiness-storage",
+        "study-calendar-capture"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/operations/__init__.py",
+        "backend/app/operations/postgres_readiness.py"
+      ],
+      "ownershipRole": "Compose PostgreSQL health decisions",
+      "dependencyNotes": [
+        "Called by the HTTP health route; imports FastAPI, Celery control, reader connection and schema version, and captures Study calendar. Existing queue and worker readiness coupling remains."
+      ],
+      "censusScope": "readiness"
+    },
+    {
+      "id": "postgres-readiness-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage",
+      "publicExports": [
+        "database/tempo_storage/postgres_readiness.py#read_health_facts"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/postgres_readiness.py"
+      ],
+      "ownershipRole": "Read PostgreSQL health facts",
+      "dependencyNotes": [
+        "Queries schema, position tables, settings, queue projection and durable task through a caller-supplied reader and date capability."
+      ],
+      "censusScope": "readiness"
+    },
+    {
+      "id": "prefix-split-http",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/prefix_split_routes.py#prefix_split_intent_status",
+        "backend/app/prefix_split_routes.py#prefix_split_preview",
+        "backend/app/prefix_split_routes.py#prefix_split_accept",
+        "backend/app/prefix_split_routes.py#prefix_split_reject"
+      ],
+      "dependencies": [
+        "prefix-split-service",
+        "prefix-split-control-storage",
+        "prefix-split-intent-storage",
+        "operation-receipt-storage",
+        "backend-command-dispatch"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/prefix_split_routes.py"
+      ],
+      "ownershipRole": "Serve manual split preview, commands and durable intent status",
+      "dependencyNotes": [
+        "HTTP router performs borrowed reads, dispatches registered command names and imports receipt and intent storage; application router composition remains outside this selection."
+      ],
+      "censusScope": "prefix_split"
+    },
+    {
+      "id": "prefix-split-commands",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/prefix_split_commands.py#accept_prefix_split",
+        "backend/app/prefix_split_commands.py#reject_prefix_split",
+        "backend/app/prefix_split_commands.py#apply_deferred_prefix_split"
+      ],
+      "dependencies": [
+        "prefix-split-service",
+        "prefix-split-mutation-storage",
+        "prefix-split-control-storage",
+        "prefix-split-intent-storage",
+        "backend-command-gateway",
+        "study-calendar-capture"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/prefix_split_commands.py"
+      ],
+      "ownershipRole": "Fence and apply accepted manual split commands",
+      "dependencyNotes": [
+        "Registers three existing command names at import; uses borrowed writer, card/queue locks, integrity invalidation and graph rebuild; their owners remain outside this selection."
+      ],
+      "censusScope": "prefix_split"
+    },
+    {
+      "id": "prefix-split-service",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/prefix_split.py#preview_prefix_split",
+        "backend/app/services/prefix_split.py#apply_prefix_split"
+      ],
+      "dependencies": [
+        "prefix-split-mutation-storage",
+        "study-calendar-policy"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/prefix_split.py"
+      ],
+      "ownershipRole": "Preview and apply split using existing writer and queue policy",
+      "dependencyNotes": [
+        "Uses borrowed PostgreSQL, chess/card helpers and Study queue-order functions; this is not pure policy or an independent scheduler."
+      ],
+      "censusScope": "prefix_split"
+    },
+    {
+      "id": "prefix-split-recovery",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/deferred_prefix_split_recovery.py#valid_original_review_receipt",
+        "backend/app/services/deferred_prefix_split_recovery.py#enqueue_one_ready_split"
+      ],
+      "dependencies": [
+        "prefix-split-intent-storage",
+        "prefix-split-mutation-storage",
+        "operation-receipt-storage",
+        "backend-contracts"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/deferred_prefix_split_recovery.py"
+      ],
+      "ownershipRole": "Check one accepted intent and enqueue its original durable child",
+      "dependencyNotes": [
+        "Uses a background borrowed connection, keyset cursor and receipt storage; the existing foreground-operation recovery beat remains outside this selection."
+      ],
+      "censusScope": "prefix_split"
+    },
+    {
+      "id": "prefix-split-mutation-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/authored_repertoires/opening_mutations",
+      "publicExports": [
+        "database/tempo_storage/authored_repertoires/opening_mutations/prefix_splits.py#prior_split",
+        "database/tempo_storage/authored_repertoires/opening_mutations/prefix_splits.py#has_active_issued_attempt",
+        "database/tempo_storage/authored_repertoires/opening_mutations/prefix_splits.py#insert_split",
+        "database/tempo_storage/authored_repertoires/opening_mutations/prefix_splits.py#copy_card"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/authored_repertoires/opening_mutations/prefix_splits.py"
+      ],
+      "ownershipRole": "Store split mutations and queue facts on the supplied transaction",
+      "dependencyNotes": [
+        "Direct SQL touches cards, revisions, memberships and queue data; connection and queue owners remain outside this selection."
+      ],
+      "censusScope": "prefix_split"
+    },
+    {
+      "id": "prefix-split-control-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/foreground_controls",
+      "publicExports": [
+        "database/tempo_storage/foreground_controls/prefix_splits.py#locked_prefix_card",
+        "database/tempo_storage/foreground_controls/prefix_splits.py#published_usage",
+        "database/tempo_storage/foreground_controls/prefix_splits.py#store_split_rejection"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/foreground_controls/prefix_splits.py"
+      ],
+      "ownershipRole": "Read fenced split source and store rejection facts on the supplied transaction",
+      "dependencyNotes": [
+        "Direct SQL reads queue, card and publication facts and writes rejection state; transaction and source-lock authority remain with the caller."
+      ],
+      "censusScope": "prefix_split"
+    },
+    {
+      "id": "prefix-split-intent-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/study",
+      "publicExports": [
+        "database/tempo_storage/study/deferred_prefix_splits.py#create_intent",
+        "database/tempo_storage/study/deferred_prefix_splits.py#due_intent",
+        "database/tempo_storage/study/deferred_prefix_splits.py#matching_reviews",
+        "database/tempo_storage/study/deferred_prefix_splits.py#set_ready",
+        "database/tempo_storage/study/deferred_prefix_splits.py#set_held",
+        "database/tempo_storage/study/deferred_prefix_splits.py#set_applied"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/study/deferred_prefix_splits.py"
+      ],
+      "ownershipRole": "Persist accepted split intents and their original-review transition facts",
+      "dependencyNotes": [
+        "Direct SQL uses migration 066 intent state, issued origins, review and receipt facts; no independent scheduler or transaction is created."
+      ],
+      "censusScope": "prefix_split"
+    },
+    {
       "id": "study-calendar-policy",
       "type": "integration",
       "maintainer": "Tempo",

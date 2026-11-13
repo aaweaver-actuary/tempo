@@ -162,6 +162,16 @@ export function validateCompositionOwnership(manifest, paths) {
 // Scope predicates enumerate tracked inputs independently of ownership. The
 // component registry is the only mapping from an input to its owner.
 const censusPredicates = {
+  card_deletion: path => /^(backend\/app\/card_deletion[^/]*|database\/tempo_storage\/authored_repertoires\/card_deletion\/.*)\.py$/.test(path),
+  pgn_import: path => /^(backend\/app\/pgn_import[^/]*|backend\/app\/services\/explicit_repertoire_import[^/]*|database\/tempo_storage\/authored_repertoires\/pgn_import\/.*)\.py$/.test(path),
+  opening_graph: path => /^(backend\/app\/services\/(?:postgres_opening_graph|opening_graph)[^/]*|database\/tempo_storage\/opening_graph\/.*)\.py$/.test(path),
+  integrity: path => /^(backend\/app\/integrity_repair_commands[^/]*|backend\/app\/services\/(?:postgres_integrity|repertoire_integrity)[^/]*|database\/tempo_storage\/authored_repertoires\/(?:integrity_commands[^/]*|integrity\/.*))\.py$/.test(path),
+  activity: path => /^(backend\/app\/activity_commands[^/]*|database\/tempo_storage\/commands\/activity[^/]*)\.py$/.test(path),
+  annotation: path => /^(backend\/app\/annotation_commands[^/]*|database\/tempo_storage\/commands\/annotations[^/]*)\.py$/.test(path),
+  teaching: path => /^(backend\/app\/teaching_commands[^/]*|database\/tempo_storage\/commands\/teaching[^/]*)\.py$/.test(path),
+  settings: path => /^(backend\/app\/settings_commands[^/]*|database\/tempo_storage\/(?:controls|foreground_controls|http_composition)\/settings[^/]*)\.py$/.test(path),
+  readiness: path => /^(backend\/app\/operations\/.*|database\/tempo_storage\/postgres_readiness[^/]*)\.py$/.test(path),
+  prefix_split: path => /^(backend\/app\/prefix_split[^/]*|backend\/app\/services\/(?:prefix_split|deferred_prefix_split_recovery)[^/]*|database\/tempo_storage\/(?:authored_repertoires\/opening_mutations\/prefix_splits|foreground_controls\/prefix_splits|study\/deferred_prefix_splits)[^/]*)\.py$/.test(path),
   calendar: path => /^(backend\/app\/study\/policy\/clock[^/]*|backend\/app\/services\/study_calendar[^/]*)\.py$/.test(path),
   retained: path => /^(backend\/app\/(contracts|games)\/.*|backend\/app\/study\/(next_exercise|queue_serving|position_learning\/issuance)[^/]*|backend\/app\/product_composition\/study[^/]*|backend\/app\/services\/queue_next_card[^/]*|database\/tempo_storage\/study\/(next_exercise_reads|position_issued_plans)[^/]*|database\/tempo_storage\/game_review[^/]*)\.py$/.test(path),
   review: path => /^(backend\/app\/(command_dispatch|command_gateway|review_commands)[^/]*|backend\/app\/services\/(learning_review_adapter|review_service|review_reconciliation)[^/]*|backend\/app\/study\/policy\/review_reconciliation[^/]*|database\/tempo_storage\/(commands\/receipts\/.*|study\/review\/.*|learning_bridge\/review[^/]*|controls\/review_reconciliation[^/]*|review_reconciliation[^/]*))\.py$/.test(path),

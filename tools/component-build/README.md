@@ -334,8 +334,75 @@ fails closed if that setting is absent. Commands and other consumers remain
 outside this selected map; this records existing dependencies rather than a new
 ownership boundary.
 
-At this base revision, 233 of 291 tracked Python files in those trees remain
-outside the combined 58-file selections. The registry alone assigns owners;
+A fifth selection maps seven existing manual prefix split files: HTTP transport,
+registered command handling, split application and deferred recovery, and three
+borrowed SQL adapters. The adapters operate on cards, queue, review receipts and
+the migration 066 intent table. Receipt gateway, queue ordering, integrity,
+graph rebuild and the existing recovery beat remain outside this selection.
+These are source roles and existing cross-owner edges, not an independent
+artifact, pure policy or a new scheduler.
+
+A sixth selection maps the PostgreSQL readiness composition, its package initializer,
+and the storage fact reader. The HTTP route calls the composition, which captures
+the Study calendar and inspects Celery; the storage reader queries schema, position,
+settings, queue and durable-task facts through the supplied connection. These
+existing edges and readiness coupling are recorded without a startup or isolation claim.
+
+A seventh selection maps the registered settings command and three SQL adapters.
+The command uses the existing transport schema, Study calendar, queue refresh and
+post-commit priority policy; the adapters read limits, lock and update global
+settings, and read the public projection on caller-owned connections. This records
+existing registration and dependencies without changing behavior.
+
+An eighth selection maps the existing teaching-state command and its SQL adapter.
+The command registers `cards.teaching.record` and is imported by task composition;
+the adapter locks the active card and inserts or replays the timestamp under the
+caller transaction. The transport, gateway and composition remain external edges.
+
+A ninth selection maps the existing position-annotation command and SQL adapter.
+The command validates FEN and registers `repertoires.annotation.save`; task
+composition imports it. The adapter locks a repertoire and deletes or upserts
+annotations in the caller transaction. Gateway, transport and task composition
+remain external. The inherited legacy command fixture remains unresolved; this
+map does not qualify runtime behavior.
+
+A tenth selection maps the existing activity control and manual retry command and
+its SQL adapter. Task composition imports the registered commands; background
+activity, durable task, queue wake and retired-kind policy remain external edges.
+The adapter locks and resets a failed task and records activity and generation
+events in the caller transaction. The inherited legacy fixture remains unresolved.
+
+An eleventh selection maps the existing repertoire integrity repair command,
+scan and source services, and their SQL and certificate adapters. Task composition,
+retained mutations, graph rebuild, queue, durable tasks, Redis admission, transport
+and source validation remain existing external edges. SQL stages and publishes
+scan facts and card blocks and supports repair under caller-owned transactions.
+This source map does not establish runtime isolation or native qualification.
+The inherited legacy command fixture remains unresolved.
+
+A twelfth selection maps opening graph construction, bounded PostgreSQL rebuild
+slices and native storage. Task composition dispatches rebuilds; authored edits
+and integrity repair request generations. Existing durable task fences, Redis
+lease, graph publication, queue retirement, card links and integrity blocks remain
+visible. This is a source map, not a runtime isolation or native qualification.
+The inherited legacy command fixture remains unresolved.
+
+A thirteenth selection maps existing PGN import commands, validation, explicit
+delivery filtering, and preparation and import SQL. Receipt, operation and task
+generation identity remain with existing owners; graph, integrity, canonical
+prefix, durable task, Redis admission and task/main composition are existing
+edges. This source map does not establish native or runtime qualification.
+The inherited legacy command fixture remains unresolved.
+
+A fourteenth selection maps existing explicit card and repertoire deletion decisions
+and their SQL adapter. Main, commands, Study, tactic, review and graph callers,
+calendar and observation-summary policy remain visible external edges. Caller-owned
+operations include tombstones, retention, task cancellation, queue, graph and
+evidence mutations. Mapping does not authorize deletion or establish native proof.
+The inherited legacy fixture and three focused PGN failures remain unresolved.
+
+At this base revision, 192 of 291 tracked Python files in those trees remain
+outside the combined 99-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover

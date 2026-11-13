@@ -155,7 +155,17 @@
               "retained",
               "review",
               "durable",
-              "calendar"
+              "calendar",
+              "prefix_split",
+              "readiness",
+              "settings",
+              "teaching",
+              "annotation",
+              "activity",
+              "integrity",
+              "opening_graph",
+              "pgn_import",
+              "card_deletion"
             ]
           }
         }
