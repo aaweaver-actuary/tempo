@@ -42,7 +42,7 @@ export function verifyCheckpoint1BrowserReceipt(receipt) {
 // The executable plan is also the read-only --list output; keep one source of truth.
 export function postgresTestStages({ mode, nativeChecks = [], maintainedStudyProof = false }) {
   if (!Array.isArray(nativeChecks) || new Set(nativeChecks).size !== nativeChecks.length
-    || nativeChecks.some(check => !['redis-fixture-isolation', 'position-grade-effects', 'position-review-atomicity', 'position-introductions', 'position-queue-admission', 'frozen-requeue-cycle', 'prefix-split-placement', 'game-review-reader'].includes(check))
+    || nativeChecks.some(check => !['owner-trio', 'redis-fixture-isolation', 'position-grade-effects', 'position-review-atomicity', 'position-introductions', 'position-queue-admission', 'frozen-requeue-cycle', 'prefix-split-placement', 'game-review-reader'].includes(check))
     || nativeChecks.length && !['study','browser'].includes(mode)) throw new Error('Invalid native PostgreSQL selection');
   if (!["full", "browser", "study", "durability", "lifecycle", "lifecycle-current", "priority-historical"].includes(mode)) throw new Error(`Unknown PostgreSQL test mode: ${mode}`);
   const nativeStages = nativeChecks.map(check => check === "game-review-reader" ? "game_review_reader" : check);
@@ -221,4 +221,10 @@ export function originalPrefixSplitRows(snapshot, sourceCardId) {
     .map(({source_card_id, source_revision, shortened_card_id, continuation_card_id}) =>
       ({source_card_id, source_revision, shortened_card_id, continuation_card_id}))
     .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+}
+
+export function verifyOwnerTrioReceipt(receipt, project, revision) {
+  if (receipt?.project !== project || receipt?.revision !== revision || receipt?.cleanup !== 'completed'
+      || JSON.stringify(receipt?.completed) !== JSON.stringify(['deletion', 'monotonic_renewal', 'broker_wakes']))
+    throw new Error('Owner trio requires exact completed proof identities and cleanup');
 }

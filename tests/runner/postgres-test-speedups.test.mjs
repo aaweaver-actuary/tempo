@@ -8,7 +8,7 @@ import { runInNewContext } from "node:vm";
 import { test } from "node:test";
 import { Chess } from "chess.js";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "../../database/tests/postgres-test-options.mjs";
-import { maintainedQueueCases, unresolvedQueueCases, excludedQueueCases, verifyMaintainedQueueReceipt, verifyCheckpoint1QueueReceipt, verifyCheckpoint1BrowserReceipt, checkpoint1BrowserCases, checkpoint1NativeChecks, checkpoint1QueueCases, assertDisposableVolumes, backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "../../database/tests/postgres-test-plan.mjs";
+import { verifyOwnerTrioReceipt, maintainedQueueCases, unresolvedQueueCases, excludedQueueCases, verifyMaintainedQueueReceipt, verifyCheckpoint1QueueReceipt, verifyCheckpoint1BrowserReceipt, checkpoint1BrowserCases, checkpoint1NativeChecks, checkpoint1QueueCases, assertDisposableVolumes, backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "../../database/tests/postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   readStudyQueuePublication, repertoireLimitRecreationPgn, studyDurabilityPgn } from "../../database/tests/postgres-test-fixture.mjs";
 import { createScenarioTimer, postgresCommandTiming } from "../../scripts/test-scenario-timings.mjs";
@@ -1263,8 +1263,8 @@ test("pr102 background restoration recovers API health before confirming restore
   assert.deepEqual(events, [["background-worker", "background-scheduler"], "original readiness passed",
     "verified all running"]);
   const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
-  // The retired priority benchmark and Defense proof have no restoration call sites.
-  assert.equal(source.match(/restoreConsumers: \(\) => restoreBackgroundWorkloadConsumers\(/g)?.length, 3);
+  // The owner trio adds one isolated workload restoration site.
+  assert.equal(source.match(/restoreConsumers: \(\) => restoreBackgroundWorkloadConsumers\(/g)?.length, 4);
 });
 
 
@@ -1782,4 +1782,30 @@ test('P07 polling rejects foreign initial and completed operation identities', a
   await assert.rejects(poll(accepted('original'), 'original'), /identity/);
   receipt = {operation_id:'original', state:'complete', response:{applied:true}};
   assert.deepEqual(await poll(accepted('original'), 'original'), {applied:true});
+});
+
+test("owner trio selection and receipt fail closed", () => {
+  const options = parse(["--mode", "browser", "--browser-file", "redis-admission-recovery.spec.ts", "--native-check", "owner-trio"]);
+  assert(postgresTestStages(options).includes("owner-trio"));
+  assert.throws(() => parse(["--mode", "durability", "--native-check", "owner-trio"]));
+  assert.throws(() => parse(["--mode", "browser", "--native-check", "owner-trio", "--native-check", "owner-trio"]));
+  const project = "tempo-pg-regressions-12-12345678", revision = "a".repeat(40);
+  const receipt = { project, revision, cleanup: "completed", completed: ["deletion", "monotonic_renewal", "broker_wakes"] };
+  verifyOwnerTrioReceipt(receipt, project, revision);
+  for (const change of [{project: "foreign"}, {revision: "b".repeat(40)}, {cleanup: "unknown"},
+    {completed: ["deletion", "broker_wakes"]}, {completed: ["deletion", "monotonic_renewal", "monotonic_renewal"]}])
+    assert.throws(() => verifyOwnerTrioReceipt({...receipt, ...change}, project, revision));
+});
+test("owner trio rejects foreign identity before connection", () => {
+  const probe = `import runpy
+m=runpy.run_path('database/tests/check_owner_trio.py')
+f=m['validate_environment']
+base={'TEMPO_TEST_INSTANCE':'disposable','TEMPO_TEST_COMPOSE_PROJECT':'tempo-pg-regressions-1-12345678','TEMPO_NATIVE_CANDIDATE_REVISION':'a'*40,'TEMPO_REDIS_URL':'redis://redis:6379/0','PGPASSFILE':'/run/secrets/admin_pgpass'}
+assert f(base)==(base['TEMPO_TEST_COMPOSE_PROJECT'],base['TEMPO_NATIVE_CANDIDATE_REVISION'])
+for change in ({'TEMPO_TEST_INSTANCE':'live'},{'TEMPO_TEST_COMPOSE_PROJECT':'foreign'},{'TEMPO_REDIS_URL':'redis://localhost:6379/0'},{'PGHOSTADDR':'127.0.0.1'},{'TEMPO_DATABASE_WRITE_URL':'foreign'},{'PGPASSFILE':'/tmp/pass'}):
+ try: f({**base,**change})
+ except RuntimeError: pass
+ else: raise AssertionError(change)`;
+  const result = spawnSync(resolvePython(), ['-c', probe], { cwd: root, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
 });

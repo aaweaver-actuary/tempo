@@ -11,7 +11,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { createIsolatedTestEnvironment } from "../../scripts/test-environment.mjs";
 import { resolvePython } from "../../scripts/resolve-python.mjs";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "./postgres-test-options.mjs";
-import { requireOriginalOperationReceipt, originalPrefixSplitRows, assertDisposableVolumes, verifyMaintainedQueueReceipt, verifyMaintainedBrowserReceipt, verifyCheckpoint1QueueReceipt, verifyCheckpoint1BrowserReceipt, checkpoint1BrowserCases, unresolvedQueueCases, backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "./postgres-test-plan.mjs";
+import { verifyOwnerTrioReceipt, requireOriginalOperationReceipt, originalPrefixSplitRows, assertDisposableVolumes, verifyMaintainedQueueReceipt, verifyMaintainedBrowserReceipt, verifyCheckpoint1QueueReceipt, verifyCheckpoint1BrowserReceipt, checkpoint1BrowserCases, unresolvedQueueCases, backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "./postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   readStudyQueuePublication, repertoireLimitRecreationPgn, studyDurabilityPgn } from "./postgres-test-fixture.mjs";
 import { createScenarioTimer, isTimingPublicationFailure, postgresCommandTiming } from "../../scripts/test-scenario-timings.mjs";
@@ -1638,6 +1638,28 @@ const actions = {
     atomicJson(`test-results/native/${project}-${check}.json`, {
       head: candidateRevision, checks: {[check]: evidence}});
   }])),
+  'owner-trio': async () => {
+    assertDevelopmentProjectOwned(project);
+    let evidence;
+    await executeIsolatedBackgroundWorkload({
+      stopConsumers: () => { run('docker', [...compose, 'stop', ...workloadConsumers]); verifyWorkloadConsumers('exited'); },
+      measureWorkload: () => {
+        const result = run('docker', [...compose, 'run', '--rm', '--no-deps',
+          '-e', `TEMPO_TEST_COMPOSE_PROJECT=${project}`,
+          '-e', `TEMPO_NATIVE_CANDIDATE_REVISION=${candidateRevision}`,
+          '-e', 'TEMPO_REDIS_URL=redis://redis:6379/0',
+          'schema', 'python', '/source/database/tests/check_owner_trio.py'],
+          {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8'});
+        evidence = JSON.parse(result.stdout);
+        verifyOwnerTrioReceipt(evidence, project, candidateRevision);
+      },
+      restoreConsumers: () => restoreBackgroundWorkloadConsumers({
+        startConsumers: services => run('docker', [...compose, 'up', '--no-build', '-d', '--no-deps', ...services]),
+        waitForReady: () => waitForReady({ requireContainerHealthy: true }), verifyConsumers: verifyWorkloadConsumers,
+      }),
+    });
+    atomicJson(`test-results/native/${project}-owner-trio.json`, evidence);
+  },
   'redis-fixture-isolation': async () => {
     let evidence;
     await executeIsolatedBackgroundWorkload({
