@@ -188,7 +188,23 @@ def test_purge_preserves_identifier_reads_clock_points_fixed_targets_and_tombsto
     assert events[first_clock + 1] == ("execute", 9, ("timestamp", "card"))
     second_clock = events.index("clock", first_clock + 1)
     assert events[second_clock + 1] == ("many", [("card", "timestamp")])
-    assert database.batches[0][1] == [("card", "timestamp")]
+    assert database.batches == [(
+        "INSERT INTO deleted_cards(card_id,deleted_at) VALUES(%s,%s) ON CONFLICT(card_id) DO NOTHING",
+        [("card", "timestamp")],
+    )]
+    # Identical identifier parameters must not allow one fixed purge target to
+    # stand in for another in the borrowed fake.
+    delete_targets = [statement for statement, _ in database.calls if statement.startswith("DELETE FROM ")]
+    assert set(delete_targets) == {
+        f"DELETE FROM {table} WHERE card_id=ANY(%s)"
+        for table in ("opening_evidence_attempts", "opening_evidence_presentations",
+                      "study_attempts", "card_revisions", "queue_projection_diagnostics",
+                      "endgame_templates", "tactic_progress", "daily_queue")
+    } | {
+        "DELETE FROM cards WHERE id=ANY(%s)",
+        "DELETE FROM opening_evidence_queue_contexts WHERE queue_entry_id=ANY(%s) OR presentation_snapshot_id IN (SELECT id FROM opening_evidence_presentations WHERE card_id=ANY(%s))",
+    }
+    assert len(delete_targets) == 10
     assert events[-1] == ("execute", 16, (["card"],))
 
 
