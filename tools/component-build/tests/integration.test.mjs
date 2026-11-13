@@ -5,9 +5,17 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { checkComponents, repository, validateManifest } from "../check-components.mjs";
+import { validateOwnedPaths } from "../selection.mjs";
 
 const python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3.12";
 const original = JSON.parse(readFileSync(join(repository, "components.json")));
+test("T02 pure package tracked sources have exactly one declared owner", () => {
+  const result = spawnSync("git", ["ls-files", "packages/board-ui/src", "packages/evidence-math/src"], { cwd: repository, encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  const paths = result.stdout.trim().split("\n").filter(Boolean);
+  assert.ok(paths.length);
+  validateOwnedPaths(original, paths, ["board-ui", "evidence-math"]);
+});
 test("Learning review registers its actual application, tooling and native suites", () => {
   const componentIds = ["learning-review-application"];
   validateManifest(original, repository, { componentIds });

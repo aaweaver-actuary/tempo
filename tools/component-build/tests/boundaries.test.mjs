@@ -5,10 +5,54 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { repository, checkTypeScript, checkConsumer, validateManifest } from "../check-components.mjs";
+import { validateOwnerQualification } from "../restricted-build.mjs";
+import { validateOwnedPaths } from "../selection.mjs";
+import { createHash } from "node:crypto";
 const manifest = JSON.parse(readFileSync(resolve(repository, "components.json"), "utf8"));
 const chess = manifest.components.find(component => component.id === "chess-line");
 const scheduling = manifest.components.find(component => component.id === "scheduling");
 const python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3";
+test("T02 rejects unowned and duplicate pure package paths", () => {
+  const owners = [{ id: "a", root: "packages/a" }, { id: "b", root: "packages/b" }];
+  validateOwnedPaths({ components: owners }, ["packages/a/src/index.ts"], ["a", "b"]);
+  assert.throws(() => validateOwnedPaths({ components: owners }, ["packages/c/src/index.ts"], ["a", "b"]), /found 0/);
+  assert.throws(() => validateOwnedPaths({ components: [...owners, { id: "c", root: "packages/a/src" }] }, ["packages/a/src/index.ts"], ["a", "c"]), /found 2/);
+});
+test("T02 rejects unknown, missing and skipped owner qualification", t => {
+  const dir = mkdtempSync(join(tmpdir(), "tempo-t02-report-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  assert.throws(() => validateOwnerQualification("unknown", dir), /Unknown/);
+  assert.throws(() => validateOwnerQualification("board-ui", dir));
+  const labels = ["producer-install", "producer-typecheck", "producer-tests", "producer-build", "producer-pack", "consumer-install", "consumer-typecheck", "consumer-smoke", "consumer-build"];
+  writeFileSync(join(dir, "qualification.json"), JSON.stringify({ outcome: "passed", stagingRemoved: true, receipts: labels.map(label => ({ label, exitCode: 0 })) }));
+  writeFileSync(join(dir, "artifact.tgz"), "artifact");
+  writeFileSync(join(dir, "artifact.json"), JSON.stringify({ filename: "artifact.tgz", sha256: createHash("sha256").update("artifact").digest("hex") }));
+  const cases = [{ name: "board.test.ts", assertionResults: ["one", "two"].map(title => ({ title, ancestorTitles: [], status: "passed" })) }];
+  writeFileSync(join(dir, "unit-results.json"), JSON.stringify({ success: true, numTotalTests: 2, numPassedTests: 2, numFailedTests: 0, numPendingTests: 0, numTodoTests: 0, testResults: cases }));
+  assert.deepEqual(validateOwnerQualification("board-ui", dir), ["artifact.tgz"]);
+  const receipts = labels.map(label => ({ label, exitCode: 0 }));
+  for (const extra of [{ label: "producer-tests", exitCode: 1 }, { label: "unknown", exitCode: 0 }, { label: "producer-tests", exitCode: 0 }]) {
+    writeFileSync(join(dir, "qualification.json"), JSON.stringify({ outcome: "passed", stagingRemoved: true, receipts: [...receipts, extra] }));
+    assert.throws(() => validateOwnerQualification("board-ui", dir), /Incomplete/);
+  }
+  writeFileSync(join(dir, "qualification.json"), JSON.stringify({ outcome: "passed", stagingRemoved: true, receipts }));
+  cases[0].assertionResults[1] = cases[0].assertionResults[0];
+  writeFileSync(join(dir, "unit-results.json"), JSON.stringify({ success: true, numTotalTests: 2, numPassedTests: 2, numFailedTests: 0, numPendingTests: 0, numTodoTests: 0, testResults: cases }));
+  assert.throws(() => validateOwnerQualification("board-ui", dir), /Incomplete/);
+  writeFileSync(join(dir, "unit-results.json"), JSON.stringify({ success: true, numTotalTests: 2, numPassedTests: 1, numFailedTests: 0, numPendingTests: 1, numTodoTests: 0, testResults: cases }));
+  assert.throws(() => validateOwnerQualification("board-ui", dir), /Incomplete/);
+});
+test("T02 rejects duplicated evidence case identities even if counts agree", t => {
+  const dir = mkdtempSync(join(tmpdir(), "tempo-t02-evidence-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeFileSync(join(dir, "artifact.whl"), "artifact");
+  const matrix = ["3.12", "3.14"].flatMap(version => ["wheel", "sdist-wheel"].map(artifact => ({ interpreter: `Python ${version}.1`, artifact, passed: 2 })));
+  writeFileSync(join(dir, "qualification.json"), JSON.stringify({ complete: true, matrix, artifacts: [{ file: "artifact.whl", sha256: createHash("sha256").update("artifact").digest("hex") }] }));
+  for (let index = 0; index < 2; index++) for (const kind of ["wheel", "sdist-wheel"]) writeFileSync(join(dir, `cases-${index}-${kind}.json`), JSON.stringify({ selected: ["case-a", "case-b"], passed: ["case-a", "case-b"], failed: [], skipped: [] }));
+  assert.deepEqual(validateOwnerQualification("evidence-math", dir), ["artifact.whl"]);
+  writeFileSync(join(dir, "cases-0-wheel.json"), JSON.stringify({ selected: ["case-a", "case-a"], passed: ["case-a", "case-a"], failed: [], skipped: [] }));
+  assert.throws(() => validateOwnerQualification("evidence-math", dir), /duplicate/);
+});
 // Node marks test children internally; independent CLI fixtures must not inherit it.
 function spawnIsolatedNode(args, options = {}) {
   const env = { ...process.env, ...options.env };
