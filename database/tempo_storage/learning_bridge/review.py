@@ -55,13 +55,13 @@ def bind_receipt_request(database: postgres.PostgresConnection, request_json: st
 def queue_date(database, entry_id):
     return database.execute('SELECT queue_date FROM daily_queue WHERE id=%s', (entry_id,)).fetchone()
 
-def complete_identified_attempt(database, state, entry_id, card_id):
+def complete_identified_attempt(database: postgres.PostgresConnection, state: str, entry_id: int, card_id: str) -> None:
     database.execute("UPDATE daily_queue SET status='complete',attempt_state=%s WHERE id=%s AND card_id=%s", (state, entry_id, card_id))
 
-def complete_first_attempt(database, day, card_id):
+def complete_first_attempt(database: postgres.PostgresConnection, day: str, card_id: str) -> None:
     database.execute("UPDATE daily_queue SET status='complete' WHERE id=(SELECT id FROM daily_queue WHERE queue_date=%s AND card_id=%s AND status='queued' ORDER BY position LIMIT 1)", (day, card_id))
 
-def mark_clean_tactic(database, reviewed_at, card_id):
+def mark_clean_tactic(database: postgres.PostgresConnection, reviewed_at: str, card_id: str) -> None:
     database.execute('UPDATE tactic_progress SET clean_pass_at=COALESCE(clean_pass_at,%s) WHERE card_id=%s', (reviewed_at, card_id))
 
 def insert_receipt(database, attempt_id, card_id, entry_id, outcome, guided, completed_at, review_id, scheduling_status, warning, result_json):
