@@ -15,10 +15,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from tempo_evidence_math.position_learning import PositionDefinition
-from tempo_storage.authored_repertoires.position_study_source import (
-    PreparedPositionSource, fence_position_source,
-)
+from tempo_evidence_math.position_learning import PositionDefinition, PreparedPositionSourceView
+from tempo_storage.authored_repertoires.position_study_source import fence_position_source
 
 
 @dataclass(frozen=True)
@@ -86,7 +84,7 @@ def owner_mode(database, repertoire_id: str, expected_authored_digest: str | Non
     return OwnerDecision("position", mode, epoch, digest, "position_owner_active")
 
 
-def fence_position_owner_in_writer(database, prepared_source: PreparedPositionSource, *,
+def fence_position_owner_in_writer(database, prepared_source: PreparedPositionSourceView, *,
                                    definition: PositionDefinition, epoch: str, queue_entry_id: int, card_id: str,
                                    revision: int) -> OwnerDecision:
     """Authorize *new* issuance only, using A1 and retained queue admission.
