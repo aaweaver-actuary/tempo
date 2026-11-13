@@ -618,8 +618,14 @@ fences and the borrowed transaction remain with their existing owners. Due facts
 do not grant issuance or establish live source currentness. This source map is
 not native or runtime qualification; previous fixture gaps remain open.
 
-At this base revision, 39 of 289 tracked Python files in those trees remain
-outside the combined 250-file selections. The registry alone assigns owners;
+A forty-sixth selection maps the existing PostgreSQL pools and connection scopes,
+storage admission binding and application composition. Main and task composition
+bind the existing gate and measurement; the pool module registers shutdown at
+import. This source map is not a runtime, startup or isolation qualification;
+previous fixture gaps remain open.
+
+At this base revision, 35 of 289 tracked Python files in those trees remain
+outside the combined 254-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover
