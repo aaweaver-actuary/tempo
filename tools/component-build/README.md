@@ -695,6 +695,17 @@ not an installed-state observation. This census executes no SQL and does not
 qualify migration, rollback, recovery or native behavior; other executable-role
 inventories and existing fixture gaps remain open.
 
+## Historical reduction inspection tools
+
+The three existing `tools/reduction` scripts are source-inspection tooling: they
+read Git revisions or parse current source and emit audit findings. Their historical
+classifications do not authorize product deletions and are not a production planner.
+The source guard inventories and parses them without execution. The selection of
+`tools/component-build/tests/test_source_delta.py` and
+`scripts/tests/tempo-retained-history-authority.test.mjs` remains unconfirmed;
+this mapping does not establish either as passing. Other executable-role inventories
+and previously recorded fixture gaps remain open.
+
 The contract-tooling source census assigns twelve tracked executable Python and
 TypeScript files outside implemented package roots to tooling, tests, or the
 independent TypeScript consumer. The existing contract-exchange suite remains

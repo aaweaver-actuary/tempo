@@ -416,6 +416,31 @@ if not {'migration_source','validate_migration_history','apply_migrations','migr
   return {resources: tracked.length, version};
 }
 
+export function validateReductionTools(manifest, root = repository, python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3") {
+  const listed=spawnSync("git",["ls-files","-z","tools/reduction"],{cwd:root,encoding:"utf8"});
+  if (listed.error || listed.status!==0) throw new Error("Cannot enumerate reduction tooling");
+  const tracked=listed.stdout.split("\0").filter(p=>/\.(?:py|sh|js|jsx|mjs|cjs|ts|tsx)$/.test(p));
+  const owner=manifest.components.find(c=>c.id==="historical-reduction-audit-tooling");
+  const mapped=manifest.components.filter(c=>c.status==="mapped" && c.ownedFiles);
+  if (!owner || owner.status!=="mapped" || !Array.isArray(owner.resourceRoles)) throw new Error("Missing reduction tooling owner");
+  if (new Set(owner.ownedFiles).size!==owner.ownedFiles.length || owner.ownedFiles.length!==tracked.length || owner.ownedFiles.some(p=>!tracked.includes(p))) throw new Error("Reduction tooling inventory missing, duplicate or stale");
+  const allowedRoles=new Set(["source-census","source-link-audit","historical-diff-audit"]), roles=new Map();
+  for (const entry of owner.resourceRoles) {
+    const parts=typeof entry === "string" ? entry.split("#") : [];
+    if (parts.length!==2 || !owner.ownedFiles.includes(parts[0]) || !allowedRoles.has(parts[1]) || roles.has(parts[0])) throw new Error("Invalid reduction tooling role");
+    roles.set(parts[0],parts[1]);
+  }
+  if (roles.size!==tracked.length || tracked.some(p=>!roles.has(p) || !p.endsWith(".py"))) throw new Error("Invalid reduction tooling role");
+  for (const p of tracked) if (p.split("/").some(x=>!x || x==="." || x==="..") || !existsSync(resolve(root,p)) || !inside(realpathSync(root),realpathSync(resolve(root,p))) || mapped.filter(c=>c.ownedFiles.includes(p)).length!==1) throw new Error("Invalid or overlapping reduction tooling source");
+  const code=`import ast,json,pathlib,sys
+root=pathlib.Path(sys.argv[1])
+for p in json.loads(sys.argv[2]): ast.parse((root/p).read_text(),filename=p)
+`;
+  const parsed=spawnSync(python,["-c",code,resolve(root),JSON.stringify(tracked)],{encoding:"utf8"});
+  if (parsed.error || parsed.status!==0) throw new Error("Reduction tooling source parse failed: "+(parsed.error?.message ?? parsed.stderr));
+  return {files:tracked.length};
+}
+
 export function checkComponents(root = repository, python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3", options = {}) {
   const manifest = readManifest(root);
   const selected = selectComponents(manifest, options.componentIds);
@@ -429,6 +454,7 @@ export function checkComponents(root = repository, python = process.env.TEMPO_CO
   if (root === repository && options.componentIds === undefined) {
     validateStartupFacts(manifest, root);
     validateDdlResources(manifest, root, python);
+    validateReductionTools(manifest, root, python);
     validateContractTooling(manifest, root, python);
   }
   validateManifest(manifest, root, { componentIds: selected.map(component => component.id), suiteIds: options.componentIds === undefined ? manifest.suites?.map(suite => suite.id) : undefined });
@@ -468,6 +494,7 @@ if (process.argv[1] && resolve(process.argv[1]) === new URL(import.meta.url).pat
       if (root === repository && options.componentIds === undefined) {
         validateStartupFacts(manifest, root);
         validateDdlResources(manifest, root);
+        validateReductionTools(manifest, root);
         validateContractTooling(manifest, root);
       }
       validateManifest(manifest, root, { componentIds: options.suiteIds ? [] : selected.map(component => component.id), suiteIds: options.suiteIds });
