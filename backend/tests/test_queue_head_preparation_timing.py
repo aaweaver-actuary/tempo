@@ -26,7 +26,7 @@ def test_position_preparation_timing_preserves_proposal_and_source_hold(
     monkeypatch, caplog, timing, held
 ):
     from tempo_storage import connections
-    from tempo_storage.study import game_feedback, position_due_candidates
+    from tempo_storage.study import position_due_candidates
     from app.study.position_learning import issuance as position_issued_plans
     from app.services import position_queue_admission
     from app.study.position_learning import issued_plan_service, route_planner
@@ -110,7 +110,6 @@ def test_position_preparation_timing_preserves_proposal_and_source_hold(
     monkeypatch.setattr(
         position_due_candidates, "PositionDueCandidateReader", DueReader
     )
-    monkeypatch.setattr(game_feedback, "read_position_urgency", lambda *a, **kw: None)
     monkeypatch.setattr(
         position_queue_admission,
         "select_carrier",
