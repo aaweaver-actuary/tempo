@@ -458,7 +458,7 @@ async function waitForStudyableImport(...argumentsList) {
       child.stdin.on('error', error => { observer.error = error.name; });
       observer.done = new Promise(resolve => child.once('close', code => resolve(code)));
     } catch (error) {
-      try { atomicJson(`test-results/native/${project}-p14-queue-observer.json`, {revision:candidateRevision, project, incomplete:true, diagnostic_error:error.name}); }
+      try { atomicJson(`test-results/native/${project}-p14-queue-observer.json`, {revision:candidateRevision, project, incomplete:true, container_process_exit_verified:false, diagnostic_error:error.name}); }
       catch { console.error('P14 queue observer evidence unavailable'); }
     }
   }
@@ -481,14 +481,14 @@ async function waitForStudyableImport(...argumentsList) {
           clearTimeout(terminationTimer);
         }
         atomicJson(`test-results/native/${project}-p14-queue-observer.json`, {
-          revision:candidateRevision, project, observer_exit:childExit, diagnostic_error:observer.error,
+          revision:candidateRevision, project, docker_exec_exit:childExit, container_process_exit_verified:false, diagnostic_error:observer.error,
           incomplete:exit === 'timeout' || childExit !== 0 || Boolean(observer.error) || observer.overflow,
           overflow:observer.overflow, samples:observer.output.split('\n').filter(Boolean).map(line => JSON.parse(line)),
         });
       } catch (error) {
         // Diagnostics must never replace the Study outcome or change its deadline.
         try { atomicJson(`test-results/native/${project}-p14-queue-observer.json`, {
-          revision:candidateRevision, project, incomplete:true, diagnostic_error:error.name,
+          revision:candidateRevision, project, incomplete:true, container_process_exit_verified:false, diagnostic_error:error.name,
         }); } catch { /* The original Study outcome remains authoritative. */ }
         console.error(`P14 queue observer unavailable: ${error.name}`);
       }

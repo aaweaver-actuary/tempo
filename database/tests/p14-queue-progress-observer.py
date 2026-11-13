@@ -6,7 +6,7 @@ import re
 import select
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import psycopg
 import redis
@@ -26,6 +26,35 @@ def digest(value):
     return hashlib.sha256(str(value).encode()).hexdigest() if value is not None else None
 
 
+def safe_day(value):
+    if value is None: return None
+    try:
+        if not isinstance(value, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', value): raise ValueError()
+        return date.fromisoformat(value).isoformat()
+    except ValueError:
+        return {'invalid_digest': digest(value)}
+
+
+def safe_timestamp(value):
+    if value is None: return None
+    try:
+        if isinstance(value, datetime): parsed = value
+        elif isinstance(value, str) and re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})', value):
+            parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        else: raise ValueError()
+        if parsed.tzinfo is None: raise ValueError()
+        return parsed.isoformat()
+    except ValueError:
+        return {'invalid_digest': digest(value)}
+
+
+def safe_projection(row):
+    states = {'ready', 'refreshing', 'failed', 'empty'}
+    return {**row, 'queue_date': safe_day(row['queue_date']),
+            'state': row['state'] if row['state'] in states else 'unknown',
+            'updated_at': safe_timestamp(row['updated_at'])}
+
+
 def safe_payload(raw):
     try:
         value = json.loads(raw)
@@ -33,8 +62,7 @@ def safe_payload(raw):
     except (TypeError, ValueError):
         return {'valid': False, 'digest': digest(raw)}
     result = {'valid': True, 'digest': digest(raw)}
-    if isinstance(value.get('queue_date'), str) and re.fullmatch(r'\d{4}-\d{2}-\d{2}', value['queue_date']):
-        result['queue_date'] = value['queue_date']
+    if 'queue_date' in value: result['queue_date'] = safe_day(value['queue_date'])
     phases = {'unlock_opening','tactical_introductions','reset_opening_new','reset_opening_stale',
               'reconcile_unseen','admit_due','admit_position_due','prioritized_openings',
               'prioritized_opening_item','study_opening_page','study_opening_item','admit_study',
@@ -53,16 +81,16 @@ def safe_task(row):
             'generation': row['generation'], 'state': row['state'] if row['state'] in allowed_states else 'unknown',
             'phase_digest': digest(row['phase']), 'payload': safe_payload(row['payload_json']),
             'attempt_count': row['attempt_count'], 'max_attempts': row['max_attempts'],
-            'next_attempt_at': row['next_attempt_at'], 'lease_present': row['lease_token'] is not None,
-            'lease_digest': digest(row['lease_token']), 'lease_expires_at': row['lease_expires_at'],
+            'next_attempt_at': safe_timestamp(row['next_attempt_at']), 'lease_present': row['lease_token'] is not None,
+            'lease_digest': digest(row['lease_token']), 'lease_expires_at': safe_timestamp(row['lease_expires_at']),
             'has_error': row['has_error'], 'error_digest': row['error_digest'],
-            'created_at': row['created_at'], 'updated_at': row['updated_at']}
+            'created_at': safe_timestamp(row['created_at']), 'updated_at': safe_timestamp(row['updated_at'])}
 
 
 def safe_event(row):
     return {'task_id_digest': digest(row['task_id']), 'generation': row['generation'],
             'event_digest': digest(row['event']), 'phase_digest': digest(row['phase']),
-            'has_detail': row['has_detail'], 'detail_digest': row['detail_digest'], 'created_at': row['created_at']}
+            'has_detail': row['has_detail'], 'detail_digest': row['detail_digest'], 'created_at': safe_timestamp(row['created_at'])}
 
 
 def safe_wake(fields, owner):
@@ -88,7 +116,7 @@ def sample():
                 raise RuntimeError('Unowned database marker')
             result['tasks'] = [safe_task(row) for row in db.execute("""SELECT id,deduplication_key,generation,state,phase,payload_json,attempt_count,max_attempts,next_attempt_at,lease_token,lease_expires_at,(last_error IS NOT NULL) AS has_error,md5(last_error) AS error_digest,created_at,updated_at FROM background_tasks WHERE kind='daily_queue' ORDER BY id LIMIT 100""").fetchall()]
             result['events'] = [safe_event(row) for row in db.execute("""SELECT e.task_id,e.generation,e.event,e.phase,(e.detail IS NOT NULL) AS has_detail,md5(e.detail) AS detail_digest,e.created_at FROM background_task_events e JOIN background_tasks t ON t.id=e.task_id WHERE t.kind='daily_queue' ORDER BY e.id DESC LIMIT 100""").fetchall()]
-            result['projections'] = db.execute("SELECT queue_date,state,generation,refresh_pending,requested_refresh_epoch,published_refresh_epoch,(last_error IS NOT NULL) AS has_error,md5(last_error) AS error_digest,updated_at FROM queue_projections ORDER BY queue_date DESC LIMIT 10").fetchall()
+            result['projections'] = [safe_projection(row) for row in db.execute("SELECT queue_date,state,generation,refresh_pending,requested_refresh_epoch,published_refresh_epoch,(last_error IS NOT NULL) AS has_error,md5(last_error) AS error_digest,updated_at FROM queue_projections ORDER BY queue_date DESC LIMIT 10").fetchall()]
             result['activity'] = db.execute("""SELECT pid,md5(application_name) AS application_digest,state,wait_event_type,wait_event,query_start,md5(query) AS query_digest FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() ORDER BY pid LIMIT 40""").fetchall()
             result['locks'] = db.execute("""SELECT pid,locktype,mode,granted,md5(relation::regclass::text) AS relation_digest,waitstart FROM pg_locks WHERE database=(SELECT oid FROM pg_database WHERE datname=current_database()) AND (NOT granted OR locktype='advisory') ORDER BY pid LIMIT 80""").fetchall()
     except Exception as error:

@@ -40,9 +40,10 @@ test("P14 observer never emits payload, lease or wake secrets", () => {
 m=runpy.run_path('database/tests/p14-queue-progress-observer.py',run_name='observer_probe')
 secret='SENTINEL_SECRET_VALUE'
 payload=json.dumps({'queue_date':'2026-11-12','_queue_phase':'admit_due','_refresh_cycle_epoch':5,'after_card_id':secret,'other':secret})
-row={'id':secret,'deduplication_key':secret,'generation':1,'state':'leased','phase':secret,'payload_json':payload,'attempt_count':1,'max_attempts':5,'next_attempt_at':'later','lease_token':secret,'lease_expires_at':'later','has_error':True,'error_digest':'digest','created_at':'before','updated_at':'after'}
-event={'task_id':secret,'generation':1,'event':secret,'phase':secret,'has_detail':True,'detail_digest':'digest','created_at':'now'}
-result={'task':m['safe_task'](row),'event':m['safe_event'](event),'wake':m['safe_wake']([secret,'published','1',secret,secret,secret],secret)}
+row={'id':secret,'deduplication_key':secret,'generation':1,'state':'leased','phase':secret,'payload_json':payload,'attempt_count':1,'max_attempts':5,'next_attempt_at':secret,'lease_token':secret,'lease_expires_at':secret,'has_error':True,'error_digest':'digest','created_at':secret,'updated_at':secret}
+event={'task_id':secret,'generation':1,'event':secret,'phase':secret,'has_detail':True,'detail_digest':'digest','created_at':secret}
+projection={'queue_date':secret,'state':'ready','generation':1,'refresh_pending':1,'requested_refresh_epoch':5,'published_refresh_epoch':1,'has_error':False,'error_digest':None,'updated_at':secret}
+result={'task':m['safe_task'](row),'event':m['safe_event'](event),'projection':m['safe_projection'](projection),'wake':m['safe_wake']([secret,'published','1',secret,secret,secret],secret)}
 text=json.dumps(result)
 assert secret not in text
 assert result['task']['payload']['phase']=='admit_due' and result['task']['payload']['_refresh_cycle_epoch']==5
