@@ -20,3 +20,19 @@ Published linked `study_exercise` cards remain supported ordinary Study work. Ex
 | GET `/api/studies/{study_id}/exercises/{exercise_id}/attempts/{attempt_id}/feedback` | `{specification}` from the persisted attempt's revision, after verifying all path ownership. This legacy projection has no identity fields, so the route must enforce identity and revision before returning it. |
 
 Pending is `{attempt_id, assessment, pending_self_assessment: true}`: the durable parent command has completed and can release only its dependent self-assessment, but no human review is complete and the queue must not advance. Completed is `{attempt_id, assessment, rating, requested_rating, review, persisted: true}`; `review` is null for practice and contains the review and requeue identities for a review. The writer owns the request hash, queue/card/revision fences, original attempts and scheduling transaction. Existing writer errors preserve their HTTP distinctions: 404 unavailable owner/attempt, 409 identity/revision/queue conflict or retired presentation, 422 invalid request/answer; dependency failures and pending commands must not be represented as completed success. B31 must preserve these distinctions and prove exact persisted revision ownership on feedback. `study-exercise-transport.ts` provides pure response decoders for C21 adoption; it does not itself activate these routes or establish assembled behavior.
+
+### Proposed offline grader compatibility
+
+The existing Python parser and grader v1 are authoritative for retained v1
+work; browser conformance must follow that behavior rather than claim that the
+old browser grader was equivalent. See the [Study policy decision](../../../backend/app/study/policy/README.md#grader-v1-compatibility-decision)
+for the compatibility details and the boundary for a real v2.
+
+For newly created offline attempts, the proposed local provenance is
+`server_contract_version: 1` and `browser_implementation_revision: 2` after
+the conforming browser implementation is actually adopted. These are local
+metadata, not fields added to the server request or its hash. Existing attempts
+without provenance remain `legacy_unknown`: do not infer or backfill a revision
+on read, silently regrade them, or replace their original operation and answer.
+This decision documents the intended follow-up; it does not implement or stamp
+provenance, alter persisted grader versions, or change the transport.
