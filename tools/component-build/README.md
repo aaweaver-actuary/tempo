@@ -555,8 +555,9 @@ legacy adapters and borrowed SQL store. Existing scheduling package, FSRS defaul
 source identity, caller transaction and review receipt owners remain visible. This
 source map does not establish native proof. Nineteen previously reported fixture
 failures remain unresolved. Ten scheduling store fixture cases also error on the
-missing `real_game_feedback_adapter`; the selected interpreter lacks `grimp` and
-installed scheduling/chess-core package metadata for other selected checks.
+missing `real_game_feedback_adapter`. The initial interpreter lacked `grimp` and
+installed scheduling/chess-core metadata; a task-owned locked, non-editable Python
+environment subsequently passed 49 scheduling boundary and package metadata cases.
 
 At this base revision, 83 of 289 tracked Python files in those trees remain
 outside the combined 206-file selections. The registry alone assigns owners;
