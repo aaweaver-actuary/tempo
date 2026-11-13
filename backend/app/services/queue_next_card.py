@@ -65,7 +65,7 @@ def prepare_queue_head(payload):
         prepare_position_issuance,
     )
     from app.study.position_learning.route_planner import choose_plan
-    from .position_queue_admission import select_carrier
+    from app.study.position_learning.position_carrier import select_carrier
     from .background_runtime import training_timing_stage
 
     def held(reason):
