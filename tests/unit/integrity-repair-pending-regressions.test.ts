@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { enqueueIntegrityRepair, pendingIntegrityRepairs, flushIntegrityRepairs } from "../../app/lib/integrity-repair-outbox";
+import { enqueueIntegrityRepair, pendingIntegrityRepairs, flushIntegrityRepairs, retryIntegrityRepair } from "../../app/lib/integrity-repair-outbox";
 
 const startingFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 const choice = { repertoireId: "rep", issueId: "issue", signature: "signature", selectedMoveUci: "e2e4" };
@@ -112,4 +112,58 @@ it("C14 matching integrity 202 resolves only its original operation receipt", as
   const saved = enqueueIntegrityRepair(choice); savedId = saved.operationId;
   await flushIntegrityRepairs();
   expect(pendingIntegrityRepairs()[0]).toMatchObject({ operationId: savedId, taskId: "original-task" });
+});
+
+
+it.each(["own", "missing", "foreign", "malformed"])("C14 %s operation-retry 202 retains original identity and receipt recovery", async kind => {
+  let id = "", advanced = false;
+  const retries: string[] = [], reads: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/retry") && init?.method === "POST") {
+      retries.push(decodeURIComponent(url.split("/").at(-2)!));
+      if (kind === "malformed") return new Response("not-json", { status: 202 });
+      return Response.json({ state: "blocked", ...(kind === "own" ? { operation_id: id }
+        : kind === "foreign" ? { operation_id: "foreign" } : {}) }, { status: 202 });
+    }
+    if (url.includes("/api/operations/")) {
+      reads.push(decodeURIComponent(url.split("/").pop()!));
+      return advanced ? Response.json({ operation_id: id, state: "complete", retry_cycle: 2,
+        response: { task_id: "original-task", repertoire_id: "rep", issue_id: "issue", state: "queued" } })
+        : Response.json({ operation_id: id, state: "blocked", retry_cycle: 1, attempt_count: 3 });
+    }
+    throw new Error(`Unexpected request ${url}`);
+  }));
+  const saved = enqueueIntegrityRepair(choice); id = saved.operationId;
+  await flushIntegrityRepairs();
+  await retryIntegrityRepair(id);
+  const held = pendingIntegrityRepairs()[0];
+  expect(held).toMatchObject({ operationId: id, ...choice, phase: "saving", retry: { kind: "operation", deliveryAccepted: kind === "own" } });
+  expect(retries).toEqual([id]);
+  advanced = true;
+  vi.spyOn(Date, "now").mockReturnValue(Date.now() + 31_000);
+  await flushIntegrityRepairs();
+  expect(pendingIntegrityRepairs()[0]).toMatchObject({ operationId: id, phase: "validating", taskId: "original-task" });
+  expect(reads.every(read => read === id)).toBe(true);
+  expect(retries).toEqual([id]);
+});
+
+it('C14 foreign retry acknowledgment permits replay of the same blocked operation', async () => {
+  let id = '', posts = 0;
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith('/retry') && init?.method === 'POST') {
+      expect(decodeURIComponent(url.split('/').at(-2)!)).toBe(id);
+      posts++;
+      return Response.json({ operation_id: posts === 1 ? 'foreign' : id, state: 'blocked' }, { status: 202 });
+    }
+    return Response.json({ operation_id: id, state: 'blocked', retry_cycle: 1, attempt_count: 3 });
+  }));
+  id = enqueueIntegrityRepair(choice).operationId;
+  await flushIntegrityRepairs(); await retryIntegrityRepair(id);
+  expect(pendingIntegrityRepairs()[0].retry).toMatchObject({ kind: 'operation', deliveryAccepted: false });
+  vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 31_000);
+  await flushIntegrityRepairs();
+  expect(posts).toBe(2);
+  expect(pendingIntegrityRepairs()[0]).toMatchObject({ operationId: id, retry: { deliveryAccepted: true } });
 });

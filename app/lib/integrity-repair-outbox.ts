@@ -276,6 +276,11 @@ async function processRetry(repair: PendingIntegrityRepair) {
     } else if (!retry.deliveryAccepted) {
       const response = await timedRequest(`${API_URL}/api/operations/${encodeURIComponent(repair.operationId)}/retry`, { method: "POST" }, false);
       if (!response.ok) throw new Error("Repair retry delivery is unconfirmed. Check its original receipt.");
+      if (response.status === 202) {
+        const acknowledgment = decodeOperationAcceptance(await response.json(), "command");
+        if (acknowledgment.kind === "malformed" || acknowledgment.operationId !== repair.operationId)
+          throw new Error("Repair retry acknowledgment did not confirm the original operation identity.");
+      }
       updateRepair(repair.operationId, current => ({ ...current, retry: { ...retry, deliveryAccepted: true } }));
     }
     return false;
