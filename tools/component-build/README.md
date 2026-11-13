@@ -501,8 +501,14 @@ protection, queue change/rollback and reader-version edges remain visible. This
 source map does not authorize activation or establish native qualification; the
 nineteen previously reported fixture failures remain unresolved.
 
-At this base revision, 126 of 291 tracked Python files in those trees remain
-outside the combined 165-file selections. The registry alone assigns owners;
+A twenty-eighth selection maps original queue attempt recovery, provenance SQL and
+explicit abandonment lifecycle. Existing entry/card/revision/content, receipt,
+locked-origin fingerprint and accepted-review/position exclusions remain visible.
+This source map does not authorize abandonment or establish native qualification;
+the nineteen previously reported fixture failures remain unresolved.
+
+At this base revision, 123 of 291 tracked Python files in those trees remain
+outside the combined 168-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover

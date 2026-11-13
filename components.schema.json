@@ -178,7 +178,8 @@
               "study_attempt",
               "study_grading",
               "repertoire_conflicts",
-              "frozen_order"
+              "frozen_order",
+              "queue_attempt_origin"
             ]
           }
         }

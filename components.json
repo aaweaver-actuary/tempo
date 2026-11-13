@@ -2,6 +2,107 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "queue-attempt-origin-application",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/queue_attempt_origins.py#recover_queue_entry",
+        "backend/app/queue_attempt_origins.py#validate_failure_marker"
+      ],
+      "dependencies": [
+        "queue-attempt-origin-storage",
+        "study-attempt-guard"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/queue_attempt_origins.py"
+      ],
+      "ownershipRole": "Validate original queue attempt provenance",
+      "dependencyNotes": [
+        "Uses original entry/card/revision and immutable content identity, saved result and abandonment guard; Learning review and queue command consumers retain existing conflict handling."
+      ],
+      "censusScope": "queue_attempt_origin"
+    },
+    {
+      "id": "queue-attempt-origin-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/lifecycle",
+      "publicExports": [
+        "database/tempo_storage/lifecycle/queue_attempt_origins.py#attempt_contexts",
+        "database/tempo_storage/lifecycle/queue_attempt_origins.py#current_card_identity",
+        "database/tempo_storage/lifecycle/queue_attempt_origins.py#entry_contexts",
+        "database/tempo_storage/lifecycle/queue_attempt_origins.py#retain_recovered_completion"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/lifecycle/queue_attempt_origins.py"
+      ],
+      "ownershipRole": "Read original attempt and retain recovered result",
+      "dependencyNotes": [
+        "Caller-transaction SQL reads original and current identity and preserves recovered completion under original entry, card and revision; projection is not a receipt."
+      ],
+      "censusScope": "queue_attempt_origin"
+    },
+    {
+      "id": "queue-attempt-abandonment",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/lifecycle",
+      "publicExports": [
+        "database/tempo_storage/lifecycle/queue_attempt_abandonment.py#origin_fingerprint",
+        "database/tempo_storage/lifecycle/queue_attempt_abandonment.py#validate_request",
+        "database/tempo_storage/lifecycle/queue_attempt_abandonment.py#is_abandoned",
+        "database/tempo_storage/lifecycle/queue_attempt_abandonment.py#plan_in_writer",
+        "database/tempo_storage/lifecycle/queue_attempt_abandonment.py#abandon_in_writer",
+        "database/tempo_storage/lifecycle/queue_attempt_abandonment.py#main"
+      ],
+      "dependencies": [
+        "study-queue-position-lock"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/lifecycle/queue_attempt_abandonment.py"
+      ],
+      "ownershipRole": "Plan and record explicit attempt abandonment",
+      "dependencyNotes": [
+        "Existing explicit lifecycle/CLI checks schema, locked origin fingerprint, unfinished issued legacy opening and accepted-review/position exclusions; operation receipt and caller transaction remain authoritative. Mapping grants no permission to invoke it."
+      ],
+      "censusScope": "queue_attempt_origin"
+    },
+    {
       "id": "study-frozen-order-policy",
       "type": "integration",
       "maintainer": "Tempo",
