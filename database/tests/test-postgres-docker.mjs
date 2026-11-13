@@ -11,7 +11,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { createIsolatedTestEnvironment } from "../../scripts/test-environment.mjs";
 import { resolvePython } from "../../scripts/resolve-python.mjs";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "./postgres-test-options.mjs";
-import { requireOriginalOperationReceipt, originalPrefixSplitRows, assertDisposableVolumes, verifyMaintainedQueueReceipt, verifyMaintainedBrowserReceipt, unresolvedQueueCases, backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "./postgres-test-plan.mjs";
+import { requireOriginalOperationReceipt, originalPrefixSplitRows, assertDisposableVolumes, verifyMaintainedQueueReceipt, verifyMaintainedBrowserReceipt, verifyCheckpoint1QueueReceipt, verifyCheckpoint1BrowserReceipt, checkpoint1BrowserCases, unresolvedQueueCases, backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "./postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   readStudyQueuePublication, repertoireLimitRecreationPgn, studyDurabilityPgn } from "./postgres-test-fixture.mjs";
 import { createScenarioTimer, isTimingPublicationFailure, postgresCommandTiming } from "../../scripts/test-scenario-timings.mjs";
@@ -35,7 +35,8 @@ if (options.list) {
     historical_priority_rollback: stages.includes("study_durability") ? "not executed" : undefined,
     study_durability_cases: stages.includes("study_durability") ? ["foreground_study", "prefix_split_http_accept_replay", "prefix_split_http_restart_replay", "study_burial_quota", "blocked_burial_recovery"] : [],
     lifecycle_current_cases: options.mode === "lifecycle-current" ? ["current65_baseline", "current65_before_write", "current65_interrupted", "current65_unresolved_refusal", "current65_mismatched_guard", "current65_retry_original", "current65_repeat", "current65_recreate", "current65_original_replay"] : [],
-    priority_historical_cases: options.mode === "priority-historical" ? ["test_postgres_priority_index_only_rollback_preserves_accepted_reviews"] : [] }, null, 2));
+    priority_historical_cases: options.mode === "priority-historical" ? ["test_postgres_priority_index_only_rollback_preserves_accepted_reviews"] : [],
+    p14_checkpoint1_browser_cases: options.p14Checkpoint1 ? checkpoint1BrowserCases : [] }, null, 2));
   process.exit(0);
 }
 
@@ -232,7 +233,7 @@ async function verifyStudyPriorityMaintenance(currentOnly = false) {
   });
 }
 
-async function verifyStudyQueueReceipts(maintained = false) {
+async function verifyStudyQueueReceipts(maintained = false, checkpoint1 = false) {
     await executeIsolatedBackgroundWorkload({
       stopConsumers: () => {
         run("docker", [...compose, "stop", ...workloadConsumers]);
@@ -242,9 +243,15 @@ async function verifyStudyQueueReceipts(maintained = false) {
         const result = run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
           "/source/database/tests/check_postgres_queue_attempt_recovery.py", ...(maintained ? ["--case-set", "maintained-six"] : [])],
           {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, echoCapturedOutput: true});
-        if (!maintained) return;
+        if (!maintained && !checkpoint1) return;
         const records = result.stdout.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line));
         const receipt = records.findLast(record => record.execution === 'completed');
+        if (checkpoint1) {
+          if (records.filter(record => record.execution === 'completed').length !== 1) throw new Error('Checkpoint1 requires exactly one queue completion receipt');
+          verifyCheckpoint1QueueReceipt(receipt);
+          atomicJson(`test-results/native/${project}-p14-queue.json`, { revision: candidateRevision, project, ...receipt });
+          return;
+        }
         verifyMaintainedQueueReceipt(receipt);
         atomicJson(`test-results/native/${project}-maintained-queue.json`, {revision: candidateRevision, project, ...receipt});
         const paused = run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
@@ -1496,7 +1503,8 @@ const actions = {
   },
   browser: async () => {
       const browserArguments = buildPostgresPlaywrightArguments(options);
-      const report = options.maintainedStudyProof
+      if (options.p14Checkpoint1) browserArguments.push("--project", "chromium");
+      const report = options.p14Checkpoint1 ? resolve(`test-results/ci/${project}-p14-browser.json`) : options.maintainedStudyProof
         ? resolve(process.env.TEMPO_CI_REPORT ?? `test-results/ci/${project}-maintained-study.json`) : process.env.TEMPO_CI_REPORT;
       run("npx", browserArguments, { env: { ...environment,
         ...(report ? {TEMPO_CI_REPORT: report} : {}),
@@ -1504,6 +1512,10 @@ const actions = {
         TEMPO_TEST_COMPOSE_PROJECT: project,
         TEMPO_TEST_OUTPUT_DIR: join(process.cwd(), "test-results", `browser-postgres-${process.pid}`),
       } });
+      if (options.p14Checkpoint1) {
+        verifyCheckpoint1BrowserReceipt(JSON.parse(readFileSync(report, 'utf8')));
+        atomicJson(`test-results/native/${project}-p14-browser.json`, { revision: candidateRevision, project, browser_report: report, cases: checkpoint1BrowserCases });
+      }
       if (options.maintainedStudyProof) {
         verifyMaintainedBrowserReceipt(JSON.parse(readFileSync(report, 'utf8')));
         atomicJson(`test-results/native/${project}-maintained-study.json`, {revision: candidateRevision, project,
@@ -1532,7 +1544,7 @@ const actions = {
     await verifyStudyPriorityMaintenance();
     await verifyStudyOpeningAdmission();
   },
-  study_queue_receipts: () => verifyStudyQueueReceipts(),
+  study_queue_receipts: () => verifyStudyQueueReceipts(false, options.p14Checkpoint1),
   ...Object.fromEntries(['position-grade-effects', 'position-review-atomicity', 'position-introductions', 'position-queue-admission', 'prefix-split-placement'].map(check => [check, async () => {
     assertDevelopmentProjectOwned(project);
     const imageReference = run('docker', [...compose, 'images', '-q', 'schema'],

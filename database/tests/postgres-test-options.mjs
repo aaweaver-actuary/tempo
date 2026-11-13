@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { basename, join } from "node:path";
+import { checkpoint1BrowserGrep, checkpoint1NativeChecks } from "./postgres-test-plan.mjs";
 
 export const maintainedStudyBrowser = "study_only_mode_preserves_foreground_review_and_queue_progression across reload and resumption$";
 
@@ -11,7 +12,11 @@ export function parsePostgresTestOptions(argumentsList, environment = process.en
   const options = { list: false, skipBrowser: false, browserFile: null, browserGrep: null, mode: null };
   for (let argumentIndex = 0; argumentIndex < argumentsList.length; argumentIndex += 1) {
     const argument = argumentsList[argumentIndex];
-    if (argument === "--maintained-study-proof") {
+    if (argument === "--p14-checkpoint1") {
+      if (options.p14Checkpoint1) throw new Error("Duplicate P14 checkpoint selection");
+      options.p14Checkpoint1 = true;
+    }
+    else if (argument === "--maintained-study-proof") {
       if (options.maintainedStudyProof) throw new Error("Duplicate maintained Study proof option");
       options.maintainedStudyProof = true;
     }
@@ -34,6 +39,13 @@ export function parsePostgresTestOptions(argumentsList, environment = process.en
     } else {
       throw new Error(`Unknown PostgreSQL test option: ${argument}`);
     }
+  }
+
+  if (options.p14Checkpoint1) {
+    if (options.mode !== "study" || options.skipBrowser || options.browserFile || options.browserGrep || options.nativeChecks?.length || options.maintainedStudyProof || environment.TEMPO_PG_STALE_DELIVERY_ONLY === "1" || environment.TEMPO_RELEASE_CANDIDATE_MODE)
+      throw new Error("P14 checkpoint requires its fixed Study, browser and native selection");
+    options.browserGrep = checkpoint1BrowserGrep;
+    options.nativeChecks = [...checkpoint1NativeChecks];
   }
 
   if (options.maintainedStudyProof) {

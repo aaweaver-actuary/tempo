@@ -8,7 +8,7 @@ import { runInNewContext } from "node:vm";
 import { test } from "node:test";
 import { Chess } from "chess.js";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "../../database/tests/postgres-test-options.mjs";
-import { maintainedQueueCases, unresolvedQueueCases, excludedQueueCases, verifyMaintainedQueueReceipt, assertDisposableVolumes, backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "../../database/tests/postgres-test-plan.mjs";
+import { maintainedQueueCases, unresolvedQueueCases, excludedQueueCases, verifyMaintainedQueueReceipt, verifyCheckpoint1QueueReceipt, verifyCheckpoint1BrowserReceipt, checkpoint1BrowserCases, checkpoint1NativeChecks, checkpoint1QueueCases, assertDisposableVolumes, backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "../../database/tests/postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   readStudyQueuePublication, repertoireLimitRecreationPgn, studyDurabilityPgn } from "../../database/tests/postgres-test-fixture.mjs";
 import { createScenarioTimer, postgresCommandTiming } from "../../scripts/test-scenario-timings.mjs";
@@ -18,6 +18,28 @@ import { resolvePython } from "../../scripts/resolve-python.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const parse = (args) => parsePostgresTestOptions(args, {}, root);
+
+test("P14 checkpoint has one fixed browser and native selection", () => {
+  const options = parse(["--mode", "study", "--p14-checkpoint1"]);
+  assert.deepEqual(options.nativeChecks, checkpoint1NativeChecks);
+  assert.equal(checkpoint1BrowserCases.length, 10);
+  for (const [, title] of checkpoint1BrowserCases) assert(new RegExp(options.browserGrep).test(title));
+  for (const args of [["--p14-checkpoint1"], ["--mode", "browser", "--p14-checkpoint1"], ["--mode", "study", "--p14-checkpoint1", "--browser-grep", "other"], ["--mode", "study", "--p14-checkpoint1", "--native-check", "position-grade-effects"], ["--mode", "study", "--p14-checkpoint1", "--p14-checkpoint1"]]) assert.throws(() => parse(args));
+});
+test("P14 queue receipt rejects missing, foreign, duplicate and partial cases", () => {
+  const receipt = { case_set: "all", scope: "all-eight", execution: "completed", executed_count: 8, cases: [...checkpoint1QueueCases] };
+  verifyCheckpoint1QueueReceipt(receipt);
+  for (const change of [r => { r.cases.pop(); }, r => { r.cases[0] = "foreign"; }, r => { r.cases[0] = r.cases[1]; }, r => { r.executed_count = 0; }, r => { r.execution = "starting"; }]) {
+    const bad = structuredClone(receipt); change(bad); assert.throws(() => verifyCheckpoint1QueueReceipt(bad));
+  }
+});
+test("P14 browser receipt rejects skipped, retried, duplicate, foreign and zero cases", () => {
+  const report = { stats: { expected: 10, skipped: 0, unexpected: 0, flaky: 0 }, suites: [{ specs: checkpoint1BrowserCases.map(([file, title]) => ({ file, title, tests: [{ projectName: "chromium", status: "expected", results: [{ status: "passed", retry: 0 }] }] })) }] };
+  verifyCheckpoint1BrowserReceipt(report);
+  for (const change of [r => { r.stats.skipped = 1; }, r => { r.suites[0].specs[0].tests[0].results[0].retry = 1; }, r => { r.suites[0].specs[0] = structuredClone(r.suites[0].specs[1]); }, r => { r.suites[0].specs[0].file = "foreign.spec.ts"; }, r => { r.suites[0].specs = []; }, r => { r.suites[0].specs[0].tests[0].results[0].status = "skipped"; }]) {
+    const bad = structuredClone(report); change(bad); assert.throws(() => verifyCheckpoint1BrowserReceipt(bad));
+  }
+});
 
 test("P08 historical rollback selects exactly one case and rejects mixed selectors", () => {
   const options = parse(["--mode", "priority-historical"]);
