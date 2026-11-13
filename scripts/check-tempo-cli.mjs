@@ -95,8 +95,9 @@ export async function readLifecycleQueue(read, pause, deadline, now = Date.now) 
 
 // The caller supplies the owned target and authentic saved-review receipt.
 // All mutations below go through the same lifecycle owner used by the CLI.
-export async function verifyCurrent65Transition({ makeCandidate, lifecycle, snapshot, readGuard, readGuardBytes, writeGuardBytes, readDeployment, readVersions, commandLog }) {
+export async function verifyCurrent65Transition({ makeCandidate, lifecycle, snapshot, originalBeforeHandoff, readGuard, readGuardBytes, writeGuardBytes, readDeployment, readVersions, commandLog }) {
   const original = await snapshot();
+  if (originalBeforeHandoff) assert.deepEqual(original, originalBeforeHandoff, "Owned root handoff must preserve the original review, Tactics and receipt snapshots");
   assert(original.review?.review_id && original.review?.queue_entry_id && original.receipt?.state === "complete", "A committed original review and receipt are required");
   assert.deepEqual(await readVersions(), Array.from({ length: 65 }, (_, index) => index + 1));
   const prewrite = makeCandidate(); await prewrite.inspectTarget();
@@ -433,8 +434,38 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
         return { review: { review_id: review.review_id, queue_entry_id: card.queue_entry_id, row: raw.review }, receipt: raw.receipt, queue: raw.queue, history,
           tactic: { progress: raw.tactic_progress, attempt: raw.tactic_attempt, receipt: raw.tactic_receipt, card: raw.tactic_card } };
       };
+      const originalBeforeHandoff = await snapshot();
+      assert.deepEqual(await readVersions(), Array.from({ length: 65 }, (_, index) => index + 1));
+      const snapshotVolumes = async () => {
+        const entries = Object.entries(target.volumes);
+        for (const [key, volume] of entries) assert(!volume.external && volume.name === `${childProject}_${key}`, "Only owned disposable volumes may be handed off");
+        const inspected = JSON.parse((await docker(["volume", "inspect", ...entries.map(([, volume]) => volume.name)])).stdout);
+        assert.equal(inspected.length, entries.length);
+        return entries.map(([key, volume]) => {
+          const matches = inspected.filter(item => item?.Name === volume.name); assert.equal(matches.length, 1);
+          const item = matches[0];
+          assert.equal(item.Labels?.["com.docker.compose.project"], childProject); assert.equal(item.Labels?.["com.docker.compose.volume"], key);
+          assert(item.Driver && item.Mountpoint && item.CreatedAt);
+          return { Name: item.Name, Driver: item.Driver, Mountpoint: item.Mountpoint, CreatedAt: item.CreatedAt, Scope: item.Scope, Labels: item.Labels, Options: item.Options };
+        }).sort((a, b) => a.Name.localeCompare(b.Name));
+      };
+      const originalVolumes = await snapshotVolumes();
+      await handoffOwnedSchema62({ oldRuntime: old, snapshotVolumes,
+        readEvidence: () => ({ deployment: readFileSync(join(stateDirectory, "deployment.json")),
+          guard: existsSync(join(stateDirectory, "migration-guard.json")) ? readFileSync(join(stateDirectory, "migration-guard.json")) : null }),
+        down: () => compose(["--profile", "maintenance", "down"]),
+        listContainers: async () => (await docker(["ps", "-aq", "--filter", `label=com.docker.compose.project=${childProject}`])).stdout.trim().split(/\s+/).filter(Boolean) });
+      // Recreate only owned dependencies under the candidate root; applications
+      // remain stopped until the migration owner has verified original history.
+      assert.equal(currentImages.postgres, images.postgres); assert.equal(currentImages.redis, images.redis);
+      const dependenciesOverride = join(directory, "current65-dependency-images.json");
+      atomicJson(dependenciesOverride, { services: { postgres: { image: currentImages.postgres }, redis: { image: currentImages.redis } } });
+      await docker([...currentArgs, "-f", dependenciesOverride, "up", "-d", "--no-build", "--no-deps", "--wait", "postgres", "redis"], { echo: true });
+      assert.deepEqual(await snapshotVolumes(), originalVolumes, "Owned volume identities must survive candidate dependency startup");
+      const running = (await docker([...currentArgs, "ps", "--services", "--status", "running"])).stdout.trim().split(/\s+/).filter(Boolean).sort();
+      assert.deepEqual(running, ["postgres", "redis"], "Application writers must remain stopped after root handoff");
       const guardPath = join(stateDirectory, "migration-guard.json");
-      await verifyCurrent65Transition({ makeCandidate, lifecycle, snapshot, readVersions, commandLog,
+      await verifyCurrent65Transition({ makeCandidate, lifecycle, snapshot, originalBeforeHandoff, readVersions, commandLog,
         readGuard: () => JSON.parse(readFileSync(guardPath, "utf8")), readGuardBytes: () => readFileSync(guardPath),
         writeGuardBytes: bytes => writeFileSync(guardPath, bytes, { mode: 0o600 }),
         readDeployment: () => JSON.parse(readFileSync(join(stateDirectory, "deployment.json"), "utf8")) });

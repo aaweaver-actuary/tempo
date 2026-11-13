@@ -60,6 +60,23 @@ test("current65 lifecycle preserves original guard and review through refusal an
   assert.equal(result.settled.attempt_id, pending.attempt_id);
   assert.deepEqual(result.settled.backup, pending.backup);
   assert.deepEqual(events, ["current65_before_write", "current65_interrupted", "current65_unresolved_refusal", "current65_mismatched_guard", "current65_retry_original", "current65_repeat", "current65_recreate"]);
+  await assert.rejects(verifyCurrent65Transition({ makeCandidate, lifecycle, snapshot: async () => original,
+    originalBeforeHandoff: { ...original, receipt: { state: "complete", operation_id: "different" } },
+    readGuard, readGuardBytes: () => bytes, writeGuardBytes: value => { bytes = value; }, readDeployment: () => saved,
+    readVersions: async () => versions, commandLog: [] }), /handoff must preserve/);
+});
+
+test("current65 root handoff preserves volumes and starts only owned dependencies before candidate inspection", () => {
+  const source = readFileSync(new URL("../../scripts/check-tempo-cli.mjs", import.meta.url), "utf8");
+  const start = source.indexOf("      const originalBeforeHandoff = await snapshot();");
+  const end = source.indexOf("      await verifyCurrent65Transition(", start);
+  const handoff = source.slice(start, end);
+  assert(start >= 0 && end > start);
+  assert(handoff.indexOf("handoffOwnedSchema62(") < handoff.indexOf('"postgres", "redis"], { echo: true }'));
+  assert.match(handoff, /compose\(\["--profile", "maintenance", "down"\]\)/);
+  assert.match(handoff, /snapshotVolumes\(\), originalVolumes/);
+  assert.match(handoff, /Application writers must remain stopped/);
+  assert(!handoff.includes('"down", "-v"'));
 });
 
 test("current lifecycle profile rejects unknown, wrong-schema and schema59 selections before work", () => {
