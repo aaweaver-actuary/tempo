@@ -23,7 +23,7 @@ it("F2 a cached Study specification never selects offline grading for a connecte
   const requests: string[] = [];
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
     const url = String(input); requests.push(url);
-    if (url.endsWith("/present")) return Response.json({ id: "exercise", revision: 1, type: "move_line", prompt: specification.prompt, hint: "", fen });
+    if (url.includes("/present?")) return Response.json({ id: "exercise", revision: 1, type: "move_line", prompt: specification.prompt, hint: "", fen });
     if (url.endsWith("/attempts")) return Response.json({ attempt_id: JSON.parse(String(options?.body)).attempt_id,
       assessment: { outcome: "correct", feedback: "Saved by Learning" }, persisted: true });
     if (url.endsWith("/feedback")) return Response.json({ specification });
@@ -297,7 +297,7 @@ it.each([false, true])("pr285_rejected_answer_self_assessment_replacement_uses_n
   mounted.unmount();
 });
 
-it('B31 issued Study reload supplies its exact queue identity only after ordinary presentation is unavailable', async () => {
+it('B31 issued Study reload supplies its exact queue identity before presentation', async () => {
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   const fen = new Chess().fen();
   const card: PracticeCard = { id: asCardId('queue-recovery'), kind: 'study', title: 'Study', subtitle: '', startingFen: asFenString(fen),
@@ -311,6 +311,18 @@ it('B31 issued Study reload supplies its exact queue identity only after ordinar
   }));
   render(<StudyExerciseRunner studyId="study" exerciseId="exercise" card={card} boardTheme="brown" pieceSet="cburnett" />);
   await screen.findByText('Retained prompt');
-  const query = new URL(requests[1], 'http://localhost').searchParams;
+  const query = new URL(requests[0], 'http://localhost').searchParams;
   expect(Object.fromEntries(query)).toEqual({ card_id: 'retained-card', queue_entry_id: '17', queue_cycle: '3', revision: '2' });
+});
+
+it('B31 issued Study refuses a changed presentation FEN even at the same revision', async () => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+  const card: PracticeCard = { id: asCardId('fen-retained'), kind: 'study', title: 'Study', subtitle: '', startingFen: asFenString(new Chess().fen()),
+    moves: [], userMoveTarget: 1, backendId: asCardId('fen-card'), queueEntryId: asQueueEntryId(21), queueCycle: 0, revision: 1 };
+  const fetcher = vi.fn(async (_input: RequestInfo | URL) => Response.json({ id: 'exercise', revision: 1, type: 'explanation', prompt: 'Changed source', hint: '', fen: '8/8/8/8/8/8/8/8 w - - 0 1' }));
+  vi.stubGlobal('fetch', fetcher);
+  render(<StudyExerciseRunner studyId="study" exerciseId="exercise" card={card} boardTheme="brown" pieceSet="cburnett" />);
+  await screen.findByText(/original exercise identity or revision changed/i);
+  expect(screen.queryByText('Changed source')).toBeNull();
+  expect(String(fetcher.mock.calls[0][0])).toContain('/present?card_id=fen-card&queue_entry_id=21&queue_cycle=0&revision=1');
 });

@@ -17,13 +17,14 @@ _AVAILABLE_ATTEMPT_BASE_SQL = "SELECT q.id FROM daily_queue q JOIN cards c ON c.
 ISSUED_RETAINED_STUDY = """c.content_type='study_exercise' AND EXISTS(
     SELECT 1 FROM study_exercises retained_exercise
     JOIN studies retained_study ON retained_study.id=retained_exercise.study_id
+    JOIN study_positions retained_position ON retained_position.id=retained_exercise.position_id
     JOIN queue_attempt_origins origin ON origin.queue_entry_id=q.id AND origin.card_id=c.id
       AND origin.revision=c.revision AND origin.queue_date=q.queue_date AND origin.cycle=q.cycle
       AND origin.issued_as_head=1 AND origin.content_type='study_exercise'
       AND origin.start_fen=c.start_fen AND origin.moves_json=c.moves_json
+      AND retained_position.fen=origin.start_fen
     WHERE retained_exercise.id=c.study_exercise_id AND retained_exercise.current_revision=c.revision
       AND (retained_exercise.status<>'published' OR retained_study.archived<>0))"""
-RETAINED_STUDY_ORDER = "CASE WHEN " + ISSUED_RETAINED_STUDY + " THEN 0 ELSE 1 END, q.position,q.id"
 
 
 def base_available_attempt_sql(miss_reason: str) -> str:

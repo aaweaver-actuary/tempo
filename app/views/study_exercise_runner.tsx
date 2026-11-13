@@ -105,15 +105,12 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
     }
     const base = `${API_URL}/api/studies/${studyId}/exercises/${exerciseId}`;
     const present = async () => {
-      const response = await fetch(`${base}/present`, { signal: controller.signal });
-      if (response.status !== 404) return response;
       const hasQueue = card?.backendId && card.queueEntryId !== undefined && card.queueCycle !== undefined && card.revision !== undefined;
-      if (hasQueue) {
-        const params = new URLSearchParams({ card_id: card.backendId!, queue_entry_id: String(card.queueEntryId),
-          queue_cycle: String(card.queueCycle), revision: String(card.revision) });
-        const issued = await fetch(`${base}/present?${params}`, { signal: controller.signal });
-        if (issued.status !== 404) return issued;
-      }
+      if (card && !hasQueue) throw new Error("The original Study queue identity is unavailable.");
+      const params = hasQueue ? new URLSearchParams({ card_id: card.backendId!, queue_entry_id: String(card.queueEntryId),
+        queue_cycle: String(card.queueCycle), revision: String(card.revision) }) : undefined;
+      const response = await fetch(`${base}/present${params ? `?${params}` : ""}`, { signal: controller.signal });
+      if (response.status !== 404) return response;
       if (!card || hasQueue) {
         const { retainedPendingStudyPresentation } = await import("../lib/study-command-client");
         const queue = hasQueue ? { cardId: card!.backendId!, entryId: Number(card!.queueEntryId),
@@ -127,7 +124,8 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
       .then(async (response) => {
         const body = await response.json() as PresentedStudyExercise & { detail?: string };
         if (!response.ok) throw new Error(responseError(response.status, body.detail));
-        if (body.id !== exerciseId || (card?.revision !== undefined && body.revision !== card.revision))
+        if (body.id !== exerciseId || (card?.revision !== undefined && body.revision !== card.revision) ||
+            (card?.startingFen !== undefined && body.fen !== card.startingFen))
           throw new Error("The original exercise identity or revision changed. Restore the original attempt before continuing.");
         if (generation === generationRef.current) setExercise(body);
       })
