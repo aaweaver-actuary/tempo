@@ -694,3 +694,9 @@ classified. No current direct source consumer was established for
 not an installed-state observation. This census executes no SQL and does not
 qualify migration, rollback, recovery or native behavior; other executable-role
 inventories and existing fixture gaps remain open.
+
+The contract-tooling source census assigns twelve tracked executable Python and
+TypeScript files outside implemented package roots to tooling, tests, or the
+independent TypeScript consumer. The existing contract-exchange suite remains
+unchanged. This is source-role inventory and syntax inspection only; it does not
+execute tooling or establish artifact, runtime, native, or whole-repository coverage.
