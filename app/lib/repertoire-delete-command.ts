@@ -2,7 +2,7 @@ import { decodeOperationResult } from "../domain/adapters/operation-result-adapt
 import { readPendingRepertoireDeletionRecord, writePendingRepertoireDeletionRecord, clearPendingRepertoireDeletionRecord } from "../../database/browser/adapters/authoring/repertoire-delete";
 import { z } from "zod";
 import { API_URL } from "../const";
-import { confirmOperationResponse, PendingOperationError, FailedOperationError } from "./operation-status";
+import { confirmOriginalOperationResponse, PendingOperationError, FailedOperationError } from "./operation-status";
 import { readJsonResponse } from "./validated-data";
 
 const deletedRepertoireSchema = z.strictObject({ deleted: z.literal(true), id: z.string() });
@@ -50,9 +50,9 @@ export async function deleteRepertoireCommand(repertoireId: string, learnedCards
     writePendingRepertoireDeletionRecord(pending);
   }
   try {
-    const response = await confirmOperationResponse(await fetch(`${API_URL}/api/repertoires/${encodeURIComponent(repertoireId)}?learned_cards=${learnedCards}`, {
+    const response = await confirmOriginalOperationResponse(await fetch(`${API_URL}/api/repertoires/${encodeURIComponent(repertoireId)}?learned_cards=${learnedCards}`, {
       method: "DELETE", headers: { "Idempotency-Key": pending.operationId },
-    }));
+    }), pending.operationId);
     const result = await readJsonResponse(response, deletedRepertoireSchema, "delete repertoire");
     if (result.id !== repertoireId) throw new Error("The deletion response names a different repertoire.");
     clearPendingRepertoireDeletionRecord();

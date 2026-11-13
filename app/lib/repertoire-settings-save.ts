@@ -2,7 +2,7 @@ import { decodeOperationResult } from "../domain/adapters/operation-result-adapt
 import { readPendingRepertoireSettingsBytes, decodePendingRepertoireSettingsRecord, writePendingRepertoireSettingsRecord, clearPendingRepertoireSettingsRecord } from "../../database/browser/adapters/authoring/repertoire-settings";
 import { z } from "zod";
 import { API_URL } from "../const";
-import { confirmOperationResponse, FailedOperationError, PendingOperationError } from "./operation-status";
+import { confirmOriginalOperationResponse, FailedOperationError, PendingOperationError } from "./operation-status";
 import { readJsonResponse } from "./validated-data";
 
 const dailyLimitSchema = z.number().int().min(0).max(100);
@@ -64,7 +64,7 @@ export async function saveRepertoireLimit(repertoireId: string, limit: number | 
       clearPendingRepertoireSettingsRecord(repertoireId);
       await readJsonResponse(response, repertoireSettingsResponseSchema, "repertoire settings");
     }
-    response = await confirmOperationResponse(response);
+    response = await confirmOriginalOperationResponse(response, pending.operationId);
     return validateResult(await readJsonResponse(response, repertoireSettingsResponseSchema, "repertoire settings"));
   } catch (error) {
     if (error instanceof FailedOperationError) clearPendingRepertoireSettingsRecord(repertoireId);
