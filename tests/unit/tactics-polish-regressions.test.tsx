@@ -125,7 +125,7 @@ it("tactic Show Move, capture dialog, and Restart retain the guided attempt and 
         return Response.json(catalog);
       if (String(input).endsWith("/attempt")) {
         submissions.push(JSON.parse(options.body));
-        return Response.json({});
+        return Response.json({ card_id: "card", mode: "normal", next_due: "2026-11-13" });
       }
       return Response.json({});
     }),
@@ -192,7 +192,7 @@ it.each(["missing", "foreign"])("%s tactic acknowledgment cannot advance the com
         ? (kind === "foreign" ? { operation_id: "foreign", state: "queued" } : { state: "queued" })
         : { operation_id: `tactic-attempt:${attempts[0]}`, state: "queued" }, { status: 202 });
     }
-    if (url.includes("/api/operations/")) return Response.json({ operation_id: `tactic-attempt:${attempts[0]}`, state: "complete", response: {} });
+    if (url.includes("/api/operations/")) return Response.json({ operation_id: `tactic-attempt:${attempts[0]}`, state: "complete", response: { card_id: "card", mode: "normal", next_due: "2026-11-13" } });
     return Response.json({});
   });
   vi.stubGlobal("fetch", fetcher);
@@ -209,4 +209,29 @@ it.each(["missing", "foreign"])("%s tactic acknowledgment cannot advance the com
   expect(attempts[1]).toBe(attempts[0]);
   await screen.findByText("Puzzle 2 of 25");
   expect(fetcher.mock.calls.filter(([input]) => String(input).includes("/api/operations/"))).toHaveLength(1);
+});
+
+it("C14 malformed tactic receipt retains the original completed attempt until a valid retry", async () => {
+  const attempts: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input, options) => {
+    const url = String(input);
+    if (url.includes("tactics-packs")) return Response.json(records.slice(0, 25));
+    if (url.includes("tactics/catalog")) return Response.json(catalog);
+    if (url.endsWith("/api/tactics/attempt")) {
+      attempts.push(JSON.parse(options.body).attempt_id);
+      return Response.json({ operation_id: `tactic-attempt:${attempts[0]}`, state: "queued" }, { status: 202 });
+    }
+    if (url.includes("/api/operations/")) return Response.json({ operation_id: `tactic-attempt:${attempts[0]}`, state: "complete",
+      response: attempts.length === 1 ? {} : { card_id: "card", mode: "normal", next_due: "2026-11-13" } });
+    return Response.json({});
+  }));
+  render(<TacticsView theme="brown" pieceSet="cburnett" onQueueChanged={vi.fn()} />);
+  await screen.findByText("Puzzle 1 of 25");
+  fireEvent.click(screen.getByText("a2e6")); fireEvent.click(screen.getByText("f7f8"));
+  await screen.findByText("Could not save this attempt. Retry to save it before continuing.");
+  expect(screen.getByText("Puzzle 1 of 25")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Retry save" }));
+  await waitFor(() => expect(attempts).toHaveLength(2));
+  expect(attempts[1]).toBe(attempts[0]);
+  await screen.findByText("Puzzle 2 of 25");
 });

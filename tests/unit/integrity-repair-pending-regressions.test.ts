@@ -9,14 +9,14 @@ const integrity = { repertoire_id: "rep", status: "needs_repair", issue_count: 1
     fen: startingFen, trained_color: "white", signature: "signature", moves: [], sources: [] }] };
 afterEach(() => { localStorage.clear(); vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
-it("SQLite integrity repair retries through its signature-deduplicated endpoint", async () => {
+it("legacy direct integrity repair retries through its signature-deduplicated endpoint", async () => {
   let posts = 0;
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     if (String(input).includes("/api/operations/")) return Response.json({}, { status: 404 });
     if (init?.method === "POST") {
       posts += 1;
       if (posts === 1) throw new Error("response lost after enqueue");
-      return Response.json({ task_id: "repair-task", repertoire_id: "rep", issue_id: "issue", state: "queued" }, { status: 202 });
+      return Response.json({ task_id: "repair-task", repertoire_id: "rep", issue_id: "issue", state: "queued" });
     }
     return Response.json(integrity);
   }));
@@ -61,4 +61,55 @@ it("repair request deadlines include stalled response bodies without losing the 
   const flushing = flushIntegrityRepairs();
   await vi.advanceTimersByTimeAsync(15_000); await flushing;
   expect(pendingIntegrityRepairs()[0]).toMatchObject({ operationId: saved.operationId, error: "Body timed out" });
+});
+
+it.each(["missing", "foreign"])("C14 %s integrity 202 cannot adopt a task before the original receipt", async kind => {
+  let operationId = "", confirmed = false;
+  const reads: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/api/operations/")) {
+      reads.push(decodeURIComponent(url.split("/").pop()!));
+      return confirmed ? Response.json({ operation_id: operationId, state: "complete", response: {
+        task_id: "original-task", repertoire_id: "rep", issue_id: "issue", state: "queued" } })
+        : Response.json({ state: "unknown" });
+    }
+    if (init?.method === "POST") {
+      operationId = new Headers(init.headers).get("Idempotency-Key")!;
+      return Response.json({ task_id: "foreign-task", repertoire_id: "rep", issue_id: "issue", state: "queued",
+        ...(kind === "foreign" ? { operation_id: "foreign" } : {}) }, { status: 202 });
+    }
+    return Response.json(integrity);
+  }));
+  const saved = enqueueIntegrityRepair(choice);
+  await flushIntegrityRepairs();
+  expect(pendingIntegrityRepairs()[0]).toMatchObject({ operationId: saved.operationId, ...choice });
+  expect(pendingIntegrityRepairs()[0].taskId).toBeUndefined();
+  expect(reads).toEqual([saved.operationId]);
+  confirmed = true;
+  vi.spyOn(Date, "now").mockReturnValue(Date.now() + 3001);
+  await flushIntegrityRepairs();
+  expect(pendingIntegrityRepairs()[0]).toMatchObject({ operationId: saved.operationId, taskId: "original-task" });
+  expect(reads.every(id => id === saved.operationId)).toBe(true);
+});
+
+it("C14 matching integrity 202 resolves only its original operation receipt", async () => {
+  let savedId = "", sent = false;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes("/api/operations/")) {
+      expect(decodeURIComponent(String(input).split("/").pop()!)).toBe(savedId);
+      return sent ? Response.json({ operation_id: savedId, state: "complete", response: {
+        task_id: "original-task", repertoire_id: "rep", issue_id: "issue", state: "queued" } })
+        : Response.json({ state: "unknown" });
+    }
+    if (init?.method === "POST") {
+      expect(new Headers(init.headers).get("Idempotency-Key")).toBe(savedId);
+      sent = true;
+      return Response.json({ operation_id: savedId, state: "queued" }, { status: 202 });
+    }
+    return Response.json(integrity);
+  }));
+  const saved = enqueueIntegrityRepair(choice); savedId = saved.operationId;
+  await flushIntegrityRepairs();
+  expect(pendingIntegrityRepairs()[0]).toMatchObject({ operationId: savedId, taskId: "original-task" });
 });
