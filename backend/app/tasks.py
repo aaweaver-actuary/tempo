@@ -426,7 +426,7 @@ def recover_study_operations() -> bool:
                     connection=connection, retry=False, ignore_result=True,
                     headers={"submitted_at": time.time()})
         except Exception:
-            _LOGGER.exception("Deferred split wake unavailable; original child remains queued for periodic recovery")
+            _LOGGER.exception("Deferred split wake outcome uncertain; durable original child remains subject to normal recovery and fencing")
     return operation is not None or enqueued
 
 
