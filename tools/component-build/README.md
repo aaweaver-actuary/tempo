@@ -593,8 +593,13 @@ unavailable control holds optional admission while existing essential exceptions
 remain in task composition. This source map is not runtime proof; the two diagnostics,
 24 PGN scope, nineteen earlier and ten missing-adapter fixture gaps remain open.
 
-At this base revision, 58 of 289 tracked Python files in those trees remain
-outside the combined 231-file selections. The registry alone assigns owners;
+A forty-second selection maps bounded repertoire move verification and its
+read-only source adapter. Existing legal replay, cursor, source-token recheck and
+main endpoint remain visible; this source map is not native or runtime proof. The
+previously reported fixture gaps remain unresolved.
+
+At this base revision, 55 of 289 tracked Python files in those trees remain
+outside the combined 234-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover

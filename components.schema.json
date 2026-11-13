@@ -192,7 +192,8 @@
               "background_activity",
               "background_metrics",
               "redis_runtime",
-              "study_control"
+              "study_control",
+              "repertoire_move_verification"
             ]
           }
         }

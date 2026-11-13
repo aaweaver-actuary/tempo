@@ -2,6 +2,69 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "repertoire-move-verification",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/repertoire_move_verification.py#verify_repertoire_move"
+      ],
+      "dependencies": [
+        "repertoire-move-verification-storage",
+        "backend-chess-identity"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/repertoire_move_verification.py"
+      ],
+      "ownershipRole": "Verify a move against bounded saved repertoire lines",
+      "dependencyNotes": [
+        "Uses python-chess, monotonic replay budget and read connections; captures and rechecks source token around bounded page replay. Main exposes the existing endpoint and invalid, stale or unfinished evidence holds."
+      ],
+      "censusScope": "repertoire_move_verification"
+    },
+    {
+      "id": "repertoire-move-verification-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/repertoire_scope",
+      "publicExports": [
+        "database/tempo_storage/repertoire_scope/move_verification.py#_source_token",
+        "database/tempo_storage/repertoire_scope/move_verification.py#source_line_page"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/repertoire_scope/__init__.py",
+        "database/tempo_storage/repertoire_scope/move_verification.py"
+      ],
+      "ownershipRole": "Read repertoire verification source facts",
+      "dependencyNotes": [
+        "Caller-connection SQL computes existing source digest and ID-ordered bounded line page; service owns replay, source recheck and result decisions."
+      ],
+      "censusScope": "repertoire_move_verification"
+    },
+    {
       "id": "application-activity-gate",
       "type": "integration",
       "maintainer": "Tempo",
