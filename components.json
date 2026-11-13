@@ -6050,7 +6050,8 @@
         "integration",
         "postgres-migration-tooling",
         "database-cli-backup-operations",
-        "database-cli-probes"
+        "database-cli-probes",
+        "postgres-backup-verification"
       ],
       "buildInputs": [],
       "buildCommand": null,
@@ -9119,6 +9120,75 @@
       ],
       "resourceRoles": [
         "database/tooling/cli/probes.mjs#cli-diagnostic-probes"
+      ]
+    },
+    {
+      "id": "postgres-fingerprint-tool",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tooling",
+      "publicExports": [
+        "database/tooling/postgres_fingerprint.py#update_row_digest",
+        "database/tooling/postgres_fingerprint.py#destination_fingerprint"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tooling/postgres_fingerprint.py"
+      ],
+      "ownershipRole": "ordered-row-fingerprint",
+      "dependencyNotes": [
+        "Reads ordered rows from a caller-supplied PostgreSQL transaction and computes typed row counts and digest in bounded cursor batches.",
+        "Existing verify_postgres_cli_state.py also consumes these facts and remains outside this selection. Source map does not execute database operations."
+      ],
+      "resourceRoles": [
+        "database/tooling/postgres_fingerprint.py#ordered-row-fingerprint"
+      ]
+    },
+    {
+      "id": "postgres-backup-verification",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tooling",
+      "publicExports": [
+        "database/tooling/verify_postgres_backup.py#table_layout",
+        "database/tooling/verify_postgres_backup.py#compare_backup",
+        "database/tooling/verify_postgres_backup.py#main"
+      ],
+      "dependencies": [
+        "postgres-fingerprint-tool"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tooling/verify_postgres_backup.py"
+      ],
+      "ownershipRole": "backup-verification",
+      "dependencyNotes": [
+        "CLI opens supplied database connections and compares source/restored table layout and fingerprints; the CLI caller owns target selection and lifecycle.",
+        "Existing verify_postgres_cli_state.py also consumes these facts and remains outside this selection. Source map does not execute database operations."
+      ],
+      "resourceRoles": [
+        "database/tooling/verify_postgres_backup.py#backup-verification"
       ]
     }
   ],
