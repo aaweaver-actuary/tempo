@@ -346,3 +346,24 @@ it.each([200, 202] as const)('C24 refuses delayed child %i after authority chang
     expect(calls).toHaveLength(1); expect(calls.some(url => url.includes('/api/operations/'))).toBe(false);
   } finally { vi.unstubAllGlobals(); vi.restoreAllMocks(); }
 });
+
+it('C24 does not send self-assessment after authority changes before journal completion', async () => {
+  const { vi } = await import('vitest'); const { openingEvidenceStorage } = await import('../fixtures/opening-evidence-storage');
+  const browserStorage = localStorage; const storage = await openingEvidenceStorage(); vi.stubGlobal('localStorage', browserStorage);
+  const connection = await import('../../app/lib/study-connection'); const authority = connection.defaultStudyClient.studyWorkspace();
+  const base = { cardId: 'card', outcome: 'correct', guided: false, completedAt: '2026-09-26T12:05:00Z', expectedReviewId: 0, expectedRevision: 1, studyId: 'study', exerciseId: 'exercise', answer: { type: 'explanation', text: 'answer', ready: true }, selfRating: 'correct' } as const;
+  const parent = { ...base, localEntryId: 1, attemptId: 'parent', serverReviewId: 41, serverAcknowledged: true, serverRepeatEntryId: 77 };
+  const child = { ...base, localEntryId: 2, parentLocalEntryId: 1, attemptId: 'child', queueCycle: 1,
+    repeatBinding: { authority, parentAttemptId: 'parent', reviewId: 41, entryId: 77, cycle: 4, revision: 1, cardId: 'card' } };
+  storage.stores.training.set('prepared-daily-queue', { localDate: '2026-09-26', preparedAt: base.completedAt, cards: [], nextTemporaryId: 100, attempts: [parent, child] });
+  const calls: string[] = []; vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    calls.push(String(input)); return Response.json({ attempt_id: 'child', assessment: { outcome: 'needs_self_assessment', feedback: 'compare' }, pending_self_assessment: true });
+  }));
+  storage.controls.beforeCommit = () => { connection.defaultStudyClient.disconnectStudy(); return undefined; };
+  try {
+    const offline = await import('../../app/lib/offline-training'); await expect(offline.replayOfflineAttempts()).rejects.toThrow('authority changed');
+    const retained = (await offline.readPreparedTraining())?.attempts;
+    expect(retained).toEqual([parent, { ...child, serverAssessment: { outcome: 'needs_self_assessment', feedback: 'compare' } }]);
+    expect(calls).toHaveLength(1); expect(calls.some(url => url.includes('/self-assess') || url.includes('/api/operations/'))).toBe(false);
+  } finally { vi.unstubAllGlobals(); vi.restoreAllMocks(); }
+});

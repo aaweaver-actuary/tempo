@@ -401,6 +401,7 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
       current = await updatePreparedTraining((saved) => { requireDeliveryAuthority(); return ({ ...saved!, attempts: saved!.attempts.map((item) =>
         item.localEntryId === attempt.localEntryId ? { ...item, serverAssessment,
           ...(assessmentsDiffer(attempt.assessment, serverAssessment) ? { syncWarning: "The computer assessed the original answer differently from the saved phone assessment." } : {}) } : item) }); });
+      requireDeliveryAuthority();
     }
     if (result.pending_self_assessment && !attempt.selfRating) {
       hold(attempt, "The original phone answer is confirmed and awaits its saved self-assessment.");
@@ -410,6 +411,7 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
       const assessmentEndpoint = `${API_URL}/api/studies/${encodeURIComponent(attempt.studyId)}/exercises/${encodeURIComponent(attempt.exerciseId)}/attempts/${encodeURIComponent(attempt.attemptId)}/self-assess`;
       let assessed: Response;
       try {
+        requireDeliveryAuthority();
         assessed = await fetch(assessmentEndpoint, {
           method: "POST", headers: { "Content-Type": "application/json",
             "Idempotency-Key": `phone-assessment:${attempt.attemptId}` },
