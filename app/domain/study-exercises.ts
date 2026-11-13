@@ -49,6 +49,16 @@ export type StudySnapshot = z.infer<typeof studySnapshotSchema>;
 export type StudyAssessment = { outcome: "correct" | "incorrect" | "unrecognized" | "needs_self_assessment" | "invalid_submission";
   feedback: string; omitted?: string[]; extra?: string[]; outside_region?: string[] };
 
+// python-chess fills omitted FEN fields and treats fullmove zero as one.
+// Normalize only the temporary board input; keep the frozen snapshot unchanged.
+function boardFen(fen: string): string {
+  const fields = fen.trim().split(/\s+/);
+  const defaults = ["", "w", "-", "-", "0", "1"];
+  for (let index = fields.length; index < defaults.length; index++) fields.push(defaults[index]);
+  if (fields[5] === "0") fields[5] = "1";
+  return fields.join(" ");
+}
+
 const boardSquares = Array.from({ length: 64 }, (_, index) => `${"abcdefgh"[index % 8]}${Math.floor(index / 8) + 1}`);
 function knightAttack(from: string, target: string) {
   const dx = Math.abs(from.charCodeAt(0) - target.charCodeAt(0));
@@ -58,7 +68,7 @@ function knightAttack(from: string, target: string) {
 /** Validate the authored v1 exercise before evaluating a frozen snapshot. */
 export function validateStudyExercise(specification: StudySpecification, fen: string): boolean {
   try {
-    const board = new Chess(fen);
+    const board = new Chess(boardFen(fen));
     const pieces = board.board().flat().filter((piece) => piece !== null);
     for (const color of ["w", "b"] as const) {
       const owned = pieces.filter((piece) => piece.color === color);
@@ -67,7 +77,7 @@ export function validateStudyExercise(specification: StudySpecification, fen: st
       const king = owned.find((piece) => piece.type === "k")!;
       if (color !== board.turn() && board.isAttacked(king.square, board.turn())) return false;
     }
-    const [, turn, rights, ep] = fen.split(/\s+/);
+    const [, turn, rights, ep] = boardFen(fen).split(/\s+/);
     for (const [right, king, rook, color] of [["K", "e1", "h1", "w"], ["Q", "e1", "a1", "w"], ["k", "e8", "h8", "b"], ["q", "e8", "a8", "b"]] as const) {
       if (rights?.includes(right) && (board.get(king)?.type !== "k" || board.get(king)?.color !== color || board.get(rook)?.type !== "r" || board.get(rook)?.color !== color)) return false;
     }
@@ -90,7 +100,7 @@ export function validateStudyExercise(specification: StudySpecification, fen: st
       if (checkers.length > 1) return false;
       const to = `${ep[0]}${turn === "w" ? "5" : "4"}` as Parameters<Chess["get"]>[0];
       if (checkers[0] !== to) {
-        const prior = new Chess(fen);
+        const prior = new Chess(boardFen(fen));
         const pawn = prior.remove(to)!;
         prior.put(pawn, `${ep[0]}${turn === "w" ? "7" : "2"}` as Parameters<Chess["get"]>[0]);
         if (prior.isAttacked(ourKing.square, enemy)) return false;
@@ -101,7 +111,7 @@ export function validateStudyExercise(specification: StudySpecification, fen: st
     if (specification.type === "move_line") {
       for (const line of specification.accepted_lines) {
         if (!line.length || (specification.mode === "single" && line.length !== 1)) return false;
-        const position = new Chess(fen);
+        const position = new Chess(boardFen(fen));
         for (const move of line) {
           if (!/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(move)) return false;
           position.move({ from: move.slice(0, 2), to: move.slice(2, 4), promotion: move[4] });
@@ -124,7 +134,7 @@ export function validateStudyExercise(specification: StudySpecification, fen: st
 }
 
 export function availableKnightRoutes(specification: Extract<StudySpecification, { type: "knight_path" }>, fen: string): string[][] {
-  const board = new Chess(fen);
+  const board = new Chess(boardFen(fen));
   const routes: string[][] = [];
   const visit = (position: string, path: string[]) => {
     const hops = path.length - 1;
@@ -144,7 +154,7 @@ export function availableKnightRoutes(specification: Extract<StudySpecification,
 export function evaluateStudyAnswer(specification: StudySpecification, answer: StudyAnswer, fen: string): StudyAssessment {
   if (specification.type !== answer.type) return { outcome: "invalid_submission", feedback: "Answer type does not match this exercise" };
   if (specification.type === "move_line" && answer.type === "move_line") {
-    const board = new Chess(fen);
+    const board = new Chess(boardFen(fen));
     try { for (const move of answer.moves) {
       if (!/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(move) && move !== "0000") return { outcome: "invalid_submission", feedback: "Use legal UCI moves" };
       board.move({ from: move.slice(0, 2), to: move.slice(2, 4), promotion: move[4] });

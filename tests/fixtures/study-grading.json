@@ -2799,5 +2799,69 @@
     },
     "expected_validation_stage": "specification_semantic",
     "expected_semantic_result": null
+  },
+  {
+    "name": "fen_fullmove_zero",
+    "fen": "4k3/8/8/8/8/8/8/4K1N1 w - - 0 0",
+    "specification": {
+      "type": "move_line",
+      "prompt": "Develop the knight",
+      "hint": "",
+      "explanation": "Original example",
+      "grading_policy": "reference",
+      "mode": "single",
+      "accepted_lines": [
+        [
+          "g1f3"
+        ],
+        [
+          "g1e2"
+        ]
+      ]
+    },
+    "answer": {
+      "type": "move_line",
+      "moves": [
+        "g1f3"
+      ]
+    },
+    "outcome": "correct",
+    "expected_validation_stage": "graded",
+    "expected_semantic_result": {
+      "outcome": "correct",
+      "feedback": "Matches an authored answer"
+    }
+  },
+  {
+    "name": "fen_placement_only",
+    "fen": "4k3/8/8/8/8/8/8/4K1N1",
+    "specification": {
+      "type": "move_line",
+      "prompt": "Develop the knight",
+      "hint": "",
+      "explanation": "Original example",
+      "grading_policy": "reference",
+      "mode": "single",
+      "accepted_lines": [
+        [
+          "g1f3"
+        ],
+        [
+          "g1e2"
+        ]
+      ]
+    },
+    "answer": {
+      "type": "move_line",
+      "moves": [
+        "g1f3"
+      ]
+    },
+    "outcome": "correct",
+    "expected_validation_stage": "graded",
+    "expected_semantic_result": {
+      "outcome": "correct",
+      "feedback": "Matches an authored answer"
+    }
   }
 ]
