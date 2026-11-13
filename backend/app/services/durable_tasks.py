@@ -537,6 +537,18 @@ def advance_task_slice_in_transaction(
     return bool(changed)
 
 
+def defer_future_queue_slice_in_transaction(database, task, *, now):
+    """Preserve a future-day checkpoint and retry after a bounded interval."""
+    changed = storage.defer_for_foreground(database, (
+        _iso(now + timedelta(seconds=60)), _iso(now),
+        task["id"], task["generation"], task["lease_token"],
+    ))
+    if changed:
+        _record_event(database, task["id"], task["generation"],
+                      "future_study_day_deferred", task.get("phase"), kind="daily_queue")
+    return bool(changed)
+
+
 def complete_task_slice_in_transaction(database, task: dict) -> bool:
     """Complete a PostgreSQL task in the same transaction as its final publication."""
 

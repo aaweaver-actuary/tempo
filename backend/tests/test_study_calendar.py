@@ -402,3 +402,18 @@ def test_backward_day_creates_distinct_task_preserving_leased_singleton(monkeypa
     assert result == created and original == before
     assert keys == ["current", "current-day:2026-11-11"]
     assert signals == ["2026-11-11"] and len(events) == 1
+
+
+def test_future_day_slice_defers_without_changing_its_lease_identity(monkeypatch):
+    from app.services import postgres_queue_refresh as refresh
+    now = datetime(2026, 11, 12, 2, tzinfo=timezone.utc)
+    calls = []
+    task = {"id":"original", "generation":7, "lease_token":"lease"}
+    monkeypatch.setattr(refresh, "_queue_slice_current_day", lambda db: (now, "2026-11-11"))
+    monkeypatch.setattr(refresh, "lock_current_slice", lambda db, value: calls.append(("lock", value.copy())) or True)
+    monkeypatch.setattr(refresh, "defer_future_queue_slice_in_transaction", lambda db, value, *, now: calls.append(("defer", value.copy(), now)))
+    assert not refresh._admit_current_day_slice(object(), task, "2026-11-12")
+    assert calls == [("lock", task), ("defer", task, now)]
+    calls.clear()
+    assert refresh._admit_current_day_slice(object(), task, "2026-11-11")
+    assert calls == [("lock", task)]
