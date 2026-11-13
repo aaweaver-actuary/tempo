@@ -50,7 +50,7 @@ def insert_queued(writer: ReceiptWriter, operation_id, command_name, request_has
 def enqueue_foreground_operation(database, operation_id, command_name, request_hash, payload):
     """Retain one exact child command; None means its identity lock was busy."""
     writer = receipt_writer(database)
-    locked = _receipt_connection(writer).execute_native(
+    locked = _receipt_connection(writer).execute(
         "SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))", (operation_id,),
     ).fetchone()[0]
     if not locked:
