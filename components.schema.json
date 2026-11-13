@@ -186,7 +186,8 @@
               "position_plan",
               "position_source",
               "captured_tactic",
-              "chess_helpers"
+              "chess_helpers",
+              "scheduling_review"
             ]
           }
         }

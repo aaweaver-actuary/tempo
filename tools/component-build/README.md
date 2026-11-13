@@ -550,8 +550,16 @@ evidence, Tactics, Study and authoring consumers remain visible. This source map
 is not a standalone package or runtime qualification. Nineteen previously reported
 fixture failures remain unresolved.
 
-At this base revision, 90 of 289 tracked Python files in those trees remain
-outside the combined 199-file selections. The registry alone assigns owners;
+A thirty-sixth selection maps Study scheduling review contracts, policy, maturity,
+legacy adapters and borrowed SQL store. Existing scheduling package, FSRS defaults,
+source identity, caller transaction and review receipt owners remain visible. This
+source map does not establish native proof. Nineteen previously reported fixture
+failures remain unresolved. Ten scheduling store fixture cases also error on the
+missing `real_game_feedback_adapter`; the selected interpreter lacks `grimp` and
+installed scheduling/chess-core package metadata for other selected checks.
+
+At this base revision, 83 of 289 tracked Python files in those trees remain
+outside the combined 206-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover

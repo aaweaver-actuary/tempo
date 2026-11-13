@@ -2,6 +2,164 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "scheduling-review-contract",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/study/policy/scheduling_review_contracts.py#CardState",
+        "backend/app/study/policy/scheduling_review_contracts.py#ReviewRecord",
+        "backend/app/study/policy/scheduling_review_contracts.py#SchedulingReviewStore"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study/policy/scheduling_review_contracts.py",
+        "backend/app/services/scheduling_review_contracts.py"
+      ],
+      "ownershipRole": "Describe Study scheduling review facts and capabilities",
+      "dependencyNotes": [
+        "Typed Study policy contracts and assignment-only service facade preserve existing interfaces; callers own transaction and source identity."
+      ],
+      "censusScope": "scheduling_review"
+    },
+    {
+      "id": "scheduling-review-policy",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/study/policy/scheduling_review_application.py#apply_scheduling_review",
+        "backend/app/services/scheduling_review_application.py#apply_scheduling_review"
+      ],
+      "dependencies": [
+        "scheduling-review-contract",
+        "opening-maturity-policy",
+        "scheduling-adapter"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study/policy/scheduling_review_application.py",
+        "backend/app/services/scheduling_review_application.py"
+      ],
+      "ownershipRole": "Apply Study scheduling review decisions",
+      "dependencyNotes": [
+        "Study policy consumes borrowed store and injected scheduler; legacy service facade supplies existing scheduling functions. Review service and Learning adapter remain callers and own receipt/transaction boundary."
+      ],
+      "censusScope": "scheduling_review"
+    },
+    {
+      "id": "opening-maturity-policy",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/study/policy/opening_maturity.py#augment_opening_maturity"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study/policy/opening_maturity.py"
+      ],
+      "ownershipRole": "Augment opening maturity facts",
+      "dependencyNotes": [
+        "Existing scheduling and review reconciliation consumers provide successful-day, outcome and baseline facts; this helper owns no storage."
+      ],
+      "censusScope": "scheduling_review"
+    },
+    {
+      "id": "scheduling-adapter",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/services/scheduler.py#schedule_review"
+      ],
+      "dependencies": [
+        "scheduling"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/scheduler.py"
+      ],
+      "ownershipRole": "Adapt environmental defaults to scheduling package",
+      "dependencyNotes": [
+        "Uses FSRS Card and existing scheduling package; preserves supplied card identity and historical UTC/day defaults. Study/Learning remains scheduling owner."
+      ],
+      "censusScope": "scheduling_review"
+    },
+    {
+      "id": "scheduling-review-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "database/tempo_storage/scheduling_review_store.py#OwnedConnectionSchedulingReviewStore"
+      ],
+      "dependencies": [
+        "scheduling-review-contract"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/scheduling_review_store.py"
+      ],
+      "ownershipRole": "Persist scheduling review through borrowed connection",
+      "dependencyNotes": [
+        "SQL store reads card and maturity/source facts, appends review and saves card state on caller connection; caller owns lock, transaction and receipt."
+      ],
+      "censusScope": "scheduling_review"
+    },
+    {
       "id": "backend-chess-identity",
       "type": "integration",
       "maintainer": "Tempo",
