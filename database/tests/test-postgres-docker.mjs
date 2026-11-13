@@ -458,7 +458,7 @@ async function waitForStudyableImport(...argumentsList) {
       child.stdin.on('error', error => { observer.error = error.name; });
       observer.done = new Promise(resolve => child.once('close', code => resolve(code)));
     } catch (error) {
-      try { atomicJson(`test-results/native/${project}-p14-queue-observer.json`, {revision:candidateRevision, project, diagnostic_error:error.name}); }
+      try { atomicJson(`test-results/native/${project}-p14-queue-observer.json`, {revision:candidateRevision, project, incomplete:true, diagnostic_error:error.name}); }
       catch { console.error('P14 queue observer evidence unavailable'); }
     }
   }
@@ -469,16 +469,27 @@ async function waitForStudyableImport(...argumentsList) {
       try {
         observer.child.stdin.end();
         let timer;
-        const timeout = new Promise(resolve => { timer = setTimeout(() => resolve('timeout'), 65000); });
+        const timeout = new Promise(resolve => { timer = setTimeout(() => resolve('timeout'), 6000); });
         const exit = await Promise.race([observer.done, timeout]);
         clearTimeout(timer);
-        if (exit === 'timeout') observer.child.kill('SIGTERM');
+        let childExit = exit;
+        if (exit === 'timeout') {
+          // Signal only the exact docker-exec child; do not claim container exit.
+          observer.child.kill('SIGTERM');
+          let terminationTimer;
+          childExit = await Promise.race([observer.done, new Promise(resolve => { terminationTimer = setTimeout(() => resolve('unconfirmed'), 1000); })]);
+          clearTimeout(terminationTimer);
+        }
         atomicJson(`test-results/native/${project}-p14-queue-observer.json`, {
-          revision:candidateRevision, project, observer_exit:exit, diagnostic_error:observer.error,
+          revision:candidateRevision, project, observer_exit:childExit, diagnostic_error:observer.error,
+          incomplete:exit === 'timeout' || childExit !== 0 || Boolean(observer.error) || observer.overflow,
           overflow:observer.overflow, samples:observer.output.split('\n').filter(Boolean).map(line => JSON.parse(line)),
         });
       } catch (error) {
         // Diagnostics must never replace the Study outcome or change its deadline.
+        try { atomicJson(`test-results/native/${project}-p14-queue-observer.json`, {
+          revision:candidateRevision, project, incomplete:true, diagnostic_error:error.name,
+        }); } catch { /* The original Study outcome remains authoritative. */ }
         console.error(`P14 queue observer unavailable: ${error.name}`);
       }
     }

@@ -35,6 +35,26 @@ test("P14 queue observer rejects a foreign project before connecting", () => {
   assert.match(result.stderr, /AssertionError/);
   assert.equal(result.stdout, "");
 });
+test("P14 observer never emits payload, lease or wake secrets", () => {
+  const probe = `import json,runpy
+m=runpy.run_path('database/tests/p14-queue-progress-observer.py',run_name='observer_probe')
+secret='SENTINEL_SECRET_VALUE'
+payload=json.dumps({'queue_date':'2026-11-12','_queue_phase':'admit_due','_refresh_cycle_epoch':5,'after_card_id':secret,'other':secret})
+row={'id':secret,'deduplication_key':secret,'generation':1,'state':'leased','phase':secret,'payload_json':payload,'attempt_count':1,'max_attempts':5,'next_attempt_at':'later','lease_token':secret,'lease_expires_at':'later','has_error':True,'error_digest':'digest','created_at':'before','updated_at':'after'}
+event={'task_id':secret,'generation':1,'event':secret,'phase':secret,'has_detail':True,'detail_digest':'digest','created_at':'now'}
+result={'task':m['safe_task'](row),'event':m['safe_event'](event),'wake':m['safe_wake']([secret,'published','1',secret,secret,secret],secret)}
+text=json.dumps(result)
+assert secret not in text
+assert result['task']['payload']['phase']=='admit_due' and result['task']['payload']['_refresh_cycle_epoch']==5
+assert result['task']['lease_present'] and result['wake']['owner_present']
+print('safe')`;
+  const result = spawnSync(resolvePython(), ["-c", probe], { cwd: root, encoding: "utf8", timeout: 5000,
+    env: { ...process.env, PYTHONPATH: "backend:database", TEMPO_TEST_INSTANCE: "disposable",
+      TEMPO_P14_OBSERVER_PROJECT: "tempo-pg-regressions-1-12345678",
+      TEMPO_DATABASE_READ_URL: "postgresql://tempo_reader@postgres:5432/tempo", TEMPO_REDIS_URL: "redis://redis:6379/0" } });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), "safe");
+});
 test("P14 frozen owner bridge refuses foreign or incomplete identities before connecting", () => {
   const script = `import os,runpy
 os.environ['PGPASSFILE']='/run/secrets/admin_pgpass'
