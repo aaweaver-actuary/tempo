@@ -3,10 +3,11 @@ import { createStudyClient, type StudyClientStorage } from '../../app/lib/study-
 import { confirmOperationResponse, PendingOperationError, readOperationResponse, retryBlockedOperation } from '../../app/lib/operation-status';
 
 function storage(): StudyClientStorage {
-  let registry: string | null = null;
+  const registry = new Map<string, { identity: string; origin: string; workspace: string }>();
   return { sessionConnectionAvailable: () => false, readSessionConnection: () => null,
     writeSessionConnection: () => {}, removeSessionConnection: () => {},
-    readAuthorityRegistry: () => registry, writeAuthorityRegistry: value => { registry = value; },
+    readRegisteredAuthorities: () => [...registry.values()], bindAuthority: value => { registry.set(value.identity, value); },
+    offlineStoreLocator: identity => identity ? `locator:${identity}` : "local-locator",
     readRetainedStudyData: async () => ({ databases: {}, legacy: {} }),
     inspectRetainedStudyAuthority: async () => ({ facts: [], retained: { databases: {}, legacy: {} } }) };
 }
