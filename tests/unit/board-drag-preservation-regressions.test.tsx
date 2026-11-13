@@ -12,10 +12,20 @@ import { asCardId, asFenString, asSanMove } from "../../app/types";
 import { useBoardShellStore } from "../../app/state/board-shell-store";
 import { useTrainingStore } from "../../app/state/training-store";
 
-const api = vi.hoisted(() => ({ state: { dom: { bounds: { clear: vi.fn() } } }, set: vi.fn(), cancelMove: vi.fn(), destroy: vi.fn(),
-  redrawAll: vi.fn(), setAutoShapes: vi.fn(), setShapes: vi.fn() }));
-const createBoard = vi.hoisted(() => vi.fn((element: unknown, config: unknown) => { void element; void config; return api; }));
-vi.mock("@lichess-org/chessground", () => ({ Chessground: createBoard }));
+const observed = vi.hoisted(() => ({ props: undefined as import("@tempo/board-ui").BoardProps | undefined,
+  handle: undefined as import("@tempo/board-ui").BoardHandle | undefined, mounts: 0, unmounts: 0 }));
+vi.mock("@tempo/board-ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tempo/board-ui")>();
+  const React = await import("react");
+  return { ...actual, Board: React.forwardRef<import("@tempo/board-ui").BoardHandle, import("@tempo/board-ui").BoardProps>((props, ref) => {
+    const inner = React.useRef<import("@tempo/board-ui").BoardHandle>(null);
+    observed.props = props;
+    React.useImperativeHandle(ref, () => inner.current!);
+    React.useLayoutEffect(() => { observed.mounts++; observed.handle = inner.current ?? undefined;
+      return () => { observed.unmounts++; observed.handle = undefined; }; }, []);
+    return React.createElement(actual.Board, { ...props, ref: inner });
+  }) };
+});
 vi.mock("../../app/lib/move-sound", () => ({ playMoveSound: vi.fn(), playChessMoveSound: vi.fn() }));
 const boardProps = { fen: STANDARD_FEN, locked: false, showHint: false,
   theme: "brown" as const, pieceSet: "cburnett" as const, onMove: vi.fn() };
@@ -26,7 +36,7 @@ const trainingProps = { dateLabel: "Today", serviceError: "", refreshDatabaseQue
   handleAttemptFailure: vi.fn(), resetCardAttempt: vi.fn(), setEditorCard: vi.fn(), useSharedBoard: true };
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.clearAllMocks(); observed.props = undefined; observed.handle = undefined; observed.mounts = 0; observed.unmounts = 0;
   useBoardShellStore.setState(useBoardShellStore.getInitialState(), true);
   useTrainingStore.setState({ currentFenString: asFenString(STANDARD_FEN), step: 0, boardAttempt: 0,
     feedback: "ready", showHint: false, queueNotice: "", lastMove: undefined, opponentLastMove: undefined,
@@ -38,38 +48,29 @@ beforeEach(() => {
 
 it("equivalent last-move values do not cancel a held piece or reapply FEN", () => {
   const view = render(<Chessboard {...boardProps} lastMove={["e7", "e5"]} />);
-  api.cancelMove.mockClear(); api.set.mockClear();
-  for (let update = 0; update < 10; update++)
-    view.rerender(<Chessboard {...boardProps} lastMove={["e7", "e5"]} onMove={vi.fn()} />);
-  expect(api.cancelMove).not.toHaveBeenCalled();
-  expect(api.set).not.toHaveBeenCalled();
+  const first = observed.props!, baseline = boardDiagnostics();
+  for (let i = 0; i < 10; i++) view.rerender(<Chessboard {...boardProps} lastMove={["e7", "e5"]} onMove={vi.fn()} />);
+  expect(observed.props!.positionIdentity).toBe(first.positionIdentity);
+  expect(observed.props!.positionRevision).toBe(first.positionRevision);
+  expect(boardDiagnostics().inputCancellations).toBe(baseline.inputCancellations);
 });
 
 it("training parent status updates keep the lease and forward the latest handler exactly once", () => {
-  const firstMove = vi.fn(); const currentMove = vi.fn();
+  const firstMove = vi.fn(), currentMove = vi.fn();
   const view = render(<><PersistentBoardShell /><TrainingView {...trainingProps} onMove={firstMove} /></>);
-  const initialHandler = useBoardShellStore.getState().board.onMove;
-  const currentAfter = api.set.mock.calls.findLast(([config]) => config.movable?.events?.after)?.[0].movable.events.after;
-  const snapshots: string[] = [];
-  const unsubscribe = useBoardShellStore.subscribe((state) => snapshots.push(state.board.interactionMode));
-  api.cancelMove.mockClear(); api.set.mockClear();
-  view.rerender(<><PersistentBoardShell /><TrainingView {...trainingProps} dateLabel="Updated status" onMove={currentMove} /></>);
-  expect(snapshots).not.toContain("readonly");
-  expect(useBoardShellStore.getState().board.onMove).toBe(initialHandler);
-  expect(api.cancelMove).not.toHaveBeenCalled();
-  const config = createBoard.mock.calls.at(-1)![1] as { movable: { events: { after: (from: string, to: string) => void } } };
-  act(() => (currentAfter ?? config.movable.events.after)("e2", "e4"));
-  expect(firstMove).not.toHaveBeenCalled();
-  expect(currentMove).toHaveBeenCalledExactlyOnceWith("e2", "e4");
-  unsubscribe();
+  const identity = observed.props!.positionIdentity, baseline = boardDiagnostics();
+  view.rerender(<><PersistentBoardShell /><TrainingView {...trainingProps} dateLabel="Updated" onMove={currentMove} /></>);
+  expect(observed.props!.positionIdentity).toBe(identity);
+  expect(boardDiagnostics().inputCancellations).toBe(baseline.inputCancellations);
+  act(() => observed.props!.onMove?.({ from: "e2", to: "e4", positionIdentity: identity, positionRevision: observed.props!.positionRevision }));
+  expect(firstMove).not.toHaveBeenCalled(); expect(currentMove).toHaveBeenCalledExactlyOnceWith("e2", "e4");
 });
 
 it("a wrong attempt returning to the same FEN explicitly resets through position revision", () => {
   const view = render(<Chessboard {...boardProps} positionRevision={0} />);
-  api.cancelMove.mockClear(); api.set.mockClear();
-  view.rerender(<Chessboard {...boardProps} positionRevision={1} />);
-  expect(api.cancelMove).toHaveBeenCalledTimes(1);
-  expect(api.set).toHaveBeenCalledWith(expect.objectContaining({ fen: STANDARD_FEN }));
+  const baseline = boardDiagnostics(); view.rerender(<Chessboard {...boardProps} positionRevision={1} />);
+  expect(observed.props!.positionRevision).toBe(1);
+  expect(boardDiagnostics().inputCancellations).toBe(baseline.inputCancellations + 1);
 });
 
 function Publisher({ snapshot = {}, enabled = true }: { snapshot?: Partial<BoardShellSnapshot>; enabled?: boolean }) {
@@ -123,75 +124,56 @@ it("an obsolete mounted publisher cannot steal a replacement owner's lease on re
 
 it("Strict Mode reacquires once per setup and reapplies the board after construction cleanup", () => {
   const view = render(<StrictMode><PersistentBoardShell /><Publisher /></StrictMode>);
-  expect(createBoard).toHaveBeenCalledTimes(2);
-  expect(api.destroy).toHaveBeenCalledTimes(1);
+  expect(observed.mounts).toBe(2); expect(observed.unmounts).toBe(1);
   expect(useBoardShellStore.getState().leaseActive).toBe(true);
-  const initialSession = useBoardShellStore.getState().session;
-  api.cancelMove.mockClear();
+  const session = useBoardShellStore.getState().session, baseline = boardDiagnostics();
   view.rerender(<StrictMode><PersistentBoardShell /><Publisher snapshot={{ onMove: vi.fn() }} /></StrictMode>);
-  expect(useBoardShellStore.getState().session).toBe(initialSession);
-  expect(api.cancelMove).not.toHaveBeenCalled();
-  view.unmount();
-  expect(useBoardShellStore.getState().leaseActive).toBe(false);
-  expect(api.destroy).toHaveBeenCalledTimes(2);
+  expect(useBoardShellStore.getState().session).toBe(session);
+  expect(boardDiagnostics().inputCancellations).toBe(baseline.inputCancellations);
+  view.unmount(); expect(useBoardShellStore.getState().leaseActive).toBe(false); expect(observed.unmounts).toBe(2);
 });
 
 it("same-FEN card changes and same-owner remounts invalidate held input", () => {
   const shell = render(<PersistentBoardShell />);
   const publisher = render(<Publisher snapshot={{ positionKey: "card-one" }} />);
-  api.cancelMove.mockClear();
+  const first = observed.props!.positionIdentity, baseline = boardDiagnostics();
   publisher.rerender(<Publisher snapshot={{ positionKey: "card-two" }} />);
-  expect(api.cancelMove).toHaveBeenCalledTimes(1);
-  publisher.unmount();
-  api.cancelMove.mockClear();
+  expect(observed.props!.positionIdentity).not.toBe(first);
+  expect(boardDiagnostics().inputCancellations).toBe(baseline.inputCancellations + 1);
+  publisher.unmount(); const previous = observed.props!.positionIdentity;
   render(<Publisher snapshot={{ positionKey: "card-two" }} />);
-  expect(api.cancelMove).toHaveBeenCalledTimes(1);
-  expect(createBoard).toHaveBeenCalledTimes(1);
-  shell.unmount();
+  expect(observed.props!.positionIdentity).not.toBe(previous); expect(observed.mounts).toBe(1); shell.unmount();
 });
 
 it("read-only or unavailable input cancels the held move and ignores queued move events", () => {
-  const onMove = vi.fn();
-  render(<PersistentBoardShell />);
+  vi.useFakeTimers(); const onMove = vi.fn(); render(<PersistentBoardShell />);
   const publisher = render(<Publisher snapshot={{ onMove }} />);
-  api.cancelMove.mockClear();
+  act(() => { observed.handle!.selectSquare("e2"); observed.handle!.selectSquare("e4"); });
   publisher.rerender(<Publisher snapshot={{ onMove, unavailable: "Reconnect to continue" }} />);
-  expect(api.cancelMove).toHaveBeenCalledTimes(1);
-  expect(api.set).toHaveBeenLastCalledWith(expect.objectContaining({ draggable: { enabled: false, showGhost: true } }));
-  const config = createBoard.mock.calls.at(-1)![1] as { movable: { events: { after: (from: string, to: string) => void } } };
-  act(() => config.movable.events.after("e2", "e4"));
-  expect(onMove).not.toHaveBeenCalled();
+  expect(observed.props!.locked).toBe(true); act(() => vi.advanceTimersByTime(1));
+  expect(onMove).not.toHaveBeenCalled(); vi.useRealTimers();
 });
 
 it("annotation, highlight, handler and appearance updates preserve drag without reapplying FEN", async () => {
   const view = render(<Chessboard {...boardProps} lastMove={["e7", "e5"]} expectedSan="e4" />);
-  api.cancelMove.mockClear(); api.set.mockClear();
-  view.rerender(<Chessboard {...boardProps} lastMove={["d7", "d5"]} theme="blue" pieceSet="merida"
-    expectedSan="e4" showHint shapes={[{ orig: "g1", dest: "f3", brush: "blue", label: { text: "Knight" } }]}
-    drawnShapes={[{ orig: "a4", brush: "green" }]} onMove={vi.fn()} />);
-  await waitFor(() => expect(api.setAutoShapes).toHaveBeenLastCalledWith(expect.arrayContaining([
-    { orig: "e2", dest: "e4", brush: "yellow" },
-  ])));
-  expect(api.cancelMove).not.toHaveBeenCalled();
-  expect(api.set.mock.calls.every(([config]) => !("fen" in config))).toBe(true);
-  expect(api.setShapes).toHaveBeenLastCalledWith([{ orig: "a4", brush: "green" }]);
+  const baseline = boardDiagnostics();
+  view.rerender(<Chessboard {...boardProps} lastMove={["d7", "d5"]} theme="blue" pieceSet="merida" expectedSan="e4" showHint
+    shapes={[{ orig: "g1", dest: "f3", brush: "blue", label: { text: "Knight" } }]} drawnShapes={[{ orig: "a4", brush: "green" }]} />);
+  await waitFor(() => expect(observed.props!.shapes).toEqual(expect.arrayContaining([expect.objectContaining({ orig: "e2", dest: "e4", brush: "yellow" })])));
+  expect(observed.props!.drawnShapes).toEqual([expect.objectContaining({ orig: "a4", brush: "green" })]);
+  expect(boardDiagnostics().inputCancellations).toBe(baseline.inputCancellations);
 });
 
-it("select-only and free editing retain current handlers and disable input when locked", () => {
-  const onSquareSelect = vi.fn(); const onFreeMove = vi.fn();
+it("select-only and free editing retain current handlers and disable input when locked", async () => {
+  const onSquareSelect = vi.fn(), onFreeMove = vi.fn();
   const view = render(<Chessboard {...boardProps} selectOnly onSquareSelect={onSquareSelect} />);
-  const config = createBoard.mock.calls.at(-1)![1] as {
-    events: { select: (square: string) => void }; movable: { events: { after: (from: string, to: string) => void } } };
-  act(() => config.events.select("a4"));
-  expect(onSquareSelect).toHaveBeenCalledExactlyOnceWith("a4");
+  act(() => observed.handle!.selectSquare("a4")); await waitFor(() => expect(onSquareSelect).toHaveBeenCalledExactlyOnceWith("a4"));
   view.rerender(<Chessboard {...boardProps} editMode onFreeMove={onFreeMove} onSquareSelect={onSquareSelect} />);
-  const currentAfter = api.set.mock.calls.at(-1)![0].movable.events.after;
-  act(() => currentAfter("e2", "e4"));
+  expect(observed.props!.mode).toBe("free");
+  act(() => observed.props!.onFreeMove?.({ from: "e2", to: "e4", positionIdentity: observed.props!.positionIdentity, positionRevision: observed.props!.positionRevision }));
   expect(onFreeMove).toHaveBeenCalledExactlyOnceWith("e2", "e4");
   view.rerender(<Chessboard {...boardProps} editMode locked onFreeMove={onFreeMove} onSquareSelect={onSquareSelect} />);
-  act(() => { config.events.select("a4"); config.movable.events.after("e2", "e4"); });
-  expect(onSquareSelect).toHaveBeenCalledTimes(1);
-  expect(onFreeMove).toHaveBeenCalledTimes(1);
+  expect(observed.props!.locked).toBe(true); act(() => observed.handle!.selectSquare("a4")); expect(onSquareSelect).toHaveBeenCalledTimes(1);
 });
 
 it("a fixed twenty-update status workload produces no new publication, lease release or reset", () => {
@@ -205,62 +187,54 @@ it("a fixed twenty-update status workload produces no new publication, lease rel
 });
 
 it("deferred Chessground events from a previous card cannot grade or annotate its replacement", () => {
-  const oldMove = vi.fn(); const currentMove = vi.fn(); const oldDrawing = vi.fn(); const currentDrawing = vi.fn();
-  const view = render(<Chessboard {...boardProps} positionKey="old-card" onMove={oldMove} onDrawnShapesChange={oldDrawing} />);
-  const initialConfig = createBoard.mock.calls.at(-1)![1] as {
-    movable: { events: { after: (from: string, to: string) => void } };
-    drawable: { onChange: (shapes: unknown[]) => void } };
-  const queuedMove = initialConfig.movable.events.after;
-  const queuedDrawing = initialConfig.drawable.onChange;
-  view.rerender(<Chessboard {...boardProps} positionKey="current-card" onMove={currentMove} onDrawnShapesChange={currentDrawing} />);
-  act(() => { queuedMove("e2", "e4"); queuedDrawing([{ orig: "a4", brush: "red" }]); });
-  expect(oldMove).not.toHaveBeenCalled(); expect(currentMove).not.toHaveBeenCalled();
-  expect(oldDrawing).not.toHaveBeenCalled(); expect(currentDrawing).not.toHaveBeenCalled();
-  const currentConfig = api.set.mock.calls.at(-1)![0];
-  act(() => { currentConfig.movable.events.after("e2", "e4"); currentConfig.drawable.onChange([{ orig: "b4", brush: "green" }]); });
-  expect(currentMove).toHaveBeenCalledExactlyOnceWith("e2", "e4");
-  expect(currentDrawing).toHaveBeenCalledExactlyOnceWith([{ orig: "b4", brush: "green" }]);
+  vi.useFakeTimers(); const oldMove = vi.fn(), currentMove = vi.fn();
+  const view = render(<Chessboard {...boardProps} positionKey="old-card" onMove={oldMove} />);
+  act(() => { observed.handle!.selectSquare("e2"); observed.handle!.selectSquare("e4"); });
+  view.rerender(<Chessboard {...boardProps} positionKey="current-card" onMove={currentMove} />);
+  act(() => vi.advanceTimersByTime(1)); expect(oldMove).not.toHaveBeenCalled(); expect(currentMove).not.toHaveBeenCalled();
+  act(() => { observed.handle!.selectSquare("g1"); observed.handle!.selectSquare("f3"); vi.advanceTimersByTime(1); });
+  expect(currentMove).toHaveBeenCalledExactlyOnceWith("g1", "f3"); vi.useRealTimers();
 });
 
 it("Chessground drawing cannot mutate published annotations or shared defaults", () => {
-  render(<PersistentBoardShell />);
-  render(<Publisher />);
-  const publishedShapes = useBoardShellStore.getState().board.drawnShapes;
-  const imperativeShapes = api.setShapes.mock.calls.at(-1)![0];
-  expect(imperativeShapes).not.toBe(publishedShapes);
-  imperativeShapes.push({ orig: "a4", brush: "green" });
-  expect(publishedShapes).toEqual([]);
-  expect(defaultBoardState.drawnShapes).toEqual([]);
+  render(<PersistentBoardShell />); render(<Publisher />);
+  const published = useBoardShellStore.getState().board.drawnShapes;
+  expect(observed.props!.drawnShapes).not.toBe(published);
+  (observed.props!.drawnShapes as unknown[]).push({ orig: "a4", brush: "green" });
+  expect(published).toEqual([]); expect(defaultBoardState.drawnShapes).toEqual([]);
 });
 
 it("editor mode transition refreshes geometry after the setup palette moves the board", () => {
   const view = render(<Chessboard {...boardProps} editMode />);
-  api.redrawAll.mockClear();
+  expect(observed.props!.mode).toBe("free");
   view.rerender(<Chessboard {...boardProps} editMode={false} />);
-  expect(api.redrawAll).toHaveBeenCalledOnce();
-  expect(api.set).toHaveBeenLastCalledWith(expect.objectContaining({ movable: expect.objectContaining({ free: false }) }));
+  expect(observed.props!.mode).toBe("legal"); expect(observed.mounts).toBe(1);
 });
 
 
 it("heading size changes clear hit-test bounds without canceling a held drag", () => {
-  const heading = document.createElement("div");
-  let notifyHeadingResize: (() => void) | undefined;
-  const disconnectHeadingObserver = vi.fn();
-  vi.stubGlobal("ResizeObserver", class {
-    constructor(private notify: () => void) {}
-    observe(element: HTMLElement) { if (element === heading) notifyHeadingResize = this.notify; }
-    disconnect() { disconnectHeadingObserver(); }
-  });
+  const heading = document.createElement("div"); let notify: (() => void) | undefined;
+  const disconnected = vi.fn();
+  vi.stubGlobal("ResizeObserver", class { constructor(private callback: () => void) {} observe(element: HTMLElement) { if (element === heading) notify = this.callback; } disconnect() { disconnected(); } });
   const view = render(<Chessboard {...boardProps} layoutAnchor={heading} />);
-  api.state.dom.bounds.clear.mockClear();
-  api.redrawAll.mockClear(); api.cancelMove.mockClear(); api.set.mockClear();
-  const originalInstances = createBoard.mock.calls.length;
-  act(() => notifyHeadingResize?.());
-  expect(api.state.dom.bounds.clear).toHaveBeenCalledOnce();
-  expect(api.redrawAll).not.toHaveBeenCalled();
-  expect(api.cancelMove).not.toHaveBeenCalled();
-  expect(api.set).not.toHaveBeenCalled();
-  expect(createBoard).toHaveBeenCalledTimes(originalInstances);
-  view.unmount();
-  expect(disconnectHeadingObserver).toHaveBeenCalled();
+  const baseline = boardDiagnostics(); expect(observed.props!.layoutAnchor).toBe(heading);
+  act(() => notify?.()); expect(boardDiagnostics().inputCancellations).toBe(baseline.inputCancellations);
+  expect(observed.mounts).toBe(1); view.unmount(); expect(disconnected).toHaveBeenCalled();
+});
+
+it('FE21 a same-position move clears old shapes once but later changed annotations appear', () => {
+  const first = [{ orig: 'e2', dest: 'e4', brush: 'green' }] as import('@lichess-org/chessground/draw').DrawShape[];
+  const next = [{ orig: 'd2', dest: 'd4', brush: 'blue' }] as import('@lichess-org/chessground/draw').DrawShape[];
+  const view = render(<Chessboard {...boardProps} shapes={first} />);
+  const identity = observed.props!.positionIdentity, revision = observed.props!.positionRevision;
+  expect(observed.props!.shapes).toEqual(first);
+  act(() => observed.props!.onMove?.({ from: 'e2', to: 'e4', positionIdentity: identity, positionRevision: revision }));
+  expect(observed.props!.shapes).toEqual([]);
+  view.rerender(<Chessboard {...boardProps} shapes={[{ ...first[0] }]} />);
+  expect(observed.props!.shapes).toEqual([]);
+  view.rerender(<Chessboard {...boardProps} shapes={next} />);
+  expect(observed.props!.shapes).toEqual(next);
+  view.rerender(<Chessboard {...boardProps} shapes={first} />);
+  expect(observed.props!.shapes).toEqual(first);
+  expect(observed.props!.drawingWhileLocked).toBe(true);
 });

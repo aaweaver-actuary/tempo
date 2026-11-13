@@ -58,6 +58,8 @@ export interface BoardProps extends PositionIdentity {
   readonly destinations?: ReadonlyMap<Square, readonly Square[]>;
   readonly showDestinations?: boolean;
   readonly drawingEnabled?: boolean;
+  /** Permit drawing while piece movement is locked or read-only. */
+  readonly drawingWhileLocked?: boolean;
   readonly theme?: BoardTheme;
   readonly pieceSet?: PieceSet;
   readonly lastMove?: readonly [Square, Square];

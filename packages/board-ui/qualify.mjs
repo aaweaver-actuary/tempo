@@ -51,7 +51,7 @@ try {
   await run("producer-typecheck", "npm", ["run", "typecheck"], producer);
   await run("producer-tests", "npm", ["test", "--", "--reporter=json", "--outputFile=" + join(output, "unit-results.json")], producer);
   const unitResults = JSON.parse(await readFile(join(output, "unit-results.json"), "utf8"));
-  // Exact prior BUI inventory plus the three FE20 diagnostic regressions.
+  // Exact prior BUI and FE20 inventory plus the FE21 drawing-policy regression.
   const expectedTests = [
     "Board.test.tsx :: BUI-09 Strict Mode constructs clean lifecycles, fences previous callbacks and destroys each instance once",
     "Board.test.tsx :: BUI-10 accessible focus and keyboard seams stay available while read-only blocks imperative input",
@@ -74,6 +74,7 @@ try {
     "controller.test.ts :: BUI-12 identity replacement cancels a live drawing before installing the replacement handler",
     "controller.test.ts :: FE20 diagnostic events use the latest handler and stop on disposal",
     "controller.test.ts :: FE20 diagnostic snapshots are detached and unavailable after disposal",
+    "controller.test.ts :: drawing opt-in remains available while movement is locked and fences old drawing events",
     "controller.test.ts :: held input and authoritative position BUI-01 equivalent props and fresh callbacks preserve held input and forward the latest handler once",
     "controller.test.ts :: held input and authoritative position BUI-02 annotations, appearance, check and last move never reapply FEN or cancel held input",
     "controller.test.ts :: held input and authoritative position BUI-03 FEN replacement cancels input, restores FEN, and fences stale move/select/drawing callbacks",
@@ -110,8 +111,8 @@ try {
   const actualTests = unitResults.testResults.flatMap(file => file.assertionResults.map(test =>
     `${basename(file.name)} :: ${test.fullName}`)).sort();
   assert.deepEqual(actualTests, expectedTests, "Execute the exact board regression inventory");
-  assert.equal(unitResults.numTotalTests, 53);
-  assert.equal(unitResults.numPassedTests, 53);
+  assert.equal(unitResults.numTotalTests, 54);
+  assert.equal(unitResults.numPassedTests, 54);
   assert.equal(unitResults.numFailedTests, 0);
   assert.equal(unitResults.numPendingTests, 0);
   assert.equal(unitResults.numTodoTests, 0);
