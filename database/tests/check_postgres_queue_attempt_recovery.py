@@ -938,10 +938,8 @@ def test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_r
     from app.services import durable_tasks, postgres_queue_refresh, frozen_opening_order
     from tempo_storage.queue_refresh import foreground as refresh_requests
     identifier = f'queue-extraction-{uuid.uuid4()}'
-    day = '2099-10-12'
     now = datetime.now(timezone.utc).isoformat()
-    payload = {'queue_date': day, '_queue_phase': 'reset_opening_new',
-               'preserve_through_entry_id': 42}
+    payload = None
     task = None
     snapshot = None
     class InterruptedPublication(RuntimeError):
@@ -950,6 +948,12 @@ def test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_r
         raise InterruptedPublication('after application effect, before checkpoint')
     try:
         with postgres.connection() as owned_database:
+            # Use the owner's locked settings and calendar. Yesterday remains
+            # admissible across midnight while exercising the same reset phase.
+            _, current_day = postgres_queue_refresh._queue_slice_current_day(owned_database)
+            day = (date.fromisoformat(current_day) - timedelta(days=1)).isoformat()
+            payload = {'queue_date': day, '_queue_phase': 'reset_opening_new',
+                       'preserve_through_entry_id': 42}
             snapshot = snapshot_queue_environment(owned_database, (day, day))
             owned_database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,%s,'synthetic',%s)", (identifier, identifier, now))
             owned_database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES(%s,%s,'prefix',%s,'[\"e2e4\"]','learning',%s)", (identifier, identifier, 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', day))
@@ -966,6 +970,10 @@ def test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_r
                 checkpoint = observer.execute('SELECT state,phase,payload_json,generation,lease_token FROM background_tasks WHERE id=%s', (task['id'],)).fetchone()
                 return card_state, tuple(checkpoint)
         before = state()
+        assert before[0] == 'learning'
+        assert before[1][0] == 'leased' and before[1][3] == task['generation']
+        assert before[1][4] == identifier
+        assert json.loads(before[1][2])['_queue_phase'] == 'reset_opening_new'
         # A foreground-owned row blocks the actual relocated background update.
         with postgres.connection() as foreground:
             foreground.execute('SELECT id FROM cards WHERE id=%s FOR UPDATE', (identifier,))
