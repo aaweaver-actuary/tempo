@@ -3038,6 +3038,22 @@ test("schema 65 accepts only schema 64 or its own pending retry", () => {
     assert.throws(() => validateCut62Preflight({ applied_versions: [current], expected_version: 65 }, null), /Unsupported/);
 });
 
+test("schema 66 allows only current 65 or completed 66 and its own retry", () => {
+  for (const current of [65, 66]) {
+    const status = { applied_versions: [current], expected_version: 66 };
+    for (const guard of [null, {state:'pending', starting_schema:65, intended_schema:66},
+      {state:'pending', starting_schema:66, intended_schema:66}])
+      assert.doesNotThrow(() => validateCut62Preflight(status, guard));
+    for (const guard of [{state:'pending', starting_schema:61, intended_schema:62},
+      {state:'pending', starting_schema:64, intended_schema:65},
+      {state:'pending', starting_schema:64, intended_schema:66},
+      {state:'pending', starting_schema:65, intended_schema:67}])
+      assert.throws(() => validateCut62Preflight(status, guard), /Unsupported/);
+  }
+  for (const [current, expected] of [[59,66],[61,66],[62,66],[63,66],[64,66],[67,66],[65,67]])
+    assert.throws(() => validateCut62Preflight({applied_versions:[current], expected_version:expected}, null), /Unsupported/);
+});
+
 test("schema 63 migration preserves the original history guard through a verification retry", async t => {
   let schema = 62, failVerification = true, migrations = 0;
   const history = { reviews: { count: 7, digest: "unchanged-study-history" } };
