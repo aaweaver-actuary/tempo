@@ -613,7 +613,7 @@ it.each(["foreign", "current", "global", "intents", "empty"])("FE05 %s unknown s
   await createUnknownStore(name, scenario !== "empty");
   const before = await client.retainedStudyData();
   const { inspectRetainedStudyAuthority } = await import("../../database/browser/study-connection-storage");
-  const inspection = await inspectRetainedStudyAuthority(() => []);
+  const inspection = await inspectRetainedStudyAuthority();
   const unknown = inspection.facts.filter(fact => fact.disposition === "unknown");
   if (scenario === "empty") expect(unknown).toEqual([]);
   else expect(unknown).toContainEqual({ authority: ["global", "intents"].includes(scenario) ? null : authority, disposition: "unknown" });
@@ -641,4 +641,14 @@ it("FE05 registered foreign unknown store permits recovery but holds a new cutov
   await expect(client.assertStudyAuthority("http://learning.test:8001", "workspace-a", "recover")).resolves.toEqual(before);
   await expect(client.assertStudyAuthority("http://target.test", "workspace-a")).rejects.toMatchObject({ kind: "authority" });
   expect(await client.retainedStudyData()).toEqual(before);
+});
+
+it("FE06 reads a v1 registry and inspects without rewriting its original bytes", async () => {
+  const authority = "http://learning.test:8001:study:workspace-a";
+  const bytes = `{  "${authority}" : { "origin":"http://learning.test:8001", "workspace":"workspace-a", "offlineDatabase":"${`tempo-offline-training:${encodeURIComponent(authority)}`}" } }`;
+  localStorage.setItem("tempo-learning-authorities-v1", bytes);
+  const storage = await import("../../database/browser/study-connection-storage");
+  expect(storage.readRegisteredAuthorities()).toEqual([{ identity: authority, origin: "http://learning.test:8001", workspace: "workspace-a" }]);
+  await storage.inspectRetainedStudyAuthority();
+  expect(localStorage.getItem("tempo-learning-authorities-v1")).toBe(bytes);
 });
