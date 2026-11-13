@@ -347,7 +347,7 @@ def ensure_due_refresh_in_transaction(database, queue_date):
     """
     from tempo_storage.commands import queue as storage
 
-    active = storage.lock_current_queue_task(database)
+    active = storage.lock_current_queue_task(database, queue_date)
     if (
         active
         and active["state"] in {"queued", "leased", "retrying"}

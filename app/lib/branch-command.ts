@@ -2,7 +2,7 @@ import { decodeOperationResult } from "../domain/adapters/operation-result-adapt
 import { readPendingBranchRecord, writePendingBranchRecord, clearPendingBranchRecord } from "../../database/browser/adapters/authoring/branch";
 import { API_URL } from "../const";
 import { branchResultSchema } from "../domain/schemas";
-import { confirmOperationResponse, PendingOperationError } from "./operation-status";
+import { confirmOriginalOperationResponse, PendingOperationError } from "./operation-status";
 import { readJsonResponse } from "./validated-data";
 
 type BranchPayload = {
@@ -54,7 +54,7 @@ export async function saveBranchCommand(payload: BranchPayload) {
     headers: { "Content-Type": "application/json", "Idempotency-Key": pending.operationId },
     body,
   });
-  response = await confirmOperationResponse(response);
+  response = await confirmOriginalOperationResponse(response, pending.operationId);
   if (!response.ok) throw new Error("Could not save this repertoire branch.");
   const result = await readJsonResponse(response, branchResultSchema, "saved repertoire branch");
   clearPendingBranchRecord();

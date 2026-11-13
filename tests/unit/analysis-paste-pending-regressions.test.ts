@@ -66,3 +66,37 @@ it("keeps changed work blocked while pending and clears a confirmed terminal fai
   await expect(saveAnalysisPasteCommand(payload)).rejects.toThrow("terminal");
   expect(localStorage.getItem("tempo-pending-analysis-paste-v1")).toBeNull();
 });
+
+
+it.each(["missing", "foreign"])("%s initial acknowledgment preserves original command bytes and retries the same key", async kind => {
+  const storageKey = "tempo-pending-analysis-paste-v1";
+  const writes: { key: string | null; body: BodyInit | null | undefined }[] = [];
+  const urls: string[] = [];
+  let originalId = "";
+  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input); urls.push(url);
+    if (urls.length > 1) expect(localStorage.getItem(storageKey)).toBe(saved);
+    if (url.includes("/api/operations/")) {
+      expect(decodeURIComponent(url)).toContain(`/api/operations/${originalId}`);
+      return Response.json(writes.length < 2 ? { state: "pending" } : { operation_id: originalId, state: "complete", response: completed });
+    }
+    const key = new Headers(init?.headers).get("Idempotency-Key");
+    writes.push({ key, body: init?.body });
+    if (writes.length === 1) {
+      originalId = key!;
+      return Response.json(kind === "foreign" ? { operation_id: "foreign", state: "queued" } : { state: "queued" }, { status: 202 });
+    }
+    return Response.json({ operation_id: key, state: "queued" }, { status: 202 });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  await expect(saveAnalysisPasteCommand(payload)).rejects.toBeInstanceOf(PendingOperationError);
+  const saved = localStorage.getItem("tempo-pending-analysis-paste-v1");
+  expect(saved).not.toBeNull();
+  expect(JSON.parse(saved!).operationId).toBe(originalId);
+  expect(urls).toHaveLength(1);
+  await saveAnalysisPasteCommand(payload);
+  expect(writes).toHaveLength(2);
+  expect(writes[1]).toEqual(writes[0]);
+  expect(urls.some(url => url.includes("foreign"))).toBe(false);
+  expect(localStorage.getItem("tempo-pending-analysis-paste-v1")).toBeNull();
+});

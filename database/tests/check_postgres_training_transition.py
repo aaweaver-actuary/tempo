@@ -122,7 +122,11 @@ def main():
             events = connection.execute("SELECT count(*) FROM opening_evidence_events e JOIN opening_evidence_attempts a ON a.attempt_id=e.attempt_id WHERE a.state='complete' AND a.card_id LIKE %s", (identifier+'-prepared-%',)).fetchone()[0]
             pending = connection.execute("SELECT count(*) FROM background_tasks WHERE id LIKE %s AND state!='complete'", (identifier+'-analysis-%',)).fetchone()[0]
             recovered = connection.execute("SELECT count(*) FROM opening_evidence_attempts WHERE state='partial' AND card_id=%s", (identifier+'-prepared-000',)).fetchone()[0]
-            print(json.dumps({"reviews": reviews, "complete_evidence": complete, "completion_events": events, "pending_maintenance": pending, "historical_partials": recovered}))
+            attempts = connection.execute("SELECT attempt_id,card_id,queue_entry_id,review_id,request_json,result_json FROM review_attempt_receipts WHERE card_id LIKE %s ORDER BY attempt_id", (identifier+'-prepared-%',)).fetchall()
+            identity = [{"attempt_id": row[0], "card_id": row[1], "queue_entry_id": row[2], "review_id": row[3],
+                "request": json.loads(row[4]), "result": json.loads(row[5])} for row in attempts]
+            evidence = connection.execute("SELECT attempt_id,card_id,review_id FROM opening_evidence_attempts WHERE state='complete' AND card_id LIKE %s ORDER BY attempt_id", (identifier+'-prepared-%',)).fetchall()
+            print(json.dumps({"reviews": reviews, "complete_evidence": complete, "completion_events": events, "pending_maintenance": pending, "historical_partials": recovered, "attempts": identity, "evidence": evidence}))
         return
     raise ValueError("Unknown fixture action")
 

@@ -1,9 +1,50 @@
+export const checkpoint1BrowserCases = [
+  ['frozen-study-recovery-real.spec.ts', 'real frozen Study preserves original parent and child through reload and playable successor'],
+  ['frozen-study-recovery-real.spec.ts', 'original frozen phone attempt survives offline reload and reconciles once'],
+  ['frozen-study-recovery-real.spec.ts', 'real phone Again resolves original repeat cycle before replaying child'],
+  ['manual-prefix-split-http.spec.ts', 'real manual split accepts original issued review and replays its exact receipt'],
+  ['manual-prefix-split-http.spec.ts', 'real manual split rejection is retained on the original offered card'],
+  ['minimal-game-review-acceptance.spec.ts', 'minimal Game Review compares pasted and saved games against current repertoire without Study writes'],
+  ['opening-progression.spec.ts', 'one real short-prefix practice admits its child while parent is learning 390'],
+  ['opening-progression.spec.ts', 'one real short-prefix practice admits its child while parent is learning 1280'],
+  ['position-study-acceptance.spec.ts', 'position Study keeps its server-issued suffix and first-wrong journal across reload and offline'],
+  ['study-only-mode.spec.ts', 'original review replay validator rejects failure and foreign receipts'],
+  ['study-only-mode.spec.ts', 'study_only_mode_preserves_foreground_review_and_queue_progression across reload and resumption'],
+];
+export const checkpoint1BrowserGrep = checkpoint1BrowserCases.map(([, title]) => title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$').join('|');
+export const checkpoint1NativeChecks = ['position-grade-effects', 'position-review-atomicity', 'position-introductions', 'position-queue-admission', 'frozen-requeue-cycle', 'prefix-split-placement', 'game-review-reader'];
+export const checkpoint1QueueCases = [
+  'test_postgres_queue_extraction_preserves_contention_restart_and_idempotent_replay',
+  'test_postgres_scheduling_adapter_effects_rollback_with_receipt_failure',
+  'test_postgres_scheduling_concurrent_replay_preserves_one_history_and_queue_effect',
+  'test_retained_command_retry_preserves_immutable_identity',
+  'test_postgres_paused_feedback_history_preserves_ordinary_study',
+  'test_postgres_retained_review_reconciliation_preserves_original_attempt',
+  'test_postgres_guided_marker_locks_displayed_revision_until_commit',
+  'test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recovery',
+];
+
+export function verifyCheckpoint1QueueReceipt(receipt) {
+  if (receipt?.case_set !== 'all' || receipt.scope !== 'all-eight' || receipt.execution !== 'completed' || receipt.executed_count !== checkpoint1QueueCases.length || JSON.stringify(receipt.cases) !== JSON.stringify(checkpoint1QueueCases) || new Set(receipt.cases).size !== checkpoint1QueueCases.length || JSON.stringify(receipt.excluded_cases) !== '[]' || JSON.stringify(receipt.unresolved_owner_cases) !== JSON.stringify(unresolvedQueueCases)) throw new Error('Checkpoint1 requires exactly the eight completed queue cases and its unresolved scope');
+}
+export function verifyCheckpoint1BrowserReceipt(receipt) {
+  const stats = receipt?.stats, cases = [];
+  function visit(node) {
+    for (const suite of node.suites ?? []) visit(suite);
+    for (const spec of node.specs ?? []) for (const test of spec.tests ?? []) cases.push({ file: spec.file?.split('/').at(-1), title: spec.title, test });
+  }
+  visit(receipt ?? {});
+  const identities = cases.map(item => JSON.stringify([item.file, item.title]));
+  const expected = checkpoint1BrowserCases.map(item => JSON.stringify(item)).sort();
+  if (stats?.expected !== expected.length || stats.skipped !== 0 || stats.unexpected !== 0 || stats.flaky !== 0 || cases.length !== expected.length || new Set(identities).size !== expected.length || JSON.stringify(identities.sort()) !== JSON.stringify(expected) || cases.some(({ test }) => test.projectName !== 'chromium' || test.status !== 'expected' || test.results?.length !== 1 || test.results[0].status !== 'passed' || test.results[0].retry !== 0)) throw new Error('Checkpoint1 requires exactly eleven passing Chromium cases without skips or retries');
+}
+
 // The executable plan is also the read-only --list output; keep one source of truth.
 export function postgresTestStages({ mode, nativeChecks = [], maintainedStudyProof = false }) {
   if (!Array.isArray(nativeChecks) || new Set(nativeChecks).size !== nativeChecks.length
-    || nativeChecks.some(check => !['redis-fixture-isolation', 'position-grade-effects', 'position-introductions', 'position-queue-admission', 'prefix-split-placement', 'game-review-reader'].includes(check))
+    || nativeChecks.some(check => !['redis-fixture-isolation', 'position-grade-effects', 'position-review-atomicity', 'position-introductions', 'position-queue-admission', 'frozen-requeue-cycle', 'prefix-split-placement', 'game-review-reader'].includes(check))
     || nativeChecks.length && !['study','browser'].includes(mode)) throw new Error('Invalid native PostgreSQL selection');
-  if (!["full", "browser", "study", "durability", "lifecycle", "lifecycle-current"].includes(mode)) throw new Error(`Unknown PostgreSQL test mode: ${mode}`);
+  if (!["full", "browser", "study", "durability", "lifecycle", "lifecycle-current", "priority-historical"].includes(mode)) throw new Error(`Unknown PostgreSQL test mode: ${mode}`);
   const nativeStages = nativeChecks.map(check => check === "game-review-reader" ? "game_review_reader" : check);
   if (maintainedStudyProof) {
     if (mode !== "study" || nativeChecks.length) throw new Error("Invalid maintained Study proof selection");
@@ -16,6 +57,7 @@ export function postgresTestStages({ mode, nativeChecks = [], maintainedStudyPro
   if (mode === "lifecycle-current") {
     return ["compose_config", "image_build", "maintenance_cli", "deployment_lifecycle_current", "cleanup"];
   }
+  if (mode === "priority-historical") return ["compose_config", "image_build", "priority_postgres_startup", "priority_historical_rollback", "cleanup"];
   const durabilityStages = [
     "background_budget", "operation_recovery", "schema_migrations", "background_diagnostics",
     ...(mode === "full" ? ["deployment_lifecycle"] : []), "background_workloads",
@@ -126,14 +168,17 @@ export const maintainedQueueCases = [
   'test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recovery',
 ];
 export const unresolvedQueueCases = [
-  'test_postgres_real_game_obligation_admission_restart_publication_and_remediation',
-  'test_postgres_retired_opening_evidence_reconciliation_is_atomic_and_replay_safe',
+  'test_postgres_retained_review_reconciliation_preserves_original_attempt',
+];
+export const excludedQueueCases = [
+  'test_postgres_paused_feedback_history_preserves_ordinary_study',
+  ...unresolvedQueueCases,
 ];
 export function verifyMaintainedQueueReceipt(receipt) {
   if (receipt?.case_set !== 'maintained-six' || receipt.scope !== 'partial'
       || receipt.execution !== 'completed' || receipt.executed_count !== 6
       || JSON.stringify(receipt.cases) !== JSON.stringify(maintainedQueueCases)
-      || JSON.stringify(receipt.excluded_cases) !== JSON.stringify(unresolvedQueueCases)
+      || JSON.stringify(receipt.excluded_cases) !== JSON.stringify(excludedQueueCases)
       || JSON.stringify(receipt.unresolved_owner_cases) !== JSON.stringify(unresolvedQueueCases))
     throw new Error('Maintained queue proof requires all six exact cases and unresolved-owner disposition');
 }
@@ -150,4 +195,30 @@ export function verifyMaintainedBrowserReceipt(receipt) {
       || results.length !== 1 || results[0].status !== 'passed' || results[0].retry !== 0
       || results[0].title !== 'study_only_mode_preserves_foreground_review_and_queue_progression across reload and resumption')
     throw new Error('Maintained Study browser proof requires exactly one real passing case without skips or retries');
+}
+
+// A stage exit alone cannot establish that the HTTP split journey ran.
+export function verifyStudyDurabilityScenario(report, scope) {
+  if (report?.acceptance_scope !== scope || JSON.stringify(report.unresolved_owner_cases) !== JSON.stringify(unresolvedQueueCases) || report.historical_priority_rollback !== 'not executed') throw new Error('Wrong PostgreSQL acceptance scope or unresolved disposition');
+  for (const label of ['prefix_split_http_accept_replay', 'prefix_split_http_restart_replay']) {
+    const entries = (report.details ?? []).filter(entry => entry.stage === 'study_durability' && entry.label === label);
+    if (entries.length !== 1 || entries[0].category !== 'scenario' || entries[0].completed !== true
+        || entries[0].exit_code !== 0 || entries[0].skipped || entries[0].retries)
+      throw new Error('Missing or invalid PostgreSQL HTTP split evidence');
+  }
+}
+
+// Receipt URLs alone do not bind a returned operation to the requested one.
+export function requireOriginalOperationReceipt(receipt, operationId) {
+  if (!operationId || receipt?.operation_id !== operationId) throw new Error('Operation receipt identity changed');
+  return receipt;
+}
+
+// A split archives the source and can remove its repertoire membership.
+export function originalPrefixSplitRows(snapshot, sourceCardId) {
+  if (!sourceCardId || !Array.isArray(snapshot?.tables?.prefix_splits)) throw new Error('Missing original split snapshot');
+  return snapshot.tables.prefix_splits.filter(row => row.source_card_id === sourceCardId)
+    .map(({source_card_id, source_revision, shortened_card_id, continuation_card_id}) =>
+      ({source_card_id, source_revision, shortened_card_id, continuation_card_id}))
+    .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
 }

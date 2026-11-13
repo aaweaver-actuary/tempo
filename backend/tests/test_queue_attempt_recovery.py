@@ -53,8 +53,10 @@ def test_queue_recovery_selector_preserves_default_eight_and_exact_maintained_si
     all_cases = namespace["_QUEUE_RECOVERY_ALL"]
     maintained = namespace["_QUEUE_RECOVERY_MAINTAINED_SIX"]
     unresolved = namespace["_QUEUE_RECOVERY_UNRESOLVED"]
-    assert len(all_cases) == 8 and len(maintained) == 6 and len(unresolved) == 2
-    assert maintained == tuple(case for case in all_cases if case not in unresolved)
+    excluded = namespace["_QUEUE_RECOVERY_EXCLUDED"]
+    assert len(all_cases) == 8 and len(maintained) == 6 and len(unresolved) == 1
+    assert maintained == tuple(case for case in all_cases if case not in excluded)
+    assert excluded == ("test_postgres_paused_feedback_history_preserves_ordinary_study", *unresolved)
     namespace["queue_recovery_main"]([])
     assert events == list(all_cases)
     events.clear()
@@ -65,7 +67,7 @@ def test_queue_recovery_selector_preserves_default_eight_and_exact_maintained_si
     assert [receipt["execution"] for receipt in receipts] == ["starting", "completed"]
     assert receipts[-1]["scope"] == "partial"
     assert receipts[-1]["executed_count"] == 6
-    assert receipts[-1]["excluded_cases"] == list(unresolved)
+    assert receipts[-1]["excluded_cases"] == list(excluded)
     assert receipts[-1]["unresolved_owner_cases"] == list(unresolved)
 
 
@@ -209,3 +211,66 @@ def test_maintained_queue_cases_and_fixture_use_native_sql_markers():
                         assert "?" not in literal.value, (function.name, call.lineno)
                 checked += 1
     assert checked > 70
+
+
+def test_queue_recovery_paused_feedback_selection_is_exact(capsys):
+    import json
+    namespace, events = _queue_selector_namespace()
+    namespace["queue_recovery_main"](["--case-set", "paused-feedback"])
+    assert events == ["test_postgres_paused_feedback_history_preserves_ordinary_study"]
+    receipt = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert receipt["scope"] == "paused-feedback-only" and receipt["executed_count"] == 1
+
+
+def test_paused_feedback_waits_for_the_exact_post_review_generation_and_publication():
+    import ast
+    from pathlib import Path
+    import pytest
+
+    source = Path(__file__).resolve().parents[2] / 'database/tests/check_postgres_background_workloads.py'
+    tree = ast.parse(source.read_text())
+    node = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == '_await_queue_generation')
+    namespace = {}
+    exec(compile(ast.Module(body=[node], type_ignores=[]), str(source), 'exec'), namespace)
+    wait = namespace['_await_queue_generation']
+    values = iter([
+        ({'id': 'task', 'generation': 8, 'state': 'queued'}, {'published_refresh_epoch': 6}),
+        ({'id': 'task', 'generation': 8, 'state': 'complete'}, {'published_refresh_epoch': 6}),
+        ({'id': 'task', 'generation': 8, 'state': 'complete'}, {'published_refresh_epoch': 7}),
+    ])
+    wakes, pauses = [], []
+    row = wait(lambda: next(values), lambda: wakes.append(1), lambda: 0, pauses.append, 'task', 8, 7)
+    assert row == {'id': 'task', 'generation': 8, 'state': 'complete'}
+    assert len(wakes) == 2 and pauses == [0.25, 0.25]
+    with pytest.raises(AssertionError, match='generation changed'):
+        wait(lambda: ({'id': 'task', 'generation': 9, 'state': 'complete'}, {'published_refresh_epoch': 7}),
+             lambda: None, lambda: 0, lambda _: None, 'task', 8, 7)
+    ticks = iter([0, 91])
+    with pytest.raises(AssertionError, match='did not complete'):
+        wait(lambda: ({'id': 'task', 'generation': 8, 'state': 'queued'}, {'published_refresh_epoch': 6}),
+             lambda: None, lambda: next(ticks), lambda _: None, 'task', 8, 7)
+
+
+def test_queue_recovery_retained_review_selection_is_exact(capsys):
+    import json
+    namespace, events = _queue_selector_namespace()
+    namespace["queue_recovery_main"](["--case-set", "review-recovery"])
+    assert events == ["test_postgres_retained_review_reconciliation_preserves_original_attempt"]
+    receipt = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert receipt["scope"] == "review-recovery-only" and receipt["executed_count"] == 1
+
+
+def test_p05_position_bridge_selects_one_exact_issued_review_case():
+    import importlib.util
+    from pathlib import Path
+    import pytest
+
+    path = Path(__file__).resolve().parents[2] / 'database/tests/position-native-pytest.py'
+    spec = importlib.util.spec_from_file_location('p05_position_bridge', path)
+    bridge = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bridge)
+    assert bridge.selected_nodeid({'TEMPO_NATIVE_POSITION_CHECK': 'position-review-atomicity'}) == (
+        'database/tests/position_study/test_position_review_transport_atomicity.py::'
+        'test_p05_real_issued_review_transport_effect_and_checkpoint_rollback')
+    with pytest.raises(RuntimeError, match='Unknown native position check'):
+        bridge.selected_nodeid({'TEMPO_NATIVE_POSITION_CHECK': 'other'})

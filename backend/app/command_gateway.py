@@ -52,6 +52,10 @@ class CommandConflict(ValueError):
     """An operation ID was reused for a different command or payload."""
 
 
+class CommandPrerequisitePending(Exception):
+    """Keep this same durable command retryable while its prerequisite remains."""
+
+
 def is_command_registered(name: str) -> bool:
     """Report whether the existing default registry contains a command."""
     return name in _handlers
@@ -386,6 +390,11 @@ def _execute_command(
             if preparation_error is not None:
                 raise preparation_error
             result = _handlers[command_name](database, prepared)
+        except CommandPrerequisitePending as error:
+            storage.rollback_handler(receipt_writer)
+            storage.release_handler(receipt_writer)
+            storage.defer_prerequisite(receipt_writer, operation_id, str(error))
+            return None
         except (*storage.TRANSIENT_DATABASE_ERRORS, BackgroundAdmissionDeferred):
             # The broker will redeliver; an uncertain commit must not be
             # converted into a permanent failed receipt.

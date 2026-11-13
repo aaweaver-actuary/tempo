@@ -209,3 +209,10 @@ it("native prefix durability uses only the finite registered command and origina
   expect(runner).toContain('native-command-durability-not-HTTP');
   expect(runner).not.toContain('get(`cards/${splitCard.id}/prefix-split`)');
 });
+
+
+it("P14 checkpoint browser stops on its first failure without changing its fixed selection", () => {
+  const options = parsePostgresTestOptions(["--mode", "study", "--p14-checkpoint1"], cleanEnvironment);
+  expect(buildPostgresPlaywrightArguments(options)).toEqual(["playwright", "test", "--grep", options.browserGrep, "--max-failures=1"]);
+  expect(buildPostgresPlaywrightArguments(parsePostgresTestOptions([], cleanEnvironment))).not.toContain("--max-failures=1");
+});

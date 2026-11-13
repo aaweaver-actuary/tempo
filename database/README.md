@@ -12,3 +12,10 @@ Migration 065 records fenced position-introduction history conflicts with the
 selected card, conflicting card and revision, and source identity. These rows
 are durable observations, not authorization to introduce the position; later
 refreshes recheck the original history and source.
+
+Migration 066 adds a Study-owned deferred prefix-split intent for an accepted
+request tied to an issued queue entry. Its accepting operation receipt stays
+immutable; a later matching saved review makes a separately fenced child effect
+eligible. Waiting, held and applied intent states retain their identities and
+do not delete original queue entries or reviews. This describes candidate source,
+not an applied migration or native qualification.

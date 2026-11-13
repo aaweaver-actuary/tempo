@@ -11,6 +11,7 @@ import { SelectInput } from "../components/inputs/SelectInput";
 import { useBoardPublisher } from "../hooks/use-board-publisher";
 import type { PracticeCard } from "../domain/cards";
 import { availableKnightRoutes, evaluateStudyAnswer, studySpecificationSchema, type StudyAnswer } from "../domain/study-exercises";
+import { decodeFrozenPresentation, decodeFrozenFeedback, decodeFrozenAttempt } from "../domain/study-exercise-transport";
 import { recordOfflineStudyAttempt } from "../lib/offline-training";
 import { executeStudyRequest, retainedStudyRequest, startAnotherStudyPractice, studyPracticeBoundary, StudyRequestRejectedError } from "../lib/study-command-client";
 
@@ -31,6 +32,7 @@ type AttemptReply = {
   assessment: { outcome: string; feedback: string; omitted?: string[]; extra?: string[] };
   pending_self_assessment?: boolean;
   rating?: string;
+  persisted?: boolean;
 };
 
 function responseError(status: number, detail?: string) {
@@ -66,11 +68,12 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
   const practiceBoundaryRef = useRef<number | undefined>(undefined);
   const [practiceRestoration, setPracticeRestoration] = useState(0);
   const [uncertain, setUncertain] = useState(false);
+  const [offlineRecorded, setOfflineRecorded] = useState(false);
   const resetPracticeProjection = useCallback((boundary: number) => {
     if (practiceBoundaryRef.current === boundary) return;
     practiceBoundaryRef.current = boundary; generationRef.current++;
     pendingRef.current = null; offlineAnswerRef.current = null;
-    setReply(null); setFeedback(null); setSaveError(""); setSelectedSquares([]); setMoveSequence([]); setChoiceIds([]);
+    setReply(null); setOfflineRecorded(false); setFeedback(null); setSaveError(""); setSelectedSquares([]); setMoveSequence([]); setChoiceIds([]);
     setCoordinateInput(""); setAnswerText(""); setHintSeen(false); setUncertain(false); setBusy(true);
     setPracticeRestoration(value => value + 1);
   }, []);
@@ -83,7 +86,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
       if (generation !== generationRef.current) return;
       setExercise(null); setLoadError(""); setSaveError(""); setSelectedSquares([]);
       setMoveSequence([]); setCoordinateInput(""); setSelectedPromotion("q"); setChoiceIds([]); setReachable(true);
-      setAnswerText(""); setHintSeen(false); setReply(null); setFeedback(null); setUncertain(false);
+      setAnswerText(""); setHintSeen(false); setReply(null); setOfflineRecorded(false); setFeedback(null); setUncertain(false);
     });
     pendingRef.current = null;
     practiceBoundaryRef.current = undefined;
@@ -103,10 +106,31 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
       }); });
       return () => { generationRef.current += 1; };
     }
-    void fetch(`${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/present`, { signal: controller.signal })
+    const base = `${API_URL}/api/studies/${studyId}/exercises/${exerciseId}`;
+    const present = async () => {
+      const hasQueue = card?.backendId && card.queueEntryId !== undefined && card.queueCycle !== undefined && card.revision !== undefined;
+      if (card && !hasQueue) throw new Error("The original Study queue identity is unavailable.");
+      const params = hasQueue ? new URLSearchParams({ card_id: card.backendId!, queue_entry_id: String(card.queueEntryId),
+        queue_cycle: String(card.queueCycle), revision: String(card.revision) }) : undefined;
+      const response = await fetch(`${base}/present${params ? `?${params}` : ""}`, { signal: controller.signal });
+      if (response.status !== 404) return response;
+      if (!card || hasQueue) {
+        const { retainedPendingStudyPresentation } = await import("../lib/study-command-client");
+        const queue = hasQueue ? { cardId: card!.backendId!, entryId: Number(card!.queueEntryId),
+          cycle: card!.queueCycle!, revision: card!.revision! } : undefined;
+        const attempt = await retainedPendingStudyPresentation(studyId, exerciseId, `${base}/attempts`, queue);
+        if (attempt) return fetch(`${base}/present?${new URLSearchParams({ attempt_id: attempt })}`, { signal: controller.signal });
+      }
+      return response;
+    };
+    void present()
       .then(async (response) => {
-        const body = await response.json() as PresentedStudyExercise & { detail?: string };
-        if (!response.ok) throw new Error(responseError(response.status, body.detail));
+        const raw: unknown = await response.json();
+        if (!response.ok) throw new Error(responseError(response.status, (raw as { detail?: string })?.detail));
+        const body = decodeFrozenPresentation(raw, { exerciseId, revision: card?.revision });
+        if (body.id !== exerciseId || (card?.revision !== undefined && body.revision !== card.revision) ||
+            (card?.startingFen !== undefined && body.fen !== card.startingFen))
+          throw new Error("The original exercise identity or revision changed. Restore the original attempt before continuing.");
         if (generation === generationRef.current) setExercise(body);
       })
       .catch((error: unknown) => {
@@ -114,10 +138,11 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
           setLoadError(error instanceof Error ? error.message : "Could not load this exercise.");
       });
     return () => { controller.abort(); generationRef.current += 1; };
-  }, [studyId, exerciseId, card?.studySnapshot, offline]);
+  }, [studyId, exerciseId, card?.studySnapshot, card?.backendId, card?.queueEntryId, card?.queueCycle, card?.revision, offline]);
 
 
   const answerLocked = Boolean(reply) || uncertain;
+  const canAdvance = Boolean(reply && !reply.pending_self_assessment && (reply.persisted === true || offlineRecorded));
   const currentFen = useMemo(() => {
     if (!exercise || exercise.type !== "move_line") return exercise?.fen ?? card?.startingFen ?? "8/8/8/8/8/8/8/8 w - - 0 1";
     try {
@@ -157,10 +182,18 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
     if (exercise?.type !== "move_line") return false;
     return new Chess(boardHistory.fen).moves({ verbose: true }).some((move) => Boolean(move.promotion));
   }, [exercise?.type, boardHistory.fen]);
+  const advance = async () => {
+    if (!canAdvance || !onAdvance || busy || blocked) return;
+    const generation = generationRef.current;
+    setBusy(true); setSaveError("");
+    try { await onAdvance(); }
+    catch (error) { if (generation === generationRef.current) setSaveError(error instanceof Error ? error.message : "Could not load the next exercise. Retry."); }
+    finally { if (generation === generationRef.current) setBusy(false); }
+  };
   const keyboard = { ...boardHistory.keyboard,
     reset: () => { boardHistory.keyboard.reset(); setOrientation("white"); },
     hint: !reply && exercise?.hint && !boardHistory.viewingHistory && !blocked ? () => setHintSeen(true) : undefined,
-    nextItem: reply && !reply.pending_self_assessment && onAdvance && !busy && !blocked ? () => { void onAdvance(); } : undefined,
+    nextItem: canAdvance && onAdvance && !busy && !blocked ? () => { void advance(); } : undefined,
   };
   useBoardPublisher("train", useSharedBoard && exercise?.id === exerciseId ? {
     keyboard,
@@ -200,8 +233,8 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
   const revealFeedback = useCallback(async (attemptId: string, generation: number) => {
     const feedbackResponse = await fetch(`${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/attempts/${attemptId}/feedback`);
     if (!feedbackResponse.ok) throw new Error("Answer saved, but feedback could not load. Retry feedback.");
-    const revealed = await feedbackResponse.json() as { specification: Record<string, unknown> };
-    if (generation === generationRef.current) { setFeedback(revealed.specification); setSaveError(""); }
+    const revealed = decodeFrozenFeedback(await feedbackResponse.json());
+    if (generation === generationRef.current) { setFeedback(revealed.specification as unknown as Record<string, unknown>); setSaveError(""); }
   }, [studyId, exerciseId]);
 
   const exerciseRevision = exercise?.revision;
@@ -223,7 +256,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
       pendingRef.current = { id: retained.requestId, payload: retained.body }; setUncertain(true);
       const restored = await executeStudyRequest({ scope: requestScope,
         endpoint: `${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/attempts`, requestId: retained.requestId, body: retained.body, practiceBoundary: boundary });
-      const body = await restored.json() as AttemptReply;
+      const body = decodeFrozenAttempt(await restored.json(), { attemptId: retained.attemptId, context: card ? "review" : "practice" });
       if (!active || generation !== generationRef.current) return;
       setReply(body); pendingRef.current = null; setUncertain(false);
       const assessment = await retainedStudyRequest(`${requestScope}:self-assess`, body.attempt_id);
@@ -232,7 +265,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
         const response = await executeStudyRequest({ scope: `${requestScope}:self-assess`,
           endpoint: `${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/attempts/${body.attempt_id}/self-assess`,
           requestId: assessment.requestId, attemptId: assessment.attemptId, revision: assessment.revision, body: assessment.body, practiceBoundary: boundary });
-        if (active && generation === generationRef.current) setReply(await response.json() as AttemptReply);
+        if (active && generation === generationRef.current) setReply(decodeFrozenAttempt(await response.json(), { attemptId: assessment.attemptId, context: card ? "review" : "practice" }));
       }
       await revealFeedback(body.attempt_id, generation);
       if (active && generation === generationRef.current && assessment?.state === "discarded") setSaveError((assessment.receipt as { message: string }).message);
@@ -270,6 +303,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
         }
         await recordOfflineStudyAttempt(Number(card.queueEntryId), studyId, answer, undefined, hintSeen);
         if (generation === generationRef.current) {
+          setOfflineRecorded(true);
           setReply({ attempt_id: crypto.randomUUID(), assessment, rating: assessment.outcome === "correct" ? "correct" : "again" });
           setFeedback(card.studySnapshot.specification as unknown as Record<string, unknown>);
         }
@@ -295,10 +329,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
     try {
       const confirmed = await executeStudyRequest({ scope: requestScope, endpoint: `${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/attempts`,
         requestId: pending.id, body: pending.payload, practiceBoundary: practiceBoundaryRef.current });
-      const body = await confirmed.json() as AttemptReply & { detail?: string };
-      if (!confirmed.ok) {
-        throw new Error(responseError(confirmed.status, body.detail));
-      }
+      const body = decodeFrozenAttempt(await confirmed.json(), { attemptId: pending.id, context: card ? "review" : "practice" });
       if (generation !== generationRef.current) return;
       setReply(body); pendingRef.current = null; setUncertain(false);
       await revealFeedback(pending.id, generation);
@@ -317,7 +348,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
     if (offline && card?.studySnapshot && card.queueEntryId && offlineAnswerRef.current) {
       try {
         await recordOfflineStudyAttempt(Number(card.queueEntryId), studyId, offlineAnswerRef.current, rating, hintSeen);
-        if (generation === generationRef.current) setReply({ ...reply, pending_self_assessment: false, rating });
+        if (generation === generationRef.current) { setOfflineRecorded(true); setReply({ ...reply, pending_self_assessment: false, rating }); }
         offlineAnswerRef.current = null;
       } catch (error) { if (generation === generationRef.current) setSaveError(error instanceof Error ? error.message : "Could not save self-assessment on phone."); }
       return;
@@ -329,8 +360,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
       const confirmed = await executeStudyRequest({ scope: `${requestScope}:self-assess`,
         endpoint: `${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/attempts/${reply.attempt_id}/self-assess`,
         requestId: retained?.requestId ?? `${reply.attempt_id}:self-assess${previous?.state === "discarded" ? `:${crypto.randomUUID()}` : ""}`, attemptId: reply.attempt_id, revision: exercise.revision, body: retained?.body ?? { rating }, practiceBoundary: practiceBoundaryRef.current });
-      const body = await confirmed.json() as AttemptReply & { detail?: string };
-      if (!confirmed.ok) throw new Error(responseError(confirmed.status, body.detail));
+      const body = decodeFrozenAttempt(await confirmed.json(), { attemptId: reply.attempt_id, context: card ? "review" : "practice" });
       if (generation === generationRef.current) setReply(body);
     } catch (error) { if (generation === generationRef.current) setSaveError(error instanceof Error ? error.message : "Could not save self-assessment. Retry."); }
     finally { if (generation === generationRef.current) setBusy(false); }
@@ -394,7 +424,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
         {Boolean(feedback.further_analysis) && <p>{String(feedback.further_analysis)}</p>}</div>}
       {reply.pending_self_assessment && <div><Button disabled={busy} onClick={() => void selfAssess("correct")}>Correct (self-assessed)</Button>
         <Button disabled={busy} onClick={() => void selfAssess("again")}>Again (self-assessed)</Button></div>}
-      {!reply.pending_self_assessment && onAdvance && <Button onClick={() => void onAdvance()}>Continue</Button>}
+      {canAdvance && onAdvance && <Button disabled={busy || blocked} onClick={() => void advance()}>Continue</Button>}
       {!reply.pending_self_assessment && !card && !onAdvance && <Button disabled={busy} onClick={() => {
         const generation = generationRef.current;
         setBusy(true);

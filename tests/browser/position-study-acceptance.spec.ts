@@ -33,8 +33,10 @@ with psycopg.connect(dsn, row_factory=tempo_row_factory) as raw:
     port = PostgresConnection(raw)
     now = datetime.now(timezone.utc)
     if command == 'schema':
+        from tempo_storage.ddl.schema_version import POSTGRES_SCHEMA_VERSION
         print(json.dumps({'database': raw.execute('SELECT current_database()').fetchone()[0],
-                          'version': raw.execute('SELECT MAX(version) FROM tempo_schema_migrations').fetchone()[0]}))
+                          'version': raw.execute('SELECT MAX(version) FROM tempo_schema_migrations').fetchone()[0],
+                          'candidate_version': POSTGRES_SCHEMA_VERSION}))
     if command in ('seed', 'legacy'):
         import chess
         from fsrs import Card
@@ -374,12 +376,13 @@ test("position Study keeps its server-issued suffix and first-wrong journal acro
   const updatedSettings = await request.put(`${api}/settings`, { data: { ...settings, new_cards_per_day: 2, initial_depth: 2, lichess_username: "", chesscom_username: "" } });
   expect(updatedSettings.ok(), await updatedSettings.text()).toBe(true);
   const identity = `position-browser-${randomUUID().replaceAll("-", "")}`;
-  const schema = fixture<{ database: string; version: number }>(project, "schema", identity);
+  const schema = fixture<{ database: string; version: number; candidate_version: number }>(project, "schema", identity);
   await testInfo.attach("position-study-disposable-schema", {
     body: Buffer.from(JSON.stringify(schema, null, 2)), contentType: "application/json",
   });
-  // Current source contract: tempo_storage/ddl/schema_version.py requires 65.
-  expect(schema.version, "Disposable runtime migration version").toBe(65);
+  // Bind the exact expected candidate to the running API and its migration ledger.
+  expect(schema.candidate_version, "Packaged candidate schema version").toBe(66);
+  expect(schema.version, "Disposable runtime migration version").toBe(schema.candidate_version);
   let originalIdentity: WirePlan | undefined;
   let successorIdentity: WirePlan | undefined;
   const requestTimingSamples: Array<{

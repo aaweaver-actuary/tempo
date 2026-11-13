@@ -187,3 +187,20 @@ it.each([
   await clearTrainingFailureAfterReview(42, "replacement-card", 2);
   expect(pendingTrainingFailureContexts()).toEqual(normalized);
 });
+
+it.each(["missing", "foreign"])("%s guided failure acknowledgment retains its frozen identity and payload", async kind => {
+  await enqueueTrainingFailure(1999, "original-guided", 3);
+  const original = pendingTrainingFailureContexts()[0];
+  const calls: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push(String(input));
+    if (init?.method !== "POST") return Response.json({ state: "unknown" });
+    expect(new Headers(init.headers).get("Idempotency-Key")).toBe(original.operationId);
+    expect(init.body).toBe(JSON.stringify({ card_id: "original-guided", expected_revision: 3 }));
+    return Response.json(kind === "foreign" ? { operation_id: "foreign", state: "queued" } : { state: "queued" }, { status: 202 });
+  }));
+  await expect(flushTrainingFailures()).rejects.toMatchObject({ name: "PendingOperationError", operationId: original.operationId });
+  expect(pendingTrainingFailureContexts()).toEqual([original]);
+  expect(calls).toHaveLength(1); // initial POST only
+  expect(calls.some(url => url.includes("foreign"))).toBe(false);
+});

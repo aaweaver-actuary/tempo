@@ -1,6 +1,6 @@
 import { LEARNING_URL as API_URL, learningFetch as fetch } from "./study-connection";
 import { putStudyIntent, studyIntentRecords, studyIntentStore, updateStudyIntent } from "../../database/browser/study-intent-storage";
-import { confirmOperationResponse, readOperationResponse, PendingOperationError, FailedOperationError } from "./operation-status";
+import { confirmOriginalOperationResponse, readOperationResponse, PendingOperationError, FailedOperationError } from "./operation-status";
 import { pendingReviews } from "./review-outbox";
 
 const deliveryOwner = crypto.randomUUID();
@@ -109,7 +109,7 @@ async function saveTrainingFailures(): Promise<void> {
         headers: { "Idempotency-Key": operationId, ...(backendId ? { "Content-Type": "application/json" } : {}) },
         ...(backendId ? { body: JSON.stringify({ card_id: backendId, expected_revision: expectedRevision }) } : {}),
       });
-      response = await confirmOperationResponse(response, { signal: controller.signal });
+      response = await confirmOriginalOperationResponse(response, operationId, { signal: controller.signal });
       if (response.status === 202) throw new PendingOperationError(operationId);
     } catch (cause) {
       if (controller.signal.aborted)
