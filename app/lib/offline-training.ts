@@ -216,6 +216,11 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
   if (!current) return null;
   const heldCards = new Set<string>();
   const heldEntries = new Set<number>();
+  const hold = (attempt: OfflineAttempt, message: string) => {
+    heldCards.add(attempt.cardId); heldEntries.add(attempt.localEntryId);
+    publishNotification({ severity: "warning", source: "phone recovery", key: `phone-attempt:${attempt.localEntryId}`,
+      message, details: { attemptId: attempt.attemptId ?? "unknown", localEntryId: attempt.localEntryId } });
+  };
   for (const [attemptIndex, attempt] of current.attempts.entries()) {
     if (attempt.serverReviewId || attempt.serverAcknowledged || (attempt.conflict && attempt.studyId)) continue;
     if (current.attempts.slice(0, attemptIndex).some((earlier) => earlier.cardId === attempt.cardId && earlier.conflict)) {
@@ -227,11 +232,9 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
     }
     const studyFacts = [attempt.studyId, attempt.exerciseId, attempt.answer, attempt.attemptId];
     const incompleteStudy = studyFacts.slice(0, 3).some(Boolean) && !studyFacts.every(Boolean);
-    if (incompleteStudy || heldCards.has(attempt.cardId) || (attempt.parentLocalEntryId !== undefined && heldEntries.has(attempt.parentLocalEntryId))) {
-      heldCards.add(attempt.cardId); heldEntries.add(attempt.localEntryId);
-      publishNotification({ severity: "warning", source: "phone recovery", key: `phone-attempt:${attempt.localEntryId}`,
-        message: "This saved phone exercise is held because its original identity is incomplete.",
-        details: { attemptId: attempt.attemptId ?? "unknown", localEntryId: attempt.localEntryId } });
+    if (incompleteStudy || (attempt.answer && !studyAnswerSchema.safeParse(attempt.answer).success) ||
+        heldCards.has(attempt.cardId) || (attempt.parentLocalEntryId !== undefined && heldEntries.has(attempt.parentLocalEntryId))) {
+      hold(attempt, "This saved phone exercise is held because its original identity or answer is unsupported.");
       continue;
     }
     const parent = current.attempts.find((candidate) => candidate.localEntryId === attempt.parentLocalEntryId);
@@ -302,6 +305,10 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
     if (attempt.studyId && attempt.exerciseId && attempt.attemptId) {
       const decoded = decodeFrozenAttempt(result, { attemptId: attempt.attemptId, context: "review" });
       result = decoded as unknown as typeof result;
+    }
+    if (result.pending_self_assessment && !attempt.selfRating) {
+      hold(attempt, "The original phone answer is confirmed and awaits its saved self-assessment.");
+      continue;
     }
     if (result.pending_self_assessment && attempt.studyId && attempt.exerciseId && attempt.attemptId && attempt.selfRating) {
       const assessmentEndpoint = `${API_URL}/api/studies/${encodeURIComponent(attempt.studyId)}/exercises/${encodeURIComponent(attempt.exerciseId)}/attempts/${encodeURIComponent(attempt.attemptId)}/self-assess`;
