@@ -32,6 +32,10 @@ def fixture_database():
     verify_owned_target(target)
     if owned_target(os.environ) != target:
         raise RuntimeError('Fixture target changed during identity verification')
+    # Bind the real process gate only after every configured DSN and the
+    # read-only cluster/database identity have passed the owned-target fence.
+    from app.product_composition.database_infrastructure import bind_database_infrastructure
+    bind_database_infrastructure()
     try:
         yield target
     finally:
