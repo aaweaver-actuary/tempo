@@ -18,12 +18,26 @@ export function writeRedisAdmissionEvidence(directory: string, filename: string,
   writeFileSync(join(directory, filename), contents, { flag: "wx" });
 }
 
+/** Playwright serializes message and cause, but does not serialize AggregateError.errors. */
+export function describeEvidenceFailure(value: unknown, seen = new Set<unknown>()): string {
+  if (!(value instanceof Error)) return String(value);
+  if (seen.has(value)) return "[cyclic error]";
+  seen.add(value);
+  const details = [`${value.name}: ${value.message}`];
+  if (value instanceof AggregateError) {
+    value.errors.forEach((item, index) => details.push(`failure ${index + 1}: ${describeEvidenceFailure(item, seen)}`));
+  } else if (value.cause !== undefined) {
+    details.push(`cause: ${describeEvidenceFailure(value.cause, seen)}`);
+  }
+  return details.join("; ");
+}
+
 export async function writeEvidenceThenCleanup(write: () => void, cleanup: () => Promise<void>): Promise<void> {
   let writeFailure: unknown;
   let writeFailed = false;
   try { write(); } catch (error) { writeFailed = true; writeFailure = error; }
   try { await cleanup(); } catch (error) {
-    if (writeFailed) throw new AggregateError([writeFailure, error], "Evidence write and fixture cleanup both failed", { cause: writeFailure });
+    if (writeFailed) throw new AggregateError([writeFailure, error], `Evidence write and fixture cleanup both failed; evidence: ${describeEvidenceFailure(writeFailure)}; cleanup: ${describeEvidenceFailure(error)}`, { cause: writeFailure });
     throw error;
   }
   if (writeFailed) throw writeFailure;
