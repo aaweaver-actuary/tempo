@@ -348,8 +348,14 @@ the Study calendar and inspects Celery; the storage reader queries schema, posit
 settings, queue and durable-task facts through the supplied connection. These
 existing edges and readiness coupling are recorded without a startup or isolation claim.
 
-At this base revision, 223 of 291 tracked Python files in those trees remain
-outside the combined 68-file selections. The registry alone assigns owners;
+A seventh selection maps the registered settings command and three SQL adapters.
+The command uses the existing transport schema, Study calendar, queue refresh and
+post-commit priority policy; the adapters read limits, lock and update global
+settings, and read the public projection on caller-owned connections. This records
+existing registration and dependencies without changing behavior.
+
+At this base revision, 219 of 291 tracked Python files in those trees remain
+outside the combined 72-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover

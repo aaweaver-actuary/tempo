@@ -2,6 +2,131 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "settings-command",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/settings_commands.py#decode_settings_request",
+        "backend/app/settings_commands.py#apply_settings",
+        "backend/app/settings_commands.py#update_settings"
+      ],
+      "dependencies": [
+        "backend-command-gateway",
+        "settings-foreground-storage",
+        "study-calendar-capture"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/settings_commands.py"
+      ],
+      "ownershipRole": "Apply and register settings updates",
+      "dependencyNotes": [
+        "Registers settings.update at import; uses the existing transport schema, PostgreSQL connection, queue refresh transaction and post-commit Study priority policy."
+      ],
+      "censusScope": "settings"
+    },
+    {
+      "id": "settings-control-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/controls",
+      "publicExports": [
+        "database/tempo_storage/controls/settings.py#effective_opening_limit_rows",
+        "database/tempo_storage/controls/settings.py#repertoire_limit_row",
+        "database/tempo_storage/controls/settings.py#study_mode_setting"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/controls/settings.py"
+      ],
+      "ownershipRole": "Read settings facts for control decisions",
+      "dependencyNotes": [
+        "Caller-connection SQL reads settings and repertoire limits; admission policy remains outside this adapter."
+      ],
+      "censusScope": "settings"
+    },
+    {
+      "id": "settings-foreground-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/foreground_controls",
+      "publicExports": [
+        "database/tempo_storage/foreground_controls/settings.py#locked_settings",
+        "database/tempo_storage/foreground_controls/settings.py#store_settings"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/foreground_controls/settings.py"
+      ],
+      "ownershipRole": "Lock and update global settings",
+      "dependencyNotes": [
+        "Caller-connection SQL locks and updates the global settings row; transaction and supplied columns remain caller-owned."
+      ],
+      "censusScope": "settings"
+    },
+    {
+      "id": "settings-http-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/http_composition",
+      "publicExports": [
+        "database/tempo_storage/http_composition/settings.py#public_settings"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/http_composition/settings.py"
+      ],
+      "ownershipRole": "Read product settings",
+      "dependencyNotes": [
+        "Caller-connection SQL selects the current public settings projection; HTTP decisions remain outside this adapter."
+      ],
+      "censusScope": "settings"
+    },
+    {
       "id": "postgres-readiness-composition",
       "type": "integration",
       "maintainer": "Tempo",

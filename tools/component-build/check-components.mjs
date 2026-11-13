@@ -162,6 +162,7 @@ export function validateCompositionOwnership(manifest, paths) {
 // Scope predicates enumerate tracked inputs independently of ownership. The
 // component registry is the only mapping from an input to its owner.
 const censusPredicates = {
+  settings: path => /^(backend\/app\/settings_commands[^/]*|database\/tempo_storage\/(?:controls|foreground_controls|http_composition)\/settings[^/]*)\.py$/.test(path),
   readiness: path => /^(backend\/app\/operations\/.*|database\/tempo_storage\/postgres_readiness[^/]*)\.py$/.test(path),
   prefix_split: path => /^(backend\/app\/prefix_split[^/]*|backend\/app\/services\/(?:prefix_split|deferred_prefix_split_recovery)[^/]*|database\/tempo_storage\/(?:authored_repertoires\/opening_mutations\/prefix_splits|foreground_controls\/prefix_splits|study\/deferred_prefix_splits)[^/]*)\.py$/.test(path),
   calendar: path => /^(backend\/app\/study\/policy\/clock[^/]*|backend\/app\/services\/study_calendar[^/]*)\.py$/.test(path),

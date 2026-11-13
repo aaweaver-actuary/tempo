@@ -157,7 +157,8 @@
               "durable",
               "calendar",
               "prefix_split",
-              "readiness"
+              "readiness",
+              "settings"
             ]
           }
         }
