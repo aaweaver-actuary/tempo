@@ -433,3 +433,23 @@ def test_queue_attempt_recovery_preserves_original_conflict(monkeypatch):
     with pytest.raises(ReviewConflict) as error:
         review.LearningReviewAdapter(None, None).recover_attempt(SimpleNamespace(card_id="card"))
     assert error.value is original
+
+
+@pytest.mark.parametrize("value", [0, 123])
+def test_last_queue_id_retains_empty_and_existing_aggregate_values(value):
+    calls = []
+    class Database:
+        def execute(self, query, parameters):
+            calls.append((query, parameters))
+            return SimpleNamespace(fetchone=lambda: (value,))
+    assert review.storage.last_queue_id(Database(), "2026-10-21") == value
+    assert calls == [("SELECT COALESCE(MAX(id),0) FROM daily_queue WHERE queue_date=%s", ("2026-10-21",))]
+
+
+@pytest.mark.parametrize("row", [None, (None,), (True,), ("123",)])
+def test_last_queue_id_rejects_invalid_driver_facts(row):
+    class Database:
+        def execute(self, *_):
+            return SimpleNamespace(fetchone=lambda: row)
+    with pytest.raises(TypeError):
+        review.storage.last_queue_id(Database(), "2026-10-21")

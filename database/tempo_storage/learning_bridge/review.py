@@ -85,8 +85,14 @@ def insert_receipt(database: postgres.PostgresConnection, attempt_id: str | None
 def retain_completion(database: postgres.PostgresConnection, result_json: str, entry_id: int, card_id: str) -> None:
     database.execute('UPDATE daily_queue SET review_result_json=%s WHERE id=%s AND card_id=%s', (result_json, entry_id, card_id))
 
-def last_queue_id(database, day):
-    return database.execute('SELECT COALESCE(MAX(id),0) FROM daily_queue WHERE queue_date=%s', (day,)).fetchone()[0]
+def last_queue_id(database: postgres.PostgresConnection, day: str) -> int:
+    row = database.execute('SELECT COALESCE(MAX(id),0) FROM daily_queue WHERE queue_date=%s', (day,)).fetchone()
+    if row is None:
+        raise TypeError("'NoneType' object is not subscriptable")
+    value: object = row[0]
+    if type(value) is not int:
+        raise TypeError("Invalid last queue ID")
+    return value
 
 def evidence_state(database: postgres.PostgresConnection, attempt_id: str) -> postgres.TempoRow | None:
     return database.execute_native('SELECT state FROM opening_evidence_attempts WHERE attempt_id=%s', (attempt_id,)).fetchone()
