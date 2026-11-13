@@ -178,3 +178,97 @@ def locked_attempt(database, attempt_id, exercise_id):
         'SELECT * FROM study_attempts WHERE id=%s AND exercise_id=%s FOR UPDATE',
         (attempt_id, exercise_id),
     ).fetchone()
+
+
+def frozen_presentation(database, study_id, exercise_id):
+    """Read only a published exercise and its study-owned source position."""
+    return database.execute(
+        """SELECT e.id,e.current_revision,r.specification_json,p.fen
+           FROM study_exercises e JOIN studies s ON s.id=e.study_id
+           JOIN study_positions p ON p.id=e.position_id
+           JOIN study_sources src ON src.id=p.source_id
+           JOIN study_chapters chapter ON chapter.id=src.chapter_id AND chapter.study_id=e.study_id
+           JOIN study_exercise_revisions r ON r.exercise_id=e.id AND r.revision=e.current_revision
+           WHERE e.id=%s AND e.study_id=%s AND e.status='published' AND s.archived=0""",
+        (exercise_id, study_id),
+    ).fetchone()
+
+
+def frozen_attempt_feedback(database, study_id, exercise_id, attempt_id):
+    """Bind feedback to the original attempt and its persisted revision."""
+    return database.execute(
+        """SELECT r.specification_json FROM study_attempts a
+           JOIN study_exercises e ON e.id=a.exercise_id
+           JOIN study_exercise_revisions r ON r.exercise_id=a.exercise_id AND r.revision=a.revision
+           WHERE a.id=%s AND a.exercise_id=%s AND e.study_id=%s""",
+        (attempt_id, exercise_id, study_id),
+    ).fetchone()
+
+
+def issued_frozen_presentation(database, study_id, exercise_id, card_id, entry_id, cycle, revision):
+    """Read the exact current revision of a previously issued Study queue card."""
+    return database.execute(
+        """SELECT e.id,e.current_revision,r.specification_json,p.fen
+           FROM study_exercises e JOIN cards c ON c.study_exercise_id=e.id
+           JOIN daily_queue q ON q.card_id=c.id
+           JOIN queue_attempt_origins origin ON origin.queue_entry_id=q.id AND origin.card_id=c.id
+             AND origin.revision=c.revision AND origin.queue_date=q.queue_date AND origin.cycle=q.cycle
+             AND origin.issued_as_head=1 AND origin.content_type='study_exercise'
+             AND origin.start_fen=c.start_fen AND origin.moves_json=c.moves_json
+           JOIN study_positions p ON p.id=e.position_id AND p.fen=origin.start_fen
+           JOIN study_sources src ON src.id=p.source_id
+           JOIN study_chapters chapter ON chapter.id=src.chapter_id AND chapter.study_id=e.study_id
+           JOIN study_exercise_revisions r ON r.exercise_id=e.id AND r.revision=e.current_revision
+           WHERE e.id=%s AND e.study_id=%s AND c.id=%s AND q.id=%s AND q.cycle=%s
+             AND c.revision=%s AND e.current_revision=c.revision AND q.status='queued'
+             AND c.archived=0 AND c.pending_validation=0 AND c.superseded_by IS NULL
+             AND NOT EXISTS(SELECT 1 FROM deleted_cards deleted WHERE deleted.card_id=c.id)""",
+        (exercise_id, study_id, card_id, entry_id, cycle, revision),
+    ).fetchone()
+
+
+def pending_frozen_presentation(database, study_id, exercise_id, attempt_id):
+    """Require original issued position evidence for pending review recovery.
+
+    Practice attempts do not retain an immutable FEN, so they remain held when
+    the ordinary presentation is unavailable.
+    """
+    return database.execute(
+        """SELECT e.id,a.revision AS current_revision,r.specification_json,p.fen
+           FROM study_attempts a JOIN study_exercises e ON e.id=a.exercise_id
+           JOIN study_exercise_revisions r ON r.exercise_id=a.exercise_id AND r.revision=a.revision
+           JOIN cards c ON c.id=a.card_id AND c.study_exercise_id=e.id AND c.revision=a.revision
+           JOIN queue_attempt_origins origin ON origin.queue_entry_id=a.queue_entry_id AND origin.card_id=c.id
+             AND origin.revision=a.revision AND origin.cycle=a.cycle AND origin.issued_as_head=1
+             AND origin.content_type='study_exercise' AND origin.start_fen=c.start_fen AND origin.moves_json=c.moves_json
+           JOIN study_positions p ON p.id=e.position_id AND p.fen=origin.start_fen
+           JOIN study_sources src ON src.id=p.source_id
+           JOIN study_chapters chapter ON chapter.id=src.chapter_id AND chapter.study_id=e.study_id
+           WHERE a.id=%s AND e.id=%s AND e.study_id=%s AND a.context='review' AND a.result_json IS NULL
+             AND a.retired_operation_id IS NULL AND a.assessment_method='self_assessed'
+             AND e.current_revision=a.revision""",
+        (attempt_id, exercise_id, study_id),
+    ).fetchone()
+
+
+def issued_review_source_state(database, exercise_id, card_id, entry_id, cycle, revision):
+    """None if no issued origin; otherwise whether its source remains exact."""
+    row = database.execute(
+        """SELECT (origin.start_fen=c.start_fen AND origin.moves_json=c.moves_json
+                    AND p.fen=origin.start_fen) AS source_current
+           FROM queue_attempt_origins origin JOIN cards c ON c.id=origin.card_id
+           JOIN daily_queue q ON q.id=origin.queue_entry_id AND q.card_id=c.id
+           JOIN study_exercises e ON e.id=c.study_exercise_id
+           JOIN study_positions p ON p.id=e.position_id
+           WHERE origin.queue_entry_id=%s AND origin.card_id=%s AND origin.cycle=%s
+             AND origin.revision=%s AND origin.queue_date=q.queue_date AND q.cycle=origin.cycle
+             AND origin.issued_as_head=1 AND origin.content_type='study_exercise'
+             AND e.id=%s AND e.current_revision=origin.revision AND c.revision=origin.revision""",
+        (entry_id, card_id, cycle, revision, exercise_id),
+    ).fetchone()
+    return None if row is None else bool(row['source_current'])
+
+
+def study_is_active(database, study_id):
+    row = database.execute('SELECT archived FROM studies WHERE id=%s', (study_id,)).fetchone()
+    return row is not None and row[0] == 0

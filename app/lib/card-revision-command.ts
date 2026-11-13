@@ -3,7 +3,7 @@ import { readPendingCardRevisionRecord, writePendingCardRevisionRecord, clearPen
 import { readPendingCardDeletionBytes } from "../../database/browser/adapters/authoring/card-delete";
 import { API_URL } from "../const";
 import { cardRevisionResultSchema } from "../domain/schemas";
-import { confirmOperationResponse, PendingOperationError } from "./operation-status";
+import { confirmOriginalOperationResponse, PendingOperationError } from "./operation-status";
 import { readJsonResponse } from "./validated-data";
 
 type CardRevision = {
@@ -59,7 +59,7 @@ export async function reviseCardCommand(revision: CardRevision) {
       history_mode: revision.historyMode, expected_revision: revision.expectedRevision,
     }),
   });
-  response = await confirmOperationResponse(response);
+  response = await confirmOriginalOperationResponse(response, pending.operationId);
   const result = await readJsonResponse(response, cardRevisionResultSchema, "card revision");
   clearPendingCardRevisionRecord();
   return result;

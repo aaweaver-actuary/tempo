@@ -32,8 +32,12 @@ def apply_plan(database, entry_ids, positions, buckets, kinds, queue_date):
     if matched_count != len(entry_ids):
         return matched_count
     values = (entry_ids, positions, buckets, kinds, queue_date)
-    database.execute_native("UPDATE daily_queue AS queue\n           SET position=planned.position,card_bucket=planned.bucket,\n               admission_kind=planned.kind\n           FROM unnest(%s::bigint[],%s::bigint[],%s::text[],%s::text[])\n                AS planned(id,position,bucket,kind)\n           WHERE queue.id=planned.id AND queue.queue_date=%s AND queue.status='queued'\n             AND queue.admission_kind IS DISTINCT FROM planned.kind", values)
-    database.execute_native("UPDATE daily_queue AS queue\n           SET position=planned.position,card_bucket=planned.bucket\n           FROM unnest(%s::bigint[],%s::bigint[],%s::text[],%s::text[])\n                AS planned(id,position,bucket,kind)\n           WHERE queue.id=planned.id AND queue.queue_date=%s AND queue.status='queued'\n             AND queue.admission_kind IS NOT DISTINCT FROM planned.kind\n             AND (queue.position,queue.card_bucket) IS DISTINCT FROM\n                 (planned.position,planned.bucket)", values)
+    # An issued row's admission and presentation are part of the original
+    # attempt. It is still counted in matched membership, but never rewritten
+    # by a later derived presentation plan.
+    unissued = " AND NOT EXISTS (SELECT 1 FROM queue_attempt_origins origin WHERE origin.queue_entry_id=queue.id AND origin.card_id=queue.card_id AND origin.revision=(SELECT card.revision FROM cards card WHERE card.id=queue.card_id) AND origin.issued_as_head=1)"
+    database.execute_native("UPDATE daily_queue AS queue\n           SET position=planned.position,card_bucket=planned.bucket,\n               admission_kind=planned.kind\n           FROM unnest(%s::bigint[],%s::bigint[],%s::text[],%s::text[])\n                AS planned(id,position,bucket,kind)\n           WHERE queue.id=planned.id AND queue.queue_date=%s AND queue.status='queued'\n             AND queue.admission_kind IS DISTINCT FROM planned.kind" + unissued, values)
+    database.execute_native("UPDATE daily_queue AS queue\n           SET position=planned.position,card_bucket=planned.bucket\n           FROM unnest(%s::bigint[],%s::bigint[],%s::text[],%s::text[])\n                AS planned(id,position,bucket,kind)\n           WHERE queue.id=planned.id AND queue.queue_date=%s AND queue.status='queued'\n             AND (queue.position,queue.card_bucket) IS DISTINCT FROM\n                 (planned.position,planned.bucket)" + unissued, values)
     return matched_count
 
 def save_plan(database, queue_date, seed, membership_hash, generated_at):

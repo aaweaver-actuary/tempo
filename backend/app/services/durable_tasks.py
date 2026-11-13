@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 import json
 import random
 from tempo_storage.postgres import PostgresConnection
@@ -261,6 +261,15 @@ def _merge_preserve_pointer(target, current):
     return target
 
 
+def accepted_queue_day(payload):
+    """Return only the exact valid day actually present in an accepted payload."""
+    value = payload.get("queue_date")
+    try:
+        return value if isinstance(value, str) and date.fromisoformat(value).isoformat() == value else None
+    except ValueError:
+        return None
+
+
 def _request_current_queue_in_transaction(
     database, payload, *, priority, max_attempts, delay_seconds, minimum_generation
 ):
@@ -284,10 +293,34 @@ def _request_current_queue_in_transaction(
         next_attempt_at=_iso(now + timedelta(seconds=delay_seconds)),
     )
     previous_payload = json.loads(task["payload_json"])
-    previous_day = previous_payload.get("queue_date") or payload["queue_date"]
+    previous_day = accepted_queue_day(previous_payload)
+    task_key = "current"
+    alternate = None
+    if not created and previous_day != payload["queue_date"]:
+        alternate = storage.locked_queue_task_for_day(database, payload["queue_date"])
+    if alternate is not None or (
+        not created and previous_day != payload["queue_date"] and
+        (previous_day is None or task["state"] in ACTIVE_STATES)
+    ):
+        # Preserve the accepted singleton and its lease. Distinct calendar days
+        # coalesce separately under the same daily_queue worker and fences.
+        task_key = "current-day:" + payload["queue_date"]
+        task, created = storage.lock_or_create_current_queue_task(
+            database,
+            task_id=str(uuid.uuid4()),
+            payload_json=json.dumps(payload, separators=(",", ":")),
+            priority=priority,
+            max_attempts=max_attempts,
+            now=_iso(now),
+            initial_generation=minimum_generation + 1,
+            next_attempt_at=_iso(now + timedelta(seconds=delay_seconds)),
+            deduplication_key=task_key,
+        )
+        previous_payload = json.loads(task["payload_json"])
+        previous_day = accepted_queue_day(previous_payload)
+        if previous_day != payload["queue_date"]:
+            raise RuntimeError("Queue day key disagrees with its accepted payload")
     started = created
-    if not created and previous_day > payload["queue_date"]:
-        return dict(task)
     if (
         not created
         and previous_day == payload["queue_date"]
@@ -310,7 +343,7 @@ def _request_current_queue_in_transaction(
             (
                 task["id"],
                 "daily_queue",
-                "current",
+                task_key,
                 max(int(task["generation"]) + 1, minimum_generation + 1),
                 priority,
                 json.dumps(payload, separators=(",", ":")),
@@ -511,6 +544,35 @@ def advance_task_slice_in_transaction(
             next_phase,
             kind=task.get("kind"),
         )
+    return bool(changed)
+
+
+# A dayless accepted generation has no trustworthy original calendar fact.
+# Keep it non-claimable and observable until an owner-specific resolver can
+# verify such a fact. Never manufacture a day from a later request or clock.
+_UNKNOWN_QUEUE_DAY_UNTIL = "9999-12-31T23:59:59+00:00"
+
+
+def hold_unknown_queue_day_in_transaction(database, task):
+    changed = storage.hold_unknown_queue_day(database, (
+        _UNKNOWN_QUEUE_DAY_UNTIL, _iso(), task["id"], task["generation"], task["lease_token"],
+    ))
+    if changed:
+        _record_event(database, task["id"], task["generation"],
+                      "accepted_queue_day_unknown", task.get("phase"),
+                      "Original accepted Study day is unavailable", kind="daily_queue")
+    return bool(changed)
+
+
+def defer_future_queue_slice_in_transaction(database, task, *, now):
+    """Preserve a future-day checkpoint and retry after a bounded interval."""
+    changed = storage.defer_for_foreground(database, (
+        _iso(now + timedelta(seconds=60)), _iso(now),
+        task["id"], task["generation"], task["lease_token"],
+    ))
+    if changed:
+        _record_event(database, task["id"], task["generation"],
+                      "future_study_day_deferred", task.get("phase"), kind="daily_queue")
     return bool(changed)
 
 
@@ -856,7 +918,7 @@ def serialize_task(row) -> dict:
         "age_seconds": age_seconds,
         "last_error": row["last_error"],
     }
-    if row["kind"] == "daily_queue" and row["deduplication_key"] == "current":
+    if row["kind"] == "daily_queue" and (row["deduplication_key"] == "current" or row["deduplication_key"].startswith("current-day:")):
         phases = {
             "unlock_opening",
             "block_opening",
@@ -925,7 +987,7 @@ def annotate_queue_projection_workers(projections, tasks, today):
         task.get("queue_date")
         for task in tasks
         if task.get("kind") == "daily_queue"
-        and task.get("deduplication_key") == "current"
+        and (task.get("deduplication_key") == "current" or str(task.get("deduplication_key", "")).startswith("current-day:"))
         and task.get("state") in {"queued", "leased", "retrying"}
     }
     return [

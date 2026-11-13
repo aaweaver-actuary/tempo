@@ -2,11 +2,13 @@ import { expect, it, vi } from 'vitest';
 import { createStudyClient, type StudyClientStorage } from '../../app/lib/study-connection';
 
 function storage() {
-  let session: string | null = null, registry: string | null = null;
+  let session: string | null = null;
+  const registry = new Map<string, { identity: string; origin: string; workspace: string }>();
   const adapter: StudyClientStorage = {
     sessionConnectionAvailable: () => true, readSessionConnection: () => session,
     writeSessionConnection: value => { session = value; }, removeSessionConnection: () => { session = null; },
-    readAuthorityRegistry: () => registry, writeAuthorityRegistry: value => { registry = value; },
+    readRegisteredAuthorities: () => [...registry.values()], bindAuthority: value => { registry.set(value.identity, value); },
+    offlineStoreLocator: identity => identity ? `locator:${identity}` : "local-locator",
     readRetainedStudyData: async () => ({ databases: {}, legacy: {} }),
     inspectRetainedStudyAuthority: async () => ({ facts: [], retained: { databases: {}, legacy: {} } }),
   };
@@ -174,4 +176,14 @@ it('C03 explicit rejected bootstrap notifies authentication and releases its con
     resolveBaseHref: () => 'https://shell.example/', onAuthenticationRequired: auth, acquireActivityHold: hold });
   await expect(client.connectStudy('https://learning.example', 'alpha', 'a'.repeat(40))).rejects.toMatchObject({ kind: 'http' });
   expect(auth).toHaveBeenCalledTimes(1); expect(hold).toHaveBeenCalledTimes(1); expect(release).toHaveBeenCalledTimes(1);
+});
+
+it('FE06 semantic registry supplies an opaque locator without browser layout or JSON', async () => {
+  const port = storage();
+  const client = createStudyClient({ independent: true, baseUrl: '', storage: port,
+    transport: vi.fn(async () => Response.json(bootstrap('alpha'))) });
+  await client.connectStudy('https://a.example', 'alpha', 'a'.repeat(40));
+  expect(port.readRegisteredAuthorities()).toEqual([{ identity: 'https://a.example:study:alpha', origin: 'https://a.example', workspace: 'alpha' }]);
+  expect(client.studyOfflineDatabaseName()).toBe('locator:https://a.example:study:alpha');
+  expect(port.readRegisteredAuthorities()[0]).not.toHaveProperty('offlineDatabase');
 });

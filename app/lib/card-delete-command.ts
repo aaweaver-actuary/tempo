@@ -3,7 +3,7 @@ import { readPendingCardDeletionRecord, readPendingCardEditBytes, writePendingCa
 import { independentStudy } from "./study-connection";
 import { z } from "zod";
 import { API_URL } from "../const";
-import { confirmOperationResponse, PendingOperationError, FailedOperationError } from "./operation-status";
+import { confirmOriginalOperationResponse, PendingOperationError, FailedOperationError } from "./operation-status";
 import { readJsonResponse } from "./validated-data";
 
 const pendingSchema = z.strictObject({ operationId: z.string(), cardId: z.string(), expectedRevision: z.number().int().positive() });
@@ -43,9 +43,9 @@ export async function deleteCardCommand(cardId: string, expectedRevision: number
   pending ??= { operationId: crypto.randomUUID(), cardId, expectedRevision };
   writePendingCardDeletionRecord(pending);
   try {
-    const response = await confirmOperationResponse(await fetch(`${API_URL}/api/cards/${encodeURIComponent(cardId)}?permanent=true&expected_revision=${expectedRevision}`, {
+    const response = await confirmOriginalOperationResponse(await fetch(`${API_URL}/api/cards/${encodeURIComponent(cardId)}?permanent=true&expected_revision=${expectedRevision}`, {
       method: "DELETE", headers: { "Idempotency-Key": pending.operationId },
-    }));
+    }), pending.operationId);
     const result = await readJsonResponse(response, resultSchema, "delete card");
     if (result.card_id !== cardId) throw new Error("The deletion response names a different card.");
     clearPendingCardDeletionRecord();

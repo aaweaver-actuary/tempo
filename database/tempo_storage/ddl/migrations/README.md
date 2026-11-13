@@ -2,10 +2,12 @@
 
 ## Current migration owner
 
-[Source readiness](../schema_version.py) requires schema 65; this is not an
+[Source readiness](../schema_version.py) requires schema 66; this is not an
 installed-state observation. [The ordered migration directory](.) preserves
 forward upgrade history, including [064 retirement dispositions](064_retire_optional_study_producers.sql)
-and [065](065_position_introduction_holds.sql).
+and [065](065_position_introduction_holds.sql). [066](066_deferred_prefix_split_intents.sql)
+adds Study-owned deferred split intents and a review lookup index; it does not
+rewrite original reviews, queue origins or operation receipts.
 The [supported migration runner](../../../tooling/apply_postgres_migrations.py)
 uses the retained SQL/checksum resources rather than importing a retired runtime.
 Use the [registered CLI lifecycle](../../../../docs/TEMPO-CLI.md) with its stopped-writer,

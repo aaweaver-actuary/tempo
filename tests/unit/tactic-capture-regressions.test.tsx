@@ -542,3 +542,11 @@ it.each(["malformed", "foreign"])("capture retains saved bytes for a %s receipt"
   await expect(saveTacticCapture()).rejects.toThrow();
   expect(localStorage.getItem(key)).toBe(original);
 });
+
+it.each(["missing", "foreign"])("%s capture acknowledgment retains the exact saved capture without polling", async kind => {
+  const fetcher = vi.fn(async () => Response.json(kind === "foreign" ? { operation_id: "foreign", state: "queued" } : { state: "queued" }, { status: 202 }));
+  vi.stubGlobal("fetch", fetcher);
+  await expect(saveTacticCapture(draft)).rejects.toThrow("still pending");
+  expect(pendingTacticCapture()?.capture_id).toBeTruthy();
+  expect(fetcher).toHaveBeenCalledOnce();
+});

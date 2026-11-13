@@ -1,5 +1,5 @@
 import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy } from "./study-connection";
-import { confirmOperationResponse } from "./operation-status";
+import { confirmOriginalOperationResponse } from "./operation-status";
 import { queueRecordWithCompatibleOpeningEvidence } from "../domain/adapters/practice-card-adapters";
 import { queueCardSchema, queueEnvelopeSchema } from "../domain/schemas";
 import type { BackendQueueCard } from "../domain/transport";
@@ -13,6 +13,7 @@ import type { OpeningEvidenceCheckpoint } from "../domain/opening-evidence";
 import { saveEvidenceAwareReview } from "./opening-evidence-review";
 import { acknowledgeOpeningReview, retainOpeningEvidenceForStorageFallback } from "./opening-evidence-journal";
 import { publishNotification } from "./notifications";
+import { decodeFrozenAttempt } from "../domain/study-exercise-transport";
 
 export class OfflineReplayError extends Error {
   constructor(message: string, readonly endpoint: string, options?: ErrorOptions) {
@@ -213,6 +214,13 @@ export async function recordOfflineStudyAttempt(localEntryId: number, studyId: s
 async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> {
   let current = await readPreparedTraining();
   if (!current) return null;
+  const heldCards = new Set<string>();
+  const heldEntries = new Set<number>();
+  const hold = (attempt: OfflineAttempt, message: string) => {
+    heldCards.add(attempt.cardId); heldEntries.add(attempt.localEntryId);
+    publishNotification({ severity: "warning", source: "phone recovery", key: `phone-attempt:${attempt.localEntryId}`,
+      message, details: { attemptId: attempt.attemptId ?? "unknown", localEntryId: attempt.localEntryId } });
+  };
   for (const [attemptIndex, attempt] of current.attempts.entries()) {
     if (attempt.serverReviewId || attempt.serverAcknowledged || (attempt.conflict && attempt.studyId)) continue;
     if (current.attempts.slice(0, attemptIndex).some((earlier) => earlier.cardId === attempt.cardId && earlier.conflict)) {
@@ -220,6 +228,13 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
         ...saved!, attempts: saved!.attempts.map((item) => item.localEntryId === attempt.localEntryId
           ? { ...item, conflict: "An earlier phone attempt for this card conflicted with the computer" } : item),
       }));
+      continue;
+    }
+    const studyFacts = [attempt.studyId, attempt.exerciseId, attempt.answer, attempt.attemptId];
+    const incompleteStudy = studyFacts.slice(0, 3).some(Boolean) && !studyFacts.every(Boolean);
+    if (incompleteStudy || (attempt.answer && !studyAnswerSchema.safeParse(attempt.answer).success) ||
+        heldCards.has(attempt.cardId) || (attempt.parentLocalEntryId !== undefined && heldEntries.has(attempt.parentLocalEntryId))) {
+      hold(attempt, "This saved phone exercise is held because its original identity or answer is unsupported.");
       continue;
     }
     const parent = current.attempts.find((candidate) => candidate.localEntryId === attempt.parentLocalEntryId);
@@ -248,6 +263,7 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
             queue_entry_id: serverEntryId, queue_cycle: attempt.queueCycle ?? 0,
             expected_review_id: expectedReviewId, hint_seen: attempt.guided }),
         });
+        response = await confirmOriginalOperationResponse(response, `phone-study:${attempt.attemptId}`, { signal: controller.signal });
       } else {
         const reviewAttemptId = attempt.attemptId ?? `phone:${attempt.localEntryId}:${attempt.completedAt}`;
         const completion = attempt.openingEvidenceCompletion
@@ -268,7 +284,6 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
           },
         });
       }
-      response = await confirmOperationResponse(response, { signal: controller.signal });
     } catch (error) {
       throw new OfflineReplayError(`Could not sync saved review. ${String(error)}`, reviewEndpoint, { cause: error });
     } finally {
@@ -287,6 +302,14 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
       warning?: string; reconciliation?: string;
       competing_review?: { outcome?: string | null; completed_at?: string | null };
       pending_self_assessment?: boolean; review?: { review_id: number; requeue_entry_id: number | null } };
+    if (attempt.studyId && attempt.exerciseId && attempt.attemptId) {
+      const decoded = decodeFrozenAttempt(result, { attemptId: attempt.attemptId, context: "review" });
+      result = decoded as unknown as typeof result;
+    }
+    if (result.pending_self_assessment && !attempt.selfRating) {
+      hold(attempt, "The original phone answer is confirmed and awaits its saved self-assessment.");
+      continue;
+    }
     if (result.pending_self_assessment && attempt.studyId && attempt.exerciseId && attempt.attemptId && attempt.selfRating) {
       const assessmentEndpoint = `${API_URL}/api/studies/${encodeURIComponent(attempt.studyId)}/exercises/${encodeURIComponent(attempt.exerciseId)}/attempts/${encodeURIComponent(attempt.attemptId)}/self-assess`;
       let assessed: Response;
@@ -296,7 +319,7 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
             "Idempotency-Key": `phone-assessment:${attempt.attemptId}` },
           body: JSON.stringify({ rating: attempt.selfRating }),
         });
-        assessed = await confirmOperationResponse(assessed);
+        assessed = await confirmOriginalOperationResponse(assessed, `phone-assessment:${attempt.attemptId}`);
       } catch (error) {
         throw new OfflineReplayError(`Could not sync study self-assessment. ${String(error)}`, assessmentEndpoint, { cause: error });
       }
@@ -307,7 +330,9 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
         continue;
       }
       if (!assessed.ok) throw new OfflineReplayError(`Could not sync study self-assessment (HTTP ${assessed.status})`, assessmentEndpoint);
-      result = await assessed.json() as typeof result;
+      const decoded = decodeFrozenAttempt(await assessed.json(), { attemptId: attempt.attemptId, context: "review" });
+      if ("pending_self_assessment" in decoded) throw new Error("The original self-assessment has not completed.");
+      result = decoded as unknown as typeof result;
     }
     if (result.review) result = { ...result.review };
     if (!Number.isInteger(result.review_id) && !(result.persisted && result.reconciliation === "history_only"))

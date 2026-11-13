@@ -62,3 +62,34 @@ test("rejecting a prefix split remains dismissed after queue reload", async ({ p
   await expect(page.getByText("Split test opening")).toBeVisible();
   await expect(page.getByRole("button", { name: "Accept" })).toHaveCount(0);
 });
+
+test("lost split acknowledgment recovers the original receipt after reload on a successor", async ({ page }) => {
+  await prepareVisualUI(page);
+  const waiting = { status: "waiting_review", intent_id: "intent-browser", card_id: "browser-prefix", source_revision: 3, queue_entry_id: 1, reason: null };
+  const original = { operationId: "original-browser-op", decision: "accept", cardId: "browser-prefix", revision: 3, queueEntryId: 1 };
+  let receiptReads = 0;
+  let statusReads = 0;
+  await page.route("**/api/queue/window?**", route => route.fulfill({ json: { cards: [nextCard], count: 1 } }));
+  await page.route("**/api/operations/original-browser-op", route => {
+    receiptReads += 1;
+    return route.fulfill({ json: { operation_id: original.operationId, state: "complete", response: waiting } });
+  });
+  await page.route("**/api/cards/browser-prefix/prefix-split/intents/intent-browser", route => {
+    statusReads += 1;
+    return route.fulfill({ json: { ...waiting, status: "applied", result: {
+      source_card_id: "browser-prefix", source_revision: 3, applied: true, idempotent: false,
+      parent: { card_id: "browser-parent", starting_fen: startingFen, moves: prefixMoves.slice(0, 3), tested_player_moves: 2 },
+      continuation: { card_id: "browser-child", starting_fen: startingFen, moves: prefixMoves.slice(3), tested_player_moves: 1 },
+    } } });
+  });
+  await page.evaluate(record => localStorage.setItem("tempo-pending-prefix-split-v1", JSON.stringify(record)), original);
+  await page.reload();
+  await expect(page.getByText("Next queued opening")).toBeVisible();
+  await expect(page.getByText(/Shortening is saved/)).toBeVisible();
+  expect(receiptReads).toBe(1);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-prefix-split-v1")!).operationId)).toBe(original.operationId);
+  await page.reload();
+  await expect(page.getByText(/Shortening completed/)).toBeVisible();
+  expect(statusReads).toBe(1);
+  expect(await page.evaluate(() => localStorage.getItem("tempo-pending-prefix-split-v1"))).toBeNull();
+});
