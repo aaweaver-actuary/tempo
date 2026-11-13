@@ -1,6 +1,7 @@
 """Legacy persistence/transport capabilities borrowing the caller's connection."""
 
 from __future__ import annotations
+from dataclasses import dataclass
 from datetime import date, datetime, timezone
 import json
 from collections.abc import Callable, Mapping
@@ -33,6 +34,13 @@ from .background_runtime import training_timing_stage
 if TYPE_CHECKING:
     from app.contracts.transport.settings import Settings
     from app.study.position_checkpoint import PositionCheckpointFence, PositionCheckpointPreparation
+
+
+@dataclass(frozen=True)
+class _CommandCalendar:
+    observed_at: datetime
+    local_day: date
+    policy: ReviewPolicy
 
 
 def _lock_review_cards(database: PostgresConnection, card_id: str, candidate: learning.PreparedNext | None) -> bool:
@@ -108,34 +116,30 @@ class LearningReviewAdapter:
         self.policy_provider = policy_provider
         self.observed_at = observed_at
         self.local_day = local_day
-        self._command_time: datetime | None = None
-        self._command_day: date | None = None
-        self._command_timezone: str | None = None
-        self._command_policy: ReviewPolicy | None = None
+        self._command_calendar: _CommandCalendar | None = None
         self._review_attempt: QueueAttempt | None = None
         self.deferred_effects: list[Callable[[], None]] = []
 
-    def _capture_command_day(self) -> None:
-        if self._command_time is None:
-            self._command_time = self.observed_at or datetime.now(timezone.utc)
-            self._command_policy = self.policy()
-            self._command_timezone = self._command_policy.timezone
-            self._command_day = self.local_day or learning.review_day_at(
-                self._command_time, self._command_timezone
-            )
+    def _capture_command_day(self) -> _CommandCalendar:
+        if self._command_calendar is None:
+            observed_at = self.observed_at or datetime.now(timezone.utc)
+            policy = self.policy()
+            local_day = self.local_day or learning.review_day_at(observed_at, policy.timezone)
+            self._command_calendar = _CommandCalendar(observed_at, local_day, policy)
+        return self._command_calendar
 
     def context(self, command: ReviewCommand) -> ReviewContext:
-        self._capture_command_day()
+        calendar = self._capture_command_day()
         return learning.review_context(
             command,
-            observed_at=self._command_time,
-            local_day=self._command_day,
-            timezone_name=self._command_timezone,
+            observed_at=calendar.observed_at,
+            local_day=calendar.local_day,
+            timezone_name=calendar.policy.timezone,
         )
 
     def policy(self) -> ReviewPolicy:
-        if self._command_policy is not None:
-            return self._command_policy
+        if self._command_calendar is not None:
+            return self._command_calendar.policy
         if self.policy_provider:
             settings = self.policy_provider()
             return learning.ReviewPolicy(
@@ -246,6 +250,7 @@ class LearningReviewAdapter:
         self, command: ReviewCommand, attempt: QueueAttempt, context: ReviewContext, *,
         guided: bool, revision: int | None, competing_review: CompetingReview | None = None
     ) -> ReconciledReview:
+        calendar = self._capture_command_day()
         result = reconcile_completed_review(
             self.database,
             command.card_id,
@@ -255,8 +260,8 @@ class LearningReviewAdapter:
             guided=guided,
             completed_at=context.reviewed_at if command.recorded_at else None,
             expected_revision=revision,
-            timezone_name=self._command_timezone,
-            observed_at=self._command_time,
+            timezone_name=calendar.policy.timezone,
+            observed_at=calendar.observed_at,
             local_day=context.local_day,
             competing_review=competing_review.as_dict() if competing_review else None,
         )
@@ -517,10 +522,10 @@ class LearningReviewAdapter:
         return False
 
     def lock_queue_date(self) -> None:
-        self._capture_command_day()
+        calendar = self._capture_command_day()
         if self._position_fence is not None:
             return  # lock_original_queue takes the original issued day below
-        lock_queue_date_for_position(self.database, self._command_day.isoformat())
+        lock_queue_date_for_position(self.database, calendar.local_day.isoformat())
 
     def lock_position_attempt(self, command: ReviewCommand) -> None:
         from tempo_storage.study import (

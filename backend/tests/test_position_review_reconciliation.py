@@ -4,6 +4,7 @@ import importlib.util
 import json
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import tempo_learning_review as review
@@ -253,10 +254,10 @@ def test_production_adapter_translates_owner_schedule_and_reconciliation_without
     from app.services import learning_review_adapter as adapter_module
     from tempo_learning_review.models import ScheduleSnapshot, ReconciledReview
 
-    adapter = object.__new__(adapter_module.LearningReviewAdapter)
-    adapter.database = object()
-    adapter._command_timezone = 'America/New_York'
-    adapter._command_time = _fixture.NOW
+    adapter = adapter_module.LearningReviewAdapter(
+        object(), None, observed_at=_fixture.NOW,
+        policy_provider=lambda: SimpleNamespace(timezone='America/New_York', light_first_interval_days=7),
+    )
     owner_result = _fixture.Capabilities().scheduled
     reconciliation = {'persisted': True, 'review_id': None, 'queue_entry_id': 1,
         'requeue_entry_id': None, 'reconciliation': 'history_only', 'warning': 'retained', 'competing_review': None}

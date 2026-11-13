@@ -13,6 +13,49 @@ DAY = date(2026, 10, 21)
 NOW = datetime(2026, 10, 21, 12, tzinfo=timezone.utc)
 
 
+@pytest.mark.parametrize("failure", ["policy", "day"])
+def test_calendar_capture_is_atomic_after_failed_initialization(monkeypatch, failure):
+    calls = []
+    def policy():
+        calls.append("policy")
+        if failure == "policy" and calls.count("policy") == 1:
+            raise RuntimeError("policy unavailable")
+        return SimpleNamespace(timezone="America/New_York", light_first_interval_days=3)
+
+    original_day = review.learning.review_day_at
+    def day(*args):
+        calls.append("day")
+        if failure == "day" and calls.count("day") == 1:
+            raise RuntimeError("day unavailable")
+        return original_day(*args)
+
+    monkeypatch.setattr(review.learning, "review_day_at", day)
+    adapter = review.LearningReviewAdapter(None, None, observed_at=NOW, policy_provider=policy)
+    with pytest.raises(RuntimeError):
+        adapter._capture_command_day()
+    assert adapter._command_calendar is None
+    captured = adapter._capture_command_day()
+    assert (captured.observed_at, captured.local_day, captured.policy.timezone) == (
+        NOW, DAY, "America/New_York")
+    assert adapter._capture_command_day() is captured
+    assert calls.count("policy") == 2
+
+
+def test_calendar_context_preserves_recorded_review_day_and_captured_policy():
+    from tempo_learning_review.models import ReviewCommand
+
+    adapter = review.LearningReviewAdapter(
+        None, None, observed_at=NOW,
+        policy_provider=lambda: SimpleNamespace(timezone="America/New_York", light_first_interval_days=3),
+    )
+    command = ReviewCommand("card", "correct", False, 4, "2026-10-21T02:00:00Z", None, None, "attempt", "{}")
+    context = adapter.context(command)
+    assert context.local_day == DAY
+    assert context.reviewed_at == datetime(2026, 10, 21, 2, tzinfo=timezone.utc)
+    assert context.review_day == date(2026, 10, 20)
+    assert adapter.policy() is adapter._capture_command_day().policy
+
+
 @pytest.mark.parametrize("method", ["save_receipt", "save_position_receipt"])
 def test_receipt_insert_uses_validated_facts_and_preserves_payload(monkeypatch, method):
     from tempo_learning_review.models import ReviewResult
