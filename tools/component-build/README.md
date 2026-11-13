@@ -694,3 +694,16 @@ this map and this change neither authorizes nor performs their extraction. The
 current next-exercise main branch still has its existing untyped callbacks;
 unmerged B12/B13 are not represented as released. Native, browser, package and
 assembled behavior are not established by these source checks.
+
+## DDL resource source census
+
+The database schema source owner records each tracked SQL and Python input in the
+DDL tree by its forward-history, recent-forward, checksum-history, maintenance
+rollback, fixture SQL, source-readiness or namespace role. Database migration
+tooling owns the existing explicit operator and read-only source inventory. The
+050 wrapper binds a retained checksum resource; 049 rollback is separately
+classified. No current direct source consumer was established for
+`study_conflicts.sql` beyond its fixture documentation. Source readiness 66 is
+not an installed-state observation. This census executes no SQL and does not
+qualify migration, rollback, recovery or native behavior; other executable-role
+inventories and existing fixture gaps remain open.

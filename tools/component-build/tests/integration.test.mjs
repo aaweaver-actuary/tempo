@@ -4,8 +4,9 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync,
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { checkComponents, repository, validateManifest, compositionPaths, validateCompositionOwnership, censusPaths, validateCensusOwnership, validateCensusInterfaces, validateStartupFacts, validateNamespaceMarkers } from "../check-components.mjs";
+import { checkComponents, repository, validateManifest, compositionPaths, validateCompositionOwnership, censusPaths, validateCensusOwnership, validateCensusInterfaces, validateStartupFacts, validateNamespaceMarkers, validateDdlResources } from "../check-components.mjs";
 import { validateOwnedPaths, selectComponents } from "../selection.mjs";
+import { validateMigrationInventory } from "../../../database/tooling/check-migration-inventory.mjs";
 
 const python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3.12";
 const original = JSON.parse(readFileSync(join(repository, "components.json")));
@@ -132,6 +133,44 @@ test("T02 namespace guard detects new tracked and executable marker sources", co
   const added = "backend/app/new_namespace/__init__.py"; mkdirSync(join(root,added,".."),{recursive:true}); writeFileSync(join(root,added), "");
   assert.equal(spawnSync("git", ["-C",root,"add",added], {cwd:root}).status, 0);
   assert.throws(() => validateNamespaceMarkers(original, root, python), /exactly one namespace/);
+});
+test("T02 DDL source version rejects empty, missing, duplicate and mismatched history", () => {
+  const files = Array.from({length:66}, (_,i) => String(i+1).padStart(3,"0") + "_example.sql");
+  const schema = "POSTGRES_SCHEMA_VERSION = 66\n";
+  assert.equal(validateMigrationInventory(files,schema),66);
+  assert.throws(()=>validateMigrationInventory([],schema),/unique and contiguous/);
+  assert.throws(()=>validateMigrationInventory(files.filter(f=>!f.startsWith("032_")),schema),/unique and contiguous/);
+  assert.throws(()=>validateMigrationInventory([...files,"032_duplicate.sql"],schema),/unique and contiguous/);
+  assert.throws(()=>validateMigrationInventory(files,"POSTGRES_SCHEMA_VERSION = 65\n"),/disagrees/);
+});
+test("T02 DDL resource census rejects missing, duplicate, stale and wrong roles", () => {
+  assert.deepEqual(validateDdlResources(original, repository, python), {resources:73, version:66});
+  const missing=structuredClone(original), owner=missing.components.find(c=>c.id==="postgres-schema-source"); owner.ownedFiles.pop();
+  assert.throws(()=>validateDdlResources(missing,repository,python), /missing, duplicate or stale/);
+  const duplicate=structuredClone(original), d=duplicate.components.find(c=>c.id==="postgres-schema-source"); d.ownedFiles.push(d.ownedFiles[0]);
+  assert.throws(()=>validateDdlResources(duplicate,repository,python), /missing, duplicate or stale/);
+  const stale=structuredClone(original), st=stale.components.find(c=>c.id==="postgres-schema-source"); st.ownedFiles[0]="../foreign.sql";
+  assert.throws(()=>validateDdlResources(stale,repository,python), /missing, duplicate or stale/);
+  const wrong=structuredClone(original), w=wrong.components.find(c=>c.id==="postgres-schema-source"); w.resourceRoles[0]+="-wrong";
+  assert.throws(()=>validateDdlResources(wrong,repository,python), /resource role/);
+  const overlap=structuredClone(original); overlap.components.find(c=>c.id==="integration").ownedFiles.push(overlap.components.find(c=>c.id==="postgres-schema-source").ownedFiles[0]);
+  assert.throws(()=>validateDdlResources(overlap,repository,python), /overlapping DDL/);
+});
+test("T02 DDL resource guard detects changed history and newly tracked SQL", context => {
+  const root=mkdtempSync(join(tmpdir(),"tempo-ddl-source-")); context.after(()=>rmSync(root,{recursive:true,force:true}));
+  assert.equal(spawnSync("git",["-C",root,"init","-q"],{cwd:root}).status,0);
+  const files=original.components.filter(c=>["postgres-schema-source","postgres-migration-tooling"].includes(c.id)).flatMap(c=>c.ownedFiles);
+  for(const path of files){mkdirSync(join(root,path,".."),{recursive:true});cpSync(join(repository,path),join(root,path));}
+  assert.equal(spawnSync("git",["-C",root,"add","database"],{cwd:root}).status,0);
+  assert.deepEqual(validateDdlResources(original,root,python),{resources:73,version:66});
+  const history="database/tempo_storage/ddl/historical/050_remediation.sql"; writeFileSync(join(root,history),"changed");
+  assert.throws(()=>validateDdlResources(original,root,python),/Historical migration resource mismatch/); cpSync(join(repository,history),join(root,history));
+  const tool="database/tooling/apply_postgres_migrations.py", target=join(root,tool), source=readFileSync(target,"utf8");
+  writeFileSync(target,source.replace('"050_learning_remediation.sql": (','"051_foreign.sql": ('));
+  assert.throws(()=>validateDdlResources(original,root,python),/DDL source witness failed/); writeFileSync(target,source);
+  const added="database/tempo_storage/ddl/migrations/067_unlisted.sql"; writeFileSync(join(root,added),"");
+  assert.equal(spawnSync("git",["-C",root,"add",added],{cwd:root}).status,0);
+  assert.throws(()=>validateDdlResources(original,root,python),/missing, duplicate or stale/);
 });
 test("T02 startup census cannot disappear when all owner tags are removed", () => {
   const missing = structuredClone(original);
@@ -546,6 +585,25 @@ test("D selected TypeScript validation never invokes Python or needs backend sou
   symlinkSync(join(repository, dependencyRoot), join(root, "node_modules"));
   writeFileSync(join(root, "components.json"), JSON.stringify({ schemaVersion: 1, components: [component] }));
   assert.equal(checkComponents(root, "/python-must-not-run", { componentIds: ["chess-line"] })[0].id, "chess-line");
+});
+test("T02 DDL census does not run for selected or minimal component checks and listings", context => {
+  const root = mkdtempSync(join(tmpdir(), "tempo-ddl-minimal-"));
+  context.after(() => rmSync(root, {recursive:true, force:true}));
+  const component = original.components.find(c => c.id === "chess-line");
+  mkdirSync(join(root,"packages")); cpSync(join(repository,component.root),join(root,component.root),{recursive:true});
+  const dependencyRoot = existsSync(join(repository,"node_modules/chess.js")) ? "node_modules" : "packages/chess-line/node_modules";
+  symlinkSync(join(repository,dependencyRoot),join(root,"node_modules"));
+  writeFileSync(join(root,"components.json"),JSON.stringify({schemaVersion:1,components:[component]}));
+  assert.equal(existsSync(join(root,"database")),false);
+  assert.equal(checkComponents(root,"/python-must-not-run",{componentIds:["chess-line"]})[0].id,"chess-line");
+  assert.equal(checkComponents(repository,"/python-must-not-run",{componentIds:["chess-line"]})[0].id,"chess-line");
+  const cli=join(repository,"tools/component-build/check-components.mjs"), env={...process.env,TEMPO_COMPONENT_ROOT:root,TEMPO_COMPONENT_PYTHON:"/python-must-not-run"};
+  for (const args of [["--list"],["--component","chess-line","--list"]]) {
+    const result=spawnSync(process.execPath,[cli,...args],{cwd:root,env,encoding:"utf8"});
+    assert.equal(result.status,0,result.stdout+result.stderr); assert.equal(JSON.parse(result.stdout).selected[0].id,"chess-line");
+  }
+  const full=spawnSync(process.execPath,[cli,"--list"],{cwd:repository,env:{...process.env,TEMPO_COMPONENT_PYTHON:"/python-must-not-run"},encoding:"utf8"});
+  assert.notEqual(full.status,0); assert.match(full.stderr,/DDL source witness failed|python-must-not-run/);
 });
 test("D component listing performs no build, producer or test execution", context => {
   const fixture = contractFixture(context);
