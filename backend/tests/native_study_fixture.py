@@ -89,10 +89,10 @@ def owned_postgres(tmp_path_factory, *, additional_ports=(), profile="default"):
         revision = os.environ.get('TEMPO_NATIVE_CANDIDATE_REVISION', '')
         info = conninfo_to_dict(bridge_dsn)
         # libpq defaults can redirect even an apparently explicit DSN.
-        ambient_pg = any(name.startswith('PG') and name not in {'PG_VERSION', 'PG_MAJOR'}
+        ambient_pg = any(name.startswith('PG') and name not in {'PG_VERSION', 'PG_MAJOR', 'PGPASSFILE'}
                          for name in os.environ)
         if (set(info) != {'host', 'port', 'user', 'dbname'}
-                or ambient_pg
+                or ambient_pg or os.environ.get('PGPASSFILE') != '/run/secrets/admin_pgpass'
                 or additional_ports or profile != 'default' or os.environ.get('TEMPO_TEST_INSTANCE') != 'disposable'
                 or not re.fullmatch(r'tempo-pg-regressions-[0-9]+-[0-9a-f]{8}', project)
                 or not re.fullmatch(r'[0-9a-f]{40}', revision)

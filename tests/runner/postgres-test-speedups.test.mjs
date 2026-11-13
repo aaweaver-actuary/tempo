@@ -28,6 +28,7 @@ test("P14 checkpoint has one fixed browser and native selection", () => {
 });
 test("P14 frozen owner bridge refuses foreign or incomplete identities before connecting", () => {
   const script = `import os,runpy
+os.environ['PGPASSFILE']='/run/secrets/admin_pgpass'
 m=runpy.run_path('backend/tests/native_study_fixture.py'); f=m['owned_postgres'].__wrapped__
 def no_connection(*args,**kwargs): raise AssertionError('unexpected connection')
 f.__globals__['psycopg'].connect=no_connection
@@ -36,13 +37,14 @@ for dsn,project,revision in [('postgresql://postgres@postgres:5432/tempo','tempo
  try: next(f(None))
  except RuntimeError as error: assert 'identity' in str(error)
  else: raise AssertionError('foreign target accepted')
-for variable in ('PGHOSTADDR','PGSERVICE','PGOPTIONS'):
+for variable in ('PGHOSTADDR','PGSERVICE','PGOPTIONS','PGPASSFILE'):
  os.environ.update(TEMPO_NATIVE_FROZEN_BRIDGE_DSN='postgresql://postgres@postgres:5432/tempo_position_test_'+'a'*32,TEMPO_TEST_COMPOSE_PROJECT='tempo-pg-regressions-1-12345678',TEMPO_NATIVE_CANDIDATE_REVISION='a'*40,TEMPO_TEST_INSTANCE='disposable')
  os.environ[variable]='foreign'
  try: next(f(None))
  except RuntimeError as error: assert 'identity' in str(error)
  else: raise AssertionError('ambient override accepted')
- del os.environ[variable]
+ if variable == 'PGPASSFILE': os.environ[variable]='/run/secrets/admin_pgpass'
+ else: del os.environ[variable]
 class Cursor:
  def fetchone(self): return ('tempo_position_test_'+'a'*32,'foreign-project')
 class Conn:
@@ -63,6 +65,23 @@ f.__globals__['psycopg'].connect=lambda *args,**kwargs: ParentConn()
 try: next(f(None))
 except RuntimeError as error: assert 'parent cluster marker differs' in str(error)
 else: raise AssertionError('foreign parent accepted')`;
+  const result = spawnSync(resolvePython(), ["-c", script], { cwd: root, env: { ...process.env, PYTHONPATH: "backend:database" }, encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+});
+test("P14 bridge accepts composed credential path and rejects foreign passfiles before connecting", () => {
+  const script = `import os,runpy,psycopg
+m=runpy.run_path('database/tests/position-native-pytest.py')
+os.environ.update(TEMPO_NATIVE_POSITION_CHECK='frozen-requeue-cycle',TEMPO_TEST_COMPOSE_PROJECT='tempo-pg-regressions-1-12345678',TEMPO_NATIVE_CANDIDATE_REVISION='a'*40,TEMPO_TEST_INSTANCE='disposable',PGPASSFILE='/run/secrets/admin_pgpass')
+def no_connection(*args,**kwargs): raise AssertionError('connect reached')
+psycopg.connect=no_connection
+os.environ['PGPASSFILE']='/tmp/foreign'
+try: m['execute']()
+except RuntimeError as error: assert 'ambient libpq' in str(error)
+else: raise AssertionError('foreign passfile accepted')
+os.environ['PGPASSFILE']='/run/secrets/admin_pgpass'
+try: m['execute']()
+except AssertionError as error: assert 'connect reached' in str(error)
+else: raise AssertionError('composed credential did not reach connection')`;
   const result = spawnSync(resolvePython(), ["-c", script], { cwd: root, env: { ...process.env, PYTHONPATH: "backend:database" }, encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
 });

@@ -104,8 +104,8 @@ def execute():
     import pytest
     # Reject libpq environment overrides before the bootstrap connection too.
     if os.environ.get('TEMPO_NATIVE_POSITION_CHECK') == 'frozen-requeue-cycle':
-        if any(name.startswith('PG') and name not in {'PG_VERSION', 'PG_MAJOR'}
-               for name in os.environ):
+        if any(name.startswith('PG') and name not in {'PG_VERSION', 'PG_MAJOR', 'PGPASSFILE'}
+               for name in os.environ) or os.environ.get('PGPASSFILE') != '/run/secrets/admin_pgpass':
             raise RuntimeError('Invalid owned frozen bridge identity: ambient libpq configuration')
     project, revision = identity(os.environ)
     nodeid = selected_nodeid(os.environ)

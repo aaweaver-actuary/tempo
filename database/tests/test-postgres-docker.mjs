@@ -1547,6 +1547,15 @@ const actions = {
   study_queue_receipts: () => verifyStudyQueueReceipts(false, options.p14Checkpoint1),
   ...Object.fromEntries(['position-grade-effects', 'position-review-atomicity', 'position-introductions', 'position-queue-admission', 'frozen-requeue-cycle', 'prefix-split-placement'].map(check => [check, async () => {
     assertDevelopmentProjectOwned(project);
+    if (check === 'frozen-requeue-cycle') {
+      const config = JSON.parse(run('docker', [...compose, 'config', '--format', 'json'],
+        {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8'}).stdout);
+      const schema = config.services.schema;
+      assert.equal(schema.environment.PGPASSFILE, '/run/secrets/admin_pgpass');
+      assert.equal(resolve(config.secrets.admin_pgpass.file), join(secretsDirectory, 'admin_pgpass'));
+      assert(schema.secrets.some(secret => secret.source === 'admin_pgpass' &&
+        (!secret.target || secret.target === 'admin_pgpass' || secret.target === '/run/secrets/admin_pgpass')));
+    }
     const imageReference = run('docker', [...compose, 'images', '-q', 'schema'],
       {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8'}).stdout.trim();
     assert.match(imageReference, /^(sha256:)?[a-f0-9]{12,64}$/);
