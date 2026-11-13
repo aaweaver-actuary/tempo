@@ -155,7 +155,8 @@
               "retained",
               "review",
               "durable",
-              "calendar"
+              "calendar",
+              "prefix_split"
             ]
           }
         }
