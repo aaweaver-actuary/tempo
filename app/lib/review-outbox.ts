@@ -246,6 +246,7 @@ async function sendReview(review: PendingReview, transport: ReturnType<typeof cr
   const reconciling = review.state === "reconciling";
   const endpoint = `${transport.origin}/api/cards/${encodeURIComponent(review.backendId)}/review${reconciling ? "/reconcile" : ""}`;
   let failureMarkerSent = false;
+  let sentDeliveryKey: string | undefined;
   const response = await withReviewSaveDeadline(endpoint, review, signal => saveEvidenceAwareReview({
     endpoint, signal, client: transport.client, requireCurrent, rejectEvidence: rejectOpeningEvidence, request: async (url, options) => {
       requireCurrent();
@@ -284,11 +285,9 @@ async function sendReview(review: PendingReview, transport: ReturnType<typeof cr
         endpoint: url, revision: review.expectedRevision, createdAt: existing?.createdAt ?? review.completedAt ?? "legacy-time-unavailable",
         payload: { parentKey: `review:${attemptId}`, headers: options.headers, body: JSON.parse(String(options.body)) } });
       requireCurrent();
+      sentDeliveryKey = deliveryKey;
       const response = await transport.client.learningFetch(url, options);
       requireCurrent();
-      const receipt = await response.clone().json().catch(() => undefined) as { persisted?: boolean } | undefined;
-      requireCurrent();
-      if (receipt?.persisted === true) await store.update(deliveryKey, current => ({ ...current, state: "committed", receipt }));
       return response;
     },
     operationKey: reconciling ? `review-reconcile:${attemptId}:${review.reconciliationSequence ?? 1}` : `review-attempt:${attemptId}`,
@@ -335,6 +334,13 @@ async function sendReview(review: PendingReview, transport: ReturnType<typeof cr
     },
   }), parentSignal);
   if (!response.ok) throw await responseError(response, endpoint, review);
+  // Only a direct successful result or the original operation's confirmed
+  // receipt can settle the delivery. A 202 body is never a review receipt.
+  const receipt = await response.clone().json().catch(() => undefined) as { persisted?: boolean } | undefined;
+  requireCurrent();
+  if (sentDeliveryKey && receipt?.persisted === true)
+    await store.update(sentDeliveryKey, current => ({ ...current, state: "committed", receipt }));
+  requireCurrent();
   return response;
 }
 

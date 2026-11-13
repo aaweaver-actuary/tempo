@@ -39,6 +39,35 @@ it("foreign initial review acknowledgment cannot settle the original attempt or 
   expect(requests.some(request => decodeURIComponent(request.url).includes("review-attempt:foreign"))).toBe(false);
 });
 
+it.each(["missing", "foreign"])("%s 202 with persisted flag cannot commit the review delivery journal", async kind => {
+  const { studyIntentStore } = await import("../../database/browser/study-intent-storage");
+  const original = auditReview(`false-receipt-${kind}`, 99102);
+  await enqueuePendingReview(original);
+  const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    expect(init?.method).toBe("POST");
+    return Response.json({ ...(kind === "foreign" ? { operation_id: "foreign" } : {}),
+      state: "queued", persisted: true }, { status: 202 });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  await expect(flushPendingReviews()).rejects.toThrow();
+  const store = await studyIntentStore();
+  const delivery = await store.get(`review-delivery:review-attempt:${original.attemptId}`);
+  expect(delivery?.state).toBe("pending");
+  expect(delivery?.receipt).toBeUndefined();
+  expect((await store.get(`review:${original.attemptId}`))?.state).toBe("pending");
+  expect(fetcher).toHaveBeenCalledOnce();
+});
+
+it("direct successful review commits its delivery journal", async () => {
+  const { studyIntentStore } = await import("../../database/browser/study-intent-storage");
+  const original = auditReview("direct-delivery", 99103);
+  await enqueuePendingReview(original);
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ persisted: true, review_id: 314 })));
+  await flushPendingReviews();
+  expect(await (await studyIntentStore()).get("review-delivery:review-attempt:direct-delivery"))
+    .toMatchObject({ state: "committed", receipt: { persisted: true, review_id: 314 } });
+});
+
 it.each([
   ["review-attempt:aggregate", true, "review-attempt:aggregate:aggregate-only"],
   ["review-reconcile:attempt:2", false, "review-reconcile:attempt:2"],
