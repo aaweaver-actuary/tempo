@@ -4,7 +4,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync,
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { checkComponents, repository, validateManifest, compositionPaths, validateCompositionOwnership, censusPaths, validateCensusOwnership, validateCensusInterfaces, validateStartupFacts, validateDdlResources, validateReductionTools, validateContractTooling, validateDatabaseCliTools, validateBackupVerificationSources, validateManagedCutSources, validatePostgresQualificationSources, validateStudyCensusResource } from "../check-components.mjs";
+import { checkComponents, repository, validateManifest, compositionPaths, validateCompositionOwnership, censusPaths, validateCensusOwnership, validateCensusInterfaces, validateStartupFacts, validateDdlResources, validateReductionTools, validateContractTooling, validateDatabaseCliTools, validateBackupVerificationSources, validateManagedCutSources, validatePostgresQualificationSources, validateStudyCensusResource, validateSchemaOperatorWrappers } from "../check-components.mjs";
 import { validateOwnedPaths, selectComponents } from "../selection.mjs";
 import { validateMigrationInventory } from "../../../database/tooling/check-migration-inventory.mjs";
 
@@ -98,6 +98,37 @@ for (const [scope, path] of [["retained", "backend/app/contracts/new_contract.py
     assert.throws(() => validateCensusOwnership(original, scope, paths), /found 0/);
   });
 }
+test("T02 schema wrapper resources reject missing, duplicate, role, dependency, swap and overlap", () => {
+  assert.deepEqual(validateSchemaOperatorWrappers(original,repository),{sources:2});
+  const change=(fn)=>{const bad=structuredClone(original),owner=bad.components.find(c=>c.id==="postgres-schema-interactive-wrapper");fn(bad,owner);return bad;};
+  assert.throws(()=>validateSchemaOperatorWrappers(change((_,o)=>o.ownedFiles.pop()),repository),/missing, duplicate or stale/);
+  assert.throws(()=>validateSchemaOperatorWrappers(change((_,o)=>o.ownedFiles.push(o.ownedFiles[0])),repository),/missing, duplicate or stale/);
+  assert.throws(()=>validateSchemaOperatorWrappers(change((_,o)=>o.ownedFiles[0]="../foreign.sh"),repository),/missing, duplicate or stale/);
+  assert.throws(()=>validateSchemaOperatorWrappers(change((_,o)=>o.resourceRoles[0]+="-wrong"),repository),/operator role/);
+  assert.throws(()=>validateSchemaOperatorWrappers(change((_,o)=>o.dependencies=[]),repository),/capability or dependency/);
+  assert.throws(()=>validateSchemaOperatorWrappers(change((b,o)=>b.components.find(c=>c.id==="integration").ownedFiles.push(o.ownedFiles[0])),repository),/overlapping/);
+  const swapped=change((b,o)=>{const other=b.components.find(c=>c.id==="postgres-schema-cli-wrapper");[other.ownedFiles,o.ownedFiles]=[o.ownedFiles,other.ownedFiles];[other.resourceRoles,o.resourceRoles]=[o.resourceRoles,other.resourceRoles];});
+  assert.throws(()=>validateSchemaOperatorWrappers(swapped,repository),/operator role/);
+});
+test("T02 schema wrapper byte witnesses discover changes without invoking shell", context => {
+  const root=mkdtempSync(join(tmpdir(),"tempo-wrapper-source-"));context.after(()=>rmSync(root,{recursive:true,force:true}));
+  assert.equal(spawnSync("git",["-C",root,"init","-q"],{cwd:root}).status,0);
+  const files=original.components.filter(c=>["postgres-schema-cli-wrapper","postgres-schema-interactive-wrapper"].includes(c.id)).flatMap(c=>c.ownedFiles);
+  for(const file of files){mkdirSync(join(root,file,".."),{recursive:true});cpSync(join(repository,file),join(root,file));}
+  assert.equal(spawnSync("git",["-C",root,"add","database/tooling"],{cwd:root}).status,0);assert.deepEqual(validateSchemaOperatorWrappers(original,root),{sources:2});
+  const target=join(root,"database/tooling/tempo-schema-update.sh"),source=readFileSync(target,"utf8");
+  writeFileSync(target,source.replace("#!/usr/bin/env zsh","#!/bin/sh"));assert.throws(()=>validateSchemaOperatorWrappers(original,root),/shebang mismatch/);
+  writeFileSync(target,source.replace("cd /Users/andy/tempo","cd /tmp/foreign"));assert.throws(()=>validateSchemaOperatorWrappers(original,root),/byte witness changed/);
+  writeFileSync(target,source.replace("docker compose down","# docker compose down"));assert.throws(()=>validateSchemaOperatorWrappers(original,root),/byte witness changed/);
+  writeFileSync(target,source);
+  const sentinel=join(root,"executed"),added="database/tooling/tempo-schema-update-extra.sh";
+  writeFileSync(join(root,added),`#!/usr/bin/env zsh\ntouch ${JSON.stringify(sentinel)}\n`);
+  assert.equal(spawnSync("git",["-C",root,"add",added],{cwd:root}).status,0);assert.throws(()=>validateSchemaOperatorWrappers(original,root),/missing, duplicate or stale/);
+  const registered=structuredClone(original),owner=registered.components.find(c=>c.id==="postgres-schema-interactive-wrapper");owner.ownedFiles.push(added);owner.resourceRoles.push(added+"#operator-interactive-wrapper");
+  assert.deepEqual(validateSchemaOperatorWrappers(registered,root),{sources:3});assert.equal(existsSync(sentinel),false);
+  const jsx="database/tooling/tempo-schema-update-extra.jsx";writeFileSync(join(root,jsx),"export default null;\n");assert.equal(spawnSync("git",["-C",root,"add",jsx],{cwd:root}).status,0);
+  assert.throws(()=>validateSchemaOperatorWrappers(registered,root),/missing, duplicate or stale/);owner.ownedFiles.push(jsx);owner.resourceRoles.push(jsx+"#operator-interactive-wrapper");assert.throws(()=>validateSchemaOperatorWrappers(registered,root),/Invalid or overlapping schema operator source/);
+});
 test("T02 Study census SQL owner rejects missing, duplicate, stale, role and overlap", () => {
   assert.deepEqual(validateStudyCensusResource(original,repository),{resources:1});
   const change=(fn)=>{const bad=structuredClone(original),owner=bad.components.find(c=>c.id==="postgres-study-census-resource");fn(bad,owner);return bad;};

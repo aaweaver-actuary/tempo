@@ -756,3 +756,13 @@ deletion authority. Its catalog estimates do not establish usage. Existing
 `database/tests/test_study_census.py` statically checks the transaction and query
 text; no current operational executor is established. This census executes no
 SQL, and other database tooling and previous qualification gaps remain open.
+
+## Database schema operator wrappers
+
+The migration CLI wrapper and operator-specific interactive wrapper are mapped as
+separate shell resources. The latter contains a hard-coded `/Users/andy/tempo`
+target and a `docker compose down` command after its response branch. The guard
+reads tracked source bytes and checks bounded witnesses; it neither invokes a
+shell nor proves shell syntax, target safety, execution semantics or runtime
+qualification. No operator action is authorized by this map. Other database
+tooling and prior qualification gaps remain open.
