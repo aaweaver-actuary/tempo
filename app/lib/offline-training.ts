@@ -14,6 +14,7 @@ import { saveEvidenceAwareReview } from "./opening-evidence-review";
 import { acknowledgeOpeningReview, rejectOpeningEvidence, retainOpeningEvidenceForStorageFallback } from "./opening-evidence-journal";
 import { publishNotification } from "./notifications";
 import { decodeFrozenAttempt } from "../domain/study-exercise-transport";
+import { reportDataDiagnostic } from "./data-validation";
 
 export class OfflineReplayError extends Error {
   constructor(message: string, readonly endpoint: string, options?: ErrorOptions) {
@@ -68,7 +69,7 @@ export async function savePreparedTraining(raw: unknown): Promise<PreparedTraini
     throw new Error(envelope.projection.last_error ?? "Daily queue preparation failed. Check the computer worker and retry.");
   if (!envelope.local_date || (!independentStudy && (envelope.projection?.state !== "ready" || envelope.count !== envelope.cards.length)))
     throw new Error("The daily queue is not fully prepared yet");
-  const cards = (independentStudy ? envelope.cards.slice(0, 1) : envelope.cards).map((card) => queueCardSchema.parse(queueRecordWithCompatibleOpeningEvidence(card)));
+  const cards = (independentStudy ? envelope.cards.slice(0, 1) : envelope.cards).map((card) => queueCardSchema.parse(queueRecordWithCompatibleOpeningEvidence(card, { reportIssue: issue => reportDataDiagnostic(issue.source, issue.raw, issue.message, issue.recordId) })));
   const preparedAt = (raw as { prepared_at: string }).prepared_at;
   return updatePreparedTraining((current) => {
     if (current?.attempts.some((attempt) => !attempt.serverReviewId && !attempt.serverAcknowledged && !attempt.conflict))

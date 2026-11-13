@@ -1,3 +1,4 @@
+import type { ValidationEffects, ValidationReporter } from "../domain/validation";
 import type { AnalysisLine, PackagedPuzzle, PracticeCard } from "../types";
 import type { repertoireLinesFromPayload } from "../domain/adapters/workspace-adapters";
 import type { queueCardsFromPayload } from "../domain/adapters/practice-card-adapters";
@@ -41,10 +42,10 @@ export type StudyTaskResults = {
 export type StudyTaskResult<Task extends StudyTask> = StudyTaskResults[Task["kind"]];
 
 // Compatibility facade for existing pure callers; worker entries import their own owner.
-export function computeStudyTask<Task extends PureStudyTask>(task: Task): StudyTaskResult<Task>;
-export function computeStudyTask(task: PureStudyTask) {
+export function computeStudyTask<Task extends PureStudyTask>(task: Task, effects?: ValidationEffects | ValidationReporter): StudyTaskResult<Task>;
+export function computeStudyTask(task: PureStudyTask, effects?: ValidationEffects | ValidationReporter) {
   switch (task.kind) {
-    case "workspace": case "queue": case "deck": return computeEssentialStudyTask(task);
-    default: return computeOptionalStudyTask(task);
+    case "workspace": case "queue": case "deck": return computeEssentialStudyTask(task, effects);
+    default: return computeOptionalStudyTask(task, effects);
   }
 }

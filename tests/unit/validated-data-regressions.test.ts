@@ -3,7 +3,6 @@ import * as z from "zod";
 import { Chess } from "chess.js";
 import { queueCardsFromPayload } from "../../app/domain/adapters/practice-card-adapters";
 import { computeStudyTask } from "../../app/lib/study-computation";
-import { computeEssentialStudyTask } from "../../app/lib/essential-study-computation";
 import type { ValidationIssue } from "../../app/domain/validation";
 import {
   builderSessionSchema,
@@ -180,7 +179,7 @@ it.each(["available", "unavailable", undefined])("optional_encounter_evidence_st
 });
 
 it("optional_encounter_status_keeps_unknown_values_and_fields_quarantined", () => {
-  expect(computeEssentialStudyTask({ kind: "queue", payload: { cards: [
+  expect(computeStudyTask({ kind: "queue", payload: { cards: [
     { ...rawCard, encounter_evidence_status: "unknown" },
     { ...rawCard, encounter_evidence_status: "available", unexpected: true },
   ], count: 2 } }, diagnosticEffects)).toEqual([]);

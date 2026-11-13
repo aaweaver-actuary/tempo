@@ -50,3 +50,10 @@ it("computation and decoder carry explicit effects while retaining reporter comp
   expect(() => computeEssentialStudyTask({ kind: "workspace", url: "/api/settings", payload: {} }, reportError)).toThrow();
   expect(reportError).toHaveBeenCalledTimes(4); expect(dataDiagnostics()).toEqual([]);
 });
+
+it('FE10 browser card boundary publishes invalid opening evidence through its collector', async () => {
+  const { practiceCardFromQueue } = await import('../../app/utils/cards');
+  const raw = { ...card, opening_decision_manifest: { malformed: true } };
+  expect(practiceCardFromQueue(raw as never).backendId).toBe('card');
+  expect(dataDiagnostics()).toEqual([expect.objectContaining({ source: 'opening evidence', raw })]);
+});
