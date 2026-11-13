@@ -177,7 +177,8 @@
               "queue_refresh",
               "study_attempt",
               "study_grading",
-              "repertoire_conflicts"
+              "repertoire_conflicts",
+              "frozen_order"
             ]
           }
         }

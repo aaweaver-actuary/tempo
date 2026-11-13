@@ -2,6 +2,111 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "study-frozen-order-policy",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/study/frozen_order",
+      "publicExports": [
+        "backend/app/study/frozen_order/interfaces.py#FrozenRankFacts",
+        "backend/app/study/frozen_order/interfaces.py#FrozenAnnotationFacts",
+        "backend/app/study/frozen_order/policy.py#annotate",
+        "backend/app/study/frozen_order/policy.py#proposal_valid",
+        "backend/app/study/frozen_order/policy.py#order_queue_slots"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study/frozen_order/__init__.py",
+        "backend/app/study/frozen_order/interfaces.py",
+        "backend/app/study/frozen_order/policy.py"
+      ],
+      "ownershipRole": "Interpret supplied frozen Study ordering facts",
+      "dependencyNotes": [
+        "Policy consumes supplied rank, activation and exposure facts and injected fingerprint/card capabilities; it does not activate runs or read storage."
+      ],
+      "censusScope": "frozen_order"
+    },
+    {
+      "id": "frozen-order-composition",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/frozen_opening_order.py#annotate",
+        "backend/app/services/frozen_opening_order.py#proposal_valid",
+        "backend/app/services/frozen_opening_order.py#order_queue_slots",
+        "backend/app/services/frozen_opening_order.py#stage_run"
+      ],
+      "dependencies": [
+        "study-frozen-order-policy",
+        "frozen-order-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/frozen_opening_order.py"
+      ],
+      "ownershipRole": "Compose frozen preference over borrowed storage",
+      "dependencyNotes": [
+        "Binds caller connection, existing content fingerprint and reader version to policy; queue refresh and other legacy consumers retain existing interfaces."
+      ],
+      "censusScope": "frozen_order"
+    },
+    {
+      "id": "frozen-order-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage",
+      "publicExports": [
+        "database/tempo_storage/frozen_order.py#activation",
+        "database/tempo_storage/frozen_order.py#stage_run",
+        "database/tempo_storage/frozen_order.py#activate_run",
+        "database/tempo_storage/frozen_order.py#rollback_run",
+        "database/tempo_storage/frozen_order.py#annotation_facts"
+      ],
+      "dependencies": [
+        "study-frozen-order-policy"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/frozen_order.py"
+      ],
+      "ownershipRole": "Read and persist frozen ordering state",
+      "dependencyNotes": [
+        "Caller-connection SQL reads activation, ranks and exposure, stages or activates runs, records/restores queue changes and rollback state; caller owns transaction and lifecycle authorization."
+      ],
+      "censusScope": "frozen_order"
+    },
+    {
       "id": "repertoire-conflict-policy",
       "type": "integration",
       "maintainer": "Tempo",
