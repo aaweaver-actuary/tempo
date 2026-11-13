@@ -82,20 +82,6 @@ def add_repertoire_branch(
     )
     depth = storage.initial_training_depth(database)
     storage.set_line_training_depth(database, line_id, depth)
-    if request.source_gap_id:
-        try:
-            gap_node_id, gap_move_uci = request.source_gap_id.split(":", 1)
-        except ValueError as error:
-            raise HTTPException(422, "Invalid repertoire coverage gap") from error
-        gap = storage.lock_source_gap(database, gap_node_id, gap_move_uci)
-        if gap is None or gap["repertoire_id"] != repertoire_id:
-            raise HTTPException(422, "Coverage gap does not belong to this repertoire")
-        if not moves or moves[0] != gap_move_uci or len(moves) < 2:
-            raise HTTPException(
-                422,
-                "A resolved gap must include the missing opponent move and your response",
-            )
-        storage.mark_gap_covered(database, gap_node_id, gap_move_uci)
     if inserted is not None:
         certify_admitted_route(database, repertoire_id, validated_route)
     invalidate_integrity_in_transaction(database, repertoire_id)

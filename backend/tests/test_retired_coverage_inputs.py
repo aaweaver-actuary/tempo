@@ -118,3 +118,32 @@ def test_native_recovery_keeps_original_receipt_and_rejects_retired_gap(owned_po
         assert tuple(db.execute_native("SELECT payload_json,error_json FROM operation_receipts WHERE operation_id=%s", (operation_id,)).fetchone()) == (original_bytes, row[5])
         assert tuple(db.execute_native("SELECT payload_json,response_json FROM operation_receipts WHERE operation_id=%s", (complete_id,)).fetchone()) == (original_bytes, response_bytes)
         assert snapshot(db) == before
+
+
+def test_gap_free_paste_keeps_preview_token_and_save_contract(monkeypatch):
+    import hashlib
+    import json
+    import chess
+    from app.services import analysis_paste as owner, canonical_prefix
+
+    database = object()
+    lines = [{"id": "root", "repertoire_id": "rep", "trained_color": "white",
+              "start_fen": chess.STARTING_FEN, "moves_json": json.dumps(["e2e4"])}]
+    monkeypatch.setattr(owner.storage, "repertoires", lambda db: [{"id": "rep", "name": "Example"}])
+    monkeypatch.setattr(owner.storage, "lines", lambda db: lines)
+    events = []
+    monkeypatch.setattr(owner.storage, "insert_line", lambda *args: events.append("insert") or 1)
+    monkeypatch.setattr(owner.storage, "initial_depth", lambda db: 2)
+    monkeypatch.setattr(owner.storage, "set_line_depth", lambda *args: events.append("depth"))
+    monkeypatch.setattr(canonical_prefix, "ensure_batch_lines_in_scope", lambda *args: ["route"])
+    monkeypatch.setattr(canonical_prefix, "certify_admitted_route", lambda *args: events.append("certify"))
+    text = "e4 e5 Nf3 *"
+    preview = owner.build_paste_preview(database, text, None, None)
+    signature = hashlib.sha256(json.dumps([[{"id": "rep", "name": "Example"}], lines], sort_keys=True).encode()).hexdigest()
+    assert preview["preview_token"] == hashlib.sha256(json.dumps([text, None, None, signature], sort_keys=True).encode()).hexdigest()
+    parsed = owner.parse_pasted_lines(text, None)
+    result = owner.commit_pasted_lines(database, text, None, None, preview["preview_token"],
+        [{"index": 0, "repertoire_id": "rep", "acknowledge_conflict": True}], preview, parsed)
+    assert result == {"saved": [{"index": 0, "repertoire_id": "rep", "duplicate": False, "conflict": False}],
+                      "affected_repertoire_ids": ["rep"], "gap_resolved": False}
+    assert events == ["insert", "depth", "certify"]
