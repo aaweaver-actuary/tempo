@@ -108,6 +108,11 @@ test("T02 contract tooling roles reject missing, duplicate, stale, wrong role an
   assert.throws(()=>validateContractTooling(stale,repository,python),/missing, duplicate or stale/);
   const wrong=structuredClone(original); wrong.components.find(c=>c.id==="contract-exchange-tooling").resourceRoles[0]+="-wrong";
   assert.throws(()=>validateContractTooling(wrong,repository,python),/role/);
+  const reclassified=structuredClone(original), changed=reclassified.components.find(c=>c.id==="contract-exchange-tooling");
+  changed.resourceRoles[0]=changed.resourceRoles[0].replace("#boundary-check", "#suite-runner");
+  assert.deepEqual(validateContractTooling(reclassified,repository,python),{sources:12});
+  const duplicateRole=structuredClone(original), dr=duplicateRole.components.find(c=>c.id==="contract-exchange-tooling"); dr.resourceRoles[1]=dr.resourceRoles[0];
+  assert.throws(()=>validateContractTooling(duplicateRole,repository,python),/role/);
   const overlap=structuredClone(original);overlap.components.find(c=>c.id==="integration").ownedFiles.push("contracts/run_tests.py");
   assert.throws(()=>validateContractTooling(overlap,repository,python),/overlapping/);
 });
@@ -125,6 +130,9 @@ test("T02 contract tooling discovers new tracked sources and rejects malformed s
   const added=join(root,"contracts/new_tool.py");writeFileSync(added,"raise RuntimeError('must not execute')\n");
   assert.equal(spawnSync("git",["-C",root,"add","contracts/new_tool.py"]).status,0);
   assert.throws(()=>validateContractTooling(original,root,python),/missing, duplicate or stale/);
+  const extended=structuredClone(original), owner=extended.components.find(c=>c.id==="contract-exchange-tooling");
+  owner.ownedFiles.push("contracts/new_tool.py"); owner.resourceRoles.push("contracts/new_tool.py#suite-runner");
+  assert.deepEqual(validateContractTooling(extended,root,python),{sources:13});
 });
 test("T02 DDL source version rejects empty, missing, duplicate and mismatched history", () => {
   const files = Array.from({length:66}, (_,i) => String(i+1).padStart(3,"0") + "_example.sql");

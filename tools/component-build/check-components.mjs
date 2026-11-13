@@ -327,14 +327,20 @@ export function validateContractTooling(manifest, root = repository, python = pr
   const result = spawnSync("git", ["ls-files", "-z", "contracts"], {cwd: root, encoding: "utf8"});
   if (result.error || result.status !== 0) throw new Error("Cannot enumerate contract tooling");
   const tracked = result.stdout.split("\0").filter(path => /^contracts\/(?:[^/]+\.py|tests\/[^/]+\.py|consumer-examples\/src\/.*\.(?:ts|tsx|js|mjs))$/.test(path));
-  const roles = {"contracts/check_dependencies.py":"boundary-check", "contracts/conftest.py":"pytest-hook", "contracts/export_schemas.py":"schema-export", "contracts/qualify_artifacts.py":"artifact-qualification", "contracts/run_tests.py":"suite-runner", "contracts/tests/test_catalog_and_collection.py":"test", "contracts/tests/test_dependency_boundaries.py":"test", "contracts/tests/test_python_consumers.py":"test", "contracts/tests/test_semantic_negatives.py":"test", "contracts/consumer-examples/src/consumer.test.ts":"consumer-test", "contracts/consumer-examples/src/expectations.ts":"consumer-expectations", "contracts/consumer-examples/src/semantics.ts":"consumer-semantics"};
+  const allowedRoles = {"contract-exchange-tooling": new Set(["boundary-check", "pytest-hook", "schema-export", "artifact-qualification", "suite-runner"]), "contract-exchange-tests": new Set(["test"]), "contract-typescript-consumer": new Set(["consumer-test", "consumer-expectations", "consumer-semantics"])};
   const owners = ["contract-exchange-tooling", "contract-exchange-tests", "contract-typescript-consumer"].map(id => manifest.components.find(c => c.id === id));
   if (owners.some(c => !c || c.status !== "mapped" || !Array.isArray(c.ownedFiles) || !Array.isArray(c.resourceRoles))) throw new Error("Missing contract tooling owner");
   const listed = owners.flatMap(c => c.ownedFiles), mapped = manifest.components.filter(c => c.status === "mapped" && c.ownedFiles);
   if (new Set(listed).size !== listed.length || listed.length !== tracked.length || listed.some(path => !tracked.includes(path))) throw new Error("Contract tooling inventory missing, duplicate or stale");
   for (const owner of owners) {
-    const expected = owner.ownedFiles.map(path => path + "#" + roles[path]);
-    if (expected.some(role => role.endsWith("#undefined")) || owner.resourceRoles.length !== expected.length || new Set(owner.resourceRoles).size !== expected.length || expected.some(role => !owner.resourceRoles.includes(role))) throw new Error("Invalid contract tooling role");
+    const byPath = new Map();
+    for (const entry of owner.resourceRoles) {
+      if (typeof entry !== "string") throw new Error("Invalid contract tooling role");
+      const parts = entry.split("#");
+      if (parts.length !== 2 || !owner.ownedFiles.includes(parts[0]) || byPath.has(parts[0]) || !allowedRoles[owner.id].has(parts[1])) throw new Error("Invalid contract tooling role");
+      byPath.set(parts[0], parts[1]);
+    }
+    if (byPath.size !== owner.ownedFiles.length) throw new Error("Invalid contract tooling role");
     for (const path of owner.ownedFiles) {
       if (!existsSync(resolve(root,path)) || !inside(realpathSync(root),realpathSync(resolve(root,path))) || mapped.filter(c => c.ownedFiles.includes(path)).length !== 1) throw new Error("Invalid or overlapping contract tooling owner");
       const id = path.startsWith("contracts/tests/") ? "contract-exchange-tests" : path.startsWith("contracts/consumer-examples/") ? "contract-typescript-consumer" : "contract-exchange-tooling";

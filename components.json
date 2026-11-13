@@ -8989,7 +8989,9 @@
       "status": "mapped",
       "root": "contracts",
       "publicExports": [],
-      "dependencies": [],
+      "dependencies": [
+        "game-evidence-contracts"
+      ],
       "buildInputs": [],
       "buildCommand": null,
       "artifact": null,
