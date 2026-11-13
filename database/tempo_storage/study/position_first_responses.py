@@ -5,6 +5,11 @@ calling these functions. This adapter never opens or commits a connection.
 """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from tempo_storage.postgres import PostgresConnection
+
 
 def issued_record(database, attempt_id):
     return database.execute_native(
@@ -33,7 +38,7 @@ def insert(database, envelope, digest, payload_json, accepted_at):
     ).fetchone()
 
 
-def has_position_tables(database):
+def has_position_tables(database: PostgresConnection) -> bool:
     row = database.execute_native("SELECT to_regclass('public.study_position_issued_plans') IS NOT NULL", ()).fetchone()
     return bool(row and row[0])
 
