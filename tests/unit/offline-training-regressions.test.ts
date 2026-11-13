@@ -391,3 +391,48 @@ it.each([200, 409, 422] as const)('C24 stops later replay after authority switch
     expect(calls).toHaveLength(1); expect(calls.some(url => url.includes('/cards/opening/'))).toBe(false);
   } finally { vi.unstubAllGlobals(); vi.restoreAllMocks(); }
 });
+
+it.each(['same-card-conflict', 'parent-conflict', 'evidence-rejection'] as const)('C24 guards delayed %s journal callback against authority change', async (scenario) => {
+  const { vi } = await import('vitest'); const { openingEvidenceStorage } = await import('../fixtures/opening-evidence-storage');
+  const browserStorage = localStorage; const storage = await openingEvidenceStorage(); vi.stubGlobal('localStorage', browserStorage);
+  const connection = await import('../../app/lib/study-connection');
+  const base = { outcome: 'correct', guided: false, completedAt: '2026-09-26T12:05:00Z', expectedReviewId: 0, expectedRevision: 1 } as const;
+  const prior = { ...base, localEntryId: 1, cardId: scenario === 'same-card-conflict' ? 'same' : 'other', studyId: 'study', attemptId: 'prior', conflict: 'original conflict' };
+  const child = { ...base, localEntryId: 2, cardId: 'same', attemptId: 'child', ...(scenario === 'parent-conflict' ? { parentLocalEntryId: 1 } : {}) };
+  const records = scenario === 'evidence-rejection' ? [child] : [prior, child];
+  storage.stores.training.set('prepared-daily-queue', { localDate: '2026-09-26', preparedAt: base.completedAt, cards: [], nextTemporaryId: 100, attempts: records });
+  try {
+    const offline = await import('../../app/lib/offline-training');
+    const preparedStorage = await import('../../database/browser/prepared-training-storage'); const update = preparedStorage.updatePreparedTraining;
+    if (scenario === 'evidence-rejection') {
+      const evidence = await import('../../app/lib/opening-evidence-review');
+      vi.spyOn(evidence, 'saveEvidenceAwareReview').mockImplementation(async (args) => { connection.defaultStudyClient.disconnectStudy(); await args.onEvidenceRejected?.('rejected evidence'); return Response.json({ review_id: 99 }); });
+    } else {
+      vi.spyOn(preparedStorage, 'updatePreparedTraining').mockImplementation(async (mutate) => { connection.defaultStudyClient.disconnectStudy(); return update(mutate); });
+    }
+    await expect(offline.replayOfflineAttempts()).rejects.toThrow('authority changed');
+    expect((await offline.readPreparedTraining())?.attempts).toEqual(records);
+  } finally { vi.unstubAllGlobals(); vi.restoreAllMocks(); }
+});
+
+it('C24 never sends evidence fallback after authority changes during rejection', async () => {
+  const { vi } = await import('vitest'); const { openingEvidenceStorage, evidenceCompletion } = await import('../fixtures/opening-evidence-storage');
+  const browserStorage = localStorage; const storage = await openingEvidenceStorage(); vi.stubGlobal('localStorage', browserStorage);
+  const connection = await import('../../app/lib/study-connection'); const completion = evidenceCompletion('opening-original');
+  const attempt = { localEntryId: 101, cardId: 'opening', outcome: 'correct', guided: false, completedAt: '2026-10-03T12:01:00Z', expectedReviewId: 0, expectedRevision: 1, attemptId: 'opening-original', openingEvidenceCompletion: completion };
+  storage.stores.training.set('prepared-daily-queue', { localDate: '2026-10-03', preparedAt: attempt.completedAt, cards: [], nextTemporaryId: 100, attempts: [attempt] });
+  let finish!: (value: Uint8Array) => void; let started!: () => void;
+  const waiting = new Promise<void>(done => { started = done; }); const calls: string[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    calls.push(String(input)); return new Response(new ReadableStream<Uint8Array>({ start(controller) {
+      finish = value => { controller.enqueue(value); controller.close(); }; started();
+    } }), { status: 409, headers: { 'Content-Type': 'application/json' } });
+  }));
+  try {
+    const offline = await import('../../app/lib/offline-training'); const pending = offline.replayOfflineAttempts(); await waiting;
+    connection.defaultStudyClient.disconnectStudy();
+    finish(new TextEncoder().encode(JSON.stringify({ detail: { code: 'opening_evidence_invalid', message: 'rejected', aggregate_review_allowed: true, retryable: false } })));
+    await expect(pending).rejects.toThrow('authority changed');
+    expect((await offline.readPreparedTraining())?.attempts).toEqual([attempt]); expect(calls).toHaveLength(1);
+  } finally { vi.unstubAllGlobals(); vi.restoreAllMocks(); }
+});

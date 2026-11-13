@@ -11,7 +11,7 @@ export { readPreparedTraining } from "../../database/browser/prepared-training-s
 export type { OfflineAttempt, PreparedTraining } from "../domain/offline-training";
 import type { OpeningEvidenceCheckpoint } from "../domain/opening-evidence";
 import { saveEvidenceAwareReview } from "./opening-evidence-review";
-import { acknowledgeOpeningReview, retainOpeningEvidenceForStorageFallback } from "./opening-evidence-journal";
+import { acknowledgeOpeningReview, rejectOpeningEvidence, retainOpeningEvidenceForStorageFallback } from "./opening-evidence-journal";
 import { publishNotification } from "./notifications";
 import { decodeFrozenAttempt } from "../domain/study-exercise-transport";
 
@@ -239,10 +239,10 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
     requirePassAuthority();
     if (attempt.serverReviewId || attempt.serverAcknowledged || (attempt.conflict && attempt.studyId)) continue;
     if (current.attempts.slice(0, attemptIndex).some((earlier) => earlier.cardId === attempt.cardId && earlier.conflict)) {
-      current = await updatePreparedTraining((saved) => ({
+      current = await updatePreparedTraining((saved) => { requirePassAuthority(); return ({
         ...saved!, attempts: saved!.attempts.map((item) => item.localEntryId === attempt.localEntryId
           ? { ...item, conflict: "An earlier phone attempt for this card conflicted with the computer" } : item),
-      }));
+      }); });
       continue;
     }
     const studyFacts = [attempt.studyId, attempt.exerciseId, attempt.answer, attempt.attemptId];
@@ -254,10 +254,10 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
     }
     const parent = current.attempts.find((candidate) => candidate.localEntryId === attempt.parentLocalEntryId);
     if (parent?.conflict) {
-      current = await updatePreparedTraining((saved) => ({
+      current = await updatePreparedTraining((saved) => { requirePassAuthority(); return ({
         ...saved!, attempts: saved!.attempts.map((item) => item.localEntryId === attempt.localEntryId
           ? { ...item, conflict: "An earlier repeat conflicted with a computer review" } : item),
-      }));
+      }); });
       continue;
     }
     if (attempt.parentLocalEntryId !== undefined && (!parent || (!parent.serverAcknowledged && !parent.serverReviewId))) {
@@ -347,12 +347,14 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
         const completion = attempt.openingEvidenceCompletion
           ? { ...attempt.openingEvidenceCompletion, queue_entry_id: serverEntryId } : undefined;
         response = await saveEvidenceAwareReview({
+          client: defaultStudyClient, requireCurrent: requirePassAuthority, rejectEvidence: rejectOpeningEvidence,
           endpoint: reviewEndpoint, operationKey: `phone-reconcile:${reviewAttemptId}`, signal: controller.signal,
           completion, evidenceRejected: attempt.openingEvidenceRejected,
           aggregateOnly: attempt.openingEvidenceFallbackReason === "local_storage_quota",
           onEvidenceRejected: async (message) => {
-            await updatePreparedTraining((saved) => ({ ...saved!, attempts: saved!.attempts.map((item) =>
-              item.localEntryId === attempt.localEntryId ? { ...item, openingEvidenceRejected: message } : item) }));
+            await updatePreparedTraining((saved) => { requirePassAuthority(); return ({ ...saved!, attempts: saved!.attempts.map((item) =>
+              item.localEntryId === attempt.localEntryId ? { ...item, openingEvidenceRejected: message } : item) }); });
+            requirePassAuthority();
           },
           body: {
             queue_entry_id: serverEntryId, outcome: attempt.outcome, guided: attempt.guided,
