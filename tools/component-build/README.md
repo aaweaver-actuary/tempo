@@ -587,8 +587,14 @@ boundaries remain visible; durable tasks remain authoritative. This source map
 does not establish runtime or native proof. The two diagnostics, 24 PGN scope,
 nineteen earlier and ten missing-adapter fixture gaps remain unresolved.
 
-At this base revision, 61 of 289 tracked Python files in those trees remain
-outside the combined 228-file selections. The registry alone assigns owners;
+A forty-first selection maps process activity gating, Study-only policy and the
+generation-fenced expiring control snapshot. Database settings remain authoritative;
+unavailable control holds optional admission while existing essential exceptions
+remain in task composition. This source map is not runtime proof; the two diagnostics,
+24 PGN scope, nineteen earlier and ten missing-adapter fixture gaps remain open.
+
+At this base revision, 58 of 289 tracked Python files in those trees remain
+outside the combined 231-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover

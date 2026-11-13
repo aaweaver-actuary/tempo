@@ -2,6 +2,107 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "application-activity-gate",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/activity_gate.py#BackgroundContractError",
+        "backend/app/services/activity_gate.py#ApplicationActivityGate"
+      ],
+      "dependencies": [
+        "redis-admission-application"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/activity_gate.py"
+      ],
+      "ownershipRole": "Coordinate process foreground and background activity",
+      "dependencyNotes": [
+        "Existing process-local request/job and database section controls use Redis admission when configured; main, tasks and database infrastructure bind it. No separate scheduler or authority is introduced."
+      ],
+      "censusScope": "study_control"
+    },
+    {
+      "id": "study-mode-policy",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/study_mode.py#study_only_enabled"
+      ],
+      "dependencies": [
+        "application-activity-gate",
+        "settings-control-storage",
+        "redis-admission-application",
+        "study-priority-control"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/study_mode.py"
+      ],
+      "ownershipRole": "Read Study-only admission policy",
+      "dependencyNotes": [
+        "Database settings remain authoritative; background shared control unavailable or not explicitly false holds optional admission. Existing daily queue and durable callback allowlists remain in task composition."
+      ],
+      "censusScope": "study_control"
+    },
+    {
+      "id": "study-priority-control",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/study_priority.py#refresh_policy",
+        "backend/app/services/study_priority.py#control_snapshot",
+        "backend/app/services/study_priority.py#policy_publisher"
+      ],
+      "dependencies": [
+        "application-activity-gate",
+        "redis-admission-application",
+        "redis-policy-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/study_priority.py"
+      ],
+      "ownershipRole": "Publish and read expiring Study control snapshot",
+      "dependencyNotes": [
+        "Reserves generation before bounded settings read and publishes only matching generation; unavailable, refreshing or expired control fails closed for optional work. Main owns publisher lifecycle."
+      ],
+      "censusScope": "study_control"
+    },
+    {
       "id": "redis-admission-application",
       "type": "integration",
       "maintainer": "Tempo",

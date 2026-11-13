@@ -191,7 +191,8 @@
               "repertoire_snapshot",
               "background_activity",
               "background_metrics",
-              "redis_runtime"
+              "redis_runtime",
+              "study_control"
             ]
           }
         }
