@@ -111,3 +111,21 @@ def test_runtime_snapshot_reads_same_sixteen_slots_before_sampling_clock(monkeyp
         ("mget", [f"tempo:diagnostics:worker:{slot}" for slot in range(16)]),
         "now",
     ]
+
+
+def test_wake_storage_owns_exact_task_keys_and_isolated_prefix(monkeypatch):
+    from app.services import background_wakes
+    from tempo_storage.redis_control.wake_runtime import wakes
+
+    task = 'app.tasks.poll_background_tasks'
+    assert background_wakes.ownership_keys(task) == (
+        'tempo:wake:app.tasks.poll_background_tasks',
+        'tempo:wake:app.tasks.poll_background_tasks:publication',
+    )
+    monkeypatch.setattr(wakes, '_KEY_PREFIX', 'owned:proof:')
+    assert background_wakes.ownership_keys(task) == (
+        'owned:proof:app.tasks.poll_background_tasks',
+        'owned:proof:app.tasks.poll_background_tasks:publication',
+    )
+    assert background_wakes.ownership_keys('other') == ('owned:proof:other', 'owned:proof:other:publication')
+    assert not any(hasattr(background_wakes, name) for name in ('_KEY_PREFIX', '_RESERVE', '_ABORT'))
