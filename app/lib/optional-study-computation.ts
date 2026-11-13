@@ -1,12 +1,12 @@
 import type { StudyTask } from "./study-computation";
-import type { ValidationReporter } from "./data-validation";
+import type { ValidationReporter, ValidationEffects } from "../domain/validation";
 import { validateWorkspacePayload, repertoireLinesFromPayload } from "../domain/adapters/workspace-adapters";
 import { canonicalizeLine } from "../utils/canonical-line";
 import { buildRepertoireAlternativeSnapshot } from "./repertoire-alternative-index";
 import { indexRepertoirePositions, prepareChessPositionDistance, type IndexedPosition } from "./position-similarity";
 
 /** Optional repertoire and position computation; no second copy of chess algorithms. */
-export function computeOptionalStudyTask(task: StudyTask, reporter?: ValidationReporter) {
+export function computeOptionalStudyTask(task: StudyTask, reporter?: ValidationReporter | ValidationEffects) {
   switch (task.kind) {
     case "workspace": return validateWorkspacePayload(task.url, task.payload, undefined, reporter);
     case "transportLines": return repertoireLinesFromPayload(task.payload, reporter);
