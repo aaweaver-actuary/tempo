@@ -417,8 +417,15 @@ source map does not establish native or runtime qualification. The three PGN and
 three legacy fixture failures remain unresolved. The retained mutation boundary
 test also fails importing the missing `retained` module; it is not runtime proof.
 
-At this base revision, 185 of 291 tracked Python files in those trees remain
-outside the combined 106-file selections. The registry alone assigns owners;
+A seventeenth selection maps registered card and branch edit commands and their
+SQL adapters. Existing caller transactions handle revisions, replacement, reviews,
+queue and membership changes, branch locks and graph/integrity requests. Gateway,
+calendar, source validation, canonical prefix, deletion, transport and task
+composition remain visible edges. This is a source map, not native proof. The
+three PGN, three legacy and one retained mutation fixture failures remain unresolved.
+
+At this base revision, 180 of 291 tracked Python files in those trees remain
+outside the combined 111-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover

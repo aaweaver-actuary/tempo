@@ -167,7 +167,8 @@
               "pgn_import",
               "card_deletion",
               "canonical_prefix",
-              "repertoire_changes"
+              "repertoire_changes",
+              "card_branch_edits"
             ]
           }
         }

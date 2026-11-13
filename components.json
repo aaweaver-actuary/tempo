@@ -2,6 +2,152 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "card-edit-command",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/card_commands.py#revise_card",
+        "backend/app/card_commands.py#archive_card",
+        "backend/app/card_commands.py#delete_card"
+      ],
+      "dependencies": [
+        "backend-command-gateway",
+        "card-edit-storage",
+        "repertoire-change-validation",
+        "repertoire-change-source-storage",
+        "study-calendar-capture",
+        "canonical-prefix-application",
+        "integrity-scan-service",
+        "opening-graph-rebuild",
+        "card-deletion-application"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/card_commands.py"
+      ],
+      "ownershipRole": "Register and apply card edit commands",
+      "dependencyNotes": [
+        "Task composition imports registrations cards.revise, cards.archive and cards.delete. Uses content transport, python-chess, card identity and caller transaction; review transfer and queue handling follow existing edit decisions."
+      ],
+      "censusScope": "card_branch_edits"
+    },
+    {
+      "id": "branch-edit-command",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/branch_commands.py#add_repertoire_branch",
+        "backend/app/branch_commands.py#remove_repertoire_branch"
+      ],
+      "dependencies": [
+        "backend-command-gateway",
+        "branch-edit-storage",
+        "repertoire-change-validation",
+        "repertoire-change-source-storage",
+        "study-calendar-capture",
+        "canonical-prefix-application",
+        "integrity-scan-service",
+        "opening-graph-rebuild"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/branch_commands.py"
+      ],
+      "ownershipRole": "Register and apply authored branch commands",
+      "dependencyNotes": [
+        "Task composition imports registrations repertoire.branch.add and repertoire.branch.remove. Uses authored-line transport, python-chess and caller transaction; graph and integrity updates remain existing effects."
+      ],
+      "censusScope": "card_branch_edits"
+    },
+    {
+      "id": "card-edit-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/authored_repertoires/card_edits",
+      "publicExports": [
+        "database/tempo_storage/authored_repertoires/card_edits/storage.py#locked_card",
+        "database/tempo_storage/authored_repertoires/card_edits/storage.py#record_revision",
+        "database/tempo_storage/authored_repertoires/card_edits/storage.py#transfer_reviews",
+        "database/tempo_storage/authored_repertoires/card_edits/storage.py#rebind_queued",
+        "database/tempo_storage/authored_repertoires/card_edits/storage.py#archive"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/authored_repertoires/card_edits/__init__.py",
+        "database/tempo_storage/authored_repertoires/card_edits/storage.py"
+      ],
+      "ownershipRole": "Persist card edit facts and effects",
+      "dependencyNotes": [
+        "Caller-transaction SQL handles edit locks, revision, replacement, review/queue and membership operations; retained mutation service also consumes this adapter."
+      ],
+      "censusScope": "card_branch_edits"
+    },
+    {
+      "id": "branch-edit-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/authored_repertoires",
+      "publicExports": [
+        "database/tempo_storage/authored_repertoires/branches.py#lock_repertoire_for_add",
+        "database/tempo_storage/authored_repertoires/branches.py#insert_line_values",
+        "database/tempo_storage/authored_repertoires/branches.py#lock_repertoire_for_remove",
+        "database/tempo_storage/authored_repertoires/branches.py#delete_matching_lines"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/authored_repertoires/branches.py"
+      ],
+      "ownershipRole": "Persist authored branch changes",
+      "dependencyNotes": [
+        "Caller-transaction native SQL locks repertoire and gap candidates, reads settings/lines and writes line, training depth and gap state; integrity repair also uses the repertoire lock."
+      ],
+      "censusScope": "card_branch_edits"
+    },
+    {
       "id": "repertoire-change-contract",
       "type": "integration",
       "maintainer": "Tempo",
