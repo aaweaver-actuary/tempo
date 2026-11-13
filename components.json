@@ -2,6 +2,169 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "position-source-preparation",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/repertoire",
+      "publicExports": [
+        "backend/app/repertoire/position_study_source.py#prepare_position_source",
+        "backend/app/repertoire/position_study_source.py#prepare_position_source_with_facts"
+      ],
+      "dependencies": [
+        "repertoire-product-snapshot-storage",
+        "position-source-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/repertoire/position_study_source.py"
+      ],
+      "ownershipRole": "Prepare position source from bounded publication",
+      "dependencyNotes": [
+        "Builds routes and source certificate from one bounded repertoire snapshot, compares owner header and creates source token; issuance, checkpoint and admission consumers still fence under writer."
+      ],
+      "censusScope": "position_source"
+    },
+    {
+      "id": "position-source-change-policy",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/study/position_learning",
+      "publicExports": [
+        "backend/app/study/position_learning/source_change_policy.py#ScopedPositionSource",
+        "backend/app/study/position_learning/source_change_policy.py#SourceChangeDecision",
+        "backend/app/study/position_learning/source_change_policy.py#compare_source_change",
+        "backend/app/study/position_learning/source_change_policy.py#compare_persisted_definition"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study/position_learning/source_change_policy.py"
+      ],
+      "ownershipRole": "Classify supplied position source changes",
+      "dependencyNotes": [
+        "Consumes prepared and fenced source facts; detached certificates are claims and it neither authorizes grades nor reuses prior prefix credit."
+      ],
+      "censusScope": "position_source"
+    },
+    {
+      "id": "repertoire-product-snapshot-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/authored_repertoires",
+      "publicExports": [
+        "database/tempo_storage/authored_repertoires/product_snapshot.py#read_repertoire"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/authored_repertoires/product_snapshot.py"
+      ],
+      "ownershipRole": "Read bounded repertoire publication snapshot",
+      "dependencyNotes": [
+        "One SQL statement provides one MVCC view of bounded source rows, card/membership and graph facts on borrowed connection; adapter owns no transaction, lock or commit."
+      ],
+      "censusScope": "position_source"
+    },
+    {
+      "id": "position-source-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/authored_repertoires",
+      "publicExports": [
+        "database/tempo_storage/authored_repertoires/position_study_source.py#AuthoredSourceToken",
+        "database/tempo_storage/authored_repertoires/position_study_source.py#PreparedPositionSource",
+        "database/tempo_storage/authored_repertoires/position_study_source.py#PreparedPositionSourceWithFacts",
+        "database/tempo_storage/authored_repertoires/position_study_source.py#authored_digest",
+        "database/tempo_storage/authored_repertoires/position_study_source.py#fence_position_source",
+        "database/tempo_storage/authored_repertoires/position_study_source.py#prepared_source"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/authored_repertoires/position_study_source.py"
+      ],
+      "ownershipRole": "Seal and fence authored position source",
+      "dependencyNotes": [
+        "Prepared source token preserves original snapshot, source revision and authored digest. Writer fence rechecks current header/integrity and source facts; preparation claims alone do not grant authority."
+      ],
+      "censusScope": "position_source"
+    },
+    {
+      "id": "position-owner-epoch-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/study",
+      "publicExports": [
+        "database/tempo_storage/study/position_owner_epoch.py#OwnerDecision",
+        "database/tempo_storage/study/position_owner_epoch.py#PositionOwnerFacts",
+        "database/tempo_storage/study/position_owner_epoch.py#owner_mode",
+        "database/tempo_storage/study/position_owner_epoch.py#shared_owner_fence",
+        "database/tempo_storage/study/position_owner_epoch.py#fence_position_owner_in_writer"
+      ],
+      "dependencies": [
+        "position-source-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/study/position_owner_epoch.py"
+      ],
+      "ownershipRole": "Read and fence position owner epoch",
+      "dependencyNotes": [
+        "Borrowed writer and shared owner lock gate routing; inactive/shadow retain legacy while staged/paused or changed identity hold. New issuance fence validates source, epoch, definition and original queue/card/revision admission; it does not settle prior receipts."
+      ],
+      "censusScope": "position_source"
+    },
+    {
       "id": "position-study-ports",
       "type": "integration",
       "maintainer": "Tempo",

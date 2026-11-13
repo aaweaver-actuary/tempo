@@ -531,8 +531,14 @@ and the preparation seal are claims, not storage attestations; the issuer still
 fences source, admission and schedule witnesses. This source map does not establish
 native qualification. The nineteen previously reported fixture failures remain open.
 
-At this base revision, 105 of 291 tracked Python files in those trees remain
-outside the combined 186-file selections. The registry alone assigns owners;
+A thirty-third selection maps bounded repertoire snapshot and position source
+preparation, source change policy and owner epoch fences. Original source digest,
+revision, admission identity and borrowed-writer checks remain visible; prepared
+claims do not authorize settlement or activate an owner. This source map is not
+native proof. Nineteen previously reported fixture failures remain unresolved.
+
+At this base revision, 100 of 291 tracked Python files in those trees remain
+outside the combined 191-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover

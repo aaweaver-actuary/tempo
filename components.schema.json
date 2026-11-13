@@ -183,7 +183,8 @@
               "opening_evidence",
               "position_first_response",
               "position_grade_effect",
-              "position_plan"
+              "position_plan",
+              "position_source"
             ]
           }
         }
