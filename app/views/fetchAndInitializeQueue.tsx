@@ -1,5 +1,5 @@
 import { holdActiveStudyRequest } from "../lib/study-priority";
-import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy } from "../lib/study-connection";
+import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy, defaultStudyClient } from "../lib/study-connection";
 import { recoverStudyRequests } from "../lib/study-command-client";
 import { PendingOperationError } from "../lib/operation-status";
 import { initializeStudyIntentStorage, isStudyIntentStoreCurrent } from "../../database/browser/study-intent-storage";
@@ -26,7 +26,7 @@ export function rememberConfirmedQueueEntry(card: PracticeCard): void {
 
 let requestGeneration = 0;
 let activeQueueController: AbortController | null = null;
-const queueCacheKey = independentStudy ? `tempo-training-queue-window-v2:${studyWorkspace()}` : "tempo-training-queue-window-v2";
+const queueCacheKey = () => independentStudy ? `tempo-training-queue-window-v2:${studyWorkspace()}` : "tempo-training-queue-window-v2";
 
 function eligibleQueueCards(
   cards: PracticeCard[], phoneAttempts: readonly OfflineAttempt[] = [], localRepeatQueueIds: ReadonlySet<number> = new Set(),
@@ -103,7 +103,7 @@ function showGuidedAttemptSaveNotice(error?: string | null) {
 
 export function invalidateTrainingQueueCache(): void {
   requestGeneration += 1;
-  localStorage.removeItem(queueCacheKey);
+  localStorage.removeItem(queueCacheKey());
 }
 
 class LegacyTrainingFailurePendingError extends QueueProcessingError {}
@@ -139,7 +139,10 @@ function retainPendingFailures(
 }
 
 const queueTransport = createQueueTransport({
-  fetch: (...args) => fetch(...args), baseUrl: API_URL,
+  fetch: (...args) => fetch(...args), authority: () => {
+    const baseUrl = API_URL, generation = defaultStudyClient.generation, origin = defaultStudyClient.origin;
+    return { baseUrl, isCurrent: () => defaultStudyClient.generation === generation && defaultStudyClient.origin === origin && API_URL === baseUrl };
+  },
   timer: { setTimeout: (callback, delay) => globalThis.setTimeout(callback, delay), clearTimeout: handle => globalThis.clearTimeout(handle) },
 });
 
@@ -149,6 +152,8 @@ export async function fetchAndInitializeQueue(
     timeoutMs?: number; signal?: AbortSignal; retryPreparation?: boolean; expectedAttempt?: { attemptId?: string; generation: number } } = {},
 ): Promise<QueueInitializationResult> {
   if (!usesLocalApi()) return "superseded";
+  const authority = queueTransport.captureAuthority();
+  const acquisitionCacheKey = queueCacheKey();
   const generation = ++requestGeneration;
   activeQueueController?.abort();
   const controller = new AbortController();
@@ -169,22 +174,25 @@ export async function fetchAndInitializeQueue(
   const releasePriority = holdActiveStudyRequest();
   try {
     const intentStore = await awaitQueueStage(initializeStudyIntentStorage(), controller.signal);
+    queueTransport.assertCurrent(authority);
     if (options.replaySavedReviews !== false) await awaitQueueStage(recoverStudyRequests(controller.signal), controller.signal);
+    queueTransport.assertCurrent(authority);
     const pendingFailureContexts = pendingTrainingFailureContexts();
     const pendingFailureEntries = new Set(pendingFailureContexts.map((item) => item.queueEntryId));
     let failureSaveError: string | null = null;
     try { retainPendingFailures([], pendingFailureContexts); }
     catch (error) { if (!(error instanceof LegacyTrainingFailurePendingError)) throw error; }
     const savedPreparedQueue = typeof indexedDB === "undefined" ? null : await awaitQueueStage(readPreparedTraining().catch(() => null), controller.signal);
+    queueTransport.assertCurrent(authority);
     if (isIPhoneHomeScreen() && !useTrainingStore.getState().isDatabaseQueueActive && !pendingReviews().length &&
         savedPreparedQueue?.localDate !== localDayKey()) {
-      const stored = localStorage.getItem(queueCacheKey);
+      const stored = localStorage.getItem(acquisitionCacheKey);
       if (stored) {
         try {
           const cached = JSON.parse(stored) as QueuePayload;
           if (cached.local_date === localDayKey() && cached.cards?.length) {
             const cachedCards = await awaitQueueStage(runStudyTask({ kind: "queue", payload: cached }, controller.signal), controller.signal);
-            if (generation === requestGeneration && expectedAttemptMatches() && !controller.signal.aborted) {
+            if (generation === requestGeneration && authority.isCurrent() && expectedAttemptMatches() && !controller.signal.aborted) {
               const availableCards = eligibleQueueCards(retainPendingFailures(cachedCards, pendingFailureContexts), savedPreparedQueue?.attempts);
               useTrainingStore.getState().hydrateLocalQueue(
                 availableCards, false, Math.max(0, (cached.count ?? cachedCards.length) - (cachedCards.length - availableCards.length)),
@@ -192,7 +200,7 @@ export async function fetchAndInitializeQueue(
             }
           }
         } catch (error) {
-          if (!(error instanceof LegacyTrainingFailurePendingError)) localStorage.removeItem(queueCacheKey);
+          if (!(error instanceof LegacyTrainingFailurePendingError)) localStorage.removeItem(acquisitionCacheKey);
         }
       }
     }
@@ -204,6 +212,7 @@ export async function fetchAndInitializeQueue(
           publishNotification({ severity: "info", source: "phone review sync", key: "phone-review-syncing",
             message: "Syncing reviews saved on this phone with the computer." });
         replayed = await awaitQueueStage(replayOfflineAttempts(), controller.signal);
+        queueTransport.assertCurrent(authority);
         const syncing = notifications().find((record) => record.key === "phone-review-syncing" && !record.resolvedAt);
         if (syncing) {
           if (replayed?.attempts.some((attempt) => attempt.conflict))
@@ -222,6 +231,7 @@ export async function fetchAndInitializeQueue(
           });
         }
       } catch (error) {
+        queueTransport.assertCurrent(authority);
         pendingReviewError = error instanceof Error ? error.message : String(error);
         const syncing = notifications().find((record) => record.key === "phone-review-syncing" && !record.resolvedAt);
         if (syncing) updateNotification(syncing.id, { severity: "warning", active: false,
@@ -237,7 +247,9 @@ export async function fetchAndInitializeQueue(
     if (options.replaySavedReviews !== false && pendingReviews().length) {
       try {
         await awaitQueueStage(flushPendingReviews(Infinity, true), controller.signal);
+        queueTransport.assertCurrent(authority);
       } catch (error) {
+        queueTransport.assertCurrent(authority);
         pendingReviewError = error instanceof Error ? error.message : String(error);
         if (generation === requestGeneration)
           reportDebugError(error, {
@@ -253,34 +265,36 @@ export async function fetchAndInitializeQueue(
     }
     if (!pendingReviewError && pendingReviews().some(review => review.automaticRecoverySuppressed))
       pendingReviewError = "Previously saved reviews need explicit attention before retrying.";
+    queueTransport.assertCurrent(authority);
     updateReviewConflictNotice();
     if (pendingFailureEntries.size)
       void flushTrainingFailures().then(() => {
-        if (generation === requestGeneration && isStudyIntentStoreCurrent(intentStore)) showGuidedAttemptSaveNotice();
+        if (generation === requestGeneration && authority.isCurrent() && isStudyIntentStoreCurrent(intentStore)) showGuidedAttemptSaveNotice();
       }).catch((error) => {
         failureSaveError = `Could not confirm a guided attempt. Refresh the training queue. ${String(error)}`;
-        if (generation === requestGeneration && isStudyIntentStoreCurrent(intentStore)) showGuidedAttemptSaveNotice(failureSaveError);
+        if (generation === requestGeneration && authority.isCurrent() && isStudyIntentStoreCurrent(intentStore)) showGuidedAttemptSaveNotice(failureSaveError);
       });
     let raw: QueuePayload;
     const acquisition = { observedBusyHead: false };
     try {
-      raw = await awaitQueueStage(queueTransport.loadTodayQueueWithRetry(controller.signal, acquisition), controller.signal);
+      raw = await awaitQueueStage(queueTransport.loadTodayQueueWithRetry(controller.signal, acquisition, authority), controller.signal);
     } catch (caught) {
       const error = acquisition.observedBusyHead && !controller.signal.aborted && !(caught instanceof QueueProcessingError)
         ? new QueueProcessingError(`Position study could not be loaded after a busy response. ${String(caught)}`, { cause: caught })
         : caught;
       queueRequestFailed = !(error instanceof QueueProcessingError);
       failedOperation = queueRequestFailed ? "load today queue" : "process today queue response";
-      failedEndpoint = `${API_URL}/api/queue/window?limit=20`;
+      failedEndpoint = `${authority.baseUrl}/api/queue/window?limit=20`;
       throw error;
     }
+    queueTransport.assertCurrent(authority);
     const processingStarted = performance.now();
     const cards = await awaitQueueStage(runStudyTask({
       kind: "queue",
       payload: raw,
     }, controller.signal), controller.signal);
     performance.measure("tempo.queue.processing", { start: processingStarted, end: performance.now(), detail: { generation } });
-    if (generation !== requestGeneration || !expectedAttemptMatches()) return "superseded";
+    if (generation !== requestGeneration || !expectedAttemptMatches() || !authority.isCurrent()) return "superseded";
     if (controller.signal.aborted) throw controller.signal.reason;
     const rawHead = raw.cards?.[0] as { id?: unknown; queue_entry_id?: unknown } | undefined;
     if ((rawHead && (!cards[0] || cards[0].backendId !== rawHead.id || cards[0].queueEntryId !== rawHead.queue_entry_id)) ||
@@ -330,7 +344,7 @@ export async function fetchAndInitializeQueue(
     useTrainingStore.getState().setPendingReviewError(pendingReviewError);
     useTrainingStore.getState().setOfflineQueue(false);
     queueInitialized = true;
-    try { localStorage.setItem(queueCacheKey, JSON.stringify(raw)); } catch {
+    try { localStorage.setItem(acquisitionCacheKey, JSON.stringify(raw)); } catch {
       // A full browser storage quota must not turn a successful queue read into a failure.
     }
     const conflicts = replayed?.attempts.filter((attempt) => attempt.conflict) ?? [];
@@ -357,7 +371,7 @@ export async function fetchAndInitializeQueue(
       if (!pendingTrainingFailures().length) useTrainingStore.getState().setQueueNotice("");
     }
     const hasConflicts = Boolean(replayed?.attempts.some((attempt) => attempt.conflict));
-    if ((independentStudy || isIPhoneHomeScreen()) && typeof indexedDB !== "undefined" && options.preparePhoneQueue !== false) void fetch(`${API_URL}/api/queue/prepared?include_opening_evidence=true`, { signal: controller.signal })
+    if (authority.isCurrent() && (independentStudy || isIPhoneHomeScreen()) && typeof indexedDB !== "undefined" && options.preparePhoneQueue !== false) void fetch(`${authority.baseUrl}/api/queue/prepared?include_opening_evidence=true`, { signal: controller.signal })
       .then(async (response) => {
         if (response.status === 404)
           throw new Error("Tempo on the computer is an older version. Update it, then reopen Tempo on the phone.");
@@ -366,9 +380,9 @@ export async function fetchAndInitializeQueue(
         if (response.status === 202) throw new PhoneQueueRefreshingError();
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const payload = await response.json() as QueuePayload & { prepared_at: string };
-        if (generation !== requestGeneration || !expectedAttemptMatches() || controller.signal.aborted) return null;
+        if (generation !== requestGeneration || !expectedAttemptMatches() || !authority.isCurrent() || controller.signal.aborted) return null;
         const prepared = await savePreparedTraining(payload);
-        if (generation !== requestGeneration || !expectedAttemptMatches() || controller.signal.aborted) return null;
+        if (generation !== requestGeneration || !expectedAttemptMatches() || !authority.isCurrent() || controller.signal.aborted) return null;
         if (prepared.preparedAt !== payload.prepared_at || prepared.localDate !== payload.local_date)
           throw new Error(prepared.attempts.some((attempt) => !attempt.serverReviewId && !attempt.conflict)
             ? "Saved phone reviews are still waiting to sync. The older offline queue was kept."
@@ -383,7 +397,7 @@ export async function fetchAndInitializeQueue(
             cards: payload.cards, count: payload.count, local_date: payload.local_date,
             projection: payload.projection,
           } }, controller.signal);
-          if (generation !== requestGeneration || !expectedAttemptMatches() || controller.signal.aborted) return null;
+          if (generation !== requestGeneration || !expectedAttemptMatches() || !authority.isCurrent() || controller.signal.aborted) return null;
           const availableCards = eligibleQueueCards(retainPendingFailures(completeCards, pendingFailureContexts), prepared.attempts);
           useTrainingStore.getState().hydrateLocalQueue(
             availableCards, false, Math.max(0, prepared.cards.length - (completeCards.length - availableCards.length)),
@@ -394,7 +408,7 @@ export async function fetchAndInitializeQueue(
       .then(async (prepared) => {
         if (!prepared) return;
         await waitForOfflineShell();
-        if (generation === requestGeneration && !hasConflicts && prepared.localDate === localDayKey())
+        if (generation === requestGeneration && authority.isCurrent() && !hasConflicts && prepared.localDate === localDayKey())
           showPhoneQueuePreparationNotice(
             `Phone queue prepared for ${prepared.localDate}.` +
             (prepared.cards.some(requiresConnectedGrading)
@@ -403,7 +417,7 @@ export async function fetchAndInitializeQueue(
           );
       })
       .catch((error) => {
-        if (generation === requestGeneration && !hasConflicts && !controller.signal.aborted)
+        if (generation === requestGeneration && authority.isCurrent() && !hasConflicts && !controller.signal.aborted)
           showPhoneQueuePreparationNotice(
             error instanceof PhoneQueueRefreshingError ? error.message :
               `Phone queue could not be prepared. ${error instanceof Error ? error.message : "Keep the computer connected and retry loading the queue."}`,
@@ -412,7 +426,7 @@ export async function fetchAndInitializeQueue(
       });
     return availableCards.length ? "installed" : "exhausted";
   } catch (error) {
-    if (generation !== requestGeneration || !expectedAttemptMatches()) return "superseded";
+    if (generation !== requestGeneration || !expectedAttemptMatches() || !authority.isCurrent()) return "superseded";
     reportDebugError(error, {
       kind: "api", source: queueRequestFailed ? "training-queue" : "training-queue-processing",
       operation: failedOperation, endpoint: failedEndpoint,
@@ -432,7 +446,7 @@ export async function fetchAndInitializeQueue(
         throw error;
       }
       const availableCards = await awaitQueueStage(loadEligibleOfflineQueue(prepared), controller.signal);
-      if (generation !== requestGeneration || !expectedAttemptMatches()) return "superseded";
+      if (generation !== requestGeneration || !expectedAttemptMatches() || !authority.isCurrent()) return "superseded";
       useTrainingStore.getState().hydrateLocalQueue(availableCards, advance, availableCards.length);
       useTrainingStore.getState().setOfflineQueue(true);
       queueInitialized = true;
@@ -449,7 +463,7 @@ export async function fetchAndInitializeQueue(
     releasePriority();
     clearTimeout(deadline);
     options.signal?.removeEventListener("abort", cancelAcquisition);
-    if (generation === requestGeneration && (queueInitialized || expectedAttemptMatches()))
+    if (generation === requestGeneration && authority.isCurrent() && (queueInitialized || expectedAttemptMatches()))
       useTrainingStore.setState({ queueReadiness: queueInitialized || options.preservePreparedAttempt ? "ready" : "unavailable" });
     if (activeQueueController === controller) activeQueueController = null;
   }

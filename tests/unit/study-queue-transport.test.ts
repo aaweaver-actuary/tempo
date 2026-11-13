@@ -5,7 +5,7 @@ const original = "queue.issue_head:original";
 const accepted = (state = "queued") => Response.json({ operation_id: original, state }, { status: 202, headers: { "Retry-After": "0.3" } });
 const receipt = (state: string, extra: object = {}) => Response.json({ operation_id: original, state, ...extra });
 function transport(fetcher: typeof fetch) {
-  return createQueueTransport({ fetch: fetcher, baseUrl: "https://original.example", timer: {
+  return createQueueTransport({ fetch: fetcher, authority: () => ({ baseUrl: "https://original.example", isCurrent: () => true }), timer: {
     setTimeout: (callback, delay) => globalThis.setTimeout(callback, delay), clearTimeout: handle => globalThis.clearTimeout(handle),
   } });
 }
@@ -90,4 +90,75 @@ it("returns a nontransient held head without treating it as a new issuance", asy
   const fetcher = vi.fn().mockResolvedValue(Response.json({ cards: [card], count: 1 }));
   expect(await transport(fetcher).loadTodayQueueWithRetry(new AbortController().signal, { observedBusyHead: false })).toEqual({ cards: [card], count: 1 });
   expect(fetcher).toHaveBeenCalledOnce();
+});
+
+it("fences an in-flight original operation when authority changes and uses the new authority only for a new acquisition", async () => {
+  let origin = "https://first.example", generation = 1;
+  const fetcher = vi.fn().mockResolvedValueOnce(accepted()).mockResolvedValueOnce(Response.json({ cards: [], count: 0 }));
+  const client = createQueueTransport({ fetch: fetcher, authority: () => {
+    const capturedOrigin = origin, capturedGeneration = generation;
+    return { baseUrl: capturedOrigin, isCurrent: () => origin === capturedOrigin && generation === capturedGeneration };
+  }, timer: { setTimeout: (callback, delay) => globalThis.setTimeout(callback, delay), clearTimeout: handle => globalThis.clearTimeout(handle) } });
+  const originalLoad = client.loadTodayQueueWithRetry(new AbortController().signal, { observedBusyHead: false });
+  const rejected = expect(originalLoad).rejects.toMatchObject({ name: "QueueAuthorityChangedError" });
+  await vi.advanceTimersByTimeAsync(0);
+  origin = "https://second.example"; generation++;
+  await vi.advanceTimersByTimeAsync(400); await rejected;
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(String(fetcher.mock.calls[0][0])).toContain("https://first.example/api/queue/window");
+  expect(await client.loadTodayQueueWithRetry(new AbortController().signal, { observedBusyHead: false })).toEqual({ cards: [], count: 0 });
+  expect(String(fetcher.mock.calls[1][0])).toContain("https://second.example/api/queue/window");
+});
+
+it("composed queue acquisition binds connection generation across connect and reconnect", async () => {
+  vi.useRealTimers(); vi.resetModules();
+  const { IDBFactory } = await import("fake-indexeddb");
+  vi.stubGlobal("__TEMPO_STUDY__", true); vi.stubGlobal("__TEMPO_DEMO__", false); vi.stubGlobal("indexedDB", new IDBFactory());
+  localStorage.clear(); sessionStorage.clear();
+  const bootstrap = { schema_version: 1, workspace_id: "workspace-a", timezone: "UTC", local_date: "2026-11-13",
+    settings: { study_only_mode: false, new_cards_per_day: 10, study_new_per_day: 10, tactics_new_per_day: 5,
+      include_defensive_cards_in_daily_stack: true, light_first_interval_days: 7 } };
+  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+    const address = String(input);
+    if (address.endsWith("/api/study/bootstrap")) return Response.json(bootstrap);
+    if (address.startsWith("http://first.test") && address.includes("/api/queue/window")) return accepted();
+    if (address.startsWith("http://second.test") && address.includes("/api/queue/window")) return Response.json({ cards: [], count: 0 });
+    throw new Error(`Unexpected queue transport ${address}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const { fetchAndInitializeQueue } = await import("../../app/views/fetchAndInitializeQueue");
+  const connection = await import("../../app/lib/study-connection");
+  const storage = await import("../../database/browser/study-intent-storage");
+  try {
+    await connection.connectStudy("http://first.test", "workspace-a", "test-credential-12345678901234567890");
+    const first = fetchAndInitializeQueue(false, { preparePhoneQueue: false, replaySavedReviews: false });
+    await vi.waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("first.test/api/queue/window"))).toBe(true));
+    await connection.connectStudy("http://second.test", "workspace-a", "test-credential-12345678901234567890");
+    expect(await first).toBe("superseded");
+    const firstOriginCalls = fetcher.mock.calls.filter(([url]) => String(url).includes("first.test"));
+    expect(firstOriginCalls.filter(([url]) => String(url).includes("/api/operations/"))).toHaveLength(0);
+    expect(await fetchAndInitializeQueue(false, { preparePhoneQueue: false, replaySavedReviews: false })).toBe("exhausted");
+    expect(fetcher.mock.calls.filter(([url]) => String(url).includes("/api/queue/window")).map(([url]) => new URL(String(url)).origin))
+      .toEqual(["http://first.test", "http://second.test"]);
+    expect(fetcher.mock.calls.filter(([url]) => String(url).includes("/api/operations/"))).toHaveLength(0);
+  } finally { storage.closeStudyIntentStorage(); connection.disconnectStudy(); vi.unstubAllGlobals(); localStorage.clear(); sessionStorage.clear(); }
+}, 15_000);
+
+it("does not accept an old completed receipt after authority changes during its status request", async () => {
+  let origin = "https://first.example", generation = 1, resolveReceipt!: (response: Response) => void;
+  const delayed = new Promise<Response>(resolve => { resolveReceipt = resolve; });
+  const fetcher = vi.fn().mockResolvedValueOnce(accepted()).mockReturnValueOnce(delayed);
+  const client = createQueueTransport({ fetch: fetcher, authority: () => {
+    const captured = origin, version = generation;
+    return { baseUrl: captured, isCurrent: () => origin === captured && generation === version };
+  }, timer: { setTimeout: (callback, delay) => globalThis.setTimeout(callback, delay), clearTimeout: handle => globalThis.clearTimeout(handle) } });
+  const load = client.loadTodayQueueWithRetry(new AbortController().signal, { observedBusyHead: false });
+  const rejected = expect(load).rejects.toMatchObject({ name: "QueueAuthorityChangedError" });
+  await vi.advanceTimersByTimeAsync(400);
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  origin = "https://second.example"; generation++;
+  resolveReceipt(receipt("complete", { response: { issued: true } }));
+  await rejected;
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  expect(String(fetcher.mock.calls[1][0])).toBe(`https://first.example/api/operations/${encodeURIComponent(original)}`);
 });

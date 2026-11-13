@@ -5,7 +5,11 @@ import type { StudyNextExerciseOutcome } from "../../domain/transport";
 
 export type QueueTimer = { setTimeout(callback: () => void, delay: number): ReturnType<typeof globalThis.setTimeout>;
   clearTimeout(handle: ReturnType<typeof globalThis.setTimeout>): void };
-export type QueueTransportOptions = { fetch: typeof globalThis.fetch; baseUrl: string; timer: QueueTimer };
+export type QueueAuthority = { baseUrl: string; isCurrent(): boolean };
+export type QueueTransportOptions = { fetch: typeof globalThis.fetch; authority(): QueueAuthority; timer: QueueTimer };
+export class QueueAuthorityChangedError extends Error {
+  constructor() { super("Study authority changed while acquiring the queue. Retry with the current service."); this.name = "QueueAuthorityChangedError"; }
+}
 
 export type QueuePayload = {
   cards?: unknown[];
@@ -38,7 +42,17 @@ export function awaitQueueStage<T>(operation: Promise<T> | T, signal: AbortSigna
 
 
 export function createQueueTransport(options: QueueTransportOptions) {
-  async function fetchQueueWindow(signal: AbortSignal, observePreparation = false, operationId?: string): Promise<{ response: Response; payload: unknown }> {
+  function captureAuthority(): QueueAuthority {
+    const authority = options.authority();
+    assertCurrent(authority);
+    return authority;
+  }
+  function assertCurrent(authority: QueueAuthority): void {
+    if (!authority.isCurrent()) throw new QueueAuthorityChangedError();
+  }
+  async function fetchQueueWindow(signal: AbortSignal, observePreparation = false, operationId?: string,
+    authority: QueueAuthority = captureAuthority()): Promise<{ response: Response; payload: unknown }> {
+    assertCurrent(authority);
     const controller = new AbortController();
     const abortSupersededRequest = () => controller.abort();
     if (signal.aborted) abortSupersededRequest();
@@ -50,18 +64,21 @@ export function createQueueTransport(options: QueueTransportOptions) {
     }, 15_000);
     try {
       const path = operationId ? `/api/operations/${encodeURIComponent(operationId)}` : "/api/queue/window?limit=20&include_opening_evidence=true";
-      const response = await awaitQueueStage(options.fetch(`${options.baseUrl}${path}`, {
+      const response = await awaitQueueStage(options.fetch(`${authority.baseUrl}${path}`, {
         signal: controller.signal,
         ...(observePreparation ? { headers: { "X-Tempo-Work-Class": "background" } } : {}),
       }), controller.signal);
+      assertCurrent(authority);
       let payload: unknown;
       try { payload = await awaitQueueStage(response.json(), controller.signal); }
       catch (error) {
         if (controller.signal.aborted || (error instanceof Error && error.name === "AbortError")) throw error;
         if (response.ok) throw new QueueProcessingError(`The local queue returned invalid JSON. ${String(error)}`);
       }
+      assertCurrent(authority);
       return { response, payload };
     } catch (error) {
+      assertCurrent(authority);
       if (timedOut)
         throw new Error("Queue request timed out after 15 seconds. Retry loading the queue.", { cause: error });
       throw error;
@@ -89,7 +106,9 @@ export function createQueueTransport(options: QueueTransportOptions) {
   const transientPositionHolds = new Set(["position_card_busy", "position_attempt_busy", "position_source_graph_busy",
     "position_owner_busy", "position_original_admission_unavailable"]);
 
-  async function followQueueIssuance(response: Response, payload: unknown, signal: AbortSignal): Promise<void> {
+  async function followQueueIssuance(response: Response, payload: unknown, signal: AbortSignal,
+    authority: QueueAuthority = captureAuthority()): Promise<void> {
+    assertCurrent(authority);
     const pending = decodeOperationAcceptance(payload);
     if (pending.kind === "malformed")
       throw new QueueProcessingError("The local queue returned an invalid pending operation. Retry loading the queue.");
@@ -99,7 +118,8 @@ export function createQueueTransport(options: QueueTransportOptions) {
     const delay = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.max(250, retryAfter * 1000) : 1000;
     for (let poll = 0; poll < 20; poll += 1) {
       await waitForQueueRetry(delay, signal);
-      const { response: status, payload: value } = await fetchQueueWindow(signal, false, operationId);
+      assertCurrent(authority);
+      const { response: status, payload: value } = await fetchQueueWindow(signal, false, operationId, authority);
       if (!status.ok) throw new QueueProcessingError(`Queue operation status could not be loaded (HTTP ${status.status}). Retry loading the queue.`);
       const receipt = decodeOperationResult(value, operationId, true);
       // The receipt's result is a command result, never a current queue envelope.
@@ -113,17 +133,19 @@ export function createQueueTransport(options: QueueTransportOptions) {
   }
 
   async function loadTodayQueueWithRetry(
-    signal: AbortSignal, acquisition: { observedBusyHead: boolean },
+    signal: AbortSignal, acquisition: { observedBusyHead: boolean }, authority: QueueAuthority = captureAuthority(),
   ): Promise<QueuePayload> {
+    assertCurrent(authority);
     let failedRequests = 0;
     let retryBusyHead = false;
     for (let attempt = 0; attempt < 20; attempt += 1) {
-      const { response, payload: responsePayload } = await fetchQueueWindow(signal, attempt > 0 && !retryBusyHead);
+      assertCurrent(authority);
+      const { response, payload: responsePayload } = await fetchQueueWindow(signal, attempt > 0 && !retryBusyHead, undefined, authority);
       if (response.status === 202) {
         // Cancellation stops only this observation; the durable server operation
         // retains its identity and can finish after navigation or tab closure.
         acquisition.observedBusyHead = true;
-        await followQueueIssuance(response, responsePayload, signal);
+        await followQueueIssuance(response, responsePayload, signal, authority);
         retryBusyHead = true;
         continue;
       }
@@ -182,5 +204,5 @@ export function createQueueTransport(options: QueueTransportOptions) {
   }
 
 
-  return { fetchQueueWindow, waitForQueueRetry, followQueueIssuance, loadTodayQueueWithRetry };
+  return { captureAuthority, assertCurrent, fetchQueueWindow, waitForQueueRetry, followQueueIssuance, loadTodayQueueWithRetry };
 }
