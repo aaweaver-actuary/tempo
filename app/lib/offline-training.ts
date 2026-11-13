@@ -260,6 +260,7 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
       continue;
     }
     let repeatBinding = attempt.repeatBinding;
+    let requireDeliveryAuthority = () => {};
     if (parent && attempt.studyId && attempt.exerciseId) {
       if (!parent.attemptId || parent.studyId !== attempt.studyId || parent.exerciseId !== attempt.exerciseId ||
           parent.cardId !== attempt.cardId || !parent.serverReviewId || !parent.serverRepeatEntryId) {
@@ -270,6 +271,9 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
       const origin = defaultStudyClient.origin;
       const authority = defaultStudyClient.studyWorkspace();
       const stillBound = () => defaultStudyClient.generation === generation && defaultStudyClient.origin === origin && defaultStudyClient.studyWorkspace() === authority;
+      requireDeliveryAuthority = () => {
+        if (!stillBound()) throw new OfflineReplayError("Study authority changed during original repeat delivery.", "queue repeat identity");
+      };
       const matches = (value: OfflineAttempt["repeatBinding"]) => value && value.authority === authority &&
         value.parentAttemptId === parent.attemptId && value.reviewId === parent.serverReviewId &&
         value.entryId === parent.serverRepeatEntryId && value.cardId === attempt.cardId && value.revision === attempt.expectedRevision &&
@@ -312,6 +316,7 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
     const reviewEndpoint = attempt.studyId && attempt.exerciseId && attempt.answer && attempt.attemptId
       ? `${API_URL}/api/studies/${encodeURIComponent(attempt.studyId)}/exercises/${encodeURIComponent(attempt.exerciseId)}/attempts`
       : `${API_URL}/api/cards/${encodeURIComponent(attempt.cardId)}/review`;
+    requireDeliveryAuthority();
     let response: Response;
     let serverRejection: OfflineAttempt["serverRejection"];
     try {
@@ -324,7 +329,9 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
             queue_entry_id: serverEntryId, queue_cycle: repeatBinding?.cycle ?? attempt.queueCycle ?? 0,
             expected_review_id: expectedReviewId, hint_seen: attempt.guided }),
         });
+        requireDeliveryAuthority();
         response = await confirmOriginalOperationResponse(response, `phone-study:${attempt.attemptId}`, { signal: controller.signal, requireReceiptIdentity: true });
+        requireDeliveryAuthority();
       } else {
         const reviewAttemptId = attempt.attemptId ?? `phone:${attempt.localEntryId}:${attempt.completedAt}`;
         const completion = attempt.openingEvidenceCompletion
@@ -346,6 +353,7 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
         });
       }
     } catch (error) {
+      requireDeliveryAuthority();
       if (attempt.studyId && attempt.exerciseId && attempt.attemptId && error instanceof FailedOperationError &&
           error.operationId === `phone-study:${attempt.attemptId}` && error.status === 422 && error.retryable !== true) {
         serverRejection = { operationId: error.operationId, status: error.status, message: error.message,
@@ -361,17 +369,19 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
     }
     if (response.status === 409) {
       const detail = (await response.json().catch(() => ({}))) as { detail?: string };
-      current = await updatePreparedTraining((saved) => ({
+      requireDeliveryAuthority();
+      current = await updatePreparedTraining((saved) => { requireDeliveryAuthority(); return ({
         ...saved!, attempts: saved!.attempts.map((item) => item.localEntryId === attempt.localEntryId
           ? { ...item, conflict: detail.detail ?? "This review conflicts with the computer" } : item),
-      }));
+      }); });
       continue;
     }
     if (response.status === 422 && attempt.studyId && attempt.exerciseId && attempt.attemptId) {
       const detail = await response.json().catch(() => ({})) as { detail?: unknown };
+      requireDeliveryAuthority();
       const reason = typeof detail.detail === "string" ? detail.detail : "The computer rejected the original answer.";
-      current = await updatePreparedTraining((saved) => ({ ...saved!, attempts: saved!.attempts.map((item) =>
-        item.localEntryId === attempt.localEntryId ? { ...item, conflict: `Computer rejected the saved answer: ${reason}`, ...(serverRejection ? { serverRejection } : {}) } : item) }));
+      current = await updatePreparedTraining((saved) => { requireDeliveryAuthority(); return ({ ...saved!, attempts: saved!.attempts.map((item) =>
+        item.localEntryId === attempt.localEntryId ? { ...item, conflict: `Computer rejected the saved answer: ${reason}`, ...(serverRejection ? { serverRejection } : {}) } : item) }); });
       hold(attempt, `The original phone answer was rejected: ${reason}`);
       continue;
     }
@@ -380,6 +390,7 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
       warning?: string; reconciliation?: string;
       competing_review?: { outcome?: string | null; completed_at?: string | null };
       pending_self_assessment?: boolean; review?: { review_id: number; requeue_entry_id: number | null } };
+    requireDeliveryAuthority();
     let serverAssessment: StudyAssessment | undefined;
     if (attempt.studyId && attempt.exerciseId && attempt.attemptId) {
       const decoded = decodeFrozenAttempt(result, { attemptId: attempt.attemptId, context: "review" });
@@ -387,9 +398,9 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
       result = decoded as unknown as typeof result;
     }
     if (result.pending_self_assessment && serverAssessment) {
-      current = await updatePreparedTraining((saved) => ({ ...saved!, attempts: saved!.attempts.map((item) =>
+      current = await updatePreparedTraining((saved) => { requireDeliveryAuthority(); return ({ ...saved!, attempts: saved!.attempts.map((item) =>
         item.localEntryId === attempt.localEntryId ? { ...item, serverAssessment,
-          ...(assessmentsDiffer(attempt.assessment, serverAssessment) ? { syncWarning: "The computer assessed the original answer differently from the saved phone assessment." } : {}) } : item) }));
+          ...(assessmentsDiffer(attempt.assessment, serverAssessment) ? { syncWarning: "The computer assessed the original answer differently from the saved phone assessment." } : {}) } : item) }); });
     }
     if (result.pending_self_assessment && !attempt.selfRating) {
       hold(attempt, "The original phone answer is confirmed and awaits its saved self-assessment.");
@@ -404,18 +415,23 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
             "Idempotency-Key": `phone-assessment:${attempt.attemptId}` },
           body: JSON.stringify({ rating: attempt.selfRating }),
         });
+        requireDeliveryAuthority();
         assessed = await confirmOriginalOperationResponse(assessed, `phone-assessment:${attempt.attemptId}`, { requireReceiptIdentity: true });
+        requireDeliveryAuthority();
       } catch (error) {
         throw new OfflineReplayError(`Could not sync study self-assessment. ${String(error)}`, assessmentEndpoint, { cause: error });
       }
       if (assessed.status === 409) {
         const detail = (await assessed.json().catch(() => ({}))) as { detail?: string };
-        current = await updatePreparedTraining((saved) => ({ ...saved!, attempts: saved!.attempts.map((item) => item.localEntryId === attempt.localEntryId
-          ? { ...item, conflict: detail.detail ?? "Study revision changed before sync" } : item) }));
+        requireDeliveryAuthority();
+        current = await updatePreparedTraining((saved) => { requireDeliveryAuthority(); return ({ ...saved!, attempts: saved!.attempts.map((item) => item.localEntryId === attempt.localEntryId
+          ? { ...item, conflict: detail.detail ?? "Study revision changed before sync" } : item) }); });
         continue;
       }
       if (!assessed.ok) throw new OfflineReplayError(`Could not sync study self-assessment (HTTP ${assessed.status})`, assessmentEndpoint);
-      const decoded = decodeFrozenAttempt(await assessed.json(), { attemptId: attempt.attemptId, context: "review" });
+      const assessedBody = await assessed.json();
+      requireDeliveryAuthority();
+      const decoded = decodeFrozenAttempt(assessedBody, { attemptId: attempt.attemptId, context: "review" });
       if ("pending_self_assessment" in decoded) throw new Error("The original self-assessment has not completed.");
       serverAssessment = decoded.assessment;
       result = decoded as unknown as typeof result;
@@ -425,7 +441,7 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
       throw new Error("Review sync did not confirm a saved review");
     if (attempt.openingEvidenceCompletion && attempt.attemptId && !attempt.openingEvidenceFallbackReason)
       void acknowledgeOpeningReview(attempt.attemptId).catch(() => undefined);
-    current = await updatePreparedTraining((saved) => ({
+    current = await updatePreparedTraining((saved) => { requireDeliveryAuthority(); return ({
       ...saved!, attempts: saved!.attempts.map((item) => item.localEntryId === attempt.localEntryId
         ? { ...item, serverEntryId, serverReviewId: result.review_id ?? undefined,
             serverAcknowledged: true, conflict: undefined,
@@ -435,7 +451,7 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
               : result.warning ? `${result.warning} Other saved result: ${result.competing_review?.outcome ?? "unknown"} ` +
               `at ${result.competing_review?.completed_at ?? "unknown"}.` : undefined,
             serverRepeatEntryId: result.requeue_entry_id } : item),
-    }));
+    }); });
   }
   return current;
 }
