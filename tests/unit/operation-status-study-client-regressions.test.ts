@@ -139,3 +139,9 @@ it('receipt_body_reconnect_cannot_publish_a_complete_old_authority_result', asyn
   finish(new TextEncoder().encode(JSON.stringify({ operation_id:'original', state:'complete', response:null })));
   await expect(pending).rejects.toThrow('authority changed');
 });
+
+it('strict original operation confirmation requires identity on the receipt', async () => {
+  const transport = vi.fn().mockResolvedValue(Response.json({ state: 'failed', error: { status_code: 422, detail: 'invalid' } }));
+  await expect(confirmOriginalOperationResponse(Response.json({ operation_id: 'original', state: 'queued' }, { status: 202 }),
+    'original', { fetch: transport, requireReceiptIdentity: true })).rejects.toMatchObject({ name: 'PendingOperationError', operationId: 'original' });
+});

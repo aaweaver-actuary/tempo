@@ -43,6 +43,7 @@ export type OfflineAttempt = {
   assessment?: StudyAssessment;
   gradingProvenance?: OfflineGradingProvenance;
   serverAssessment?: StudyAssessment;
+  serverRejection?: { operationId: string; status: number; message: string; code?: string; retryable?: boolean; detail?: unknown };
   selfRating?: "correct" | "again";
 };
 

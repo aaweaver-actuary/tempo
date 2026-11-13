@@ -1,5 +1,5 @@
 import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy } from "./study-connection";
-import { confirmOriginalOperationResponse } from "./operation-status";
+import { confirmOriginalOperationResponse, FailedOperationError } from "./operation-status";
 import { queueRecordWithCompatibleOpeningEvidence } from "../domain/adapters/practice-card-adapters";
 import { queueCardSchema, queueEnvelopeSchema } from "../domain/schemas";
 import type { BackendQueueCard } from "../domain/transport";
@@ -259,6 +259,12 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
       hold(attempt, "The computer did not issue a repeat for this saved parent review.");
       continue;
     }
+    // The retained review receipt gives the new entry ID, but not its cycle.
+    // A locally guessed parent+1 cycle is not proof of the server-issued origin.
+    if (parent && attempt.studyId && attempt.exerciseId) {
+      hold(attempt, "The computer's repeat cycle is not proven for this saved exercise.");
+      continue;
+    }
     const serverEntryId = parent?.serverRepeatEntryId ?? parent?.serverEntryId ?? attempt.localEntryId;
     const expectedReviewId = parent?.serverReviewId ?? attempt.expectedReviewId;
     const controller = new AbortController();
@@ -267,6 +273,7 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
       ? `${API_URL}/api/studies/${encodeURIComponent(attempt.studyId)}/exercises/${encodeURIComponent(attempt.exerciseId)}/attempts`
       : `${API_URL}/api/cards/${encodeURIComponent(attempt.cardId)}/review`;
     let response: Response;
+    let serverRejection: OfflineAttempt["serverRejection"];
     try {
       if (attempt.studyId && attempt.exerciseId && attempt.answer && attempt.attemptId) {
         response = await fetch(reviewEndpoint, {
@@ -277,7 +284,7 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
             queue_entry_id: serverEntryId, queue_cycle: attempt.queueCycle ?? 0,
             expected_review_id: expectedReviewId, hint_seen: attempt.guided }),
         });
-        response = await confirmOriginalOperationResponse(response, `phone-study:${attempt.attemptId}`, { signal: controller.signal });
+        response = await confirmOriginalOperationResponse(response, `phone-study:${attempt.attemptId}`, { signal: controller.signal, requireReceiptIdentity: true });
       } else {
         const reviewAttemptId = attempt.attemptId ?? `phone:${attempt.localEntryId}:${attempt.completedAt}`;
         const completion = attempt.openingEvidenceCompletion
@@ -299,7 +306,16 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
         });
       }
     } catch (error) {
-      throw new OfflineReplayError(`Could not sync saved review. ${String(error)}`, reviewEndpoint, { cause: error });
+      if (attempt.studyId && attempt.exerciseId && attempt.attemptId && error instanceof FailedOperationError &&
+          error.operationId === `phone-study:${attempt.attemptId}` && error.status === 422 && error.retryable !== true) {
+        serverRejection = { operationId: error.operationId, status: error.status, message: error.message,
+          ...(error.code !== undefined ? { code: error.code } : {}),
+          ...(error.retryable !== undefined ? { retryable: error.retryable } : {}),
+          ...(error.detail !== undefined ? { detail: error.detail } : {}) };
+        response = Response.json({ detail: typeof error.detail === "string" ? error.detail : error.message }, { status: 422 });
+      } else {
+        throw new OfflineReplayError(`Could not sync saved review. ${String(error)}`, reviewEndpoint, { cause: error });
+      }
     } finally {
       window.clearTimeout(timeout);
     }
@@ -315,7 +331,7 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
       const detail = await response.json().catch(() => ({})) as { detail?: unknown };
       const reason = typeof detail.detail === "string" ? detail.detail : "The computer rejected the original answer.";
       current = await updatePreparedTraining((saved) => ({ ...saved!, attempts: saved!.attempts.map((item) =>
-        item.localEntryId === attempt.localEntryId ? { ...item, conflict: `Computer rejected the saved answer: ${reason}` } : item) }));
+        item.localEntryId === attempt.localEntryId ? { ...item, conflict: `Computer rejected the saved answer: ${reason}`, ...(serverRejection ? { serverRejection } : {}) } : item) }));
       hold(attempt, `The original phone answer was rejected: ${reason}`);
       continue;
     }

@@ -177,14 +177,14 @@ it("C24 records provenance with a newly committed frozen answer", async () => {
   } finally { vi.unstubAllGlobals(); vi.restoreAllMocks(); }
 });
 
-it("C24 repeats only through the authoritative parent requeue identity", async () => {
+it("C24 holds a Study repeat when the receipt does not prove its cycle", async () => {
   const { vi } = await import("vitest");
   const { openingEvidenceStorage } = await import("../fixtures/opening-evidence-storage");
   const browserStorage = localStorage; const storage = await openingEvidenceStorage(); vi.stubGlobal("localStorage", browserStorage);
   const base = { cardId: "exercise-card", outcome: "correct", guided: false, completedAt: "2026-09-26T12:05:00Z", expectedReviewId: 0, expectedRevision: 1, studyId: "study", exerciseId: "exercise", answer: { type: "choice", option_ids: ["a"] } } as const;
   const parent = { ...base, localEntryId: 1, attemptId: "parent" };
   const child = { ...base, localEntryId: 2, parentLocalEntryId: 1, attemptId: "child", queueCycle: 1 };
-  storage.stores.training.set("prepared-daily-queue", { localDate: "2026-09-26", preparedAt: base.completedAt, cards: [], nextTemporaryId: 100, attempts: [parent, child] });
+  storage.stores.training.set("prepared-daily-queue", { localDate: "2026-09-26", preparedAt: base.completedAt, cards: [{ ...preparedCard, id: "exercise-card", queue_entry_id: 77, cycle: 3 }], nextTemporaryId: 100, attempts: [parent, child] });
   const bodies: Array<Record<string, unknown>> = [];
   vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body)); bodies.push(body);
@@ -193,8 +193,39 @@ it("C24 repeats only through the authoritative parent requeue identity", async (
   }));
   try {
     const offline = await import("../../app/lib/offline-training"); const result = await offline.replayOfflineAttempts();
-    expect(bodies.map(body => [body.attempt_id, body.queue_entry_id, body.expected_review_id])).toEqual([["parent", 1, 0], ["child", 77, 41]]);
-    expect(result?.attempts.map(attempt => attempt.serverReviewId)).toEqual([41, 42]);
-    await offline.replayOfflineAttempts(); expect(bodies).toHaveLength(2);
+    expect(bodies.map(body => [body.attempt_id, body.queue_entry_id, body.expected_review_id])).toEqual([["parent", 1, 0]]);
+    expect(result?.attempts[0].serverReviewId).toBe(41); expect(result?.attempts[1]).toEqual(child);
+    await offline.replayOfflineAttempts(); expect(bodies).toHaveLength(1);
+  } finally { vi.unstubAllGlobals(); vi.restoreAllMocks(); }
+});
+
+it.each(['terminal', 'terminal_false', 'foreign', 'missing', 'pending', 'retryable'] as const)("C24 preserves identity and scopes receipt case %s", async (scenario) => {
+  const { vi } = await import('vitest'); const { openingEvidenceStorage } = await import('../fixtures/opening-evidence-storage');
+  const browserStorage = localStorage; const storage = await openingEvidenceStorage(); vi.stubGlobal('localStorage', browserStorage);
+  const base = { outcome: 'correct', guided: false, completedAt: '2026-09-26T12:05:00Z', expectedReviewId: 0, expectedRevision: 1 } as const;
+  const original = { ...base, localEntryId: 1, cardId: 'study-card', studyId: 'study', exerciseId: 'exercise', attemptId: 'original', answer: { type: 'move_line', moves: ['Nf3'] }, assessment: { outcome: 'unrecognized', feedback: 'old' }, selfRating: 'correct' };
+  const other = { ...base, localEntryId: 2, cardId: 'opening', attemptId: 'opening-original' };
+  storage.stores.training.set('prepared-daily-queue', { localDate: '2026-09-26', preparedAt: base.completedAt, cards: [], nextTemporaryId: 100, attempts: [original, other] });
+  const calls: { url: string; key: string | null; body: string }[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input); calls.push({ url, key: new Headers(init?.headers).get('Idempotency-Key'), body: String(init?.body) });
+    if (url.includes('/cards/opening/')) return Response.json({ review_id: 41, requeue_entry_id: null });
+    if (!url.includes('/api/operations/')) return Response.json({ operation_id: 'phone-study:original', state: 'queued' }, { status: 202 });
+    return Response.json({ ...(scenario === 'missing' ? {} : { operation_id: scenario === 'foreign' ? 'foreign' : 'phone-study:original' }),
+      state: scenario === 'pending' ? 'queued' : 'failed', error: { status_code: 422, message: 'invalid answer', detail: 'Use legal UCI moves', ...(scenario === 'retryable' ? { retryable: true } : scenario === 'terminal_false' ? { retryable: false } : {}) } });
+  }));
+  try {
+    const offline = await import('../../app/lib/offline-training');
+    if (scenario === 'terminal' || scenario === 'terminal_false') {
+      const result = await offline.replayOfflineAttempts();
+      expect(result?.attempts[0]).toEqual({ ...original, conflict: 'Computer rejected the saved answer: Use legal UCI moves', serverRejection: { operationId: 'phone-study:original', status: 422, message: 'invalid answer', detail: 'Use legal UCI moves', ...(scenario === 'terminal_false' ? { retryable: false } : {}) } });
+      expect(result?.attempts[1]).toMatchObject({ serverReviewId: 41 });
+    } else {
+      await expect(offline.replayOfflineAttempts()).rejects.toThrow();
+      expect((storage.stores.training.get('prepared-daily-queue') as { attempts: unknown[] }).attempts).toEqual([original, other]);
+      expect(calls.some(call => call.url.includes('/cards/opening/'))).toBe(false);
+    }
+    expect(calls[0].key).toBe('phone-study:original'); expect(JSON.parse(calls[0].body).answer).toEqual(original.answer);
+    expect(calls[0].body).not.toContain('gradingProvenance');
   } finally { vi.unstubAllGlobals(); vi.restoreAllMocks(); }
 });
