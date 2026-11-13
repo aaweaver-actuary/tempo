@@ -1,5 +1,5 @@
-import { readAuthorityRegistry, readRetainedStudyData, inspectRetainedStudyAuthority, readSessionConnection, removeSessionConnection,
-  sessionConnectionAvailable, writeAuthorityRegistry, writeSessionConnection } from "../../database/browser/study-connection-storage";
+import { readRegisteredAuthorities, bindAuthority, offlineStoreLocator, readRetainedStudyData, inspectRetainedStudyAuthority, readSessionConnection, removeSessionConnection,
+  sessionConnectionAvailable, writeSessionConnection } from "../../database/browser/study-connection-storage";
 import { holdActiveStudyRequest } from "./study-priority";
 import { API_URL } from "../const";
 
@@ -22,8 +22,8 @@ export function createStudyClient(configuration: StudyClientConfiguration) {
   });
 }
 
-const browserStorage: StudyClientStorage = { readAuthorityRegistry, readRetainedStudyData, inspectRetainedStudyAuthority, readSessionConnection,
-  removeSessionConnection, sessionConnectionAvailable, writeAuthorityRegistry, writeSessionConnection };
+const browserStorage: StudyClientStorage = { readRegisteredAuthorities, bindAuthority, offlineStoreLocator, readRetainedStudyData, inspectRetainedStudyAuthority, readSessionConnection,
+  removeSessionConnection, sessionConnectionAvailable, writeSessionConnection };
 export let LEARNING_URL = API_URL;
 export const defaultStudyClient = createStudyClient({ independent: independentStudy, baseUrl: API_URL, storage: browserStorage,
   transport: (input, init) => globalThis.fetch(input, init), persistSession: true,

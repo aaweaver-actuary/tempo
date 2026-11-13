@@ -552,7 +552,7 @@ def begin_position_checkpoint(database, prepared):
         position_first_responses as position_storage,
     )
     from app.study.position_learning.issuance import replay_exact_attempt
-    from tempo_storage.study.position_owner_epoch import owner_lock_key
+    from tempo_storage.study.position_owner_epoch import borrowed_writer_available, shared_owner_fence
     from tempo_evidence_math.position_learning import Hold
 
     if prepared is None:
@@ -562,13 +562,8 @@ def begin_position_checkpoint(database, prepared):
         or prepared._seal is not _POSITION_CHECKPOINT_SEAL
     ):
         raise EvidenceConflict("Position checkpoint preparation is required")
-    try:
-        if database.read_only or database.raw.info.transaction_status.name != "INTRANS":
-            raise EvidenceConflict("Position checkpoint requires a borrowed writer")
-    except AttributeError as exc:
-        raise EvidenceConflict(
-            "Position checkpoint requires a borrowed writer"
-        ) from exc
+    if not borrowed_writer_available(database):
+        raise EvidenceConflict("Position checkpoint requires a borrowed writer")
     plan, request = prepared.plan, prepared.request
     current = replay_exact_attempt(database, request.attempt_id)
     if (
@@ -598,11 +593,10 @@ def begin_position_checkpoint(database, prepared):
         or request.queue_entry_id not in (None, plan.queue_entry_id)
     ):
         raise EvidenceConflict("Position issuance and original checkpoint scope differ")
-    locked = database.execute_native(
-        "SELECT pg_try_advisory_xact_lock_shared(hashtextextended(%s,0))",
-        (owner_lock_key(manifest.repertoire_id),),
-    ).fetchone()
-    if not locked or not locked[0]:
+    lock = shared_owner_fence(database, manifest.repertoire_id)
+    if lock == "writer_unavailable":
+        raise EvidenceConflict("Position checkpoint requires a borrowed writer")
+    if lock == "busy":
         raise EvidenceConflict("Position owner is busy")
     return PositionCheckpointFence(
         prepared,

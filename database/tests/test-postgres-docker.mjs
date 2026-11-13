@@ -4,18 +4,18 @@ import assert from "node:assert/strict";
 import {allocatedNativeProofSource,postgresProofAllocations,verifyRestoredPostgresConsumers} from "./postgres-maintenance-proof.mjs";
 import { withDevelopmentStartup, reconcileDevelopmentStartup, assertDevelopmentProjectOwned, composeResourceLimits, managedBuild, recordBudgetResource, runWithDevelopmentBudget, managedComposeBuild, resourceBudgets, waitForStudyQuiet } from '../../scripts/development-budget.mjs';
 import { randomBytes } from "node:crypto";
-import { spawnSync, execFileSync } from "node:child_process";
+import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { createServer } from "node:net";
 import { accessSync, chmodSync, constants, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { createIsolatedTestEnvironment } from "../../scripts/test-environment.mjs";
 import { resolvePython } from "../../scripts/resolve-python.mjs";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "./postgres-test-options.mjs";
-import { assertDisposableVolumes, verifyMaintainedQueueReceipt, verifyMaintainedBrowserReceipt, unresolvedQueueCases, backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "./postgres-test-plan.mjs";
+import { requireOriginalOperationReceipt, originalPrefixSplitRows, assertDisposableVolumes, verifyMaintainedQueueReceipt, verifyMaintainedBrowserReceipt, verifyCheckpoint1QueueReceipt, verifyCheckpoint1BrowserReceipt, checkpoint1BrowserCases, unresolvedQueueCases, backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "./postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   readStudyQueuePublication, repertoireLimitRecreationPgn, studyDurabilityPgn } from "./postgres-test-fixture.mjs";
 import { createScenarioTimer, isTimingPublicationFailure, postgresCommandTiming } from "../../scripts/test-scenario-timings.mjs";
-import { checkLifecycleSource, readSchema62Bridge } from "../../scripts/lifecycle-source-preflight.mjs";
+import { checkLifecycleSource, readSchema62Bridge, readSchema65Baseline } from "../../scripts/lifecycle-source-preflight.mjs";
 import { buildMaterials, normalizeCandidateBake, writeCandidateReceipt, verifyCandidateReceipt } from "../../scripts/release-candidate-artifacts.mjs";
 import { inspectImmutableImageSet } from "../../scripts/tempo-runtime.mjs";
 import { verifyTempoCliLifecycle } from "../../scripts/check-tempo-cli.mjs";
@@ -31,15 +31,20 @@ if (options.list) {
   console.log(JSON.stringify({ mode: options.mode, stages,
     browser_file: options.browserFile, browser_grep: options.browserGrep,
     acceptance_scope: options.maintainedStudyProof ? "partial-maintained-study-not-full-E02" : options.mode,
-    unresolved_owner_cases: options.maintainedStudyProof ? unresolvedQueueCases : [] }, null, 2));
+    unresolved_owner_cases: stages.includes("study_durability") ? unresolvedQueueCases : [],
+    historical_priority_rollback: stages.includes("study_durability") ? "not executed" : undefined,
+    study_durability_cases: stages.includes("study_durability") ? ["foreground_study", "prefix_split_http_accept_replay", "prefix_split_http_restart_replay", "study_burial_quota", "blocked_burial_recovery"] : [],
+    lifecycle_current_cases: options.mode === "lifecycle-current" ? ["current65_baseline", "current65_before_write", "current65_interrupted", "current65_unresolved_refusal", "current65_mismatched_guard", "current65_retry_original", "current65_repeat", "current65_recreate", "current65_original_replay"] : [],
+    priority_historical_cases: options.mode === "priority-historical" ? ["test_postgres_priority_index_only_rollback_preserves_accepted_reviews"] : [],
+    p14_checkpoint1_browser_cases: options.p14Checkpoint1 ? checkpoint1BrowserCases : [] }, null, 2));
   process.exit(0);
 }
 
 // Reject invalid opt-in inputs before budget admission or temporary secrets.
 if (options.mode === "lifecycle-current") {
   if (staleOnly || process.env.TEMPO_LIFECYCLE_P0_59_ONLY === "1"
-      || schemaVersionFromSource(readFileSync("database/tempo_storage/ddl/schema_version.py", "utf8")) !== 63)
-    throw new Error("Current lifecycle profile requires schema 63 and the schema-61 predecessor fixture without other scenario overrides");
+      || schemaVersionFromSource(readFileSync("database/tempo_storage/ddl/schema_version.py", "utf8")) !== 66)
+    throw new Error("Current lifecycle profile requires schema 66 and its schema-65 predecessor without scenario overrides");
 }
 if (process.env.TEMPO_RELEASE_CANDIDATE_MODE) {
   const mode = process.env.TEMPO_RELEASE_CANDIDATE_MODE, owner = process.env.TEMPO_RELEASE_CANDIDATE_OWNER;
@@ -62,12 +67,13 @@ if (process.env.TEMPO_RELEASE_CANDIDATE_MODE) {
 }
 
 if (stages.includes("deployment_lifecycle") || stages.includes("deployment_lifecycle_current")) {
-  process.env.TEMPO_LIFECYCLE_SCHEMA62_IMAGES ??= resolve("config/lifecycle-images/schema62-linux-arm64.json");
-  if (process.env.TEMPO_LIFECYCLE_P0_59_ONLY !== "1" && !process.env.TEMPO_LIFECYCLE_SCHEMA61_IMAGES
+  if (stages.includes("deployment_lifecycle")) process.env.TEMPO_LIFECYCLE_SCHEMA62_IMAGES ??= resolve("config/lifecycle-images/schema62-linux-arm64.json");
+  if (stages.includes("deployment_lifecycle") && process.env.TEMPO_LIFECYCLE_P0_59_ONLY !== "1" && !process.env.TEMPO_LIFECYCLE_SCHEMA61_IMAGES
       && ["DOCKER_HOST", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH"].some(name => process.env[name]))
     throw new Error("Automatic historical image preparation does not support inherited Docker host or TLS overrides; supply an explicit historical manifest or use a named context.");
-  checkLifecycleSource({ profile: options.mode === "lifecycle-current" ? "current63" : "full" });
+  checkLifecycleSource({ profile: options.mode === "lifecycle-current" ? "current65" : "full" });
 }
+if (options.mode === "priority-historical") checkLifecycleSource({ profile: "current65" });
 
 // Docker Desktop only shares the project checkout, so the short-lived secret
 if (!process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN)
@@ -142,6 +148,8 @@ const measureScenario = createScenarioTimer(timingPath, {
   plan_hash: process.env.TEMPO_CI_PLAN_HASH ?? null,
   acceptance_scope: options.maintainedStudyProof ? "partial-maintained-study-not-full-E02" : options.mode,
   native_checks: options.nativeChecks ?? [],
+  unresolved_owner_cases: stages.includes("study_durability") ? unresolvedQueueCases : [],
+  historical_priority_rollback: stages.includes("study_durability") ? "not executed" : null,
   browser_file: options.browserFile, browser_grep: options.browserGrep,
   planned_stages: stages,
 });
@@ -225,7 +233,7 @@ async function verifyStudyPriorityMaintenance(currentOnly = false) {
   });
 }
 
-async function verifyStudyQueueReceipts(maintained = false) {
+async function verifyStudyQueueReceipts(maintained = false, checkpoint1 = false) {
     await executeIsolatedBackgroundWorkload({
       stopConsumers: () => {
         run("docker", [...compose, "stop", ...workloadConsumers]);
@@ -235,11 +243,37 @@ async function verifyStudyQueueReceipts(maintained = false) {
         const result = run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
           "/source/database/tests/check_postgres_queue_attempt_recovery.py", ...(maintained ? ["--case-set", "maintained-six"] : [])],
           {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, echoCapturedOutput: true});
-        if (!maintained) return;
+        if (!maintained && !checkpoint1) return;
         const records = result.stdout.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line));
         const receipt = records.findLast(record => record.execution === 'completed');
+        if (checkpoint1) {
+          if (records.filter(record => record.execution === 'completed').length !== 1) throw new Error('Checkpoint1 requires exactly one queue completion receipt');
+          verifyCheckpoint1QueueReceipt(receipt);
+          atomicJson(`test-results/native/${project}-p14-queue.json`, { revision: candidateRevision, project, ...receipt });
+          return;
+        }
         verifyMaintainedQueueReceipt(receipt);
         atomicJson(`test-results/native/${project}-maintained-queue.json`, {revision: candidateRevision, project, ...receipt});
+        const paused = run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
+          "/source/database/tests/check_postgres_queue_attempt_recovery.py", "--case-set", "paused-feedback"],
+          {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, echoCapturedOutput: true});
+        const pausedRecords = paused.stdout.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line));
+        const pausedReceipt = pausedRecords.findLast(record => record.execution === 'completed');
+        assert.deepEqual(pausedReceipt?.cases, ['test_postgres_paused_feedback_history_preserves_ordinary_study']);
+        assert.equal(pausedReceipt?.case_set, 'paused-feedback');
+        assert.equal(pausedReceipt?.scope, 'paused-feedback-only');
+        assert.equal(pausedReceipt?.executed_count, 1);
+        atomicJson(`test-results/native/${project}-paused-feedback.json`, {revision: candidateRevision, project, ...pausedReceipt});
+        const review = run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
+          "/source/database/tests/check_postgres_queue_attempt_recovery.py", "--case-set", "review-recovery"],
+          {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, echoCapturedOutput: true});
+        const reviewRecords = review.stdout.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line));
+        const reviewReceipt = reviewRecords.findLast(record => record.execution === 'completed');
+        assert.deepEqual(reviewReceipt?.cases, ['test_postgres_retained_review_reconciliation_preserves_original_attempt']);
+        assert.equal(reviewReceipt?.case_set, 'review-recovery');
+        assert.equal(reviewReceipt?.scope, 'review-recovery-only');
+        assert.equal(reviewReceipt?.executed_count, 1);
+        atomicJson(`test-results/native/${project}-review-recovery.json`, {revision: candidateRevision, project, ...reviewReceipt});
       },
       restoreConsumers: () => restoreBackgroundWorkloadConsumers({
         startConsumers: services => run("docker", [...compose, "up", "--no-build", "-d", "--no-deps", ...services]),
@@ -376,23 +410,24 @@ async function postCommand(path, payload, { method = "POST", operationId, label 
   if (operationId) headers["Idempotency-Key"] = operationId;
   return confirm(await apiRequest(path, {
     method, headers, body: JSON.stringify(payload),
-  }, label));
+  }, label), operationId);
 }
 
 async function confirm(...argumentsList) {
   return measureScenario.detail("operation_receipt", "readiness", () => pollForConfirmation(...argumentsList));
 }
 
-async function pollForConfirmation(response) {
+async function pollForConfirmation(response, expectedOperationId) {
   if (response.status !== 202) {
     if (!response.ok) throw new Error(`command HTTP ${response.status} ${await response.text()}`);
     return response.json();
   }
   const pending = await response.json();
   assert(pending.operation_id, "202 command must return an operation ID");
+  if (expectedOperationId) requireOriginalOperationReceipt(pending, expectedOperationId);
   for (let attempt = 0; attempt < 120; attempt += 1) {
     measureScenario.poll();
-    const receipt = await get(`operations/${encodeURIComponent(pending.operation_id)}`);
+    const receipt = requireOriginalOperationReceipt(await get(`operations/${encodeURIComponent(pending.operation_id)}`), pending.operation_id);
     if (receipt.state === "complete") return receipt.response;
     if (receipt.state === "failed") throw new Error(`PostgreSQL command failed: ${JSON.stringify(receipt.error)}`);
     await measureScenario.wait(250);
@@ -401,7 +436,64 @@ async function pollForConfirmation(response) {
 }
 
 async function waitForStudyableImport(...argumentsList) {
-  return measureScenario.detail("import_publication", "readiness", () => pollForStudyableImport(...argumentsList));
+  let observer;
+  if (options.p14Checkpoint1) {
+    try {
+      const owned = assertDevelopmentProjectOwned(project);
+      const api = owned.filter(c => c.Config?.Labels?.['com.docker.compose.service'] === 'api' && c.State?.Running);
+      assert.equal(api.length, 1, 'P14 observer requires the owned running API');
+      const image = candidateInspect(api[0].Image);
+      assert.equal(image.Config.Labels['org.opencontainers.image.revision'], candidateRevision);
+      const source = readFileSync('database/tests/p14-queue-progress-observer.py', 'utf8');
+      const child = spawn('docker', ['exec', '-i', '-e', `TEMPO_P14_OBSERVER_PROJECT=${project}`,
+        api[0].Id, 'timeout', '60s', 'python', '-c', source], {env: environment, stdio: ['pipe', 'pipe', 'pipe']});
+      observer = {child, output: '', error: null, overflow: false};
+      child.on('error', error => { observer.error = error.name; });
+      child.stdout.on('data', chunk => {
+        if (observer.output.length + chunk.length > 2_000_000) observer.overflow = true;
+        else observer.output += chunk.toString();
+      });
+      // Never retain stderr: driver errors may contain connection credentials.
+      child.stderr.resume();
+      child.stdin.on('error', error => { observer.error = error.name; });
+      observer.done = new Promise(resolve => child.once('close', code => resolve(code)));
+    } catch (error) {
+      try { atomicJson(`test-results/native/${project}-p14-queue-observer.json`, {revision:candidateRevision, project, incomplete:true, container_process_exit_verified:false, diagnostic_error:error.name}); }
+      catch { console.error('P14 queue observer evidence unavailable'); }
+    }
+  }
+  try {
+    return await measureScenario.detail("import_publication", "readiness", () => pollForStudyableImport(...argumentsList));
+  } finally {
+    if (observer) {
+      try {
+        observer.child.stdin.end();
+        let timer;
+        const timeout = new Promise(resolve => { timer = setTimeout(() => resolve('timeout'), 6000); });
+        const exit = await Promise.race([observer.done, timeout]);
+        clearTimeout(timer);
+        let childExit = exit;
+        if (exit === 'timeout') {
+          // Signal only the exact docker-exec child; do not claim container exit.
+          observer.child.kill('SIGTERM');
+          let terminationTimer;
+          childExit = await Promise.race([observer.done, new Promise(resolve => { terminationTimer = setTimeout(() => resolve('unconfirmed'), 1000); })]);
+          clearTimeout(terminationTimer);
+        }
+        atomicJson(`test-results/native/${project}-p14-queue-observer.json`, {
+          revision:candidateRevision, project, docker_exec_exit:childExit, container_process_exit_verified:false, diagnostic_error:observer.error,
+          incomplete:exit === 'timeout' || childExit !== 0 || Boolean(observer.error) || observer.overflow,
+          overflow:observer.overflow, samples:observer.output.split('\n').filter(Boolean).map(line => JSON.parse(line)),
+        });
+      } catch (error) {
+        // Diagnostics must never replace the Study outcome or change its deadline.
+        try { atomicJson(`test-results/native/${project}-p14-queue-observer.json`, {
+          revision:candidateRevision, project, incomplete:true, container_process_exit_verified:false, diagnostic_error:error.name,
+        }); } catch { /* The original Study outcome remains authoritative. */ }
+        console.error(`P14 queue observer unavailable: ${error.name}`);
+      }
+    }
+  }
 }
 
 async function pollForStudyableImport(repertoireId) {
@@ -757,7 +849,7 @@ async function verifyForegroundAndStudyDurability() {
   assert(failedAttempt, "Guided failure command receives a confirmed response");
 
   const splitOperationId = `pg-study-prefix-split-${randomBytes(10).toString("hex")}`;
-  const split = await verifyNativeStudyPrefixSplit(splitCard, importedStudy.repertoire_id, splitOperationId);
+  const split = await measureScenario.detail("prefix_split_http_accept_replay", "scenario", () => verifyHttpStudyPrefixSplit(splitCard, importedStudy.repertoire_id, splitOperationId, true));
   assert.equal(split.response.applied, true);
   const queueRead = await apiRequest("queue/today", {}, "foreground GET queue/today during background backlog");
   assert.equal(queueRead.status, 200);
@@ -822,7 +914,7 @@ async function verifyForegroundAndStudyDurability() {
   assert(beforeRestartState.reviews.some((row) => row.card_id === reviewCard.id));
   assert(beforeRestartState.queue.some((row) => row.card_id === guidedCard.id
     && (row.attempt_failed === 1 || row.attempt_state === "failed" || row.attempt_state === "guided")));
-  assert(beforeRestartState.prefixSplits.some((row) => row.source_card_id === splitCard.id));
+  assert.equal(originalPrefixSplitRows(studySnapshot, splitCard.id).length, 1);
 
   const savedReviewCount = beforeRestartState.reviews.length;
   run("docker", [...compose, "down"]);
@@ -830,8 +922,8 @@ async function verifyForegroundAndStudyDurability() {
   await waitForReady();
   await waitForStudyableImport(importedStudy.repertoire_id);
   await waitForStudyableImport(importedBackground.repertoire_id);
-  const replayedSplit = await verifyNativeStudyPrefixSplit(splitCard, importedStudy.repertoire_id, splitOperationId);
-  assert.deepEqual(replayedSplit, split, "Native split receipt and exact split rows survive restart and original-ID replay");
+  const replayedSplit = await measureScenario.detail("prefix_split_http_restart_replay", "scenario", () => verifyHttpStudyPrefixSplit(splitCard, importedStudy.repertoire_id, splitOperationId, false));
+  assert.deepEqual(replayedSplit, split, "HTTP split receipt and exact split rows survive restart and original-ID replay");
   const afterRestartSnapshot = await readStudySnapshot();
   await verifyPgnImportReplayWithoutDuplicates(pgnImportOperationId, importedStudy, "after recreation");
   await verifyDiscardedPgnReplay(discardedPgnId);
@@ -873,25 +965,37 @@ async function verifyForegroundAndStudyDurability() {
   activeStudyRepertoireId = null;
 }
 
-async function verifyNativeStudyPrefixSplit(card, repertoireId, operationId) {
-  await readStudySnapshot(); // Revalidate the exact owned target and schema before writing.
-  const inspected = run("docker", ["inspect", "--format",
-    '{"id":{{json .Id}},"labels":{{json .Config.Labels}}}', `${project}-foreground-worker-1`],
-    {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8'});
-  const writer = JSON.parse(inspected.stdout);
-  assert.match(writer.id, /^[a-f0-9]{64}$/);
-  assert.equal(writer.labels['com.docker.compose.project'], project);
-  assert.equal(writer.labels['com.docker.compose.service'], 'foreground-worker');
-  assert.equal(writer.labels['tempo.resource-owner'], process.env.TEMPO_DEVELOPMENT_BUDGET_TOKEN);
-  const proof = run("docker", ["exec", "-i", "-e", "TEMPO_TEST_INSTANCE=disposable", writer.id, "python", "-", card.id, repertoireId, operationId, String(card.revision)], {
-    input: readFileSync("tests/fixtures/postgres-study-prefix-split.py", "utf8"),
-    stdio: ['pipe', 'pipe', 'inherit'], encoding: 'utf8', env: environment,
-  });
-  const receipt = JSON.parse(proof.stdout.trim());
-  assert.equal(receipt.scope, 'native-command-durability-not-HTTP');
-  assert.equal(receipt.operation_id, operationId);
-  console.log(`PASS native prefix-split receipt/replay; UNRESOLVED HTTP transport: ${receipt.unresolved_transport}`);
-  return receipt;
+async function verifyHttpStudyPrefixSplit(card, repertoireId, operationId, initial) {
+  const path = `cards/${encodeURIComponent(card.id)}/prefix-split`;
+  const payload = {expected_revision: card.revision};
+  if (initial) {
+    const preview = await get(path);
+    assert.equal(preview.source_card_id, card.id);
+    assert.equal(preview.source_revision, card.revision);
+    assert.equal(preview.applied, false);
+  }
+  async function deliver() {
+    const raw = await apiRequest(path, {method: "POST", headers: {"Content-Type": "application/json", "Idempotency-Key": operationId}, body: JSON.stringify(payload)}, "foreground POST prefix split");
+    if (raw.status === 202) assert.equal((await raw.clone().json()).operation_id, operationId);
+    return confirm(raw, operationId);
+  }
+  const response = await deliver();
+  assert.equal(response.applied, true);
+  assert.equal(response.source_card_id, card.id);
+  assert.equal(response.source_revision, card.revision);
+  const receipt = requireOriginalOperationReceipt(await get(`operations/${encodeURIComponent(operationId)}`), operationId);
+  assert.equal(receipt.state, "complete");
+  assert.deepEqual(receipt.response, response);
+  const rows = originalPrefixSplitRows(await readStudySnapshot(), card.id);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].source_revision, card.revision);
+  assert.equal(rows[0].shortened_card_id, response.parent.card_id);
+  assert.equal(rows[0].continuation_card_id, response.continuation.card_id);
+  const replay = await deliver();
+  assert.deepEqual(replay, response);
+  assert.deepEqual(await get(`operations/${encodeURIComponent(operationId)}`), receipt);
+  assert.deepEqual(originalPrefixSplitRows(await readStudySnapshot(), card.id), rows);
+  return {response, receipt, rows};
 }
 
 async function verifyStudyBurialRetainsQuota() {
@@ -1111,7 +1215,7 @@ const actions = {
         context: environment.DOCKER_CONTEXT, images: bridge.images, acquisition: "borrowed-local", builds: 0, pulls: 0,
       });
     }
-    if ((stages.includes("deployment_lifecycle") || stages.includes("deployment_lifecycle_current")) && environment.TEMPO_LIFECYCLE_P0_59_ONLY !== "1"
+    if (stages.includes("deployment_lifecycle") && environment.TEMPO_LIFECYCLE_P0_59_ONLY !== "1"
       && !environment.TEMPO_LIFECYCLE_SCHEMA61_IMAGES) {
       const context = spawnSync("docker", ["context", "show"], { encoding: "utf8", env: environment, timeout: 15_000 });
       assert.equal(context.status, 0, "Cannot select historical image Docker context");
@@ -1155,7 +1259,7 @@ const actions = {
       run("docker", ["tag", borrowedCandidate.maintenance, maintenanceImage]);
     } else {
       if (candidateMode === "produce") candidateSuiteTags.push(...candidateRoles.map(role => `${project}-${role}`));
-      await managedComposeBuild(() => execFileSync('docker',[...compose,'build','--print'],{encoding:'utf8',env:environment}),
+      await managedComposeBuild(() => execFileSync('docker',[...compose,'build','--print', ...(options.mode === 'priority-historical' ? ['schema'] : [])],{encoding:'utf8',env:environment}),
       args => run('docker', candidateMetadataPath ? [...args, "--metadata-file", candidateMetadataPath] : args,
         candidateMetadataPath ? { env: { ...environment, BUILDX_METADATA_PROVENANCE: "min" } } : {}));
     }
@@ -1203,6 +1307,11 @@ const actions = {
     run("docker", [...compose, "up", "--no-build", "-d"]);
     await waitForReady();
   },
+  priority_postgres_startup: async () => {
+    await waitForStudyQuiet();
+    run("docker", [...compose, "up", "--no-build", "-d", "--no-deps", "--wait", "postgres"]);
+    run("docker", [...compose, "run", "--rm", "--no-deps", "schema"], { timeout: 180_000 });
+  },
   service_health: async () => {
     const runningContainers = spawnSync("docker", [...compose, "ps", "--format", "json"],
       { encoding: "utf8", env: environment });
@@ -1233,6 +1342,45 @@ const actions = {
     await runAllocatedNativeProof('/source/database/tests/check_postgres_operation_recovery.py',
       'test_postgres_operation_recovery_uses_bounded_maintenance_allocation');
   },
+  priority_historical_rollback: async () => {
+    {
+      assertDevelopmentProjectOwned(project);
+      const baseline = readSchema65Baseline(environment).manifest;
+      if (baseline.kind !== "installed-receipt") throw new Error("Historical proof requires the registered schema65 image receipt");
+      const image = JSON.parse(run("docker", ["image", "inspect", baseline.images.migration], { stdio: ["ignore", "pipe", "inherit"], encoding: "utf8" }).stdout)[0];
+      assert.equal(image.Id, baseline.images.migration); assert.equal(image.Os, "linux"); assert.equal(image.Architecture, "arm64");
+      assert.equal(image.Config?.Labels?.["org.opencontainers.image.revision"], baseline.revision);
+      const sentinel = `tempo_priority_sentinel_${randomBytes(16).toString("hex")}`;
+      const evidenceDirectory = resolve(process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/performance", "priority-historical", project);
+      mkdirSync(evidenceDirectory, { recursive: true, mode: 0o700 });
+      const override = join(secretsDirectory, "priority-historical-image.json");
+      atomicJson(override, { services: { schema: { image: baseline.images.migration,
+        environment: { TEMPO_POSTGRES_ADMIN_URL: `postgresql://postgres@postgres:5432/${sentinel}` } } } });
+      const fixture = "/source/database/tests/check_postgres_study_priority.py";
+      const schema = (...args) => run("docker", [...compose, "-f", priorityResourceLimits, "run", "--rm", "--no-deps", "-e", `TEMPO_TEST_COMPOSE_PROJECT=${project}`, "schema", "python", fixture, "--owned-stack", ...args], { timeout: 180_000 });
+      let failure;
+      try {
+        schema("--sentinel-create", sentinel);
+        // The immutable predecessor maintenance image owns initialization to 65.
+        run("docker", [...compose, "-f", priorityResourceLimits, "-f", override, "run", "--rm", "--no-deps", "schema", "database/tooling/apply_postgres_migrations.py"], { timeout: 180_000 });
+        run("docker", [...compose, "-f", priorityResourceLimits, "run", "--rm", "--no-deps", "-e", `TEMPO_TEST_COMPOSE_PROJECT=${project}`, "--volume", `${evidenceDirectory}:/evidence`, "schema", "python", fixture, "--owned-stack", "--historical-only", "--sentinel-db", sentinel, "--evidence", "/evidence"], { timeout: 180_000 });
+        const report = JSON.parse(readFileSync(join(evidenceDirectory, "native.json"), "utf8"));
+        const identity = "test_postgres_priority_index_only_rollback_preserves_accepted_reviews", result = report.cases?.[identity];
+        assert.equal(report.complete, true); assert.equal(report.historical_only, true); assert.deepEqual(Object.keys(report.cases), [identity]);
+        assert.deepEqual(result.schema_path, [49, 48, 49]); assert.equal(result.accepted_reviews_retained, 60);
+        assert.equal(result.sentinel_schema, 65); assert.equal(result.sentinel_exact_rows_unchanged, true);
+        assert.equal(result.historical_fixture_exact_rows_unchanged, true); assert.equal(result.original_ledger_unchanged, true);
+        assert.deepEqual(result.priority_indexes, ["idx_operation_retry_due", "idx_operation_lease_due", "idx_operation_queue_due"]);
+      } catch (error) { failure = error; }
+      finally {
+        try { schema("--sentinel-drop", sentinel); }
+        catch (error) { failure = failure ? new AggregateError([failure, error], "Historical proof and sentinel cleanup failed") : error; }
+      }
+      if (failure) throw failure;
+      atomicJson(join(evidenceDirectory, "assembly.json"), { revision: candidateRevision, predecessor_revision: baseline.revision,
+        predecessor_receipt_sha256: baseline.provenance.receipt_sha256, predecessor_image: baseline.images.migration, project, sentinel, sentinel_cleanup: true, complete: true });
+    }
+  },
   schema_migrations: async () => {
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
       "/source/database/tests/check_postgres_study_only.py"]);
@@ -1248,7 +1396,7 @@ const actions = {
       "/source/database/tests/check_postgres_background_diagnostics.py"]);
   },
   deployment_lifecycle_current: async () => {
-    await verifyTempoCliLifecycle({ project, environment, revision: candidateRevision, profile: "current63",
+    await verifyTempoCliLifecycle({ project, environment, revision: candidateRevision, profile: "current65",
       composeFiles: [join(process.cwd(), "docker-compose.postgres.test.yml"), resourceLimits, buildLabels], measure: measureScenario });
   },
   deployment_lifecycle: async () => {
@@ -1412,7 +1560,8 @@ const actions = {
   },
   browser: async () => {
       const browserArguments = buildPostgresPlaywrightArguments(options);
-      const report = options.maintainedStudyProof
+      if (options.p14Checkpoint1) browserArguments.push("--project", "chromium");
+      const report = options.p14Checkpoint1 ? resolve(`test-results/ci/${project}-p14-browser.json`) : options.maintainedStudyProof
         ? resolve(process.env.TEMPO_CI_REPORT ?? `test-results/ci/${project}-maintained-study.json`) : process.env.TEMPO_CI_REPORT;
       run("npx", browserArguments, { env: { ...environment,
         ...(report ? {TEMPO_CI_REPORT: report} : {}),
@@ -1420,12 +1569,16 @@ const actions = {
         TEMPO_TEST_COMPOSE_PROJECT: project,
         TEMPO_TEST_OUTPUT_DIR: join(process.cwd(), "test-results", `browser-postgres-${process.pid}`),
       } });
+      if (options.p14Checkpoint1) {
+        verifyCheckpoint1BrowserReceipt(JSON.parse(readFileSync(report, 'utf8')));
+        atomicJson(`test-results/native/${project}-p14-browser.json`, { revision: candidateRevision, project, browser_report: report, cases: checkpoint1BrowserCases });
+      }
       if (options.maintainedStudyProof) {
         verifyMaintainedBrowserReceipt(JSON.parse(readFileSync(report, 'utf8')));
         atomicJson(`test-results/native/${project}-maintained-study.json`, {revision: candidateRevision, project,
           scope: 'partial-maintained-study-not-full-E02', browser_report: report, browser_cases: 1,
           unresolved_owner_cases: unresolvedQueueCases, historical_priority_rollback: 'not executed',
-          unresolved_transport: ['prefix-split HTTP GET/POST unmounted'], prefix_split_scope: 'native-command-durability-not-HTTP'});
+          prefix_split_scope: 'http-preview-accept-receipt-replay'});
       }
   },
   maintained_study_only: async () => {
@@ -1448,9 +1601,18 @@ const actions = {
     await verifyStudyPriorityMaintenance();
     await verifyStudyOpeningAdmission();
   },
-  study_queue_receipts: () => verifyStudyQueueReceipts(),
-  ...Object.fromEntries(['position-grade-effects', 'position-introductions', 'position-queue-admission', 'prefix-split-placement'].map(check => [check, async () => {
+  study_queue_receipts: () => verifyStudyQueueReceipts(false, options.p14Checkpoint1),
+  ...Object.fromEntries(['position-grade-effects', 'position-review-atomicity', 'position-introductions', 'position-queue-admission', 'frozen-requeue-cycle', 'prefix-split-placement'].map(check => [check, async () => {
     assertDevelopmentProjectOwned(project);
+    if (check === 'frozen-requeue-cycle') {
+      const config = JSON.parse(run('docker', [...compose, 'config', '--format', 'json'],
+        {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8'}).stdout);
+      const schema = config.services.schema;
+      assert.equal(schema.environment.PGPASSFILE, '/run/secrets/admin_pgpass');
+      assert.equal(resolve(config.secrets.admin_pgpass.file), join(secretsDirectory, 'admin_pgpass'));
+      assert(schema.secrets.some(secret => secret.source === 'admin_pgpass' &&
+        (!secret.target || secret.target === 'admin_pgpass' || secret.target === '/run/secrets/admin_pgpass')));
+    }
     const imageReference = run('docker', [...compose, 'images', '-q', 'schema'],
       {stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8'}).stdout.trim();
     assert.match(imageReference, /^(sha256:)?[a-f0-9]{12,64}$/);

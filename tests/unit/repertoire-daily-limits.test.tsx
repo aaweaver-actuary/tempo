@@ -204,3 +204,38 @@ it.each([
   await expect(saveRepertoireLimit("rep", 10)).rejects.toThrow();
   expect(localStorage.getItem(key)).toBe(original);
 });
+
+
+it.each(["missing", "foreign"])("%s initial acknowledgment retains the exact original operation through retry", async kind => {
+  const storageKey = "tempo-pending-repertoire-settings-v1:rep";
+  const writes: { url: string; method: string | undefined; key: string | null; body: BodyInit | null | undefined }[] = [];
+  const urls: string[] = [];
+  let operationId = "";
+  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input); urls.push(url);
+    if (urls.length > 1) expect(localStorage.getItem(storageKey)).toBe(saved);
+    if (url.includes("/api/operations/")) {
+      expect(decodeURIComponent(url)).toContain(`/api/operations/${operationId}`);
+      if (writes.length < 2) return Response.json({ state: "pending" });
+      return Response.json({ operation_id: operationId, state: "complete", response: result(5) });
+    }
+    const key = new Headers(init?.headers).get("Idempotency-Key");
+    writes.push({ url, method: init?.method, key, body: init?.body });
+    if (writes.length === 1) {
+      operationId = key!;
+      return Response.json(kind === "foreign" ? { operation_id: "foreign", state: "queued" } : { state: "queued" }, { status: 202 });
+    }
+    return Response.json({ operation_id: key, state: "queued" }, { status: 202 });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  await expect(saveRepertoireLimit("rep", 5)).rejects.toBeInstanceOf(PendingOperationError);
+  const saved = localStorage.getItem(storageKey);
+  expect(saved).not.toBeNull();
+  expect(JSON.parse(saved!).operationId).toBe(operationId);
+  expect(urls).toHaveLength(1);
+  await saveRepertoireLimit("rep", 5);
+  expect(writes).toHaveLength(2);
+  expect(writes[1]).toEqual(writes[0]);
+  expect(urls.some(url => url.includes("foreign"))).toBe(false);
+  expect(localStorage.getItem(storageKey)).toBeNull();
+});

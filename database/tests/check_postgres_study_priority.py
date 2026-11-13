@@ -76,6 +76,8 @@ def private_database(parent_url):
     finally:
         with psycopg.connect(parent_url, autocommit=True) as parent:
             parent.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(identity)))
+            if parent.execute('SELECT 1 FROM pg_database WHERE datname=%s', (identity,)).fetchone():
+                raise RuntimeError('Owned private database cleanup failed')
 
 
 def _advance_unlock_checkpoint_attempt(*, force_timeout=False):
@@ -331,11 +333,48 @@ def study_snapshot(database):
         database.execute('SELECT COUNT(*) FROM operation_receipts').fetchone()[0],)
 
 
-def historical_rollback_proof(parent_url, owned_url, receipt_ids):
+def seed_historical_history(database):
+    """Populate an explicit schema-49 request/receipt fixture, without copying later schemas."""
+    from app.contracts.command_identity import request_digest
+    from app.contracts.transport.study import ReviewRequest
+    database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('priority','Priority','synthetic','2000-01-01')")
+    database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type) SELECT 'review-'||lpad(i::text,4,'0'),'priority','prefix',%s,'[\"e2e4\"]','learning','2000-01-01','tactic' FROM generate_series(1,120) i", (FEN,))
+    receipt_ids = []
+    for index in range(1, 61):
+        card = f'review-{index:04d}'; attempt = f'historical-attempt-{index:04d}'
+        queue = database.execute("INSERT INTO daily_queue(queue_date,card_id,position,status) VALUES('2000-01-01',%s,%s,'complete') RETURNING id", (card,index)).fetchone()[0]
+        review_id = database.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval) VALUES(%s,'correct','2000-01-01T00:00:00Z',1,2) RETURNING id", (card,)).fetchone()[0]
+        payload = {'card_id':card,'review':ReviewRequest(outcome='correct',queue_entry_id=queue,expected_revision=1,attempt_id=attempt).durable_payload()}
+        response = {'persisted':True,'review_id':review_id,'queue_entry_id':queue}
+        operation = f'review-attempt:{attempt}'; receipt_ids.append(operation)
+        database.execute("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,payload_json,response_json) VALUES(%s,'cards.review',%s,'complete',%s,%s)", (operation,request_digest('cards.review',payload),json.dumps(payload,sort_keys=True,separators=(',',':')),json.dumps(response,sort_keys=True,separators=(',',':'))))
+    return receipt_ids
+
+
+def historical_indexes(database):
+    return database.execute("SELECT indexname,indexdef FROM pg_indexes WHERE schemaname='public' ORDER BY indexname").fetchall()
+
+
+def require_historical_receipt_bindings(database, receipt_ids):
+    from app.contracts.command_identity import request_digest
+    for operation, command, digest, payload_text, response_text in database.execute(
+            "SELECT operation_id,command_name,request_hash,payload_json,response_json FROM operation_receipts WHERE operation_id=ANY(%s) ORDER BY operation_id", (receipt_ids,)).fetchall():
+        payload, response = json.loads(payload_text), json.loads(response_text)
+        if command != 'cards.review' or digest != request_digest(command,payload) or operation != 'review-attempt:' + payload['review']['attempt_id'] or response.get('persisted') is not True:
+            raise RuntimeError('Historical request and receipt identity differs')
+        row = database.execute('SELECT r.card_id,q.card_id,q.id FROM reviews r JOIN daily_queue q ON q.id=%s WHERE r.id=%s', (response['queue_entry_id'],response['review_id'])).fetchone()
+        if row != (payload['card_id'],payload['card_id'],payload['review']['queue_entry_id']): raise RuntimeError('Historical receipt does not bind the original review and queue row')
+
+
+def historical_rollback_proof(parent_url, owned_url, receipt_ids=None, *, sentinel_schema=None):
     from tempo_storage.ddl.schema_version import POSTGRES_SCHEMA_VERSION
+    expected_schema = sentinel_schema or POSTGRES_SCHEMA_VERSION
     sources = historical_migration_sources()
     with psycopg.connect(owned_url) as original:
         original_snapshot = study_snapshot(original)
+        original_rows = historical_rows(original, receipt_ids) if receipt_ids else None
+        original_ledger = [row[0] for row in original.execute('SELECT version FROM tempo_schema_migrations ORDER BY version')]
+        require_ledger(original, expected_schema)
     with private_database(parent_url) as historical_url:
         with psycopg.connect(historical_url) as historical:
             for version, (path, source) in enumerate(sources, 1):
@@ -345,13 +384,27 @@ def historical_rollback_proof(parent_url, owned_url, receipt_ids):
             require_priority_indexes(historical, True)
             with psycopg.connect(owned_url) as original:
                 require_same_cluster(original, historical)
-                require_ledger(original, POSTGRES_SCHEMA_VERSION)
-                before = copy_historical_rows(original, historical, receipt_ids)
+                require_ledger(original, expected_schema)
+                try:
+                    require_copy_contract(original, historical)
+                    copy_contract = 'exact-match'
+                except RuntimeError as error:
+                    if not str(error).startswith('Schema or foreign keys differ for '): raise
+                    copy_contract = str(error)
+                historical_ids = seed_historical_history(historical)
+                require_historical_receipt_bindings(historical, historical_ids)
+                before = historical_rows(historical, historical_ids)
+                queue_before = historical.execute("SELECT * FROM daily_queue ORDER BY id").fetchall()
+                if len(queue_before) != 60: raise RuntimeError('Historical accepted queue fixture differs')
+                indexes_before = historical_indexes(historical)
                 historical.commit()
                 historical.execute((ROOT / 'database/tempo_storage/ddl/rollbacks/049_study_priority_recovery.sql').read_text(), prepare=False)
                 require_ledger(historical, 48)
                 require_priority_indexes(historical, False)
-                require_historical_rows(historical, receipt_ids, before)
+                require_historical_rows(historical, historical_ids, before)
+                require_historical_receipt_bindings(historical, historical_ids)
+                if historical.execute('SELECT * FROM daily_queue ORDER BY id').fetchall() != queue_before: raise RuntimeError('Historical accepted queue rows changed')
+                if historical_indexes(historical) != [row for row in indexes_before if row[0] not in PRIORITY_INDEXES]: raise RuntimeError('Rollback changed unrelated indexes')
                 if study_snapshot(original) != original_snapshot:
                     raise RuntimeError('Original study snapshot changed during rollback')
                 historical.commit()
@@ -359,18 +412,58 @@ def historical_rollback_proof(parent_url, owned_url, receipt_ids):
                     historical.execute(sources[-1][1], prepare=False)
                     require_ledger(historical, 49)
                     require_priority_indexes(historical, True)
-                    require_historical_rows(historical, receipt_ids, before)
-                require_ledger(original, POSTGRES_SCHEMA_VERSION)
-                if historical_rows(original, receipt_ids) != before:
+                    require_historical_rows(historical, historical_ids, before)
+                    require_historical_receipt_bindings(historical, historical_ids)
+                    if historical.execute('SELECT * FROM daily_queue ORDER BY id').fetchall() != queue_before: raise RuntimeError('Historical accepted queue rows changed')
+                    if historical_indexes(historical) != indexes_before: raise RuntimeError('Reapplication did not restore exact indexes')
+                require_ledger(original, expected_schema)
+                if original_rows is not None and historical_rows(original, receipt_ids) != original_rows:
                     raise RuntimeError('Original accepted history changed')
                 if study_snapshot(original) != original_snapshot:
                     raise RuntimeError('Original study snapshot changed during rollback proof')
     with psycopg.connect(owned_url) as original:
-        if study_snapshot(original) != original_snapshot:
+        if study_snapshot(original) != original_snapshot or [row[0] for row in original.execute('SELECT version FROM tempo_schema_migrations ORDER BY version')] != original_ledger:
             raise RuntimeError('Original study snapshot changed during historical database cleanup')
     return {'schema_path': [49, 48, 49], 'accepted_reviews_retained': 60,
-            'source_and_copy_exact_rows_unchanged': True, 'original_ledger_unchanged': True,
-            'study_snapshot_unchanged': True}
+            'historical_fixture_exact_rows_unchanged': True, 'original_ledger_unchanged': True,
+            'study_snapshot_unchanged': True, 'priority_indexes': list(PRIORITY_INDEXES), 'copy_contract_observation': copy_contract}
+
+
+def require_owned_sentinel(parent_url, name):
+    if not re.fullmatch(r'tempo_priority_sentinel_[0-9a-f]{32}', name or ''):
+        raise RuntimeError('Invalid owned sentinel identity')
+    project = os.environ.get('TEMPO_TEST_COMPOSE_PROJECT', '')
+    if not re.fullmatch(r'tempo-pg-regressions-[0-9]+-[0-9a-f]{8}', project):
+        raise RuntimeError('Historical sentinel requires the exact owned test project')
+    with psycopg.connect(parent_url, autocommit=True) as parent:
+        marker = parent.execute("SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database()").fetchone()[0]
+        if marker != 'tempo-disposable-postgres-test': raise RuntimeError('Refusing a non-disposable parent database')
+        return parent.execute("SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname=%s", (name,)).fetchone()
+
+
+def sentinel_snapshot(database):
+    require_ledger(database, 65)
+    return {table: database.execute(sql.SQL('SELECT * FROM {} ORDER BY {}').format(sql.Identifier(table), sql.Identifier('operation_id' if table == 'operation_receipts' else 'id'))).fetchall()
+            for table in ('repertoires', 'cards', 'reviews', 'daily_queue', 'operation_receipts')}
+
+
+def run_historical_only(parent_url, sentinel_name):
+    marker = require_owned_sentinel(parent_url, sentinel_name)
+    if marker != (f'tempo-priority-sentinel:{os.environ["TEMPO_TEST_COMPOSE_PROJECT"]}:{sentinel_name}',): raise RuntimeError('Sentinel ownership marker differs')
+    sentinel_url = make_conninfo(parent_url, dbname=sentinel_name)
+    with psycopg.connect(sentinel_url) as database:
+        require_ledger(database, 65)
+        # Independent, task-owned schema65 history: no copied/projected rows.
+        database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('sentinel','Sentinel','synthetic','2000-01-01')")
+        database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES('sentinel-card','sentinel','prefix',%s,'[\"e2e4\"]','learning','2000-01-01')", (FEN,))
+        database.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval) VALUES('sentinel-card','correct','2000-01-01',1,2)")
+        database.execute("INSERT INTO daily_queue(queue_date,card_id,position,status) VALUES('2000-01-01','sentinel-card',0,'complete')")
+        database.execute("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,response_json) VALUES('sentinel-receipt','cards.review','sentinel','complete','{\"persisted\":true}')")
+        database.commit(); before = sentinel_snapshot(database)
+    result = historical_rollback_proof(parent_url, sentinel_url, sentinel_schema=65)
+    with psycopg.connect(sentinel_url) as database:
+        if sentinel_snapshot(database) != before: raise RuntimeError('Original schema65 sentinel rows changed')
+    return {**result, 'sentinel_schema':65, 'sentinel_exact_rows_unchanged':True}
 
 
 def stop_owned_writers(processes, loader, stop_load):
@@ -657,10 +750,44 @@ def main():
     parser.add_argument('--quick',action='store_true')
     parser.add_argument('--current-only', action='store_true',
                         help='Select the five current invariants; leave historical 49→48→49 proof unchanged and unexecuted')
+    parser.add_argument('--historical-only', action='store_true', help='Select only the owned schema49 rollback and independent schema65 sentinel')
+    parser.add_argument('--sentinel-db', help='Exact runner-owned schema65 sentinel database identity')
+    parser.add_argument('--sentinel-create', help=argparse.SUPPRESS)
+    parser.add_argument('--sentinel-drop', help=argparse.SUPPRESS)
     parser.add_argument('--owned-stack',action='store_true')
     parser.add_argument('--evidence',type=Path,default=ROOT/'test-results/study-priority-native')
     args = parser.parse_args()
-    if args.list: print(json.dumps(CASES[:5] if args.current_only else CASES)); return
+    if (args.current_only and args.historical_only or args.historical_only and args.quick
+            or args.sentinel_create and (args.sentinel_drop or args.historical_only or args.sentinel_db or args.list)
+            or args.sentinel_drop and (args.historical_only or args.sentinel_db or args.list)
+            or args.sentinel_db and (not args.historical_only or args.list)):
+        parser.error('Historical rollback is a fixed, unfiltered selection')
+    if args.list: print(json.dumps([CASES[5]] if args.historical_only else CASES[:5] if args.current_only else CASES)); return
+    if args.sentinel_create or args.sentinel_drop or args.historical_only:
+        if not args.owned_stack or os.getenv('TEMPO_TEST_INSTANCE') != 'disposable': raise RuntimeError('Historical proof requires the owning disposable runner')
+        parent_url = 'postgresql://postgres@postgres:5432/tempo'
+        name = args.sentinel_create or args.sentinel_drop or args.sentinel_db
+        marker = require_owned_sentinel(parent_url, name)
+        if args.sentinel_create:
+            if args.sentinel_drop or args.historical_only or marker is not None: raise RuntimeError('Sentinel already exists or selection differs')
+            with psycopg.connect(parent_url, autocommit=True) as parent:
+                parent.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(name)))
+                try: parent.execute(sql.SQL('COMMENT ON DATABASE {} IS {}').format(sql.Identifier(name),sql.Literal(f'tempo-priority-sentinel:{os.environ["TEMPO_TEST_COMPOSE_PROJECT"]}:{name}')))
+                except Exception:
+                    parent.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(name))); raise
+            print(json.dumps({'sentinel':name,'created':True})); return
+        if args.sentinel_drop:
+            if args.historical_only: raise RuntimeError('Sentinel cleanup selection differs')
+            if marker is None: print(json.dumps({'sentinel':name,'removed':True,'already_absent':True})); return
+            if marker != (f'tempo-priority-sentinel:{os.environ["TEMPO_TEST_COMPOSE_PROJECT"]}:{name}',): raise RuntimeError('Sentinel ownership marker differs')
+            with psycopg.connect(parent_url, autocommit=True) as parent: parent.execute(sql.SQL('DROP DATABASE {} WITH (FORCE)').format(sql.Identifier(name)))
+            if require_owned_sentinel(parent_url, name) is not None: raise RuntimeError('Sentinel cleanup failed')
+            print(json.dumps({'sentinel':name,'removed':True})); return
+        if not args.sentinel_db: parser.error('Historical rollback requires its owned schema65 sentinel')
+        args.evidence.mkdir(parents=True,exist_ok=True)
+        result = {CASES[5]:run_historical_only(parent_url,name)}
+        (args.evidence/'native.json').write_text(json.dumps({'complete':True,'historical_only':True,'cases':result},indent=2)+'\n')
+        print(json.dumps(result)); return
     args.evidence.mkdir(parents=True,exist_ok=True)
     if args.owned_stack:
         if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':

@@ -397,22 +397,20 @@ def recover_study_operations() -> bool:
             paused_commands=RETIRED_COMMANDS
             | (PAUSED_IMPORT_COMMANDS if study_only_enabled() else frozenset()),
         )
-    if operation is None:
-        return False
-    if operation["background"]:
-        raise ValueError("Essential recovery cannot dispatch optional background work")
-    celery_app.send_task(
-        "app.tasks.execute_foreground_command",
-        args=[
-            operation["operation_id"],
-            operation["command_name"],
-            operation["payload"],
-        ],
-        task_id=operation["operation_id"],
-        queue="foreground",
-        headers={"submitted_at": time.time()},
-    )
-    return True
+    if operation is not None:
+        if operation["background"]:
+            raise ValueError("Essential recovery cannot dispatch optional background work")
+        celery_app.send_task(
+            "app.tasks.execute_foreground_command",
+            args=[operation["operation_id"], operation["command_name"], operation["payload"]],
+            task_id=operation["operation_id"], queue="foreground", headers={"submitted_at": time.time()},
+        )
+    # Preserve the normal recovery dispatch above. One bounded intent check may
+    # atomically enqueue a foreground child for the next existing recovery pass.
+    from .services.deferred_prefix_split_recovery import enqueue_one_ready_split
+    with activity_gate.background_control():
+        enqueued = enqueue_one_ready_split()
+    return operation is not None or enqueued
 
 
 @celery_app.task(

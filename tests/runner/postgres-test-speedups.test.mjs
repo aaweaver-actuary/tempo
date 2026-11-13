@@ -8,15 +8,194 @@ import { runInNewContext } from "node:vm";
 import { test } from "node:test";
 import { Chess } from "chess.js";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "../../database/tests/postgres-test-options.mjs";
-import { assertDisposableVolumes, backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "../../database/tests/postgres-test-plan.mjs";
+import { maintainedQueueCases, unresolvedQueueCases, excludedQueueCases, verifyMaintainedQueueReceipt, verifyCheckpoint1QueueReceipt, verifyCheckpoint1BrowserReceipt, checkpoint1BrowserCases, checkpoint1NativeChecks, checkpoint1QueueCases, assertDisposableVolumes, backgroundWorkloadConsumers, executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages, restoreBackgroundWorkloadConsumers } from "../../database/tests/postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   readStudyQueuePublication, repertoireLimitRecreationPgn, studyDurabilityPgn } from "../../database/tests/postgres-test-fixture.mjs";
 import { createScenarioTimer, postgresCommandTiming } from "../../scripts/test-scenario-timings.mjs";
 import { validatePostgresScenarios } from "../../scripts/ci-run-layer.mjs";
 import { stopApplicationsAndVerifyWorkerSignals } from "../../database/tests/redis/check-redis-readiness.mjs";
+import { resolvePython } from "../../scripts/resolve-python.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const parse = (args) => parsePostgresTestOptions(args, {}, root);
+
+test("P14 checkpoint has one fixed browser and native selection", () => {
+  const options = parse(["--mode", "study", "--p14-checkpoint1"]);
+  assert.deepEqual(options.nativeChecks, checkpoint1NativeChecks);
+  assert.equal(checkpoint1BrowserCases.length, 11);
+  for (const [, title] of checkpoint1BrowserCases) assert(new RegExp(options.browserGrep).test(title));
+  for (const args of [["--p14-checkpoint1"], ["--mode", "browser", "--p14-checkpoint1"], ["--mode", "study", "--p14-checkpoint1", "--browser-grep", "other"], ["--mode", "study", "--p14-checkpoint1", "--native-check", "position-grade-effects"], ["--mode", "study", "--p14-checkpoint1", "--p14-checkpoint1"]]) assert.throws(() => parse(args));
+});
+test("P14 queue observer rejects a foreign project before connecting", () => {
+  const result = spawnSync(resolvePython(), ["database/tests/p14-queue-progress-observer.py"], {
+    cwd: root, env: { ...process.env, TEMPO_TEST_INSTANCE: "disposable", TEMPO_P14_OBSERVER_PROJECT: "foreign" },
+    encoding: "utf8", timeout: 5000,
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /AssertionError/);
+  assert.equal(result.stdout, "");
+});
+test("P14 observer never emits payload, lease or wake secrets", () => {
+  const probe = `import json,runpy
+m=runpy.run_path('database/tests/p14-queue-progress-observer.py',run_name='observer_probe')
+secret='SENTINEL_SECRET_VALUE'
+payload=json.dumps({'queue_date':'2026-11-12','_queue_phase':'admit_due','_refresh_cycle_epoch':5,'after_card_id':secret,'other':secret})
+row={'id':secret,'deduplication_key':secret,'generation':1,'state':'leased','phase':secret,'payload_json':payload,'attempt_count':1,'max_attempts':5,'next_attempt_at':secret,'lease_token':secret,'lease_expires_at':secret,'has_error':True,'error_digest':'digest','created_at':secret,'updated_at':secret}
+event={'task_id':secret,'generation':1,'event':secret,'phase':secret,'has_detail':True,'detail_digest':'digest','created_at':secret}
+projection={'queue_date':secret,'state':'ready','generation':1,'refresh_pending':1,'requested_refresh_epoch':5,'published_refresh_epoch':1,'has_error':False,'error_digest':None,'updated_at':secret}
+result={'task':m['safe_task'](row),'event':m['safe_event'](event),'projection':m['safe_projection'](projection),'wake':m['safe_wake']([secret,'published','1',secret,secret,secret],secret)}
+text=json.dumps(result)
+assert secret not in text
+assert result['task']['payload']['phase']=='admit_due' and result['task']['payload']['_refresh_cycle_epoch']==5
+assert result['task']['lease_present'] and result['wake']['owner_present']
+print('safe')`;
+  const result = spawnSync(resolvePython(), ["-c", probe], { cwd: root, encoding: "utf8", timeout: 5000,
+    env: { ...process.env, PYTHONPATH: "backend:database", TEMPO_TEST_INSTANCE: "disposable",
+      TEMPO_P14_OBSERVER_PROJECT: "tempo-pg-regressions-1-12345678",
+      TEMPO_DATABASE_READ_URL: "postgresql://tempo_reader@postgres:5432/tempo", TEMPO_REDIS_URL: "redis://redis:6379/0" } });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), "safe");
+});
+test("P14 frozen owner bridge refuses foreign or incomplete identities before connecting", () => {
+  const script = `import os,runpy
+os.environ['PGPASSFILE']='/run/secrets/admin_pgpass'
+m=runpy.run_path('backend/tests/native_study_fixture.py'); f=m['owned_postgres'].__wrapped__
+def no_connection(*args,**kwargs): raise AssertionError('unexpected connection')
+f.__globals__['psycopg'].connect=no_connection
+for dsn,project,revision in [('postgresql://postgres@postgres:5432/tempo','tempo-pg-regressions-1-12345678','a'*40),('postgresql://postgres@postgres:5432/tempo_position_test_'+'a'*32,'foreign','a'*40),('postgresql://postgres@localhost:5432/tempo_position_test_'+'a'*32,'tempo-pg-regressions-1-12345678','a'*40),('postgresql://postgres@postgres:5432/tempo_position_test_'+'a'*32+'?hostaddr=127.0.0.1','tempo-pg-regressions-1-12345678','a'*40),('postgresql://postgres@postgres:5432/tempo_position_test_'+'a'*32+'?service=foreign','tempo-pg-regressions-1-12345678','a'*40),('postgresql://postgres@postgres:5432/tempo_position_test_'+'a'*32+'?options=-csearch_path%3Dfoo','tempo-pg-regressions-1-12345678','a'*40)]:
+ os.environ.update(TEMPO_NATIVE_FROZEN_BRIDGE_DSN=dsn,TEMPO_TEST_COMPOSE_PROJECT=project,TEMPO_NATIVE_CANDIDATE_REVISION=revision,TEMPO_TEST_INSTANCE='disposable')
+ try: next(f(None))
+ except RuntimeError as error: assert 'identity' in str(error)
+ else: raise AssertionError('foreign target accepted')
+for variable in ('PGHOSTADDR','PGSERVICE','PGOPTIONS','PGPASSFILE'):
+ os.environ.update(TEMPO_NATIVE_FROZEN_BRIDGE_DSN='postgresql://postgres@postgres:5432/tempo_position_test_'+'a'*32,TEMPO_TEST_COMPOSE_PROJECT='tempo-pg-regressions-1-12345678',TEMPO_NATIVE_CANDIDATE_REVISION='a'*40,TEMPO_TEST_INSTANCE='disposable')
+ os.environ[variable]='foreign'
+ try: next(f(None))
+ except RuntimeError as error: assert 'identity' in str(error)
+ else: raise AssertionError('ambient override accepted')
+ if variable == 'PGPASSFILE': os.environ[variable]='/run/secrets/admin_pgpass'
+ else: del os.environ[variable]
+class Cursor:
+ def fetchone(self): return ('tempo_position_test_'+'a'*32,'foreign-project')
+class Conn:
+ def __enter__(self): return self
+ def __exit__(self,*args): pass
+ def execute(self,*args): return Cursor()
+os.environ.update(TEMPO_NATIVE_FROZEN_BRIDGE_DSN='postgresql://postgres@postgres:5432/tempo_position_test_'+'a'*32,TEMPO_TEST_COMPOSE_PROJECT='tempo-pg-regressions-1-12345678',TEMPO_NATIVE_CANDIDATE_REVISION='a'*40,TEMPO_TEST_INSTANCE='disposable')
+f.__globals__['psycopg'].connect=lambda *args,**kwargs: Conn()
+try: next(f(None))
+except RuntimeError as error: assert 'marker differs' in str(error)
+else: raise AssertionError('foreign database marker accepted')
+class ParentConn(Conn):
+ def execute(self, query, *args):
+  class Result:
+   def fetchone(self): return ('tempo_position_test_'+'a'*32,'tempo-pg-regressions-1-12345678') if 'current_database()' in query else ('foreign-parent',)
+  return Result()
+f.__globals__['psycopg'].connect=lambda *args,**kwargs: ParentConn()
+try: next(f(None))
+except RuntimeError as error: assert 'parent cluster marker differs' in str(error)
+else: raise AssertionError('foreign parent accepted')`;
+  const result = spawnSync(resolvePython(), ["-c", script], { cwd: root, env: { ...process.env, PYTHONPATH: "backend:database" }, encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+});
+test("P14 bridge accepts composed credential path and rejects foreign passfiles before connecting", () => {
+  const script = `import os,runpy,psycopg
+m=runpy.run_path('database/tests/position-native-pytest.py')
+os.environ.update(TEMPO_NATIVE_POSITION_CHECK='frozen-requeue-cycle',TEMPO_TEST_COMPOSE_PROJECT='tempo-pg-regressions-1-12345678',TEMPO_NATIVE_CANDIDATE_REVISION='a'*40,TEMPO_TEST_INSTANCE='disposable',PGPASSFILE='/run/secrets/admin_pgpass')
+def no_connection(*args,**kwargs): raise AssertionError('connect reached')
+psycopg.connect=no_connection
+os.environ['PGPASSFILE']='/tmp/foreign'
+try: m['execute']()
+except RuntimeError as error: assert 'ambient libpq' in str(error)
+else: raise AssertionError('foreign passfile accepted')
+os.environ['PGPASSFILE']='/run/secrets/admin_pgpass'
+try: m['execute']()
+except AssertionError as error: assert 'connect reached' in str(error)
+else: raise AssertionError('composed credential did not reach connection')`;
+  const result = spawnSync(resolvePython(), ["-c", script], { cwd: root, env: { ...process.env, PYTHONPATH: "backend:database" }, encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+});
+test("P14 frozen requeue native selector is exact and cannot widen its mode", () => {
+  const options = parse(["--mode", "study", "--browser-grep", "C24", "--native-check", "frozen-requeue-cycle"]);
+  assert(postgresTestStages(options).includes("frozen-requeue-cycle"));
+  assert.throws(() => parse(["--mode", "durability", "--native-check", "frozen-requeue-cycle"]));
+  assert.throws(() => parse(["--mode", "study", "--browser-grep", "C24", "--native-check", "frozen-requeue-cycle", "--native-check", "frozen-requeue-cycle"]));
+  const bridge = readFileSync(join(root, "database/tests/position-native-pytest.py"), "utf8");
+  assert(bridge.includes("backend/tests/test_frozen_study_attempts_postgres.py::test_native_original_review_requeue_cycle_read_is_bound_and_read_only"));
+});
+test("P14 queue receipt rejects missing, foreign, duplicate and partial cases", () => {
+  const receipt = { case_set: "all", scope: "all-eight", execution: "completed", executed_count: 8, cases: [...checkpoint1QueueCases], excluded_cases: [], unresolved_owner_cases: [...unresolvedQueueCases] };
+  verifyCheckpoint1QueueReceipt(receipt);
+  for (const change of [r => { r.cases.pop(); }, r => { r.cases[0] = "foreign"; }, r => { r.cases[0] = r.cases[1]; }, r => { r.executed_count = 0; }, r => { r.execution = "starting"; }]) {
+    const bad = structuredClone(receipt); change(bad); assert.throws(() => verifyCheckpoint1QueueReceipt(bad));
+  }
+});
+test("P14 browser receipt rejects skipped, retried, duplicate, foreign and zero cases", () => {
+  const report = { stats: { expected: 11, skipped: 0, unexpected: 0, flaky: 0 }, suites: [{ specs: checkpoint1BrowserCases.map(([file, title]) => ({ file, title, tests: [{ projectName: "chromium", status: "expected", results: [{ status: "passed", retry: 0 }] }] })) }] };
+  verifyCheckpoint1BrowserReceipt(report);
+  for (const change of [r => { r.stats.skipped = 1; }, r => { r.suites[0].specs[0].tests[0].results[0].retry = 1; }, r => { r.suites[0].specs[0] = structuredClone(r.suites[0].specs[1]); }, r => { r.suites[0].specs[0].file = "foreign.spec.ts"; }, r => { r.suites[0].specs = []; }, r => { r.suites[0].specs[0].tests[0].results[0].status = "skipped"; }]) {
+    const bad = structuredClone(report); change(bad); assert.throws(() => verifyCheckpoint1BrowserReceipt(bad));
+  }
+});
+
+test("P08 historical rollback selects exactly one case and rejects mixed selectors", () => {
+  const options = parse(["--mode", "priority-historical"]);
+  assert.deepEqual(postgresTestStages(options), ["compose_config", "image_build", "priority_postgres_startup", "priority_historical_rollback", "cleanup"]);
+  assert.equal(options.skipBrowser, true);
+  for (const args of [["--mode", "priority-historical", "--browser-grep", "anything"], ["--mode", "priority-historical", "--native-check", "position-grade-effects"], ["--mode", "priority-historical", "--maintained-study-proof"], ["--mode", "priority-historical", "--skip-browser"]]) assert.throws(() => parse(args));
+  assert.throws(() => parsePostgresTestOptions(["--mode", "priority-historical"], { TEMPO_PG_STALE_DELIVERY_ONLY: "1" }, root));
+});
+
+test("P08 proof failure still runs the owning cleanup stage", async () => {
+  const stages = postgresTestStages(parse(["--mode", "priority-historical"])), calls = [];
+  const actions = Object.fromEntries(stages.map(stage => [stage, async () => { calls.push(stage); if (stage === "priority_historical_rollback") throw new Error("fixture failure"); }]));
+  await assert.rejects(executePostgresTestPlan(stages, actions, async (_name, action) => action()), /fixture failure/);
+  assert.equal(calls.at(-1), "cleanup");
+});
+
+test("P08 historical stage binds installed image and always attempts owned sentinel cleanup", () => {
+  const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
+  const start = source.indexOf("  priority_historical_rollback: async () => {");
+  const end = source.indexOf("  schema_migrations: async () => {", start);
+  const stage = source.slice(start, end);
+  assert(start >= 0 && end > start);
+  assert.match(stage, /baseline\.kind !== "installed-receipt"/);
+  assert.match(stage, /baseline\.images\.migration/);
+  assert.match(stage, /finally\s*\{[\s\S]*--sentinel-drop/);
+  assert.match(stage, /sentinel_schema, 65/);
+  assert.match(stage, /accepted_reviews_retained, 60/);
+  const startupStart = source.indexOf("  priority_postgres_startup: async () => {");
+  const startupEnd = source.indexOf("  service_health: async () => {", startupStart);
+  const startup = source.slice(startupStart, startupEnd);
+  assert(startupStart >= 0 && startupEnd > startupStart);
+  assert.match(startup, /"--wait", "postgres"/);
+  assert.match(startup, /"--no-deps", "schema"/);
+  assert(!startup.includes('"api"') && !startup.includes('"redis"') && !startup.includes('"web"'));
+  assert.match(source, /options\.mode === 'priority-historical' \? \['schema'\] : \[\]/);
+});
+
+test("P08 strict historical copy contract refuses a changed source schema", () => {
+  const script = `import runpy
+m=runpy.run_path('database/tests/check_postgres_study_priority.py')
+f=m['require_copy_contract']; f.__globals__['table_contract']=lambda database, table: (database, table)
+try: f('current','historical')
+except RuntimeError as error: assert 'Schema or foreign keys differ' in str(error)
+else: raise AssertionError('Mismatched copy was accepted')`;
+  const result = spawnSync(resolvePython(), ["-c", script], { cwd: root, env: { ...process.env, PYTHONPATH: "backend:database" }, encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test("P08 sentinel refuses foreign database and project identities before connecting", () => {
+  const script = `import os,runpy
+m=runpy.run_path('database/tests/check_postgres_study_priority.py'); f=m['require_owned_sentinel']
+for name,project in [('live','tempo-pg-regressions-1-12345678'),('tempo_priority_sentinel_'+'a'*32,'tempo')]:
+ os.environ['TEMPO_TEST_COMPOSE_PROJECT']=project
+ try: f('must-not-connect',name)
+ except RuntimeError: pass
+ else: raise AssertionError('foreign target accepted')`;
+  const result = spawnSync(resolvePython(), ["-c", script], { cwd: root, env: { ...process.env, PYTHONPATH: "backend:database" }, encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+});
 
 test("disposable_health_probe_does_not_hold_foreground_admission", () => {
   const composeSource = readFileSync(join(root, "docker-compose.postgres.test.yml"), "utf8");
@@ -272,7 +451,7 @@ test("current lifecycle has its own complete plan and cannot qualify the full hi
   assert.throws(() => validatePostgresScenarios("lifecycle", plan, report), /missing, failed or mismatched/);
 });
 
-test("current lifecycle invokes the explicitly bounded current63 checker profile", async () => {
+test("current lifecycle invokes the explicitly bounded current65 checker profile", async () => {
   const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
   const start = source.indexOf("  deployment_lifecycle_current: async () => {");
   const end = source.indexOf("  deployment_lifecycle: async () => {", start);
@@ -282,7 +461,24 @@ test("current lifecycle invokes the explicitly bounded current63 checker profile
     process: { cwd: () => root }, measureScenario: {}, verifyTempoCliLifecycle: async args => calls.push(args),
   });
   await action.deployment_lifecycle_current();
-  assert.equal(calls.length, 1); assert.equal(calls[0].profile, "current63");
+  assert.equal(calls.length, 1); assert.equal(calls[0].profile, "current65");
+});
+
+test("current65 preflight does not inject the historical schema62 image default", () => {
+  const source = readFileSync(join(root, "database/tests/test-postgres-docker.mjs"), "utf8");
+  const start = source.indexOf('if (stages.includes("deployment_lifecycle") || stages.includes("deployment_lifecycle_current")) {');
+  const end = source.indexOf("\n// Docker Desktop only shares", start);
+  assert(start >= 0 && end > start);
+  for (const historical of [false, true]) {
+    const env = {}, seen = [];
+    runInNewContext(source.slice(start, end), { stages: [historical ? "deployment_lifecycle" : "deployment_lifecycle_current"],
+      process: { env }, resolve, options: { mode: historical ? "lifecycle" : "lifecycle-current" }, checkLifecycleSource: input => seen.push({ ...input, env: { ...env } }) });
+    assert.equal(seen[0].profile, historical ? "full" : "current65");
+    assert.equal(Boolean(env.TEMPO_LIFECYCLE_SCHEMA62_IMAGES), historical);
+  }
+  const env = { TEMPO_LIFECYCLE_SCHEMA62_IMAGES: "/explicit-override" };
+  assert.throws(() => runInNewContext(source.slice(start, end), { stages: ["deployment_lifecycle_current"], process: { env }, resolve,
+    options: { mode: "lifecycle-current" }, checkLifecycleSource: () => { if (env.TEMPO_LIFECYCLE_SCHEMA62_IMAGES) throw new Error("historical override refused"); } }), /historical override refused/);
 });
 
 test("current lifecycle rejects unsupported source and fixture overrides before admission", () => {
@@ -290,11 +486,11 @@ test("current lifecycle rejects unsupported source and fixture overrides before 
   const start = source.indexOf('if (options.mode === "lifecycle-current") {');
   const end = source.indexOf('if (process.env.TEMPO_RELEASE_CANDIDATE_MODE)', start);
   assert(start >= 0 && end < source.indexOf("process.exit(await runWithDevelopmentBudget"));
-  for (const [version, environment, staleOnly] of [[62, {}, false], [64, {}, false], [63, { TEMPO_LIFECYCLE_P0_59_ONLY: "1" }, false], [63, {}, true]]) {
+  for (const [version, environment, staleOnly] of [[62, {}, false], [65, {}, false], [66, { TEMPO_LIFECYCLE_P0_59_ONLY: "1" }, false], [66, {}, true]]) {
     assert.throws(() => runInNewContext(source.slice(start, end), {
       options: { mode: "lifecycle-current" }, process: { env: environment }, staleOnly,
       readFileSync: () => "source", schemaVersionFromSource: () => version,
-    }), /requires schema 63/);
+    }), /requires schema 66/);
   }
 });
 
@@ -808,8 +1004,8 @@ test("nested timing cannot qualify failed, missing or stale durability and lifec
     const planned_stages = postgresTestStages({ mode });
     const plan = { commit: "candidate", hash: "immutable-plan", jobs: { [layer]: { mode, planned_stages } } };
     const report = { runner: "postgres", mode, commit: plan.commit, plan_hash: plan.hash, planned_stages,
-      stages: Object.fromEntries(planned_stages.map(stage => [stage, { exit_code: 0, duration_seconds: 1 }])),
-      details: [{ label: "expected_migration_rejection", category: "migration", exit_code: 1, completed: true }] };
+      acceptance_scope: mode, unresolved_owner_cases: mode === 'durability' ? unresolvedQueueCases : [], historical_priority_rollback: mode === 'durability' ? 'not executed' : null, stages: Object.fromEntries(planned_stages.map(stage => [stage, { exit_code: 0, duration_seconds: 1 }])),
+      details: [...(mode === "durability" ? ["prefix_split_http_accept_replay", "prefix_split_http_restart_replay"].map(label => ({stage:"study_durability", label, category:"scenario", completed:true, exit_code:0})) : []), { label: "expected_migration_rejection", category: "migration", exit_code: 1, completed: true }] };
     assert.doesNotThrow(() => validatePostgresScenarios(layer, plan, report));
     for (const modify of [
       candidate => { candidate.stages[planned_stages[0]].exit_code = 1; },
@@ -829,7 +1025,7 @@ test("packaged Games reader cannot be missing, skipped, failed, or omitted from 
   const planned_stages = postgresTestStages({ mode: "durability" });
   const plan = { commit: "candidate", hash: "immutable-plan", jobs: { postgres: { mode: "durability", planned_stages } } };
   const report = { runner: "postgres", mode: "durability", commit: plan.commit, plan_hash: plan.hash, planned_stages,
-    stages: Object.fromEntries(planned_stages.map(stage => [stage, { exit_code: 0 }])) };
+    acceptance_scope: 'durability', unresolved_owner_cases: unresolvedQueueCases, historical_priority_rollback: 'not executed', details: ["prefix_split_http_accept_replay", "prefix_split_http_restart_replay"].map(label => ({stage:"study_durability", label, category:"scenario", completed:true, exit_code:0})), stages: Object.fromEntries(planned_stages.map(stage => [stage, { exit_code: 0 }])) };
   assert.doesNotThrow(() => validatePostgresScenarios("postgres", plan, report));
   for (const modify of [
     candidate => { delete candidate.stages.game_review_reader; },
@@ -1501,4 +1697,89 @@ test('selected Study durability retains current history and quota proofs without
     assert(action.includes(proof), `Missing retained ${proof}`);
   assert(!action.includes('check_postgres_stalemate_swindles.py'));
   assert(postgresTestStages({mode: 'study'}).includes('study_durability'));
+});
+
+
+test("P04 maintained queue receipt distinguishes pending native replacement from unresolved owner", () => {
+  const receipt = { case_set: "maintained-six", scope: "partial", execution: "completed", executed_count: 6,
+    cases: maintainedQueueCases, excluded_cases: excludedQueueCases, unresolved_owner_cases: unresolvedQueueCases };
+  assert.equal(excludedQueueCases[0], "test_postgres_paused_feedback_history_preserves_ordinary_study");
+  assert.deepEqual(unresolvedQueueCases, ["test_postgres_retained_review_reconciliation_preserves_original_attempt"]);
+  verifyMaintainedQueueReceipt(receipt);
+  assert.throws(() => verifyMaintainedQueueReceipt({ ...receipt, excluded_cases: unresolvedQueueCases }));
+  assert.throws(() => verifyMaintainedQueueReceipt({ ...receipt, unresolved_owner_cases: excludedQueueCases }));
+});
+
+
+test('P07 position atomicity bridge is explicitly selectable and cannot widen mode', () => {
+  const options = parse(['--mode', 'study', '--browser-grep', 'P07', '--native-check', 'position-review-atomicity']);
+  assert(postgresTestStages(options).includes('position-review-atomicity'));
+  assert.throws(() => parse(['--mode','durability','--native-check','position-review-atomicity']));
+  assert.throws(() => parse(['--mode','study','--browser-grep','P07','--native-check','position-review-atomicity','--native-check','position-review-atomicity']));
+  const source = readFileSync('database/tests/test-postgres-docker.mjs', 'utf8');
+  assert(source.includes("'position-grade-effects', 'position-review-atomicity', 'position-introductions'"));
+});
+
+test('P07 HTTP split report requires both exact completed cases and correct scope', async () => {
+  const { verifyStudyDurabilityScenario } = await import('../../database/tests/postgres-test-plan.mjs');
+  const details = ['prefix_split_http_accept_replay','prefix_split_http_restart_replay'].map(label => ({stage:'study_durability', label, category:'scenario', completed:true, exit_code:0}));
+  const report = {acceptance_scope:'durability', unresolved_owner_cases:unresolvedQueueCases, historical_priority_rollback:'not executed', details};
+  assert.doesNotThrow(() => verifyStudyDurabilityScenario(report, 'durability'));
+  for (const invalid of [
+    {...report, acceptance_scope:'full'}, {...report, details:[]},
+    {...report, details:[details[0],details[0],details[1]]},
+    {...report, details:[details[0], {...details[1], skipped:true}]},
+    {...report, details:[details[0], {...details[1], retries:1}]},
+    {...report, details:[details[0], {...details[1], exit_code:1}]},
+  ]) assert.throws(() => verifyStudyDurabilityScenario(invalid, 'durability'));
+});
+
+
+test('P07 CI PostgreSQL consumer rejects missing duplicate and partial HTTP evidence', () => {
+  const mode = 'durability', planned_stages = postgresTestStages({mode});
+  const plan = {commit:'candidate', hash:'plan', jobs:{postgres:{mode, planned_stages}}};
+  const labels = ['prefix_split_http_accept_replay','prefix_split_http_restart_replay'];
+  const report = {runner:'postgres',mode,commit:plan.commit,plan_hash:plan.hash,planned_stages,acceptance_scope:mode, unresolved_owner_cases:unresolvedQueueCases, historical_priority_rollback:'not executed',
+    stages:Object.fromEntries(planned_stages.map(stage => [stage,{exit_code:0}])),
+    details:labels.map(label => ({stage:'study_durability',label,category:'scenario',completed:true,exit_code:0}))};
+  assert.doesNotThrow(() => validatePostgresScenarios('postgres',plan,report));
+  for (const modify of [r => {r.details.pop();}, r => {r.details.push({...r.details[0]});},
+    r => {r.details[0].skipped=true;}, r => {r.acceptance_scope='partial-maintained-study-not-full-E02';},
+    r => {r.stages.cleanup.skipped=true;}, r => {r.unresolved_owner_cases=[];}, r => {r.historical_priority_rollback='passed';}]) {
+    const bad=structuredClone(report); modify(bad);
+    assert.throws(() => validatePostgresScenarios('postgres',plan,bad));
+  }
+});
+
+
+test('P07 original split rows survive removed membership and foreign card owner', async () => {
+  const {originalPrefixSplitRows} = await import('../../database/tests/postgres-test-plan.mjs');
+  const expected={source_card_id:'original',source_revision:4,shortened_card_id:'parent',continuation_card_id:'child'};
+  const snapshot={tables:{repertoire_cards:[{repertoire_id:'current',card_id:'parent'}],
+    cards:[{id:'original',repertoire_id:'foreign',archived:1}],
+    prefix_splits:[{...expected,extra:'unchanged'}, {source_card_id:'other'}]}};
+  assert.deepEqual(originalPrefixSplitRows(snapshot,'original'),[expected]);
+  assert.deepEqual(originalPrefixSplitRows(snapshot,'absent'),[]);
+});
+
+test('P07 accepts only the original operation receipt identity', async () => {
+  const {requireOriginalOperationReceipt} = await import('../../database/tests/postgres-test-plan.mjs');
+  const receipt={operation_id:'original',state:'complete',response:{applied:true}};
+  assert.strictEqual(requireOriginalOperationReceipt(receipt,'original'),receipt);
+  for (const bad of [{...receipt,operation_id:'foreign'}, {...receipt,operation_id:undefined}, null])
+    assert.throws(() => requireOriginalOperationReceipt(bad,'original'), /identity/);
+});
+
+test('P07 polling rejects foreign initial and completed operation identities', async () => {
+  const {requireOriginalOperationReceipt} = await import('../../database/tests/postgres-test-plan.mjs');
+  const source = readFileSync('database/tests/test-postgres-docker.mjs', 'utf8');
+  const body = source.slice(source.indexOf('async function pollForConfirmation('), source.indexOf('\nasync function waitForStudyableImport('));
+  let receipt = {operation_id:'foreign', state:'complete', response:{applied:true}};
+  const poll = runInNewContext(`(${body})`, {assert, requireOriginalOperationReceipt,
+    get: async () => receipt, measureScenario: {poll() {}, wait: async () => {}}, encodeURIComponent, Error});
+  const accepted = id => new Response(JSON.stringify({operation_id:id, state:'queued'}), {status:202});
+  await assert.rejects(poll(accepted('foreign'), 'original'), /identity/);
+  await assert.rejects(poll(accepted('original'), 'original'), /identity/);
+  receipt = {operation_id:'original', state:'complete', response:{applied:true}};
+  assert.deepEqual(await poll(accepted('original'), 'original'), {applied:true});
 });

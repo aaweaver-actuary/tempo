@@ -1,3 +1,4 @@
+import { verifyStudyDurabilityScenario } from '../database/tests/postgres-test-plan.mjs';
 import { spawnSync } from "node:child_process";
 import { performance } from "node:perf_hooks";
 import { createHash } from "node:crypto";
@@ -109,9 +110,10 @@ export function validatePostgresScenarios(layer, plan, scenarios) {
     || scenarios.commit !== plan.commit || scenarios.plan_hash !== plan.hash
     || JSON.stringify(scenarios.planned_stages) !== JSON.stringify(planned.planned_stages)
     || JSON.stringify(Object.keys(scenarios.stages ?? {}).sort()) !== JSON.stringify([...planned.planned_stages].sort())
-    || planned.planned_stages.some(stage => scenarios.stages[stage]?.exit_code !== 0)) {
+    || planned.planned_stages.some(stage => scenarios.stages[stage]?.exit_code !== 0 || scenarios.stages[stage]?.skipped || scenarios.stages[stage]?.retries)) {
     throw new Error(`${layer}: missing, failed or mismatched PostgreSQL scenario results`);
   }
+  if (planned.planned_stages.includes("study_durability")) verifyStudyDurabilityScenario(scenarios, planned.mode);
 }
 
 export function layerCommands(layer, plan, shardId) {

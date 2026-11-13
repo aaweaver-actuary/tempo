@@ -238,6 +238,8 @@ def test_native_authorized_introduction_writes_fresh_state_only_after_admission(
                 "ALTER TABLE cards ADD COLUMN fsrs_card_json text, ADD COLUMN state text"
             )
             raw.execute("""CREATE TABLE tempo_schema_migrations(version integer PRIMARY KEY);
+                CREATE TABLE settings(id integer PRIMARY KEY, timezone text NOT NULL);
+                INSERT INTO settings VALUES(1,'UTC');
                 CREATE TABLE repertoire_integrity_state(repertoire_id text PRIMARY KEY,
                     status text,scan_status text,scan_generation text,checked_at text,
                     scan_completed_sources bigint,scan_total_sources bigint,scan_error text);
@@ -288,6 +290,9 @@ def test_native_authorized_introduction_writes_fresh_state_only_after_admission(
                     self.raw = raw
 
                 def execute_native(self, query, params=()):
+                    return self.raw.execute(query, params)
+
+                def execute(self, query, params=()):
                     return self.raw.execute(query, params)
 
             port = Port(raw)
@@ -367,6 +372,8 @@ def test_native_authorized_introduction_writes_fresh_state_only_after_admission(
                 refresh, "_admit_one_prioritized_opening", lambda *a: False
             )
             raw.execute("BEGIN")
+            _, authoritative_day = refresh._queue_slice_current_day(port)
+            assert authoritative_day == task["payload"]["queue_date"]
             assert refresh.execute_postgres_queue_refresh_slice(task)
             raw.execute("COMMIT")
             assert (
@@ -629,3 +636,28 @@ def test_targeted_game_intro_does_not_initialize_on_rejected_admission(monkeypat
         introductions=Rejected(),
     )
     assert result.status == "deferred"
+
+
+def test_introduced_claim_requires_exact_canonical_queue_proof(monkeypatch):
+    from app.services import position_queue_admission as admission
+
+    calls = []
+    class Database:
+        def execute_native(self, sql, params):
+            calls.append((" ".join(sql.split()), params))
+            return Cursor(None)
+    class Introductions:
+        def admit_encounter(self, *args, **kwargs):
+            return NS(status="introduced")
+    proposal = object()
+    target = NS(repertoire_id="r", decision_id="d", presentation_id="card", presentation_revision=7)
+    monkeypatch.setattr(intro, "initialize_introduction", lambda *a, **k: pytest.fail("unproved admission cannot initialize"))
+    with pytest.raises(ValueError, match="position_canonical_introduction_unproved"):
+        admission.admit_targeted_position_introduction(
+            Database(), (proposal, target), NS(prepared=proposal, definitions=(DEF,)),
+            day="2026-11-02", now=datetime.now(timezone.utc), introductions=Introductions(),
+        )
+    sql, params = calls[0]
+    assert "c.id=%s AND c.revision=%s AND c.introduced_at IS NOT NULL" in sql
+    assert "q.queue_date=%s AND q.admission_repertoire_id=%s AND q.status='queued' LIMIT 1" in sql
+    assert params == ("card", 7, "2026-11-02", "r")

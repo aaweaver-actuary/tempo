@@ -40,11 +40,12 @@ export function decodeOperationResult(value: unknown, operationId: string, requi
 /** Validate the initial 202 identity before any status URL is constructed.
  * An acknowledgment owns only identity/state; receipt details belong to polls.
  */
-export function decodeOperationAcceptance(value: unknown): StudyOperationAcceptance {
+export function decodeOperationAcceptance(value: unknown, identity: "queue" | "command" = "queue"): StudyOperationAcceptance {
   if (!value || typeof value !== "object" || Array.isArray(value)) return { kind: "malformed" };
   const acknowledgment = value as StudyOperationReceiptWire;
-  if (typeof acknowledgment.operation_id !== "string" ||
-      !/^[A-Za-z0-9:._-]{1,128}$/.test(acknowledgment.operation_id)) return { kind: "malformed" };
+  if (typeof acknowledgment.operation_id !== "string" || acknowledgment.operation_id.length < 1 ||
+      Array.from(acknowledgment.operation_id).length > 128 ||
+      (identity === "queue" && !/^[A-Za-z0-9:._-]+$/.test(acknowledgment.operation_id))) return { kind: "malformed" };
   const result = decodeOperationResult({ operation_id: acknowledgment.operation_id, state: acknowledgment.state },
     acknowledgment.operation_id, true);
   if (result.kind === "pending" || result.kind === "unknown" || result.kind === "blocked")

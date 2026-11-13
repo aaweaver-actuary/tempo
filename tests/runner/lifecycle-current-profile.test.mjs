@@ -3,7 +3,81 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { runInNewContext } from "node:vm";
 import { test } from "node:test";
-import { assertCurrent63Guard, validateLifecycleProfile, verifyTempoCliLifecycle } from "../../scripts/check-tempo-cli.mjs";
+import { assertCurrent63Guard, assertLifecycleOperationIdentity, classifyLifecycleOperation, pollLifecycleOperation, readLifecycleQueue, validateLifecycleProfile, verifyTempoCliLifecycle, verifyCurrent65Transition } from "../../scripts/check-tempo-cli.mjs";
+
+test("current65 polling binds acknowledgment and every receipt to the original operation", () => {
+  assert.equal(assertLifecycleOperationIdentity({ operation_id: "original" }, "original"), "original");
+  for (const value of [{}, { operation_id: "" }, { operation_id: "foreign" }]) assert.throws(() => assertLifecycleOperationIdentity(value, "original"), /identity/);
+  for (const state of ["unknown", "pending", "queued", "executing", "retrying"]) assert.equal(classifyLifecycleOperation({ operation_id: "original", state }, "original"), "pending");
+  assert.equal(classifyLifecycleOperation({ operation_id: "original", state: "complete" }, "original"), "complete");
+  for (const state of ["failed", "blocked", "unrecognized"]) assert.throws(() => classifyLifecycleOperation({ operation_id: "original", state }, "original"));
+  assert.throws(() => classifyLifecycleOperation({ operation_id: "foreign", state: "complete" }, "original"), /identity/);
+});
+test("current65 polling waits for matching unknown but terminates at its bound", async () => {
+  const responses = [{ operation_id: "original", state: "unknown" }, { operation_id: "original", state: "complete", response: { review_id: 7 } }];
+  assert.deepEqual(await pollLifecycleOperation("original", async () => responses.shift(), async () => {}, 2), { review_id: 7 });
+  let reads = 0;
+  await assert.rejects(pollLifecycleOperation("original", async () => { reads++; return { operation_id: "original", state: "unknown" }; }, async () => {}, 2), /bounded poll limit/);
+  assert.equal(reads, 2);
+});
+test("current65 queue rereads authority after a 202 issue receipt", async () => {
+  let reads = 0;
+  const queue = await readLifecycleQueue(async () => {
+    reads++;
+    if (reads === 1) {
+      const response = await pollLifecycleOperation("issue-original", async () => ({ operation_id: "issue-original", state: "complete", response: { issued: true } }), async () => {}, 1);
+      return { pending: true, value: response };
+    }
+    return { pending: false, value: { cards: [{ id: "playable" }] } };
+  }, async () => {}, 10, () => 0);
+  assert.equal(reads, 2); assert.equal(queue.cards[0].id, "playable");
+  for (const receipt of [{ operation_id: "foreign", state: "complete" }, { operation_id: "issue-original", state: "failed" }])
+    await assert.rejects(readLifecycleQueue(async () => ({ pending: true, value: await pollLifecycleOperation("issue-original", async () => receipt, async () => {}, 1) }), async () => {}, 10, () => 0));
+});
+
+test("current65 lifecycle preserves original guard and review through refusal and retry", async () => {
+  const versions65 = Array.from({ length: 65 }, (_, i) => i + 1), versions66 = [...versions65, 66];
+  const original = { review: { review_id: 7, queue_entry_id: 9 }, receipt: { state: "complete", operation_id: "original" } };
+  const pending = { state: "pending", target: "owned", starting_schema: 65, intended_schema: 66, starting_versions: versions65,
+    attempt_id: "attempt", backup: { verified: true, restore_removed: true, filename: "original.dump" } };
+  let bytes = Buffer.from(JSON.stringify(pending)), versions = versions65, saved = { schema: 66 }, events = [];
+  const readGuard = () => JSON.parse(bytes.toString());
+  const makeCandidate = options => ({ ...options, inspectTarget: async () => {}, preflightSchema: async () => {} });
+  const lifecycle = async (label, _plan, runtime) => {
+    events.push(label);
+    if (label === "current65_before_write") return runtime.preflightSchema();
+    if (label === "current65_interrupted") {
+      versions = versions66;
+      return runtime.intercept(async () => ({}), "docker", ["database/tooling/apply_postgres_migrations.py"], {});
+    }
+    if (label === "current65_unresolved_refusal") throw new Error("pending migration requires retry");
+    if (label === "current65_mismatched_guard") { assert.equal(readGuard().target, "foreign-target"); throw new Error("foreign guard"); }
+    if (label === "current65_retry_original") bytes = Buffer.from(JSON.stringify({ ...pending, state: "verified" }));
+  };
+  const result = await verifyCurrent65Transition({ makeCandidate, lifecycle, snapshot: async () => original,
+    readGuard, readGuardBytes: () => bytes, writeGuardBytes: value => { bytes = value; }, readDeployment: () => saved,
+    readVersions: async () => versions, commandLog: [] });
+  assert.equal(result.settled.attempt_id, pending.attempt_id);
+  assert.deepEqual(result.settled.backup, pending.backup);
+  assert.deepEqual(events, ["current65_before_write", "current65_interrupted", "current65_unresolved_refusal", "current65_mismatched_guard", "current65_retry_original", "current65_repeat", "current65_recreate"]);
+  await assert.rejects(verifyCurrent65Transition({ makeCandidate, lifecycle, snapshot: async () => original,
+    originalBeforeHandoff: { ...original, receipt: { state: "complete", operation_id: "different" } },
+    readGuard, readGuardBytes: () => bytes, writeGuardBytes: value => { bytes = value; }, readDeployment: () => saved,
+    readVersions: async () => versions, commandLog: [] }), /handoff must preserve/);
+});
+
+test("current65 root handoff preserves volumes and starts only owned dependencies before candidate inspection", () => {
+  const source = readFileSync(new URL("../../scripts/check-tempo-cli.mjs", import.meta.url), "utf8");
+  const start = source.indexOf("      const originalBeforeHandoff = await snapshot();");
+  const end = source.indexOf("      await verifyCurrent65Transition(", start);
+  const handoff = source.slice(start, end);
+  assert(start >= 0 && end > start);
+  assert(handoff.indexOf("handoffOwnedSchema62(") < handoff.indexOf('"postgres", "redis"], { echo: true }'));
+  assert.match(handoff, /compose\(\["--profile", "maintenance", "down"\]\)/);
+  assert.match(handoff, /snapshotVolumes\(\), originalVolumes/);
+  assert.match(handoff, /Application writers must remain stopped/);
+  assert(!handoff.includes('"down", "-v"'));
+});
 
 test("current lifecycle profile rejects unknown, wrong-schema and schema59 selections before work", () => {
   assert.doesNotThrow(() => validateLifecycleProfile("full", 62, {}));
@@ -70,14 +144,14 @@ test("schema64 cannot reuse historical lifecycle qualification through direct pr
     assert.throws(() => validateLifecycleProfile(profile, 64, {}), /Schema-64.*not qualified/);
 });
 
-test("direct lifecycle verifier refuses native65 before resources or timing stages", async () => {
+test("direct lifecycle verifier refuses native66 historical profile before resources or timing stages", async () => {
   let stages = 0;
   for (const profile of ["full", "current63"])
     await assert.rejects(verifyTempoCliLifecycle({
       project: "must-not-acquire", revision: "a".repeat(40), composeFiles: [], profile,
       environment: { TEMPO_LIFECYCLE_SCHEMA61_IMAGES: "/must-not-read", DOCKER_HOST: "must-not-contact" },
       measure: () => { stages++; throw new Error("Resources must not be acquired"); },
-    }), /Schema-65.*not qualified/);
+    }), /Schema-66.*not qualified/);
   assert.equal(stages, 0);
 });
 

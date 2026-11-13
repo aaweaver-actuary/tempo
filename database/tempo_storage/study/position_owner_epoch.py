@@ -15,10 +15,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from tempo_evidence_math.position_learning import PositionDefinition
-from tempo_storage.authored_repertoires.position_study_source import (
-    PreparedPositionSource, fence_position_source,
-)
+from tempo_evidence_math.position_learning import PositionDefinition, PreparedPositionSourceView
+from tempo_storage.authored_repertoires.position_study_source import fence_position_source
 
 
 @dataclass(frozen=True)
@@ -28,6 +26,50 @@ class OwnerDecision:
     epoch: str | None
     source_digest: str | None
     reason: str
+
+
+@dataclass(frozen=True)
+class PositionOwnerFacts:
+    repertoire_id: str
+    mode: str
+    epoch: str
+    source_digest: str
+
+
+def next_active_owner(database, after_repertoire: str) -> PositionOwnerFacts | None:
+    """Read the next active owner from the caller's borrowed connection."""
+    row = database.execute_native(
+        """SELECT o.repertoire_id,o.epoch,e.source_digest
+            FROM study_position_owners o JOIN study_position_epochs e
+              ON e.repertoire_id=o.repertoire_id AND e.epoch=o.epoch
+            WHERE o.mode='active' AND o.repertoire_id>%s ORDER BY o.repertoire_id LIMIT 1""",
+        (after_repertoire,),
+    ).fetchone()
+    return None if row is None else PositionOwnerFacts(row["repertoire_id"], "active", row["epoch"], row["source_digest"])
+
+
+def active_owner(database, repertoire_id: str) -> PositionOwnerFacts | None:
+    """Read the exact active owner used by a continued due scan."""
+    row = database.execute_native(
+        """SELECT o.repertoire_id,o.epoch,e.source_digest
+            FROM study_position_owners o JOIN study_position_epochs e
+              ON e.repertoire_id=o.repertoire_id AND e.epoch=o.epoch
+            WHERE o.mode='active' AND o.repertoire_id=%s""",
+        (repertoire_id,),
+    ).fetchone()
+    return None if row is None else PositionOwnerFacts(row["repertoire_id"], "active", row["epoch"], row["source_digest"])
+
+
+def current_owner(database, repertoire_id: str) -> PositionOwnerFacts | None:
+    """Read routing facts without acquiring the later writer fence."""
+    row = database.execute_native(
+        """SELECT o.mode,o.epoch,e.source_digest
+        FROM study_position_owners o JOIN study_position_epochs e
+          ON e.repertoire_id=o.repertoire_id AND e.epoch=o.epoch
+        WHERE o.repertoire_id=%s""",
+        (repertoire_id,),
+    ).fetchone()
+    return None if row is None else PositionOwnerFacts(repertoire_id, row["mode"], row["epoch"], row["source_digest"])
 
 
 def owner_lock_key(repertoire_id: str) -> str:
@@ -40,6 +82,22 @@ def _writer(database) -> bool:
         return not database.read_only and database.raw.info.transaction_status.name == "INTRANS"
     except AttributeError:
         return False
+
+
+def borrowed_writer_available(database) -> bool:
+    """Check the caller-owned transaction without opening or changing it."""
+    return _writer(database)
+
+
+def shared_owner_fence(database, repertoire_id: str) -> Literal["acquired", "writer_unavailable", "busy"]:
+    """Fence original-owner replay without requiring current source or owner mode."""
+    if not _writer(database):
+        return "writer_unavailable"
+    locked = database.execute_native(
+        "SELECT pg_try_advisory_xact_lock_shared(hashtextextended(%s,0))",
+        (owner_lock_key(repertoire_id),),
+    ).fetchone()
+    return "acquired" if locked and locked[0] else "busy"
 
 
 def _hold(reason: str, mode=None, epoch=None, digest=None) -> OwnerDecision:
@@ -59,11 +117,7 @@ def owner_mode(database, repertoire_id: str, expected_authored_digest: str | Non
         return _hold("borrowed_owner_writer_transaction_required")
     if not isinstance(repertoire_id, str) or not repertoire_id:
         return _hold("repertoire_required")
-    locked = database.execute_native(
-        "SELECT pg_try_advisory_xact_lock_shared(hashtextextended(%s,0))",
-        (owner_lock_key(repertoire_id),),
-    ).fetchone()
-    if not locked or not locked[0]:
+    if shared_owner_fence(database, repertoire_id) != "acquired":
         return _hold("position_owner_busy")
     row = database.execute_native(
         """SELECT o.mode,o.epoch,e.source_digest FROM study_position_owners o
@@ -86,7 +140,7 @@ def owner_mode(database, repertoire_id: str, expected_authored_digest: str | Non
     return OwnerDecision("position", mode, epoch, digest, "position_owner_active")
 
 
-def fence_position_owner_in_writer(database, prepared_source: PreparedPositionSource, *,
+def fence_position_owner_in_writer(database, prepared_source: PreparedPositionSourceView, *,
                                    definition: PositionDefinition, epoch: str, queue_entry_id: int, card_id: str,
                                    revision: int) -> OwnerDecision:
     """Authorize *new* issuance only, using A1 and retained queue admission.

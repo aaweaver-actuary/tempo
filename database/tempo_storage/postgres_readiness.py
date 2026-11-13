@@ -26,6 +26,8 @@ def read_health_facts(reader, today):
                 ).fetchone()
                 queue_task = database.execute_native(
                     "SELECT state,payload_json FROM background_tasks "
-                    "WHERE kind='daily_queue' AND deduplication_key='current'"
+                    "WHERE kind='daily_queue' AND (deduplication_key='current' OR deduplication_key=%s) "
+                    "AND payload_json::jsonb->>'queue_date'=%s LIMIT 1",
+                    ("current-day:" + today().isoformat(), today().isoformat()),
                 ).fetchone()
     return version_row, position_tables, settings_row, queue_row, queue_task

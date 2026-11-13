@@ -2,20 +2,12 @@
 import { basename, dirname, isAbsolute, join } from 'node:path';
 import { closeSync, constants, existsSync, fstatSync, fsyncSync, lstatSync, openSync, readFileSync, unlinkSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
-import { atomicJson, targetKey, validateContainers, validateTarget } from './tempo-deployment.mjs';
+import { cut62WitnessName, atomicJson, targetKey, validateContainers, validateTarget } from './tempo-deployment.mjs';
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 
-// Only the exact migration with a version-scoped comparator may cross this cut.
-export function cut62WitnessName(guard) {
-  const crossing = guard.starting_schema < 62 && guard.intended_schema >= 62;
-  if (!crossing) return null;
-  if (![59, 61].includes(guard.starting_schema) || guard.intended_schema !== 62 ||
-      !/^[0-9a-f-]{36}$/i.test(guard.attempt_id ?? ''))
-    throw new Error('Unsupported schema 62 crossing; preserve the original backup and fix forward.');
-  return `cut62-${guard.attempt_id}.json`;
-}
+export { cut62WitnessName } from "./tempo-deployment.mjs";
 
 // These inspections are read-only: neither proves exclusive daemon control nor
 // authorizes detachment or a nonempty migration by itself.

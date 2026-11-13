@@ -1,8 +1,8 @@
-import { decodeOperationResult } from "../domain/adapters/operation-result-adapter";
+import { decodeOperationAcceptance, decodeOperationResult } from "../domain/adapters/operation-result-adapter";
 import { defaultStudyClient, type StudyClient } from "./study-connection";
 import { notifyOperationStatusChange } from "./operation-status-events";
 
-type OperationResponseOptions = { background?: boolean; signal?: AbortSignal; fetch?: typeof fetch; allowMissing?: boolean; baseUrl?: string; client?: StudyClient };
+type OperationResponseOptions = { requireReceiptIdentity?: boolean; background?: boolean; signal?: AbortSignal; fetch?: typeof fetch; allowMissing?: boolean; baseUrl?: string; client?: StudyClient };
 type ClientBinding = { client: StudyClient; generation: number; origin: string };
 function bindClient(client?: StudyClient): ClientBinding | undefined {
   return client ? { client, generation: client.generation, origin: client.origin } : undefined;
@@ -28,15 +28,18 @@ export class FailedOperationError extends Error {
   }
 }
 
-export async function confirmOperationResponse(response: Response, options: OperationResponseOptions = {}): Promise<Response> {
+/** Confirm a command only against the identity that was actually submitted. */
+export async function confirmOriginalOperationResponse(response: Response, expectedOperationId: string, options: OperationResponseOptions = {}): Promise<Response> {
   if (response.status !== 202) return response;
   const binding = operationBinding(options);
-  const pending = await response.clone().json() as { operation_id?: string };
+  let wire: unknown;
+  try { wire = await response.clone().json(); }
+  catch { requireBinding(binding); throw new PendingOperationError(expectedOperationId); }
   requireBinding(binding);
-  // Existing discovery admissions also return 202, with an intent ID that
-  // their own status endpoint confirms. Preserve that response for its caller.
-  if (!pending.operation_id) return response;
-  return readReceipt(pending.operation_id, options, binding);
+  const acceptance = decodeOperationAcceptance(wire, "command");
+  if (acceptance.kind === "malformed" || acceptance.operationId !== expectedOperationId)
+    throw new PendingOperationError(expectedOperationId);
+  return readReceipt(expectedOperationId, options, binding);
 }
 
 // Resolve a known command through the same receipt semantics as a 202 response.
@@ -67,7 +70,7 @@ async function readReceipt(operationId: string, options: OperationResponseOption
     throw error;
   }
   requireBinding(binding);
-  const result = decodeOperationResult(wire, operationId, binding?.client.independent ?? defaultStudyClient.independent);
+  const result = decodeOperationResult(wire, operationId, options.requireReceiptIdentity || (binding?.client.independent ?? defaultStudyClient.independent));
   if (result.kind === "malformed" && result.reason === "identity")
     throw new PendingOperationError(operationId, "Learning did not confirm the original operation identity.");
   // A missing receipt can only be replayed by a caller retaining the original command.
