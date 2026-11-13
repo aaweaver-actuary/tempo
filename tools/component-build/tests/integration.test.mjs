@@ -4,7 +4,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync,
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { checkComponents, repository, validateManifest, compositionPaths, validateCompositionOwnership, censusPaths, validateCensusOwnership, validateCensusInterfaces } from "../check-components.mjs";
+import { checkComponents, repository, validateManifest, compositionPaths, validateCompositionOwnership, censusPaths, validateCensusOwnership, validateCensusInterfaces, validateStartupFacts } from "../check-components.mjs";
 import { validateOwnedPaths, selectComponents } from "../selection.mjs";
 
 const python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3.12";
@@ -49,7 +49,7 @@ test("T02 mapped composition rejects unowned, duplicate and untracked files", ()
   stale.components.find(item => item.id === "study-web").ownedFiles.push("app/not-tracked.tsx");
   assert.throws(() => validateCompositionOwnership(stale, paths), /untracked source/);
 });
-for (const [scope, expected] of [["retained", 37], ["review", 15], ["durable", 5], ["calendar", 2], ["prefix_split", 8], ["readiness", 3], ["settings", 4], ["teaching", 2], ["annotation", 2], ["activity", 2], ["integrity", 8], ["opening_graph", 4], ["pgn_import", 6], ["card_deletion", 3], ["canonical_prefix", 3], ["repertoire_changes", 4], ["card_branch_edits", 5], ["repertoire_controls", 3], ["tactics", 9], ["queue_commands", 4], ["queue_order", 7], ["queue_application", 7], ["queue_refresh", 8], ["study_attempt", 6], ["study_grading", 2], ["repertoire_conflicts", 4], ["frozen_order", 5], ["queue_attempt_origin", 3], ["opening_evidence", 6], ["position_first_response", 3], ["position_grade_effect", 3], ["position_plan", 6], ["position_source", 5], ["captured_tactic", 4], ["chess_helpers", 5], ["scheduling_review", 7], ["repertoire_snapshot", 6], ["background_activity", 3], ["background_metrics", 4], ["redis_runtime", 9], ["study_control", 3], ["repertoire_move_verification", 3], ["analysis_paste", 3], ["http_composition", 8], ["position_issuance_storage", 5], ["database_infrastructure", 4], ["opening_progression", 1], ["puzzle_helpers", 1], ["lifecycle_projection", 1], ["opening_kernels", 2], ["opening_admission", 3]]) {
+for (const [scope, expected] of [["retained", 37], ["review", 15], ["durable", 5], ["calendar", 2], ["prefix_split", 8], ["readiness", 3], ["settings", 4], ["teaching", 2], ["annotation", 2], ["activity", 2], ["integrity", 8], ["opening_graph", 4], ["pgn_import", 6], ["card_deletion", 3], ["canonical_prefix", 3], ["repertoire_changes", 4], ["card_branch_edits", 5], ["repertoire_controls", 3], ["tactics", 9], ["queue_commands", 4], ["queue_order", 7], ["queue_application", 7], ["queue_refresh", 8], ["study_attempt", 6], ["study_grading", 2], ["repertoire_conflicts", 4], ["frozen_order", 5], ["queue_attempt_origin", 3], ["opening_evidence", 6], ["position_first_response", 3], ["position_grade_effect", 3], ["position_plan", 6], ["position_source", 5], ["captured_tactic", 4], ["chess_helpers", 5], ["scheduling_review", 7], ["repertoire_snapshot", 6], ["background_activity", 3], ["background_metrics", 4], ["redis_runtime", 9], ["study_control", 3], ["repertoire_move_verification", 3], ["analysis_paste", 3], ["http_composition", 8], ["position_issuance_storage", 5], ["database_infrastructure", 4], ["opening_progression", 1], ["puzzle_helpers", 1], ["lifecycle_projection", 1], ["opening_kernels", 2], ["opening_admission", 3], ["startup_composition", 3]]) {
   test(`T02 ${scope} census derives ownership and entrypoints from registry`, () => {
     const paths = censusPaths(scope, repository);
     assert.equal(paths.length, expected);
@@ -84,7 +84,7 @@ for (const [scope, expected] of [["retained", 37], ["review", 15], ["durable", 5
     assert.throws(() => validateCensusInterfaces(wrong, scope, repository, python), /Missing census interface/);
   });
 }
-for (const [scope, path] of [["retained", "backend/app/contracts/new_contract.py"], ["review", "database/tempo_storage/study/review/new_storage.py"], ["durable", "database/tempo_storage/durable_tasks/new_task.py"], ["calendar", "backend/app/services/study_calendar_extra.py"], ["prefix_split", "backend/app/prefix_split_new.py"], ["readiness", "backend/app/operations/new_health.py"], ["settings", "database/tempo_storage/controls/settings_extra.py"], ["teaching", "backend/app/teaching_commands_extra.py"], ["annotation", "backend/app/annotation_commands_extra.py"], ["activity", "backend/app/activity_commands_extra.py"], ["integrity", "database/tempo_storage/authored_repertoires/integrity/new_adapter.py"], ["opening_graph", "database/tempo_storage/opening_graph/new_adapter.py"], ["pgn_import", "database/tempo_storage/authored_repertoires/pgn_import/new_adapter.py"], ["card_deletion", "database/tempo_storage/authored_repertoires/card_deletion/new_adapter.py"], ["canonical_prefix", "database/tempo_storage/authored_repertoires/canonical_prefix/new_adapter.py"], ["repertoire_changes", "backend/app/repertoire/changes/new_adapter.py"], ["card_branch_edits", "database/tempo_storage/authored_repertoires/card_edits/new_adapter.py"], ["repertoire_controls", "backend/app/repertoire_settings_extra.py"], ["tactics", "database/tempo_storage/tactics/new_adapter.py"], ["queue_commands", "backend/app/queue_commands_extra.py"], ["queue_order", "backend/app/services/queue_presentation_extra.py"], ["queue_application", "database/tempo_storage/queue_refresh/application/new_adapter.py"], ["queue_refresh", "backend/app/services/postgres_queue_refresh_extra.py"], ["study_attempt", "database/tempo_storage/study_attempts/new_adapter.py"], ["study_grading", "backend/app/study/policy/study_grading_extra.py"], ["repertoire_conflicts", "backend/app/studies/repertoire_conflicts_extra.py"], ["frozen_order", "backend/app/study/frozen_order/new_policy.py"], ["queue_attempt_origin", "database/tempo_storage/lifecycle/queue_attempt_origins_extra.py"], ["opening_evidence", "database/tempo_storage/opening_evidence/new_adapter.py"], ["position_first_response", "backend/app/study/position_learning/first_response_policy_extra.py"], ["position_grade_effect", "backend/app/study/position_learning/daily_credit_extra.py"], ["position_plan", "backend/app/study/position_learning/issued_plan_service_extra.py"], ["position_source", "backend/app/repertoire/position_study_source_extra.py"], ["captured_tactic", "backend/app/study/captured_tactic_extra.py"], ["chess_helpers", "backend/app/chess/new_helper.py"], ["scheduling_review", "backend/app/services/scheduling_review_application_extra.py"], ["repertoire_snapshot", "backend/app/repertoire/interfaces/new_projection.py"], ["background_activity", "database/tempo_storage/controls/activity/new_adapter.py"], ["background_metrics", "backend/app/services/background_metrics_extra.py"], ["redis_runtime", "database/tempo_storage/redis_control/new_adapter.py"], ["study_control", "backend/app/services/study_mode_extra.py"], ["repertoire_move_verification", "database/tempo_storage/repertoire_scope/new_adapter.py"], ["analysis_paste", "backend/app/services/analysis_paste_extra.py"], ["http_composition", "database/tempo_storage/http_composition/new_adapter.py"], ["position_issuance_storage", "database/tempo_storage/study/position_introductions_extra.py"], ["database_infrastructure", "database/tempo_storage/connections_extra.py"], ["opening_progression", "database/tempo_storage/opening_progression_extra.py"], ["puzzle_helpers", "backend/app/services/puzzles_extra.py"], ["lifecycle_projection", "database/tempo_storage/lifecycle/refresh_requests_extra.py"], ["opening_kernels", "backend/app/study/openings/frozen_math_extra.py"], ["opening_admission", "backend/app/services/queue_admission_extra.py"]]) {
+for (const [scope, path] of [["retained", "backend/app/contracts/new_contract.py"], ["review", "database/tempo_storage/study/review/new_storage.py"], ["durable", "database/tempo_storage/durable_tasks/new_task.py"], ["calendar", "backend/app/services/study_calendar_extra.py"], ["prefix_split", "backend/app/prefix_split_new.py"], ["readiness", "backend/app/operations/new_health.py"], ["settings", "database/tempo_storage/controls/settings_extra.py"], ["teaching", "backend/app/teaching_commands_extra.py"], ["annotation", "backend/app/annotation_commands_extra.py"], ["activity", "backend/app/activity_commands_extra.py"], ["integrity", "database/tempo_storage/authored_repertoires/integrity/new_adapter.py"], ["opening_graph", "database/tempo_storage/opening_graph/new_adapter.py"], ["pgn_import", "database/tempo_storage/authored_repertoires/pgn_import/new_adapter.py"], ["card_deletion", "database/tempo_storage/authored_repertoires/card_deletion/new_adapter.py"], ["canonical_prefix", "database/tempo_storage/authored_repertoires/canonical_prefix/new_adapter.py"], ["repertoire_changes", "backend/app/repertoire/changes/new_adapter.py"], ["card_branch_edits", "database/tempo_storage/authored_repertoires/card_edits/new_adapter.py"], ["repertoire_controls", "backend/app/repertoire_settings_extra.py"], ["tactics", "database/tempo_storage/tactics/new_adapter.py"], ["queue_commands", "backend/app/queue_commands_extra.py"], ["queue_order", "backend/app/services/queue_presentation_extra.py"], ["queue_application", "database/tempo_storage/queue_refresh/application/new_adapter.py"], ["queue_refresh", "backend/app/services/postgres_queue_refresh_extra.py"], ["study_attempt", "database/tempo_storage/study_attempts/new_adapter.py"], ["study_grading", "backend/app/study/policy/study_grading_extra.py"], ["repertoire_conflicts", "backend/app/studies/repertoire_conflicts_extra.py"], ["frozen_order", "backend/app/study/frozen_order/new_policy.py"], ["queue_attempt_origin", "database/tempo_storage/lifecycle/queue_attempt_origins_extra.py"], ["opening_evidence", "database/tempo_storage/opening_evidence/new_adapter.py"], ["position_first_response", "backend/app/study/position_learning/first_response_policy_extra.py"], ["position_grade_effect", "backend/app/study/position_learning/daily_credit_extra.py"], ["position_plan", "backend/app/study/position_learning/issued_plan_service_extra.py"], ["position_source", "backend/app/repertoire/position_study_source_extra.py"], ["captured_tactic", "backend/app/study/captured_tactic_extra.py"], ["chess_helpers", "backend/app/chess/new_helper.py"], ["scheduling_review", "backend/app/services/scheduling_review_application_extra.py"], ["repertoire_snapshot", "backend/app/repertoire/interfaces/new_projection.py"], ["background_activity", "database/tempo_storage/controls/activity/new_adapter.py"], ["background_metrics", "backend/app/services/background_metrics_extra.py"], ["redis_runtime", "database/tempo_storage/redis_control/new_adapter.py"], ["study_control", "backend/app/services/study_mode_extra.py"], ["repertoire_move_verification", "database/tempo_storage/repertoire_scope/new_adapter.py"], ["analysis_paste", "backend/app/services/analysis_paste_extra.py"], ["http_composition", "database/tempo_storage/http_composition/new_adapter.py"], ["position_issuance_storage", "database/tempo_storage/study/position_introductions_extra.py"], ["database_infrastructure", "database/tempo_storage/connections_extra.py"], ["opening_progression", "database/tempo_storage/opening_progression_extra.py"], ["puzzle_helpers", "backend/app/services/puzzles_extra.py"], ["lifecycle_projection", "database/tempo_storage/lifecycle/refresh_requests_extra.py"], ["opening_kernels", "backend/app/study/openings/frozen_math_extra.py"], ["opening_admission", "backend/app/services/queue_admission_extra.py"], ["startup_composition", "backend/app/tasks_extra.py"]]) {
   test(`T02 discovers newly tracked ${scope} sibling without an owner`, context => {
     const root = mkdtempSync(join(tmpdir(), "tempo-census-map-"));
     context.after(() => rmSync(root, { recursive: true, force: true }));
@@ -97,6 +97,60 @@ for (const [scope, path] of [["retained", "backend/app/contracts/new_contract.py
     assert.throws(() => validateCensusOwnership(original, scope, paths), /found 0/);
   });
 }
+test("T02 startup census cannot disappear when all owner tags are removed", () => {
+  const missing = structuredClone(original);
+  for (const component of missing.components) if (component.censusScope === "startup_composition") delete component.censusScope;
+  assert.throws(() => validateCensusOwnership(missing, "startup_composition", censusPaths("startup_composition", repository)), /lacks owners/);
+});
+test("T02 startup witness rejects foreign loader under optimized Python", context => {
+  const root = mkdtempSync(join(tmpdir(), "tempo-startup-optimize-")); context.after(() => rmSync(root, {recursive:true, force:true}));
+  mkdirSync(join(root, "backend/app"), {recursive:true});
+  for (const name of ["main.py", "tasks.py", "celery_app.py"]) {
+    let source = readFileSync(join(repository, "backend/app", name), "utf8");
+    if (name === "celery_app.py") source = source.replace('include=["app.tasks"]', 'include=["app.foreign"]');
+    writeFileSync(join(root, "backend/app", name), source);
+  }
+  const old = process.env.PYTHONOPTIMIZE; process.env.PYTHONOPTIMIZE = "1";
+  try { assert.throws(() => validateStartupFacts(original, root, python), /Startup source witness failed/); }
+  finally { if (old === undefined) delete process.env.PYTHONOPTIMIZE; else process.env.PYTHONOPTIMIZE = old; }
+});
+test("T02 startup import graph rejects a missing lazy import edge", () => {
+  const bad = structuredClone(original), owner = bad.components.find(c => c.id === "queue-refresh-wakeup");
+  owner.dependencies = owner.dependencies.filter(id => id !== "celery-startup-composition");
+  assert.throws(() => validateStartupFacts(bad, repository, python), /Missing startup import dependency/);
+});
+test("T02 startup import graph rejects an actual dependency cycle", () => {
+  const bad = structuredClone(original);
+  bad.components.find(c => c.id === "celery-startup-composition").dependencies.push("worker-startup-composition");
+  assert.throws(() => validateStartupFacts(bad, repository, python), /dependency cycle/);
+});
+test("T02 startup witnesses reject missing and foreign loader assignments", () => {
+  validateStartupFacts(original, repository, python);
+  for (const [field, value] of [["moduleAssignments", []], ["moduleAssignments", ["../outside.py#celery_app"]], ["lifecycleEdges", []], ["lifecycleEdges", ["backend/app/celery_app.py#celery-loader#unknown#app.tasks"]], ["lifecycleEdges", ["backend/app/celery_app.py#celery-loader#worker-startup-composition#app.tasks", "backend/app/celery_app.py#celery-loader#worker-startup-composition#app.tasks"]]]) {
+    const bad = structuredClone(original); bad.components.find(c => c.id === "celery-startup-composition")[field] = value;
+    assert.throws(() => validateStartupFacts(bad, repository, python), /Invalid startup/);
+  }
+});
+for (const [label, file, before, after] of [
+  ["assignment", "celery_app.py", "celery_app = CoalescingCelery(", "foreign_app = CoalescingCelery("],
+  ["loader", "celery_app.py", 'include=["app.tasks"]', 'include=["app.foreign"]'],
+  ["task route", "celery_app.py", '"app.tasks.recover_study_operations": {"queue": "foreground"}', '"app.tasks.foreign": {"queue": "foreground"}'],
+  ["task queue", "celery_app.py", '"app.tasks.recover_study_operations": {"queue": "foreground"}', '"app.tasks.recover_study_operations": {"queue": "background"}'],
+  ["beat target", "celery_app.py", '"task": "app.tasks.recover_study_operations"', '"task": "app.tasks.foreign"'],
+  ["task registration", "tasks.py", 'name="app.tasks.recover_study_operations"', 'name="app.tasks.foreign"'],
+  ["registrar", "tasks.py", 'from . import study_attempt_commands', 'from . import foreign_commands'],
+  ["checkpoint", "tasks.py", 'register_command("opening_evidence.checkpoint"', 'register_command("foreign.checkpoint"'],
+  ["router", "main.py", 'app.include_router(study_exercise_router)', 'app.include_router(foreign_router)'],
+]) test(`T02 startup witness rejects changed ${label}`, context => {
+  const root = mkdtempSync(join(tmpdir(), "tempo-startup-witness-")); context.after(() => rmSync(root, {recursive:true, force:true}));
+  mkdirSync(join(root, "backend/app"), {recursive:true});
+  for (const name of ["main.py", "tasks.py", "celery_app.py"]) {
+    let source = readFileSync(join(repository, "backend/app", name), "utf8");
+    if (name === file) { assert.ok(source.includes(before)); source = source.replace(before, after); }
+    writeFileSync(join(root, "backend/app", name), source);
+  }
+  assert.throws(() => validateStartupFacts(original, root, python), /Startup source witness failed/);
+});
 test("T02 opening admission census cannot disappear when all owner tags are removed", () => {
   const missing = structuredClone(original);
   for (const component of missing.components) if (component.censusScope === "opening_admission") delete component.censusScope;

@@ -4705,7 +4705,8 @@
       ],
       "dependencies": [
         "postgres-readiness-storage",
-        "study-calendar-capture"
+        "study-calendar-capture",
+        "celery-startup-composition"
       ],
       "buildInputs": [],
       "buildCommand": null,
@@ -7305,7 +7306,8 @@
       ],
       "dependencies": [
         "backend-command-gateway",
-        "backend-contracts"
+        "backend-contracts",
+        "celery-startup-composition"
       ],
       "buildInputs": [],
       "buildCommand": null,
@@ -7698,7 +7700,9 @@
         "backend/app/services/queue_refresh_wakeup.py#capture_queue_refresh_request",
         "backend/app/services/queue_refresh_wakeup.py#wake_queue_refresh"
       ],
-      "dependencies": [],
+      "dependencies": [
+        "celery-startup-composition"
+      ],
       "buildInputs": [],
       "buildCommand": null,
       "artifact": null,
@@ -8510,6 +8514,186 @@
         "Imports private storage _PRIORITY_OPENING_CANDIDATE_BODY; queue_application re-exports this compatibility escape to main. This is not a clean public boundary."
       ],
       "censusScope": "opening_admission"
+    },
+    {
+      "id": "api-startup-composition",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/main.py#lifespan",
+        "backend/app/main.py#operation_status",
+        "backend/app/main.py#queue_window"
+      ],
+      "dependencies": [
+        "analysis-paste-service",
+        "application-activity-gate",
+        "backend-chess-identity",
+        "backend-command-dispatch",
+        "backend-command-gateway",
+        "backend-contracts",
+        "backend-opening-segments",
+        "backend-pgn-helpers",
+        "background-runtime-application",
+        "canonical-prefix-application",
+        "card-deletion-application",
+        "celery-startup-composition",
+        "database-connection-composition",
+        "database-infrastructure-binding",
+        "durable-task-application",
+        "durable-task-storage",
+        "frozen-opening-math",
+        "game-review-http",
+        "http-practice-line-storage",
+        "http-queue-projection",
+        "http-repertoire-storage",
+        "http-system-storage",
+        "integrity-source-service",
+        "opening-capacity-frontier",
+        "opening-checkpoint-application",
+        "opening-evidence-storage",
+        "pgn-import-command",
+        "postgres-readiness-composition",
+        "prefix-split-http",
+        "queue-ordering-facade",
+        "redis-admission-application",
+        "repertoire-conflict-composition",
+        "repertoire-line-storage",
+        "repertoire-move-verification",
+        "repertoire-settings-application",
+        "settings-http-storage",
+        "study-calendar-capture",
+        "study-exercise-transport",
+        "study-mode-policy",
+        "study-priority-control",
+        "study-queue-application",
+        "study-queue-command",
+        "study-queue-composition",
+        "tactics-catalog-service",
+        "tactics-puzzle-helpers"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/main.py"
+      ],
+      "ownershipRole": "Compose API routes and startup lifecycle",
+      "dependencyNotes": [
+        "Startup composition has import-time registration/effects; this static map does not establish runtime recovery or availability."
+      ],
+      "censusScope": "startup_composition"
+    },
+    {
+      "id": "worker-startup-composition",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/tasks.py#recover_study_operations",
+        "backend/app/tasks.py#progress_study_queue",
+        "backend/app/tasks.py#poll_background_tasks"
+      ],
+      "dependencies": [
+        "activity-control-command",
+        "analysis-paste-command",
+        "application-activity-gate",
+        "backend-command-gateway",
+        "backend-contracts",
+        "background-runtime-application",
+        "background-wake-application",
+        "branch-edit-command",
+        "card-edit-command",
+        "celery-startup-composition",
+        "database-connection-composition",
+        "database-infrastructure-binding",
+        "durable-task-application",
+        "explicit-import-delivery",
+        "integrity-repair-command",
+        "integrity-scan-service",
+        "lifecycle-queue-projection-storage",
+        "opening-checkpoint-application",
+        "opening-graph-rebuild",
+        "pgn-import-command",
+        "position-annotation-command",
+        "prefix-split-commands",
+        "prefix-split-recovery",
+        "queue-ordering-facade",
+        "queue-refresh-wakeup",
+        "redis-admission-application",
+        "repertoire-control-command",
+        "settings-command",
+        "study-attempt-command",
+        "study-mode-policy",
+        "study-queue-command",
+        "study-queue-refresh-worker",
+        "study-review-command",
+        "tactics-command",
+        "teaching-state-command"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/tasks.py"
+      ],
+      "ownershipRole": "Register command and worker recovery tasks",
+      "dependencyNotes": [
+        "Startup composition has import-time registration/effects; this static map does not establish runtime recovery or availability.",
+        "Registers command handlers and periodic recovery; essential split child wake is advisory after durable enqueue."
+      ],
+      "censusScope": "startup_composition"
+    },
+    {
+      "id": "celery-startup-composition",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [],
+      "dependencies": [
+        "background-wake-application"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/celery_app.py"
+      ],
+      "ownershipRole": "Configure Celery routing and loader",
+      "dependencyNotes": [
+        "Startup composition has import-time registration/effects; this static map does not establish runtime recovery or availability."
+      ],
+      "censusScope": "startup_composition",
+      "moduleAssignments": [
+        "backend/app/celery_app.py#celery_app"
+      ],
+      "lifecycleEdges": [
+        "backend/app/celery_app.py#celery-loader#worker-startup-composition#app.tasks"
+      ]
     }
   ],
   "suites": [

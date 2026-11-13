@@ -659,8 +659,15 @@ review bridge, prefix mutation and Study capture-interface owners. The interface
 initializer retains its empty `__all__`; namespace assignment does not allocate
 future siblings or alter import behavior. Previous gaps remain open.
 
-At this base revision, 23 of 289 tracked Python files in those trees remain
-outside the combined 266-file selections. The registry alone assigns owners;
+A fifty-second selection records API, worker and Celery composition. Python
+imports remain dependency edges; Celery task loading is a separate typed lifecycle
+relationship and is not asserted acyclic. Witnesses check beat target names, not
+their intervals, and exact task queue mappings. Static witnesses do not prove startup,
+recovery or delivery. Existing fixture gaps and the position admission cycle remain
+open.
+
+At this base revision, 20 of 289 tracked Python files in those trees remain
+outside the combined 269-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover

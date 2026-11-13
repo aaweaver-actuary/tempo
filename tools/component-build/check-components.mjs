@@ -162,6 +162,7 @@ export function validateCompositionOwnership(manifest, paths) {
 // Scope predicates enumerate tracked inputs independently of ownership. The
 // component registry is the only mapping from an input to its owner.
 const censusPredicates = {
+  startup_composition: path => /^backend\/app\/(?:main|tasks|celery_app)[^/]*\.py$/.test(path),
   opening_admission: path => /^backend\/app\/services\/(?:queue_admission|opening_capacity_admission)[^/]*\.py$/.test(path),
   opening_kernels: path => /^backend\/app\/study\/openings\/(?:frozen_math|capacity_frontier)[^/]*\.py$/.test(path),
   lifecycle_projection: path => /^database\/tempo_storage\/lifecycle\/refresh_requests[^/]*\.py$/.test(path),
@@ -234,7 +235,7 @@ export function validateCensusOwnership(manifest, scope, paths) {
 }
 export function validateCensusInterfaces(manifest, scope, root = repository, python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3") {
   const owners = manifest.components.filter(component => component.censusScope === scope);
-  if (!owners.length || owners.some(owner => !owner.publicExports?.length)) throw new Error("Census owner lacks named interfaces");
+  if (!owners.length || owners.some(owner => !owner.publicExports?.length && !(scope === "startup_composition" && owner.moduleAssignments?.length))) throw new Error("Census owner lacks named interfaces");
   const references = owners.flatMap(owner => owner.publicExports.map(value => {
     const parts = value.split("#");
     if (parts.length !== 2 || !owner.ownedFiles?.includes(parts[0]) || parts[0].split("/").some(part => !part || part === "." || part === "..") || !inside(resolve(root), resolve(root, parts[0])) || !/^[A-Za-z_][A-Za-z_0-9]*$/.test(parts[1])) throw new Error("Invalid census interface: " + value);
@@ -250,6 +251,77 @@ for ref in json.loads(sys.argv[2]):
   if (result.error || result.status !== 0) throw new Error(result.error?.message ?? result.stdout + result.stderr);
 }
 
+export function validateStartupFacts(manifest, root = repository, python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3") {
+  const graph = new Map(manifest.components.map(c => [c.id, c.dependencies]));
+  const visited = new Set(), active = new Set();
+  function visit(id) {
+    if (active.has(id)) throw new Error("Startup import dependency cycle: " + id);
+    if (visited.has(id)) return;
+    active.add(id);
+    for (const dependency of graph.get(id) ?? []) if (graph.has(dependency)) visit(dependency);
+    active.delete(id); visited.add(id);
+  }
+  for (const id of graph.keys()) visit(id);
+  for (const [from, to] of [["api-startup-composition", "celery-startup-composition"], ["worker-startup-composition", "celery-startup-composition"], ["worker-startup-composition", "queue-refresh-wakeup"], ["queue-refresh-wakeup", "celery-startup-composition"], ["backend-command-dispatch", "celery-startup-composition"], ["postgres-readiness-composition", "celery-startup-composition"], ["celery-startup-composition", "background-wake-application"]])
+    if (!graph.get(from)?.includes(to)) throw new Error("Missing startup import dependency: " + from + " -> " + to);
+  const celery = manifest.components.find(c => c.id === "celery-startup-composition");
+  const worker = manifest.components.find(c => c.id === "worker-startup-composition");
+  const api = manifest.components.find(c => c.id === "api-startup-composition");
+  const assignment = "backend/app/celery_app.py#celery_app";
+  const loader = "backend/app/celery_app.py#celery-loader#worker-startup-composition#app.tasks";
+  if (!celery || !worker || !api || JSON.stringify(celery.moduleAssignments) !== JSON.stringify([assignment]) || JSON.stringify(celery.lifecycleEdges) !== JSON.stringify([loader]) || !celery.ownedFiles.includes("backend/app/celery_app.py") || !worker.ownedFiles.includes("backend/app/tasks.py") || !api.ownedFiles.includes("backend/app/main.py")) throw new Error("Invalid startup assignment or loader ownership");
+  if (manifest.components.some(c => c.id !== celery.id && (c.moduleAssignments?.length || c.lifecycleEdges?.length))) throw new Error("Unexpected startup assignment or loader");
+  const code = `import ast, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+
+def parse(p):
+    return ast.parse((root / p).read_text(), filename=p)
+c = parse('backend/app/celery_app.py')
+t = parse('backend/app/tasks.py')
+a = parse('backend/app/main.py')
+assign = [n for n in c.body if isinstance(n, (ast.Assign, ast.AnnAssign)) and any((isinstance(x, ast.Name) and x.id == 'celery_app' for x in (n.targets if isinstance(n, ast.Assign) else [n.target])))]
+if not (len(assign) == 1 and isinstance(assign[0].value, ast.Call) and isinstance(assign[0].value.func, ast.Name) and (assign[0].value.func.id == 'CoalescingCelery')):
+    raise ValueError('startup witness mismatch')
+if not any((k.arg == 'include' and ast.literal_eval(k.value) == ['app.tasks'] for k in assign[0].value.keywords)):
+    raise ValueError('startup witness mismatch')
+conf = [n.value for n in c.body if isinstance(n, ast.Expr) and isinstance(n.value, ast.Call) and isinstance(n.value.func, ast.Attribute) and (n.value.func.attr == 'update') and isinstance(n.value.func.value, ast.Attribute) and (n.value.func.value.attr == 'conf') and isinstance(n.value.func.value.value, ast.Name) and (n.value.func.value.value.id == 'celery_app')]
+if not len(conf) == 1:
+    raise ValueError('startup witness mismatch')
+kw = {k.arg: k.value for k in conf[0].keywords}
+routes = ast.literal_eval(kw['task_routes'])
+beats = ast.literal_eval(kw['beat_schedule'])
+names = {'ensure_daily_queue', 'execute_foreground_command', 'execute_background_command', 'recover_operations', 'recover_study_operations', 'poll_background_tasks', 'progress_study_queue', 'execute_background_slice'}
+expected = {'app.tasks.' + n for n in names}
+if not set(routes) == expected:
+    raise ValueError('startup witness mismatch')
+if not routes == {**{'app.tasks.' + n: {'queue': 'foreground'} for n in ('execute_foreground_command', 'ensure_daily_queue', 'progress_study_queue', 'recover_study_operations')}, **{'app.tasks.' + n: {'queue': 'background'} for n in ('execute_background_command', 'execute_background_slice', 'poll_background_tasks', 'recover_operations')}}:
+    raise ValueError('startup witness mismatch')
+if not ({v['task'] for v in beats.values()} == {'app.tasks.' + n for n in ('poll_background_tasks', 'recover_study_operations', 'recover_operations', 'progress_study_queue', 'ensure_daily_queue')} and len(beats) == 5):
+    raise ValueError('startup witness mismatch')
+registered = []
+for n in t.body:
+    if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        for d in n.decorator_list:
+            if isinstance(d, ast.Call) and isinstance(d.func, ast.Attribute) and isinstance(d.func.value, ast.Name) and (d.func.value.id == 'celery_app') and (d.func.attr == 'task'):
+                registered.extend((ast.literal_eval(k.value) for k in d.keywords if k.arg == 'name'))
+if not (len(registered) == 8 and set(registered) == expected):
+    raise ValueError('startup witness mismatch')
+registrars = {'study_attempt_commands', 'tactic_commands', 'queue_commands', 'review_commands', 'teaching_commands', 'repertoire_commands', 'settings_commands', 'annotation_commands', 'branch_commands', 'pgn_import_commands', 'analysis_paste_commands', 'prefix_split_commands', 'card_commands', 'activity_commands', 'integrity_repair_commands'}
+imports = {x.name for n in t.body if isinstance(n, ast.ImportFrom) and n.level == 1 and (n.module is None) for x in n.names}
+if not registrars <= imports:
+    raise ValueError('startup witness mismatch')
+if not any((isinstance(n, ast.Expr) and isinstance(n.value, ast.Call) and isinstance(n.value.func, ast.Name) and (n.value.func.id == 'register_command') and n.value.args and isinstance(n.value.args[0], ast.Constant) and (n.value.args[0].value == 'opening_evidence.checkpoint') for n in t.body)):
+    raise ValueError('startup witness mismatch')
+if not any((isinstance(n, ast.AsyncFunctionDef) and n.name == 'lifespan' for n in a.body)):
+    raise ValueError('startup witness mismatch')
+routers = {n.value.args[0].id for n in a.body if isinstance(n, ast.Expr) and isinstance(n.value, ast.Call) and isinstance(n.value.func, ast.Attribute) and isinstance(n.value.func.value, ast.Name) and (n.value.func.value.id == 'app') and (n.value.func.attr == 'include_router') and n.value.args and isinstance(n.value.args[0], ast.Name)}
+if not {'game_review_router', 'prefix_split_router', 'study_exercise_router'} <= routers:
+    raise ValueError('startup witness mismatch')
+`;
+  const result = spawnSync(python, ["-c", code, resolve(root)], { encoding: "utf8" });
+  if (result.error || result.status !== 0) throw new Error("Startup source witness failed: " + (result.error?.message ?? result.stderr));
+}
+
 export function checkComponents(root = repository, python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3", options = {}) {
   const manifest = readManifest(root);
   const selected = selectComponents(manifest, options.componentIds);
@@ -260,6 +332,7 @@ export function checkComponents(root = repository, python = process.env.TEMPO_CO
       validateCensusInterfaces(manifest, scope, root, python);
     }
   }
+  if (root === repository && options.componentIds === undefined) validateStartupFacts(manifest, root);
   validateManifest(manifest, root, { componentIds: selected.map(component => component.id), suiteIds: options.componentIds === undefined ? manifest.suites?.map(suite => suite.id) : undefined });
   const results = [];
   for (const component of selected) {
@@ -294,7 +367,8 @@ if (process.argv[1] && resolve(process.argv[1]) === new URL(import.meta.url).pat
     if (options.list) {
       const manifest = readManifest(root);
       const selected = options.suiteIds ? selectSuites(manifest, options.suiteIds) : selectComponents(manifest, options.componentIds);
-      validateManifest(manifest, root, { componentIds: options.suiteIds ? [] : selected.map(component => component.id), suiteIds: options.suiteIds });
+      if (root === repository && options.componentIds === undefined) validateStartupFacts(manifest, root);
+  validateManifest(manifest, root, { componentIds: options.suiteIds ? [] : selected.map(component => component.id), suiteIds: options.suiteIds });
       console.log(JSON.stringify({ selected }, null, 2));
     } else {
       if (options.suiteIds) throw new Error("Use test-lane.mjs to execute shared suites");
