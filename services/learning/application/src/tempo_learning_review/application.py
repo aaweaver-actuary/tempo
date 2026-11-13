@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import json
 
 from .errors import ReviewConflict, ReviewFailure
-from .models import ReviewCommand, ReviewContext, ReviewResult
+from .models import CompetingReview, PreparedContinuation, ReviewCommand, ReviewContext, ReviewResult
 from .ports import ReviewStore, ReviewSubmissionStore
 
 
@@ -46,7 +46,7 @@ def _refresh_opening(store, context, card, result, *, priority_first=False):
     if priority_first and card.content_type == "opening":
         for repertoire_id in card.owner_ids:
             store.refresh_priority(repertoire_id, transactional_only=True)
-    store.refresh_progression(context, card, result)
+    store.refresh_progression(context, card, ReviewResult.from_dict(result))
 
 
 def apply_review(store: ReviewStore, command: ReviewCommand, context: ReviewContext, *, position=False) -> ReviewResult:
@@ -68,7 +68,7 @@ def apply_review(store: ReviewStore, command: ReviewCommand, context: ReviewCont
                 or receipt.outcome != command.outcome or receipt.guided != command.guided
                 or receipt.completed_at != completed_at):
             raise ReviewConflict("review_attempt_reused", "Review attempt ID was reused for a different result")
-        return ReviewResult(receipt.result_json)
+        return ReviewResult.from_original(receipt.result_json)
     card = store.card(command.card_id)
     if card is None:
         raise ReviewConflict("card_unavailable", "This card is no longer available. The completed result needs review.")
@@ -97,16 +97,16 @@ def apply_review(store: ReviewStore, command: ReviewCommand, context: ReviewCont
         if (command.attempt_id and recorded_attempt is None and recorded_request == original_request
                 and command.recorded_at and recorded_time == context.reviewed_at.isoformat()):
             confirmed = {**stored, "queue_entry_id": attempt.id, "persisted": True, "idempotent": True}
-            store.save_receipt(command, context, confirmed)
+            store.save_receipt(command, context, ReviewResult.from_dict(confirmed))
             store.bind_receipt(command, request_json)
             return ReviewResult.from_dict(confirmed)
         if command.attempt_id and command.attempt_id != recorded_attempt:
             if position:
                 raise ReviewConflict("position_attempt_conflict", "A different review completed this position attempt")
             reconciled = store.reconcile_completed(command, attempt, context, guided=command.guided,
-                revision=command.expected_revision, competing_review={
-                    "outcome": recorded_request.get("outcome") if recorded_request else None,
-                    "completed_at": recorded_time}).as_dict()
+                revision=command.expected_revision, competing_review=CompetingReview(
+                    outcome=recorded_request.get("outcome") if recorded_request else None,
+                    completed_at=recorded_time)).as_dict()
             store.bind_receipt(command, request_json)
             _refresh_opening(store, context, card, reconciled, priority_first=True)
             return ReviewResult.from_dict(reconciled)
@@ -114,7 +114,7 @@ def apply_review(store: ReviewStore, command: ReviewCommand, context: ReviewCont
             raise ReviewConflict("queue_attempt_result_conflict", "A different review already completed this queue attempt")
         if command.recorded_at and recorded_time != context.reviewed_at.isoformat():
             raise ReviewConflict("queue_attempt_other_device", "This queue attempt was already reviewed on another device")
-        return ReviewResult.from_dict({**stored, "queue_entry_id": attempt.id, "persisted": True, "idempotent": True})
+        return ReviewResult.from_original(json.dumps({**stored, "queue_entry_id": attempt.id, "persisted": True, "idempotent": True}))
     if command.expected_revision is not None and store.current_revision(command.card_id) != command.expected_revision:
         raise ReviewConflict("card_revision_changed", "This card changed after the phone queue was prepared")
     latest_review = store.latest_review_id(command.card_id, valid_only=True)
@@ -156,11 +156,12 @@ def apply_review(store: ReviewStore, command: ReviewCommand, context: ReviewCont
               **({"reconciliation": "queue_origin"} if attempt.recovered else {})}
     if snapshot:
         store.save_snapshot(result["review_id"], snapshot)
+    result_value = ReviewResult.from_dict(result)
     if command.attempt_id:
         if position:
-            store.save_position_receipt(command, context, result)
+            store.save_position_receipt(command, context, result_value)
         else:
-            store.save_receipt(command, context, result)
+            store.save_receipt(command, context, result_value)
         if not position:
             store.bind_receipt(command, request_json)
     if not position:
@@ -204,24 +205,24 @@ def submit_review(store: ReviewSubmissionStore, command: ReviewCommand, context_
     context = context_factory()
     if position and not completion and not prior:
         raise ReviewFailure(409, "Position completion requires opening evidence", code="opening_evidence_conflict")
-    result = apply_review(store, command, context, position=position).as_dict()
+    result = apply_review(store, command, context, position=position)
     if completion:
         store.complete_evidence(command, result)
-        if position and not prior and result.get("idempotent") is False:
+        if position and not prior and result.current is not None and result.current.idempotent is False:
             store.apply_position_effects(command, context, result)
             store.finish_position_receipt(command, context, result)
             _, request_json = _request_binding(command, context)
             store.bind_receipt(command, request_json)
-        if not prior and result.get("idempotent") is False and result.get("requeue_entry_id") is not None:
+        if not prior and result.current is not None and result.current.idempotent is False and result.current.requeue_entry_id is not None:
             store.inherit_evidence_scope(command, result)
-    if command.attempt_id and not prior and result.get("idempotent") is False and continuation_locked:
+    if command.attempt_id and not prior and result.current is not None and result.current.idempotent is False and continuation_locked:
         candidate = command.prepared_next
         if candidate and candidate.local_date == context.local_day.isoformat():
             facts = store.continuation_facts(candidate)
             if (facts and facts.content_type not in {"study_exercise", "defense"}
                     and facts.cycle == candidate.cycle and facts.revision == candidate.revision
                     and store.issue_head(candidate)):
-                result = {**result, "prepared_continuation": {**candidate.as_dict(),
-                    "attempt_failed": facts.attempt_failed}}
+                continuation = PreparedContinuation(candidate, facts.attempt_failed)
+                result = ReviewResult.from_dict({**result.as_dict(), "prepared_continuation": continuation.as_dict()})
                 store.save_continuation(command.attempt_id, result)
-    return ReviewResult.from_dict(result)
+    return result

@@ -699,7 +699,7 @@ def test_review_requeue_context_correction_only_runs_for_fresh_review(
     }
     corrections = []
     validation_order = []
-    result = {"persisted": True, "requeue_entry_id": requeue_id}
+    result = {"persisted": True, "queue_entry_id": 101, "review_id": 1, "requeue_entry_id": requeue_id}
     if idempotent is not None:
         result["idempotent"] = idempotent
 
@@ -1086,3 +1086,25 @@ def test_b06_review_commands_register_full_submission_without_legacy_bypass():
     assert command_gateway._handlers["cards.review"] is review_commands.submit_review
     assert command_gateway._handlers["cards.review.reconcile"] is review_commands.reconcile_review
     assert "not a user submission boundary" in learning.apply_review.__doc__
+
+
+def test_production_adapter_submit_replays_original_receipt_bytes(monkeypatch):
+    from datetime import date, datetime, timezone
+    import tempo_learning_review as learning
+    from app.services.learning_review_adapter import LearningReviewAdapter
+    from tempo_storage.learning_bridge import review as storage
+
+    raw = '{ "persisted": true, "queue_entry_id": 101, "review_id": 77, "future": [1, 2] }'
+    row = {'card_id': 'card', 'queue_entry_id': 101, 'outcome': 'correct', 'guided': False,
+           'completed_at': None, 'result_json': raw, 'request_json': None}
+    monkeypatch.setattr(storage, 'receipt', lambda *_: row)
+    adapter = LearningReviewAdapter(object(), None)
+    monkeypatch.setattr(adapter, 'begin_position_review', lambda *_: False)
+    monkeypatch.setattr(adapter, 'lock_review_cards', lambda *_: False)
+    monkeypatch.setattr(adapter, 'lock_queue_date', lambda: None)
+    monkeypatch.setattr(adapter, 'is_deleted', lambda *_: False)
+    command = learning.ReviewCommand('card', 'correct', False, 101, None, None, 1, 'attempt', '{}')
+    context = learning.ReviewContext(datetime(2026, 11, 13, tzinfo=timezone.utc), date(2026, 11, 13), date(2026, 11, 13))
+    result = learning.submit_review(adapter, command, lambda: context)
+    assert result.payload_json == raw and result.as_dict()['future'] == [1, 2]
+    assert result.original is not None and result.current is None

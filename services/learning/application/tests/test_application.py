@@ -83,6 +83,7 @@ class Capabilities:
         return 2
     def save_snapshot(self, *args): self.event("snapshot")
     def save_receipt(self, cmd, ctx, result):
+        result = result.as_dict()
         self.event("receipt")
         self.saved_receipt = review.AttemptReceipt(cmd.card_id, result["queue_entry_id"], cmd.outcome,
             cmd.guided, ctx.reviewed_at.isoformat() if cmd.recorded_at else None, json.dumps(result), None)
@@ -104,6 +105,7 @@ class Capabilities:
         self.event("issue")
         return self.issue
     def save_continuation(self, attempt_id, result):
+        result = result.as_dict()
         self.event("continuation")
         self.saved_receipt = replace(self.saved_receipt, result_json=json.dumps(result))
 
@@ -259,9 +261,9 @@ def test_explicit_registration_and_immutable_internal_records():
     review.register_review_commands(lambda name, handler: registered.setdefault(name,handler), submit=submit,reconcile=reconcile)
     assert registered == {"cards.review":submit,"cards.review.reconcile":reconcile}
     with pytest.raises(FrozenInstanceError): command().outcome = "again"
-    result = review.ReviewResult.from_dict({"values":[1]})
+    result = review.ReviewResult.from_dict({"persisted": True, "queue_entry_id": 1, "review_id": 2, "values":[1]})
     result.as_dict()["values"].append(2)
-    assert result.as_dict() == {"values":[1]}
+    assert result.as_dict()["values"] == [1]
 
 
 def test_recorded_receipt_replay_does_not_read_current_scheduling_policy():
@@ -303,3 +305,45 @@ def test_original_receipt_bytes_replay_without_reencoding():
     store.saved_receipt = review.AttemptReceipt("card-a", 1, "correct", False, None, raw, None)
     assert review.apply_review(store, command(), CONTEXT).payload_json == raw
     assert not store.calls
+
+
+def test_submit_replays_original_receipt_bytes_and_unknown_fields():
+    store = Capabilities()
+    raw = '{  "persisted" : true, "queue_entry_id":1, "review_id":12, "future_field": {"x": 7} }'
+    store.saved_receipt = review.AttemptReceipt("card-a", 1, "correct", False, None, raw, None)
+    result = review.submit_review(store, command(), lambda: CONTEXT)
+    assert result.payload_json == raw and result.original is not None and result.current is None
+    assert result.as_dict()["future_field"] == {"x": 7}
+    assert not any(call[0] in {"schedule", "receipt", "issue", "continuation"} for call in store.calls)
+
+
+def test_incomplete_current_result_cannot_authorize_effects():
+    with pytest.raises(ValueError, match="Missing review result field"):
+        review.ReviewResult.from_dict({"persisted": True, "idempotent": False})
+    with pytest.raises(ValueError, match="Invalid review result"):
+        review.ReviewResult.from_dict({"persisted": False, "queue_entry_id": 1, "review_id": 2, "idempotent": False})
+    with pytest.raises(ValueError, match="Invalid review result"):
+        review.ReviewResult.from_dict({"persisted": True, "queue_entry_id": 1, "review_id": None, "idempotent": False})
+
+
+def test_incomplete_review_result_never_confirms_evidence_or_prepared_continuation(monkeypatch):
+    import tempo_learning_review.application as application
+    store = Capabilities()
+    candidate = review.PreparedNext(2, 'card-b', 1, 0, DAY.isoformat())
+    def incomplete(*args, **kwargs):
+        return review.ReviewResult.from_dict({'persisted': True, 'idempotent': False})
+    monkeypatch.setattr(application, 'apply_review', incomplete)
+    with pytest.raises(ValueError, match='Missing review result field'):
+        review.submit_review(store, command(completion=completion(), prepared_next=candidate), lambda: CONTEXT)
+    assert not any(call[0] in {'complete_evidence', 'inherit', 'issue', 'continuation'} for call in store.calls)
+
+
+def test_submit_replay_preserves_original_continuation_without_new_issue():
+    store = Capabilities()
+    raw = '{"persisted": true, "queue_entry_id": 1, "review_id": 12, "prepared_continuation": {"card_id": "original", "unknown": 9}}'
+    store.saved_receipt = review.AttemptReceipt('card-a', 1, 'correct', False, None, raw, None)
+    candidate = review.PreparedNext(2, 'new-candidate', 1, 0, DAY.isoformat())
+    result = review.submit_review(store, command(prepared_next=candidate), lambda: CONTEXT)
+    assert result.payload_json == raw
+    assert result.as_dict()['prepared_continuation'] == {'card_id': 'original', 'unknown': 9}
+    assert not any(call[0] in {'issue', 'continuation'} for call in store.calls)

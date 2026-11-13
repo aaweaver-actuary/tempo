@@ -7,8 +7,8 @@ import json
 from fastapi import HTTPException
 import tempo_learning_review as learning
 from tempo_learning_review.models import (
-    QueueAttempt, ReconciledReview, ReviewCommand, ReviewContext, ReviewPolicy,
-    ScheduledReview, ScheduleSnapshot,
+    CompetingReview, QueueAttempt, ReconciledReview, ReviewCommand, ReviewContext, ReviewPolicy,
+    ScheduledReview, ScheduleSnapshot, ReviewResult,
 )
 from tempo_storage.learning_bridge import review as storage
 from tempo_storage.connections import read_connection
@@ -238,7 +238,7 @@ class LearningReviewAdapter:
 
     def reconcile_completed(
         self, command: ReviewCommand, attempt: QueueAttempt, context: ReviewContext, *,
-        guided: bool, revision: int | None, competing_review: dict | None = None
+        guided: bool, revision: int | None, competing_review: CompetingReview | None = None
     ) -> ReconciledReview:
         result = reconcile_completed_review(
             self.database,
@@ -252,7 +252,7 @@ class LearningReviewAdapter:
             timezone_name=self._command_timezone,
             observed_at=self._command_time,
             local_day=context.local_day,
-            competing_review=competing_review,
+            competing_review=competing_review.as_dict() if competing_review else None,
         )
         return ReconciledReview.from_dict(result)
 
@@ -357,46 +357,49 @@ class LearningReviewAdapter:
     def save_snapshot(self, review_id: int, snapshot: ScheduleSnapshot) -> None:
         save_schedule_snapshot(self.database, review_id, snapshot.as_dict())
 
-    def save_receipt(self, command, context, result):
+    def save_receipt(self, command: ReviewCommand, context: ReviewContext, result: ReviewResult) -> None:
+        payload = result.as_dict()
         storage.insert_receipt(
             self.database,
             command.attempt_id,
             command.card_id,
-            result["queue_entry_id"],
+            payload["queue_entry_id"],
             command.outcome,
             int(command.guided),
             context.reviewed_at.isoformat() if command.recorded_at else None,
-            result["review_id"],
+            payload["review_id"],
             "canonical",
             None,
-            json.dumps(result),
+            json.dumps(payload),
         )
 
-    def save_position_receipt(self, command, context, result):
+    def save_position_receipt(self, command: ReviewCommand, context: ReviewContext, result: ReviewResult) -> None:
+        payload = result.as_dict()
         # D3 verifies this canonical human receipt before accepting Good. Its
         # result remains provisional until every position effect succeeds.
         storage.insert_receipt(
             self.database,
             command.attempt_id,
             command.card_id,
-            result["queue_entry_id"],
+            payload["queue_entry_id"],
             command.outcome,
             int(command.guided),
             context.reviewed_at.isoformat() if command.recorded_at else None,
-            result["review_id"],
+            payload["review_id"],
             "canonical",
             None,
             "{}",
         )
 
-    def finish_position_receipt(self, command, context, result):
-        storage.save_continuation(self.database, json.dumps(result), command.attempt_id)
+    def finish_position_receipt(self, command: ReviewCommand, context: ReviewContext, result: ReviewResult) -> None:
+        payload = result.as_dict()
+        storage.save_continuation(self.database, json.dumps(payload), command.attempt_id)
         self.retain_completion(
             command,
             self._review_attempt,
             json.dumps(
                 {
-                    **result,
+                    **payload,
                     "_request": {"outcome": command.outcome, "guided": command.guided},
                     "_recorded_at": context.reviewed_at.isoformat()
                     if command.recorded_at
@@ -424,8 +427,9 @@ class LearningReviewAdapter:
                 result_json,
             )
 
-    def refresh_progression(self, context, card, result):
-        if card.content_type == "opening" and result.get("review_id") is not None:
+    def refresh_progression(self, context: ReviewContext, card: learning.CardFacts, result: ReviewResult) -> None:
+        payload = result.as_dict()
+        if card.content_type == "opening" and payload.get("review_id") is not None:
             from ..queue_commands import request_queue_refresh_in_transaction
 
             day = context.local_day.isoformat()
@@ -573,7 +577,8 @@ class LearningReviewAdapter:
                 position_checkpoint_events(self.database, self._position_fence),
             )
 
-    def apply_position_effects(self, command, context, result):
+    def apply_position_effects(self, command: ReviewCommand, context: ReviewContext, result: ReviewResult) -> None:
+        payload = result.as_dict()
         from app.study.position_learning.grade_effects import CompletionAuthority, apply_in_borrowed_transaction
         from tempo_storage.study.position_first_responses import (
             acceptance_clock,
@@ -597,7 +602,7 @@ class LearningReviewAdapter:
             )
         if (
             command.queue_entry_id != plan.queue_entry_id
-            or result["queue_entry_id"] != plan.queue_entry_id
+            or payload["queue_entry_id"] != plan.queue_entry_id
         ):
             raise learning.ReviewFailure(
                 409,
@@ -612,7 +617,7 @@ class LearningReviewAdapter:
             plan.queue_entry_id,
             command.card_id,
             command.completion.card_revision,
-            result["review_id"],
+            payload["review_id"],
         )
         effects = apply_in_borrowed_transaction(
             self.database,
@@ -629,24 +634,26 @@ class LearningReviewAdapter:
                 409, effects.reason, code="opening_evidence_conflict"
             )
 
-    def complete_evidence(self, command, result):
+    def complete_evidence(self, command: ReviewCommand, result: ReviewResult) -> None:
+        payload = result.as_dict()
         from app.study.position_checkpoint import complete_review_evidence
 
         complete_review_evidence(
-            self.database, self.request.opening_evidence_completion, result
+            self.database, self.request.opening_evidence_completion, payload
         )
 
-    def inherit_evidence_scope(self, command, result):
+    def inherit_evidence_scope(self, command: ReviewCommand, result: ReviewResult) -> None:
+        payload = result.as_dict()
         completion = self.request.opening_evidence_completion
         storage.inherit_evidence_scope(
             self.database,
-            result["requeue_entry_id"],
+            payload["requeue_entry_id"],
             completion.manifest.presentation_snapshot_id,
             completion.manifest.repertoire_id,
             completion.manifest.trained_color,
         )
 
-    def continuation_facts(self, candidate):
+    def continuation_facts(self, candidate: learning.PreparedNext) -> learning.ContinuationFacts | None:
         row = storage.continuation_facts(
             self.database, candidate.queue_entry_id, candidate.card_id
         )
@@ -661,7 +668,7 @@ class LearningReviewAdapter:
             else None
         )
 
-    def issue_head(self, candidate):
+    def issue_head(self, candidate: learning.PreparedNext) -> bool:
         from ..queue_commands import issue_queue_head
 
         with training_timing_stage("prepared_head_issuance"):
@@ -675,8 +682,9 @@ class LearningReviewAdapter:
                 },
             )["issued"]
 
-    def save_continuation(self, attempt_id, result):
-        storage.save_continuation(self.database, json.dumps(result), attempt_id)
+    def save_continuation(self, attempt_id: str, result: ReviewResult) -> None:
+        payload = result.as_dict()
+        storage.save_continuation(self.database, json.dumps(payload), attempt_id)
 
 
 

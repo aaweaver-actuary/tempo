@@ -1,6 +1,6 @@
 """Internal immutable records, independent of HTTP models and wire v1."""
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 import json
 from typing import Literal
@@ -101,12 +101,65 @@ class ContinuationFacts:
 
 
 @dataclass(frozen=True)
+class CompetingReview:
+    outcome: str | None
+    completed_at: str | None
+
+    def as_dict(self) -> dict:
+        return {"outcome": self.outcome, "completed_at": self.completed_at}
+
+
+@dataclass(frozen=True)
+class PreparedContinuation:
+    candidate: PreparedNext
+    attempt_failed: bool
+
+    def as_dict(self) -> dict:
+        return {**self.candidate.as_dict(), "attempt_failed": self.attempt_failed}
+
+
+@dataclass(frozen=True)
+class OriginalReviewReceipt:
+    """Opaque saved response: its bytes remain authoritative on replay."""
+    payload_json: str
+
+
+@dataclass(frozen=True)
+class CurrentReviewResult:
+    persisted: bool
+    queue_entry_id: int
+    review_id: int | None
+    requeue_entry_id: int | None
+    idempotent: bool | None
+    reconciliation: str | None
+
+
+@dataclass(frozen=True)
 class ReviewResult:
     payload_json: str
+    current: CurrentReviewResult | None = field(default=None, compare=False)
+    original: OriginalReviewReceipt | None = field(default=None, compare=False)
 
     @classmethod
     def from_dict(cls, result: dict) -> ReviewResult:
-        return cls(json.dumps(result))
+        for name in ("persisted", "queue_entry_id", "review_id"):
+            if name not in result:
+                raise ValueError(f"Missing review result field: {name}")
+        if (result["persisted"] is not True or type(result["queue_entry_id"]) is not int
+            or (result["review_id"] is not None and type(result["review_id"]) is not int)
+            or (result.get("requeue_entry_id") is not None and type(result["requeue_entry_id"]) is not int)
+            or (result.get("idempotent") is not None and type(result["idempotent"]) is not bool)
+            or (result.get("idempotent") is False and result["review_id"] is None)):
+            raise ValueError("Invalid review result identity or disposition")
+        current = CurrentReviewResult(
+            result["persisted"], result["queue_entry_id"], result["review_id"],
+            result.get("requeue_entry_id"), result.get("idempotent"), result.get("reconciliation"),
+        )
+        return cls(json.dumps(result), current=current)
+
+    @classmethod
+    def from_original(cls, payload_json: str) -> ReviewResult:
+        return cls(payload_json, original=OriginalReviewReceipt(payload_json))
 
     def as_dict(self) -> dict:
         return json.loads(self.payload_json)
