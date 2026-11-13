@@ -2,6 +2,76 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "card-deletion-application",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/card_deletion.py#require_card_not_deleted",
+        "backend/app/card_deletion.py#card_deletion_preview",
+        "backend/app/card_deletion.py#permanent_delete_card",
+        "backend/app/card_deletion.py#delete_repertoire_data",
+        "backend/app/card_deletion.py#omit_deleted_graph_steps"
+      ],
+      "dependencies": [
+        "card-deletion-storage",
+        "study-calendar-capture"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/card_deletion.py"
+      ],
+      "ownershipRole": "Coordinate explicit deletion and retained ownership",
+      "dependencyNotes": [
+        "Uses calendar, observation summary and caller database; main, card and repertoire commands, Study, tactic, review and graph consumers call this owner. Existing receipt and admission proof preservation remains application policy."
+      ],
+      "censusScope": "card_deletion"
+    },
+    {
+      "id": "card-deletion-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/authored_repertoires/card_deletion",
+      "publicExports": [
+        "database/tempo_storage/authored_repertoires/card_deletion/storage.py#is_card_deleted",
+        "database/tempo_storage/authored_repertoires/card_deletion/storage.py#record_tombstones",
+        "database/tempo_storage/authored_repertoires/card_deletion/storage.py#purge_queue_and_cards",
+        "database/tempo_storage/authored_repertoires/card_deletion/storage.py#retain_membership",
+        "database/tempo_storage/authored_repertoires/card_deletion/storage.py#reparent_dependencies"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/authored_repertoires/card_deletion/__init__.py",
+        "database/tempo_storage/authored_repertoires/card_deletion/storage.py"
+      ],
+      "ownershipRole": "Persist deletion and retained ownership operations",
+      "dependencyNotes": [
+        "Caller-transaction SQL locks and rechecks, records tombstones, retains or reassigns cards, cancels tasks and mutates queue, training, graph and evidence data; application owns decisions and transaction."
+      ],
+      "censusScope": "card_deletion"
+    },
+    {
       "id": "pgn-import-command",
       "type": "integration",
       "maintainer": "Tempo",

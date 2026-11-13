@@ -394,8 +394,15 @@ prefix, durable task, Redis admission and task/main composition are existing
 edges. This source map does not establish native or runtime qualification.
 The inherited legacy command fixture remains unresolved.
 
-At this base revision, 195 of 291 tracked Python files in those trees remain
-outside the combined 96-file selections. The registry alone assigns owners;
+A fourteenth selection maps existing explicit card and repertoire deletion decisions
+and their SQL adapter. Main, commands, Study, tactic, review and graph callers,
+calendar and observation-summary policy remain visible external edges. Caller-owned
+operations include tombstones, retention, task cancellation, queue, graph and
+evidence mutations. Mapping does not authorize deletion or establish native proof.
+The inherited legacy fixture and three focused PGN failures remain unresolved.
+
+At this base revision, 192 of 291 tracked Python files in those trees remain
+outside the combined 99-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover
