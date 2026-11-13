@@ -441,6 +441,39 @@ for p in json.loads(sys.argv[2]): ast.parse((root/p).read_text(),filename=p)
   return {files:tracked.length};
 }
 
+export function validateDatabaseCliTools(manifest, root = repository) {
+  const listed=spawnSync("git",["ls-files","-z","database/tooling/cli"],{cwd:root,encoding:"utf8"});
+  if (listed.error || listed.status!==0) throw new Error("Cannot enumerate database CLI tools");
+  const tracked=listed.stdout.split("\0").filter(p=>/\.(?:py|sh|js|jsx|mjs|cjs|ts|tsx)$/.test(p));
+  const ids=["database-cli-backup-operations","database-cli-probes"], owners=ids.map(id=>manifest.components.find(c=>c.id===id));
+  if (owners.some(c=>!c || c.status!=="mapped" || !Array.isArray(c.resourceRoles) || !Array.isArray(c.ownedFiles))) throw new Error("Missing database CLI owner");
+  const mapped=manifest.components.filter(c=>c.status==="mapped" && c.ownedFiles), files=owners.flatMap(c=>c.ownedFiles);
+  if (new Set(files).size!==files.length || files.length!==tracked.length || files.some(p=>!tracked.includes(p))) throw new Error("Database CLI inventory missing, duplicate or stale");
+  const roles=new Set(["cli-backup-operations","cli-diagnostic-probes"]);
+  for (const owner of owners) {
+    const roleMap=new Map();
+    for(const entry of owner.resourceRoles) {
+      const parts=typeof entry==="string" ? entry.split("#") : [];
+      if(parts.length!==2 || !owner.ownedFiles.includes(parts[0]) || !roles.has(parts[1]) || roleMap.has(parts[0])) throw new Error("Invalid database CLI role");
+      roleMap.set(parts[0],parts[1]);
+    }
+    if(roleMap.size!==owner.ownedFiles.length) throw new Error("Invalid database CLI role");
+    const found=[];
+    for(const path of owner.ownedFiles) {
+      if(!path.endsWith(".mjs") || path.split("/").some(x=>!x || x==="." || x==="..") || !existsSync(resolve(root,path)) || !inside(realpathSync(root),realpathSync(resolve(root,path))) || mapped.filter(c=>c.ownedFiles.includes(path)).length!==1) throw new Error("Invalid or overlapping database CLI source");
+      const source=ts.createSourceFile(path,readFileSync(resolve(root,path),"utf8"),ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
+      if(source.parseDiagnostics.length) throw new Error("Database CLI source syntax invalid: "+path);
+      for(const statement of source.statements) {
+        if(!ts.isFunctionDeclaration(statement) || !statement.name || !statement.modifiers?.some(m=>m.kind===ts.SyntaxKind.ExportKeyword)) throw new Error("Database CLI source has top-level effect or unsupported declaration: "+path);
+        found.push(path+"#"+statement.name.text);
+      }
+    }
+    if(new Set(found).size!==found.length || owner.publicExports.length!==found.length || found.some(name=>!owner.publicExports.includes(name))) throw new Error("Database CLI exported interface mismatch");
+  }
+  if(!manifest.components.find(c=>c.id==="tempo-cli")?.dependencies.includes("database-cli-backup-operations") || !manifest.components.find(c=>c.id==="tempo-cli")?.dependencies.includes("database-cli-probes")) throw new Error("Missing database CLI composition dependency");
+  return {sources:tracked.length};
+}
+
 export function checkComponents(root = repository, python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3", options = {}) {
   const manifest = readManifest(root);
   const selected = selectComponents(manifest, options.componentIds);
@@ -455,6 +488,7 @@ export function checkComponents(root = repository, python = process.env.TEMPO_CO
     validateStartupFacts(manifest, root);
     validateDdlResources(manifest, root, python);
     validateReductionTools(manifest, root, python);
+    validateDatabaseCliTools(manifest, root);
     validateContractTooling(manifest, root, python);
   }
   validateManifest(manifest, root, { componentIds: selected.map(component => component.id), suiteIds: options.componentIds === undefined ? manifest.suites?.map(suite => suite.id) : undefined });
@@ -495,6 +529,7 @@ if (process.argv[1] && resolve(process.argv[1]) === new URL(import.meta.url).pat
         validateStartupFacts(manifest, root);
         validateDdlResources(manifest, root);
         validateReductionTools(manifest, root);
+        validateDatabaseCliTools(manifest, root);
         validateContractTooling(manifest, root);
       }
       validateManifest(manifest, root, { componentIds: options.suiteIds ? [] : selected.map(component => component.id), suiteIds: options.suiteIds });
