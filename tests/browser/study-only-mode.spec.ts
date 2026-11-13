@@ -8,19 +8,20 @@ import { boardBounds, navigate, prepareUI, noPageOverflow } from "./ui-fixtures"
 
 type ReceiptResponse = Pick<APIResponse, "status" | "ok" | "json">;
 async function confirmedOriginalReview(response: ReceiptResponse, operationId: string,
-  readReceipt: (id: string) => Promise<ReceiptResponse>): Promise<Record<string, unknown>> {
+  readReceipt: (id: string) => Promise<ReceiptResponse>,
+  options: { limit?: number; wait?: () => Promise<void> } = {}): Promise<Record<string, unknown>> {
   if (response.status() === 202) {
     const acknowledgement = await response.json();
-    if (acknowledgement?.operation_id !== operationId || !["queued", "pending", "running", "retrying"].includes(acknowledgement?.state))
+    if (acknowledgement?.operation_id !== operationId || !["unknown", "queued", "pending", "running", "retrying"].includes(acknowledgement?.state))
       throw new Error("The original review acknowledgement is missing or foreign");
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < (options.limit ?? 100); i++) {
       const polled = await readReceipt(operationId);
       if (!polled.ok()) throw new Error(`Original review receipt HTTP ${polled.status()}`);
       const receipt = await polled.json();
       if (receipt?.operation_id !== operationId) throw new Error("The original review receipt is missing or foreign");
       if (receipt.state === "complete") return confirmedReviewBody(receipt.response);
-      if (!["queued", "pending", "running", "retrying"].includes(receipt.state)) throw new Error("Original review did not complete");
-      await new Promise(resolve => setTimeout(resolve, 200));
+      if (!["unknown", "queued", "pending", "running", "retrying"].includes(receipt.state)) throw new Error("Original review did not complete");
+      await (options.wait?.() ?? new Promise(resolve => setTimeout(resolve, 200)));
     }
     throw new Error("Original review receipt remained pending");
   }
@@ -43,6 +44,12 @@ test("original review replay validator rejects failure and foreign receipts", as
   await expect(confirmedOriginalReview(reply(202, {operation_id:"original", state:"queued"}), "original", async () => reply(200, {operation_id:"foreign", state:"complete", response:good}))).rejects.toThrow();
   await expect(confirmedOriginalReview(reply(202, {operation_id:"original", state:"queued"}), "original", async () => reply(200, {operation_id:"original", state:"complete", response:{persisted:true}}))).rejects.toThrow();
   expect(await confirmedOriginalReview(reply(202, {operation_id:"original", state:"queued"}), "original", async () => reply(200, {operation_id:"original", state:"complete", response:good}))).toEqual(good);
+  let reads = 0;
+  const unknown = reply(202, {operation_id:"original", state:"unknown"});
+  const options = {limit: 2, wait: async () => {}};
+  expect(await confirmedOriginalReview(unknown, "original", async () => reply(200, ++reads === 1
+    ? {operation_id:"original", state:"unknown"} : {operation_id:"original", state:"complete", response:good}), options)).toEqual(good);
+  await expect(confirmedOriginalReview(unknown, "original", async () => reply(200, {operation_id:"original", state:"unknown"}), options)).rejects.toThrow("remained pending");
 });
 
 test("study_only_mode_preserves_foreground_review_and_queue_progression across reload and resumption", async ({ page, request }, testInfo) => {
