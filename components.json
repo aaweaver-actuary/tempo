@@ -7997,7 +7997,9 @@
         "database/tempo_storage/study/issuance.py#committed_issuance_count",
         "database/tempo_storage/study/issuance.py#first_target_issuance"
       ],
-      "dependencies": [],
+      "dependencies": [
+        "backend-contracts"
+      ],
       "buildInputs": [],
       "buildCommand": null,
       "artifact": null,
@@ -8032,7 +8034,9 @@
         "database/tempo_storage/study/position_schedule_state.py#PositionScheduleState",
         "database/tempo_storage/study/position_schedule_state.py#PositionScheduleStateReader"
       ],
-      "dependencies": [],
+      "dependencies": [
+        "evidence-math"
+      ],
       "buildInputs": [],
       "buildCommand": null,
       "artifact": null,
@@ -8071,7 +8075,9 @@
       ],
       "dependencies": [
         "study-position-due-storage",
-        "position-source-storage"
+        "position-source-storage",
+        "evidence-math",
+        "position-owner-epoch-storage"
       ],
       "buildInputs": [],
       "buildCommand": null,
