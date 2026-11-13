@@ -171,7 +171,8 @@
               "card_branch_edits",
               "repertoire_controls",
               "tactics",
-              "queue_commands"
+              "queue_commands",
+              "queue_order"
             ]
           }
         }

@@ -449,8 +449,16 @@ fixture failures remain unresolved. The focused queue command boundary suite als
 has eight unresolved failures: missing `postgres_sql` (one), SQLite rejection of
 PostgreSQL placeholders (four), and missing `is_postgres_connection` (three).
 
-At this base revision, 164 of 291 tracked Python files in those trees remain
-outside the combined 127-file selections. The registry alone assigns owners;
+A twenty-first selection maps Study ordering policy, receipt preservation, backend
+facade, presentation and priority preparation, and presentation SQL. Existing
+protected attempts, ownership rechecks, bounded reads and caller transactions remain
+visible; ordering does not grant serving eligibility. Frozen-order, review, Redis
+defer, queue refresh and main/task/placement are existing edges. This map is not
+native qualification. The eight queue, three PGN, three legacy and one retained
+mutation fixture failures remain unresolved.
+
+At this base revision, 158 of 291 tracked Python files in those trees remain
+outside the combined 133-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover

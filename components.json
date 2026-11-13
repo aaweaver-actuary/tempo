@@ -2,6 +2,203 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "study-queue-order-policy",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/study/policy",
+      "publicExports": [
+        "backend/app/study/policy/queue_ordering.py#queue_membership_hash",
+        "backend/app/study/policy/queue_ordering.py#queue_order_provenance",
+        "backend/app/study/policy/queue_ordering.py#preserved_queue_fingerprint",
+        "backend/app/study/policy/queue_ordering.py#priority_queue_order"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study/policy/queue_ordering.py"
+      ],
+      "ownershipRole": "Plan deterministic Study queue presentation",
+      "dependencyNotes": [
+        "Pure ordering facts and protected entries are used by order receipt and backend compatibility facade; ordering grants no serving eligibility."
+      ],
+      "censusScope": "queue_order"
+    },
+    {
+      "id": "study-queue-order-receipt",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/study",
+      "publicExports": [
+        "backend/app/study/queue_order.py#capture_daily_queue_order",
+        "backend/app/study/queue_order.py#preserve_daily_queue_order"
+      ],
+      "dependencies": [
+        "study-queue-order-policy"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study/queue_order.py"
+      ],
+      "ownershipRole": "Capture and preserve queue presentation provenance",
+      "dependencyNotes": [
+        "Uses Study review storage and frozen-order activation on caller transaction to validate previous provenance and write presentation receipt."
+      ],
+      "censusScope": "queue_order"
+    },
+    {
+      "id": "queue-ordering-facade",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/queue_ordering.py#_priority_queue_order",
+        "backend/app/services/queue_ordering.py#_protected_queue_ids",
+        "backend/app/services/queue_ordering.py#_plan_daily_queue_order"
+      ],
+      "dependencies": [
+        "study-queue-order-policy"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/queue_ordering.py"
+      ],
+      "ownershipRole": "Retain backend ordering exports",
+      "dependencyNotes": [
+        "Projects historical bridge priority labels into Study policy and restores original rows; main, queue refresh, command and placement consume existing exports."
+      ],
+      "censusScope": "queue_order"
+    },
+    {
+      "id": "queue-presentation-service",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/queue_presentation.py#presentation_rows"
+      ],
+      "dependencies": [
+        "queue-presentation-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/queue_presentation.py"
+      ],
+      "ownershipRole": "Project current queue presentation facts",
+      "dependencyNotes": [
+        "Reads via caller transaction or supplied bounded reader; normalizes admission and eligibility without changing membership or selecting work."
+      ],
+      "censusScope": "queue_order"
+    },
+    {
+      "id": "queue-priority-promotion",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/queue_priority_promotion.py#PreparedPriorityPromotion",
+        "backend/app/services/queue_priority_promotion.py#priority_changes",
+        "backend/app/services/queue_priority_promotion.py#prepare_priority_promotion"
+      ],
+      "dependencies": [
+        "queue-ordering-facade",
+        "queue-presentation-service",
+        "queue-presentation-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/queue_priority_promotion.py"
+      ],
+      "ownershipRole": "Prepare protected queue priority overlay",
+      "dependencyNotes": [
+        "Reads bounded pages and rechecks ownership state; existing Redis admission defer exception represents a stale or over-bound preparation, and canonical placement revalidates before write."
+      ],
+      "censusScope": "queue_order"
+    },
+    {
+      "id": "queue-presentation-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/queue_refresh",
+      "publicExports": [
+        "database/tempo_storage/queue_refresh/presentation.py#saved_plan",
+        "database/tempo_storage/queue_refresh/presentation.py#current_membership",
+        "database/tempo_storage/queue_refresh/presentation.py#apply_plan",
+        "database/tempo_storage/queue_refresh/presentation.py#publish_projection",
+        "database/tempo_storage/queue_refresh/presentation.py#presentation_facts",
+        "database/tempo_storage/queue_refresh/presentation.py#priority_ownership_state"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/queue_refresh/presentation.py"
+      ],
+      "ownershipRole": "Persist and read queue presentation facts",
+      "dependencyNotes": [
+        "SQL reads eligibility, membership and protected attempts, applies guarded positions and writes plan, projection and diagnostics; caller owns transaction and policy."
+      ],
+      "censusScope": "queue_order"
+    },
+    {
       "id": "study-queue-command",
       "type": "integration",
       "maintainer": "Tempo",
