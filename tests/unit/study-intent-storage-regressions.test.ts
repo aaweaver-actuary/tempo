@@ -578,3 +578,66 @@ it("C21 more than twenty retired originals stay held while later Study recovers"
     expect(notifications().filter(notice => notice.key?.startsWith("study-command:retired:") && !notice.resolvedAt)).toHaveLength(24);
   } finally { vi.unstubAllGlobals(); }
 });
+
+it.each(['review', 'teaching', 'command'] as const)('FE24 fresh %s caller owns a complete runtime without importing sibling facades', async kind => {
+  vi.resetModules(); vi.stubGlobal('indexedDB', new IDBFactory()); localStorage.clear();
+  const storageModule = await import('../../database/browser/study-intent-storage');
+  const calls: string[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input); calls.push(url);
+    if (url.includes('/api/operations/')) return new Response(null, { status: 404 });
+    if (url.includes('/teaching')) return Response.json({ cardId: 'card', revision: 2, ply: 3, taughtAt: 'saved' });
+    if (url.includes('/studies/')) return Response.json({ attempt_id: 'attempt', assessment: { outcome: 'needs_self_assessment', feedback: 'compare' }, pending_self_assessment: true });
+    if (url.includes('/review')) return Response.json({ persisted: true });
+    throw new Error(`unexpected ${url} ${init?.method}`);
+  }));
+  try {
+    await storageModule.initializeStudyIntentStorage();
+    if (kind === 'review') {
+      const review = await import('../../app/lib/review-outbox');
+      await review.enqueuePendingReview({ backendId: 'card', queueEntryId: 1, attemptId: 'review-original', outcome: 'correct', guided: false });
+      expect((await review.flushPendingReviews()).persistedAttemptIds).toEqual(['review-original']);
+    } else if (kind === 'teaching') {
+      const teaching = await import('../../app/lib/teaching-state-outbox');
+      await teaching.enqueueTeachingState({ cardId: 'card', revision: 2, ply: 3 }); await teaching.flushTeachingStates();
+      expect(teaching.pendingTeachingStates()).toEqual([]);
+    } else {
+      const command = await import('../../app/lib/study-command-client');
+      const result = await command.executeStudyRequest({ scope: 'scope', endpoint: '/api/studies/s/exercises/e/attempts', requestId: 'command-original', attemptId: 'attempt', revision: 1, body: { attempt_id: 'attempt', revision: 1, context: 'practice' } });
+      expect(await result.json()).toMatchObject({ attempt_id: 'attempt', pending_self_assessment: true });
+    }
+    expect(calls.some(url => kind === 'review' ? url.includes('/review') : kind === 'teaching' ? url.includes('/teaching') : url.includes('/studies/'))).toBe(true);
+  } finally { storageModule.closeStudyIntentStorage(); vi.unstubAllGlobals(); vi.resetModules(); }
+});
+
+it.each([
+  ['review', 'teaching', 'command'], ['review', 'command', 'teaching'],
+  ['teaching', 'review', 'command'], ['teaching', 'command', 'review'],
+  ['command', 'review', 'teaching'], ['command', 'teaching', 'review'],
+] as const)('FE24 import order %s %s %s shares one complete session', async (...order) => {
+  vi.resetModules(); vi.stubGlobal('indexedDB', new IDBFactory()); localStorage.clear();
+  const storageModule = await import('../../database/browser/study-intent-storage');
+  try {
+    for (const item of order) {
+      if (item === 'review') await import('../../app/lib/review-outbox');
+      if (item === 'teaching') await import('../../app/lib/teaching-state-outbox');
+      if (item === 'command') await import('../../app/lib/study-command-client');
+    }
+    await storageModule.initializeStudyIntentStorage();
+    const entry = await import('../../app/lib/study-session-runtime');
+    expect('registerStudyDeliveryAdapter' in entry).toBe(false);
+    expect(await entry.studySession()).toBe(await entry.studySession());
+  } finally { storageModule.closeStudyIntentStorage(); vi.unstubAllGlobals(); vi.resetModules(); }
+});
+
+it.each(['defense-command', 'endgame-command'] as const)('FE24 default composition retains retired %s without sending', async kind => {
+  vi.resetModules(); vi.stubGlobal('indexedDB', new IDBFactory()); localStorage.clear();
+  const storageModule = await import('../../database/browser/study-intent-storage'); const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher);
+  try {
+    const store = await storageModule.initializeStudyIntentStorage();
+    const record = { key: `held:${kind}`, kind, attemptId: 'old-attempt', requestId: 'old-request', endpoint: '/api/retired', revision: 1, createdAt: 'old', payload: { scope: 'old', body: {}, headers: {} } };
+    await store.put(record); const { studySession } = await import('../../app/lib/study-session-runtime');
+    await expect((await studySession()).checkSave(record.key)).rejects.toThrow('retired exercise is held');
+    expect(await store.get(record.key)).toMatchObject({ ...record, state: 'pending' }); expect(fetcher).not.toHaveBeenCalled();
+  } finally { storageModule.closeStudyIntentStorage(); vi.unstubAllGlobals(); vi.resetModules(); }
+});

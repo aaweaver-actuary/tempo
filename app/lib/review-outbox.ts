@@ -1,48 +1,22 @@
-import { readRejectedOpeningReviews, writeRejectedOpeningReviews } from "../../database/browser/adapters/practice/review-archive";
+import { ReviewReplayError, logicalAttemptId, settleExistingReviewDelivery, savedReviews, replaceReview, evidenceStorageErrors, type ReviewFlushResult } from "./study-runtime-composition";
+export { ReviewReplayError, logicalAttemptId } from "./study-runtime-composition";
+export type { ReviewFlushResult } from "./study-runtime-composition";
+import { type PendingReview, type LegacyReviewReceipt } from "./review-delivery";
+export type { PendingReview, ReviewConflictInformation } from "./review-delivery";
 import { defaultStudyClient } from "./study-connection";
 import { createReviewTransport, ReviewAuthorityChangedError } from "./review-transport";
 import type { StudySession } from "@tempo/study-session";
-import { registerStudyDeliveryAdapter, studySession } from "./study-session-runtime";
-import type { IntentRecord } from "@tempo/browser-intents";
+import { studySession } from "./study-session-runtime";
 import { studyIntentRecords, studyIntentStore, isStudyIntentStoreCurrent, updateStudyIntent, refreshStudyIntents, immutableReviewPayload } from "../../database/browser/study-intent-storage";
 import { confirmReviewSaveNotice, reportReviewSaveStatus } from "./review-save-notice";
-import type { PreparedNextIdentity, PreparedContinuation } from "./prepared-review-continuation";
-import { confirmOriginalOperationResponse, FailedOperationError, PendingOperationError, readOperationResponse } from "./operation-status";
+import { FailedOperationError, readOperationResponse } from "./operation-status";
 import { publishNotification, notifications, resolveNotification } from "./notifications";
 import { clearTrainingFailureAfterReview } from "./training-failure-outbox";
 
-import type { OpeningEvidenceCheckpoint } from "../domain/opening-evidence";
-import { validLegacyReview, validConflict } from "./study-legacy-validation";
-import { definitiveEvidenceFailure, saveEvidenceAwareReview } from "./opening-evidence-review";
-import { acknowledgeOpeningReview, rejectOpeningEvidence, retainOpeningEvidenceForStorageFallback } from "./opening-evidence-journal";
+import { definitiveEvidenceFailure } from "./opening-evidence-review";
+import { acknowledgeOpeningReview, retainOpeningEvidenceForStorageFallback } from "./opening-evidence-journal";
 import { IntentStorageError } from "@tempo/browser-intents";
 
-export type ReviewConflictInformation = { code: string; message: string; retryable: boolean };
-export type PendingReview = {
-  backendId: string;
-  queueEntryId: number;
-  outcome: "again" | "correct";
-  guided: boolean;
-  attemptId?: string;
-  completedAt?: string;
-  openingEvidenceCompletion?: OpeningEvidenceCheckpoint;
-  positionStudy?: true;
-  evidenceRejected?: string;
-  evidenceFallbackReason?: "local_storage_quota";
-  expectedRevision?: number;
-  preparedNext?: PreparedNextIdentity;
-  automaticRecoverySuppressed?: "failed" | "blocked";
-  deliveryStarted?: boolean;
-  state?: "pending" | "reconciling" | "conflicted";
-  reconciliationSequence?: number;
-  conflict?: ReviewConflictInformation;
-};
-export type ReviewFlushResult = { persistedAttemptIds: string[]; conflictedAttemptIds: string[];
-  preparedContinuations?: Record<string, PreparedContinuation> };
-
-const reviewRequestTimeoutMs = 15_000;
-const evidenceStorageErrors = new WeakSet<object>();
-const reviewStorageErrors = new WeakSet<object>();
 let activeFlush: Promise<ReviewFlushResult> | undefined;
 let activeFlushMaximumReviews = Infinity;
 const flushProgressListeners = new Set<(result: ReviewFlushResult) => void>();
@@ -70,51 +44,6 @@ function waitForSubmittedAttempt(flush: Promise<ReviewFlushResult>, attemptId: s
     void flush.then(result => { flushProgressListeners.delete(observe); resolve(result); },
       error => { flushProgressListeners.delete(observe); reject(error); });
   });
-}
-
-export class ReviewReplayError extends Error {
-  // Earlier attempts may have settled before a later item failed in this flush.
-  flushResult?: ReviewFlushResult;
-  readonly blocked: boolean;
-  readonly backendId: string;
-  readonly queueEntryId: number;
-  readonly attemptId: string;
-  readonly classification: "conflict" | "pending" | "transient" | "failed" | "storage";
-  constructor(message: string, readonly endpoint: string, review: PendingReview,
-    readonly status?: number, readonly code?: string, readonly retryable = true, options?: ErrorOptions) {
-    super(message, options);
-    this.name = "ReviewReplayError";
-    this.blocked = options?.cause instanceof PendingOperationError && options.cause.blocked;
-    this.backendId = review.backendId;
-    this.queueEntryId = review.queueEntryId;
-    this.attemptId = logicalAttemptId(review);
-    this.classification = options?.cause instanceof IntentStorageError || (options?.cause !== null && typeof options?.cause === "object" && reviewStorageErrors.has(options.cause)) ? "storage"
-      : options?.cause instanceof PendingOperationError ? "pending"
-      : status === 409 && !retryable ? "conflict" : (options?.cause instanceof FailedOperationError && !(status === 409 && options.cause.retryable === true)) ||
-        (status !== undefined && status < 500 && status !== 408 && status !== 429 && !(status === 409 && retryable)) ? "failed" : "transient";
-  }
-}
-
-export function logicalAttemptId(review: Pick<PendingReview, "attemptId" | "queueEntryId">): string {
-  return review.attemptId ?? `legacy-online:${review.queueEntryId}`;
-}
-
-function reviewOperationId(review: PendingReview): string {
-  const attemptId = logicalAttemptId(review);
-  const operation = review.state === "reconciling" ? `review-reconcile:${attemptId}:${review.reconciliationSequence ?? 1}` : `review-attempt:${attemptId}`;
-  return `${operation}${review.evidenceRejected || review.evidenceFallbackReason ? ":aggregate-only" : ""}`;
-}
-
-async function settleExistingReviewDelivery(store: Awaited<ReturnType<typeof studyIntentStore>>, operationId: string,
-  attemptId: string, receipt: unknown, requireCurrent: () => void, state: "committed" | "discarded" = "committed"): Promise<void> {
-  const key = `review-delivery:${operationId}`;
-  requireCurrent();
-  const existing = await store.get(key);
-  requireCurrent();
-  if (!existing || existing.kind !== "review-delivery" || existing.requestId !== operationId || existing.attemptId !== attemptId || existing.state !== "pending") return;
-  await store.update(key, current => current.kind === "review-delivery" && current.requestId === operationId &&
-    current.attemptId === attemptId && current.state === "pending" ? { ...current, state, receipt } : current);
-  requireCurrent();
 }
 
 /** Pending delivery keys are inspected only by the existing idle recovery hook. */
@@ -192,24 +121,6 @@ export async function recoverCommittedReviewDelivery(key: string, signal: AbortS
   }
 }
 
-function savedReviews(): PendingReview[] {
-  return studyIntentRecords("review").filter(record => record.state === "pending" || record.state === "conflicted")
-    .map(record => {
-      const review = { ...(record.data ?? record.payload) as PendingReview };
-      delete review.deliveryStarted;
-      return { ...review, ...(record.state === "conflicted" ? { state: "conflicted" as const } : {}) };
-    });
-}
-
-function readStoredReviews(): PendingReview[] {
-  const stored = readRejectedOpeningReviews();
-  if (!stored) return [];
-  const parsed: unknown = JSON.parse(stored);
-  if (!Array.isArray(parsed) || parsed.some(item => !validLegacyReview(item)))
-    throw new Error("The saved training review is invalid. Restore your data before continuing.");
-  return parsed as PendingReview[];
-}
-
 export function pendingReviews(): PendingReview[] {
   return savedReviews().filter((review) => review.state !== "conflicted");
 }
@@ -227,17 +138,6 @@ export function recoverableReviews(explicitRetryAttemptId?: string, deferredAtte
 
 export function conflictedReviews(): PendingReview[] {
   return savedReviews().filter((review) => review.state === "conflicted");
-}
-
-async function replaceReview(review: PendingReview, replacement?: PendingReview,
-  store?: Awaited<ReturnType<typeof studyIntentStore>>, requireCurrent: () => void = () => {}): Promise<void> {
-  const change = (current: IntentRecord) => ({
-    state: replacement?.state === "conflicted" ? "conflicted" as const : replacement ? "pending" as const : "committed" as const,
-    data: replacement ? { ...(current.data as PendingReview), ...replacement } : current.data, receipt: replacement ? current.receipt : { persisted: true },
-  });
-  requireCurrent();
-  if (store) { await store.update(`review:${logicalAttemptId(review)}`, change); requireCurrent(); await refreshStudyIntents(); requireCurrent(); }
-  else await updateStudyIntent(`review:${logicalAttemptId(review)}`, change);
 }
 
 export async function enqueuePendingReview(review: PendingReview): Promise<string> {
@@ -308,233 +208,6 @@ export function updateReviewConflictNotice(): void {
 }
 
 
-async function withReviewSaveDeadline(url: string, review: PendingReview,
-  send: (signal: AbortSignal) => Promise<Response>, parentSignal?: AbortSignal): Promise<Response> {
-  const controller = new AbortController();
-  const abort = () => controller.abort(parentSignal?.reason);
-  parentSignal?.addEventListener("abort", abort, { once: true });
-  if (parentSignal?.aborted) abort();
-  const timeout = setTimeout(() => controller.abort(), reviewRequestTimeoutMs);
-  try {
-    return await send(controller.signal);
-  } catch (error) {
-    const receiptError = error instanceof FailedOperationError ? error : undefined;
-    // Required evidence-storage failures must propagate without initiating fallback.
-    if (error instanceof ReviewReplayError || (error !== null && typeof error === "object" && evidenceStorageErrors.has(error))) throw error;
-    throw new ReviewReplayError(controller.signal.aborted
-      ? "Review save timed out after 15 seconds. Retry save."
-      : error instanceof Error ? error.message : String(error), url, review,
-      receiptError?.status, receiptError?.code, receiptError?.retryable ?? true, { cause: error });
-  } finally { clearTimeout(timeout); parentSignal?.removeEventListener("abort", abort); }
-}
-
-async function responseError(response: Response, endpoint: string, review: PendingReview): Promise<ReviewReplayError> {
-  const body = await response.json().catch(() => ({})) as { detail?: unknown; code?: string; retryable?: boolean };
-  const detail = body.detail !== null && typeof body.detail === "object" && !Array.isArray(body.detail)
-    ? body.detail as { message?: unknown; code?: unknown; retryable?: unknown } : undefined;
-  const message = typeof body.detail === "string" ? body.detail : typeof detail?.message === "string"
-    ? detail.message : `Local service returned HTTP ${response.status}.`;
-  const code = typeof detail?.code === "string" ? detail.code : body.code;
-  const retryable = typeof detail?.retryable === "boolean" ? detail.retryable : body.retryable;
-  return new ReviewReplayError(message, endpoint, review, response.status, code, retryable ?? response.status >= 500);
-}
-
-async function sendReview(review: PendingReview, transport: ReturnType<typeof createReviewTransport>, store: Awaited<ReturnType<typeof studyIntentStore>>, requireCurrent: () => void, verifyReceiptFirst = false, parentSignal?: AbortSignal): Promise<Response> {
-  const attemptId = logicalAttemptId(review);
-  const reconciling = review.state === "reconciling";
-  const endpoint = `${transport.origin}/api/cards/${encodeURIComponent(review.backendId)}/review${reconciling ? "/reconcile" : ""}`;
-  let failureMarkerSent = false;
-  let confirmedOperationId: string | undefined;
-  const response = await withReviewSaveDeadline(endpoint, review, signal => saveEvidenceAwareReview({
-    endpoint, signal, client: transport.client, requireCurrent, rejectEvidence: rejectOpeningEvidence, request: async (url, options) => {
-      requireCurrent();
-      // Receipt-first recovery reaches this callback only when replay is necessary.
-      if (!review.positionStudy && review.guided && !reconciling && !failureMarkerSent) {
-        failureMarkerSent = true;
-        const failureEndpoint = `${transport.origin}/api/queue/entries/${review.queueEntryId}/fail`;
-        try {
-          const response = await withReviewSaveDeadline(failureEndpoint, review, async signal => {
-            const marker = await transport.client.learningFetch(failureEndpoint, {
-              method: "POST", headers: { "Idempotency-Key": `queue-fail:${attemptId}`, "Content-Type": "application/json" },
-              body: JSON.stringify({ card_id: review.backendId, expected_revision: review.expectedRevision }), signal,
-            });
-            requireCurrent();
-            const confirmed = await confirmOriginalOperationResponse(marker, `queue-fail:${attemptId}`, { signal, client: transport.client });
-            requireCurrent();
-            return confirmed;
-          }, parentSignal);
-          requireCurrent();
-          if (!response.ok) throw await responseError(response, failureEndpoint, review);
-        } catch (error) {
-          // The marker is advisory once a guided result is completed. A stale
-          // marker never confirms persistence: the authoritative review below
-          // still validates identity and grades the explicit guided=true result.
-          if (!(error instanceof ReviewReplayError) || error.status !== 409) throw error;
-        }
-      }
-      // Reconciliation and evidence fallback use separately retained protocol commands.
-      // The parent review keeps its original answer, timestamp and evidence envelope.
-      const operationId = String((options.headers as Record<string, string>)["Idempotency-Key"]);
-      const deliveryKey = `review-delivery:${operationId}`;
-      requireCurrent();
-      const existing = await store.get(deliveryKey);
-      requireCurrent();
-      await store.put({ key: deliveryKey, kind: "review-delivery", attemptId, requestId: operationId,
-        endpoint: url, revision: review.expectedRevision, createdAt: existing?.createdAt ?? review.completedAt ?? "legacy-time-unavailable",
-        payload: { parentKey: `review:${attemptId}`, headers: options.headers, body: JSON.parse(String(options.body)) } });
-      requireCurrent();
-      const response = await transport.client.learningFetch(url, options);
-      requireCurrent();
-      return response;
-    },
-    operationKey: reconciling ? `review-reconcile:${attemptId}:${review.reconciliationSequence ?? 1}` : `review-attempt:${attemptId}`,
-    completion: review.openingEvidenceCompletion, evidenceRejected: review.evidenceRejected, positionStudy: review.positionStudy,
-    verifyReceiptFirst,
-    onConfirmedOperation: operationId => { confirmedOperationId = operationId; },
-    onRejectedOperation: (operationId, evidence) => settleExistingReviewDelivery(store, operationId, attemptId, evidence, requireCurrent, "discarded"),
-    canRetryRetainedFallback: async operationId => {
-      requireCurrent();
-      const retained = await store.get(`review-delivery:${operationId}`);
-      requireCurrent();
-      const payload = retained?.payload as { parentKey?: unknown; headers?: Record<string, unknown>; body?: unknown } | undefined;
-      const expectedBody = { outcome: review.outcome, guided: review.guided,
-        queue_entry_id: review.queueEntryId, attempt_id: attemptId,
-        ...(review.completedAt ? { recorded_at: review.completedAt } : {}),
-        ...(review.expectedRevision ? { expected_revision: review.expectedRevision } : {}),
-        ...(review.preparedNext ? { prepared_next: review.preparedNext } : {}),
-      };
-      return retained?.kind === "review-delivery" && retained.requestId === operationId && retained.attemptId === attemptId &&
-        retained.endpoint === endpoint && retained.state === "pending" && payload?.parentKey === `review:${attemptId}` &&
-        payload.headers?.["Idempotency-Key"] === operationId && JSON.stringify(payload.body) === JSON.stringify(expectedBody);
-    },
-    aggregateOnly: review.evidenceFallbackReason === "local_storage_quota",
-    onEvidenceRejected: async (message) => {
-      requireCurrent();
-      const updated = savedReviews().map((item) =>
-        item.attemptId === attemptId ? { ...item, evidenceRejected: message } : item);
-      // Required: a reload must retain the aggregate-only delivery identity.
-      try {
-        const latest = updated.find(item => item.attemptId === attemptId);
-        if (latest) await replaceReview(latest, latest, store, requireCurrent);
-        requireCurrent();
-      }
-      catch (error) {
-        if (error !== null && typeof error === "object") evidenceStorageErrors.add(error);
-        throw error;
-      }
-      try {
-        const rejected = updated.find((item) => item.attemptId === attemptId);
-        const archived = readStoredReviews();
-        // Best effort: keep the full rejected envelope after the outbox drains,
-        // even when the separate IndexedDB journal is unavailable.
-        if (rejected && !archived.some((item) => item.attemptId === attemptId))
-          writeRejectedOpeningReviews(archived, rejected);
-      } catch {
-        try {
-          publishNotification({ severity: "warning", source: "opening evidence",
-            key: `opening-evidence-archive:${attemptId}`,
-            message: "The normal review can still save. An extra diagnostic copy of the rejected opening evidence could not be retained.",
-            details: { cardId: review.backendId, queueEntryId: review.queueEntryId } });
-        } catch {
-          // Diagnostic warnings must not block the required review delivery.
-        }
-      }
-    },
-    body: { outcome: review.outcome, guided: review.guided,
-      queue_entry_id: review.queueEntryId, attempt_id: attemptId,
-      ...(review.completedAt ? { recorded_at: review.completedAt } : {}),
-      ...(review.expectedRevision ? { expected_revision: review.expectedRevision } : {}),
-      ...(review.preparedNext ? { prepared_next: review.preparedNext } : {}),
-    },
-  }), parentSignal);
-  if (!response.ok) throw await responseError(response, endpoint, review);
-  // Only a direct successful result or the original operation's confirmed
-  // receipt can settle the delivery. A 202 body is never a review receipt.
-  const receipt = await response.clone().json().catch(() => undefined) as { persisted?: boolean } | undefined;
-  requireCurrent();
-  if (receipt?.persisted === true && confirmedOperationId)
-    await settleExistingReviewDelivery(store, confirmedOperationId, attemptId, receipt, requireCurrent);
-  requireCurrent();
-  return response;
-}
-
-type LegacyReviewReceipt = { persisted?: boolean; conflict?: unknown; warning?: string; prepared_continuation?: PreparedContinuation;
-  competing_review?: { outcome?: string | null; completed_at?: string | null } };
-
-async function deliverLegacyReview(record: IntentRecord, signal: AbortSignal) {
-  const transport = createReviewTransport(defaultStudyClient);
-  const store = await studyIntentStore();
-  const requireCurrent = () => {
-    transport.requireCurrent();
-    if (!isStudyIntentStoreCurrent(store)) throw new ReviewAuthorityChangedError();
-  };
-  requireCurrent();
-  let review = (record.data ?? record.payload) as PendingReview;
-  const attemptId = logicalAttemptId(review);
-  const records = savedReviews();
-  const currentIndex = records.findIndex(item => logicalAttemptId(item) === attemptId);
-  if (records.slice(0, currentIndex).some(item => item.state === "conflicted" && item.backendId === review.backendId))
-    return { state: "conflicted" as const, data: { ...review, state: "conflicted", conflict: {
-      code: "earlier_review_conflict", message: "An earlier result for this card needs review first.", retryable: false } } };
-  const verifyReceiptFirst = review.deliveryStarted === true;
-  await replaceReview(review, { ...review, deliveryStarted: true }, store, requireCurrent);
-  requireCurrent();
-  let response: Response;
-  try { response = await sendReview(review, transport, store, requireCurrent, verifyReceiptFirst, signal); }
-  catch (error) {
-    if (review.positionStudy && error instanceof ReviewReplayError && error.status === 409 && !error.retryable) {
-      return { state: "conflicted" as const, data: { ...review, state: "conflicted", conflict: {
-        code: error.code ?? "position_attempt_conflict", message: error.message, retryable: false } } };
-    }
-    // An evidence rejection without an authorized aggregate fallback must not
-    // be converted into a different reconciliation operation. Its original
-    // command and evidence remain available for explicit recovery.
-    if (error instanceof ReviewReplayError &&
-        (error.code?.startsWith("opening_evidence_") || /\bopening_evidence_(?:conflict|unavailable)\b/.test(error.message))) throw error;
-    if (!(error instanceof ReviewReplayError) || error.status !== 409 || error.retryable || review.state === "reconciling") throw error;
-    requireCurrent();
-    review = { ...savedReviews().find(item => logicalAttemptId(item) === attemptId)!, state: "reconciling", reconciliationSequence: 1 };
-    await replaceReview(review, review, store, requireCurrent);
-    requireCurrent();
-    response = await sendReview(review, transport, store, requireCurrent, false, signal);
-  }
-  requireCurrent();
-  const persisted = await response.clone().json() as LegacyReviewReceipt;
-  requireCurrent();
-  if (review.state === "reconciling" && persisted.persisted === false && validConflict(persisted.conflict)) {
-    if (persisted.conflict.retryable) throw new ReviewReplayError(persisted.conflict.message, response.url, review, 409, persisted.conflict.code, true);
-    return { state: "conflicted" as const, receipt: persisted, data: { ...review, state: "conflicted", conflict: persisted.conflict } };
-  }
-  if (persisted.persisted !== true) throw new ReviewReplayError("The computer did not confirm this review. Retry saving it.",
-    `${transport.origin}/api/cards/${review.backendId}/review`, review);
-  return { state: "committed" as const, receipt: persisted };
-}
-
-async function checkLegacyReviewReceipt(record: IntentRecord, signal: AbortSignal) {
-  const transport = createReviewTransport(defaultStudyClient);
-  const store = await studyIntentStore();
-  const requireCurrent = () => {
-    transport.requireCurrent();
-    if (!isStudyIntentStoreCurrent(store)) throw new ReviewAuthorityChangedError();
-  };
-  requireCurrent();
-  const review = (record.data ?? record.payload) as PendingReview;
-  const attemptId = logicalAttemptId(review);
-  const operationId = reviewOperationId(review);
-  const response = await readOperationResponse(operationId, { allowMissing: true, signal, client: transport.client });
-  requireCurrent();
-  if (response.status === 404) return undefined;
-  const receipt = await response.json() as LegacyReviewReceipt;
-  requireCurrent();
-  if (receipt.persisted === true) {
-    await settleExistingReviewDelivery(store, operationId, attemptId, receipt, requireCurrent);
-    return { state: "committed" as const, receipt };
-  }
-  if (receipt.persisted === false && validConflict(receipt.conflict) && !receipt.conflict.retryable)
-    return { state: "conflicted" as const, receipt, data: { ...review, state: "conflicted", conflict: receipt.conflict } };
-  return { state: "pending" as const };
-}
-registerStudyDeliveryAdapter("review", deliverLegacyReview, checkLegacyReviewReceipt);
 export async function reviewStudySession(): Promise<StudySession> { return studySession(); }
 
 async function savePendingReviews(maximumReviews = Infinity, verifyReceiptFirst = false, explicitRetryAttemptId?: string,
