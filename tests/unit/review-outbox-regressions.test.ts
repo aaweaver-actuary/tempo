@@ -659,7 +659,9 @@ async function enqueueOpeningEvidenceReview(attemptId: string) {
     terminal: { state: "complete", final_sequence: 1, ended_at: "2026-09-30T12:01:00Z" } });
   await enqueuePendingReview({ backendId: "shadow-card", queueEntryId: 101, outcome: "correct", guided: false,
     attemptId, completedAt: completion.terminal!.ended_at, openingEvidenceCompletion: completion });
-  return pendingReviews()[0];
+  const retained = pendingReviews()[0];
+  if (!retained?.attemptId) throw new Error("Original review attempt was not retained");
+  return { ...retained, attemptId: retained.attemptId };
 }
 
 describe("optimistic training review outbox", () => {
@@ -1542,7 +1544,7 @@ it.each(["failed", "retryable", "unknown", "unavailable"])("retained fallback re
   const reloaded = await (await studyIntentStore()).get(envelope.key);
   expect(reloaded).toMatchObject({ ...envelope, state: status === "failed" ? "discarded" : "pending" });
   const { inspectRetainedStudyAuthority } = await import("../../database/browser/study-connection-storage");
-  const inspected = await inspectRetainedStudyAuthority(() => []);
+  const inspected = await inspectRetainedStudyAuthority();
   const exported = inspected.retained.databases["tempo-study-intents"].intents as Array<{ key: string; state: string; workspace: string }>;
   const preserved = exported.find(item => item.key === envelope.key)!;
   expect(preserved.state).toBe(status === "failed" ? "discarded" : "pending");
@@ -1550,7 +1552,8 @@ it.each(["failed", "retryable", "unknown", "unavailable"])("retained fallback re
   expect(inspected.facts).toContainEqual(fact);
   const storage = await import("../../database/browser/study-connection-storage");
   const { createStudyClient } = await import("../../app/lib/study-client");
-  const client = createStudyClient({ independent: true, baseUrl: "", storage: { ...storage,
+  const client = createStudyClient({ independent: true, baseUrl: "", resolveBaseHref: () => "http://localhost/",
+    onAuthenticationRequired: () => undefined, acquireActivityHold: () => () => undefined, storage: { ...storage,
     inspectRetainedStudyAuthority: async () => ({ facts: [fact], retained: inspected.retained }) }, transport: vi.fn() });
   const cutover = client.assertStudyAuthority("https://foreign.example", "other");
   if (status === "failed") await expect(cutover).resolves.toEqual(inspected.retained);

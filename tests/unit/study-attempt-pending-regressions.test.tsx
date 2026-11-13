@@ -366,16 +366,16 @@ it("saved Study review Continue explicitly advances only after its original rece
     handleAttemptFailure={vi.fn()} resetCardAttempt={vi.fn()} onMove={vi.fn()} />);
   await screen.findByText("Original exercise");
   fireEvent.change(screen.getByLabelText("Coordinates or UCI move"), { target: { value: "e2e4" } });
-  fireEvent.click(screen.getByRole("button", { name: "Add", exact: true }));
-  await waitFor(() => expect((screen.getByRole("button", { name: "Submit", exact: true }) as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(screen.getByRole("button", { name: "Submit", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: /^Add$/ }));
+  await waitFor(() => expect((screen.getByRole("button", { name: /^Submit$/ }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: /^Submit$/ }));
   await waitFor(() => expect(originalAttempt).toBeTruthy());
   expect(screen.queryByRole("button", { name: "Continue" })).toBeNull();
   expect(refresh).not.toHaveBeenCalled();
   await act(async () => finish(Response.json({ attempt_id: originalAttempt, assessment: { outcome: "correct", feedback: "Saved" },
     rating: "correct", requested_rating: "correct", persisted: true, review: { review_id: 1, requeue_entry_id: null } })));
   await screen.findByText("Saved feedback");
-  fireEvent.click(screen.getByRole("button", { name: "Continue", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: /^Continue$/ }));
   expect(refresh).toHaveBeenCalledOnce();
   expect(refresh).toHaveBeenCalledWith(true, true, false, { attemptId: original.attemptId, generation: original.generation, entryKey: original.entryKey });
   await waitFor(() => expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(true));
@@ -385,7 +385,7 @@ it("saved Study review Continue explicitly advances only after its original rece
   act(() => useTrainingStore.getState().initializeCardState(card));
   expect(useTrainingStore.getState().attempt.entryKey).toBe(original.entryKey);
   expect(useTrainingStore.getState().attempt.generation).not.toBe(original.generation);
-  fireEvent.click(screen.getByRole("button", { name: "Continue", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: /^Continue$/ }));
   await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("displayed Study attempt changed"));
   expect(refresh).toHaveBeenCalledOnce();
 });
@@ -414,18 +414,18 @@ it("offline Study Continue waits for durable phone recording before explicit adv
       handleAttemptFailure={vi.fn()} resetCardAttempt={vi.fn()} onMove={vi.fn()} />);
     await screen.findByText("Phone exercise");
     fireEvent.change(screen.getByLabelText("Coordinates or UCI move"), { target: { value: "e2e4" } });
-    fireEvent.click(screen.getByRole("button", { name: "Add", exact: true }));
-    fireEvent.click(screen.getByRole("button", { name: "Submit", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: /^Add$/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Submit$/ }));
     await screen.findByText("Phone storage failed");
     expect(screen.queryByRole("button", { name: "Continue" })).toBeNull();
     expect(refresh).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Submit", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: /^Submit$/ }));
     await waitFor(() => expect(recording).toHaveBeenCalledTimes(2));
     expect(screen.queryByRole("button", { name: "Continue" })).toBeNull();
     expect(refresh).not.toHaveBeenCalled();
     await act(async () => finish({}));
     await screen.findByText("Phone feedback");
-    fireEvent.click(screen.getByRole("button", { name: "Continue", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: /^Continue$/ }));
     expect(refresh).toHaveBeenCalledOnce();
     expect(refresh).toHaveBeenCalledWith(true, true, false, { attemptId: original.attemptId, generation: original.generation, entryKey: original.entryKey });
   } finally { recording.mockRestore(); }

@@ -114,7 +114,7 @@ it("maintained Study misuse fails before resource admission", () => {
     ['--mode','study','--native-check','position-grade-effects'], ['--mode','study','--maintained-study-proof']])
     expect(() => parsePostgresTestOptions([...args,'--maintained-study-proof'],cleanEnvironment)).toThrow();
   for (const environment of [{TEMPO_PG_STALE_DELIVERY_ONLY:'1'}, {TEMPO_RELEASE_CANDIDATE_MODE:'borrow'}])
-    expect(() => parsePostgresTestOptions(['--mode','study','--maintained-study-proof'],environment)).toThrow();
+    expect(() => parsePostgresTestOptions(['--mode','study','--maintained-study-proof'],{...cleanEnvironment,...environment})).toThrow();
 });
 
 it("maintained queue receipt fails closed on partial, wrong, missing or duplicate completion", async () => {

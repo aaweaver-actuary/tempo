@@ -71,7 +71,7 @@ it("checks each original receipt through its own supplied client", async () => {
 it.each(["defense-command", "endgame-command"])("holds retired %s without posting and may inspect its original receipt", async kind => {
   const { record, store } = fixture();
   record.kind = kind;
-  const fetch = vi.fn(async () => new Response(null, { status: 404 }));
+  const fetch = vi.fn(async (_input: RequestInfo | URL) => new Response(null, { status: 404 }));
   const delivery = createStudyCommandDelivery(client(fetch), async () => store);
   await expect(delivery.deliver(record, new AbortController().signal)).rejects.toThrow("retired exercise is held");
   expect(await delivery.checkReceipt(record, new AbortController().signal)).toBeUndefined();
@@ -238,7 +238,7 @@ it("C21 holds an unknown retained endpoint without posting its original body", a
   const { record, store } = fixture(true);
   record.endpoint = "/api/studies/s/exercises/e/author";
   const original = structuredClone(record.payload);
-  const fetcher = vi.fn(async () => new Response(null, { status: 404 }));
+  const fetcher = vi.fn(async (_input: RequestInfo | URL) => new Response(null, { status: 404 }));
   const delivery = createStudyCommandDelivery(client(fetcher), async () => store);
   await expect(delivery.deliver(record, new AbortController().signal)).rejects.toThrow("held");
   expect(fetcher).toHaveBeenCalledOnce();

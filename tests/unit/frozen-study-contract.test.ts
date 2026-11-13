@@ -16,7 +16,8 @@ describe("retained frozen exercise transport", () => {
   it("distinguishes a completed parent awaiting assessment from a persisted human review", () => {
     expect(decodeFrozenAttempt(pending, { attemptId: "attempt", context: "review" })).toEqual(pending);
     expect(decodeFrozenAttempt(completed, { attemptId: "attempt", context: "review" })).toEqual(completed);
-    expect(decodeFrozenAttempt({...completed, review: null}, { attemptId: "attempt", context: "practice" }).review).toBeNull();
+    const practice = decodeFrozenAttempt({...completed, review: null}, { attemptId: "attempt", context: "practice" });
+    expect("review" in practice && practice.review === null).toBe(true);
     for (const value of [{...pending, attempt_id: "foreign"}, {...pending, assessment: { ...assessment, outcome: "correct" }}, {...completed, persisted: false}, {...completed, review: null}, { attempt_id: "attempt" }])
       expect(() => decodeFrozenAttempt(value, { attemptId: "attempt", context: "review" })).toThrow();
   });
