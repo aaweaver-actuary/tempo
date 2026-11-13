@@ -7,6 +7,17 @@ import { api } from './product-fixtures';
 import { verifyPostgresFixtureTarget, postgresFixtureComposeArguments } from './product-fixture-reset';
 import { navigate, prepareUI } from './ui-fixtures';
 
+async function cleanupWithEvidence(originalFailure: unknown, actions: Array<[string, () => unknown | Promise<unknown>]>) {
+  const failures: Array<[string, unknown]> = [];
+  for (const [label, action] of actions) {
+    try { await action(); } catch (error) { failures.push([label, error]); }
+  }
+  if (!failures.length) return;
+  const all = originalFailure === undefined ? failures : [['original journey', originalFailure] as [string, unknown], ...failures];
+  // Playwright serializes Error.message and stack, but not AggregateError.errors.
+  throw new Error(all.map(([label, error]) => `${label}: ${error instanceof Error ? error.stack ?? error.message : String(error)}`).join('\n\n'));
+}
+
 async function confirmed(request: APIRequestContext, response: APIResponse, id: string) {
   expect(response.ok(), `original operation HTTP ${response.status()}`).toBe(true);
   const acknowledgement = await response.json();
@@ -125,15 +136,12 @@ test('real frozen Study preserves original parent and child through reload and p
     await expect(page.getByText('Answer: d2d4')).toBeVisible();
     expect(fixture('snapshot').reviews).toHaveLength(2);
   } catch (error) { originalFailure = error; throw error; } finally {
-    try {
+    await cleanupWithEvidence(originalFailure, [['fixture cleanup', () => {
       const cleanup = fixture('cleanup',JSON.stringify(displaced),JSON.stringify(operations));
       expect(cleanup.cleaned).toBe(true);
       expect(cleanup.restored + cleanup.reordered + cleanup.removed).toBe(displaced.length);
       expect(Object.values(cleanup.remaining).every(value => value === 0)).toBe(true);
-    } catch (cleanupError) {
-      if (originalFailure !== undefined) throw new AggregateError([originalFailure, cleanupError], 'Study journey and fixture cleanup failed');
-      throw cleanupError;
-    }
+    }]]);
   }
 });
 
@@ -214,16 +222,15 @@ test.describe('real frozen phone recovery', () => {
       expect(snapshot.origins).toContainEqual([before.localEntryId,before.cardId,1,1]);
       await page.reload(); expect(fixture('snapshot')).toEqual(snapshot);
     } catch (error) { originalFailure = error; throw error; } finally {
-      try {
-        await context.setOffline(false);
-        const cleanup = fixture('cleanup',JSON.stringify(displaced),JSON.stringify(operations));
-        expect(cleanup.cleaned).toBe(true);
-        expect(cleanup.restored + cleanup.reordered + cleanup.removed).toBe(displaced.length);
-        expect(Object.values(cleanup.remaining).every(value => value === 0)).toBe(true);
-      } catch (cleanupError) {
-        if (originalFailure !== undefined) throw new AggregateError([originalFailure, cleanupError], 'Study journey and fixture cleanup failed');
-        throw cleanupError;
-      }
+      await cleanupWithEvidence(originalFailure, [
+        ['restore browser network', () => context.setOffline(false)],
+        ['fixture cleanup', () => {
+          const cleanup = fixture('cleanup',JSON.stringify(displaced),JSON.stringify(operations));
+          expect(cleanup.cleaned).toBe(true);
+          expect(cleanup.restored + cleanup.reordered + cleanup.removed).toBe(displaced.length);
+          expect(Object.values(cleanup.remaining).every(value => value === 0)).toBe(true);
+        }],
+      ]);
     }
   });
 
@@ -301,15 +308,15 @@ test.describe('real frozen phone recovery', () => {
       expect(snapshot.attempts).toContainEqual(expect.arrayContaining([child.attemptId,`${prefix}-exercise-0`,1,head.id,repeat.queue_entry_id,4,'review']));
       await page.reload(); expect(fixture('snapshot')).toEqual(snapshot);
     } catch (error) { originalFailure = error; throw error; } finally {
-      try {
-        await context.setOffline(false);
-        const cleanup = fixture('cleanup',JSON.stringify(displaced),JSON.stringify(operations));
-        expect(cleanup.cleaned).toBe(true); expect(cleanup.restored + cleanup.reordered + cleanup.removed).toBe(displaced.length);
-        expect(Object.values(cleanup.remaining).every(value => value === 0)).toBe(true);
-      } catch (cleanupError) {
-        if (originalFailure !== undefined) throw new AggregateError([originalFailure, cleanupError], 'Study journey and fixture cleanup failed');
-        throw cleanupError;
-      }
+      await cleanupWithEvidence(originalFailure, [
+        ['restore browser network', () => context.setOffline(false)],
+        ['fixture cleanup', () => {
+          const cleanup = fixture('cleanup',JSON.stringify(displaced),JSON.stringify(operations));
+          expect(cleanup.cleaned).toBe(true);
+          expect(cleanup.restored + cleanup.reordered + cleanup.removed).toBe(displaced.length);
+          expect(Object.values(cleanup.remaining).every(value => value === 0)).toBe(true);
+        }],
+      ]);
     }
   });
 });
