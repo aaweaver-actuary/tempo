@@ -342,8 +342,14 @@ graph rebuild and the existing recovery beat remain outside this selection.
 These are source roles and existing cross-owner edges, not an independent
 artifact, pure policy or a new scheduler.
 
-At this base revision, 226 of 291 tracked Python files in those trees remain
-outside the combined 65-file selections. The registry alone assigns owners;
+A sixth selection maps the PostgreSQL readiness composition, its package initializer,
+and the storage fact reader. The HTTP route calls the composition, which captures
+the Study calendar and inspects Celery; the storage reader queries schema, position,
+settings, queue and durable-task facts through the supplied connection. These
+existing edges and readiness coupling are recorded without a startup or isolation claim.
+
+At this base revision, 223 of 291 tracked Python files in those trees remain
+outside the combined 68-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover

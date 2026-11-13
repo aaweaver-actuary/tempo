@@ -156,7 +156,8 @@
               "review",
               "durable",
               "calendar",
-              "prefix_split"
+              "prefix_split",
+              "readiness"
             ]
           }
         }
