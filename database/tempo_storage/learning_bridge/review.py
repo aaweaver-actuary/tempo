@@ -2,11 +2,11 @@
 from tempo_storage import postgres
 _ATTEMPT_LOCK = ' FOR UPDATE'
 
-def lock_current_card(database, card_id):
+def lock_current_card(database: postgres.PostgresConnection, card_id: str) -> None:
     database.execute_native('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', (f'tempo:card-edit:{card_id}',))
     database.execute('SELECT id FROM cards WHERE id=%s FOR UPDATE', (card_id,))
 
-def try_lock_continuation(database, card_id):
+def try_lock_continuation(database: postgres.PostgresConnection, card_id: str) -> bool:
     admitted = database.execute_native('SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))', (f'tempo:card-edit:{card_id}',)).fetchone()[0]
     if not admitted:
         return False
