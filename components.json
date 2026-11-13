@@ -2,6 +2,176 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "study-attempt-command",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/study_attempt_commands.py#submit_study_attempt",
+        "backend/app/study_attempt_commands.py#self_assess_study_attempt"
+      ],
+      "dependencies": [
+        "backend-command-gateway",
+        "study-attempt-storage",
+        "study-attempt-finalization",
+        "study-queue-position-lock",
+        "study-calendar-capture"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study_attempt_commands.py"
+      ],
+      "ownershipRole": "Register and apply Study attempt commands",
+      "dependencyNotes": [
+        "Registers submit and self-assess commands; uses grader and Study contracts, original attempt identity, exercise revision, issued review source and card/queue locks in caller transaction. Gateway retains operation receipts."
+      ],
+      "censusScope": "study_attempt"
+    },
+    {
+      "id": "study-exercise-transport",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/study_exercise_routes.py#present",
+        "backend/app/study_exercise_routes.py#submit",
+        "backend/app/study_exercise_routes.py#self_assess",
+        "backend/app/study_exercise_routes.py#feedback",
+        "backend/app/study_exercise_routes.py#requeue_identity"
+      ],
+      "dependencies": [
+        "backend-command-dispatch",
+        "study-attempt-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study_exercise_routes.py"
+      ],
+      "ownershipRole": "Serve retained Study presentation and attempt transport",
+      "dependencyNotes": [
+        "Main mounts router; borrowed reads bind issued queue identity or pending attempt, validate retained exercise, and expose feedback/requeue. POST dispatches original idempotency identity; no hidden answer fields in presentation."
+      ],
+      "censusScope": "study_attempt"
+    },
+    {
+      "id": "study-attempt-guard",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/study_attempt_guard.py#guard_current_attempt"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/study_attempt_guard.py"
+      ],
+      "ownershipRole": "Guard retired Study attempts",
+      "dependencyNotes": [
+        "Reads existing abandonment authority for original queue entry, card and revision; queue origin and Learning review callers own surrounding transaction and conflict handling."
+      ],
+      "censusScope": "study_attempt"
+    },
+    {
+      "id": "study-attempt-finalization",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/study_attempts.py#finish_study_attempt"
+      ],
+      "dependencies": [
+        "study-attempt-storage",
+        "study-queue-application"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/study_attempts.py"
+      ],
+      "ownershipRole": "Finalize Study attempt and review",
+      "dependencyNotes": [
+        "Uses existing scheduling review owner and Study calendar in caller transaction; checks active review card/queue revision, persists original attempt result, optional repeat and sibling burial."
+      ],
+      "censusScope": "study_attempt"
+    },
+    {
+      "id": "study-attempt-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/study_attempts",
+      "publicExports": [
+        "database/tempo_storage/study_attempts/storage.py#lock_attempt_identity",
+        "database/tempo_storage/study_attempts/storage.py#attempt",
+        "database/tempo_storage/study_attempts/storage.py#insert_attempt",
+        "database/tempo_storage/study_attempts/storage.py#locked_attempt",
+        "database/tempo_storage/study_attempts/storage.py#issued_frozen_presentation",
+        "database/tempo_storage/study_attempts/storage.py#pending_frozen_presentation",
+        "database/tempo_storage/study_attempts/storage.py#issued_review_source_state",
+        "database/tempo_storage/study_attempts/storage.py#completed_review_requeue"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/study_attempts/storage.py",
+        "database/tempo_storage/study_attempts/__init__.py"
+      ],
+      "ownershipRole": "Persist and read Study attempt facts",
+      "dependencyNotes": [
+        "Caller-connection SQL locks original attempt/card/queue identities and reads revision, issued origin and retained presentation; writes attempt, queue result and sibling state. Gateway owns command receipts."
+      ],
+      "censusScope": "study_attempt"
+    },
+    {
       "id": "study-queue-refresh-worker",
       "type": "integration",
       "maintainer": "Tempo",

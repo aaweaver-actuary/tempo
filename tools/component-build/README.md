@@ -474,8 +474,17 @@ mutation fixture failures remain unresolved. The queue publication fixture also
 fails because its SQLite adapter rejects PostgreSQL `FOR SHARE`; it is not native
 proof.
 
-At this base revision, 143 of 291 tracked Python files in those trees remain
-outside the combined 148-file selections. The registry alone assigns owners;
+A twenty-fourth selection maps Study exercise transport, attempt commands,
+retirement guard, review finalization and storage. Existing attempt/card/entry/
+cycle/revision, issued-origin and retained presentation bindings, gateway receipt,
+grader, calendar, queue lock and scheduling review edges remain visible. This is a
+source map, not native qualification. The seventeen previously reported queue,
+PGN, legacy and retained-mutation fixture failures remain unresolved. Both Study
+attempt guard fixture cases also fail on missing `current_presentation_available`;
+they do not establish runtime behavior.
+
+At this base revision, 137 of 291 tracked Python files in those trees remain
+outside the combined 154-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover

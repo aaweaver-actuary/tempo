@@ -174,7 +174,8 @@
               "queue_commands",
               "queue_order",
               "queue_application",
-              "queue_refresh"
+              "queue_refresh",
+              "study_attempt"
             ]
           }
         }
