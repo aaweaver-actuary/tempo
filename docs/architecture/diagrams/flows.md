@@ -41,8 +41,10 @@ and an immutable waiting acknowledgment in the original command transaction.
 The existing essential recovery path checks for the exact saved human review;
 it queues one deterministic foreground child command, which revalidates the
 source and publishes the split and intent result atomically. A held intent
-records its reason. Previously issued attempts remain usable; unrelated queue
-entries remain eligible. Native transaction, race, recovery and assembled
+records its reason. Waiting intents do not veto queue issuance; existing attempts
+remain usable and unrelated queue entries remain eligible. The child retries its
+original identity while another attempt is active and can progress after input
+becomes quiet; continuous new attempts have no established fairness guarantee. Native transaction, race, recovery and assembled
 browser acceptance are required before this source claim is qualified.
 
 ```mermaid

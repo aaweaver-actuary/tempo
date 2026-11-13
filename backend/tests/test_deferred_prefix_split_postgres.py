@@ -149,17 +149,22 @@ def test_competing_issued_attempt_keeps_child_identity_until_retry(native):
         assert fetch_intent(db, case)['child_operation_id'] == child
 
 
-def test_locked_first_intent_yields_to_other_and_recovers_after_release(native):
+def test_locked_first_intent_yields_to_other_and_recovers_after_release(native, monkeypatch):
     with native() as db:
         first = seed(db, 'first'); first_result = accept(db, first); save_receipt(db, first)
         second = seed(db, 'second'); second_result = accept(db, second); save_receipt(db, second)
         db.execute_native("UPDATE study_deferred_prefix_splits SET next_check_at=NOW()-INTERVAL '2 minutes' WHERE intent_id=%s", (first_result['intent_id'],))
         db.execute_native("UPDATE study_deferred_prefix_splits SET next_check_at=NOW()-INTERVAL '1 minute' WHERE intent_id=%s", (second_result['intent_id'],))
+    if first_result['intent_id'] > second_result['intent_id']:
+        first, second = second, first
+        first_result, second_result = second_result, first_result
+    monkeypatch.setattr(recovery, '_scan_cursor', '')
     # A separate transaction models a live worker holding both source and intent.
     with native() as locked:
         commands._lock_prefix_card(locked, first['card'])
         intents.intent(locked, first_result['intent_id'], lock=True)
-        assert recovery.enqueue_one_ready_split(), 'the locked first intent must not starve the second'
+        assert recovery.enqueue_one_ready_split() is False
+        assert recovery.enqueue_one_ready_split(), 'the next bounded beat must reach the second intent'
         with native() as db:
             assert fetch_intent(db, first)['state'] == 'waiting_review'
             assert fetch_intent(db, second)['state'] == 'ready'
@@ -179,12 +184,14 @@ def test_waiting_split_does_not_block_unrelated_queue_head(native):
     with native() as db:
         blocked = seed(db, 'queue-held'); accepted = accept(db, blocked)
         db.execute_native("UPDATE daily_queue SET status='complete' WHERE id=%s", (blocked['entry'],))
-        # The source is waiting for its real receipt; a new unissued source row
-        # must not win over an unrelated valid queue entry.
-        db.execute_native("INSERT INTO daily_queue(queue_date,card_id,cycle,position,card_bucket,admission_kind,admission_repertoire_id) VALUES(%s,%s,1,-100,'opening','due',%s)",
-                          (blocked['day'], blocked['card'], blocked['card']))
+        # A waiting split does not veto ordinary issuance of its source card.
+        source_entry = db.execute_native("INSERT INTO daily_queue(queue_date,card_id,cycle,position,card_bucket,admission_kind,admission_repertoire_id) VALUES(%s,%s,1,-100,'opening','due',%s) RETURNING id",
+                          (blocked['day'], blocked['card'], blocked['card'])).fetchone()[0]
         other = seed(db, 'queue-other')
         db.execute_native("UPDATE daily_queue SET position=-90 WHERE id=%s", (other['entry'],))
+        head = queue_storage.prepare_queue_head(db, 'not_due')(blocked['day'])
+        assert head is not None and head['id'] == source_entry
+        db.execute_native("UPDATE daily_queue SET status='complete' WHERE id=%s", (source_entry,))
         head = queue_storage.prepare_queue_head(db, 'not_due')(blocked['day'])
         assert head is not None and head['id'] == other['entry']
         assert fetch_intent(db, blocked)['intent_id'] == accepted['intent_id']
