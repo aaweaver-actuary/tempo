@@ -20,3 +20,56 @@ Published linked `study_exercise` cards remain supported ordinary Study work. Ex
 | GET `/api/studies/{study_id}/exercises/{exercise_id}/attempts/{attempt_id}/feedback` | `{specification}` from the persisted attempt's revision, after verifying all path ownership. This legacy projection has no identity fields, so the route must enforce identity and revision before returning it. |
 
 Pending is `{attempt_id, assessment, pending_self_assessment: true}`: the durable parent command has completed and can release only its dependent self-assessment, but no human review is complete and the queue must not advance. Completed is `{attempt_id, assessment, rating, requested_rating, review, persisted: true}`; `review` is null for practice and contains the review and requeue identities for a review. The writer owns the request hash, queue/card/revision fences, original attempts and scheduling transaction. Existing writer errors preserve their HTTP distinctions: 404 unavailable owner/attempt, 409 identity/revision/queue conflict or retired presentation, 422 invalid request/answer; dependency failures and pending commands must not be represented as completed success. B31 must preserve these distinctions and prove exact persisted revision ownership on feedback. `study-exercise-transport.ts` provides pure response decoders for C21 adoption; it does not itself activate these routes or establish assembled behavior.
+
+## Independent serving and retained-work disposition
+
+The SPEC retains ordinary monolith Study and retires the independent Learning
+service/database. This source decision classifies the separate Study build as a
+recovery-only hold/export surface or a removable unused serving target once
+recovery is reachable elsewhere; it does not activate that disposition or
+change current code. `static/src/main.tsx` mounts the supported monolith shell;
+`static/src/study-main.tsx` instead mounts `StudyConnectionBoundary` for the
+`TEMPO_TARGET=study` build. The latter is still buildable source, not evidence
+of a supported independent deployment.
+
+| Boundary and current consumer | Source disposition |
+| --- | --- |
+| `StudyConnectionBoundary` calls `connectStudy`; `study-client.ts` requests `/api/study/bootstrap` and validates origin, workspace and bootstrap. | The current `backend/app/main.py` has no bootstrap route. New independent connection/issuance is unsupported; do not restore Learning to satisfy it. Cached practice is not a settlement receipt. |
+| `StudySettingsPanel` reads and submits `/api/study/settings` using `settings-command`. | The current monolith owns `/api/settings`, a different contract. Hold retained independent settings commands with original endpoint, body and ID; do not translate them. Remove the obsolete panel/control only after recovery is available. |
+| `fetchAndInitializeQueue` reads `/api/queue/window`, follows `/api/operations/{id}` and rereads the authoritative queue; `main.py` exposes these monolith routes. | Supported new Study issuance belongs to the monolith queue/command owner, including issued identities and frozen exercises. A receipt is not a playable successor. |
+| `study-command-client.ts`, `offline-training.ts`, browser intent and prepared-training stores retain attempts and original receipts. | Preserve original authority, request IDs, bodies, attempts and parent/child dependencies. Recover only against the positively bound original authority; ambiguous or unavailable work remains held. C21's scoped retained-work holds do not authorize relabeling. |
+| `StudyConnectionBoundary` calls `retainedStudyData()` to inspect and export; `study-connection-storage.ts` validates registry bindings and inspects existing stores. | Preserve read-only inspection/export and independent client factories needed for original-authority recovery even if the serving entry is removed. Export is not a receipt or delivery. |
+
+FE31 adopts the existing `study-command-client` / Study session retained
+command owner for the current `tactics_view.tsx` attempt in the monolith,
+retaining the exact tactic operation and validated receipt before local
+progress. FE32 adopts that same owner for `training-bury-command.ts` and
+`home_view.tsx`, with a bounded reader for existing burial markers and their
+original operation/body through receipt and queue refresh. Neither should
+create a second lifecycle or redirect an old independent request. FE36 owns
+removing the separate entry and its connection, settings and build-mode
+controls after these adoptions and a reachable recovery/export path are
+reviewed. A newly discovered supported consumer requires the delivery owner to
+resolve its exact backend contract before removal.
+
+### Prepared-storage authority handoff
+
+The current `database/browser/offline-training-storage.ts` caches one
+`databasePromise`, although `studyOfflineDatabaseName()` selects the locator
+from the current origin and workspace. `readPreparedTraining` and
+`updatePreparedTraining` use that cached handle. The connection boundary's
+normal connect/disconnect controls reload the application, but the public
+connection client also permits a same-lifetime authority change. Source
+inspection therefore identifies a possible stale handle across such a change;
+it is not a demonstrated live incident. The connection registry and retained
+inspector attribute offline records by the exact authority-derived database
+name, and cutover blocks unresolved foreign work, but an empty or terminal
+snapshot does not itself require a hold.
+
+The recovery owner should bind each opened handle to the captured exact locator
+and fence delayed prepared-queue writes at their transaction before put; an
+in-flight old operation must retain its old authority or hold. Verify same-
+authority recovery, an allowed A-to-B transition, delayed writes, and retained
+bytes in both stores. Do not move, delete or infer the provenance of existing
+records. This is an owner handoff, not evidence that the repair or a real browser
+transition has been executed.
