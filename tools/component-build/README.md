@@ -672,6 +672,13 @@ admission still uses the next-card source cache. The former two-way import is
 removed in source; native and assembled behavior remain unqualified. This integration
 does not close existing fixture gaps.
 
+The 19 remaining package initializers have explicit namespace-only markers with
+source-linked local participants; six have no mapped local owner and remain
+unassigned, with integration as administrative maintainer only. The guard checks
+the tracked namespace inventory, overlap and docstring/empty source, not dynamic
+consumers or broader executable ownership. Other executable inventories remain
+open; the affected utility remains a non-authoritative supplied-snapshot planner.
+
 At this base revision, 19 of 290 tracked Python files in those trees remain
 outside the combined 271-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each

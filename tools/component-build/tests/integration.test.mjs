@@ -4,7 +4,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync,
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { checkComponents, repository, validateManifest, compositionPaths, validateCompositionOwnership, censusPaths, validateCensusOwnership, validateCensusInterfaces, validateStartupFacts } from "../check-components.mjs";
+import { checkComponents, repository, validateManifest, compositionPaths, validateCompositionOwnership, censusPaths, validateCensusOwnership, validateCensusInterfaces, validateStartupFacts, validateNamespaceMarkers } from "../check-components.mjs";
 import { validateOwnedPaths, selectComponents } from "../selection.mjs";
 
 const python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3.12";
@@ -101,6 +101,37 @@ test("T02 position admission census cannot disappear when all owner tags are rem
   const missing = structuredClone(original);
   for (const component of missing.components) if (component.censusScope === "position_admission") delete component.censusScope;
   assert.throws(() => validateCensusOwnership(missing, "position_admission", censusPaths("position_admission", repository)), /lacks owners/);
+});
+test("T02 namespace dispositions reject missing, duplicate, stale, overlap and foreign ownership", () => {
+  assert.deepEqual(validateNamespaceMarkers(original, repository, python), {tracked: 52, markers: 19, unassigned: 6});
+  const missing = structuredClone(original); missing.namespaceMarkers.pop();
+  assert.throws(() => validateNamespaceMarkers(missing, repository, python), /exactly one namespace/);
+  const duplicate = structuredClone(original); duplicate.namespaceMarkers.push(structuredClone(duplicate.namespaceMarkers[0]));
+  assert.throws(() => validateNamespaceMarkers(duplicate, repository, python), /duplicate or stale/);
+  const stale = structuredClone(original); stale.namespaceMarkers[0].path = "backend/app/absent/__init__.py";
+  assert.throws(() => validateNamespaceMarkers(stale, repository, python), /duplicate or stale/);
+  const escape = structuredClone(original); escape.namespaceMarkers[0].path = "../outside/__init__.py";
+  assert.throws(() => validateNamespaceMarkers(escape, repository, python), /Invalid/);
+  const overlap = structuredClone(original); overlap.components.find(c => c.id === "integration").ownedFiles.push(overlap.namespaceMarkers[0].path);
+  assert.throws(() => validateNamespaceMarkers(overlap, repository, python), /overlaps/);
+  const foreign = structuredClone(original); foreign.namespaceMarkers[0].participants.push("unknown-owner");
+  assert.throws(() => validateNamespaceMarkers(foreign, repository, python), /participants/);
+  const falseOwner = structuredClone(original); falseOwner.namespaceMarkers[0].participants = [];
+  assert.throws(() => validateNamespaceMarkers(falseOwner, repository, python), /participants/);
+});
+test("T02 namespace guard detects new tracked and executable marker sources", context => {
+  const root = mkdtempSync(join(tmpdir(), "tempo-namespaces-")); context.after(() => rmSync(root, {recursive:true, force:true}));
+  assert.equal(spawnSync("git", ["-C", root, "init", "-q"], {cwd:root}).status, 0);
+  const paths = spawnSync("git", ["ls-files", "backend/app", "database/tempo_storage"], {cwd:repository, encoding:"utf8"}).stdout.trim().split("\n").filter(p => p.endsWith("/__init__.py") && !p.startsWith("database/tempo_storage/ddl/"));
+  for (const path of paths) { mkdirSync(join(root,path,".."),{recursive:true}); cpSync(join(repository,path),join(root,path)); }
+  assert.equal(spawnSync("git", ["-C",root,"add","backend/app","database/tempo_storage"], {cwd:root}).status, 0);
+  assert.deepEqual(validateNamespaceMarkers(original, root, python), {tracked:52,markers:19,unassigned:6});
+  const target = join(root, original.namespaceMarkers[0].path); writeFileSync(target, "import os\n");
+  assert.throws(() => validateNamespaceMarkers(original, root, python), /Namespace source check failed/);
+  cpSync(join(repository,original.namespaceMarkers[0].path), target);
+  const added = "backend/app/new_namespace/__init__.py"; mkdirSync(join(root,added,".."),{recursive:true}); writeFileSync(join(root,added), "");
+  assert.equal(spawnSync("git", ["-C",root,"add",added], {cwd:root}).status, 0);
+  assert.throws(() => validateNamespaceMarkers(original, root, python), /exactly one namespace/);
 });
 test("T02 startup census cannot disappear when all owner tags are removed", () => {
   const missing = structuredClone(original);

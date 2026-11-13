@@ -19,7 +19,7 @@ export function validateSuite(suite, root, defaultCwd) {
   }
 }
 export function validateManifest(manifest, root = repository, options = {}) {
-  if (Object.keys(manifest).some(key => !["components", "schemaVersion", "suites"].includes(key)) || manifest.schemaVersion !== 1 || !Array.isArray(manifest.components) || !manifest.components.length || (manifest.suites !== undefined && !Array.isArray(manifest.suites))) throw new Error("Invalid manifest");
+  if (Object.keys(manifest).some(key => !["components", "schemaVersion", "suites", "namespaceMarkers"].includes(key)) || manifest.schemaVersion !== 1 || !Array.isArray(manifest.components) || !manifest.components.length || (manifest.suites !== undefined && !Array.isArray(manifest.suites))) throw new Error("Invalid manifest");
   const schema = readJson(resolve(repository, "components.schema.json"));
   const fields = schema.properties.components.items;
   const identities = new Set();
@@ -323,6 +323,41 @@ if not {'game_review_router', 'prefix_split_router', 'study_exercise_router'} <=
   if (result.error || result.status !== 0) throw new Error("Startup source witness failed: " + (result.error?.message ?? result.stderr));
 }
 
+export function validateNamespaceMarkers(manifest, root = repository, python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3") {
+  const result = spawnSync("git", ["ls-files", "-z", "backend/app", "database/tempo_storage"], {cwd: root, encoding: "utf8"});
+  if (result.error || result.status !== 0) throw new Error("Cannot enumerate namespace markers");
+  const tracked = result.stdout.split("\0").filter(p => p.endsWith("/__init__.py") && !p.startsWith("database/tempo_storage/ddl/"));
+  const mapped = manifest.components.filter(c => c.status === "mapped" && c.ownedFiles);
+  const markers = manifest.namespaceMarkers;
+  if (!Array.isArray(markers)) throw new Error("Missing namespace markers");
+  const ids = new Set(manifest.components.map(c => c.id)), seen = new Set();
+  for (const marker of markers) {
+    const {path, role, participants, maintainer, note} = marker;
+    if (Object.keys(marker).sort().join() !== "maintainer,note,participants,path,role" || typeof path !== "string" || path.split("/").some(p => !p || p === "." || p === "..") || !tracked.includes(path) || seen.has(path)) throw new Error("Invalid, duplicate or stale namespace marker");
+    if (!existsSync(resolve(root, path)) || !inside(realpathSync(root), realpathSync(resolve(root, path)))) throw new Error("Unavailable or escaping namespace marker");
+    seen.add(path);
+    if (mapped.some(c => c.ownedFiles.includes(path))) throw new Error("Namespace marker overlaps mapped owner");
+    if (maintainer !== "integration" || !ids.has(maintainer) || typeof note !== "string" || !note.trim() || !Array.isArray(participants) || new Set(participants).size !== participants.length || participants.some(id => !ids.has(id))) throw new Error("Invalid namespace participants or maintainer");
+    const directory = path.slice(0, -"__init__.py".length);
+    const expected = mapped.filter(c => c.ownedFiles.some(f => f.startsWith(directory) && !f.slice(directory.length).includes("/"))).map(c => c.id).sort();
+    if (JSON.stringify([...participants].sort()) !== JSON.stringify(expected) || role !== (expected.length ? "shared-namespace" : "namespace-unassigned")) throw new Error("Namespace role or participants differ from mapped local owners");
+  }
+  for (const path of tracked) {
+    const count = mapped.filter(c => c.ownedFiles.includes(path)).length + (seen.has(path) ? 1 : 0);
+    if (count !== 1) throw new Error("Expected exactly one namespace disposition for " + path);
+  }
+  const code = `import ast,json,pathlib,sys
+root=pathlib.Path(sys.argv[1])
+for name in json.loads(sys.argv[2]):
+ tree=ast.parse((root/name).read_text(),filename=name)
+ if tree.body and not (len(tree.body)==1 and isinstance(tree.body[0],ast.Expr) and isinstance(tree.body[0].value,ast.Constant) and isinstance(tree.body[0].value.value,str)):
+  raise ValueError("Namespace marker has executable statements: "+name)
+`;
+  const checked = spawnSync(python, ["-c", code, resolve(root), JSON.stringify([...seen])], {encoding:"utf8"});
+  if (checked.error || checked.status !== 0) throw new Error("Namespace source check failed: " + (checked.error?.message ?? checked.stderr));
+  return {tracked: tracked.length, markers: markers.length, unassigned: markers.filter(m => m.role === "namespace-unassigned").length};
+}
+
 export function checkComponents(root = repository, python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3", options = {}) {
   const manifest = readManifest(root);
   const selected = selectComponents(manifest, options.componentIds);
@@ -333,7 +368,7 @@ export function checkComponents(root = repository, python = process.env.TEMPO_CO
       validateCensusInterfaces(manifest, scope, root, python);
     }
   }
-  if (root === repository && options.componentIds === undefined) validateStartupFacts(manifest, root);
+  if (root === repository && options.componentIds === undefined) { validateStartupFacts(manifest, root); validateNamespaceMarkers(manifest, root, python); }
   validateManifest(manifest, root, { componentIds: selected.map(component => component.id), suiteIds: options.componentIds === undefined ? manifest.suites?.map(suite => suite.id) : undefined });
   const results = [];
   for (const component of selected) {
@@ -368,7 +403,7 @@ if (process.argv[1] && resolve(process.argv[1]) === new URL(import.meta.url).pat
     if (options.list) {
       const manifest = readManifest(root);
       const selected = options.suiteIds ? selectSuites(manifest, options.suiteIds) : selectComponents(manifest, options.componentIds);
-      if (root === repository && options.componentIds === undefined) validateStartupFacts(manifest, root);
+      if (root === repository && options.componentIds === undefined) { validateStartupFacts(manifest, root); validateNamespaceMarkers(manifest, root, python); }
   validateManifest(manifest, root, { componentIds: options.suiteIds ? [] : selected.map(component => component.id), suiteIds: options.suiteIds });
       console.log(JSON.stringify({ selected }, null, 2));
     } else {

@@ -67,8 +67,18 @@
               "type": "string"
             }
           },
-          "moduleAssignments": {"type": "array", "items": {"type": "string"}},
-          "lifecycleEdges": {"type": "array", "items": {"type": "string"}},
+          "moduleAssignments": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "lifecycleEdges": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "dependencies": {
             "type": "array",
             "items": {
@@ -214,6 +224,43 @@
     },
     "suites": {
       "type": "array"
+    },
+    "namespaceMarkers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "role",
+          "participants",
+          "maintainer",
+          "note"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "shared-namespace",
+              "namespace-unassigned"
+            ]
+          },
+          "participants": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "maintainer": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      }
     }
   }
 }

@@ -9032,5 +9032,286 @@
         "database/tempo_storage/study/position_due_candidates.py"
       ]
     }
+  ],
+  "namespaceMarkers": [
+    {
+      "path": "backend/app/__init__.py",
+      "role": "shared-namespace",
+      "participants": [
+        "activity-control-command",
+        "analysis-paste-command",
+        "api-startup-composition",
+        "backend-command-dispatch",
+        "backend-command-gateway",
+        "branch-edit-command",
+        "card-deletion-application",
+        "card-edit-command",
+        "celery-startup-composition",
+        "integrity-repair-command",
+        "pgn-import-command",
+        "pgn-import-validation",
+        "position-annotation-command",
+        "prefix-split-commands",
+        "prefix-split-http",
+        "queue-attempt-origin-application",
+        "repertoire-control-command",
+        "repertoire-settings-application",
+        "settings-command",
+        "study-attempt-command",
+        "study-exercise-transport",
+        "study-queue-command",
+        "study-review-command",
+        "tactics-command",
+        "teaching-state-command",
+        "worker-startup-composition"
+      ],
+      "maintainer": "integration",
+      "note": "Namespace marker only; no sibling implementation authority."
+    },
+    {
+      "path": "backend/app/authoring/__init__.py",
+      "role": "namespace-unassigned",
+      "participants": [],
+      "maintainer": "integration",
+      "note": "No mapped local implementation; administrative maintenance only, substantive owner remains unresolved."
+    },
+    {
+      "path": "backend/app/product_composition/__init__.py",
+      "role": "shared-namespace",
+      "participants": [
+        "database-infrastructure-binding",
+        "study-queue-composition",
+        "tactics-capture-composition"
+      ],
+      "maintainer": "integration",
+      "note": "Namespace marker only; no sibling implementation authority."
+    },
+    {
+      "path": "backend/app/services/__init__.py",
+      "role": "shared-namespace",
+      "participants": [
+        "analysis-paste-service",
+        "application-activity-gate",
+        "background-activity-service",
+        "background-diagnostic-types",
+        "background-metrics-service",
+        "background-runtime-application",
+        "background-wake-application",
+        "canonical-prefix-application",
+        "durable-task-application",
+        "explicit-import-delivery",
+        "frozen-order-composition",
+        "integrity-scan-service",
+        "integrity-source-service",
+        "opening-admission-adapter",
+        "opening-admission-policy",
+        "opening-capacity-adapter",
+        "opening-evidence-policy",
+        "opening-graph-builder",
+        "opening-graph-rebuild",
+        "position-admission-application",
+        "prefix-split-recovery",
+        "prefix-split-service",
+        "queue-ordering-facade",
+        "queue-presentation-service",
+        "queue-priority-promotion",
+        "queue-refresh-wakeup",
+        "redis-admission-application",
+        "repertoire-conflict-composition",
+        "repertoire-move-verification",
+        "scheduling-adapter",
+        "scheduling-review-contract",
+        "scheduling-review-policy",
+        "study-attempt-finalization",
+        "study-attempt-guard",
+        "study-calendar-capture",
+        "study-grading-policy",
+        "study-mode-policy",
+        "study-priority-control",
+        "study-queue-application",
+        "study-queue-preparation",
+        "study-queue-refresh-worker",
+        "study-review-adapter",
+        "study-review-reconciliation",
+        "study-review-scheduling",
+        "tactics-capture-service",
+        "tactics-catalog-service",
+        "tactics-puzzle-helpers"
+      ],
+      "maintainer": "integration",
+      "note": "Namespace marker only; no sibling implementation authority."
+    },
+    {
+      "path": "backend/app/study/__init__.py",
+      "role": "shared-namespace",
+      "participants": [
+        "opening-checkpoint-application",
+        "study-capture-admission",
+        "study-next-core",
+        "study-queue-order-receipt",
+        "study-queue-placement"
+      ],
+      "maintainer": "integration",
+      "note": "Namespace marker only; no sibling implementation authority."
+    },
+    {
+      "path": "backend/app/study/openings/__init__.py",
+      "role": "shared-namespace",
+      "participants": [
+        "frozen-opening-math",
+        "opening-capacity-frontier"
+      ],
+      "maintainer": "integration",
+      "note": "Namespace marker only; no sibling implementation authority."
+    },
+    {
+      "path": "backend/app/study/policy/__init__.py",
+      "role": "shared-namespace",
+      "participants": [
+        "opening-evidence-policy",
+        "opening-maturity-policy",
+        "opening-observation-summary",
+        "scheduling-review-contract",
+        "scheduling-review-policy",
+        "study-calendar-policy",
+        "study-grading-policy",
+        "study-queue-order-policy",
+        "study-review-reconciliation"
+      ],
+      "maintainer": "integration",
+      "note": "Namespace marker only; no sibling implementation authority."
+    },
+    {
+      "path": "backend/app/study/review/__init__.py",
+      "role": "namespace-unassigned",
+      "participants": [],
+      "maintainer": "integration",
+      "note": "No mapped local implementation; administrative maintenance only, substantive owner remains unresolved."
+    },
+    {
+      "path": "database/tempo_storage/__init__.py",
+      "role": "shared-namespace",
+      "participants": [
+        "database-connection-composition",
+        "frozen-order-storage",
+        "game-review-storage",
+        "opening-progression-storage",
+        "postgres-connection-storage",
+        "postgres-readiness-storage",
+        "repertoire-line-storage",
+        "scheduling-review-storage",
+        "study-queue-position-lock",
+        "study-review-reconciliation-storage",
+        "tactics-daily-admission"
+      ],
+      "maintainer": "integration",
+      "note": "Namespace marker only; no sibling implementation authority."
+    },
+    {
+      "path": "database/tempo_storage/authored_repertoires/__init__.py",
+      "role": "shared-namespace",
+      "participants": [
+        "analysis-paste-storage",
+        "branch-edit-storage",
+        "integrity-repair-storage",
+        "position-source-storage",
+        "repertoire-change-source-storage",
+        "repertoire-product-snapshot-storage"
+      ],
+      "maintainer": "integration",
+      "note": "Namespace marker only; no sibling implementation authority."
+    },
+    {
+      "path": "database/tempo_storage/commands/__init__.py",
+      "role": "shared-namespace",
+      "participants": [
+        "activity-retry-storage",
+        "position-annotation-storage",
+        "study-queue-command-storage",
+        "teaching-state-storage"
+      ],
+      "maintainer": "integration",
+      "note": "Namespace marker only; no sibling implementation authority."
+    },
+    {
+      "path": "database/tempo_storage/commands/studies/__init__.py",
+      "role": "namespace-unassigned",
+      "participants": [],
+      "maintainer": "integration",
+      "note": "No mapped local implementation; administrative maintenance only, substantive owner remains unresolved."
+    },
+    {
+      "path": "database/tempo_storage/controls/__init__.py",
+      "role": "shared-namespace",
+      "participants": [
+        "background-claim-sql",
+        "settings-control-storage",
+        "study-review-savepoint-storage"
+      ],
+      "maintainer": "integration",
+      "note": "Namespace marker only; no sibling implementation authority."
+    },
+    {
+      "path": "database/tempo_storage/foreground_controls/__init__.py",
+      "role": "shared-namespace",
+      "participants": [
+        "prefix-split-control-storage",
+        "repertoire-control-storage",
+        "settings-foreground-storage"
+      ],
+      "maintainer": "integration",
+      "note": "Namespace marker only; no sibling implementation authority."
+    },
+    {
+      "path": "database/tempo_storage/lifecycle/__init__.py",
+      "role": "shared-namespace",
+      "participants": [
+        "background-metrics-storage",
+        "lifecycle-queue-projection-storage",
+        "queue-attempt-abandonment",
+        "queue-attempt-origin-storage"
+      ],
+      "maintainer": "integration",
+      "note": "Namespace marker only; no sibling implementation authority."
+    },
+    {
+      "path": "database/tempo_storage/scheduling/__init__.py",
+      "role": "namespace-unassigned",
+      "participants": [],
+      "maintainer": "integration",
+      "note": "No mapped local implementation; administrative maintenance only, substantive owner remains unresolved."
+    },
+    {
+      "path": "database/tempo_storage/studies/__init__.py",
+      "role": "namespace-unassigned",
+      "participants": [],
+      "maintainer": "integration",
+      "note": "No mapped local implementation; administrative maintenance only, substantive owner remains unresolved."
+    },
+    {
+      "path": "database/tempo_storage/studies/portable/__init__.py",
+      "role": "namespace-unassigned",
+      "participants": [],
+      "maintainer": "integration",
+      "note": "No mapped local implementation; administrative maintenance only, substantive owner remains unresolved."
+    },
+    {
+      "path": "database/tempo_storage/study/__init__.py",
+      "role": "shared-namespace",
+      "participants": [
+        "position-first-response-storage",
+        "position-grade-effect-storage",
+        "position-owner-epoch-storage",
+        "prefix-split-intent-storage",
+        "study-capture-storage",
+        "study-issuance-provenance",
+        "study-next-storage",
+        "study-position-due-storage",
+        "study-position-introduction-storage",
+        "study-position-storage"
+      ],
+      "maintainer": "integration",
+      "note": "Namespace marker only; no sibling implementation authority."
+    }
   ]
 }
