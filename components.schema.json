@@ -198,7 +198,8 @@
               "http_composition",
               "position_issuance_storage",
               "database_infrastructure",
-              "opening_progression"
+              "opening_progression",
+              "puzzle_helpers"
             ]
           }
         }

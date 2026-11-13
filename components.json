@@ -2328,7 +2328,8 @@
         "queue-ordering-facade",
         "study-queue-position-lock",
         "tactics-daily-admission",
-        "durable-task-application"
+        "durable-task-application",
+        "tactics-puzzle-helpers"
       ],
       "buildInputs": [],
       "buildCommand": null,
@@ -3145,7 +3146,8 @@
       "dependencies": [
         "tactics-catalog-storage",
         "tactics-daily-admission",
-        "study-calendar-capture"
+        "study-calendar-capture",
+        "tactics-puzzle-helpers"
       ],
       "buildInputs": [],
       "buildCommand": null,
@@ -8246,6 +8248,38 @@
         "Shared practiced-parent SQL requires a non-invalidated Study review. Caller-transaction legacy unlock excludes opening cards represented by a published graph generation; non-opening children retain the existing mature-state condition."
       ],
       "censusScope": "opening_progression"
+    },
+    {
+      "id": "tactics-puzzle-helpers",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/puzzles.py#LichessPuzzle",
+        "backend/app/services/puzzles.py#parse_lichess_puzzle_row",
+        "backend/app/services/puzzles.py#load_packaged_decks",
+        "backend/app/services/puzzles.py#validate_puzzle_record"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/puzzles.py"
+      ],
+      "ownershipRole": "Parse and validate packaged tactics puzzles",
+      "dependencyNotes": [
+        "Uses external python-chess for legal setup and solution moves; reads supplied packaged deck path. Existing consumers include tactical catalog, queue refresh and unmapped main composition. It does not own Study scheduling."
+      ],
+      "censusScope": "puzzle_helpers"
     }
   ],
   "suites": [
