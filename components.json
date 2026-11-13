@@ -2,6 +2,75 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "background-activity-service",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/background_activity.py#report_progress",
+        "backend/app/services/background_activity.py#emit_progress",
+        "backend/app/services/background_activity.py#set_control",
+        "backend/app/services/background_activity.py#set_control_in_transaction"
+      ],
+      "dependencies": [
+        "background-activity-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/background_activity.py"
+      ],
+      "ownershipRole": "Coordinate background progress and controls",
+      "dependencyNotes": [
+        "Checks supported source, generation and Study-only admission; emit_progress catches PostgreSQL operational failures. Existing activity command uses borrowed transaction; standalone entry points open existing connections."
+      ],
+      "censusScope": "background_activity"
+    },
+    {
+      "id": "background-activity-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/controls/activity",
+      "publicExports": [
+        "database/tempo_storage/controls/activity/storage.py#prepare_progress_read",
+        "database/tempo_storage/controls/activity/storage.py#prepare_control_read",
+        "database/tempo_storage/controls/activity/storage.py#prepare_control_update",
+        "database/tempo_storage/controls/activity/storage.py#upsert_progress"
+      ],
+      "dependencies": [
+        "pgn-import-preparation-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/controls/activity/__init__.py",
+        "database/tempo_storage/controls/activity/storage.py"
+      ],
+      "ownershipRole": "Persist background progress and control facts",
+      "dependencyNotes": [
+        "Caller-connection SQL uses fixed durable/integrity source allowlist, generation/current work reads and row locks, explicit import receipt scope and activity upserts; caller owns action policy and transaction."
+      ],
+      "censusScope": "background_activity"
+    },
+    {
       "id": "repertoire-position-index",
       "type": "integration",
       "maintainer": "Tempo",

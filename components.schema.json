@@ -188,7 +188,8 @@
               "captured_tactic",
               "chess_helpers",
               "scheduling_review",
-              "repertoire_snapshot"
+              "repertoire_snapshot",
+              "background_activity"
             ]
           }
         }
