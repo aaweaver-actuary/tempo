@@ -141,7 +141,7 @@ def test_p05_real_issued_review_transport_effect_and_checkpoint_rollback(monkeyp
     from app.repertoire.position_study_source import prepare_position_source
     from app.services.position_queue_admission import prepare_due, admit_due
     from app.services.queue_next_card import prepare_queue_head
-    from app.queue_commands import issue_queue_head
+    from app.queue_commands import current_study_day, issue_queue_head
     from tempo_storage import connections
 
     with psycopg.connect(dsn) as empty:
@@ -151,11 +151,11 @@ def test_p05_real_issued_review_transport_effect_and_checkpoint_rollback(monkeyp
     monkeypatch.setenv('TEMPO_DATABASE_WRITE_URL', dsn)
     monkeypatch.setattr(connections, 'read_connection', reader)
     now = datetime.now(timezone.utc)
-    day = now.date().isoformat()
     fen = chess.STARTING_FEN
     moves = json.dumps(['e2e4', 'e7e5', 'g1f3'])
     with psycopg.connect(dsn, row_factory=tempo_row_factory) as raw:
         raw.execute('INSERT INTO settings(id) VALUES(1)')
+        day = current_study_day(PostgresConnection(raw), now=now)
         raw.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('n2','P05 position','fixture',%s)", (now.isoformat(),))
         raw.execute("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES('n2',3,'ready',%s)", (now.isoformat(),))
         raw.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES('route','n2','Legal route','white',%s,%s,%s)", (fen, moves, now.isoformat()))
@@ -193,13 +193,14 @@ def test_p05_real_issued_review_transport_effect_and_checkpoint_rollback(monkeyp
         assert admit_due(port, day, proposal) is None
         raw.execute("INSERT INTO daily_queue_days(queue_date,seed,membership_hash,generated_at) VALUES(%s,1,'p05',%s)", (day, now.isoformat()))
         raw.commit()
-        row = raw.execute("SELECT id,card_id FROM daily_queue WHERE queue_date=%s AND status='queued' ORDER BY position,id LIMIT 1", (day,)).fetchone()
+        row = raw.execute("SELECT id,card_id,queue_date FROM daily_queue WHERE queue_date=%s AND status='queued' ORDER BY position,id LIMIT 1", (day,)).fetchone()
         assert row and row['card_id'] == 'card'
         entry = row['id']
         raw.commit()
         head = {'queue_date': day, 'entry_id': entry, 'card_id': 'card', 'expected_revision': 1}
         prepared_head = prepare_queue_head(head)
         assert prepared_head.mode == 'position', prepared_head
+        assert row['queue_date'] == head['queue_date'] == current_study_day(port), 'queued day is no longer the authoritative Study day'
         issued = issue_queue_head(port, prepared_head)
         assert issued['issued'] and issued['position_study_hold'] is None, issued
         raw.commit()
