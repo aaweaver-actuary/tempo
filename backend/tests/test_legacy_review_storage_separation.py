@@ -1,7 +1,9 @@
 """Legacy review policy, lock selection and deferred effects borrow fixed storage."""
 
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import date, datetime, timezone
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -9,6 +11,57 @@ from app.services import learning_review_adapter as review
 
 DAY = date(2026, 10, 21)
 NOW = datetime(2026, 10, 21, 12, tzinfo=timezone.utc)
+
+
+@pytest.mark.parametrize("method", ["save_receipt", "save_position_receipt"])
+def test_receipt_insert_uses_validated_facts_and_preserves_payload(monkeypatch, method):
+    from tempo_learning_review.models import ReviewResult
+
+    payload = {"persisted": True, "queue_entry_id": 4, "review_id": None,
+               "idempotent": True, "unknown": {"original": [3, 2, 1]}}
+    result = ReviewResult.from_dict(payload)
+    calls = []
+    monkeypatch.setattr(review.storage, "insert_receipt", lambda *args: calls.append(args))
+    database = object()
+    command = SimpleNamespace(attempt_id="original-attempt", card_id="card",
+                              outcome="correct", guided=False, recorded_at=None)
+    getattr(review.LearningReviewAdapter(database, None), method)(
+        command, SimpleNamespace(reviewed_at=NOW), result
+    )
+    assert calls == [(database, "original-attempt", "card", 4, "correct", 0, None,
+                      None, "canonical", None,
+                      json.dumps(payload) if method == "save_receipt" else "{}")]
+
+
+@pytest.mark.parametrize("method", ["save_receipt", "save_position_receipt"])
+@pytest.mark.parametrize("changes", [
+    {"queue_entry_id": 5}, {"review_id": 9}, {"requeue_entry_id": 8},
+    {"idempotent": False}, {"reconciliation": "different"}, {"persisted": False},
+])
+def test_receipt_insert_rejects_divergent_typed_facts_before_write(monkeypatch, method, changes):
+    from tempo_learning_review.models import ReviewResult
+
+    result = ReviewResult.from_dict({"persisted": True, "queue_entry_id": 4,
+                                     "review_id": 7, "idempotent": True})
+    assert result.current is not None
+    forged = replace(result, current=replace(result.current, **changes))
+    monkeypatch.setattr(review.storage, "insert_receipt", lambda *_: pytest.fail("unexpected write"))
+    command = SimpleNamespace(attempt_id="original", card_id="card", outcome="correct",
+                              guided=False, recorded_at=None)
+    with pytest.raises(ValueError, match="receipt facts"):
+        getattr(review.LearningReviewAdapter(None, None), method)(
+            command, SimpleNamespace(reviewed_at=NOW), forged
+        )
+
+
+def test_opaque_original_receipt_is_not_decoded_for_new_insertion(monkeypatch):
+    from tempo_learning_review.models import ReviewResult
+
+    original = ReviewResult.from_original(' ["historical", {"extra": 1}] ')
+    monkeypatch.setattr(review.storage, "insert_receipt", lambda *_: pytest.fail("unexpected write"))
+    with pytest.raises(ValueError, match="current review result"):
+        review.LearningReviewAdapter(None, None).save_receipt(None, None, original)
+    assert original.payload_json == ' ["historical", {"extra": 1}] '
 
 
 def test_injected_policy_never_opens_settings_read(monkeypatch):

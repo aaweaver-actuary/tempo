@@ -224,6 +224,31 @@ class ReviewResult:
         """Decode a newly constructed result, whose source was a JSON object."""
         return _json_object(self.payload_json)
 
+    def current_receipt(self) -> tuple[dict[str, object], CurrentReviewResult]:
+        """Check current typed identity against the serialized response before a write."""
+        current = self.current
+        if current is None or self.original is not None:
+            raise ValueError("A current review result is required for receipt insertion")
+        payload = self.current_mapping()
+        if not all(key in payload for key in ("persisted", "queue_entry_id", "review_id")):
+            raise ValueError("Current review result fields are missing")
+        entry, review = payload["queue_entry_id"], payload["review_id"]
+        requeue, idempotent = payload.get("requeue_entry_id"), payload.get("idempotent")
+        if (payload["persisted"] is not True or current.persisted is not True or
+            type(entry) is not int or type(current.queue_entry_id) is not int or
+            (review is not None and type(review) is not int) or
+            (current.review_id is not None and type(current.review_id) is not int) or
+            (requeue is not None and type(requeue) is not int) or
+            (current.requeue_entry_id is not None and type(current.requeue_entry_id) is not int) or
+            (idempotent is not None and type(idempotent) is not bool) or
+            (current.idempotent is not None and type(current.idempotent) is not bool) or
+            (idempotent is False and review is None) or
+            current.queue_entry_id != entry or current.review_id != review or
+            current.requeue_entry_id != requeue or current.idempotent != idempotent or
+            current.reconciliation != payload.get("reconciliation")):
+            raise ValueError("Current review receipt facts do not match the serialized result")
+        return payload, current
+
 
 @dataclass(frozen=True)
 class ScheduledReview:

@@ -364,34 +364,34 @@ class LearningReviewAdapter:
         save_schedule_snapshot(self.database, review_id, snapshot.as_dict())
 
     def save_receipt(self, command: ReviewCommand, context: ReviewContext, result: ReviewResult) -> None:
-        payload = result.current_mapping()
+        payload, current = result.current_receipt()
         storage.insert_receipt(
             self.database,
             command.attempt_id,
             command.card_id,
-            payload["queue_entry_id"],
+            current.queue_entry_id,
             command.outcome,
             int(command.guided),
             context.reviewed_at.isoformat() if command.recorded_at else None,
-            payload["review_id"],
+            current.review_id,
             "canonical",
             None,
             json.dumps(payload),
         )
 
     def save_position_receipt(self, command: ReviewCommand, context: ReviewContext, result: ReviewResult) -> None:
-        payload = result.current_mapping()
+        _, current = result.current_receipt()
         # D3 verifies this canonical human receipt before accepting Good. Its
         # result remains provisional until every position effect succeeds.
         storage.insert_receipt(
             self.database,
             command.attempt_id,
             command.card_id,
-            payload["queue_entry_id"],
+            current.queue_entry_id,
             command.outcome,
             int(command.guided),
             context.reviewed_at.isoformat() if command.recorded_at else None,
-            payload["review_id"],
+            current.review_id,
             "canonical",
             None,
             "{}",
