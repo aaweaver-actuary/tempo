@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Mapping
 
 from fastapi import HTTPException
 from tempo_storage.opening_evidence.storage import SerializationFailure
@@ -516,6 +516,21 @@ class PositionCheckpointFence:
     _seal: Any
 
 
+@dataclass(frozen=True)
+class PositionCheckpointReceipt:
+    """Original saved row and grade, carried without changing their payloads."""
+    receipt: Mapping[str, object]
+    grade_receipt: Mapping[str, object] | None
+    replayed: bool
+
+
+def _checkpoint_receipt(row: dict[str, object], grade: dict[str, object] | None, *, replayed: bool) -> PositionCheckpointReceipt:
+    if (not isinstance(row.get("event_id"), str) or not isinstance(row.get("attempt_id"), str)
+        or not isinstance(row.get("payload_digest"), str) or "payload_json" not in row):
+        raise EvidenceConflict("Position first response receipt identity is invalid")
+    return PositionCheckpointReceipt(row, grade, replayed)
+
+
 def prepare_position_checkpoint(database, request):
     """Prepare frozen issuance and authored evidence on a read connection.
 
@@ -610,7 +625,7 @@ def begin_position_checkpoint(
     )
 
 
-def commit_position_checkpoint(database, fence, contiguous_events):
+def commit_position_checkpoint(database: postgres.PostgresConnection, fence: PositionCheckpointFence, contiguous_events: list[dict[str, object]]) -> tuple[PositionCheckpointReceipt, ...]:
     """Accept a validated durable journal prefix in the borrowed transaction.
 
     Original card/day/queue/attempt locks must already be held. Exact saved
@@ -642,7 +657,7 @@ def commit_position_checkpoint(database, fence, contiguous_events):
         raise EvidenceConflict(
             "Position checkpoint differs from issued display manifest"
         )
-    results = []
+    results: list[PositionCheckpointReceipt] = []
     source_fenced = False
     for observation in observations:
         if observation["response_at"] is None:
@@ -742,7 +757,7 @@ def commit_position_checkpoint(database, fence, contiguous_events):
                     expected_digest,
                 ):
                     raise EvidenceConflict("Position grade receipt identity differs")
-            results.append({"receipt": row, "grade_receipt": grade, "replayed": True})
+            results.append(_checkpoint_receipt(row, grade, replayed=True))
             continue
         if not source_fenced:
             if isinstance(source, Hold) or source is None:
@@ -799,17 +814,11 @@ def commit_position_checkpoint(database, fence, contiguous_events):
         row = persist_position_first_response(
             database, plan, envelope, now, apply_grade=apply_grade
         )
-        results.append(
-            {
-                "receipt": row,
-                "grade_receipt": fence.storage.grade_receipt(database, event_id),
-                "replayed": False,
-            }
-        )
-    return results
+        results.append(_checkpoint_receipt(row, fence.storage.grade_receipt(database, event_id), replayed=False))
+    return tuple(results)
 
 
-def position_checkpoint_events(database, fence):
+def position_checkpoint_events(database: postgres.PostgresConnection, fence: PositionCheckpointFence) -> list[dict[str, object]]:
     """Read the saved bounded contiguous journal after owner checkpoint persistence."""
     if (
         not isinstance(fence, PositionCheckpointFence)
@@ -827,11 +836,14 @@ def position_checkpoint_events(database, fence):
             "Saved checkpoint context differs from position preparation"
         )
     rows = storage.event_rows(database, (request.attempt_id,))
-    events = []
+    events: list[dict[str, object]] = []
     for row in rows:
         if row[0] != len(events) + 1:
             break
-        events.append(json.loads(row[1]))
+        decoded: object = json.loads(row[1])
+        if not isinstance(decoded, dict) or not all(isinstance(key, str) for key in decoded):
+            raise EvidenceConflict("Saved checkpoint event is invalid")
+        events.append(decoded)
     if len(events) != attempt["contiguous_sequence"]:
         raise EvidenceConflict("Saved checkpoint contiguous sequence differs")
     return events
@@ -845,7 +857,7 @@ class PositionCompletionInputs:
     event_ids: tuple[str, ...]
 
 
-def position_completion_inputs(fence, results):
+def position_completion_inputs(fence: PositionCheckpointFence, results: tuple[PositionCheckpointReceipt, ...]) -> PositionCompletionInputs:
     """Return identities for I1's saved-completion grade handoff."""
     if (
         not isinstance(fence, PositionCheckpointFence)
@@ -853,16 +865,19 @@ def position_completion_inputs(fence, results):
     ):
         raise EvidenceConflict("Position checkpoint writer fence is required")
     plan = fence.preparation.plan
-    ids = []
+    ids: list[str] = []
     for result in results:
-        row = result["receipt"]
+        row = result.receipt
         raw = row["payload_json"]
         if isinstance(raw, str):
             raw = json.loads(raw)
-        decode_position_first_response(raw, row["payload_digest"], plan)
-        if row["event_id"] != raw["event_id"] or row["attempt_id"] != plan.attempt_id:
+        event_id, attempt_id, digest = row.get("event_id"), row.get("attempt_id"), row.get("payload_digest")
+        if not isinstance(raw, dict) or not isinstance(event_id, str) or not isinstance(attempt_id, str) or not isinstance(digest, str):
+            raise EvidenceConflict("Position first response receipt identity is invalid")
+        decode_position_first_response(raw, digest, plan)
+        if event_id != raw["event_id"] or attempt_id != plan.attempt_id:
             raise EvidenceConflict("Position completion receipt identity differs")
-        ids.append(row["event_id"])
+        ids.append(event_id)
     if len(ids) != len(set(ids)):
         raise EvidenceConflict("Position completion repeats a first response")
     return PositionCompletionInputs(
@@ -870,7 +885,7 @@ def position_completion_inputs(fence, results):
     )
 
 
-def fence_position_completion(database, fence, results):
+def fence_position_completion(database: postgres.PostgresConnection, fence: PositionCheckpointFence, results: tuple[PositionCheckpointReceipt, ...]) -> None:
     """Fence current authority only if completion will add a new grade effect."""
     from tempo_evidence_math.position_learning import Hold
     from tempo_storage.authored_repertoires.position_study_source import (
@@ -885,7 +900,7 @@ def fence_position_completion(database, fence, results):
     ):
         raise EvidenceConflict("Position checkpoint writer fence is required")
     position_completion_inputs(fence, results)
-    if all(result["grade_receipt"] is not None for result in results):
+    if all(result.grade_receipt is not None for result in results):
         return
     source, plan = fence.preparation.source, fence.preparation.plan
     if source is None or isinstance(source, Hold):

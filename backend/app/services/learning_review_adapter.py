@@ -33,7 +33,7 @@ from .background_runtime import training_timing_stage
 
 if TYPE_CHECKING:
     from app.contracts.transport.settings import Settings
-    from app.study.position_checkpoint import PositionCheckpointFence, PositionCheckpointPreparation
+    from app.study.position_checkpoint import PositionCheckpointFence, PositionCheckpointPreparation, PositionCheckpointReceipt
 
 
 @dataclass(frozen=True)
@@ -112,7 +112,7 @@ class LearningReviewAdapter:
         self.prepared_manifest = prepared_manifest
         self.prepared_position_checkpoint = prepared_position_checkpoint
         self._position_fence: PositionCheckpointFence | None = None
-        self._position_receipts = ()
+        self._position_receipts: tuple[PositionCheckpointReceipt, ...] = ()
         self.policy_provider = policy_provider
         self.observed_at = observed_at
         self.local_day = local_day

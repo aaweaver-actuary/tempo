@@ -1,6 +1,7 @@
 
 from app.repertoire import position_study_source as _source_preparation
 from datetime import datetime, timezone
+import json
 from types import SimpleNamespace as NS
 
 import pytest
@@ -245,10 +246,31 @@ def test_completion_replay_skips_stale_source_but_new_grade_holds():
     prep = evidence.PositionCheckpointPreparation(None, frozen, Hold('source_changed'), evidence._POSITION_CHECKPOINT_SEAL)
     db = object()
     fence = evidence.PositionCheckpointFence(prep, db, storage, 'authored', evidence._POSITION_CHECKPOINT_SEAL)
-    accepted = [{'receipt':row, 'grade_receipt':{'grade':'good'}}]
+    accepted = (evidence._checkpoint_receipt(row, {'grade':'good'}, replayed=True),)
     evidence.fence_position_completion(db, fence, accepted)
     with pytest.raises(evidence.EvidenceConflict, match='source_changed'):
-        evidence.fence_position_completion(db, fence, [{'receipt':row, 'grade_receipt':None}])
+        evidence.fence_position_completion(db, fence, (evidence._checkpoint_receipt(row, None, replayed=True),))
+
+
+def test_checkpoint_receipt_preserves_original_raw_json_and_rejects_malformed_identity():
+    frozen = plan()
+    payload = event(actual_uci='e2e4')
+    raw = json.dumps(payload, indent=2)
+    row = {'event_id': payload['event_id'], 'attempt_id': payload['attempt_id'],
+           'payload_json': raw, 'payload_digest': evidence._position_digest(payload), 'unknown': 'preserved'}
+    grade = {'grade': 'good', 'unknown': 'preserved'}
+    saved = evidence._checkpoint_receipt(row, grade, replayed=True)
+    assert saved.receipt is row and saved.grade_receipt is grade and saved.receipt['payload_json'] == raw
+    prep = evidence.PositionCheckpointPreparation(None, frozen, None, evidence._POSITION_CHECKPOINT_SEAL)
+    fence = evidence.PositionCheckpointFence(prep, object(), storage, 'authored', evidence._POSITION_CHECKPOINT_SEAL)
+    assert evidence.position_completion_inputs(fence, (saved,)).event_ids == (payload['event_id'],)
+    with pytest.raises(evidence.EvidenceConflict, match='repeats'):
+        evidence.position_completion_inputs(fence, (saved, saved))
+    for field in ('event_id', 'attempt_id', 'payload_digest', 'payload_json'):
+        invalid = dict(row)
+        invalid.pop(field)
+        with pytest.raises(evidence.EvidenceConflict, match='identity is invalid'):
+            evidence._checkpoint_receipt(invalid, grade, replayed=True)
 
 
 def test_issued_manifest_covers_displayed_context_and_repeated_position_ordinals():
