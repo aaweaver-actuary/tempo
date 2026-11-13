@@ -202,7 +202,7 @@ Use an environment containing installed tempo-scheduling, FSRS, pytest, import-l
 and grimp. No PostgreSQL proof is claimed by these pure/seam tests.
 
 Python public APIs are policy-enforced, not a language sandbox: `__all__` defines
-exports, consumers may import only the package root and declared names, and the
+exports, consumers may import the package root and declared names, and the
 validator rejects private/deferred imports. Python technically permits importing
 internal modules; the validation policy rejects that usage. Unresolved dynamic
 loaders are prohibited in the selected packages. Local transitive sources are all
@@ -250,3 +250,25 @@ undeclared namespaces remain errors. The regular
 negative controls; `tests/boundaries.test.mjs` retains the original guards.
 This checker correction changes no application API, packaging hook, schema,
 provider or runtime lifecycle.
+
+## Pure package owner qualification
+
+`board-ui` declares its package exports, React peer and published asset subpaths;
+`evidence-math` declares its root exports and the public
+`tempo_evidence_math.position_learning` module. Their tests select through
+`test-lane.mjs --component <id>`. Evidence-math's suite expects its wheel and
+locked test dependencies installed in the interpreter selected by
+`TEMPO_COMPONENT_PYTHON`.
+
+`restricted-build.mjs --component board-ui --component evidence-math REPORT`
+invokes each package's existing isolated qualifier from declared inputs and rejects
+missing, failed, skipped, or empty qualification evidence. Set `npm_config_cache`
+to a populated task-owned npm cache. For evidence-math provide
+`TEMPO_EVIDENCE_BUILD_PYTHON` (with its locked build dependencies),
+`TEMPO_EVIDENCE_PYTHON_312`, `TEMPO_EVIDENCE_PYTHON_314`, and
+`TEMPO_EVIDENCE_WHEELHOUSE` (all absolute paths). The package qualifier tests both
+wheel forms with both interpreters after removing producer sources. These package
+proofs do not establish browser acceptance, application assembly, or coverage of
+other runtime owners. Ownership reconciliation in this batch covers only tracked
+source files in these two packages; composition and backend/storage are later
+batches.

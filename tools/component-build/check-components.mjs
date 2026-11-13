@@ -36,6 +36,7 @@ export function validateManifest(manifest, root = repository, options = {}) {
     }
     if (identities.has(component.id)) throw new Error("Duplicate component identity");
     identities.add(component.id);
+    if (component.qualification && !["board-ui", "evidence-math"].includes(component.qualification)) throw new Error("Unknown owner qualification: " + component.qualification);
     if (!inside(resolve(root), resolve(root, component.root)) || component.root.startsWith("/")) throw new Error("Source root escape");
     if (component.status === "implemented") {
       if (!component.buildCommand || !component.artifact?.name || !component.artifact?.version || !component.tests.length || !component.publicExports.length) throw new Error("Implemented component lacks build/export/test contract");
@@ -45,6 +46,11 @@ export function validateManifest(manifest, root = repository, options = {}) {
         const inputPath = resolve(root, component.root, input);
         const inputOwner = inside(resolve(root, "database"), inputPath) ? resolve(root, "database") : resolve(root, component.root);
         if (!inside(inputOwner, inputPath) || !existsSync(inputPath) || !inside(realpathSync(inputOwner), realpathSync(inputPath))) throw new Error("Unavailable/escaping build input: " + input);
+      }
+      for (const module of component.publicModules ?? []) {
+        if (!/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+$/.test(module)) throw new Error("Invalid public module: " + module);
+        const path = resolve(root, component.root, "src", ...module.split("."));
+        if (!existsSync(path + ".py") && !existsSync(resolve(path, "__init__.py"))) throw new Error("Missing public module: " + module);
       }
       if (component.testInventory && !existsSync(resolve(root, component.root, component.testInventory))) throw new Error("Unavailable component-local inventory");
       if (component.type === "contract") {
@@ -93,22 +99,22 @@ export function checkTypeScript(root, component) {
     : path === (real ? boundary.realPath : boundary.path);
   const packageMetadata = readJson(resolve(root, "package.json"));
   if (packageMetadata.name !== component.artifact.name || packageMetadata.version !== component.artifact.version) throw new Error("Artifact identity differs from manifest");
-  if (Object.keys(packageMetadata.dependencies ?? {}).sort().join() !== [...component.dependencies].sort().join()) throw new Error("Dependencies differ from manifest");
-  if (Object.keys(packageMetadata.exports ?? {}).join() !== ".") throw new Error("Private exports exposed by package map");
+  if (Object.keys(packageMetadata.dependencies ?? {}).sort().join() !== [...component.dependencies].sort().join() || Object.keys(packageMetadata.peerDependencies ?? {}).sort().join() !== [...(component.peerDependencies ?? [])].sort().join()) throw new Error("Dependencies differ from manifest");
+  if (Object.keys(packageMetadata.exports ?? {}).sort().join() !== [".", ...(component.publicSubpaths ?? [])].sort().join()) throw new Error("Private exports exposed by package map");
   for (const file of files) for (const imported of imports(readFileSync(file, "utf8"), file)) {
     if (imported.startsWith(".")) {
       const target = resolve(dirname(file), imported);
-      const candidates = [target, target.replace(/\.js$/, ".ts"), target.replace(/\.mjs$/, ".mts"), target.replace(/\.cjs$/, ".cts"), target + ".ts", target + ".mts", target + ".cts", resolve(target, "index.ts"), resolve(target, "index.mts"), resolve(target, "index.cts")];
+      const candidates = [target, target.replace(/\.js$/, ".ts"), target.replace(/\.js$/, ".tsx"), target.replace(/\.mjs$/, ".mts"), target.replace(/\.cjs$/, ".cts"), target + ".ts", target + ".tsx", target + ".mts", target + ".cts", resolve(target, "index.ts"), resolve(target, "index.mts"), resolve(target, "index.cts")];
       if (!candidates.some(candidate => sourceBoundaries.some(boundary => within(boundary, candidate)))) throw new Error("Source escape: " + imported);
       if (!candidates.some(candidate => existsSync(candidate) && sourceBoundaries.some(boundary => within(boundary, candidate) && within(boundary, realpathSync(candidate), true)))) throw new Error("Unavailable local dependency: " + imported);
     } else {
       const packageName = imported.startsWith("@") ? imported.split("/").slice(0, 2).join("/") : imported.split("/")[0];
-      if (!component.dependencies.includes(packageName)) throw new Error("Undeclared dependency: " + imported);
+      if (![...component.dependencies, ...(component.peerDependencies ?? [])].includes(packageName)) throw new Error("Undeclared dependency: " + imported);
       if (!ts.resolveModuleName(imported, file, { moduleResolution: ts.ModuleResolutionKind.NodeNext, module: ts.ModuleKind.NodeNext }, ts.sys, undefined, undefined, ts.ModuleKind.ESNext).resolvedModule)
         throw new Error("Unavailable dependency: " + imported);
     }
   }
-  const program = ts.createProgram(files, { strict: true, moduleResolution: ts.ModuleResolutionKind.NodeNext, module: ts.ModuleKind.NodeNext, target: ts.ScriptTarget.ES2022, skipLibCheck: true, noEmit: true });
+  const program = ts.createProgram(files, { strict: true, jsx: ts.JsxEmit.ReactJSX, moduleResolution: ts.ModuleResolutionKind.NodeNext, module: ts.ModuleKind.NodeNext, target: ts.ScriptTarget.ES2022, skipLibCheck: true, noEmit: true });
   const diagnostics = ts.getPreEmitDiagnostics(program);
   if (diagnostics.length) throw new Error(ts.formatDiagnosticsWithColorAndContext(diagnostics, { getCanonicalFileName: name => name, getCurrentDirectory: () => root, getNewLine: () => "\n" }));
   const checker = program.getTypeChecker();
@@ -116,8 +122,11 @@ export function checkTypeScript(root, component) {
   if (exported.join() !== [...component.publicExports].sort().join()) throw new Error("Public exports differ from manifest: " + exported);
   return { files: files.length, exports: exported };
 }
-export function checkConsumer(source, artifact, exports) {
-  for (const imported of imports(source, "consumer.ts", false)) if (imported.startsWith(artifact + "/")) throw new Error("Private implementation import: " + imported);
+export function checkConsumer(source, artifact, exports, publicSubpaths = []) {
+  for (const imported of imports(source, "consumer.ts", false)) if (imported.startsWith(artifact + "/")) {
+    const subpath = "." + imported.slice(artifact.length);
+    if (subpath.includes("..") || !publicSubpaths.some(allowed => allowed.endsWith("/*") ? subpath.startsWith(allowed.slice(0, -1)) && subpath.length > allowed.length - 1 : subpath === allowed)) throw new Error("Private implementation import: " + imported);
+  }
   const syntax = ts.createSourceFile("consumer.ts", source, ts.ScriptTarget.Latest, true);
   for (const statement of syntax.statements) if (ts.isImportDeclaration(statement) && statement.moduleSpecifier.text === artifact) {
     const bindings = statement.importClause?.namedBindings;
@@ -146,7 +155,7 @@ export function checkComponents(root = repository, python = process.env.TEMPO_CO
   for (const file of sourceFiles(resolve(root, "app"))) {
     const source = readFileSync(file, "utf8");
     for (const component of selected.filter(candidate => candidate.artifact?.name?.startsWith("@tempo/")))
-      checkConsumer(source, component.artifact.name, component.publicExports);
+      checkConsumer(source, component.artifact.name, component.publicExports, component.publicSubpaths);
     for (const imported of imports(source, file, false)) if (imported.startsWith(".") && inside(resolve(root, "packages"), resolve(dirname(file), imported))) throw new Error("Consumer bypasses public package: " + file);
   }
   const consumerCheck = spawnSync(python, [resolve(repository, "tools/component-build/check-python.py"), "consumers", resolve(root, "backend/app"), "tempo_scheduling", JSON.stringify(manifest.components.find(component => component.id === "scheduling").publicExports)], { encoding: "utf8" });

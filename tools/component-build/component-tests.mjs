@@ -1,6 +1,6 @@
 import {managedDockerEnvironment} from '../../scripts/development-docker.mjs';
 import {recordBudgetResourceSync} from '../../scripts/development-budget.mjs';
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import { spawnSync, execFileSync } from "node:child_process";
@@ -44,6 +44,8 @@ export function runComponentSelection(argumentsList, root = process.env.TEMPO_CO
       }
       let command = suite.command.replace(/^python(?=\s)/, quote(python));
       if (suite.kind === "python") command += " --junitxml=" + quote(join(reports, "cases.xml"));
+      if (suite.kind === "vitest") command += " -- --reporter=json --outputFile=" + quote(join(reports, "vitest.json"));
+      if (suite.kind === "evidence-suite") command += " --report " + quote(join(reports, "evidence.json"));
       if (suite.kind === "postgres") environment.PYTEST_ADDOPTS = "--junitxml=" + join(reports, "cases.xml");
       if (suite.kind === "contract-exchange") command = [python, resolve(repository, "tools/component-build/contract-exchange.py"), resolve(root, suite.cwd), reports].map(quote).join(" ");
       const result = spawnSync("/bin/sh", ["-c", command], { cwd: resolve(root, suite.cwd), env: environment, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
@@ -54,6 +56,15 @@ export function runComponentSelection(argumentsList, root = process.env.TEMPO_CO
       if (suite.kind === "frontend" || suite.kind === "node") {
         report = (result.stdout ?? "").trim().split("\n").filter(line => line.startsWith("{")).map(line => JSON.parse(line)).findLast(value => Array.isArray(value.executedIdentities));
         if (!report?.success || !report.passed || report.failed || report.executedIdentities.length !== report.passed) throw new Error("Missing/zero/failed structured owning cases: " + suite.id);
+      } else if (suite.kind === "vitest") {
+        const result = JSON.parse(readFileSync(join(reports, "vitest.json"), "utf8"));
+        if (!result.success || !result.numTotalTests || result.numPassedTests !== result.numTotalTests || result.numFailedTests !== 0 || result.numPendingTests !== 0 || result.numTodoTests !== 0) throw new Error("Missing/zero/failed/skipped Vitest cases: " + suite.id);
+        report = { passed: result.numPassedTests, executedIdentities: result.testResults.flatMap(file => file.assertionResults.map(item => [...item.ancestorTitles, item.title].join(" > "))) };
+        if (report.executedIdentities.length !== report.passed) throw new Error("Vitest identity mismatch: " + suite.id);
+      } else if (suite.kind === "evidence-suite") {
+        const result = JSON.parse(readFileSync(join(reports, "evidence.json"), "utf8"));
+        if (!result.complete || !result.cases?.selected?.length || JSON.stringify([...result.cases.selected].sort()) !== JSON.stringify([...result.cases.passed].sort()) || result.cases.failed.length || result.cases.skipped.length) throw new Error("Missing/zero/failed/skipped evidence cases: " + suite.id);
+        report = { passed: result.cases.passed.length, executedIdentities: result.cases.passed };
       } else {
         const parsed = spawnSync(python, [resolve(repository, "tools/component-build/case-results.py"), reports], { encoding: "utf8", env: environment });
         if (parsed.error || parsed.status !== 0) throw new Error(parsed.error?.message ?? parsed.stdout + parsed.stderr);

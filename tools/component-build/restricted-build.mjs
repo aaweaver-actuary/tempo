@@ -10,6 +10,32 @@ import { parseSelection, readManifest, selectComponents } from "./selection.mjs"
 import { buildRestrictedContracts } from "./restricted-contracts.mjs";
 import { buildWorker } from "./worker-qualifier.mjs";
 
+// Owner-local qualifiers prove installed artifacts with their source removed.
+// Refuse an incomplete report even when a child process exits successfully.
+export function validateOwnerQualification(kind, directory) {
+  const read = name => JSON.parse(readFileSync(join(directory, name), "utf8"));
+  const hash = name => createHash("sha256").update(readFileSync(join(directory, name))).digest("hex");
+  if (kind === "board-ui") {
+    const result = read("qualification.json"), tests = read("unit-results.json"), artifact = read("artifact.json");
+    const required = ["producer-install", "producer-typecheck", "producer-tests", "producer-build", "producer-pack", "consumer-install", "consumer-typecheck", "consumer-smoke", "consumer-build"];
+    if (result.outcome !== "passed" || !result.stagingRemoved || !Array.isArray(result.receipts) || required.some(label => result.receipts.filter(receipt => receipt.label === label && receipt.exitCode === 0).length !== 1) || !tests.success || !tests.numTotalTests || tests.numPassedTests !== tests.numTotalTests || tests.numFailedTests !== 0 || tests.numPendingTests !== 0 || tests.numTodoTests !== 0 || hash(artifact.filename) !== artifact.sha256) throw new Error("Incomplete board-ui qualification");
+    return [artifact.filename];
+  }
+  if (kind === "evidence-math") {
+    const result = read("qualification.json");
+    const expected = ["3.12:wheel", "3.12:sdist-wheel", "3.14:wheel", "3.14:sdist-wheel"];
+    const cells = result.matrix?.map(cell => `${cell.interpreter.match(/^Python (3\.(?:12|14))\./)?.[1]}:${cell.artifact}`) ?? [];
+    if (!result.complete || cells.length !== expected.length || expected.some(cell => cells.filter(value => value === cell).length !== 1) || result.matrix.some(cell => !cell.passed) || !result.artifacts?.length || result.artifacts.some(item => hash(item.file) !== item.sha256)) throw new Error("Incomplete evidence-math qualification");
+    for (let index = 0; index < 2; index++) for (const kind of ["wheel", "sdist-wheel"]) {
+      const cases = read(`cases-${index}-${kind}.json`);
+      const cell = result.matrix[index * 2 + (kind === "wheel" ? 0 : 1)];
+      if (!cases.selected?.length || !Array.isArray(cases.passed) || !Array.isArray(cases.failed) || !Array.isArray(cases.skipped) || cases.selected.length !== cell.passed || JSON.stringify([...cases.selected].sort()) !== JSON.stringify([...cases.passed].sort()) || cases.failed.length || cases.skipped.length) throw new Error("Missing or skipped owner cases");
+    }
+    return result.artifacts.map(item => item.file);
+  }
+  throw new Error("Unknown owner qualification: " + kind);
+}
+
 export function restrictedBuild(options) {
   const root = process.env.TEMPO_COMPONENT_ROOT ?? repository;
   const manifest = readManifest(root);
@@ -20,7 +46,7 @@ export function restrictedBuild(options) {
   for (const component of selected) if (!["library", "contract", "worker"].includes(component.type)) throw new Error("No restricted artifact builder for " + component.id);
   const started = performance.now();
   const workspace = mkdtempSync(join(tmpdir(), "tempo-m02-restricted-"));
-  const report = { node: process.version, stages: [], artifacts: [], sourceRevision: "", sourceInputs: {}, selectedComponents: selected.map(component => component.id), complete: false };
+  const report = { node: process.version, stages: [], artifacts: [], qualifications: {}, sourceRevision: "", sourceInputs: {}, selectedComponents: selected.map(component => component.id), complete: false };
   const environment = { ...process.env, UV_CACHE_DIR: process.env.UV_CACHE_DIR ?? join(tmpdir(), "tempo-m02-uv-cache"), PYTHONPATH: "", PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1" };
   delete environment.NODE_PATH;
   delete environment.PYTHONHOME;
@@ -56,7 +82,28 @@ export function restrictedBuild(options) {
       report.artifacts.push(...workerReport.artifacts);
       artifactDirectories.push(workerDirectory);
     }
-    const npmComponents = selected.filter(component => component.type !== "worker" && existsSync(resolve(root, component.root, "package.json")));
+    for (const component of selected.filter(component => component.qualification)) {
+      const build = join(workspace, component.id + "-build"); mkdirSync(build);
+      for (const input of component.buildInputs) copyInput(component, input, build);
+      const output = join(workspace, component.id + "-qualified");
+      if (component.qualification === "board-ui") {
+        checkTypeScript(resolve(root, component.root), component);
+        command(component.id + "-qualify", process.execPath, [join(build, "qualify.mjs"), output], build);
+      } else if (component.qualification === "evidence-math") {
+        const python = process.env.TEMPO_EVIDENCE_BUILD_PYTHON, python312 = process.env.TEMPO_EVIDENCE_PYTHON_312, python314 = process.env.TEMPO_EVIDENCE_PYTHON_314, wheelhouse = process.env.TEMPO_EVIDENCE_WHEELHOUSE;
+        if (![python, python312, python314, wheelhouse].every(value => value && existsSync(value))) throw new Error("Evidence qualification requires build Python, 3.12, 3.14 and wheelhouse");
+        command(component.id + "-boundary", python, [resolve(repository, "tools/component-build/check-python.py"), build, JSON.stringify(component.dependencies), JSON.stringify(component.publicExports), JSON.stringify(component.artifact), JSON.stringify(component.buildInputs)], build);
+        const reportPath = join(workspace, component.id + "-qualification.json");
+        command(component.id + "-qualify", python, [join(build, "qualify.py"), "artifacts", "--python", python312, "--python", python314, "--wheelhouse", wheelhouse, "--report", reportPath, "--artifacts", output], build);
+        cpSync(reportPath, join(output, "qualification.json"));
+      } else throw new Error("Unknown owner qualification: " + component.qualification);
+      for (const name of validateOwnerQualification(component.qualification, output)) artifact(join(output, name));
+      report.qualifications[component.id] = { report: JSON.parse(readFileSync(join(output, "qualification.json"), "utf8")) };
+      if (component.qualification === "board-ui") report.qualifications[component.id].cases = JSON.parse(readFileSync(join(output, "unit-results.json"), "utf8"));
+      else report.qualifications[component.id].cases = [0, 1].flatMap(index => ["wheel", "sdist-wheel"].map(kind => JSON.parse(readFileSync(join(output, `cases-${index}-${kind}.json`), "utf8"))));
+      artifactDirectories.push(output);
+    }
+    const npmComponents = selected.filter(component => component.type !== "worker" && !component.qualification && existsSync(resolve(root, component.root, "package.json")));
     const npmArtifacts = new Map();
     const remaining = new Set(npmComponents);
     while (remaining.size) {
@@ -98,7 +145,7 @@ export function restrictedBuild(options) {
       command(prefix + "-dependencies", "npm", ["ls", "--all", "--json"], frontendConsumer);
       artifactDirectories.push(frontendBuild);
     }
-    for (const pythonComponent of selected.filter(component => component.type === "library" && !npmComponents.includes(component))) {
+    for (const pythonComponent of selected.filter(component => component.type === "library" && !component.qualification && !npmComponents.includes(component))) {
       const pythonBuild = join(workspace, pythonComponent.id + "-build"); mkdirSync(pythonBuild);
       for (const input of [...pythonComponent.buildInputs, "tests", "README.md", "REGRESSIONS.md"]) copyInput(pythonComponent, input, pythonBuild);
       report.sourceInputs[pythonComponent.id + "Lock"] = fingerprint(join(pythonBuild, "uv.lock"));
