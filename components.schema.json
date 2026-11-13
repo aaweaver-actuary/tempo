@@ -190,7 +190,8 @@
               "scheduling_review",
               "repertoire_snapshot",
               "background_activity",
-              "background_metrics"
+              "background_metrics",
+              "redis_runtime"
             ]
           }
         }

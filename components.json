@@ -2,6 +2,241 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "redis-admission-application",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/services/redis_admission_gate.py#foreground_present",
+        "backend/app/services/redis_admission_gate.py#record_browser_activity",
+        "backend/app/services/redis_admission_gate.py#foreground_lease",
+        "backend/app/services/redis_admission_gate.py#background_lease"
+      ],
+      "dependencies": [
+        "redis-admission-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/redis_admission_gate.py"
+      ],
+      "ownershipRole": "Coordinate foreground and background admission leases",
+      "dependencyNotes": [
+        "Existing Redis policy uses token leases, expiration and fail-closed deferral; callers own task and request lifecycle."
+      ],
+      "censusScope": "redis_runtime"
+    },
+    {
+      "id": "background-wake-application",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/services/background_wakes.py#consume_wake",
+        "backend/app/services/background_wakes.py#is_owned_publication",
+        "backend/app/services/background_wakes.py#CoalescingCelery",
+        "backend/app/services/background_wakes.py#CoalescedWakeTask"
+      ],
+      "dependencies": [
+        "redis-wake-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/background_wakes.py"
+      ],
+      "ownershipRole": "Compose coalesced advisory broker wakes",
+      "dependencyNotes": [
+        "Uses Celery, Kombu and Redis transport with ownership tokens; durable task recovery remains outside advisory wake."
+      ],
+      "censusScope": "redis_runtime"
+    },
+    {
+      "id": "background-runtime-application",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/services/background_runtime.py#measure_handler",
+        "backend/app/services/background_runtime.py#heartbeat",
+        "backend/app/services/background_runtime.py#snapshot",
+        "backend/app/services/background_runtime.py#StudyResponseTiming"
+      ],
+      "dependencies": [
+        "redis-runtime-storage",
+        "background-diagnostic-types",
+        "redis-admission-application"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/background_runtime.py"
+      ],
+      "ownershipRole": "Measure background and Study runtime",
+      "dependencyNotes": [
+        "Uses runtime timing context, diagnostic types and Redis worker-stage storage; existing task/main composition consumes instrumentation."
+      ],
+      "censusScope": "redis_runtime"
+    },
+    {
+      "id": "redis-admission-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "database/tempo_storage/redis_control/admission.py#client",
+        "database/tempo_storage/redis_control/admission.py#acquire_foreground",
+        "database/tempo_storage/redis_control/admission.py#remove_foreground",
+        "database/tempo_storage/redis_control/admission.py#acquire_background",
+        "database/tempo_storage/redis_control/admission.py#remove_background"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/redis_control/__init__.py",
+        "database/tempo_storage/redis_control/admission.py"
+      ],
+      "ownershipRole": "Persist token-based Redis admission state",
+      "dependencyNotes": [
+        "Existing Redis key and script operations use foreground/background tokens and time bounds; application owns lease policy and failure handling."
+      ],
+      "censusScope": "redis_runtime"
+    },
+    {
+      "id": "redis-policy-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "database/tempo_storage/redis_control/policy.py#advance_generation",
+        "database/tempo_storage/redis_control/policy.py#publish_policy",
+        "database/tempo_storage/redis_control/policy.py#policy_snapshot"
+      ],
+      "dependencies": [
+        "redis-admission-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/redis_control/policy.py"
+      ],
+      "ownershipRole": "Persist Redis policy generation and snapshot",
+      "dependencyNotes": [
+        "Uses Redis control client and admission facts for generation-fenced policy; callers own policy and durable setting."
+      ],
+      "censusScope": "redis_runtime"
+    },
+    {
+      "id": "redis-runtime-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "database/tempo_storage/redis_control/wake_runtime/runtime.py#publish_worker_stage",
+        "database/tempo_storage/redis_control/wake_runtime/runtime.py#worker_stage_values"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/redis_control/wake_runtime/__init__.py",
+        "database/tempo_storage/redis_control/wake_runtime/runtime.py"
+      ],
+      "ownershipRole": "Persist bounded Redis runtime stages",
+      "dependencyNotes": [
+        "Existing Redis client stores and reads worker-stage diagnostics; runtime composition owns semantics."
+      ],
+      "censusScope": "redis_runtime"
+    },
+    {
+      "id": "redis-wake-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "database/tempo_storage/redis_control/wake_runtime/wakes.py#ownership_keys",
+        "database/tempo_storage/redis_control/wake_runtime/wakes.py#consume_wake",
+        "database/tempo_storage/redis_control/wake_runtime/wakes.py#publish_wake",
+        "database/tempo_storage/redis_control/wake_runtime/wakes.py#reserve_wake",
+        "database/tempo_storage/redis_control/wake_runtime/wakes.py#abort_wake"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/redis_control/wake_runtime/wakes.py"
+      ],
+      "ownershipRole": "Persist coalesced Redis wake ownership",
+      "dependencyNotes": [
+        "Existing token-scoped Redis operations reserve, publish, consume and abort advisory wakes; durable task remains authoritative."
+      ],
+      "censusScope": "redis_runtime"
+    },
+    {
       "id": "background-diagnostic-types",
       "type": "integration",
       "maintainer": "Tempo",

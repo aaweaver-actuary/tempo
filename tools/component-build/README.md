@@ -581,8 +581,14 @@ bucket/shard dependencies remain visible; this is not runtime or native proof. T
 unresolved. The diagnostics suite also has two unresolved label/runbook snapshot
 failures; these source-test results do not establish runtime behavior.
 
-At this base revision, 70 of 289 tracked Python files in those trees remain
-outside the combined 219-file selections. The registry alone assigns owners;
+A fortieth selection maps Redis admission, policy, coalesced wake and runtime
+instrumentation owners. Existing token, expiration, generation and advisory wake
+boundaries remain visible; durable tasks remain authoritative. This source map
+does not establish runtime or native proof. The two diagnostics, 24 PGN scope,
+nineteen earlier and ten missing-adapter fixture gaps remain unresolved.
+
+At this base revision, 61 of 289 tracked Python files in those trees remain
+outside the combined 228-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover
