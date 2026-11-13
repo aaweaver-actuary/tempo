@@ -282,6 +282,24 @@ describe("review attempt reliability", () => {
     expect(refreshed.step).toBe(beforeRefresh.step);
     expect(refreshed.attempt).toEqual(beforeRefresh.attempt);
   });
+  it("saved Study advancement cannot install a late response over a replacement attempt", async () => {
+    const store = useTrainingStore.getState();
+    store.hydrateLocalQueue([card], true);
+    const original = { ...useTrainingStore.getState().attempt };
+    let resolveQueue!: (response: Response) => void;
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(resolve => { resolveQueue = resolve; })));
+    const pending = fetchAndInitializeQueue(true, { replaySavedReviews: false,
+      expectedAttempt: { attemptId: original.attemptId, generation: original.generation, entryKey: original.entryKey } });
+    await settleStudyStorageTasks();
+    expect(resolveQueue).toBeTypeOf("function");
+    const replacement = { ...card, id: asCardId("new-card"), backendId: asCardId("new-card"), queueEntryId: asQueueEntryId(99) };
+    useTrainingStore.getState().hydrateLocalQueue([replacement], true);
+    const before = useTrainingStore.getState().attempt;
+    resolveQueue(Response.json({ cards: [], count: 0 }));
+    await expect(pending).resolves.toBe("superseded");
+    expect(useTrainingStore.getState().attempt).toEqual(before);
+    expect(useTrainingStore.getState().getCard()).toEqual(replacement);
+  });
   it("late queue responses cannot replace a newer playable queue entry", async () => {
     const responses: ((response: Response) => void)[] = [];
     vi.stubGlobal(

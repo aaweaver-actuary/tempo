@@ -313,9 +313,10 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
   }, []);
 
   const refreshDatabaseQueue = useCallback(
-    async (advance = false, replaySavedReviews = true, retryPreparation = false) => {
+    async (advance = false, replaySavedReviews = true, retryPreparation = false,
+      expectedAttempt?: { attemptId?: string; generation: number; entryKey?: string }) => {
       invalidateWorkspaceData();
-      const result = await fetchAndInitializeQueue(advance, { replaySavedReviews, retryPreparation });
+      const result = await fetchAndInitializeQueue(advance, { replaySavedReviews, retryPreparation, expectedAttempt });
       if (result !== "superseded") await checkPendingIntegrity();
     },
     [checkPendingIntegrity],

@@ -1,4 +1,4 @@
-import { positionStudyUnavailable } from "../domain/attempt";
+import { attemptEntryKey, positionStudyUnavailable } from "../domain/attempt";
 import { pendingPrefixSplitStatus } from "../lib/prefix-split-command";
 import { independentStudy } from "../lib/study-connection";
 import { pendingReviewMessage, reviewSaveNoticeKey } from "../lib/review-save-notice";
@@ -46,7 +46,8 @@ interface TrainingViewProps {
   serviceError: string;
   offlineQueue?: boolean;
   positionStudyUnavailableReason?: string;
-  refreshDatabaseQueue: (advance?: boolean, replaySavedReviews?: boolean, retryPreparation?: boolean) => void;
+  refreshDatabaseQueue: (advance?: boolean, replaySavedReviews?: boolean, retryPreparation?: boolean,
+    expectedAttempt?: { attemptId?: string; generation: number; entryKey?: string }) => void | Promise<void>;
   cardsLeft: number;
   card: PracticeCard;
   boardTheme: BoardTheme;
@@ -589,18 +590,32 @@ function TrainingContent(props: TrainingViewProps) {
   const liveQueueBlocked = Boolean(props.serviceError && !props.offlineQueue);
   const mutationBlocked = liveQueueBlocked || Boolean(props.burialPending);
   if (props.card.kind === "study" && props.card.studyId && props.card.studyExerciseId) {
-    return <>{props.repairNotice}{liveQueueBlocked && <div role="alert">{props.serviceError} <RetryButton onRetry={() => props.refreshDatabaseQueue(false, true, true)} /></div>}<div inert={mutationBlocked}><StudyExerciseRunner
-      key={`${props.card.queueEntryId ?? props.card.id}:${props.card.revision ?? 1}`}
-      studyId={props.card.studyId} exerciseId={props.card.studyExerciseId}
-      card={props.card} boardTheme={props.boardTheme} pieceSet={props.pieceSet}
-      offline={props.offlineQueue ?? false}
-      useSharedBoard={props.useSharedBoard ?? false} blocked={mutationBlocked}
-      onAdvance={async () => { props.refreshDatabaseQueue(true); }} /></div></>;
+    return <StudyTrainingContent key={`${props.card.queueEntryId ?? props.card.id}:${props.card.revision ?? 1}`}
+      {...props} liveQueueBlocked={liveQueueBlocked} mutationBlocked={mutationBlocked} />;
   }
   if (props.cardsLeft > 0 && (props.card.kind === "defense" || props.card.kind === "endgame")) {
     return <RetiredCardHold {...props} />;
   }
   return <StandardTrainingView {...props} />;
+}
+
+function StudyTrainingContent(props: TrainingViewProps & { liveQueueBlocked: boolean; mutationBlocked: boolean }) {
+  // Capture the displayed attempt once; a later replacement cannot inherit its Continue authority.
+  const displayedAttempt = useRef({ ...useTrainingStore.getState().attempt }).current;
+  return <>{props.repairNotice}{props.liveQueueBlocked && <div role="alert">{props.serviceError} <RetryButton onRetry={() => props.refreshDatabaseQueue(false, true, true)} /></div>}<div inert={props.mutationBlocked}><StudyExerciseRunner
+    studyId={props.card.studyId!} exerciseId={props.card.studyExerciseId!}
+    card={props.card} boardTheme={props.boardTheme} pieceSet={props.pieceSet}
+    offline={props.offlineQueue ?? false}
+    useSharedBoard={props.useSharedBoard ?? false} blocked={props.mutationBlocked}
+    onAdvance={async () => {
+      const attempt = useTrainingStore.getState().attempt;
+      if (displayedAttempt.entryKey !== attemptEntryKey(props.card) || attempt.entryKey !== displayedAttempt.entryKey ||
+          attempt.attemptId !== displayedAttempt.attemptId || attempt.generation !== displayedAttempt.generation)
+        throw new Error("The displayed Study attempt changed. Refresh the queue.");
+      await props.refreshDatabaseQueue(true, true, false, {
+        attemptId: displayedAttempt.attemptId, generation: displayedAttempt.generation, entryKey: displayedAttempt.entryKey,
+      });
+    }} /></div></>;
 }
 
 function RetiredCardHold(props: TrainingViewProps) {

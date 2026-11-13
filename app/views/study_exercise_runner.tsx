@@ -182,10 +182,18 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
     if (exercise?.type !== "move_line") return false;
     return new Chess(boardHistory.fen).moves({ verbose: true }).some((move) => Boolean(move.promotion));
   }, [exercise?.type, boardHistory.fen]);
+  const advance = async () => {
+    if (!canAdvance || !onAdvance || busy || blocked) return;
+    const generation = generationRef.current;
+    setBusy(true); setSaveError("");
+    try { await onAdvance(); }
+    catch (error) { if (generation === generationRef.current) setSaveError(error instanceof Error ? error.message : "Could not load the next exercise. Retry."); }
+    finally { if (generation === generationRef.current) setBusy(false); }
+  };
   const keyboard = { ...boardHistory.keyboard,
     reset: () => { boardHistory.keyboard.reset(); setOrientation("white"); },
     hint: !reply && exercise?.hint && !boardHistory.viewingHistory && !blocked ? () => setHintSeen(true) : undefined,
-    nextItem: canAdvance && onAdvance && !busy && !blocked ? () => { void onAdvance(); } : undefined,
+    nextItem: canAdvance && onAdvance && !busy && !blocked ? () => { void advance(); } : undefined,
   };
   useBoardPublisher("train", useSharedBoard && exercise?.id === exerciseId ? {
     keyboard,
@@ -416,7 +424,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
         {Boolean(feedback.further_analysis) && <p>{String(feedback.further_analysis)}</p>}</div>}
       {reply.pending_self_assessment && <div><Button disabled={busy} onClick={() => void selfAssess("correct")}>Correct (self-assessed)</Button>
         <Button disabled={busy} onClick={() => void selfAssess("again")}>Again (self-assessed)</Button></div>}
-      {canAdvance && onAdvance && <Button onClick={() => void onAdvance()}>Continue</Button>}
+      {canAdvance && onAdvance && <Button disabled={busy || blocked} onClick={() => void advance()}>Continue</Button>}
       {!reply.pending_self_assessment && !card && !onAdvance && <Button disabled={busy} onClick={() => {
         const generation = generationRef.current;
         setBusy(true);

@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { Chess } from "chess.js";
 import StudyExerciseRunner from "../../app/views/study_exercise_runner";
 import TrainingView from "../../app/views/training_view";
+import { useTrainingStore } from "../../app/state/training-store";
 import { useBoardShellStore } from "../../app/state/board-shell-store";
 import { PersistentBoardShell } from "../../app/components/board/persistent-board-shell";
 import { asCardId, asFenString, asQueueEntryId, type PracticeCard } from "../../app/types";
@@ -356,7 +357,10 @@ it("saved Study review Continue explicitly advances only after its original rece
     if (url.endsWith("/feedback")) return Response.json({ specification });
     throw new Error(`Unexpected request ${url}`);
   }));
-  const refresh = vi.fn();
+  let rejectRefresh!: (error: Error) => void;
+  const refresh = vi.fn(() => new Promise<void>((_resolve, reject) => { rejectRefresh = reject; }));
+  useTrainingStore.getState().initializeCardState(card);
+  const original = { ...useTrainingStore.getState().attempt };
   render(<TrainingView dateLabel="Today" serviceError="" refreshDatabaseQueue={refresh} cardsLeft={2}
     card={card} boardTheme="brown" pieceSet="cburnett" rateCard={vi.fn(async () => undefined)}
     handleAttemptFailure={vi.fn()} resetCardAttempt={vi.fn()} onMove={vi.fn()} />);
@@ -373,7 +377,17 @@ it("saved Study review Continue explicitly advances only after its original rece
   await screen.findByText("Saved feedback");
   fireEvent.click(screen.getByRole("button", { name: "Continue", exact: true }));
   expect(refresh).toHaveBeenCalledOnce();
-  expect(refresh).toHaveBeenCalledWith(true);
+  expect(refresh).toHaveBeenCalledWith(true, true, false, { attemptId: original.attemptId, generation: original.generation, entryKey: original.entryKey });
+  await waitFor(() => expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(true));
+  await act(async () => rejectRefresh(new Error("Next queue unavailable")));
+  expect((await screen.findByRole("alert")).textContent).toContain("Next queue unavailable");
+  expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(false);
+  act(() => useTrainingStore.getState().initializeCardState(card));
+  expect(useTrainingStore.getState().attempt.entryKey).toBe(original.entryKey);
+  expect(useTrainingStore.getState().attempt.generation).not.toBe(original.generation);
+  fireEvent.click(screen.getByRole("button", { name: "Continue", exact: true }));
+  await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("displayed Study attempt changed"));
+  expect(refresh).toHaveBeenCalledOnce();
 });
 
 it("offline Study Continue waits for durable phone recording before explicit advance", async () => {
@@ -392,6 +406,8 @@ it("offline Study Continue waits for durable phone recording before explicit adv
     .mockRejectedValueOnce(new Error("Phone storage failed"))
     .mockImplementationOnce(() => pending as never);
   const refresh = vi.fn();
+  useTrainingStore.getState().initializeCardState(card);
+  const original = { ...useTrainingStore.getState().attempt };
   try {
     render(<TrainingView dateLabel="Today" serviceError="" offlineQueue refreshDatabaseQueue={refresh} cardsLeft={2}
       card={card} boardTheme="brown" pieceSet="cburnett" rateCard={vi.fn(async () => undefined)}
@@ -411,6 +427,6 @@ it("offline Study Continue waits for durable phone recording before explicit adv
     await screen.findByText("Phone feedback");
     fireEvent.click(screen.getByRole("button", { name: "Continue", exact: true }));
     expect(refresh).toHaveBeenCalledOnce();
-    expect(refresh).toHaveBeenCalledWith(true);
+    expect(refresh).toHaveBeenCalledWith(true, true, false, { attemptId: original.attemptId, generation: original.generation, entryKey: original.entryKey });
   } finally { recording.mockRestore(); }
 });
