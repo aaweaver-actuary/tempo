@@ -13,25 +13,25 @@ def try_lock_continuation(database: postgres.PostgresConnection, card_id: str) -
     row = database.execute('SELECT id FROM cards WHERE id=%s' + ' FOR UPDATE SKIP LOCKED', (card_id,)).fetchone()
     return row is not None
 
-def policy_settings(database):
+def policy_settings(database: postgres.PostgresConnection) -> postgres.TempoRow | None:
     return database.execute('SELECT timezone,light_first_interval_days FROM settings WHERE id=1').fetchone()
 
-def receipt(database, attempt_id):
+def receipt(database: postgres.PostgresConnection, attempt_id: str) -> postgres.TempoRow | None:
     return database.execute('SELECT card_id,queue_entry_id,outcome,guided,completed_at,result_json,request_json FROM review_attempt_receipts WHERE attempt_id=%s', (attempt_id,)).fetchone()
 
-def card(database, card_id):
+def card(database: postgres.PostgresConnection, card_id: str) -> postgres.TempoRow | None:
     return database.execute('SELECT content_type,archived,superseded_by,revision,state FROM cards WHERE id=%s', (card_id,)).fetchone()
 
-def card_owners(database, card_id):
+def card_owners(database: postgres.PostgresConnection, card_id: str) -> list[postgres.TempoRow]:
     return database.execute('SELECT repertoire_id FROM repertoire_cards WHERE card_id=%s UNION SELECT repertoire_id FROM cards WHERE id=%s', (card_id, card_id)).fetchall()
 
-def card_integrity(database, card_id):
+def card_integrity(database: postgres.PostgresConnection, card_id: str) -> postgres.TempoRow | None:
     return database.execute("SELECT 1 FROM cards c\n               LEFT JOIN repertoire_cards rc ON rc.card_id=c.id\n               LEFT JOIN repertoires r ON r.id=rc.repertoire_id OR r.id=c.repertoire_id\n               WHERE c.id=%s AND c.archived=0\n                 AND COALESCE(c.pending_validation,0)=0\n                 AND (c.content_type!='opening' OR NOT EXISTS(\n                     SELECT 1 FROM repertoire_integrity_card_blocks block\n                     WHERE block.repertoire_id=r.id AND block.card_id=c.id\n                 )) LIMIT 1", (card_id,)).fetchone()
 
-def attempt_by_id(database, entry_id, card_id, lock):
+def attempt_by_id(database: postgres.PostgresConnection, entry_id: int, card_id: str, lock: bool) -> postgres.TempoRow | None:
     return database.execute('SELECT * FROM daily_queue WHERE id=%s AND card_id=%s' + (_ATTEMPT_LOCK if lock else ''), (entry_id, card_id)).fetchone()
 
-def first_queued_attempt(database, day, card_id, lock):
+def first_queued_attempt(database: postgres.PostgresConnection, day: str, card_id: str, lock: bool) -> postgres.TempoRow | None:
     return database.execute("SELECT * FROM daily_queue WHERE queue_date=%s AND card_id=%s AND status='queued' ORDER BY position,id LIMIT 1" + (_ATTEMPT_LOCK if lock else ''), (day, card_id)).fetchone()
 
 def current_revision(database: postgres.PostgresConnection, card_id: str) -> postgres.TempoRow | None:
@@ -82,7 +82,7 @@ def entry_status(database: postgres.PostgresConnection, entry_id: int | None, ca
 def inherit_evidence_scope(database, entry_id, snapshot_id, repertoire_id, trained_color):
     database.execute_native('INSERT INTO opening_evidence_queue_contexts(queue_entry_id,presentation_snapshot_id,repertoire_id,effective_trained_color) VALUES(%s,%s,%s,%s) ON CONFLICT(queue_entry_id,presentation_snapshot_id,repertoire_id) DO UPDATE SET effective_trained_color=EXCLUDED.effective_trained_color', (entry_id, snapshot_id, repertoire_id, trained_color))
 
-def continuation_facts(database, entry_id, card_id):
+def continuation_facts(database: postgres.PostgresConnection, entry_id: int, card_id: str) -> postgres.TempoRow | None:
     return database.execute("SELECT q.cycle,q.attempt_failed,c.revision,c.content_type FROM daily_queue q JOIN cards c ON c.id=q.card_id WHERE q.id=%s AND q.card_id=%s AND q.status='queued'", (entry_id, card_id)).fetchone()
 
 def save_continuation(database: postgres.PostgresConnection, result_json: str, attempt_id: str | None) -> None:
