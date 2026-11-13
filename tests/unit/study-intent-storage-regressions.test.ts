@@ -84,10 +84,10 @@ it.each(["teaching", "failure"])("issue219 unconfirmed accepted %s command stays
 });
 it("issue219 specialized lost-response recovery confirms the original receipt without remount or repost", async () => {
   const request = { scope: "study:s:e:4:2", endpoint: "/api/studies/s/exercises/e/attempts", requestId: "original",
-    body: { attempt_id: "original", revision: 2, answer: { type: "choice", option_ids: ["a"], displayed_order: ["a", "b"] } } };
+    body: { attempt_id: "original", revision: 2, context: "review", answer: { type: "choice", option_ids: ["a"], displayed_order: ["a", "b"] } } };
   const fetcher = vi.fn(async (_input: RequestInfo | URL, options?: RequestInit) => {
     if (options?.method === "POST") throw new Error("response lost after commit");
-    return Response.json({ state: "complete", response: { attempt_id: "original", assessment: { outcome: "correct" } } });
+    return Response.json({ state: "complete", response: { attempt_id: "original", assessment: { outcome: "correct", feedback: "ok" }, rating: "correct", requested_rating: "correct", persisted: true, review: { review_id: 1, requeue_entry_id: null } } });
   });
   vi.stubGlobal("fetch", fetcher);
   await expect(executeStudyRequest(request)).rejects.toThrow("response lost");
@@ -99,8 +99,8 @@ it("issue219 specialized lost-response recovery confirms the original receipt wi
   vi.unstubAllGlobals();
 });
 it("issue219 a different study attempt response never settles the original command", async () => {
-  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ attempt_id: "another", assessment: { outcome: "correct" } })));
-  await expect(executeStudyRequest({ scope: "scope", endpoint: "/attempts", requestId: "original", body: { attempt_id: "original" } })).rejects.toThrow("original study attempt");
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ attempt_id: "another", assessment: { outcome: "correct", feedback: "ok" }, rating: "correct", requested_rating: "correct", persisted: true, review: null })));
+  await expect(executeStudyRequest({ scope: "scope", endpoint: "/api/studies/repair/exercises/exercise/attempts", requestId: "original", body: { attempt_id: "original", revision: 1, context: "practice" } })).rejects.toThrow("Attempt identity changed");
   expect((await (await studyIntentStore()).get("scope:original"))?.state).toBe("pending");
   vi.unstubAllGlobals();
 });
@@ -148,7 +148,7 @@ it.each(["failure", "teaching"])("issue219 migrated %s recovers the original rec
 const repairScope = "study:repair:exercise:practice:1";
 const repairCommand = (id: string, scope = repairScope) => ({ key: `${scope}:${id}`, kind: "study-command", attemptId: id,
   requestId: id, endpoint: "/api/studies/repair/exercises/exercise/attempts", revision: 1,
-  createdAt: "2026-10-15T16:00:00Z", payload: { scope, headers: { "Content-Type": "application/json", "Idempotency-Key": id }, body: { attempt_id: id } } });
+  createdAt: "2026-10-15T16:00:00Z", payload: { scope, headers: { "Content-Type": "application/json", "Idempotency-Key": id }, body: { attempt_id: id, revision: 1, context: "practice" } } });
 it("pr285_recovery_ownership_live_replacement_does_not_inherit_aborted_pass", async () => {
   const command = recoveryCommand(); const store = await studyIntentStore();
   await store.put(command, { started: true });
@@ -339,7 +339,7 @@ it("pr285_recovery_ownership_old_store_cannot_publish_or_advance_replacement_cur
 it("pr285_rejected_answer_retains_terminal_validation_evidence", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => Response.json({ detail: "Submit one move" }, { status: 422 })));
   await expect(executeStudyRequest({ scope: repairScope, endpoint: "/api/studies/repair/exercises/exercise/attempts", requestId: "invalid",
-    body: { attempt_id: "invalid", revision: 1, answer: { type: "move_line", moves: [] } } })).rejects.toThrow("Submit one move");
+    body: { attempt_id: "invalid", revision: 1, context: "practice", answer: { type: "move_line", moves: [] } } })).rejects.toThrow("Submit one move");
   expect(await (await studyIntentStore()).get(`${repairScope}:invalid`)).toMatchObject({ state: "discarded", receipt: { type: "rejected", status: 422, requestId: "invalid" } });
   vi.unstubAllGlobals();
 });
@@ -391,7 +391,7 @@ it("pr285_recovery_cursor_visits_record_21_after_twenty_unresolved_commands", as
   const reads: string[] = [];
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const id = decodeURIComponent(String(input).split("/").at(-1)!); reads.push(id);
-    return Response.json(id === "recover-21" ? { state: "complete", response: { attempt_id: id } } : { state: "pending" });
+    return Response.json(id === "recover-21" ? { state: "complete", response: { attempt_id: id, assessment: { outcome: "correct", feedback: "ok" }, rating: "correct", requested_rating: "correct", persisted: true, review: null } } : { state: "pending" });
   }));
   await recoverStudyRequests(); expect(reads).toHaveLength(20);
   await recoverStudyRequests();
@@ -414,11 +414,11 @@ it.each(["failed-422", "retryable-422", "conflict", "pending", "wrong-operation"
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
     if (options?.method === "POST") {
       if (scenario === "conflict") return Response.json({ detail: "Exercise changed" }, { status: 409 });
-      return Response.json({ operation_id: scenario === "wrong-operation" ? "different" : id }, { status: 202 });
+      return Response.json({ operation_id: scenario === "wrong-operation" ? "different" : id, state: "queued" }, { status: 202 });
     }
     return Response.json(scenario === "pending" ? { state: "pending" } : { state: "failed", error: { status_code: 422, message: "Submit one move", retryable: scenario === "retryable-422" } });
   }));
-  await expect(executeStudyRequest({ scope: repairScope, endpoint: "/attempts", requestId: id, body: { attempt_id: id } })).rejects.toThrow();
+  await expect(executeStudyRequest({ scope: repairScope, endpoint: "/api/studies/repair/exercises/exercise/attempts", requestId: id, body: { attempt_id: id, revision: 1, context: "practice" } })).rejects.toThrow();
   expect(await (await studyIntentStore()).get(`${repairScope}:${id}`)).toMatchObject({ state: scenario === "failed-422" ? "discarded" : "pending" });
   vi.unstubAllGlobals();
 });
@@ -440,19 +440,19 @@ it("pr285_recovery_cursor_cancellation_retains_unvisited_commands", async () => 
   await expect(recoverStudyRequests(controller.signal)).rejects.toThrow("cancel pass");
   expect(reads).toHaveLength(1); expect(await store.list(undefined, true)).toHaveLength(21);
   const resumed: string[] = [];
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => { const id = decodeURIComponent(String(input).split("/").at(-1)!); resumed.push(id); return Response.json(id === "cancel-21" ? { state: "complete", response: { attempt_id: id } } : { state: "pending" }); }));
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => { const id = decodeURIComponent(String(input).split("/").at(-1)!); resumed.push(id); return Response.json(id === "cancel-21" ? { state: "complete", response: { attempt_id: id, assessment: { outcome: "correct", feedback: "ok" }, rating: "correct", requested_rating: "correct", persisted: true, review: null } } : { state: "pending" }); }));
   await recoverStudyRequests(); expect(resumed[0]).toBe("cancel-2"); expect(resumed).toHaveLength(20);
   expect(await store.get(`${repairScope}:cancel-21`)).toMatchObject({ state: "committed" }); vi.unstubAllGlobals();
 });
 it("pr285_recovery_cursor_defers_self_assessment_until_parent_receipt_is_settled", async () => {
   const store = await studyIntentStore();
   await store.put(repairCommand("parent"), { started: true });
-  const child = repairCommand("parent:self-assess", `${repairScope}:self-assess`); child.attemptId = "parent";
+  const child = repairCommand("parent:self-assess", `${repairScope}:self-assess`); child.attemptId = "parent"; child.endpoint += "/parent/self-assess"; child.payload.body = { rating: "correct" };
   await store.put(child, { started: true }); await store.put(repairCommand("independent"), { started: true });
   let parentComplete = false; const reads: string[] = [];
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const id = decodeURIComponent(String(input).split("/").at(-1)!); reads.push(id);
-    return Response.json(id === "parent" && !parentComplete ? { state: "pending" } : { state: "complete", response: { attempt_id: id === "parent:self-assess" ? "parent" : id } });
+    return Response.json(id === "parent" && !parentComplete ? { state: "pending" } : { state: "complete", response: id === "parent" ? { attempt_id: id, assessment: { outcome: "needs_self_assessment", feedback: "compare" }, pending_self_assessment: true } : { attempt_id: id === "parent:self-assess" ? "parent" : id, assessment: { outcome: "correct", feedback: "ok" }, rating: "correct", requested_rating: "correct", persisted: true, review: null } });
   }));
   await recoverStudyRequests(); expect(reads).not.toContain("parent:self-assess");
   expect(await store.get(`${repairScope}:independent`)).toMatchObject({ state: "committed" });
@@ -487,13 +487,13 @@ it("pr285_practice_generation_awaiting_self_assessment_blocks_reset_until_matchi
 it("pr285_rejected_answer_storage_abort_does_not_report_durable_rejection", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => Response.json({ detail: "Submit one move" }, { status: 422 })));
   const fault = interceptIntentWrites(record => { if (record.state === "discarded") throw new DOMException("rejection quota", "QuotaExceededError"); });
-  const request = { scope: repairScope, endpoint: "/attempts", requestId: "rejection-abort", body: { attempt_id: "rejection-abort", answer: { moves: [] } } };
+  const request = { scope: repairScope, endpoint: "/api/studies/repair/exercises/exercise/attempts", requestId: "rejection-abort", body: { attempt_id: "rejection-abort", revision: 1, context: "practice", answer: { moves: [] } } };
   await expect(executeStudyRequest(request)).rejects.toThrow("rejection quota"); fault.mockRestore();
   expect(await (await studyIntentStore()).get(`${repairScope}:rejection-abort`)).toMatchObject({ state: "pending", payload: { body: request.body } });
   vi.unstubAllGlobals();
 });
 it("pr285_rejected_answer_failed_receipt_can_settle_under_another_tabs_lease", async () => {
-  const request = { scope: repairScope, endpoint: "/attempts", requestId: "leased", body: { attempt_id: "leased" } };
+  const request = { scope: repairScope, endpoint: "/api/studies/repair/exercises/exercise/attempts", requestId: "leased", body: { attempt_id: "leased", revision: 1, context: "practice" } };
   vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("response lost"); })); await expect(executeStudyRequest(request)).rejects.toThrow("response lost");
   const store = await studyIntentStore(); await store.claim(`${repairScope}:leased`, "other-tab", Date.now(), 60_000);
   vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, options?: RequestInit) => {
@@ -537,15 +537,15 @@ it.each([0, -1, { queueEntryId: 1, operationId: "" }, { queueEntryId: 1, operati
 it("pr285_rejected_answer_failed_receipt_preserves_structured_validation_detail_after_reload", async () => {
   const detail = [{ loc: ["answer", "moves"], msg: "Submit one move", type: "invalid_submission" }];
   vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => init?.method === "POST"
-    ? Response.json({ operation_id: "detailed-rejection" }, { status: 202 })
+    ? Response.json({ operation_id: "detailed-rejection", state: "queued" }, { status: 202 })
     : Response.json({ state: "failed", error: { status_code: 422, code: "invalid_answer", message: "Submit one move", detail, retryable: false } })));
-  await expect(executeStudyRequest({ scope: repairScope, endpoint: "/attempts", requestId: "detailed-rejection", body: { attempt_id: "detailed-rejection" } })).rejects.toThrow("Submit one move");
+  await expect(executeStudyRequest({ scope: repairScope, endpoint: "/api/studies/repair/exercises/exercise/attempts", requestId: "detailed-rejection", body: { attempt_id: "detailed-rejection", revision: 1, context: "practice" } })).rejects.toThrow("Submit one move");
   closeStudyIntentStorage(); await initializeStudyIntentStorage();
   expect(await (await studyIntentStore()).get(`${repairScope}:detailed-rejection`)).toMatchObject({ state: "discarded", receipt: { details: { detail, code: "invalid_answer", retryable: false } } });
   vi.unstubAllGlobals();
 });
 
-it("retired exercise journals remain held outside reconnect recovery while a saved review succeeds", async () => {
+it("C21 more than twenty retired originals stay held while later Study recovers", async () => {
   const { enqueuePendingReview, flushPendingReviews } = await import("../../app/lib/review-outbox");
   const store = await studyIntentStore();
   const originals = [];
@@ -555,7 +555,7 @@ it("retired exercise journals remain held outside reconnect recovery while a sav
     originals.push(await store.put({ key: `retired:${id}`, kind, requestId: id, attemptId: `attempt-${id}`,
       endpoint: kind === "endgame-command" ? "/api/endgames/templates/original/attempt" : "/api/defense/attempt",
       revision: 1, createdAt: "2026-10-15T16:00:00Z", payload: { scope: `retired:${id}`,
-        body: { original: id }, headers: { "Idempotency-Key": id } } }, { started: false }));
+        body: { original: id }, headers: { "Idempotency-Key": id } } }, { started: index % 2 === 0 }));
   }
   const retained = recoveryCommand("kept-command");
   await store.put(retained, { started: true });
@@ -575,6 +575,6 @@ it("retired exercise journals remain held outside reconnect recovery while a sav
     expect((await flushPendingReviews()).persistedAttemptIds).toContain("kept-review");
     for (const original of originals) expect(await reopened.get(original.key)).toEqual(original);
     expect(fetcher.mock.calls.some(([input]) => /endgames|defense/.test(String(input)))).toBe(false);
-    expect(notifications().filter(notice => notice.key?.startsWith("study-command:retired:"))).toHaveLength(0);
+    expect(notifications().filter(notice => notice.key?.startsWith("study-command:retired:") && !notice.resolvedAt)).toHaveLength(24);
   } finally { vi.unstubAllGlobals(); }
 });

@@ -32,7 +32,7 @@ function fixture() {
       const key = new Headers(init.headers).get("Idempotency-Key")!;
       posts.push({ key, url, body });
       const match = url.match(/repertoires\/([^/]+)\/integrity\/issues\/([^/]+)\/resolve/);
-      if (!match) return Response.json({ operation_id: key, state: "pending" }, { status: 202 });
+      if (!match) return Response.json({ operation_id: url.match(/\/operations\/([^/]+)\/retry$/)?.[1] ?? key, state: "pending" }, { status: 202 });
       const result = submission(match[1], match[2]);
       receipts.set(key, { state: "complete", response: result });
       return Response.json(result);

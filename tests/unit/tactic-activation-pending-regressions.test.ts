@@ -43,3 +43,11 @@ it("recovers the legacy activation key with reversed pack order and removes it a
   await setPackActivation(["pack-b", "pack-a"], true);
   expect(localStorage.getItem(key)).toBeNull();
 });
+
+it.each(["missing", "foreign"])("%s activation acknowledgment retains its key and does not poll a foreign receipt", async kind => {
+  const fetcher = vi.fn(async () => Response.json(kind === "foreign" ? { operation_id: "foreign", state: "queued" } : { state: "queued" }, { status: 202 }));
+  vi.stubGlobal("fetch", fetcher);
+  await expect(setPackActivation(["pack-1"], true)).rejects.toThrow("still pending");
+  expect(localStorage.getItem("tempo-tactics-activation-pending-v1:pack-1:true")).toBeTruthy();
+  expect(fetcher).toHaveBeenCalledOnce();
+});
