@@ -1537,3 +1537,20 @@ test('P07 HTTP split report requires both exact completed cases and correct scop
     {...report, details:[details[0], {...details[1], exit_code:1}]},
   ]) assert.throws(() => verifyStudyDurabilityScenario(invalid, 'durability'));
 });
+
+
+test('P07 CI PostgreSQL consumer rejects missing duplicate and partial HTTP evidence', () => {
+  const mode = 'durability', planned_stages = postgresTestStages({mode});
+  const plan = {commit:'candidate', hash:'plan', jobs:{postgres:{mode, planned_stages}}};
+  const labels = ['prefix_split_http_accept_replay','prefix_split_http_restart_replay'];
+  const report = {runner:'postgres',mode,commit:plan.commit,plan_hash:plan.hash,planned_stages,acceptance_scope:mode,
+    stages:Object.fromEntries(planned_stages.map(stage => [stage,{exit_code:0}])),
+    details:labels.map(label => ({stage:'study_durability',label,category:'scenario',completed:true,exit_code:0}))};
+  assert.doesNotThrow(() => validatePostgresScenarios('postgres',plan,report));
+  for (const modify of [r => {r.details.pop();}, r => {r.details.push({...r.details[0]});},
+    r => {r.details[0].skipped=true;}, r => {r.acceptance_scope='partial-maintained-study-not-full-E02';},
+    r => {r.stages.cleanup.skipped=true;}]) {
+    const bad=structuredClone(report); modify(bad);
+    assert.throws(() => validatePostgresScenarios('postgres',plan,bad));
+  }
+});

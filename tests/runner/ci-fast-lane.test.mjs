@@ -638,3 +638,26 @@ test('retained_backend_unknown_sensitive_missing_owner_and_complete_changes_fail
   const study = selectFastLane([...paths, 'app/lib/review-outbox.ts']);
   assert.equal(study.tier, 'STUDY'); assert.deepEqual(study.backend, retainedBackendOwner.tests);
 });
+
+
+test('P07 fast Study gate consumes HTTP scenario evidence', () => {
+  const plan = {version:1, tier:'STUDY', ...context, runtime:{node:'test',platform:'test',architecture:'test',python:'test'},
+    python:false,node:false,paths:[],frontend:[],backend:[],browser:[],nativeChecks:[]};
+  plan.hash=planHash(plan);
+  const stages=postgresTestStages({mode:'study',nativeChecks:[]});
+  const labels=['prefix_split_http_accept_replay','prefix_split_http_restart_replay'];
+  const scenarios={mode:'study',commit:plan.head,plan_hash:plan.hash,planned_stages:stages,acceptance_scope:'study',
+    stages:Object.fromEntries(stages.map(stage => [stage,{exit_code:0}])),
+    details:labels.map(label => ({stage:'study_durability',label,category:'scenario',completed:true,exit_code:0}))};
+  const report={completed:true,status:'success',planHash:plan.hash,head:plan.head,repository:plan.repository,
+    pullRequest:plan.pullRequest,runId:execution.id,attempt:execution.attempt,
+    runtime:{node:'vtest',platform:'test',architecture:'test'},
+    commands:fastCommands(plan).map(([name,command,args]) => ({name,command,args,exit_code:0})),scenarios};
+  const needs={selection:{result:'success'},fast:{result:'success'}};
+  assert.deepEqual(validateFastGate(plan,report,needs,pr,execution), []);
+  for (const modify of [r => {r.scenarios.details.pop();}, r => {r.scenarios.details[1].retries=1;},
+    r => {r.scenarios.acceptance_scope='partial-maintained-study-not-full-E02';}, r => {r.scenarios.stages.cleanup.skipped=true;}]) {
+    const bad=structuredClone(report); modify(bad);
+    assert(validateFastGate(plan,bad,needs,pr,execution).length > 0);
+  }
+});
