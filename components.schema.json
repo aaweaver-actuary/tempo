@@ -199,7 +199,8 @@
               "position_issuance_storage",
               "database_infrastructure",
               "opening_progression",
-              "puzzle_helpers"
+              "puzzle_helpers",
+              "lifecycle_projection"
             ]
           }
         }
