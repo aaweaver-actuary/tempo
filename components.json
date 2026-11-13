@@ -7997,7 +7997,9 @@
         "database/tempo_storage/study/issuance.py#committed_issuance_count",
         "database/tempo_storage/study/issuance.py#first_target_issuance"
       ],
-      "dependencies": [],
+      "dependencies": [
+        "backend-contracts"
+      ],
       "buildInputs": [],
       "buildCommand": null,
       "artifact": null,
@@ -8032,7 +8034,9 @@
         "database/tempo_storage/study/position_schedule_state.py#PositionScheduleState",
         "database/tempo_storage/study/position_schedule_state.py#PositionScheduleStateReader"
       ],
-      "dependencies": [],
+      "dependencies": [
+        "evidence-math"
+      ],
       "buildInputs": [],
       "buildCommand": null,
       "artifact": null,
@@ -8071,7 +8075,9 @@
       ],
       "dependencies": [
         "study-position-due-storage",
-        "position-source-storage"
+        "position-source-storage",
+        "evidence-math",
+        "position-owner-epoch-storage"
       ],
       "buildInputs": [],
       "buildCommand": null,
@@ -8092,6 +8098,117 @@
         "Prepared source, owner epoch, namespace guard and seed preflight are fenced before card/day/queue locks; existing caller transaction records holds and initializes admitted state."
       ],
       "censusScope": "position_issuance_storage"
+    },
+    {
+      "id": "postgres-connection-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage",
+      "publicExports": [
+        "database/tempo_storage/postgres.py#TempoRow",
+        "database/tempo_storage/postgres.py#tempo_row_factory",
+        "database/tempo_storage/postgres.py#PostgresConnection",
+        "database/tempo_storage/postgres.py#close_pools",
+        "database/tempo_storage/postgres.py#configured",
+        "database/tempo_storage/postgres.py#prepare_authoritative_background_pool",
+        "database/tempo_storage/postgres.py#connection",
+        "database/tempo_storage/postgres.py#diagnostic_read_connection"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/postgres.py"
+      ],
+      "ownershipRole": "Provide PostgreSQL pool and transaction scopes",
+      "dependencyNotes": [
+        "Existing process-local read/write and background pools apply transaction settings and metrics flush; pool creation is lazy, and shutdown is registered at import."
+      ],
+      "censusScope": "database_infrastructure"
+    },
+    {
+      "id": "database-connection-composition",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage",
+      "publicExports": [
+        "database/tempo_storage/connections.py#query_only_request",
+        "database/tempo_storage/connections.py#connection",
+        "database/tempo_storage/connections.py#foreground_connection",
+        "database/tempo_storage/connections.py#background_connection",
+        "database/tempo_storage/connections.py#read_connection",
+        "database/tempo_storage/connections.py#background_read_connection",
+        "database/tempo_storage/connections.py#card_columns",
+        "database/tempo_storage/connections.py#initialize",
+        "database/tempo_storage/infrastructure.py#bind_database_infrastructure",
+        "database/tempo_storage/infrastructure.py#database_admission",
+        "database/tempo_storage/infrastructure.py#database_measurement"
+      ],
+      "dependencies": [
+        "postgres-connection-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/connections.py",
+        "database/tempo_storage/infrastructure.py"
+      ],
+      "ownershipRole": "Compose admitted database connections",
+      "dependencyNotes": [
+        "Background database sections use the bound gate and measurement; query-only scopes select reads and startup validates the installed schema version."
+      ],
+      "censusScope": "database_infrastructure"
+    },
+    {
+      "id": "database-infrastructure-binding",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/product_composition",
+      "publicExports": [
+        "backend/app/product_composition/database_infrastructure.py#bind_database_infrastructure"
+      ],
+      "dependencies": [
+        "database-connection-composition",
+        "application-activity-gate",
+        "background-runtime-application"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/product_composition/database_infrastructure.py"
+      ],
+      "ownershipRole": "Bind database admission and measurement",
+      "dependencyNotes": [
+        "Main and task composition bind existing activity gate and background measurement via delayed imports; rebinding different authorities is rejected by storage."
+      ],
+      "censusScope": "database_infrastructure"
     }
   ],
   "suites": [

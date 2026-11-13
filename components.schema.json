@@ -196,7 +196,8 @@
               "repertoire_move_verification",
               "analysis_paste",
               "http_composition",
-              "position_issuance_storage"
+              "position_issuance_storage",
+              "database_infrastructure"
             ]
           }
         }
