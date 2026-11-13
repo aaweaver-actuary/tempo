@@ -283,13 +283,14 @@ it("AS-15 durable complete receipt resolves an ambiguous checkpoint HTTP failure
 
 it("foreground receipt polling forwards an optional caller signal without changing admission", async () => {
   const controller = new AbortController();
-  const fetching = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async () =>
-    Response.json({ state: "complete", response: { persisted: true } }));
-  vi.stubGlobal("fetch", fetching);
-  const { confirmOperationResponse } = await import("../../app/lib/operation-status");
-  await confirmOperationResponse(Response.json({ operation_id: "foreground-key" }, { status: 202 }), { signal: controller.signal });
+  const fetching = vi.fn<typeof fetch>(async () =>
+    Response.json({ operation_id: "foreground-key", state: "complete", response: { persisted: true } }));
+  const { confirmOriginalOperationResponse } = await import("../../app/lib/operation-status");
+  await confirmOriginalOperationResponse(Response.json({ operation_id: "foreground-key", state: "pending" }, { status: 202 }),
+    "foreground-key", { signal: controller.signal, fetch: fetching });
   expect(fetching).toHaveBeenCalledOnce();
-  const [, init] = fetching.mock.calls[0];
+  const [url, init] = fetching.mock.calls[0];
+  expect(String(url)).toMatch(/\/api\/operations\/foreground-key$/);
   expect(init?.signal).toBe(controller.signal);
   expect(new Headers(init?.headers).has("X-Tempo-Work-Class")).toBe(false);
 });

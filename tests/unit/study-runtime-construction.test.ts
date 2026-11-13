@@ -1,12 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { IDBFactory } from "fake-indexeddb";
 import { openIntentStore } from "@tempo/browser-intents";
+import type { LearningClient } from "@tempo/study-session";
 import { createStudyRuntime } from "../../app/features/study/session-runtime";
 import { HeldStudyIntentError, STUDY_INTENT_KINDS, type StudyAdapterEntry } from "../../app/features/study/session-contracts";
 
 const envelope = (kind: string, key = `key-${kind}`) => ({ key, kind, attemptId: `attempt-${kind}`, requestId: `request-${kind}`,
   endpoint: "/original", revision: 1, createdAt: "original", payload: { original: true } });
-function entries(deliver = vi.fn(async () => ({ state: "committed" as const, receipt: { ok: true } }))): StudyAdapterEntry[] {
+function entries(deliver: LearningClient["deliver"] = vi.fn(async () => ({ state: "committed" as const, receipt: { ok: true } }))): StudyAdapterEntry[] {
   return STUDY_INTENT_KINDS.map(kind => kind === "defense-command" || kind === "endgame-command"
     ? { kind, disposition: "held", reason: "retired producer" } : { kind, disposition: "deliver", adapter: { deliver } });
 }

@@ -447,7 +447,9 @@ it("pr285_recovery_cursor_cancellation_retains_unvisited_commands", async () => 
 it("pr285_recovery_cursor_defers_self_assessment_until_parent_receipt_is_settled", async () => {
   const store = await studyIntentStore();
   await store.put(repairCommand("parent"), { started: true });
-  const child = repairCommand("parent:self-assess", `${repairScope}:self-assess`); child.attemptId = "parent"; child.endpoint += "/parent/self-assess"; child.payload.body = { rating: "correct" };
+  const childBase = repairCommand("parent:self-assess", `${repairScope}:self-assess`);
+  const child = { ...childBase, attemptId: "parent", endpoint: `${childBase.endpoint}/parent/self-assess`,
+    payload: { ...childBase.payload, body: { rating: "correct" } } };
   await store.put(child, { started: true }); await store.put(repairCommand("independent"), { started: true });
   let parentComplete = false; const reads: string[] = [];
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
