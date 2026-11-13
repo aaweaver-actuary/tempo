@@ -2,13 +2,17 @@
 import { defaultStudyClient, studyOfflineDatabaseName } from "../../app/lib/study-connection";
 export const offlineTrainingDatabaseName = "tempo-offline-training";
 export const offlineTrainingDatabaseVersion = 2;
-export type OfflineDatabaseBinding = { locator: string; requireCurrent: () => void };
+export type OfflineDatabaseBinding = { locator: string; requireCurrent: () => void; sameAuthority?: () => boolean };
 const databases = new Map<string, Promise<IDBDatabase>>();
 
 export function captureOfflineDatabaseBinding(): OfflineDatabaseBinding {
   const locator = studyOfflineDatabaseName(), authority = defaultStudyClient.studyWorkspace(),
     origin = defaultStudyClient.origin, generation = defaultStudyClient.generation;
-  return { locator, requireCurrent: () => {
+  const sameAuthority = () => {
+    try { return defaultStudyClient.origin === origin && defaultStudyClient.studyWorkspace() === authority && studyOfflineDatabaseName() === locator; }
+    catch { return false; }
+  };
+  return { locator, sameAuthority, requireCurrent: () => {
     if (defaultStudyClient.origin !== origin || defaultStudyClient.generation !== generation ||
         defaultStudyClient.studyWorkspace() !== authority || studyOfflineDatabaseName() !== locator)
       throw new Error("Study authority changed. Recover the original offline data with its original service.");

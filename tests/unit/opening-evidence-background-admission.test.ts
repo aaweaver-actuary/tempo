@@ -385,3 +385,48 @@ it('FE25 position reservation holds its original authority while waiting for its
   expect(await pending).toContain('could not restore');
   expect(open).not.toHaveBeenCalled();
 });
+
+it.each(['original', 'foreign', 'conflicting'])('FE25 reconnect %s authority preserves or recovers exact unsaved opening events', async target => {
+  const { openingEvidenceStorage } = await import('../fixtures/opening-evidence-storage');
+  const state = await openingEvidenceStorage();
+  const owner = await import('../../database/browser/offline-training-storage');
+  let generation = 1, authority = 'A';
+  vi.spyOn(owner, 'captureOfflineDatabaseBinding').mockImplementation(() => {
+    const originalGeneration = generation, originalAuthority = authority;
+    return { locator: `locator-${originalAuthority}`, sameAuthority: () => authority === originalAuthority,
+      requireCurrent: () => { if (generation !== originalGeneration || authority !== originalAuthority) throw new Error('authority changed'); } };
+  });
+  const journal = await import('../../app/lib/opening-evidence-journal');
+  const { mapQueueCardToPracticeCard } = await import('../../app/domain/adapters/practice-card-adapters');
+  const card = mapQueueCardToPracticeCard({ id: manifest.card_id, revision: manifest.card_revision, queue_entry_id: 101,
+    start_fen: manifest.decisions[0].fen, moves: ['e2e4','e7e5','g1f3','b8c6','f1b5'], content_type: 'opening',
+    repertoire_name: 'Held', repertoire_source: 'PGN', opening_decision_manifest: manifest });
+  const capture = journal.beginOpeningAttempt(card, 'reconnect-original')!;
+  capture.response(0, manifest.decisions[0].expected_uci, 'expected');
+  await vi.waitFor(() => expect(state.stores.opening_events.size).toBe(1));
+  state.controls.beforePut = store => store === 'opening_events' ? new DOMException('quota', 'QuotaExceededError') : undefined;
+  capture.response(2, manifest.decisions[1].expected_uci, 'expected');
+  await vi.waitFor(() => expect(capture.storageError).toContain('quota'));
+  const original = structuredClone(capture.snapshot());
+  const saved = structuredClone([...state.stores.opening_events]);
+  state.controls.beforePut = undefined; generation = 2; authority = target === 'foreign' ? 'B' : 'A';
+  if (target === 'conflicting') {
+    const record = state.stores.opening_attempts.get('reconnect-original') as Record<string, unknown>;
+    state.stores.opening_attempts.set('reconnect-original', { ...record, owner_session_id: 'foreign-owner' });
+  }
+  vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('offline')));
+  await journal.recoverOpeningEvidence().catch(() => undefined);
+  expect(capture.snapshot()).toEqual(original);
+  if (target === 'original') {
+    expect(capture.storageError).toBeUndefined();
+    expect(capture.uncommittedEvents.size).toBe(0);
+    const events = [...state.stores.opening_events.values()].map(row => { const { attempt_id: _id, ...event } = row as typeof original.events[number] & { attempt_id: string }; return event; });
+    expect(events).toEqual(original.events);
+    expect((state.stores.opening_attempts.get('reconnect-original') as { attempt_id: string }).attempt_id).toBe('reconnect-original');
+  } else {
+    expect([...state.stores.opening_events]).toEqual(saved);
+    expect(capture.uncommittedEvents.get(2)).toEqual(original.events[1]);
+    if (target === 'foreign') expect(capture.storageError).toContain('quota');
+    else { expect(capture.rebindHeld).toBe(true); expect(capture.storageError).toContain('remains held'); }
+  }
+});

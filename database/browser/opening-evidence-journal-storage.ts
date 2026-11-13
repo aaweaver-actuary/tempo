@@ -3,23 +3,53 @@ import type { OfflineDatabaseBinding } from "./offline-training-storage";
 import type { OpeningDecisionEvent, OpeningEvidenceCheckpoint } from "../../app/domain/opening-evidence";
 import type { SavedAttempt, SavedEvent, SavedOpeningJournal, OpeningEvidenceReceipt, CompletionSignal, PreparedOpeningAggregate, PendingOpeningReviewAttempt } from "../../app/domain/opening-evidence-journal";
 
+export class OpeningEvidenceRebindConflict extends Error {}
+
 export const completionSignalKey = "tempo-opening-evidence-completion-v1";
 
-export function appendOpeningAttempt(database: IDBDatabase, attempt: SavedAttempt, pendingEvents: OpeningDecisionEvent[], snapshot: OpeningEvidenceCheckpoint, binding?: OfflineDatabaseBinding): Promise<void> {
+export function appendOpeningAttempt(database: IDBDatabase, attempt: SavedAttempt, pendingEvents: OpeningDecisionEvent[], snapshot: OpeningEvidenceCheckpoint, binding?: OfflineDatabaseBinding, validateRebind = false): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     binding?.requireCurrent();
     let failure: unknown;
     const transaction = database.transaction(["opening_attempts", "opening_events"], "readwrite");
     const attempts = transaction.objectStore("opening_attempts");
+    const events = transaction.objectStore("opening_events");
     const prior = attempts.get(attempt.attempt_id);
-    prior.onsuccess = () => { try { binding?.requireCurrent(); attempts.put({ ...attempt,
-      ...(prior.result?.delivery ? { delivery: prior.result.delivery } : {}),
-      ...(["rejected", "retained"].includes(prior.result?.delivery_state)
-        ? { delivery_state: prior.result.delivery_state, rejection: prior.result.rejection,
-          retention_reason: prior.result.retention_reason } : {}),
-    }); } catch (error) { failure = error; transaction.abort(); } };
-    // Normally one row; retries also repair this attempt's failed local appends.
-    for (const pendingEvent of pendingEvents) transaction.objectStore("opening_events").put({ ...pendingEvent, attempt_id: snapshot.attempt_id });
+    const abort = (error: unknown) => { failure = error; transaction.abort(); };
+    const write = (saved: SavedAttempt | undefined) => {
+      binding?.requireCurrent();
+      attempts.put({ ...attempt,
+        ...(saved?.delivery ? { delivery: saved.delivery } : {}),
+        ...(["rejected", "retained"].includes(saved?.delivery_state ?? "")
+          ? { delivery_state: saved?.delivery_state, rejection: saved?.rejection, retention_reason: saved?.retention_reason } : {}),
+      });
+      for (const event of pendingEvents) events.put({ ...event, attempt_id: snapshot.attempt_id });
+    };
+    prior.onsuccess = () => { try {
+      binding?.requireCurrent();
+      const saved = prior.result as SavedAttempt | undefined;
+      if (!validateRebind) { write(saved); return; }
+      const rows = events.index("attempt_id").getAll(attempt.attempt_id, 257);
+      rows.onsuccess = () => { try {
+        binding?.requireCurrent();
+        const immutable = ["attempt_id", "manifest", "origin_queue_entry_id", "queue_entry_id", "parent_attempt_id", "started_at", "study_timezone", "source", "position_plan"] as const;
+        // A missing first append has no durable session/header anchor. The server
+        // attempt status proves neither local ownership nor a missing in-flight write.
+        // Keep that original in memory until an owner capability can prove it.
+        if (rows.result.length > 256 || !saved || (saved && (saved.owner_session_id !== attempt.owner_session_id ||
+            saved.final_sequence > snapshot.events.length ||
+            immutable.some(key => JSON.stringify(saved[key]) !== JSON.stringify(attempt[key])) ||
+            (saved.terminal && JSON.stringify(saved.terminal) !== JSON.stringify(snapshot.terminal)) ||
+            ["rejected", "retained"].includes(saved.delivery_state))))
+          throw new OpeningEvidenceRebindConflict("The original opening journal changed; its unsaved evidence remains held.");
+        for (const row of rows.result as SavedEvent[]) {
+          const { attempt_id: _attemptId, ...event } = row;
+          if (JSON.stringify(event) !== JSON.stringify(snapshot.events[event.sequence - 1]))
+            throw new OpeningEvidenceRebindConflict("The original opening response sequence changed; its unsaved evidence remains held.");
+        }
+        write(saved);
+      } catch (error) { abort(error); } };
+    } catch (error) { abort(error); } };
     transaction.oncomplete = () => { try { binding?.requireCurrent(); resolve(); } catch (error) { reject(error); } };
     transaction.onerror = () => reject(failure ?? transaction.error);
     transaction.onabort = () => reject(failure ?? transaction.error);

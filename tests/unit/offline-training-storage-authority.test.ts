@@ -75,3 +75,29 @@ it('FE25 journal append aborts an uncommitted stale callback without changing ei
     generation = 2; dbA.close(); dbB.close();
   } finally { vi.unstubAllGlobals(); vi.resetModules(); }
 });
+
+it.each(['other owner', 'changed header', 'changed event', 'newer sequence', 'missing anchor'])('FE25 rebind holds a %s without overwriting the original evidence', async conflict => {
+  vi.resetModules(); vi.stubGlobal('indexedDB', new IDBFactory());
+  try {
+    const { offlineTrainingDatabase } = await import('../../database/browser/offline-training-storage');
+    const { appendOpeningAttempt } = await import('../../database/browser/opening-evidence-journal-storage');
+    const { evidenceCompletion } = await import('../fixtures/opening-evidence-storage');
+    const binding = { locator: `fe25-conflict-${conflict}`, requireCurrent: () => {} };
+    const db = await offlineTrainingDatabase(binding); const checkpoint = evidenceCompletion('retained-original');
+    const { events, ...header } = checkpoint;
+    const attempt = { ...header, owner_session_id: 'original-owner', final_sequence: events.length, delivery_state: 'pending' as const };
+    const existing = { ...attempt, ...(conflict === 'other owner' ? { owner_session_id: 'foreign' } : {}),
+      ...(conflict === 'changed header' ? { queue_entry_id: 202 } : {}),
+      ...(conflict === 'newer sequence' ? { final_sequence: events.length + 1 } : {}) };
+    const event = { ...events[0], ...(conflict === 'changed event' ? { response_uci: 'a2a3' } : {}), attempt_id: checkpoint.attempt_id };
+    await new Promise<void>((resolve, reject) => { const tx = db.transaction(['opening_attempts','opening_events'], 'readwrite');
+      if (conflict !== 'missing anchor') { tx.objectStore('opening_attempts').put(existing); tx.objectStore('opening_events').put(event); }
+      else tx.objectStore('opening_attempts').get('missing');
+      tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); });
+    await expect(appendOpeningAttempt(db, attempt, events, checkpoint, binding, true)).rejects.toThrow('remains held');
+    const read = (store: string, key: IDBValidKey) => new Promise<unknown>((resolve, reject) => { const request = db.transaction(store).objectStore(store).get(key);
+      request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
+    expect(await read('opening_attempts', checkpoint.attempt_id)).toEqual(conflict === 'missing anchor' ? undefined : existing);
+    expect(await read('opening_events', [checkpoint.attempt_id, 1])).toEqual(conflict === 'missing anchor' ? undefined : event); db.close();
+  } finally { vi.unstubAllGlobals(); vi.resetModules(); }
+});

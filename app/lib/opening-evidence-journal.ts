@@ -220,10 +220,11 @@ export class OpeningAttemptJournal {
   readonly uncommittedEvents = new Map<number, OpeningDecisionEvent>();
   terminal: OpeningEvidenceCheckpoint["terminal"] = null;
   storageError: string | undefined;
+  rebindHeld = false;
   constructor(readonly header: AttemptHeader,
     private readonly append: (journal: OpeningAttemptJournal, event?: OpeningDecisionEvent) => Promise<void>,
     readonly positionPlan?: unknown,
-    readonly binding: OfflineDatabaseBinding = captureOfflineDatabaseBinding()) {
+    public binding: OfflineDatabaseBinding = captureOfflineDatabaseBinding()) {
     this.header = structuredClone(header);
   }
 
@@ -279,14 +280,14 @@ export class OpeningAttemptJournal {
     return structuredClone({ ...this.header, events: this.events, terminal: this.terminal });
   }
 
-  private reportStorageError(error: unknown): void {
+  reportStorageError(error: unknown): void {
     this.storageError = String(error);
     publishNotification({ severity: "warning", source: "opening evidence", key: `opening-evidence:${this.header.attempt_id}`,
       message: `Opening evidence could not be saved locally. Keep this page open and retry after restoring browser storage. Normal review remains available. ${String(error)}` });
   }
 }
 
-async function storeAppend(journal: OpeningAttemptJournal, event?: OpeningDecisionEvent, scheduleFlush = true): Promise<void> {
+async function storeAppend(journal: OpeningAttemptJournal, event?: OpeningDecisionEvent, scheduleFlush = true, reboundBinding?: OfflineDatabaseBinding): Promise<void> {
   const snapshot = journal.snapshot();
   const attempt: SavedAttempt = { ...snapshot, owner_session_id: sessionId, final_sequence: snapshot.events.length,
     local_capture_gap: journal.storageError,
@@ -295,10 +296,12 @@ async function storeAppend(journal: OpeningAttemptJournal, event?: OpeningDecisi
   delete (attempt as Partial<OpeningEvidenceCheckpoint>).events;
   const pendingEvents = [...journal.uncommittedEvents.values()];
   const writing = writeTail.catch(() => undefined).then(async () => {
-    journal.binding.requireCurrent();
-    const database = await offlineTrainingDatabase(journal.binding);
-    await journalStorage.appendOpeningAttempt(database, attempt, pendingEvents, snapshot, journal.binding);
-    journal.binding.requireCurrent();
+    const binding = reboundBinding ?? journal.binding;
+    binding.requireCurrent();
+    const database = await offlineTrainingDatabase(binding);
+    await journalStorage.appendOpeningAttempt(database, attempt, pendingEvents, snapshot, binding, reboundBinding !== undefined);
+    binding.requireCurrent();
+    if (reboundBinding) journal.binding = reboundBinding;
     for (const pendingEvent of pendingEvents) journal.uncommittedEvents.delete(pendingEvent.sequence);
     if (!journal.uncommittedEvents.size) journal.storageError = undefined;
     if (snapshot.terminal) releaseLeases.get(snapshot.attempt_id)?.();
@@ -571,8 +574,8 @@ async function pendingAggregateAttempts(database: IDBDatabase): Promise<Set<stri
 }
 
 function hasCurrentStorageError(journal: OpeningAttemptJournal): boolean {
-  if (!journal.storageError) return false;
-  try { journal.binding.requireCurrent(); return true; } catch { return false; }
+  if (!journal.storageError || journal.rebindHeld) return false;
+  try { journal.binding.requireCurrent(); return true; } catch { return journal.binding.sameAuthority?.() === true; }
 }
 
 async function recoverySchedule(database: IDBDatabase, pendingAggregateIds: Set<string | undefined>): Promise<RecoverySliceResult> {
@@ -608,7 +611,21 @@ async function recoverSavedOpeningEvidence(): Promise<RecoverySliceResult> {
   await writeTail.catch(() => undefined);
   binding.requireCurrent();
   const unsaved = [...captures.values()].find(hasCurrentStorageError);
-  if (unsaved) await storeAppend(unsaved, undefined, false);
+  if (unsaved) {
+    let rebound: OfflineDatabaseBinding | undefined;
+    try { unsaved.binding.requireCurrent(); } catch {
+      if (!unsaved.binding.sameAuthority?.()) throw new Error("The original opening evidence authority is unavailable.");
+      rebound = binding;
+    }
+    try { await storeAppend(unsaved, undefined, false, rebound); }
+    catch (error) {
+      if (error instanceof journalStorage.OpeningEvidenceRebindConflict) {
+        unsaved.rebindHeld = true;
+        unsaved.reportStorageError(error);
+      }
+      throw error;
+    }
+  }
   binding.requireCurrent();
   const database = await offlineTrainingDatabase(binding);
   const pendingAggregateIds = await pendingAggregateAttempts(database);
