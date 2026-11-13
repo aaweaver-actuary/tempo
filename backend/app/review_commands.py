@@ -10,13 +10,13 @@ from typing import Any
 
 def submit_review(
     database: PostgresConnection, payload: dict[str, Any]
-) -> dict[str, Any]:
+) -> object:
     return submit_legacy_review(database, payload)
 
 
 def reconcile_review(
     database: PostgresConnection, payload: dict[str, Any]
-) -> dict[str, Any]:
+) -> object:
     from app.contracts.review_conflicts import ReviewConflict
 
     # A handled conflict becomes a successful transport receipt, so the gateway

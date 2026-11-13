@@ -46,6 +46,26 @@ def names(store):
     return [call[0] for call in store.calls]
 
 
+@pytest.mark.parametrize("raw", [' [1, {"unknown": true}] ', 'null', '"old"'])
+def test_review_entrypoint_and_reconciliation_keep_opaque_original_result(monkeypatch, raw):
+    from app import review_commands
+    from app.services import learning_review_adapter as owner
+
+    original = review.ReviewResult.from_original(raw)
+    monkeypatch.setattr(owner.learning, "submit_review", lambda *_args: original)
+    database = object()
+    payload = {"card_id": "card-a", "review": {"outcome": "correct", "attempt_id": "original"}}
+    assert owner.submit_legacy_review(database, payload) == json.loads(raw)
+    assert original.payload_json == raw
+    operations = []
+    monkeypatch.setattr(review_commands.storage, "begin_reconciliation", lambda db: operations.append(("begin", db)))
+    monkeypatch.setattr(review_commands.storage, "release_reconciliation", lambda db: operations.append(("release", db)))
+    monkeypatch.setattr(review_commands.storage, "rollback_reconciliation", lambda db: pytest.fail("unexpected rollback"))
+    assert review_commands.reconcile_review(database, payload) == json.loads(raw)
+    assert operations == [("begin", database), ("release", database)]
+    assert original.payload_json == raw
+
+
 def test_reconciliation_adapter_preserves_retained_payload_and_normalization(monkeypatch):
     from app.services import learning_review_adapter as owner
 

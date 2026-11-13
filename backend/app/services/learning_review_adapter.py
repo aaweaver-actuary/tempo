@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timezone
 import json
 from collections.abc import Callable, Mapping
-from typing import TYPE_CHECKING, Literal, overload
+from typing import TYPE_CHECKING, Any, Literal, overload
 
 from fastapi import HTTPException
 import tempo_learning_review as learning
@@ -744,7 +744,7 @@ class LearningReviewAdapter:
 
 
 
-def submit_legacy_review(database, payload):
+def submit_legacy_review(database: PostgresConnection, payload: dict[str, Any]) -> object:
     from .opening_decision_evidence import EvidenceConflict
     from app.study.position_learning.grade_effects import GradeEffectError
 
