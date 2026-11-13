@@ -179,6 +179,31 @@ describe("evidence aware aggregate review", () => {
     expect(new Headers(request.mock.calls[1][1].headers).get("Idempotency-Key")).toBe("legacy:aggregate-only");
   });
   it.each([
+    "409: {'code': 'opening_evidence_conflict', 'message': 'held', 'aggregate_review_allowed': False}",
+    "409: {'code': 'opening_evidence_conflict', 'message': 'held', 'aggregate_review_allowed': True, 'retryable': True}",
+    "409: {'code': 'opening_evidence_conflict', 'message': 'held', 'aggregate_review_allowed': 'True'}",
+    "409: {'code': 'opening_evidence_conflict', 'message': 'aggregate_review_allowed: True', 'aggregate_review_allowed': False}",
+    "409: {'code': 'opening_evidence_conflict', 'aggregate_review_allowed': True, 'unknown': True}",
+    "untrusted opening_evidence_conflict aggregate_review_allowed True",
+  ])("C11 legacy denial, retry or spoof cannot authorize fallback: %s", async message => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ state: "failed", error: { status_code: 409, message } })));
+    const request = vi.fn().mockResolvedValue(Response.json({ operation_id: "legacy", state: "pending" }, { status: 202 }));
+    const rejected = vi.fn();
+    await expect(saveEvidenceAwareReview({ endpoint: "/review", operationKey: "legacy", body, completion,
+      onEvidenceRejected: rejected, request })).rejects.toBeInstanceOf(FailedOperationError);
+    expect(rejected).not.toHaveBeenCalled(); expect(request).toHaveBeenCalledOnce();
+    expect(new Headers(request.mock.calls[0][1].headers).get("Idempotency-Key")).toBe("legacy");
+  });
+  it("C11 legacy explicit true with a safely quoted message authorizes fallback", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ state: "failed", error: { status_code: 409,
+      message: `409: {'code': 'opening_evidence_conflict', 'message': "learner's retained evidence", 'aggregate_review_allowed': True}` } })));
+    const request = vi.fn().mockResolvedValueOnce(Response.json({ operation_id: "legacy", state: "pending" }, { status: 202 }))
+      .mockResolvedValueOnce(Response.json({ persisted: true }));
+    await expect(saveEvidenceAwareReview({ endpoint: "/review", operationKey: "legacy", body, completion,
+      onEvidenceRejected: vi.fn(), request })).resolves.toMatchObject({ ok: true });
+    expect(new Headers(request.mock.calls[1][1].headers).get("Idempotency-Key")).toBe("legacy:aggregate-only");
+  });
+  it.each([
     { status_code: 409, code: "opening_evidence_conflict", retryable: true, message: "retryable conflict" },
     { status_code: 503, code: "opening_evidence_unavailable", message: "temporarily unavailable" },
     { message: "409: opening_evidence_conflict" },
@@ -186,6 +211,9 @@ describe("evidence aware aggregate review", () => {
     { status_code: 409, code: "other_conflict", message: "opening_evidence_conflict spoof" },
     { status_code: 409, code: "opening_evidence_conflict", detail: { code: "opening_evidence_conflict", aggregate_review_allowed: "false" } },
     { status_code: 409, code: "opening_evidence_conflict", detail: { code: "opening_evidence_conflict", aggregate_review_allowed: true, retryable: true } },
+    { status_code: 409, code: "opening_evidence_conflict", message: "bare code is not permission" },
+    { status_code: 409, code: "other_conflict", detail: { code: "opening_evidence_conflict", aggregate_review_allowed: true } },
+    { status_code: 409, code: "opening_evidence_conflict", detail: { code: "opening_evidence_conflict" } },
   ])("C11 ambiguous or non-authoritative failure preserves original evidence %#", async error => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ operation_id: "original", state: "failed", error })));
     const request = vi.fn().mockResolvedValue(Response.json({ operation_id: "original", state: "pending" }, { status: 202 }));

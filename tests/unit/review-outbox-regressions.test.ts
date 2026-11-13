@@ -1503,7 +1503,8 @@ it.each(["immediate", "deferred"])("%s evidence rejection settles the fallback r
     expect(url.endsWith(`/api/operations/${base}`)).toBe(true);
     baseReads++;
     return Response.json(baseReads === 1 ? { operation_id: base, state: "unknown" } :
-      { operation_id: base, state: "failed", error: { status_code: 409, message: "opening_evidence_conflict", retryable: false } });
+      { operation_id: base, state: "failed", error: { status_code: 409, message: "opening_evidence_conflict", retryable: false,
+        detail: { code: "opening_evidence_conflict", message: "rejected", aggregate_review_allowed: true } } });
   }));
   expect((await flushPendingReviews()).persistedAttemptIds).toEqual([original.attemptId]);
   expect(await store.get(`review-delivery:${base}`)).toMatchObject({ state: "discarded", requestId: base, receipt: timing === "immediate" ? { status: 409, body: { detail: { code: "opening_evidence_conflict", aggregate_review_allowed: true } } } : { state: "failed", error: { status_code: 409, message: "opening_evidence_conflict" } } });
@@ -1526,7 +1527,8 @@ it.each(["failed", "retryable", "unknown", "unavailable"])("retained fallback re
     if (url.endsWith(`/api/operations/${base}`)) {
       if (status === "unavailable") throw new Error("network unavailable");
       return Response.json(["failed", "retryable"].includes(status) ? { operation_id: base, state: "failed", error: {
-        status_code: 409, code: "opening_evidence_conflict", message: "opening_evidence_conflict", retryable: status === "retryable" } }
+        status_code: 409, code: "opening_evidence_conflict", message: "opening_evidence_conflict", retryable: status === "retryable",
+        detail: { code: "opening_evidence_conflict", message: "rejected", aggregate_review_allowed: true } } }
         : { operation_id: base, state: "unknown" });
     }
     expect(url.endsWith(`/api/operations/${aggregate}`)).toBe(true);
@@ -1644,4 +1646,25 @@ it.each(["unknown", "retryable", "unavailable"])("C11 retained fallback with %s 
   expect(await store.get(`review-delivery:${base}`)).toMatchObject({ state: "pending", payload: { body: "retained original bytes" } });
   expect(await store.get(`review-delivery:${aggregate}`)).toBeUndefined();
   expect(calls.some(call => call.startsWith("POST "))).toBe(false);
+});
+
+it.each([
+  "409: {'code': 'opening_evidence_conflict', 'message': 'held', 'aggregate_review_allowed': False}",
+  "409: {'code': 'opening_evidence_conflict', 'message': 'held', 'aggregate_review_allowed': True, 'retryable': True}",
+  "409: {'code': 'opening_evidence_conflict', 'message': 'aggregate_review_allowed: True', 'aggregate_review_allowed': False}",
+])("C11 legacy nonpermission retains the exact base journal and never starts fallback: %s", async message => {
+  const { studyIntentStore } = await import("../../database/browser/study-intent-storage");
+  const original = await enqueueOpeningEvidenceReview(`legacy-hold-${crypto.randomUUID()}`);
+  const base = `review-attempt:${original.attemptId}`;
+  const calls: { url: string; init?: RequestInit }[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({ url: String(input), init });
+    return init?.method === "POST" ? Response.json({ operation_id: base, state: "queued" }, { status: 202 })
+      : Response.json({ operation_id: base, state: "failed", error: { status_code: 409, message } });
+  }));
+  await expect(flushPendingReviews()).rejects.toThrow();
+  const delivery = await (await studyIntentStore()).get(`review-delivery:${base}`);
+  expect(delivery).toMatchObject({ state: "pending", requestId: base, payload: { body: { attempt_id: original.attemptId, opening_evidence_completion: original.openingEvidenceCompletion } } });
+  expect(calls.filter(call => call.init?.method === "POST")).toHaveLength(1);
+  expect(calls.some(call => call.url.includes("aggregate-only"))).toBe(false);
 });

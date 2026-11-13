@@ -5,6 +5,10 @@ import { rejectOpeningEvidence } from "./opening-evidence-journal";
 import { createReviewTransport } from "./review-transport";
 
 const fallbackEvidenceCodes = new Set(["opening_evidence_conflict", "opening_evidence_unavailable"]);
+// Older gateway receipts stored `str(HTTPException)` rather than `detail`.
+// Accept only the exact producer-shaped Python dict representation, with an
+// explicit True permission; never extract a token from arbitrary message text.
+const legacyEvidenceDetail = /^409: \{'code': '(opening_evidence_(?:conflict|unavailable))', (?:'message': (?:'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"), )?'aggregate_review_allowed': True(?:, 'retryable': False)?\}$/;
 
 function definitiveEvidenceFailure(error: unknown): string | undefined {
   if (!(error instanceof FailedOperationError) || error.retryable === true) return;
@@ -14,12 +18,15 @@ function definitiveEvidenceFailure(error: unknown): string | undefined {
   const detail = error.detail !== null && typeof error.detail === "object" && !Array.isArray(error.detail)
     ? error.detail as Record<string, unknown> : undefined;
   if (error.detail !== undefined && !detail) return;
-  if (detail && ((Object.hasOwn(detail, "aggregate_review_allowed") && detail.aggregate_review_allowed !== true) ||
-      (Object.hasOwn(detail, "retryable") && detail.retryable !== false))) return;
-  const structuredCode = detail?.code ?? error.code;
-  if (structuredCode !== undefined) {
-    if (typeof structuredCode !== "string" || !fallbackEvidenceCodes.has(structuredCode)) return;
-  } else if (!/\bopening_evidence_(?:conflict|unavailable)\b/.test(error.message)) return;
+  if (detail) {
+    if (detail.aggregate_review_allowed !== true ||
+        (Object.hasOwn(detail, "retryable") && detail.retryable !== false) ||
+        typeof detail.code !== "string" || !fallbackEvidenceCodes.has(detail.code) ||
+        (error.code !== undefined && error.code !== detail.code)) return;
+  } else {
+    const legacy = legacyEvidenceDetail.exec(error.message);
+    if (!legacy || (error.code !== undefined && error.code !== legacy[1])) return;
+  }
   return error.message;
 }
 
