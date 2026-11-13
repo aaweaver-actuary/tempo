@@ -1,16 +1,14 @@
 """Legacy persistence/transport capabilities borrowing the caller's connection."""
 
 from __future__ import annotations
-from contextlib import nullcontext
 from datetime import date, datetime, timezone
 import json
 
 from fastapi import HTTPException
 import tempo_learning_review as learning
 from tempo_storage.learning_bridge import review as storage
-from tempo_storage.connections import connection, read_connection
+from tempo_storage.connections import read_connection
 from app.contracts.transport.study import ReviewRequest
-from tempo_storage.postgres import PostgresConnection
 from app.contracts.review_conflicts import ReviewConflict
 from tempo_storage.queue_position_lock import (
     lock_queue_date_for_position,
@@ -668,33 +666,6 @@ class LearningReviewAdapter:
     def save_continuation(self, attempt_id, result):
         storage.save_continuation(self.database, json.dumps(result), attempt_id)
 
-
-def apply_legacy_review(
-    card_id,
-    request,
-    *,
-    database=None,
-    observed_at=None,
-    local_day=None,
-    policy_provider=None,
-):
-    command = command_from_request(card_id, request)
-    with nullcontext(database) if database is not None else connection() as owned:
-        adapter = LearningReviewAdapter(
-            owned,
-            request,
-            observed_at=observed_at,
-            local_day=local_day,
-            policy_provider=policy_provider,
-        )
-        try:
-            result = learning.apply_review(
-                adapter, command, adapter.context(command)
-            ).as_dict()
-        except learning.ReviewFailure as error:
-            raise translate_failure(error) from error
-    adapter.finish_compatibility_effects()
-    return result
 
 
 def submit_legacy_review(database, payload):

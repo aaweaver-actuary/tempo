@@ -1072,3 +1072,17 @@ def test_recovery_attempt_status_foreground_read_does_not_wait_on_itself(attempt
     assert boundary.sections == [{"read_only": True, "repertoire_snapshot": False}]
     assert boundary.active_connections == 0
     assert not activity_gate.foreground_requests_active
+
+
+def test_b06_review_commands_register_full_submission_without_legacy_bypass():
+    """Mounted commands use the full owner; the low-level algorithm is not a route."""
+    from app import command_gateway, main, review_commands
+    from app.services import learning_review_adapter
+    import tempo_learning_review as learning
+
+    assert not hasattr(main, "_apply_review")
+    assert not hasattr(main, "_reconcile_review")
+    assert not hasattr(learning_review_adapter, "apply_legacy_review")
+    assert command_gateway._handlers["cards.review"] is review_commands.submit_review
+    assert command_gateway._handlers["cards.review.reconcile"] is review_commands.reconcile_review
+    assert "not a user submission boundary" in learning.apply_review.__doc__
