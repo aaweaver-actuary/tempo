@@ -494,17 +494,35 @@ def test_native_refresh_admits_due_carrier_and_reuses_pending(monkeypatch):
                 "prepare_queue_head",
                 lambda *a: lambda d: {"id": entry + 100},
             )
-            from fastapi import HTTPException
+            from app.contracts.review_conflicts import ReviewConflict
+            from app.study.position_learning import issuance
 
-            with pytest.raises(HTTPException):
-                queue_commands.issue_queue_head(port, proposal)
+            original_issue = issuance.issue_in_borrowed_transaction
+            witnessed = []
+            def witness_real_plan(database, prepared):
+                result = original_issue(database, prepared)
+                plan = prepared.plan
+                row = raw.execute(
+                    "SELECT attempt_id,queue_entry_id,card_id,card_revision,plan_digest,plan_json "
+                    "FROM study_position_issued_plans WHERE attempt_id=%s", (plan.attempt_id,)
+                ).fetchone()
+                assert row is not None
+                assert tuple(row) == (plan.attempt_id, entry, "card", 1, plan.plan_id, plan.to_record())
+                witnessed.append(plan.attempt_id)
+                return result
+
+            with monkeypatch.context() as patch:
+                patch.setattr(issuance, "issue_in_borrowed_transaction", witness_real_plan)
+                with pytest.raises(ReviewConflict) as failure:
+                    queue_commands.issue_queue_head(port, proposal)
+            assert failure.value.code == "position_head_changed"
+            assert failure.value.retryable is True
+            assert witnessed == [proposal.proposal.plan.attempt_id]
             raw.execute("ROLLBACK")
-            assert (
-                raw.execute(
-                    "SELECT count(*) FROM study_position_issued_plans"
-                ).fetchone()[0]
-                == 0
-            )
+            assert raw.execute(
+                "SELECT count(*) FROM study_position_issued_plans WHERE attempt_id=%s",
+                (proposal.proposal.plan.attempt_id,),
+            ).fetchone()[0] == 0
             monkeypatch.setattr(
                 queue_commands.queue_storage,
                 "prepare_queue_head",
