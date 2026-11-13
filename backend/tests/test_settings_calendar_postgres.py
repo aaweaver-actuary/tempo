@@ -44,14 +44,25 @@ def test_backward_zone_preserves_leased_generation_and_processes_selected_day(ow
             db.execute_native("UPDATE settings SET timezone='UTC' WHERE id=1")
             facts = seed_queue_refresh_case(db, queued_count=32, frozen_active=False)
             db.execute_native("DELETE FROM background_tasks WHERE id=%s", (facts.task_id,))
-            db.execute_native("UPDATE cards SET due_date=%s WHERE id=%s", (earlier, "queue-refresh-scale-00003"))
+            from app.chess.cards import card_id
+            candidate = card_id(chess.STARTING_FEN, ["e2e4"])
+            db.execute_native("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,trained_color,state,due_date,content_type) VALUES(%s,'queue-refresh-scale','prefix',%s,'[\"e2e4\"]','white','new',%s,'opening')", (candidate, chess.STARTING_FEN, earlier))
+            db.execute_native("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('queue-refresh-scale',%s)", (candidate,))
+            db.execute_native("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES('calendar-opening','queue-refresh-scale','Calendar','white',%s,'[\"e2e4\"]',%s)", (chess.STARTING_FEN, earlier))
+            db.execute_native("INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,decision_fen_key,starting_fen,moves_json,trained_color) VALUES('queue-refresh-scale',1,'calendar-opening',0,%s,%s,%s,'[\"e2e4\"]','white')", (candidate, chess.STARTING_FEN, chess.STARTING_FEN))
             before = protected_hash(db.raw, facts.issued_ids)
             old = queue_application.request_queue_refresh_in_transaction(db, later)
-        first = durable_tasks.claim_task("daily_queue")
-        assert first["id"] == old["id"]
-        assert refresh.execute_postgres_queue_refresh_slice(first)
-        old_delivery = durable_tasks.claim_task("daily_queue")
-        assert old_delivery["id"] == old["id"]
+        # Reach the real checkpoint after a bounded page has selected the
+        # shared opening, then keep its lease across the timezone change.
+        for _ in range(300):
+            old_delivery = durable_tasks.claim_task("daily_queue")
+            assert old_delivery is not None and old_delivery["id"] == old["id"]
+            if old_delivery["payload"].get("_queue_phase") == "study_opening_item":
+                assert old_delivery["payload"]["study_opening_items"][0]["card_id"] == candidate
+                break
+            assert refresh.execute_postgres_queue_refresh_slice(old_delivery)
+        else:
+            raise AssertionError("future task did not reach opening admission")
         with owned_postgres() as db:
             old_row = dict(db.execute_native("SELECT * FROM background_tasks WHERE id=%s", (old["id"],)).fetchone())
         with owned_postgres() as db:
@@ -68,6 +79,8 @@ def test_backward_zone_preserves_leased_generation_and_processes_selected_day(ow
             held = db.execute_native("SELECT state,generation,payload_json FROM background_tasks WHERE id=%s", (old["id"],)).fetchone()
             assert held["state"] == "retrying" and held["generation"] == old_row["generation"]
             assert held["payload_json"] == old_row["payload_json"]
+            candidate_before = db.execute_native("SELECT state,introduced_at FROM cards WHERE id=%s", (candidate,)).fetchone()
+            assert (candidate_before["state"], candidate_before["introduced_at"]) == ("new", None)
         for _ in range(300):
             with owned_postgres() as db:
                 projection = db.execute_native("SELECT state,refresh_pending FROM queue_projections WHERE queue_date=%s", (earlier,)).fetchone()
@@ -80,6 +93,9 @@ def test_backward_zone_preserves_leased_generation_and_processes_selected_day(ow
             raise AssertionError("selected current day did not reach ready")
         with owned_postgres() as db:
             assert protected_hash(db.raw, facts.issued_ids) == before
+            candidate_after = db.execute_native("SELECT state,introduced_at FROM cards WHERE id=%s", (candidate,)).fetchone()
+            assert candidate_after["introduced_at"] == earlier
+            assert db.execute_native("SELECT 1 FROM daily_queue WHERE queue_date=%s AND card_id=%s AND status='queued'", (earlier, candidate)).fetchone()
             row = db.execute_native("SELECT c.start_fen,c.moves_json FROM daily_queue q JOIN cards c ON c.id=q.card_id WHERE q.queue_date=%s AND q.status='queued' ORDER BY q.position LIMIT 1", (earlier,)).fetchone()
             assert row, "ready projection did not contain a playable queued card"
             board = chess.Board(row["start_fen"])
