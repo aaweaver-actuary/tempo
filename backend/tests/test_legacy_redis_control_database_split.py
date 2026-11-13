@@ -126,3 +126,32 @@ def test_foreground_projection_prunes_before_count_with_patched_key_and_existing
         ("count", key),
         ("execute",),
     ]
+
+
+def test_admission_storage_owns_fixed_leases_and_atomic_policy_telemetry(monkeypatch):
+    from tempo_storage.redis_control import admission, policy
+
+    events = []
+    server = object()
+    monkeypatch.setattr(admission, '_FOREGROUND_KEY', 'owned:foreground')
+    monkeypatch.setattr(admission, '_BACKGROUND_KEY', 'owned:background')
+    monkeypatch.setattr(admission, 'register_foreground', lambda *args: events.append(('foreground', args)))
+    monkeypatch.setattr(admission, 'claim_background', lambda *args: events.append(('background', args)) or False)
+    monkeypatch.setattr(admission, 'release_foreground', lambda *args: events.append(('release-foreground', args)))
+    monkeypatch.setattr(admission, 'release_background', lambda *args: events.append(('release-background', args)))
+    monkeypatch.setattr(policy, 'policy_snapshot', lambda *args: events.append(('telemetry', args)) or (0, '', ''))
+    admission.acquire_foreground(server, 100, 'attempt')
+    admission.record_browser_presence(server, 101, 'phone', 2.5)
+    assert admission.acquire_background(server, 102, 'background') is False
+    admission.remove_foreground(server, 'attempt')
+    admission.remove_background(server, 'background')
+    assert admission.policy_telemetry(server, 'policy', 'generation', 103) == (0, '', '')
+    assert admission.foreground_renewal_seconds() == 10
+    assert events == [
+        ('foreground', (server, 'owned:foreground', 100, 'attempt', 30000)),
+        ('foreground', (server, 'owned:foreground', 101, 'browser-activity:phone', 2500)),
+        ('background', (server, 'owned:foreground', 'owned:background', 102, 'background', 5000)),
+        ('release-foreground', (server, 'owned:foreground', 'attempt')),
+        ('release-background', (server, 'owned:background', 'background')),
+        ('telemetry', (server, 'owned:foreground', 'policy', 'generation', 103)),
+    ]
