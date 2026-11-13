@@ -7764,6 +7764,224 @@
         "Also consumed by background activity and authored PGN preparation outside this selection; these helpers do not claim tasks."
       ],
       "censusScope": "durable"
+    },
+    {
+      "id": "http-queue-availability",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/http_composition",
+      "publicExports": [
+        "database/tempo_storage/http_composition/availability.py#base_available_attempt_sql",
+        "database/tempo_storage/http_composition/availability.py#available_attempt_sql"
+      ],
+      "dependencies": [
+        "study-frozen-order-policy",
+        "http-retained-position-availability"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/http_composition/__init__.py",
+        "database/tempo_storage/http_composition/availability.py"
+      ],
+      "ownershipRole": "Construct available queue SQL",
+      "dependencyNotes": [
+        "Retired and retained-position predicates compose existing frozen-order availability for queue consumers."
+      ],
+      "censusScope": "http_composition"
+    },
+    {
+      "id": "http-retained-position-availability",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/http_composition",
+      "publicExports": [
+        "database/tempo_storage/http_composition/retained_position_availability.py#omission_predicate",
+        "database/tempo_storage/http_composition/retained_position_availability.py#availability_predicate",
+        "database/tempo_storage/http_composition/retained_position_availability.py#retained_holds"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/http_composition/retained_position_availability.py"
+      ],
+      "ownershipRole": "Project retained position availability",
+      "dependencyNotes": [
+        "Builds existing position-owner availability and diagnostic hold predicates; does not issue a plan."
+      ],
+      "censusScope": "http_composition"
+    },
+    {
+      "id": "http-queue-projection",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/http_composition",
+      "publicExports": [
+        "database/tempo_storage/http_composition/queue_projection.py#issued_head",
+        "database/tempo_storage/http_composition/queue_projection.py#evidence_timezone",
+        "database/tempo_storage/http_composition/queue_projection.py#queue_projection",
+        "database/tempo_storage/http_composition/queue_projection.py#queue_diagnostics",
+        "database/tempo_storage/http_composition/queue_projection.py#queue_rows",
+        "database/tempo_storage/http_composition/queue_projection.py#encounter_badges",
+        "database/tempo_storage/http_composition/queue_projection.py#encounter_rows",
+        "database/tempo_storage/http_composition/queue_projection.py#available_count",
+        "database/tempo_storage/http_composition/queue_projection.py#exercise_revision",
+        "database/tempo_storage/http_composition/queue_projection.py#entry_state",
+        "database/tempo_storage/http_composition/queue_projection.py#available_head",
+        "database/tempo_storage/http_composition/queue_projection.py#retained_entry_issued",
+        "database/tempo_storage/http_composition/queue_projection.py#mark_entry_failed",
+        "database/tempo_storage/http_composition/queue_projection.py#bury_entry",
+        "database/tempo_storage/http_composition/queue_projection.py#position_pending_modes",
+        "database/tempo_storage/http_composition/queue_projection.py#position_source_revision"
+      ],
+      "dependencies": [
+        "http-queue-availability",
+        "http-retained-position-availability",
+        "study-frozen-order-policy"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/http_composition/queue_projection.py"
+      ],
+      "ownershipRole": "Project and update HTTP queue entries",
+      "dependencyNotes": [
+        "Caller-owned connection provides queue projection, original issued-head identity and source revision reads; existing attempt-failed and bury writes remain caller transaction operations."
+      ],
+      "censusScope": "http_composition"
+    },
+    {
+      "id": "http-repertoire-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/http_composition",
+      "publicExports": [
+        "database/tempo_storage/http_composition/repertoires.py#repertoire_rows",
+        "database/tempo_storage/http_composition/repertoires.py#line_rows",
+        "database/tempo_storage/http_composition/repertoires.py#comparison_card_rows",
+        "database/tempo_storage/http_composition/repertoires.py#integrity_issue_signature",
+        "database/tempo_storage/http_composition/repertoires.py#position_annotation_rows",
+        "database/tempo_storage/http_composition/repertoires.py#annotation_rows",
+        "database/tempo_storage/http_composition/repertoires.py#save_annotation",
+        "database/tempo_storage/http_composition/repertoires.py#teaching_rows",
+        "database/tempo_storage/http_composition/repertoires.py#active_card_presence",
+        "database/tempo_storage/http_composition/repertoires.py#record_teaching_state",
+        "database/tempo_storage/http_composition/repertoires.py#selectable_repertoire",
+        "database/tempo_storage/http_composition/repertoires.py#select_main_repertoire",
+        "database/tempo_storage/http_composition/repertoires.py#export_line_rows",
+        "database/tempo_storage/http_composition/repertoires.py#export_annotation_rows"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/http_composition/repertoires.py"
+      ],
+      "ownershipRole": "Read and update repertoire HTTP state",
+      "dependencyNotes": [
+        "Caller connection reads repertoire, line, annotation and teaching facts and performs existing annotation, teaching-state and main-selection writes."
+      ],
+      "censusScope": "http_composition"
+    },
+    {
+      "id": "http-practice-line-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/http_composition",
+      "publicExports": [
+        "database/tempo_storage/http_composition/practice.py#review_count",
+        "database/tempo_storage/http_composition/practice.py#tactic_progress_rows",
+        "database/tempo_storage/http_composition/line_authoring.py#initial_depth"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/http_composition/practice.py",
+        "database/tempo_storage/http_composition/line_authoring.py"
+      ],
+      "ownershipRole": "Read practice and line authoring facts",
+      "dependencyNotes": [
+        "Caller connection reads review counts, tactic progress and line initial depth."
+      ],
+      "censusScope": "http_composition"
+    },
+    {
+      "id": "http-system-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/http_composition",
+      "publicExports": [
+        "database/tempo_storage/http_composition/system.py#frozen_opening_identity",
+        "database/tempo_storage/http_composition/system.py#check_settings_read",
+        "database/tempo_storage/http_composition/system.py#recent_queue_projections"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/http_composition/system.py"
+      ],
+      "ownershipRole": "Read HTTP system facts",
+      "dependencyNotes": [
+        "Caller-owned connection reads frozen opening identity, settings and recent queue projections."
+      ],
+      "censusScope": "http_composition"
     }
   ],
   "suites": [

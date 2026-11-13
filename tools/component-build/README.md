@@ -604,8 +604,15 @@ integrity edges remain visible; retired Coverage inputs are rejected and no gap
 state is written. This source map is not runtime proof; previous fixture gaps
 remain unresolved.
 
-At this base revision, 52 of 289 tracked Python files in those trees remain
-outside the combined 237-file selections. The registry alone assigns owners;
+A forty-fourth selection maps HTTP composition storage for availability, retained
+position holds, queue projections, repertoire state, practice, line authoring and
+system facts. Existing caller-owned transactions include queue and repertoire
+writes; the separately mapped settings adapter retains its owner. Queue consumers
+include main and Study composition as well as refresh and command storage. This is
+a source map, not runtime or native qualification; previous fixture gaps remain open.
+
+At this base revision, 44 of 289 tracked Python files in those trees remain
+outside the combined 245-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover
