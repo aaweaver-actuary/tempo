@@ -173,6 +173,17 @@ def _issued_before_archive_remounts_and_saves_original_attempt(frozen, monkeypat
             receipt = db.execute("SELECT state,error_json,last_error_json FROM operation_receipts WHERE operation_id=%s", ('earlier-issued-head',)).fetchone()
             raise AssertionError(f"Earlier issuance failed; durable receipt: {dict(receipt) if receipt else None}")
     assert earlier_issue['issued'] is True
+    # Published status must not bypass the issued-origin FEN fence.
+    published_query = f'?card_id=card-retained&queue_entry_id={retained}&queue_cycle=0&revision=1'
+    assert client.get(BASE + 'retained/present' + published_query).status_code == 200
+    changed_fen = 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1'
+    with transaction() as db:
+        db.execute("UPDATE study_positions SET fen=%s WHERE id='position'", (changed_fen,))
+    assert client.get(BASE + 'retained/present' + published_query).status_code == 404
+    assert client.get(BASE + 'retained/present').json()['fen'] == changed_fen
+    with transaction() as db:
+        db.execute("UPDATE study_positions SET fen=%s WHERE id='position'", (FEN,))
+    assert client.get(BASE + 'retained/present' + published_query).json()['fen'] == FEN
     parent = {'attempt_id': 'pending-practice', 'revision': 1, 'context': 'practice', 'answer': {'type': 'explanation', 'text': 'original'}}
     assert client.post(BASE + 'explain/attempts', json=parent, headers={'Idempotency-Key': 'pending-practice-parent'}).json()['pending_self_assessment'] is True
     with transaction() as db:

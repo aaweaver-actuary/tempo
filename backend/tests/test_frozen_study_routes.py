@@ -91,3 +91,16 @@ def test_retained_present_requires_exact_issued_or_pending_identity(client, monk
     assert client.get(BASE + "/present?card_id=card&queue_entry_id=11&queue_cycle=4&revision=2").status_code == 404
     assert client.get(BASE + "/present?attempt_id=saved-attempt").json()["revision"] == 2
     assert client.get(BASE + "/present?attempt_id=foreign").status_code == 404
+
+
+def test_published_presentation_never_bypasses_supplied_issued_identity(client, monkeypatch):
+    row = {"id": "exercise", "current_revision": 2, "fen": FEN, "specification_json": json.dumps(SPEC)}
+    ordinary = []
+    monkeypatch.setattr(routes.storage, "frozen_presentation", lambda *args: ordinary.append(args) or row)
+    monkeypatch.setattr(routes.storage, "issued_frozen_presentation", lambda *args: None)
+    query = "?card_id=card&queue_entry_id=17&queue_cycle=0&revision=2"
+    assert client.get(BASE + "/present" + query).status_code == 404
+    assert client.get(BASE + "/present?card_id=card").status_code == 404
+    assert ordinary == []
+    assert client.get(BASE + "/present").status_code == 200
+    assert len(ordinary) == 1
