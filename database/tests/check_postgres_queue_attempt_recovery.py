@@ -500,10 +500,10 @@ def test_postgres_paused_feedback_history_preserves_ordinary_study():
         grades = database.execute("SELECT row_to_json(r)::text FROM reviews r WHERE card_id=%s ORDER BY id", (prefix,)).fetchall()
         assert len(grades) == 1
         scoped = {
-            "effects": database.execute("SELECT effect_key FROM study_game_feedback WHERE card_id=%s OR effect_key=%s ORDER BY effect_key", (prefix, effect)).fetchall(),
+            "effects": database.execute("SELECT effect_key FROM study_game_feedback WHERE card_id=%s OR effect_key=%s OR identity_json LIKE %s OR payload_json LIKE %s ORDER BY effect_key", (prefix, effect, "%" + prefix + "%", "%" + prefix + "%")).fetchall(),
             "deliveries": database.execute("SELECT operation_id FROM product_feedback_deliveries WHERE source_key=%s OR effect_key=%s ORDER BY operation_id", (prefix, logical_id)).fetchall(),
             "operations": database.execute("SELECT operation_id FROM operation_receipts WHERE operation_id LIKE %s OR payload_json LIKE %s ORDER BY operation_id", (prefix + "%", "%" + prefix + "%")).fetchall(),
-            "tasks": database.execute("SELECT id FROM background_tasks WHERE id LIKE %s OR deduplication_key LIKE %s OR payload_json LIKE %s ORDER BY id", (prefix + "%", prefix + "%", "%" + prefix + "%")).fetchall(),
+            "tasks": database.execute("SELECT id FROM background_tasks WHERE id LIKE %s OR deduplication_key LIKE %s OR payload_json LIKE %s OR payload_json LIKE %s ORDER BY id", (prefix + "%", prefix + "%", "%" + prefix + "%", "%" + effect + "%")).fetchall(),
             "review_receipts": database.execute("SELECT attempt_id FROM review_attempt_receipts WHERE card_id=%s ORDER BY attempt_id", (prefix,)).fetchall(),
         }
         assert {key: [row[0] for row in values] for key, values in scoped.items()} == {
@@ -524,6 +524,29 @@ def test_postgres_paused_feedback_history_preserves_ordinary_study():
             for table, key, value in rows:
                 database.execute(f"INSERT INTO tempo_retired_work(source_table,source_key,disposition,reason,source_record) SELECT %s,%s,'paused','fixture schema 64 disposition',to_jsonb(r) FROM {table} r WHERE {key}=%s", (table, value, value))
             before = snapshot(database)
+            # A sibling can retain the same game identity without a card, or
+            # refer to the hashed effect without sharing the fixture prefix.
+            database.execute("SAVEPOINT inventory_negative")
+            try:
+                database.execute("INSERT INTO study_game_feedback(effect_key,identity_json,source_revision,card_id,decision_id,received_at,status,updated_at) VALUES('inventory-negative-effect',%s,'revision',NULL,'decision',%s,'held',%s)", (json.dumps(identity), now, now))
+                try:
+                    snapshot(database)
+                except AssertionError:
+                    pass
+                else:
+                    raise AssertionError("extra same-game effect escaped inventory")
+                database.execute("ROLLBACK TO SAVEPOINT inventory_negative")
+                database.execute("INSERT INTO background_tasks(id,kind,deduplication_key,generation,priority,state,payload_json,attempt_count,max_attempts,next_attempt_at,created_at,updated_at) VALUES('inventory-negative-task','study_game_feedback','inventory-negative-task',1,1,'queued',%s,0,5,%s,%s,%s)", (task_payload, now, now, now))
+                try:
+                    snapshot(database)
+                except AssertionError:
+                    pass
+                else:
+                    raise AssertionError("extra effect-linked task escaped inventory")
+            finally:
+                database.execute("ROLLBACK TO SAVEPOINT inventory_negative")
+                database.execute("RELEASE SAVEPOINT inventory_negative")
+            assert snapshot(database) == before
         def assert_history():
             with postgres.connection(read_only=True) as database:
                 assert snapshot(database) == before

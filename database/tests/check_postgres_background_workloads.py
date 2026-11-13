@@ -95,10 +95,10 @@ def stale_delivery_witness(phase, project):
             assert json.loads(effect_row['identity_json']) == identity and delivery_row['effect_key'] == logical_id and delivery_row['payload']['key'] == identity
             assert command_row['request_hash'] == digest and command_row['payload_json'] == original_payload and json.loads(task_row['payload_json'])['after'] == effect
             scoped = {
-                'effects': db.execute('SELECT effect_key FROM study_game_feedback WHERE card_id=%s OR effect_key=%s ORDER BY effect_key', (prefix, effect)).fetchall(),
+                'effects': db.execute('SELECT effect_key FROM study_game_feedback WHERE card_id=%s OR effect_key=%s OR identity_json LIKE %s OR payload_json LIKE %s ORDER BY effect_key', (prefix, effect, '%' + prefix + '%', '%' + prefix + '%')).fetchall(),
                 'deliveries': db.execute('SELECT operation_id FROM product_feedback_deliveries WHERE source_key=%s OR effect_key=%s ORDER BY operation_id', (prefix, logical_id)).fetchall(),
                 'operations': db.execute('SELECT operation_id FROM operation_receipts WHERE operation_id LIKE %s OR payload_json LIKE %s ORDER BY operation_id', (prefix + '%', '%' + prefix + '%')).fetchall(),
-                'tasks': db.execute('SELECT id FROM background_tasks WHERE id LIKE %s OR deduplication_key LIKE %s OR payload_json LIKE %s ORDER BY id', (prefix + '%', prefix + '%', '%' + prefix + '%')).fetchall(),
+                'tasks': db.execute('SELECT id FROM background_tasks WHERE id LIKE %s OR deduplication_key LIKE %s OR payload_json LIKE %s OR payload_json LIKE %s ORDER BY id', (prefix + '%', prefix + '%', '%' + prefix + '%', '%' + effect + '%')).fetchall(),
                 'review_receipts': db.execute('SELECT attempt_id FROM review_attempt_receipts WHERE card_id=%s ORDER BY attempt_id', (prefix,)).fetchall(),
             }
             assert {key: [next(iter(row.values())) for row in values] for key, values in scoped.items()} == {
@@ -152,6 +152,30 @@ def stale_delivery_witness(phase, project):
                 VALUES(%s,'defensive_threat_scan',%s,7,100,'leased','original','{}',2,5,%s,'original-lease',%s,%s,%s)""",
                 (task_id, task_id, now, '2099-01-01T00:00:00+00:00', now, now))
         initial = snapshot()
+        # Exercise the actual snapshot against extra linked records whose IDs do
+        # not contain the fixture prefix. Remove only these exact test rows.
+        negative_effect = 'negative-effect-' + project
+        negative_task = 'negative-task-' + project
+        def reject_extra(insert, cleanup, label):
+            try:
+                with psycopg.connect(dsn) as db:
+                    insert(db)
+                try:
+                    snapshot()
+                except AssertionError:
+                    pass
+                else:
+                    raise AssertionError(label + ' escaped inventory')
+            finally:
+                with psycopg.connect(dsn) as db:
+                    cleanup(db)
+        reject_extra(
+            lambda db: db.execute("INSERT INTO study_game_feedback(effect_key,identity_json,source_revision,card_id,decision_id,received_at,status,updated_at) VALUES(%s,%s,'revision',NULL,'decision',%s,'held',%s)", (negative_effect, json.dumps(identity), now, now)),
+            lambda db: db.execute('DELETE FROM study_game_feedback WHERE effect_key=%s', (negative_effect,)), 'extra same-game effect')
+        reject_extra(
+            lambda db: db.execute("INSERT INTO background_tasks(id,kind,deduplication_key,generation,priority,state,payload_json,attempt_count,max_attempts,next_attempt_at,created_at,updated_at) VALUES(%s,'study_game_feedback',%s,1,1,'queued',%s,0,5,%s,%s,%s)", (negative_task, negative_task, task_payload, now, now, now)),
+            lambda db: db.execute('DELETE FROM background_tasks WHERE id=%s', (negative_task,)), 'extra effect-linked task')
+        assert snapshot() == initial
     else:
         initial = snapshot()
 
