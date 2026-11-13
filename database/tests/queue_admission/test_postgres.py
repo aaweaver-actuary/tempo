@@ -210,3 +210,67 @@ def test_active_slice_rechecks_limit_and_preserves_issued_head(case):
         assert database.execute('SELECT COUNT(*) FROM daily_queue WHERE card_id IN (%s,%s)', (identity+'-a', identity+'-b')).fetchone()[0] == 1
         assert tuple(database.execute('SELECT position,issued_as_head FROM daily_queue JOIN queue_attempt_origins ON queue_entry_id=daily_queue.id WHERE daily_queue.id=%s', (case['head'],)).fetchone()) == (0, 1)
         assert tuple(database.execute('SELECT state,introduced_at FROM cards WHERE id=%s', (identity+'-b',)).fetchone()) == ('new', None)
+
+
+def test_active_generated_presentation_preserves_history_and_does_not_consume_opening_allowance(case):
+    """A frozen generated card is neither reset nor counted as a new opening."""
+    from app.services import postgres_queue_refresh as refresh
+    from tempo_storage.queue_refresh import openings, reads
+    identity, day = case['identity'], case['day']
+    generated = identity + '-b'
+    old_day = (date.fromisoformat(day) - timedelta(days=1)).isoformat()
+    with postgres.connection() as database:
+        database.execute("INSERT INTO study_recombination_changes(command_id,digest,change_json,receipt_json) VALUES(%s,'fixture','{}'::jsonb,'{}'::jsonb)", (identity,))
+        database.execute("INSERT INTO study_recombination_presentations(presentation_id,command_id,result_json) VALUES(%s,%s,'{}'::jsonb)", (generated, identity))
+        database.execute("UPDATE cards SET state='learning',introduced_at=%s,interval_days=7 WHERE id=%s", (old_day, generated))
+        # No current-day queue entry: this would otherwise be a stale reset candidate.
+        refresh.queue_application._reset_stale_opening_introductions(database, day)
+        assert tuple(database.execute('SELECT state,introduced_at,interval_days FROM cards WHERE id=%s', (generated,)).fetchone()) == ('learning', old_day, 7)
+        database.execute("UPDATE cards SET introduced_at=%s WHERE id=%s", (day, generated))
+        entry = database.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id) VALUES(%s,%s,1,'review',%s) RETURNING id", (day, generated, identity)).fetchone()[0]
+    with postgres.connection(read_only=True) as database:
+        before = tuple(database.execute('SELECT c.state,c.introduced_at,c.interval_days,q.status,o.issued_as_head FROM cards c JOIN daily_queue q ON q.card_id=c.id JOIN queue_attempt_origins o ON o.queue_entry_id=q.id WHERE q.id=%s', (entry,)).fetchone())
+        assert openings.remaining_allowance(database, day, identity)[0] == 1
+        assert openings.admitted_count(database, day, identity) == 0
+        assert database.execute('SELECT COUNT(*) FROM reviews WHERE card_id=%s', (generated,)).fetchone()[0] == 0
+    # Exclude other fixtures' entries so this read discriminates the generated candidate.
+    with postgres.connection(read_only=True) as database:
+        processed = [row[0] for row in database.execute('SELECT id FROM daily_queue WHERE queue_date=%s AND id<>%s', (day, entry)).fetchall()]
+    assert not reads.unseen_candidate(day, processed)
+    assert reads.reviewed_introductions(identity, day)[0][0] == 0
+    planned = {'card_id': identity+'-a', 'repertoire_id': identity, 'reason': None}
+    with postgres.connection() as database:
+        assert refresh._admit_one_prioritized_opening(database, day, planned) is True
+        assert refresh._admit_one_prioritized_opening(database, day, planned) is False
+    with postgres.connection(read_only=True) as database:
+        after = tuple(database.execute('SELECT c.state,c.introduced_at,c.interval_days,q.status,o.issued_as_head FROM cards c JOIN daily_queue q ON q.card_id=c.id JOIN queue_attempt_origins o ON o.queue_entry_id=q.id WHERE q.id=%s', (entry,)).fetchone())
+        assert after == before
+        assert database.execute('SELECT COUNT(*) FROM reviews WHERE card_id=%s', (generated,)).fetchone()[0] == 0
+        assert database.execute('SELECT COUNT(*) FROM daily_queue WHERE card_id=%s', (identity+'-a',)).fetchone()[0] == 1
+
+
+def test_active_study_route_rejects_stale_publication_then_accepts_current_once(case):
+    """A prepared occurrence is fenced against the exact current publication."""
+    from app.services import postgres_queue_refresh as refresh
+    identity, day = case['identity'], case['day']
+    card, line = identity+'-a', identity+'-line'
+    moves = '["e2e4"]'
+    with postgres.connection() as database:
+        database.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(%s,%s,'Route','white',%s,%s,%s)", (line, identity, FEN, moves, day))
+        database.execute("INSERT INTO opening_graph_publications(repertoire_id,generation,state,published_at) VALUES(%s,1,'ready',%s)", (identity, day))
+        database.execute("INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,parent_card_id,decision_fen_key,starting_fen,moves_json,trained_color,segment_kind,first_decision_index,last_decision_index,decision_fen_keys_json) VALUES(%s,1,%s,0,%s,NULL,%s,%s,%s,'white','prefix',0,0,'[]')", (identity, line, card, FEN, FEN, moves))
+        occurrence = {'card_id': card, 'repertoire_id': identity, 'reason': None, 'study_route': {
+            'generation': 1, 'line_id': line, 'decision_index': 0, 'content': [FEN, moves, 'white', FEN, moves]}}
+        assert refresh._study_opening_route_still_valid(database, occurrence, day)
+        # Republish the exact route under a new generation after proposal capture.
+        database.execute("INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,card_id,parent_card_id,decision_fen_key,starting_fen,moves_json,trained_color,segment_kind,first_decision_index,last_decision_index,decision_fen_keys_json) VALUES(%s,2,%s,0,%s,NULL,%s,%s,%s,'white','prefix',0,0,'[]')", (identity, line, card, FEN, FEN, moves))
+        database.execute('UPDATE opening_graph_publications SET generation=2 WHERE repertoire_id=%s', (identity,))
+        assert refresh._admit_one_prioritized_opening(database, day, occurrence) is False
+        assert tuple(database.execute('SELECT state,introduced_at FROM cards WHERE id=%s', (card,)).fetchone()) == ('new', None)
+        assert database.execute('SELECT COUNT(*) FROM daily_queue WHERE card_id=%s', (card,)).fetchone()[0] == 0
+        assert database.execute('SELECT COUNT(*) FROM queue_attempt_origins WHERE card_id=%s', (card,)).fetchone()[0] == 0
+        current = {**occurrence, 'study_route': {**occurrence['study_route'], 'generation': 2}}
+        assert refresh._admit_one_prioritized_opening(database, day, current) is True
+        assert refresh._admit_one_prioritized_opening(database, day, current) is False
+        assert database.execute('SELECT COUNT(*) FROM daily_queue WHERE card_id=%s', (card,)).fetchone()[0] == 1
+        assert tuple(database.execute('SELECT position,issued_as_head FROM daily_queue JOIN queue_attempt_origins ON queue_entry_id=daily_queue.id WHERE daily_queue.id=%s', (case['head'],)).fetchone()) == (0, 1)
