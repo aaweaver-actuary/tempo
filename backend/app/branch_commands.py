@@ -17,7 +17,7 @@ from app.repertoire.changes.ports import ChangeError
 from tempo_storage.authored_repertoires import (
     product_changes as change_storage,
 )
-from app.contracts.transport.authored_lines import BranchRequest, RemoveBranchRequest
+from app.contracts.transport.authored_lines import BranchRequest, RemoveBranchRequest, reject_retired_coverage
 from tempo_storage.postgres import PostgresConnection
 from tempo_storage.authored_repertoires import branches as storage
 from app.chess.cards import card_id
@@ -30,6 +30,7 @@ from .services.repertoire_integrity import integrity_summary
 def add_repertoire_branch(
     database: PostgresConnection, payload: dict[str, Any]
 ) -> dict[str, Any]:
+    reject_retired_coverage(payload.get("source_gap_id"))
     request = BranchRequest.model_validate(payload)
     try:
         board = chess.Board(request.starting_fen)
@@ -81,20 +82,6 @@ def add_repertoire_branch(
     )
     depth = storage.initial_training_depth(database)
     storage.set_line_training_depth(database, line_id, depth)
-    if request.source_gap_id:
-        try:
-            gap_node_id, gap_move_uci = request.source_gap_id.split(":", 1)
-        except ValueError as error:
-            raise HTTPException(422, "Invalid repertoire coverage gap") from error
-        gap = storage.lock_source_gap(database, gap_node_id, gap_move_uci)
-        if gap is None or gap["repertoire_id"] != repertoire_id:
-            raise HTTPException(422, "Coverage gap does not belong to this repertoire")
-        if not moves or moves[0] != gap_move_uci or len(moves) < 2:
-            raise HTTPException(
-                422,
-                "A resolved gap must include the missing opponent move and your response",
-            )
-        storage.mark_gap_covered(database, gap_node_id, gap_move_uci)
     if inserted is not None:
         certify_admitted_route(database, repertoire_id, validated_route)
     invalidate_integrity_in_transaction(database, repertoire_id)

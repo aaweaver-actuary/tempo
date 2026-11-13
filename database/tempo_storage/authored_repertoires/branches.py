@@ -30,23 +30,6 @@ def set_line_training_depth(database, line_id, depth):
     )
 
 
-def lock_source_gap(database, gap_node_id, gap_move_uci):
-    return database.execute_native(
-        "SELECT candidate.move_uci,node.repertoire_id FROM repertoire_coverage_candidates candidate "
-        "JOIN repertoire_coverage_nodes node ON node.id=candidate.node_id "
-        "WHERE candidate.node_id=%s AND candidate.move_uci=%s FOR UPDATE OF candidate",
-        (gap_node_id, gap_move_uci),
-    ).fetchone()
-
-
-def mark_gap_covered(database, gap_node_id, gap_move_uci):
-    database.execute_native(
-        "UPDATE repertoire_coverage_candidates SET covered=1 "
-        "WHERE node_id=%s AND move_uci=%s",
-        (gap_node_id, gap_move_uci),
-    )
-
-
 def lock_repertoire_for_remove(database, repertoire_id):
     return database.execute_native(
         "SELECT id FROM repertoires WHERE id=%s FOR UPDATE", (repertoire_id,),

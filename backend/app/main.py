@@ -42,6 +42,7 @@ from app.contracts.transport.authored_lines import (
     AnalysisPastePreviewRequest,
     BranchRequest,
     RemoveBranchRequest,
+    reject_retired_coverage,
 )
 from app.contracts.transport.content import CardRevisionRequest
 from app.contracts.transport.authored_integrity import IntegrityResolutionRequest
@@ -1182,6 +1183,7 @@ def reconcile_review(
 
 @app.post("/api/repertoire/paste/preview")
 def preview_analysis_paste(request: AnalysisPastePreviewRequest):
+    reject_retired_coverage(request.source_gap_id)
     try:
         with read_connection() as database:
             return build_paste_preview(
@@ -1222,6 +1224,7 @@ def commit_analysis_paste(
             raise HTTPException(
                 error.get("status_code", 500), error.get("message", "Save failed")
             )
+    reject_retired_coverage(request.source_gap_id)
     try:
         with read_connection() as database:
             prepared_preview = build_paste_preview(

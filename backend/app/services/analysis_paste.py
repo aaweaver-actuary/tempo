@@ -296,30 +296,6 @@ def build_paste_preview(
     return {"preview_token": token, "lines": lines}
 
 
-def _resolves_gap(
-    database: PostgresConnection,
-    source_gap_id: str,
-    repertoire_id: str,
-    pasted: PastedLine,
-) -> bool:
-    try:
-        node_id, opponent_move = source_gap_id.split(":", 1)
-    except ValueError as error:
-        raise PasteInputError("Invalid coverage gap") from error
-    gap = storage.coverage_gap(database, node_id, opponent_move)
-    if not gap or gap["repertoire_id"] != repertoire_id:
-        return False
-    gap_fen_key = canonical_fen(gap["fen"])
-    for position_index, (position, move) in enumerate(_position_moves(pasted)):
-        if (
-            position == gap_fen_key
-            and move == opponent_move
-            and position_index + 1 < len(pasted.moves)
-        ):
-            return True
-    return False
-
-
 def commit_pasted_lines(
     database: PostgresConnection,
     raw_text: str,
@@ -402,7 +378,6 @@ def commit_pasted_lines(
     now = datetime.now(timezone.utc).isoformat()
     saved: list[dict] = []
     affected: set[str] = set()
-    resolved_gap = False
     inserted_keys: set[tuple[str, str, tuple[str, ...]]] = set()
     for index, selected in sorted(by_index.items()):
         line = prepared_preview["lines"][index]
@@ -453,13 +428,6 @@ def commit_pasted_lines(
             depth = storage.initial_depth(database)
             storage.set_line_depth(database, line_id, depth)
             affected.add(selected["repertoire_id"])
-        if source_gap_id and _resolves_gap(
-            database, source_gap_id, selected["repertoire_id"], pasted
-        ):
-            node_id, opponent_move = source_gap_id.split(":", 1)
-            storage.cover_gap(database, node_id, opponent_move)
-            resolved_gap = True
-            affected.add(selected["repertoire_id"])
         saved.append(
             {
                 "index": index,
@@ -474,5 +442,5 @@ def commit_pasted_lines(
     return {
         "saved": saved,
         "affected_repertoire_ids": sorted(affected),
-        "gap_resolved": resolved_gap,
+        "gap_resolved": False,
     }

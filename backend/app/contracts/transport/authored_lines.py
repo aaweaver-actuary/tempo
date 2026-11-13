@@ -1,7 +1,14 @@
 """Authored line/paste contracts."""
 
-from typing import Literal
+from typing import Any, Literal
 from pydantic import BaseModel, Field
+from fastapi import HTTPException
+
+
+def reject_retired_coverage(value: Any) -> None:
+    """Recognize retained Coverage input without reinterpreting its bytes."""
+    if value is not None:
+        raise HTTPException(410, "Coverage authoring is retired")
 
 
 class BranchRequest(BaseModel):
@@ -13,13 +20,13 @@ class BranchRequest(BaseModel):
     trained_color: Literal["white", "black"]
     name: str = "Analysis branch"
     allow_conflict: bool = False
-    source_gap_id: str | None = None
+    source_gap_id: Any = None
 
 
 class AnalysisPastePreviewRequest(BaseModel):
     text: str
     starting_fen: str | None = None
-    source_gap_id: str | None = None
+    source_gap_id: Any = None
 
 
 class AnalysisPasteSelection(BaseModel):
