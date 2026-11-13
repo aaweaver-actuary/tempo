@@ -32,17 +32,29 @@ def frozen(owned_postgres, monkeypatch):
     monkeypatch.setattr(study_exercise_routes, 'read_connection', owned_postgres)
     monkeypatch.setattr(command_gateway, '_writer_connection', lambda background: owned_postgres())
     monkeypatch.setattr(command_dispatch, 'dispatch_command', lambda name, payload, *, idempotency_key: command_gateway.execute_command(idempotency_key, name, payload))
+    # Simulate failure at the advisory broker connection boundary without ever
+    # opening a socket. The real post-commit wake handler must absorb it.
+    from app.celery_app import celery_app
+    wake_attempts = []
+    def unavailable_wake(*args, **kwargs):
+        wake_attempts.append((args, kwargs))
+        raise ConnectionError("owned fixture: advisory broker unavailable")
+    monkeypatch.setattr(celery_app, 'connection_for_write', unavailable_wake)
     app = FastAPI(); app.include_router(study_exercise_routes.router)
-    return TestClient(app), owned_postgres
+    client = TestClient(app)
+    client.fixture_wake_attempts = wake_attempts
+    return client, owned_postgres
 
 
 def _frozen_queued_attempt_receipt_and_lost_ack_replay(frozen, option, rating):
     client, transaction = frozen
     with transaction() as db:
-        entry = db.execute("INSERT INTO daily_queue(queue_date,card_id,position,cycle) VALUES(%s,'card-choice',0,0) RETURNING id", (date.today().isoformat(),)).fetchone()[0]
+        day = date.today().isoformat()
+        cycle = db.execute("SELECT COALESCE(MAX(cycle),-1)+1 FROM daily_queue WHERE queue_date=%s AND card_id='card-choice'", (day,)).fetchone()[0]
+        entry = db.execute("INSERT INTO daily_queue(queue_date,card_id,position,cycle) VALUES(%s,'card-choice',0,%s) RETURNING id", (day, cycle)).fetchone()[0]
     attempt_id, operation_id = f"original-attempt-{rating}", f"original-operation-{rating}"
     request = {"attempt_id": attempt_id, "revision": 1, "context": "review", "queue_entry_id": entry,
-               "queue_cycle": 0, "card_id": "card-choice", "answer": {"type": "choice", "option_ids": [option]}}
+               "queue_cycle": cycle, "card_id": "card-choice", "answer": {"type": "choice", "option_ids": [option]}}
     present = client.get(BASE + 'choice/present')
     assert present.status_code == 200 and 'correct_option_ids' not in present.text
     response = client.post(BASE + 'choice/attempts', json=request, headers={'Idempotency-Key': operation_id})
@@ -59,6 +71,14 @@ def _frozen_queued_attempt_receipt_and_lost_ack_replay(frozen, option, rating):
         receipt = db.execute("SELECT request_hash,state FROM operation_receipts WHERE operation_id=%s", (operation_id,)).fetchone()
         payload = {'study_id': 'frozen', 'exercise_id': 'choice', 'attempt': study_exercise_routes.StudyAttemptRequest.model_validate(request).model_dump(mode='json')}
         assert receipt['request_hash'] == request_digest('studies.attempts.submit', payload) and receipt['state'] == 'complete'
+        # The failed wake follows commit; durable queue work must still be
+        # discoverable by the existing periodic recovery owner.
+        assert client.fixture_wake_attempts
+        task = db.execute("SELECT state,payload_json FROM background_tasks WHERE kind='daily_queue' AND deduplication_key='current'").fetchone()
+        projection = db.execute("SELECT requested_refresh_epoch FROM queue_projections WHERE queue_date=%s", (date.today().isoformat(),)).fetchone()
+        assert task and task['state'] in ('queued', 'leased', 'retrying')
+        assert json.loads(task['payload_json'])['queue_date'] == date.today().isoformat()
+        assert projection and projection['requested_refresh_epoch'] > 0
         db.execute("INSERT INTO study_exercise_revisions(exercise_id,revision,specification_json,specification_hash,created_at) VALUES('choice',2,%s,'new-hash','2026-01-02') ON CONFLICT(exercise_id,revision) DO NOTHING", (json.dumps({**SPEC, 'correct_option_ids': ['b']}),))
         db.execute("UPDATE study_exercises SET current_revision=2 WHERE id='choice'")
     assert client.get(BASE + f'choice/attempts/{attempt_id}/feedback').json()['specification']['correct_option_ids'] == ['a']
