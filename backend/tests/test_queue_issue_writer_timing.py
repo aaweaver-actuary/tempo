@@ -19,9 +19,7 @@ def test_position_writer_timing_preserves_success_and_source_busy_hold(
     from tempo_storage.authored_repertoires import (
         position_study_source,
     )
-    from tempo_storage.study import game_feedback
     from app.study.position_learning import issuance as position_issued_plans
-    from app.services import legacy_study_remediation
 
     payload = {
         "entry_id": 41,
@@ -29,53 +27,48 @@ def test_position_writer_timing_preserves_success_and_source_busy_hold(
         "expected_revision": 4,
         "queue_date": "2026-11-02",
     }
+    original_source = object()
     prepared = queue_next_card.PreparedQueueHead(
-        payload, "position", NS(source=object())
+        payload, "position", NS(source=original_source)
     )
     calls = []
     plan = NS(to_wire=lambda: {"attempt_id": "private-attempt"})
     monkeypatch.setattr(
         queue_commands, "current_study_day", lambda db: payload["queue_date"]
     )
-    monkeypatch.setattr(
-        position_study_source,
-        "fence_position_source",
-        lambda *a: (
-            calls.append("source")
-            or (Hold("position_source_graph_busy") if held else None)
-        ),
-    )
-    monkeypatch.setattr(
-        position_issued_plans,
-        "issue_in_borrowed_transaction",
-        lambda *a: calls.append("plan") or plan,
-    )
+    def fence_original(database, source):
+        assert source is original_source
+        calls.append("source")
+        return Hold("position_source_graph_busy") if held else None
+
+    monkeypatch.setattr(position_study_source, "fence_position_source", fence_original)
+    def apply_original(database, proposal):
+        assert proposal is prepared.proposal
+        calls.append("plan")
+        return plan
+
+    monkeypatch.setattr(position_issued_plans, "issue_in_borrowed_transaction", apply_original)
     monkeypatch.setattr(
         queue_commands, "_lock_attempt_card", lambda *a: calls.append("card")
     )
-    monkeypatch.setattr(
-        queue_commands.queue_storage, "is_postgres_connection", lambda *a: False
-    )
+    monkeypatch.setattr(queue_commands, "lock_queue_date_for_position", lambda *a: calls.append("queue"))
+    monkeypatch.setattr(queue_commands.queue_storage, "retired_issuance_target", lambda *a: False)
     monkeypatch.setattr(queue_commands.queue_storage, "issued_origin", lambda *a: True)
     monkeypatch.setattr(
         queue_commands.queue_storage,
         "prepare_queue_head",
         lambda *a: lambda day: {"id": 41},
     )
-    monkeypatch.setattr(
-        queue_commands,
-        "validate_available_attempt",
-        lambda *a: calls.append("validate"),
-    )
-    monkeypatch.setattr(
-        legacy_study_remediation, "bind_first_issuance", lambda *a: calls.append("bind")
-    )
+    def validate_original(database, entry, card, revision, *, current_day):
+        assert (entry, card, revision, current_day) == (41, "private-card", 4, payload["queue_date"])
+        calls.append("validate")
+
+    monkeypatch.setattr(queue_commands, "validate_available_attempt", validate_original)
     monkeypatch.setattr(
         queue_commands.queue_storage,
         "stamp_issued_head",
         lambda *a: calls.append("stamp") or True,
     )
-    monkeypatch.setattr(game_feedback, "installed", lambda *a: False)
     monkeypatch.setenv("TEMPO_TRAINING_TIMINGS", timing or "1")
     with (
         background_runtime.measure_training_timing(
@@ -92,7 +85,7 @@ def test_position_writer_timing_preserves_success_and_source_busy_hold(
         "position_study_hold": "position_source_graph_busy" if held else None,
     }
     assert calls == (
-        ["source"] if held else ["source", "plan", "card", "validate", "bind", "stamp"]
+        ["source"] if held else ["source", "plan", "card", "queue", "validate", "stamp"]
     )
     if measurement is not None:
         assert set(measurement["stages_ms"]) == (
