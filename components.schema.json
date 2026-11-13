@@ -165,7 +165,8 @@
               "integrity",
               "opening_graph",
               "pgn_import",
-              "card_deletion"
+              "card_deletion",
+              "canonical_prefix"
             ]
           }
         }

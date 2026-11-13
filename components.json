@@ -2,6 +2,74 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "canonical-prefix-application",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/canonical_prefix.py#prefix_projection",
+        "backend/app/services/canonical_prefix.py#read_prefix",
+        "backend/app/services/canonical_prefix.py#ensure_line_in_scope",
+        "backend/app/services/canonical_prefix.py#certify_admitted_route",
+        "backend/app/services/canonical_prefix.py#ensure_batch_lines_in_scope"
+      ],
+      "dependencies": [
+        "canonical-prefix-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/canonical_prefix.py"
+      ],
+      "ownershipRole": "Validate and certify canonical prefix scope",
+      "dependencyNotes": [
+        "Uses python-chess, position identity and caller database; main, PGN, branch, card, repair, retained mutation and analysis callers remain external."
+      ],
+      "censusScope": "canonical_prefix"
+    },
+    {
+      "id": "canonical-prefix-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/authored_repertoires/canonical_prefix",
+      "publicExports": [
+        "database/tempo_storage/authored_repertoires/canonical_prefix/scope.py#prefix_row",
+        "database/tempo_storage/authored_repertoires/canonical_prefix/scope.py#line_anchor",
+        "database/tempo_storage/authored_repertoires/canonical_prefix/scope.py#preview_source_revision",
+        "database/tempo_storage/authored_repertoires/canonical_prefix/scope.py#write_positions"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/authored_repertoires/canonical_prefix/__init__.py",
+        "database/tempo_storage/authored_repertoires/canonical_prefix/scope.py"
+      ],
+      "ownershipRole": "Read prefix and persist certified positions",
+      "dependencyNotes": [
+        "Caller-connection SQL optionally locks repertoire metadata, reads anchors only at current scope source revision, and upserts positions with source-revision and route-order replacement guard."
+      ],
+      "censusScope": "canonical_prefix"
+    },
+    {
       "id": "card-deletion-application",
       "type": "integration",
       "maintainer": "Tempo",

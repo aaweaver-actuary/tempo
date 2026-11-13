@@ -401,8 +401,16 @@ operations include tombstones, retention, task cancellation, queue, graph and
 evidence mutations. Mapping does not authorize deletion or establish native proof.
 The inherited legacy fixture and three focused PGN failures remain unresolved.
 
-At this base revision, 192 of 291 tracked Python files in those trees remain
-outside the combined 99-file selections. The registry alone assigns owners;
+A fifteenth selection maps canonical prefix scope and its storage adapter. The
+application checks routes and positions with python-chess; caller-connection SQL
+optionally locks repertoire metadata, reads current-revision anchors and guards
+position replacement by source revision and route order. Main, PGN, branch, card,
+repair, retained mutation and analysis consumers remain external edges. This is a
+source map, not a native or runtime qualification. The inherited legacy fixture and
+three focused PGN failures remain unresolved.
+
+At this base revision, 189 of 291 tracked Python files in those trees remain
+outside the combined 102-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover
