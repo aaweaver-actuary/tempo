@@ -2,6 +2,100 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "repertoire-conflict-policy",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/studies",
+      "publicExports": [
+        "backend/app/studies/repertoire_conflicts.py#trained_move_index_from_snapshot",
+        "backend/app/studies/repertoire_conflicts.py#conflicts_from_snapshot"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/studies/__init__.py",
+        "backend/app/studies/repertoire_conflicts.py"
+      ],
+      "ownershipRole": "Compute conflicts from supplied line snapshots",
+      "dependencyNotes": [
+        "Uses python-chess and four-entry cache on immutable six-field line tuples; PGN validation and legacy composition consume it without database access."
+      ],
+      "censusScope": "repertoire_conflicts"
+    },
+    {
+      "id": "repertoire-conflict-composition",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/repertoire_conflicts.py#trained_move_index",
+        "backend/app/services/repertoire_conflicts.py#find_repertoire_conflicts"
+      ],
+      "dependencies": [
+        "repertoire-conflict-policy",
+        "repertoire-line-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/repertoire_conflicts.py"
+      ],
+      "ownershipRole": "Compose conflict detection over borrowed reads",
+      "dependencyNotes": [
+        "Reads the line snapshot on caller connection and delegates to supplied-snapshot policy; main is an existing consumer."
+      ],
+      "censusScope": "repertoire_conflicts"
+    },
+    {
+      "id": "repertoire-line-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage",
+      "publicExports": [
+        "database/tempo_storage/repertoire_lines.py#line_snapshot",
+        "database/tempo_storage/repertoire_lines.py#repertoire_presence"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/repertoire_lines.py"
+      ],
+      "ownershipRole": "Read authored repertoire line facts",
+      "dependencyNotes": [
+        "Caller-connection SQL reads stable ID-ordered six-field line tuples and repertoire presence; no transaction or conflict decision is owned here."
+      ],
+      "censusScope": "repertoire_conflicts"
+    },
+    {
       "id": "study-grading-policy",
       "type": "integration",
       "maintainer": "Tempo",

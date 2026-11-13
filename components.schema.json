@@ -176,7 +176,8 @@
               "queue_application",
               "queue_refresh",
               "study_attempt",
-              "study_grading"
+              "study_grading",
+              "repertoire_conflicts"
             ]
           }
         }

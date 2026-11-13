@@ -489,8 +489,14 @@ remain unchanged; attempt and retained presentation consumers remain external.
 This source map does not establish runtime or browser qualification. The nineteen
 previously reported fixture failures remain unresolved.
 
-At this base revision, 135 of 291 tracked Python files in those trees remain
-outside the combined 156-file selections. The registry alone assigns owners;
+A twenty-sixth selection maps supplied-snapshot repertoire conflict computation,
+its borrowed-reader facade and line storage. Existing six-field source identity,
+python-chess, bounded cache, PGN and main consumers remain visible. This source
+map does not establish native or runtime qualification; the nineteen previously
+reported fixture failures remain unresolved.
+
+At this base revision, 131 of 291 tracked Python files in those trees remain
+outside the combined 160-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover
