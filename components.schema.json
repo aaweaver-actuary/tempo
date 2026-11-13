@@ -195,7 +195,8 @@
               "study_control",
               "repertoire_move_verification",
               "analysis_paste",
-              "http_composition"
+              "http_composition",
+              "position_issuance_storage"
             ]
           }
         }
