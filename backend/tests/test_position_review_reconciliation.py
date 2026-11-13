@@ -46,6 +46,54 @@ def names(store):
     return [call[0] for call in store.calls]
 
 
+@pytest.mark.parametrize("attempt_id", [None, "", "different-attempt"])
+def test_position_lock_rejects_unbound_attempt_before_queue_or_attempt_lock(monkeypatch, attempt_id):
+    from app.services import learning_review_adapter as adapter_module
+    from tempo_storage.study import position_first_responses as positions
+
+    adapter = adapter_module.LearningReviewAdapter(object(), None)
+    adapter._position_fence = SimpleNamespace(preparation=SimpleNamespace(plan=SimpleNamespace(attempt_id="original")))
+    monkeypatch.setattr(positions, "lock_original_queue", lambda *_: pytest.fail("unexpected queue lock"))
+    monkeypatch.setattr(positions, "lock_attempt", lambda *_: pytest.fail("unexpected attempt lock"))
+    with pytest.raises(review.ReviewFailure) as caught:
+        adapter.lock_position_attempt(replace(_fixture.command(), attempt_id=attempt_id))
+    assert caught.value.status_code == 409 and caught.value.code == "opening_evidence_conflict"
+
+
+@pytest.mark.parametrize("queue_available,attempt_available", [(True, True), (False, True), (True, False)])
+def test_position_lock_uses_original_queue_then_exact_attempt(monkeypatch, queue_available, attempt_available):
+    from app.services import learning_review_adapter as adapter_module
+    from tempo_storage.study import position_first_responses as positions
+
+    database, plan = object(), SimpleNamespace(attempt_id="original")
+    adapter = adapter_module.LearningReviewAdapter(database, None)
+    adapter._position_fence = SimpleNamespace(preparation=SimpleNamespace(plan=plan))
+    locks = []
+    monkeypatch.setattr(positions, "lock_original_queue", lambda *args: locks.append(("queue", args)) or queue_available)
+    monkeypatch.setattr(positions, "lock_attempt", lambda *args: locks.append(("attempt", args)) or attempt_available)
+    command = replace(_fixture.command(), attempt_id="original")
+    if queue_available and attempt_available:
+        adapter.lock_position_attempt(command)
+    else:
+        with pytest.raises(review.ReviewFailure) as caught:
+            adapter.lock_position_attempt(command)
+        assert caught.value.status_code == 409 and caught.value.code == "opening_evidence_conflict"
+    assert locks == [("queue", (database, plan))] + (
+        [("attempt", (database, "original"))] if queue_available else []
+    )
+
+
+def test_position_lock_requires_existing_fence_before_any_lock(monkeypatch):
+    from app.services import learning_review_adapter as adapter_module
+    from tempo_storage.study import position_first_responses as positions
+
+    monkeypatch.setattr(positions, "lock_original_queue", lambda *_: pytest.fail("unexpected queue lock"))
+    monkeypatch.setattr(positions, "lock_attempt", lambda *_: pytest.fail("unexpected attempt lock"))
+    with pytest.raises(review.ReviewFailure) as caught:
+        adapter_module.LearningReviewAdapter(object(), None).lock_position_attempt(_fixture.command())
+    assert caught.value.status_code == 409 and caught.value.code == "opening_evidence_conflict"
+
+
 def test_position_receipt_requires_resolved_attempt_before_any_write(monkeypatch):
     from app.services import learning_review_adapter as adapter_module
 

@@ -541,10 +541,21 @@ class LearningReviewAdapter:
             position_first_responses as positions,
         )
 
-        plan = self._position_fence.preparation.plan
+        fence = self._position_fence
+        if fence is None:
+            raise learning.ReviewFailure(
+                409, "Original position attempt is unavailable", code="opening_evidence_conflict"
+            )
+        plan = fence.preparation.plan
+        attempt_id = command.attempt_id
+        if not attempt_id or attempt_id != plan.attempt_id:
+            raise learning.ReviewFailure(
+                409, "Completion must identify the same aggregate review attempt and queue entry",
+                code="opening_evidence_conflict",
+            )
         if not positions.lock_original_queue(
             self.database, plan
-        ) or not positions.lock_attempt(self.database, command.attempt_id):
+        ) or not positions.lock_attempt(self.database, attempt_id):
             raise learning.ReviewFailure(
                 409,
                 "Original position attempt is busy or unavailable",
