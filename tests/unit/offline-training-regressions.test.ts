@@ -81,7 +81,7 @@ it("C21 holds an ambiguous phone exercise and its repeat while syncing an unrela
   const child = { ...base, localEntryId: 2, parentLocalEntryId: 1, cardId: "held", attemptId: "repeat" };
   const unrelated = { ...base, localEntryId: 3, cardId: "opening", attemptId: "opening-original" };
   storage.stores.training.set("prepared-daily-queue", { localDate: "2026-09-26", preparedAt: base.completedAt, cards: [], nextTemporaryId: 100, attempts: [held, child, unrelated] });
-  const fetcher = vi.fn(async () => Response.json({ review_id: 41, requeue_entry_id: null })); vi.stubGlobal("fetch", fetcher);
+  const fetcher = vi.fn(async (_input: RequestInfo | URL) => Response.json({ review_id: 41, requeue_entry_id: null })); vi.stubGlobal("fetch", fetcher);
   try {
     const result = await (await import("../../app/lib/offline-training")).replayOfflineAttempts();
     expect(result?.attempts.slice(0, 2)).toEqual([held, child]);
