@@ -39,7 +39,7 @@ help:
 	@printf '%s\n' 'Browser scopes exclude recovery/backup checks; make full still requires them all.'
 	@printf '%s\n' 'Docker recovery: make docker-durability (ordinary PostgreSQL durability without browser/lifecycle)'
 	@printf '%s\n' 'Deployment rehearsal: make docker-lifecycle (complete CLI recovery/deployment lifecycle)'
-	@printf '%s\n' 'Historical schema 63 upgrade: make docker-lifecycle-current (schema 63 source only)'
+	@printf '%s\n' 'Current schema 65 to 66 upgrade: make docker-lifecycle-current (owned fixture only)'
 	@printf '%s\n' 'Focused files: make unit-file FILE=tests/unit/example.test.ts'
 	@printf '%s\n' '               make python-file FILE=backend/tests/test_services.py'
 	@printf '%s\n' '               make ui-file FILE=games-board-context.spec.ts'
@@ -98,7 +98,7 @@ docker-lifecycle:
 	node database/tests/test-postgres-docker.mjs --mode lifecycle
 
 docker-lifecycle-current:
-	node scripts/lifecycle-source-preflight.mjs --current63
+	node scripts/lifecycle-source-preflight.mjs --current65
 	node scripts/check-test-capabilities.mjs --docker --loopback --workspace-mount
 	node database/tests/test-postgres-docker.mjs --mode lifecycle-current
 

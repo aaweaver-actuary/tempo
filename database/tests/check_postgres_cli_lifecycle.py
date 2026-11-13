@@ -19,7 +19,7 @@ from pathlib import Path
 
 import psycopg
 
-from database.tooling.apply_postgres_migrations import MIGRATIONS, migration_source
+from database.tooling.apply_postgres_migrations import MIGRATIONS, apply_migrations, migration_source
 from database.tooling.provision_postgres_roles import provision
 from tempo_storage.ddl.schema_version import POSTGRES_SCHEMA_VERSION
 
@@ -91,6 +91,7 @@ def main():
     dsn = os.environ["TEMPO_POSTGRES_ADMIN_URL"]
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--seed65", action="store_true", help="Initialize a fresh, owned schema-65 lifecycle fixture")
     mode.add_argument("--seed59", action="store_true", help="Seed populated historical data and advance only through schema 59")
     mode.add_argument("--seed-defense-v2", metavar="TARGET", help="Seed and describe the owned all-group Defense fixture")
     mode.add_argument("--seed-defense-v2-15", metavar="TARGET", help="Seed the owned fifteen-card mixed Defense fixture")
@@ -102,6 +103,37 @@ def main():
     mode.add_argument("--seed-abandon-orphan", action="store_true", help="Seed one fixed synthetic orphan after the owned CLI target upgrades")
     mode.add_argument("--abandon-inspection", action="store_true", help="Read retained origin/receipt bytes and complete Study history for abandonment proof")
     options = parser.parse_args()
+    if options.seed65:
+        from urllib.parse import urlparse
+        parsed = urlparse(dsn)
+        if (not re.fullmatch(r'tempo-pg-regressions-[a-z0-9-]+-cli', os.environ.get('TEMPO_TEST_COMPOSE_PROJECT', ''))
+                or parsed.hostname != 'postgres' or parsed.path != '/tempo' or parsed.username != 'postgres'
+                or POSTGRES_SCHEMA_VERSION != 65):
+            raise RuntimeError('Schema-65 fixture requires the owned CLI database and schema-65 maintenance image')
+        with psycopg.connect(dsn) as database:
+            if database.execute("SELECT count(*) FROM information_schema.tables WHERE table_schema='public'").fetchone()[0]:
+                raise RuntimeError('Schema-65 fixture refuses a nonempty database')
+        # Use the actual predecessor image's registered migration owner. This is
+        # initialization of an empty disposable database, not a historical upgrade proof.
+        apply_migrations(dsn)
+        with psycopg.connect(dsn) as database:
+            versions = [row[0] for row in database.execute('SELECT version FROM tempo_schema_migrations ORDER BY version')]
+            if versions != list(range(1, 66)):
+                raise RuntimeError('Schema-65 fixture ledger differs')
+            database.execute("INSERT INTO settings(id) VALUES (1)")
+            database.execute("INSERT INTO tactic_rotation(id) VALUES (1)")
+            database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('cli-preserved','CLI preserved','regression','2000-01-01')")
+            database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('__game_tactics__','Game tactics','regression','2000-01-01')")
+            for card, repertoire, content in [('cli-history', 'cli-preserved', 'opening'), ('cli-legacy-tactical-miss', '__game_tactics__', 'tactics')]:
+                database.execute("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,archived,content_type)
+                  VALUES(%s,%s,'response','rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1','["e2e4"]','mature','2000-01-01',1,%s)""", (card,repertoire,content))
+            database.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval) VALUES('cli-history','correct','2000-01-01',1,2)")
+            database.execute("INSERT INTO daily_queue(queue_date,card_id,position,status) VALUES('2000-01-01','cli-history',0,'complete')")
+            database.execute("INSERT INTO daily_queue(queue_date,card_id,position,status,card_bucket) VALUES('2000-01-01','cli-legacy-tactical-miss',1,'complete','tactics')")
+            database.execute("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,response_json) VALUES('cli-preserved-receipt','fixture','preserved','complete','{\"ok\":true}')")
+        provision(dsn, Path('/run/secrets/reader_password').read_text().strip(), Path('/run/secrets/writer_password').read_text().strip())
+        print('Seeded owned schema 65 with retained Study, Tactics and receipt history')
+        return
     if options.refresh_defense_v2_15:
         if not re.fullmatch(r'tempo-pg-regressions-[a-z0-9-]+-cli', os.environ.get('TEMPO_TEST_COMPOSE_PROJECT', '')):
             raise RuntimeError('Defense fixture requires the owned CLI test project')
@@ -314,6 +346,8 @@ def main():
                 "receipt": "SELECT operation_id,command_name,request_hash,state,response_json,error_json,created_at,updated_at FROM operation_receipts WHERE operation_id='cli-preserved-receipt'",
             }.items():
                 history[name] = database.execute(statement).fetchall()
+            if os.environ.get("TEMPO_CLI_CURRENT65_SNAPSHOT") == "1":
+                history["cards"] = database.execute("SELECT row_to_json(c) FROM cards c WHERE id IN ('cli-history','cli-legacy-tactical-miss') ORDER BY id").fetchall()
             print(json.dumps(history, default=str))
         return
     with psycopg.connect(dsn) as database:

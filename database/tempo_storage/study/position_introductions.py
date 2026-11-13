@@ -53,6 +53,17 @@ class PreparedIntroduction:
         object.__setattr__(self, '_seal', seal)
 
 
+def canonical_introduction_admitted(database, *, card_id: str, revision: int, day: str, repertoire_id: str) -> bool:
+    """Prove the existing physical admission inside the caller's transaction."""
+    row = database.execute_native(
+        """SELECT 1 FROM cards c JOIN daily_queue q ON q.card_id=c.id
+            WHERE c.id=%s AND c.revision=%s AND c.introduced_at IS NOT NULL
+              AND q.queue_date=%s AND q.admission_repertoire_id=%s AND q.status='queued' LIMIT 1""",
+        (card_id, revision, day, repertoire_id),
+    ).fetchone()
+    return bool(row)
+
+
 def prepare_introduction(source, card_id, *, target=None):
     """Project the bounded exact decisions and aliases of an admitted card."""
     from tempo_storage.authored_repertoires.position_study_source import PreparedPositionSource

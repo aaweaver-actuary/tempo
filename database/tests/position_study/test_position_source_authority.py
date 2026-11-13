@@ -185,3 +185,34 @@ def test_native_id_only_edit_and_busy_row_cannot_cross_fence():
     finally:
         with psycopg.connect(dsn, autocommit=True) as cleanup:
             cleanup.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(schema)))
+
+
+def test_foreign_structural_and_forged_owner_values_never_authorize_writer(monkeypatch):
+    db = setup(monkeypatch)
+    prepared = _source_preparation.prepare_position_source(db, 'rep')
+    foreign = SimpleNamespace(snapshot=prepared.snapshot, routes=prepared.routes,
+                              authored_token=prepared.authored_token)
+    assert owner.fence_position_source(db, foreign).reason == 'position_source_owner_preparation_required'
+    forged = object.__new__(owner.PreparedPositionSource)
+    for name in ('snapshot', 'routes', 'authored_token'):
+        object.__setattr__(forged, name, getattr(prepared, name))
+    assert owner.fence_position_source(db, forged).reason == 'position_source_owner_preparation_required'
+    object.__setattr__(forged, '_seal', object())
+    assert owner.fence_position_source(db, forged).reason == 'position_source_owner_preparation_required'
+    assert owner.fence_position_source(db, prepared) is None
+
+
+def test_owner_publication_facts_are_detached_and_preserve_full_provenance(monkeypatch):
+    db = setup(monkeypatch)
+    prepared = _source_preparation.prepare_position_source_with_facts(db, 'rep')
+    assert not isinstance(prepared, Hold)
+    token = prepared.prepared.authored_token
+    original = prepared.publication_facts()
+    assert set(original) == {'repertoire', 'lines', 'cards', 'memberships', 'graphs'}
+    assert token.original_source_digest == prepared.prepared.snapshot.membership.digest
+    original['lines'][0]['moves_json'] = '[]'
+    original['cards'][0]['revision'] += 1
+    detached = prepared.publication_facts()
+    assert detached['lines'][0]['moves_json'] != '[]'
+    assert detached['cards'][0]['revision'] == db.facts['cards'][0]['revision']
+    assert owner.fence_position_source(db, prepared.prepared) is None

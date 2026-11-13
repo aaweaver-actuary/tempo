@@ -12,7 +12,7 @@ import { schemaVersionFromSource, validateTarget, validateContainers, deployment
   CommandExecutionError, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, sourceFingerprint, sourceMatchesFingerprint } from "../../scripts/tempo-deployment.mjs";
 import { assessMigrationRecovery, cut62WitnessName, validateCut62Preflight, assertColdPreflightContainers, assertOfflineBuildContainers, cut62MountDirectory, requirePrivateCut62Witness, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
 import { parseArguments, ensureDocker } from "../../scripts/tempo-cli.mjs";
-import { authenticateManagedSettlement, inspectRegisteredIsolation, matchesManagedPinnedHelper, runManagedPinnedChild } from "../../scripts/tempo-managed-isolation.mjs";
+import { cut62WitnessName as managedCut62WitnessName, authenticateManagedSettlement, inspectRegisteredIsolation, matchesManagedPinnedHelper, runManagedPinnedChild } from "../../scripts/tempo-managed-isolation.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
 import { assertDependencyCorrectionOrder } from "../../scripts/check-tempo-cli.mjs";
@@ -2843,6 +2843,29 @@ test("schema 62 comparator accepts only the exact guarded crossing", () => {
     assert.throws(() => cut62WitnessName({ ...guard, ...change }), /Unsupported/);
 });
 
+test("schema 62 comparator preserves original matrix across both public callers", () => {
+  // Frozen pre-extraction behavior: coercion, UUID acceptance, and error text are historical API.
+  function original(guard) {
+    const crossing = guard.starting_schema < 62 && guard.intended_schema >= 62;
+    if (!crossing) return null;
+    if (![59, 61].includes(guard.starting_schema) || guard.intended_schema !== 62 ||
+        !/^[0-9a-f-]{36}$/i.test(guard.attempt_id ?? ''))
+      throw new Error('Unsupported schema 62 crossing; preserve the original backup and fix forward.');
+    return `cut62-${guard.attempt_id}.json`;
+  }
+  const outcome = (fn, guard) => { try { return {value: fn(guard)}; } catch (error) { return {name:error.name, message:error.message}; } };
+  const schemas = [undefined, null, -1, 58, 59, 60, 61, 62, 63, 64, 65, '59', '62', 'bad'];
+  const ids = [undefined, null, '', '01234567-89ab-cdef-0123-456789abcdef',
+    '01234567-89AB-CDEF-0123-456789ABCDEF', 'x'.repeat(36), '-'.repeat(36), '../witness'];
+  for (const starting_schema of schemas) for (const intended_schema of schemas) for (const attempt_id of ids) {
+    const guard = {starting_schema, intended_schema, attempt_id};
+    const expected = outcome(original, guard);
+    assert.deepEqual(outcome(cut62WitnessName, guard), expected);
+    assert.deepEqual(outcome(managedCut62WitnessName, guard), expected);
+  }
+  assert.strictEqual(cut62WitnessName, managedCut62WitnessName);
+});
+
 test("schema 62 retry requires an existing private regular witness", t => {
   const path = join(directory(t), "original.json");
   assert.throws(() => requirePrivateCut62Witness(path), /missing/);
@@ -3013,6 +3036,22 @@ test("schema 65 accepts only schema 64 or its own pending retry", () => {
   }
   for (const current of [62, 63])
     assert.throws(() => validateCut62Preflight({ applied_versions: [current], expected_version: 65 }, null), /Unsupported/);
+});
+
+test("schema 66 allows only current 65 or completed 66 and its own retry", () => {
+  for (const current of [65, 66]) {
+    const status = { applied_versions: [current], expected_version: 66 };
+    for (const guard of [null, {state:'pending', starting_schema:65, intended_schema:66},
+      {state:'pending', starting_schema:66, intended_schema:66}])
+      assert.doesNotThrow(() => validateCut62Preflight(status, guard));
+    for (const guard of [{state:'pending', starting_schema:61, intended_schema:62},
+      {state:'pending', starting_schema:64, intended_schema:65},
+      {state:'pending', starting_schema:64, intended_schema:66},
+      {state:'pending', starting_schema:65, intended_schema:67}])
+      assert.throws(() => validateCut62Preflight(status, guard), /Unsupported/);
+  }
+  for (const [current, expected] of [[59,66],[61,66],[62,66],[63,66],[64,66],[67,66],[65,67]])
+    assert.throws(() => validateCut62Preflight({applied_versions:[current], expected_version:expected}, null), /Unsupported/);
 });
 
 test("schema 63 migration preserves the original history guard through a verification retry", async t => {

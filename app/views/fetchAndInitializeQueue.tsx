@@ -313,9 +313,14 @@ async function loadTodayQueueWithRetry(
 export async function fetchAndInitializeQueue(
   advance = false,
   options: { preparePhoneQueue?: boolean; replaySavedReviews?: boolean; preservePreparedAttempt?: boolean;
-    timeoutMs?: number; signal?: AbortSignal; retryPreparation?: boolean; expectedAttempt?: { attemptId?: string; generation: number } } = {},
+    timeoutMs?: number; signal?: AbortSignal; retryPreparation?: boolean; expectedAttempt?: { attemptId?: string; generation: number; entryKey?: string } } = {},
 ): Promise<QueueInitializationResult> {
   if (!usesLocalApi()) return "superseded";
+  const expectedAttemptMatches = () => !options.expectedAttempt ||
+    (useTrainingStore.getState().attempt.attemptId === options.expectedAttempt.attemptId &&
+      useTrainingStore.getState().attempt.generation === options.expectedAttempt.generation &&
+      (options.expectedAttempt.entryKey === undefined || useTrainingStore.getState().attempt.entryKey === options.expectedAttempt.entryKey));
+  if (!expectedAttemptMatches()) return "superseded";
   const generation = ++requestGeneration;
   activeQueueController?.abort();
   const controller = new AbortController();
@@ -325,9 +330,6 @@ export async function fetchAndInitializeQueue(
   if (options.signal?.aborted) cancelAcquisition();
   const deadline = setTimeout(() => controller.abort(
     new QueueProcessingError("Queue acquisition timed out. Retry loading the queue to check its result.")), options.timeoutMs ?? 15_000);
-  const expectedAttemptMatches = () => !options.expectedAttempt ||
-    (useTrainingStore.getState().attempt.attemptId === options.expectedAttempt.attemptId &&
-      useTrainingStore.getState().attempt.generation === options.expectedAttempt.generation);
   if (!options.preservePreparedAttempt) useTrainingStore.setState({ queueReadiness: "loading", queueStatus: { kind: "pending" } });
   let queueInitialized = false;
   let failedOperation = "process today queue";

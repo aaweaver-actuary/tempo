@@ -5,7 +5,7 @@ from types import SimpleNamespace as NS
 
 import pytest
 
-from app.services import postgres_opening_evidence as evidence
+from app.study import position_checkpoint as evidence
 from tempo_storage.study import position_first_responses as storage
 
 
@@ -90,8 +90,6 @@ def test_correct_stays_pending_and_grade_failure_aborts(monkeypatch):
 
 def test_standalone_checkpoint_bridges_original_ply_and_replays_guided_correction(monkeypatch):
     import json
-    import sys
-    from types import ModuleType
     from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
     from tempo_evidence_math import opening_position_key
     from tempo_storage.authored_repertoires import position_study_source
@@ -118,15 +116,16 @@ def test_standalone_checkpoint_bridges_original_ply_and_replays_guided_correctio
     # browser's unverified disposition.
     source = NS(routes=[NS(decisions=[NS(definition=slot.definition)])], authored_token=NS(authored_digest='authored'))
     monkeypatch.setattr(position_study_source, 'fence_position_source', lambda *_: None)
-    grade_module = ModuleType('tempo_storage.study.position_grade_effects')
+    from app.study.position_learning import grade_effects
     grades = []
-    grade_module.apply_in_borrowed_transaction = lambda _db, attempt, ids, **kw: grades.append((attempt, ids))
-    monkeypatch.setitem(sys.modules, grade_module.__name__, grade_module)
+    monkeypatch.setattr(grade_effects, 'apply_in_borrowed_transaction',
+                        lambda _db, attempt, ids, **kw: grades.append((attempt, ids)))
     from tempo_storage.study import position_owner_epoch
     monkeypatch.setattr(position_owner_epoch, 'owner_mode', lambda *_: NS(disposition='position', epoch='epoch'))
-    monkeypatch.setattr(evidence, 'begin_position_checkpoint', lambda _db, prep: evidence.PositionCheckpointFence(prep, _db, storage, 'authored', evidence._POSITION_CHECKPOINT_SEAL))
-    monkeypatch.setattr(storage, 'lock_original_queue', lambda *_: True)
-    monkeypatch.setattr(storage, 'lock_attempt', lambda *_: True)
+    lock_order = []
+    monkeypatch.setattr(evidence, 'begin_position_checkpoint', lambda _db, prep: lock_order.append('owner') or evidence.PositionCheckpointFence(prep, _db, storage, 'authored', evidence._POSITION_CHECKPOINT_SEAL))
+    monkeypatch.setattr(storage, 'lock_original_queue', lambda *_: lock_order.append('card/day/queue') or True)
+    monkeypatch.setattr(storage, 'lock_attempt', lambda *_: lock_order.append('attempt') or True)
     monkeypatch.setattr(storage, 'acceptance_clock', lambda *_: (datetime.now(timezone.utc), 'UTC'))
     monkeypatch.setattr(evidence, '_validate_checkpoint_scope', lambda *_, **__: None)
     monkeypatch.setattr(evidence, '_persist_observations', lambda *_: None)
@@ -153,6 +152,7 @@ def test_standalone_checkpoint_bridges_original_ply_and_replays_guided_correctio
                        position_preparation=evidence.PositionCheckpointPreparation(req, frozen, source, evidence._POSITION_CHECKPOINT_SEAL))
     result = evidence.commit_standalone_checkpoint(None, prepared)
     assert result['persisted'] and len(grades) == 1
+    assert lock_order == ['owner', 'card/day/queue', 'attempt']
     assert saved[0]['payload_json']['original_ply'] == 6
     assert saved[0]['payload_json']['decision_index'] == 0
     assert saved[0]['payload_json']['disposition'] == 'wrong'
@@ -192,19 +192,44 @@ def test_public_preparation_and_owner_fence_bind_writer(monkeypatch):
                      'card_id':'card', 'card_revision':4, 'trained_color':'white',
                      'decisions':[{'decision_id':'d'*64, 'decision_index':0, 'move_offset':6,
                                    'fen':frozen.decision_slots[0].fen, 'expected_uci':'e2e4'}]}})
+    calls = []
     class Cursor:
         def fetchone(self): return (True,)
     class DB:
         read_only = False
         raw = NS(info=NS(transaction_status=NS(name='INTRANS')))
-        def execute_native(self, *_): return Cursor()
+        def execute_native(self, sql, params):
+            calls.append(('lock', sql, params))
+            return Cursor()
     db = DB()
     monkeypatch.setattr(storage, 'has_position_tables', lambda *_: True)
-    monkeypatch.setattr(position_issued_plans, 'replay_exact_attempt', lambda *_: frozen)
+    monkeypatch.setattr(position_issued_plans, 'replay_exact_attempt', lambda *_: calls.append(('replay',)) or frozen)
     monkeypatch.setattr(_source_preparation, 'prepare_position_source', lambda *_: Hold('source_changed'))
     prep = evidence.prepare_position_checkpoint(db, req)
+    calls.clear()
     fence = evidence.begin_position_checkpoint(db, prep)
     assert fence.preparation.plan is frozen and fence.authored_digest == 'authored'
+    assert [call[0] for call in calls] == ['replay', 'lock']
+    assert calls[1][2] == ('tempo:position-owner:r',)
+    calls.clear()
+    changed = req.model_copy(update={'origin_queue_entry_id': 22})
+    bad_scope = evidence.PositionCheckpointPreparation(changed, frozen, Hold('source_changed'), evidence._POSITION_CHECKPOINT_SEAL)
+    with pytest.raises(evidence.EvidenceConflict, match='scope differ'):
+        evidence.begin_position_checkpoint(db, bad_scope)
+    assert [call[0] for call in calls] == ['replay']
+    monkeypatch.setattr(position_issued_plans, 'replay_exact_attempt', lambda *_: calls.append(('changed',)) or None)
+    calls.clear()
+    with pytest.raises(evidence.EvidenceConflict, match='issuance changed'):
+        evidence.begin_position_checkpoint(db, prep)
+    assert calls == [('changed',)]
+    monkeypatch.setattr(position_issued_plans, 'replay_exact_attempt', lambda *_: frozen)
+    from tempo_storage.study import position_owner_epoch
+    monkeypatch.setattr(position_owner_epoch, 'shared_owner_fence', lambda *_: 'busy')
+    with pytest.raises(evidence.EvidenceConflict, match='owner is busy'):
+        evidence.begin_position_checkpoint(db, prep)
+    for unavailable in (object(), NS(read_only=True), NS(read_only=False, raw=NS(info=NS(transaction_status=NS(name='IDLE'))))):
+        with pytest.raises(evidence.EvidenceConflict, match='requires a borrowed writer'):
+            evidence.begin_position_checkpoint(unavailable, prep)
     with pytest.raises(evidence.EvidenceConflict):
         evidence.commit_position_checkpoint(DB(), fence, [])
     with pytest.raises(evidence.EvidenceConflict):
@@ -272,7 +297,7 @@ def test_foreground_preparation_validates_issued_manifest_not_physical(monkeypat
         'origin_queue_entry_id':21, 'queue_entry_id':21, 'started_at':now,
         'study_timezone':'UTC', 'manifest':expected, 'events':[]})
     monkeypatch.setattr(evidence.storage, 'postgres_is_configured', lambda: True)
-    monkeypatch.setattr(evidence.storage, 'read_connection', lambda: nullcontext(object()))
+    monkeypatch.setattr(evidence, 'read_connection', lambda: nullcontext(object()))
     monkeypatch.setattr(evidence.storage, 'presentation_context', lambda *_: {'id':13})
     monkeypatch.setattr(evidence, '_manifest_snapshot', lambda row: row)
     monkeypatch.setattr(evidence, 'decision_manifest', lambda *_: scope)
@@ -337,3 +362,29 @@ def test_all_displayed_events_map_to_issued_ordinals_including_repeated_position
     evidence.commit_position_checkpoint(db, fence, events)
     assert [(r['decision_index'], r['original_ply']) for r in saved] == [(0,4), (1,6), (2,8)]
     assert len({r['event_id'] for r in saved}) == 3
+
+
+def test_shared_owner_fence_requires_writer_and_preserves_lock_identity():
+    from tempo_storage.study.position_owner_epoch import borrowed_writer_available, shared_owner_fence
+
+    class DB:
+        def __init__(self, *, read_only=False, status='INTRANS', acquired=True):
+            self.read_only = read_only
+            self.raw = NS(info=NS(transaction_status=NS(name=status)))
+            self.acquired = acquired
+            self.calls = []
+        def execute_native(self, statement, parameters):
+            self.calls.append((statement, parameters))
+            return NS(fetchone=lambda: (self.acquired,))
+
+    for db in (object(), DB(read_only=True), DB(status='IDLE')):
+        assert not borrowed_writer_available(db)
+        assert shared_owner_fence(db, 'r') == 'writer_unavailable'
+        if isinstance(db, DB):
+            assert db.calls == []
+    busy = DB(acquired=False)
+    assert shared_owner_fence(busy, 'r') == 'busy'
+    db = DB()
+    assert borrowed_writer_available(db)
+    assert shared_owner_fence(db, 'r') == 'acquired'
+    assert db.calls == [('SELECT pg_try_advisory_xact_lock_shared(hashtextextended(%s,0))', ('tempo:position-owner:r',))]

@@ -208,6 +208,24 @@ def test_native_two_decisions_and_late_failure_rollback():
             conn.execute('CREATE TABLE review_attempt_receipts (attempt_id text, queue_entry_id bigint, card_id text, review_id bigint, scheduling_status text)')
             conn.execute('CREATE TABLE reviews (id bigint, card_id text, source_kind text, source_ref text, invalidated_at text)')
             rep, epoch = plan.target.key.repertoire_id, plan.owner_epoch
+            # The checkpoint's shared fence conflicts with the owner's exclusive
+            # writer, and rollback releases the exact transaction-scoped key.
+            from tempo_storage.study.position_owner_epoch import owner_lock_key, shared_owner_fence
+            with psycopg.connect(dsn, autocommit=True) as first, psycopg.connect(dsn, autocommit=True) as second:
+                with pytest.raises(RuntimeError, match='release checkpoint fence'):
+                    with first.transaction():
+                        assert shared_owner_fence(Borrowed(first), rep) == 'acquired'
+                        with second.transaction():
+                            assert second.execute('SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))',
+                                                  (owner_lock_key(rep),)).fetchone()[0] is False
+                        raise RuntimeError('release checkpoint fence')
+                with second.transaction():
+                    assert second.execute('SELECT pg_try_advisory_xact_lock(hashtextextended(%s,0))',
+                                          (owner_lock_key(rep),)).fetchone()[0] is True
+                    with first.transaction():
+                        assert shared_owner_fence(Borrowed(first), rep) == 'busy'
+                with first.transaction():
+                    assert shared_owner_fence(Borrowed(first), rep) == 'acquired'
             conn.execute('INSERT INTO study_position_epochs VALUES (%s,%s,%s,%s)', (rep, epoch, 'authored', now))
             conn.execute("INSERT INTO study_position_owners VALUES (%s,%s,'active',%s)", (rep, epoch, now))
             for index, slot in enumerate(plan.decision_slots):

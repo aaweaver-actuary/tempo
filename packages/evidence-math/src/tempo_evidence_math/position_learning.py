@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Literal
+from typing import Literal, NotRequired, Protocol, TypedDict
 
 import chess
 from ._identity import opening_position_key
@@ -70,6 +70,157 @@ class SourceCertificate:
             required(getattr(self, name), name)
 
 
+# Detached semantic views only. Matching values are not an owner capability:
+# the concrete source owner must prepare and fence its own sealed ticket.
+class PositionSourceMembershipView(Protocol):
+    @property
+    def snapshot_id(self) -> str: ...
+    @property
+    def source_revision(self) -> str: ...
+    @property
+    def digest(self) -> str: ...
+
+
+class PositionDecisionBindingView(Protocol):
+    @property
+    def decision_id(self) -> str: ...
+    @property
+    def repertoire_id(self) -> str: ...
+    @property
+    def position_key(self) -> str: ...
+    @property
+    def selected_response_uci(self) -> str: ...
+    @property
+    def presentation_id(self) -> str: ...
+    @property
+    def presentation_revision(self) -> int: ...
+    @property
+    def repertoire_revision(self) -> int: ...
+    @property
+    def introduction(self) -> Literal["introduced", "unintroduced", "unknown"]: ...
+    @property
+    def introduced_at(self) -> str | None: ...
+    @property
+    def available(self) -> bool: ...
+    @property
+    def introduction_matches_current_content(self) -> bool: ...
+    @property
+    def route_id(self) -> str | None: ...
+    @property
+    def route_ply(self) -> int | None: ...
+
+
+class PositionSourceSnapshotView(Protocol):
+    @property
+    def membership(self) -> PositionSourceMembershipView: ...
+    @property
+    def decision_presentations(self) -> tuple[PositionDecisionBindingView, ...]: ...
+
+
+class PositionSourceHeader(TypedDict):
+    id: str
+    scope_source_revision: int
+    canonical_prefix_revision: int
+    canonical_prefix_moves_json: str
+    graph_generation: int
+    graph_state: str
+    workspace_id: str
+
+
+class PositionIntegrityFacts(TypedDict):
+    integrity_status: str
+    scan_status: str
+    scan_generation: str
+    checked_at: str
+    scan_completed_sources: int
+    scan_total_sources: int
+    scan_error: None
+    graph_task_generation: int
+    graph_task_state: str
+    scan_task_id: str
+    scan_task_generation: int
+    scan_task_state: str
+
+
+class PositionSourceTokenFacts(TypedDict):
+    original_snapshot_id: str
+    original_source_revision: str
+    original_source_digest: str
+    repertoire_id: str
+    authored_digest: str
+    header: PositionSourceHeader
+    integrity: PositionIntegrityFacts
+
+
+class AuthoredPositionSourceView(Protocol):
+    @property
+    def original_snapshot_id(self) -> str: ...
+    @property
+    def original_source_revision(self) -> str: ...
+    @property
+    def original_source_digest(self) -> str: ...
+    @property
+    def repertoire_id(self) -> str: ...
+    @property
+    def authored_digest(self) -> str: ...
+    def as_dict(self) -> PositionSourceTokenFacts: ...
+
+
+class PositionPublicationHeader(PositionSourceHeader):
+    name: str
+
+
+class PositionPublicationLine(TypedDict):
+    id: str
+    repertoire_id: str
+    trained_color: Literal["white", "black"]
+    start_fen: str
+    moves_json: str
+    name: NotRequired[str]
+
+
+class PositionPublicationCard(TypedDict):
+    id: str
+    revision: int
+    trained_color: str | None
+    content_type: str
+    start_fen: str
+    moves_json: str
+    archived: int
+    pending_validation: int
+    superseded_by: str | None
+    introduced_at: str | None
+    repertoire_id: NotRequired[str | None]
+    canonical_route_source: NotRequired[int]
+    integrity_blocked: NotRequired[bool]
+    deleted: NotRequired[bool]
+
+
+class PositionPublicationMembership(TypedDict):
+    repertoire_id: str
+    card_id: str
+    canonical_route_source: NotRequired[int]
+
+
+class PositionPublicationGraph(TypedDict):
+    repertoire_id: str
+    generation: int
+    line_id: str
+    decision_index: int
+    card_id: str
+    starting_fen: str
+    moves_json: str
+    trained_color: Literal["white", "black"]
+
+
+class PositionPublicationFacts(TypedDict):
+    repertoire: PositionPublicationHeader
+    lines: list[PositionPublicationLine]
+    cards: list[PositionPublicationCard]
+    memberships: list[PositionPublicationMembership]
+    graphs: list[PositionPublicationGraph]
+
+
 @dataclass(frozen=True)
 class DecisionOccurrence:
     ply: int  # 0 based ply, just BEFORE learner response
@@ -113,6 +264,21 @@ class RouteOption:
         if any(d.ply >= len(self.moves_uci) or self.moves_uci[d.ply] != d.definition.expected_uci
                for d in self.decisions):
             raise ValueError("route_decision_mismatch")
+
+
+class PreparedPositionSourceView(Protocol):
+    @property
+    def snapshot(self) -> PositionSourceSnapshotView: ...
+    @property
+    def routes(self) -> tuple[RouteOption, ...]: ...
+    @property
+    def authored_token(self) -> AuthoredPositionSourceView: ...
+
+
+class PreparedPositionSourceWithFactsView(Protocol):
+    @property
+    def prepared(self) -> PreparedPositionSourceView: ...
+    def publication_facts(self) -> PositionPublicationFacts: ...
 
 
 @dataclass(frozen=True)

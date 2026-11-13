@@ -183,6 +183,7 @@ export default function CardEditor({
         if (!card.backendId || !prefixSplitPreview)
           throw new Error("The shorter prefix preview is not ready.");
         const result = await acceptPrefixSplitCommand(card.backendId, card.revision ?? 1);
+        if ("status" in result) throw new Error("This split is waiting for its original Study review.");
         onSave({
           ...card,
           backendId: result.parent.card_id,

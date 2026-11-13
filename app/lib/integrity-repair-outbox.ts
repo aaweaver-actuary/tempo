@@ -1,4 +1,4 @@
-import { decodeOperationResult } from "../domain/adapters/operation-result-adapter";
+import { decodeOperationAcceptance, decodeOperationResult } from "../domain/adapters/operation-result-adapter";
 import { writeIntegrityRepairRecord, readLegacyRepairQueueBytes, readLegacyRepairCommandBytes, decodeLegacyRepairQueue, decodeLegacyRepairCommand, readIntegrityRepairBytes, decodeIntegrityRepairRecord, clearLegacyRepairQueue, clearLegacyRepairCommand, integrityRepairRecordKeys, readIntegrityRepairRecordForKey, integrityRepairStorageKey, clearIntegrityRepairRecord } from "../../database/browser/adapters/authoring/integrity-repair";
 import { z } from "zod";
 import { API_URL } from "../const";
@@ -276,6 +276,11 @@ async function processRetry(repair: PendingIntegrityRepair) {
     } else if (!retry.deliveryAccepted) {
       const response = await timedRequest(`${API_URL}/api/operations/${encodeURIComponent(repair.operationId)}/retry`, { method: "POST" }, false);
       if (!response.ok) throw new Error("Repair retry delivery is unconfirmed. Check its original receipt.");
+      if (response.status === 202) {
+        const acknowledgment = decodeOperationAcceptance(await response.json(), "command");
+        if (acknowledgment.kind === "malformed" || acknowledgment.operationId !== repair.operationId)
+          throw new Error("Repair retry acknowledgment did not confirm the original operation identity.");
+      }
       updateRepair(repair.operationId, current => ({ ...current, retry: { ...retry, deliveryAccepted: true } }));
     }
     return false;
@@ -314,6 +319,13 @@ async function processRepair(repair: PendingIntegrityRepair) {
       body: JSON.stringify({ signature: repair.signature, selected_move_uci: repair.selectedMoveUci }),
     }, false);
     const body: unknown = await response.json();
+    if (response.status === 202) {
+      const acknowledgment = decodeOperationAcceptance(body, "command");
+      if (acknowledgment.kind === "malformed" || acknowledgment.operationId !== repair.operationId)
+        throw new Error("Repair acknowledgment did not confirm the original operation identity.");
+      await confirmReceipt(repair);
+      return;
+    }
     if (response.ok && !(body && typeof body === "object" && "operation_id" in body)) { accepted(repair, body); return; }
     // A stale endpoint response can race a successful earlier delivery. Resolve its receipt first.
     if (await confirmReceipt(repair)) return;

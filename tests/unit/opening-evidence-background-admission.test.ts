@@ -98,7 +98,7 @@ it.each([false, true])("AS-15 background checkpoint receipt polling remains back
   let receiptReads = 0;
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
     requests.push({ url, init });
-    if (init?.method === "POST") return Response.json({ operation_id: originalDelivery.operationKey }, { status: 202 });
+    if (init?.method === "POST") return Response.json({ operation_id: originalDelivery.operationKey, state: "queued" }, { status: 202 });
     receiptReads += 1;
     return Response.json(pendingFirst && receiptReads === 1 ? { state: "pending" } : { state: "complete", response: {
       persisted: true, attempt_id: checkpoint.attempt_id, received_sequences: [1], contiguous_sequence: 1,
@@ -125,7 +125,7 @@ it("foreground review completion and operation receipt reads retain foreground a
   const requests: { url: string; init?: RequestInit }[] = [];
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
     requests.push({ url, init });
-    return init?.method === "POST" ? Response.json({ operation_id: "review-key" }, { status: 202 })
+    return init?.method === "POST" ? Response.json({ operation_id: "review-key", state: "queued" }, { status: 202 })
       : Response.json({ state: "complete", response: { persisted: true } });
   }));
   const { saveEvidenceAwareReview } = await import("../../app/lib/opening-evidence-review");
@@ -147,7 +147,7 @@ it.each([202, 500])("AS-15 checkpoint receipt polling is bounded by the delivery
   let releaseReceipt!: (response: Response) => void;
   vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
     requests.push({ url, init });
-    if (init?.method === "POST") return Promise.resolve(Response.json({ operation_id: originalDelivery.operationKey }, { status: postStatus }));
+    if (init?.method === "POST") return Promise.resolve(Response.json({ operation_id: originalDelivery.operationKey, state: "queued" }, { status: postStatus }));
     return new Promise<Response>((resolve, reject) => {
       releaseReceipt = resolve;
       init?.signal?.addEventListener("abort", () => reject(new DOMException("Delivery aborted", "AbortError")), { once: true });
@@ -202,7 +202,7 @@ it.each(["immediate", "deferred"])("AS-15 immediate and deferred durable checkpo
     const body = JSON.parse(init.body as string) as OpeningEvidenceCheckpoint;
     if (body.attempt_id === checkpoint.attempt_id) return timing === "immediate"
       ? Response.json({ detail: error.detail }, { status: 409 })
-      : Response.json({ operation_id: originalDelivery.operationKey }, { status: 202 });
+      : Response.json({ operation_id: originalDelivery.operationKey, state: "queued" }, { status: 202 });
     return Response.json({ persisted: true, attempt_id: body.attempt_id, received_sequences: [1], contiguous_sequence: 1 });
   }));
   await journal.flushOpeningEvidence();
@@ -292,4 +292,30 @@ it("foreground receipt polling forwards an optional caller signal without changi
   const [, init] = fetching.mock.calls[0];
   expect(init?.signal).toBe(controller.signal);
   expect(new Headers(init?.headers).has("X-Tempo-Work-Class")).toBe(false);
+});
+
+it.each(["missing", "foreign"])("%s checkpoint acknowledgment retains frozen key and bytes across later journal events", async kind => {
+  const { journal, attempts, savedEvents, originalDelivery } = await savedJournal();
+  const calls: { url: string; init?: RequestInit }[] = [];
+  let retry = false;
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+    calls.push({ url, init });
+    if (init?.method !== "POST") return Response.json({ state: retry && calls.filter(call => call.init?.method === "POST").length > 1 ? "pending" : "unknown" });
+    expect(new Headers(init.headers).get("Idempotency-Key")).toBe(originalDelivery.operationKey);
+    expect(new Headers(init.headers).get("X-Tempo-Work-Class")).toBe("background");
+    expect(init.body).toBe(JSON.stringify(originalDelivery.checkpoint));
+    if (!retry) return Response.json(kind === "foreign" ? { operation_id: "foreign", state: "queued" } : { state: "queued" }, { status: 202 });
+    return Response.json({ operation_id: originalDelivery.operationKey, state: "queued" }, { status: 202 });
+  }));
+  await expect(journal.flushOpeningEvidence()).rejects.toMatchObject({ name: "PendingOperationError", operationId: originalDelivery.operationKey });
+  expect(attempts.get(checkpoint.attempt_id)?.delivery).toEqual(originalDelivery);
+  expect(calls).toHaveLength(1);
+  savedEvents.set(JSON.stringify([checkpoint.attempt_id, 2]), { ...checkpoint.events[0], attempt_id: checkpoint.attempt_id, sequence: 2 });
+  retry = true;
+  await expect(journal.flushOpeningEvidence()).rejects.toMatchObject({ name: "PendingOperationError", operationId: originalDelivery.operationKey });
+  expect(attempts.get(checkpoint.attempt_id)?.delivery).toEqual(originalDelivery);
+  const posts = calls.filter(call => call.init?.method === "POST");
+  expect(posts).toHaveLength(2);
+  expect(posts[1].init?.body).toBe(posts[0].init?.body);
+  expect(calls.some(call => call.url.includes("foreign"))).toBe(false);
 });

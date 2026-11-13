@@ -55,5 +55,5 @@ export function recoveryCommand(identity = "original"): IntentEnvelope {
 
 export function completedRecoveryReceipt(command: IntentEnvelope) {
   return { operation_id: command.requestId, state: "complete", response: { attempt_id: command.attemptId,
-    assessment: { outcome: "correct", feedback: "Original result confirmed" }, rating: "correct" } };
+    assessment: { outcome: "correct", feedback: "Original result confirmed" }, rating: "correct", requested_rating: "correct", persisted: true, review: { review_id: 1, requeue_entry_id: null } } };
 }

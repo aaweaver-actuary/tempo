@@ -3,6 +3,8 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest";
 import { Chess } from "chess.js";
 import StudyExerciseRunner from "../../app/views/study_exercise_runner";
+import TrainingView from "../../app/views/training_view";
+import { useTrainingStore } from "../../app/state/training-store";
 import { useBoardShellStore } from "../../app/state/board-shell-store";
 import { PersistentBoardShell } from "../../app/components/board/persistent-board-shell";
 import { asCardId, asFenString, asQueueEntryId, type PracticeCard } from "../../app/types";
@@ -23,9 +25,9 @@ it("F2 a cached Study specification never selects offline grading for a connecte
   const requests: string[] = [];
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
     const url = String(input); requests.push(url);
-    if (url.endsWith("/present")) return Response.json({ id: "exercise", revision: 1, type: "move_line", prompt: specification.prompt, hint: "", fen });
+    if (url.includes("/present?")) return Response.json({ id: "exercise", revision: 1, type: "move_line", mode: "single", grading_policy: "reference", prompt: specification.prompt, hint: "", fen });
     if (url.endsWith("/attempts")) return Response.json({ attempt_id: JSON.parse(String(options?.body)).attempt_id,
-      assessment: { outcome: "correct", feedback: "Saved by Learning" }, persisted: true });
+      assessment: { outcome: "correct", feedback: "Saved by Learning" }, rating: "correct", requested_rating: "correct", persisted: true, review: { review_id: 1, requeue_entry_id: null } });
     if (url.endsWith("/feedback")) return Response.json({ specification });
     throw new Error(`Unexpected request ${url}`);
   }));
@@ -51,10 +53,10 @@ it.each([false, true])("study feedback browses the reference line and R restores
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith("/present")) return Response.json({ id: "exercise", revision: 1, type: "move_line",
-      prompt: "Find the reference line", hint: "Develop a piece", fen: startingFen });
+      prompt: "Find the reference line", hint: "Develop a piece", mode: "stepwise_line", grading_policy: "reference", fen: startingFen });
     if (url.endsWith("/attempts") && init?.method === "POST") {
       submissions.push(JSON.parse(String(init.body)));
-      return Response.json({ attempt_id: JSON.parse(String(init?.body)).attempt_id, assessment: { outcome: "incorrect", feedback: "Review the reference" }, rating: "again" });
+      return Response.json({ attempt_id: JSON.parse(String(init?.body)).attempt_id, assessment: { outcome: "incorrect", feedback: "Review the reference" }, rating: "again", requested_rating: "again", persisted: true, review: null });
     }
     if (url.endsWith("/feedback")) return Response.json({ specification: { type: "move_line", prompt: "Find the reference line",
       hint: "Develop a piece", explanation: "Reference continuation", grading_policy: "reference", mode: "stepwise_line",
@@ -106,7 +108,7 @@ it.each([false, true])("study feedback browses the reference line and R restores
 
 it("study shortcuts preserve submitted moves and hints without revealing or submitting an unanswered line", async () => {
   const fetcher = vi.fn(async () => Response.json({ id: "exercise", revision: 1, type: "move_line",
-    prompt: "Find the continuation", hint: "Develop a piece", fen: new Chess().fen() }));
+    prompt: "Find the continuation", hint: "Develop a piece", mode: "single", grading_policy: "reference", fen: new Chess().fen() }));
   vi.stubGlobal("fetch", fetcher);
   const advance = vi.fn(async () => undefined);
   render(<StudyExerciseRunner studyId="study" exerciseId="exercise" boardTheme="brown" pieceSet="cburnett" useSharedBoard onAdvance={advance} />);
@@ -156,7 +158,7 @@ it("Study attempt and self-assessment retry pending Celery operations with the s
       return Response.json(assessmentStatusReads === 1 ? { state: "pending" } : {
         state: "complete", response: { attempt_id: attemptWrites[0].id,
           assessment: { outcome: "needs_self_assessment", feedback: "Assess your answer" },
-          rating: "correct", pending_self_assessment: false },
+          rating: "correct", requested_rating: "correct", persisted: true, review: null },
       });
     }
     if (url.includes("/api/operations/")) {
@@ -169,12 +171,13 @@ it("Study attempt and self-assessment retry pending Celery operations with the s
     }
     if (url.endsWith("/feedback"))
       return Response.json({ specification: { type: "explanation", prompt: "Explain the plan",
-        rubric: "Develop pieces" } });
+        hint: "", explanation: "", rubric: "Develop pieces" } });
     throw new Error(`Unexpected request: ${url}`);
   }));
 
+  const advance = vi.fn(async () => undefined);
   render(<StudyExerciseRunner studyId="study" exerciseId="exercise"
-    boardTheme="brown" pieceSet="cburnett" useSharedBoard />);
+    boardTheme="brown" pieceSet="cburnett" useSharedBoard onAdvance={advance} />);
   await waitFor(() => expect((screen.getByRole("button", { name: "I have my answer" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "I have my answer" }));
   await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("still pending"));
@@ -184,8 +187,12 @@ it("Study attempt and self-assessment retry pending Celery operations with the s
   expect(attemptStatusReads).toBe(2);
   expect(attemptWrites[0].key).toBe(attemptWrites[0].id);
 
+  expect(screen.queryByRole("button", { name: "Continue" })).toBeNull();
+  expect(advance).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Correct (self-assessed)" }));
   await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("still pending"));
+  expect(screen.queryByRole("button", { name: "Continue" })).toBeNull();
+  expect(advance).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Again (self-assessed)" }));
   await waitFor(() => expect(screen.queryByRole("button", { name: "Correct (self-assessed)" })).toBeNull());
   expect((await (await studyIntentStore()).list("study-command")).find(record => record.endpoint.endsWith("/self-assess"))?.revision).toBe(3);
@@ -200,12 +207,12 @@ it.each([false, true])("pr285_rejected_answer_can_be_corrected_with_fresh_identi
   const submissions: Array<{ body: { attempt_id: string; answer: { moves: string[] } }; key: string }> = [];
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    if (url.endsWith("/present")) return Response.json({ id: "exercise", revision: 1, type: "move_line", mode: "single", prompt: "Choose one legal move", hint: "", fen: new Chess().fen() });
+    if (url.endsWith("/present")) return Response.json({ id: "exercise", revision: 1, type: "move_line", mode: "single", grading_policy: "reference", prompt: "Choose one legal move", hint: "", fen: new Chess().fen() });
     if (url.endsWith("/attempts")) {
       const body = JSON.parse(String(init?.body)); submissions.push({ body, key: (init?.headers as Record<string, string>)["Idempotency-Key"] });
-      return body.answer.moves.length === 0 ? Response.json({ detail: "Submit one move" }, { status: 422 }) : Response.json({ attempt_id: body.attempt_id, assessment: { outcome: "correct", feedback: "Corrected answer saved" }, rating: "correct" });
+      return body.answer.moves.length === 0 ? Response.json({ detail: "Submit one move" }, { status: 422 }) : Response.json({ attempt_id: body.attempt_id, assessment: { outcome: "correct", feedback: "Corrected answer saved" }, rating: "correct", requested_rating: "correct", persisted: true, review: null });
     }
-    if (url.endsWith("/feedback")) return Response.json({ specification: { type: "move_line", prompt: "Choose one legal move", mode: "single", grading_policy: "reference", accepted_lines: [["e2e4"]], explanation: "Develop" } });
+    if (url.endsWith("/feedback")) return Response.json({ specification: { type: "move_line", prompt: "Choose one legal move", mode: "single", grading_policy: "reference", accepted_lines: [["e2e4"]], hint: "", explanation: "Develop" } });
     throw new Error(`Unexpected request: ${url}`);
   });
   vi.stubGlobal("fetch", fetcher);
@@ -244,9 +251,9 @@ it("pr285_practice_generation_new_self_assessment_cannot_reuse_the_old_attempt",
     if (url.endsWith("/attempts")) { const body = JSON.parse(String(init?.body)); attempts.push(body.attempt_id); return Response.json({ attempt_id: body.attempt_id, assessment: { outcome: "needs_self_assessment", feedback: "Assess your answer" }, pending_self_assessment: true }); }
     if (url.endsWith("/self-assess")) {
       const parent = url.split("/").at(-2)!; const { rating } = JSON.parse(String(init?.body)); assessments.push({ parent, rating, key: (init?.headers as Record<string, string>)["Idempotency-Key"] });
-      return Response.json({ attempt_id: parent, assessment: { outcome: "needs_self_assessment", feedback: "Assessment saved" }, pending_self_assessment: false, rating });
+      return Response.json({ attempt_id: parent, assessment: { outcome: "needs_self_assessment", feedback: "Assessment saved" }, rating, requested_rating: rating, persisted: true, review: null });
     }
-    if (url.endsWith("/feedback")) return Response.json({ specification: { type: "explanation", prompt: "Explain the plan", rubric: "Develop pieces" } });
+    if (url.endsWith("/feedback")) return Response.json({ specification: { type: "explanation", prompt: "Explain the plan", hint: "", explanation: "", rubric: "Develop pieces" } });
     throw new Error(`Unexpected request: ${url}`);
   }));
   render(<StudyExerciseRunner studyId="practice" exerciseId="exercise" boardTheme="brown" pieceSet="cburnett" useSharedBoard />);
@@ -274,11 +281,11 @@ it.each([false, true])("pr285_rejected_answer_self_assessment_replacement_uses_n
     if (url.endsWith("/attempts")) { answerPosts++; parent = JSON.parse(String(init?.body)).attempt_id; return Response.json({ attempt_id: parent, assessment: { outcome: "needs_self_assessment", feedback: "Rate it" }, pending_self_assessment: true }); }
     if (url.endsWith("/self-assess")) {
       const { rating } = JSON.parse(String(init?.body)); const key = (init?.headers as Record<string, string>)["Idempotency-Key"]; ratings.push({ rating, key });
-      if (ratings.length === 1) return Response.json({ operation_id: key }, { status: 202 });
-      return Response.json({ attempt_id: parent, assessment: { outcome: "needs_self_assessment", feedback: "Replacement assessment saved" }, pending_self_assessment: false, rating });
+      if (ratings.length === 1) return Response.json({ operation_id: key, state: "queued" }, { status: 202 });
+      return Response.json({ attempt_id: parent, assessment: { outcome: "needs_self_assessment", feedback: "Replacement assessment saved" }, rating, requested_rating: rating, persisted: true, review: null });
     }
     if (url.includes("/api/operations/")) return Response.json({ state: "failed", error: { status_code: 422, message: "Choose another assessment" } });
-    if (url.endsWith("/feedback")) return Response.json({ specification: { type: "explanation", prompt: "Rate the plan", rubric: "Develop" } });
+    if (url.endsWith("/feedback")) return Response.json({ specification: { type: "explanation", prompt: "Rate the plan", hint: "", explanation: "", rubric: "Develop" } });
     throw new Error(`Unexpected request: ${url}`);
   }));
   const runner = <StudyExerciseRunner studyId="rating" exerciseId="exercise" boardTheme="brown" pieceSet="cburnett" useSharedBoard />;
@@ -295,4 +302,131 @@ it.each([false, true])("pr285_rejected_answer_self_assessment_replacement_uses_n
   expect(records.filter(record => record.attemptId !== parent)).toEqual([]);
   expect(records.find(record => record.state === "discarded")).toMatchObject({ requestId: ratings[0].key, payload: { body: { rating: "correct" } } });
   mounted.unmount();
+});
+
+it('B31 issued Study reload supplies its exact queue identity before presentation', async () => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+  const fen = new Chess().fen();
+  const card: PracticeCard = { id: asCardId('queue-recovery'), kind: 'study', title: 'Study', subtitle: '', startingFen: asFenString(fen),
+    moves: [], userMoveTarget: 1, backendId: asCardId('retained-card'), queueEntryId: asQueueEntryId(17), queueCycle: 3, revision: 2 };
+  const requests: string[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input); requests.push(url);
+    if (url.endsWith('/present')) return Response.json({ detail: 'Exercise unavailable' }, { status: 404 });
+    if (url.includes('/present?')) return Response.json({ id: 'exercise', revision: 2, type: 'explanation', prompt: 'Retained prompt', hint: '', fen });
+    throw new Error(`Unexpected request ${url}`);
+  }));
+  render(<StudyExerciseRunner studyId="study" exerciseId="exercise" card={card} boardTheme="brown" pieceSet="cburnett" />);
+  await screen.findByText('Retained prompt');
+  const query = new URL(requests[0], 'http://localhost').searchParams;
+  expect(Object.fromEntries(query)).toEqual({ card_id: 'retained-card', queue_entry_id: '17', queue_cycle: '3', revision: '2' });
+});
+
+it('B31 issued Study refuses a changed presentation FEN even at the same revision', async () => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+  const card: PracticeCard = { id: asCardId('fen-retained'), kind: 'study', title: 'Study', subtitle: '', startingFen: asFenString(new Chess().fen()),
+    moves: [], userMoveTarget: 1, backendId: asCardId('fen-card'), queueEntryId: asQueueEntryId(21), queueCycle: 0, revision: 1 };
+  const fetcher = vi.fn(async (_input: RequestInfo | URL) => Response.json({ id: 'exercise', revision: 1, type: 'explanation', prompt: 'Changed source', hint: '', fen: '4k3/8/8/8/8/8/8/4K3 w - - 0 1' }));
+  vi.stubGlobal('fetch', fetcher);
+  render(<StudyExerciseRunner studyId="study" exerciseId="exercise" card={card} boardTheme="brown" pieceSet="cburnett" />);
+  await screen.findByText(/original exercise identity or revision changed/i);
+  expect(screen.queryByText('Changed source')).toBeNull();
+  expect(String(fetcher.mock.calls[0][0])).toContain('/present?card_id=fen-card&queue_entry_id=21&queue_cycle=0&revision=1');
+});
+
+
+it("saved Study review Continue explicitly advances only after its original receipt", async () => {
+  vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+  const fen = new Chess().fen();
+  const card: PracticeCard = { id: asCardId("queue-17"), kind: "study", title: "Study", subtitle: "",
+    startingFen: asFenString(fen), moves: [], userMoveTarget: 1, backendId: asCardId("card-17"),
+    queueEntryId: asQueueEntryId(17), queueCycle: 0, revision: 1, studyId: "study", studyExerciseId: "exercise" };
+  const specification = { type: "move_line", prompt: "Original exercise", hint: "", explanation: "Saved feedback",
+    grading_policy: "reference", mode: "single", accepted_lines: [["e2e4"]] };
+  let finish!: (response: Response) => void;
+  const pending = new Promise<Response>(resolve => { finish = resolve; });
+  let originalAttempt = "";
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/present?")) return Response.json({ id: "exercise", revision: 1, type: "move_line", mode: "single", grading_policy: "reference", prompt: "Original exercise", hint: "", fen });
+    if (url.endsWith("/attempts")) {
+      originalAttempt = JSON.parse(String(init?.body)).attempt_id;
+      expect((init?.headers as Record<string, string>)["Idempotency-Key"]).toBe(originalAttempt);
+      return pending;
+    }
+    if (url.endsWith("/feedback")) return Response.json({ specification });
+    throw new Error(`Unexpected request ${url}`);
+  }));
+  let rejectRefresh!: (error: Error) => void;
+  const refresh = vi.fn(() => new Promise<void>((_resolve, reject) => { rejectRefresh = reject; }));
+  useTrainingStore.getState().initializeCardState(card);
+  const original = { ...useTrainingStore.getState().attempt };
+  render(<TrainingView dateLabel="Today" serviceError="" refreshDatabaseQueue={refresh} cardsLeft={2}
+    card={card} boardTheme="brown" pieceSet="cburnett" rateCard={vi.fn(async () => undefined)}
+    handleAttemptFailure={vi.fn()} resetCardAttempt={vi.fn()} onMove={vi.fn()} />);
+  await screen.findByText("Original exercise");
+  fireEvent.change(screen.getByLabelText("Coordinates or UCI move"), { target: { value: "e2e4" } });
+  fireEvent.click(screen.getByRole("button", { name: "Add", exact: true }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Submit", exact: true }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "Submit", exact: true }));
+  await waitFor(() => expect(originalAttempt).toBeTruthy());
+  expect(screen.queryByRole("button", { name: "Continue" })).toBeNull();
+  expect(refresh).not.toHaveBeenCalled();
+  await act(async () => finish(Response.json({ attempt_id: originalAttempt, assessment: { outcome: "correct", feedback: "Saved" },
+    rating: "correct", requested_rating: "correct", persisted: true, review: { review_id: 1, requeue_entry_id: null } })));
+  await screen.findByText("Saved feedback");
+  fireEvent.click(screen.getByRole("button", { name: "Continue", exact: true }));
+  expect(refresh).toHaveBeenCalledOnce();
+  expect(refresh).toHaveBeenCalledWith(true, true, false, { attemptId: original.attemptId, generation: original.generation, entryKey: original.entryKey });
+  await waitFor(() => expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(true));
+  await act(async () => rejectRefresh(new Error("Next queue unavailable")));
+  expect((await screen.findByRole("alert")).textContent).toContain("Next queue unavailable");
+  expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(false);
+  act(() => useTrainingStore.getState().initializeCardState(card));
+  expect(useTrainingStore.getState().attempt.entryKey).toBe(original.entryKey);
+  expect(useTrainingStore.getState().attempt.generation).not.toBe(original.generation);
+  fireEvent.click(screen.getByRole("button", { name: "Continue", exact: true }));
+  await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("displayed Study attempt changed"));
+  expect(refresh).toHaveBeenCalledOnce();
+});
+
+it("offline Study Continue waits for durable phone recording before explicit advance", async () => {
+  vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+  const fen = new Chess().fen();
+  const specification: StudySpecification = { type: "move_line", prompt: "Phone exercise", hint: "", explanation: "Phone feedback",
+    grading_policy: "reference", mode: "single", accepted_lines: [["e2e4"]] };
+  const card: PracticeCard = { id: asCardId("queue-18"), kind: "study", title: "Study", subtitle: "",
+    startingFen: asFenString(fen), moves: [], userMoveTarget: 1, backendId: asCardId("card-18"),
+    queueEntryId: asQueueEntryId(18), queueCycle: 0, revision: 1, studyId: "study", studyExerciseId: "exercise",
+    studySnapshot: { schema_version: 1, grader_version: 1, exercise_id: "exercise", revision: 1, fen, specification } };
+  let finish!: (value: unknown) => void;
+  const pending = new Promise(resolve => { finish = resolve; });
+  const offline = await import("../../app/lib/offline-training");
+  const recording = vi.spyOn(offline, "recordOfflineStudyAttempt")
+    .mockRejectedValueOnce(new Error("Phone storage failed"))
+    .mockImplementationOnce(() => pending as never);
+  const refresh = vi.fn();
+  useTrainingStore.getState().initializeCardState(card);
+  const original = { ...useTrainingStore.getState().attempt };
+  try {
+    render(<TrainingView dateLabel="Today" serviceError="" offlineQueue refreshDatabaseQueue={refresh} cardsLeft={2}
+      card={card} boardTheme="brown" pieceSet="cburnett" rateCard={vi.fn(async () => undefined)}
+      handleAttemptFailure={vi.fn()} resetCardAttempt={vi.fn()} onMove={vi.fn()} />);
+    await screen.findByText("Phone exercise");
+    fireEvent.change(screen.getByLabelText("Coordinates or UCI move"), { target: { value: "e2e4" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Submit", exact: true }));
+    await screen.findByText("Phone storage failed");
+    expect(screen.queryByRole("button", { name: "Continue" })).toBeNull();
+    expect(refresh).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Submit", exact: true }));
+    await waitFor(() => expect(recording).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("button", { name: "Continue" })).toBeNull();
+    expect(refresh).not.toHaveBeenCalled();
+    await act(async () => finish({}));
+    await screen.findByText("Phone feedback");
+    fireEvent.click(screen.getByRole("button", { name: "Continue", exact: true }));
+    expect(refresh).toHaveBeenCalledOnce();
+    expect(refresh).toHaveBeenCalledWith(true, true, false, { attemptId: original.attemptId, generation: original.generation, entryKey: original.entryKey });
+  } finally { recording.mockRestore(); }
 });

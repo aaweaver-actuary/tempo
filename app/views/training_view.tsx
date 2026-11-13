@@ -1,4 +1,5 @@
-import { positionStudyUnavailable } from "../domain/attempt";
+import { attemptEntryKey, positionStudyUnavailable } from "../domain/attempt";
+import { pendingPrefixSplitStatus } from "../lib/prefix-split-command";
 import { independentStudy } from "../lib/study-connection";
 import { pendingReviewMessage, reviewSaveNoticeKey } from "../lib/review-save-notice";
 import { positionsFromMoves, useBoardHistory } from "../hooks/use-board-history";
@@ -45,7 +46,8 @@ interface TrainingViewProps {
   serviceError: string;
   offlineQueue?: boolean;
   positionStudyUnavailableReason?: string;
-  refreshDatabaseQueue: (advance?: boolean, replaySavedReviews?: boolean, retryPreparation?: boolean) => void;
+  refreshDatabaseQueue: (advance?: boolean, replaySavedReviews?: boolean, retryPreparation?: boolean,
+    expectedAttempt?: { attemptId?: string; generation: number; entryKey?: string }) => void | Promise<void>;
   cardsLeft: number;
   card: PracticeCard;
   boardTheme: BoardTheme;
@@ -67,7 +69,7 @@ interface TrainingViewProps {
   handleAttemptFailure: () => void;
   resetCardAttempt: () => void;
   setEditorCard?: (card: PracticeCard | null) => void;
-  onAcceptPrefixSplit?: (card: PracticeCard) => Promise<void>;
+  onAcceptPrefixSplit?: (card: PracticeCard) => Promise<"waiting" | void>;
   onRejectPrefixSplit?: (card: PracticeCard) => Promise<void>;
   onOpeningAssistance?: (moveOffset: number, kind: AssistanceKind) => void;
   onMove: (from: Square, to: Square) => void;
@@ -112,9 +114,26 @@ function StandardTrainingView({
   const [prefixSplitPendingAction, setPrefixSplitPendingAction] = useState<"accept" | "reject" | null>(null);
   const [rejectedPrefixOfferKey, setRejectedPrefixOfferKey] = useState("");
   const [prefixSplitError, setPrefixSplitError] = useState<{ key: string; message: string }>();
+  const [prefixSplitNotice, setPrefixSplitNotice] = useState("");
   const reviewNotificationId = useRef<string | undefined>(undefined);
   const reviewNotificationKey = useRef<string | undefined>(undefined);
   const prefixOfferKey = `${card.backendId ?? card.id}:${card.revision ?? 1}:${card.prefixSplitLatestFailureId ?? 0}`;
+  useEffect(() => {
+    let current = true;
+    setPrefixSplitNotice("");
+    if (!usesLocalApi()) return;
+    const check = () => void pendingPrefixSplitStatus().then(status => {
+      if (!current || !status) return;
+      if ("status" in status)
+        setPrefixSplitNotice(status.status === "held"
+          ? `The shortening request is held: ${status.reason ?? "check the original attempt"}.`
+          : status.reason ?? "Shortening is saved and will continue after the original review is saved.");
+      else setPrefixSplitNotice("Shortening completed. Refresh the queue to load the updated cards.");
+    }).catch(() => { if (current) setPrefixSplitNotice("Shortening status is unavailable; the saved request is retained."); });
+    check();
+    const timer = window.setInterval(check, 30000);
+    return () => { current = false; window.clearInterval(timer); };
+  }, [card.backendId, card.queueEntryId]);
   const {
     boardAttempt,
     attemptFailed,
@@ -464,6 +483,7 @@ function StandardTrainingView({
               <FailureNote failureAnnotation={failureAnnotation} />
             )}
             {!phoneOpening && moveTrail}
+            {prefixSplitNotice && <p role="status">{prefixSplitNotice}</p>}
             {usesLocalApi() && !independentStudy && card.suggestShorterPrefix &&
               rejectedPrefixOfferKey !== prefixOfferKey &&
               card.kind === "opening" &&
@@ -530,7 +550,8 @@ function StandardTrainingView({
     setPrefixSplitError(undefined);
     try {
       if (action === "accept") {
-        await onAcceptPrefixSplit(card);
+        const outcome = await onAcceptPrefixSplit(card);
+        if (outcome === "waiting") setPrefixSplitNotice("Shortening is saved and will continue after this review is saved.");
         setRejectedPrefixOfferKey(prefixOfferKey);
       } else {
         await onRejectPrefixSplit(card);
@@ -569,18 +590,32 @@ function TrainingContent(props: TrainingViewProps) {
   const liveQueueBlocked = Boolean(props.serviceError && !props.offlineQueue);
   const mutationBlocked = liveQueueBlocked || Boolean(props.burialPending);
   if (props.card.kind === "study" && props.card.studyId && props.card.studyExerciseId) {
-    return <>{props.repairNotice}{liveQueueBlocked && <div role="alert">{props.serviceError} <RetryButton onRetry={() => props.refreshDatabaseQueue(false, true, true)} /></div>}<div inert={mutationBlocked}><StudyExerciseRunner
-      key={`${props.card.queueEntryId ?? props.card.id}:${props.card.revision ?? 1}`}
-      studyId={props.card.studyId} exerciseId={props.card.studyExerciseId}
-      card={props.card} boardTheme={props.boardTheme} pieceSet={props.pieceSet}
-      offline={props.offlineQueue ?? false}
-      useSharedBoard={props.useSharedBoard ?? false} blocked={mutationBlocked}
-      onAdvance={async () => { props.refreshDatabaseQueue(); }} /></div></>;
+    return <StudyTrainingContent key={`${props.card.queueEntryId ?? props.card.id}:${props.card.revision ?? 1}`}
+      {...props} liveQueueBlocked={liveQueueBlocked} mutationBlocked={mutationBlocked} />;
   }
   if (props.cardsLeft > 0 && (props.card.kind === "defense" || props.card.kind === "endgame")) {
     return <RetiredCardHold {...props} />;
   }
   return <StandardTrainingView {...props} />;
+}
+
+function StudyTrainingContent(props: TrainingViewProps & { liveQueueBlocked: boolean; mutationBlocked: boolean }) {
+  // Capture the displayed attempt once; a later replacement cannot inherit its Continue authority.
+  const displayedAttempt = useRef({ ...useTrainingStore.getState().attempt }).current;
+  return <>{props.repairNotice}{props.liveQueueBlocked && <div role="alert">{props.serviceError} <RetryButton onRetry={() => props.refreshDatabaseQueue(false, true, true)} /></div>}<div inert={props.mutationBlocked}><StudyExerciseRunner
+    studyId={props.card.studyId!} exerciseId={props.card.studyExerciseId!}
+    card={props.card} boardTheme={props.boardTheme} pieceSet={props.pieceSet}
+    offline={props.offlineQueue ?? false}
+    useSharedBoard={props.useSharedBoard ?? false} blocked={props.mutationBlocked}
+    onAdvance={async () => {
+      const attempt = useTrainingStore.getState().attempt;
+      if (displayedAttempt.entryKey !== attemptEntryKey(props.card) || attempt.entryKey !== displayedAttempt.entryKey ||
+          attempt.attemptId !== displayedAttempt.attemptId || attempt.generation !== displayedAttempt.generation)
+        throw new Error("The displayed Study attempt changed. Refresh the queue.");
+      await props.refreshDatabaseQueue(true, true, false, {
+        attemptId: displayedAttempt.attemptId, generation: displayedAttempt.generation, entryKey: displayedAttempt.entryKey,
+      });
+    }} /></div></>;
 }
 
 function RetiredCardHold(props: TrainingViewProps) {

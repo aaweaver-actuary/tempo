@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import date
 from dataclasses import dataclass
 from typing import Any
 
@@ -14,6 +13,7 @@ from tempo_storage.foreground_controls import settings as storage
 from app.contracts.transport.settings import Settings
 from tempo_storage.postgres import PostgresConnection
 from .queue_commands import request_queue_refresh_in_transaction
+from .services.study_calendar import capture_study_calendar
 
 
 _SETTINGS_COLUMNS = tuple(Settings.model_fields)
@@ -46,7 +46,8 @@ def apply_settings(
     if "study_only_mode" not in supplied_fields:
         values["study_only_mode"] = bool(existing["study_only_mode"])
     storage.store_settings(database, {**values, "study_only_mode": int(values["study_only_mode"])}, _SETTINGS_COLUMNS)
-    request_queue_refresh_in_transaction(database, date.today().isoformat())
+    calendar = capture_study_calendar(database)
+    request_queue_refresh_in_transaction(database, calendar.day.isoformat())
     return values
 
 

@@ -5,6 +5,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import secrets
 import subprocess
@@ -80,6 +81,46 @@ def owned_postgres(tmp_path_factory, *, additional_ports=(), profile="default"):
     # The packaged browser journey reuses this exact owned network namespace;
     # only its existing web service may request an extra loopback-only port.
     assert additional_ports in ((), (80,))
+    bridge_dsn = os.environ.get('TEMPO_NATIVE_FROZEN_BRIDGE_DSN')
+    if bridge_dsn is not None:
+        from psycopg.conninfo import conninfo_to_dict
+        from database.tooling.apply_postgres_migrations import apply_migrations
+        project = os.environ.get('TEMPO_TEST_COMPOSE_PROJECT', '')
+        revision = os.environ.get('TEMPO_NATIVE_CANDIDATE_REVISION', '')
+        info = conninfo_to_dict(bridge_dsn)
+        # libpq defaults can redirect even an apparently explicit DSN.
+        ambient_pg = any(name.startswith('PG') and name not in {'PG_VERSION', 'PG_MAJOR', 'PGPASSFILE'}
+                         for name in os.environ)
+        if (set(info) != {'host', 'port', 'user', 'dbname'}
+                or ambient_pg or os.environ.get('PGPASSFILE') != '/run/secrets/admin_pgpass'
+                or additional_ports or profile != 'default' or os.environ.get('TEMPO_TEST_INSTANCE') != 'disposable'
+                or not re.fullmatch(r'tempo-pg-regressions-[0-9]+-[0-9a-f]{8}', project)
+                or not re.fullmatch(r'[0-9a-f]{40}', revision)
+                or info.get('host') != 'postgres' or info.get('port') != '5432' or info.get('user') != 'postgres'
+                or not re.fullmatch(r'tempo_position_test_[a-f0-9]{32}', info.get('dbname', ''))):
+            raise RuntimeError('Invalid owned frozen bridge identity')
+        with psycopg.connect(bridge_dsn, autocommit=True) as raw:
+            row = raw.execute("SELECT current_database(),shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database()").fetchone()
+            if row != (info['dbname'], project): raise RuntimeError('Owned frozen bridge database marker differs')
+            parent = raw.execute("SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname='tempo'").fetchone()
+            if parent != ('tempo-disposable-postgres-test',):
+                raise RuntimeError('Owned frozen bridge parent cluster marker differs')
+            if raw.execute("SELECT count(*) FROM information_schema.tables WHERE table_schema='public'").fetchone()[0]:
+                raise RuntimeError('Owned frozen bridge database is not empty')
+        apply_migrations(bridge_dsn)
+        with psycopg.connect(bridge_dsn) as raw:
+            raw.execute('INSERT INTO settings(id) VALUES(1)')
+            raw.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('white','Synthetic','fixture',%s)", (NOW.isoformat(),))
+        @contextmanager
+        def transaction():
+            with psycopg.connect(bridge_dsn, row_factory=tempo_row_factory) as raw:
+                raw.execute("SET LOCAL lock_timeout='3s'")
+                raw.execute("SET LOCAL statement_timeout='5s'")
+                if raw.execute('SELECT current_database()').fetchone()[0] != info['dbname']:
+                    raise RuntimeError('Owned frozen bridge database changed')
+                yield PostgresConnection(raw)
+        yield transaction
+        return
     published = [
         value
         for port in additional_ports

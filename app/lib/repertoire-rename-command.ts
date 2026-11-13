@@ -1,9 +1,19 @@
 import { decodeOperationResult } from "../domain/adapters/operation-result-adapter";
 import { readPendingRepertoireRenameRecord, writePendingRepertoireRenameRecord, clearPendingRepertoireRenameRecord } from "../../database/browser/adapters/authoring/repertoire-rename";
 import { API_URL } from "../const";
-import { confirmOperationResponse, PendingOperationError } from "./operation-status";
+import { z } from "zod";
+import { confirmOriginalOperationResponse, PendingOperationError } from "./operation-status";
 
 type PendingRename = { operationId: string; repertoireId: string; name: string };
+const renameResponseSchema = z.strictObject({ id: z.string(), name: z.string() });
+
+function validateRename(raw: unknown, pending: PendingRename): void {
+  const result = renameResponseSchema.parse(raw);
+  // Python str.strip() owns the persisted value; retain the submitted bytes.
+  const name = pending.name.replace(/^[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+|[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+$/g, "");
+  if (result.id !== pending.repertoireId || result.name !== name)
+    throw new Error("The service did not confirm the original repertoire rename.");
+}
 
 function readPendingRename(): PendingRename | null {
   const parsed = readPendingRepertoireRenameRecord();
@@ -27,6 +37,7 @@ export async function renameRepertoireCommand(repertoireId: string, name: string
       throw new Error(receipt.error.message ?? "The earlier repertoire rename failed.");
     }
     if (receipt.kind === "complete") {
+      validateRename(receipt.response, pending);
       clearPendingRepertoireRenameRecord();
       if (pending.repertoireId === repertoireId && pending.name === name) return;
       pending = null;
@@ -44,7 +55,8 @@ export async function renameRepertoireCommand(repertoireId: string, name: string
     headers: { "Content-Type": "application/json", "Idempotency-Key": pending.operationId },
     body: JSON.stringify({ name }),
   });
-  response = await confirmOperationResponse(response);
+  response = await confirmOriginalOperationResponse(response, pending.operationId);
   if (!response.ok) throw new Error("Could not rename this repertoire");
+  validateRename(await response.json(), pending);
   clearPendingRepertoireRenameRecord();
 }

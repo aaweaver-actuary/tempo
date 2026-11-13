@@ -8,8 +8,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+from typing import cast
 
-from tempo_evidence_math.position_learning import Hold
+from tempo_evidence_math.position_learning import (
+    Hold, PositionIntegrityFacts, PositionPublicationFacts, PositionSourceHeader, PositionSourceSnapshotView, PositionSourceTokenFacts, PreparedPositionSourceView, RouteOption,
+)
 from tempo_game_evidence_contracts.legacy import fingerprint
 from tempo_game_evidence_contracts.legacy_scope import LegacyIntegrityCertificate
 
@@ -82,22 +85,23 @@ class AuthoredSourceToken:
     header_json: str
     integrity_json: str
 
-    def as_dict(self):
+    def as_dict(self) -> PositionSourceTokenFacts:
         return {"original_snapshot_id": self.original_snapshot_id,
                 "original_source_revision": self.original_source_revision,
                 "original_source_digest": self.original_source_digest,
                 "repertoire_id": self.repertoire_id, "authored_digest": self.authored_digest,
-                "header": json.loads(self.header_json), "integrity": json.loads(self.integrity_json)}
+                "header": cast(PositionSourceHeader, json.loads(self.header_json)),
+                "integrity": cast(PositionIntegrityFacts, json.loads(self.integrity_json))}
 
 
 @dataclass(frozen=True, init=False)
 class PreparedPositionSource:
-    snapshot: object
-    routes: tuple
+    snapshot: PositionSourceSnapshotView
+    routes: tuple[RouteOption, ...]
     authored_token: AuthoredSourceToken
     _seal: object
 
-    def __init__(self, seal, snapshot, routes, token):
+    def __init__(self, seal: object, snapshot: PositionSourceSnapshotView, routes: tuple[RouteOption, ...], token: AuthoredSourceToken):
         if seal is not _OWNER_SEAL:
             raise ValueError("position_source_owner_preparation_required")
         object.__setattr__(self, "snapshot", snapshot)
@@ -113,15 +117,15 @@ class PreparedPositionSourceWithFacts:
     _facts_json: str
     _seal: object
 
-    def __init__(self, seal, prepared, facts_json):
+    def __init__(self, seal: object, prepared: PreparedPositionSource, facts_json: str):
         if seal is not _OWNER_SEAL:
             raise ValueError("position_source_owner_preparation_required")
         object.__setattr__(self, "prepared", prepared)
         object.__setattr__(self, "_facts_json", facts_json)
         object.__setattr__(self, "_seal", seal)
 
-    def publication_facts(self):
-        return json.loads(self._facts_json)
+    def publication_facts(self) -> PositionPublicationFacts:
+        return cast(PositionPublicationFacts, json.loads(self._facts_json))
 
 
 
@@ -130,13 +134,13 @@ class PreparedPositionSourceWithFacts:
 
 
 
-def fence_position_source(database, prepared: PreparedPositionSource) -> Hold | None:
+def fence_position_source(database, prepared: PreparedPositionSourceView) -> Hold | None:
     """Fence authored content and current integrity in caller's writer transaction.
 
     Persist token.as_dict() with the immutable issued attempt. A successful fence
     does not claim that the original full physical publication digest is current.
     """
-    if not isinstance(prepared, PreparedPositionSource) or prepared._seal is not _OWNER_SEAL:
+    if not isinstance(prepared, PreparedPositionSource) or getattr(prepared, "_seal", None) is not _OWNER_SEAL:
         return Hold("position_source_owner_preparation_required")
     if database.read_only or database.raw.info.transaction_status.name != "INTRANS":
         return Hold("borrowed_owner_writer_transaction_required")
@@ -162,7 +166,8 @@ def fence_position_source(database, prepared: PreparedPositionSource) -> Hold | 
     return None
 
 
-def prepared_source(snapshot, routes, token, *, publication_facts=None):
+def prepared_source(snapshot: PositionSourceSnapshotView, routes: tuple[RouteOption, ...], token: AuthoredSourceToken, *,
+                    publication_facts: PositionPublicationFacts | None = None) -> PreparedPositionSource | PreparedPositionSourceWithFacts:
     """Seal the complete prepared value; writer fences still verify its source."""
     membership = snapshot.membership
     if (membership.snapshot_id, membership.source_revision, membership.digest) != (

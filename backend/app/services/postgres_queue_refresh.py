@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from itertools import islice
 import json
 import logging
@@ -36,6 +36,9 @@ from .durable_tasks import (
     advance_task_slice_in_transaction,
     complete_task_slice_in_transaction,
     lock_current_slice,
+    defer_future_queue_slice_in_transaction,
+    hold_unknown_queue_day_in_transaction,
+    accepted_queue_day,
 )
 from app.chess.pgn import ends_on_trained_move
 from .puzzles import validate_puzzle_record
@@ -675,16 +678,43 @@ def _prepare_projection_blocked_count(queue_date: str) -> int:
     return int(read_storage.projection_blocked_count(queue_date)[0][0])
 
 
+def _queue_slice_current_day(database):
+    """Lock settings first, matching settings.update's settings-before-task order."""
+    from app.study.policy.clock import study_calendar_at
+    timezone_name = refresh_requests.lock_study_timezone(database)
+    if timezone_name is None:
+        raise RuntimeError("Current Study policy is unavailable")
+    now = datetime.now(timezone.utc)
+    return now, study_calendar_at(now, timezone_name).day.isoformat()
+
+
+def _admit_current_day_slice(database, task, queue_date):
+    now, current_day = _queue_slice_current_day(database)
+    if not lock_current_slice(database, task):
+        return False
+    if queue_date > current_day:
+        defer_future_queue_slice_in_transaction(database, task, now=now)
+        return False
+    return True
+
+
 def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     """Apply one eligibility phase; later queue phases remain explicitly gated."""
 
     payload = task["payload"]
-    queue_date = str(payload.get("queue_date") or date.today().isoformat())
+    queue_date = accepted_queue_day(payload)
+    if queue_date is None:
+        # Never prepare or publish a slice using a newly inferred day. This
+        # transaction fences the original generation and preserves its payload.
+        with connection(background=True) as database:
+            if lock_current_slice(database, task):
+                hold_unknown_queue_day_in_transaction(database, task)
+        return False
     # Pin before preparing any work. An upgraded checkpoint cannot certify that
     # its earlier slices covered requests accepted before epoch tracking existed.
     if "_refresh_cycle_epoch" not in payload:
         with connection(background=True) as database:
-            if not lock_current_slice(database, task):
+            if not _admit_current_day_slice(database, task, queue_date):
                 return False
             epochs = refresh_requests.lock_refresh_epochs(database, queue_date)
             epoch = (
@@ -830,7 +860,7 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
         background=True,
         **({"queue_refresh_publication": True} if phase == "randomize_queue" else {}),
     ) as database:
-        if not lock_current_slice(database, task):
+        if not _admit_current_day_slice(database, task, queue_date):
             return False
         if frozen_token != list(frozen_opening_order.activation(database, lock=True)):
             return advance_task_slice_in_transaction(

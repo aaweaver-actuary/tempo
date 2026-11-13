@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import json
 
-from tempo_evidence_math.position_learning import Hold, SourceCertificate
+from tempo_evidence_math.position_learning import Hold, SourceCertificate, PreparedPositionSourceView, PreparedPositionSourceWithFactsView
 from tempo_storage.authored_repertoires.product_snapshot import read_repertoire
 from tempo_storage.authored_repertoires.position_study_source import (
-    AuthoredSourceToken, PreparedPositionSource, PreparedPositionSourceWithFacts,
+    AuthoredSourceToken,
     read_owner_header, authored_digest, prepared_source,
 )
 
@@ -40,12 +40,12 @@ def _prepare_position_source(database, repertoire_id, *, retain_facts):
 
 
 
-def prepare_position_source_with_facts(database, repertoire_id: str) -> PreparedPositionSourceWithFacts | Hold:
+def prepare_position_source_with_facts(database, repertoire_id: str) -> PreparedPositionSourceWithFactsView | Hold:
     """Prepare source and preserve the same complete read, outside the writer."""
     return _prepare_position_source(database, repertoire_id, retain_facts=True)
 
 
 
-def prepare_position_source(database, repertoire_id: str) -> PreparedPositionSource | Hold:
+def prepare_position_source(database, repertoire_id: str) -> PreparedPositionSourceView | Hold:
     """Read and legally project a complete publication outside the writer."""
     return _prepare_position_source(database, repertoire_id, retain_facts=False)

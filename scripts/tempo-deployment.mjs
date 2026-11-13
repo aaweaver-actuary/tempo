@@ -6,6 +6,16 @@ import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync,
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { TempoProblem, verificationProblem } from "./tempo-guidance.mjs";
 
+// Only the exact migration with a version-scoped comparator may cross this cut.
+export function cut62WitnessName(guard) {
+  const crossing = guard.starting_schema < 62 && guard.intended_schema >= 62;
+  if (!crossing) return null;
+  if (![59, 61].includes(guard.starting_schema) || guard.intended_schema !== 62 ||
+      !/^[0-9a-f-]{36}$/i.test(guard.attempt_id ?? ''))
+    throw new Error('Unsupported schema 62 crossing; preserve the original backup and fix forward.');
+  return `cut62-${guard.attempt_id}.json`;
+}
+
 export const productVolumes = Object.fromEntries(["tempo-postgres-data", "tempo-postgres-backups",
   "tempo-redis-data"].map(name => [name, { name, external: true }]));
 
