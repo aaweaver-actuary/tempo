@@ -61,7 +61,19 @@ def stale_delivery_witness(phase, project):
             progress = db.execute('SELECT row_to_json(p)::text AS row FROM tactic_progress p WHERE puzzle_id=%s', (puzzle_id,)).fetchone()
             grades = db.execute('SELECT row_to_json(r)::text AS row FROM reviews r WHERE card_id=%s ORDER BY id', (prefix,)).fetchall()
             assert len(grades) == 1
-            history = {'existing_grades': grades}
+            source = db.execute('SELECT row_to_json(r)::text AS row FROM product_feedback_sources r WHERE source_key=%s', (prefix,)).fetchone()
+            assert source
+            scoped = {
+                'effects': db.execute('SELECT effect_key FROM study_game_feedback WHERE card_id=%s OR effect_key LIKE %s ORDER BY effect_key', (prefix, prefix + '%')).fetchall(),
+                'deliveries': db.execute('SELECT operation_id FROM product_feedback_deliveries WHERE source_key=%s OR effect_key LIKE %s ORDER BY operation_id', (prefix, prefix + '%')).fetchall(),
+                'operations': db.execute('SELECT operation_id FROM operation_receipts WHERE operation_id LIKE %s OR payload_json LIKE %s ORDER BY operation_id', (prefix + '%', '%' + prefix + '%')).fetchall(),
+                'tasks': db.execute('SELECT id FROM background_tasks WHERE id LIKE %s OR deduplication_key LIKE %s OR payload_json LIKE %s ORDER BY id', (prefix + '%', prefix + '%', '%' + prefix + '%')).fetchall(),
+                'review_receipts': db.execute('SELECT attempt_id FROM review_attempt_receipts WHERE card_id=%s ORDER BY attempt_id', (prefix,)).fetchall(),
+            }
+            assert {key: [next(iter(row.values())) for row in values] for key, values in scoped.items()} == {
+                'effects': [effect], 'deliveries': [delivery], 'operations': sorted([fg, operation]),
+                'tasks': sorted([game_task, task_id]), 'review_receipts': []}
+            history = {'existing_grades': grades, 'source': source['row'], 'scoped': scoped}
             for table, key, value in (('study_game_feedback', 'effect_key', effect),
                                       ('operation_receipts', 'operation_id', operation),
                                       ('product_feedback_deliveries', 'operation_id', delivery),

@@ -435,9 +435,23 @@ def _exercise_ordinary_study_with_paused_history(assert_history):
         review_operation = f"paused-review-{uuid.uuid4()}"
         operations.append(review_operation)
         saved = execute_command(review_operation, "cards.review", review)
-        assert saved["persisted"] and execute_command(review_operation, "cards.review", review) == saved
-        with postgres.connection(read_only=True) as database:
-            assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id=%s", (card,)).fetchone()[0] == 1
+        assert saved["persisted"]
+        def saved_receipts():
+            with postgres.connection(read_only=True) as database:
+                rows = database.execute("SELECT * FROM review_attempt_receipts WHERE card_id=%s", (card,)).fetchall()
+                assert len(rows) == 1
+                receipt = dict(rows[0])
+                assert (receipt["attempt_id"], receipt["card_id"], receipt["queue_entry_id"], receipt["review_id"]) == (
+                    review["review"]["attempt_id"], card, entry, saved["review_id"])
+                assert json.loads(receipt["result_json"]) == saved
+                operation = database.execute("SELECT command_name,state,response_json FROM operation_receipts WHERE operation_id=%s", (review_operation,)).fetchone()
+                assert operation and operation["command_name"] == "cards.review" and operation["state"] == "complete"
+                assert json.loads(operation["response_json"]) == saved
+                assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id=%s", (card,)).fetchone()[0] == 1
+                return receipt, dict(operation)
+        receipt_before = saved_receipts()
+        assert execute_command(review_operation, "cards.review", review) == saved
+        assert saved_receipts() == receipt_before
         assert_history()
 
 
@@ -467,9 +481,20 @@ def test_postgres_paused_feedback_history_preserves_ordinary_study():
             assert source and retired
             assert database.execute(f"SELECT l.disposition='paused' AND l.source_record=to_jsonb(r) FROM tempo_retired_work l JOIN {table} r ON r.{key}=l.source_key WHERE l.source_table=%s AND l.source_key=%s", (table, value)).fetchone()[0]
             result.append((source[0], retired[0]))
+        source = database.execute("SELECT row_to_json(r)::text FROM product_feedback_sources r WHERE source_key=%s", (prefix,)).fetchone()
+        assert source
         grades = database.execute("SELECT row_to_json(r)::text FROM reviews r WHERE card_id=%s ORDER BY id", (prefix,)).fetchall()
         assert len(grades) == 1
-        return result, tuple(row[0] for row in grades)
+        scoped = {
+            "effects": database.execute("SELECT effect_key FROM study_game_feedback WHERE card_id=%s OR effect_key LIKE %s ORDER BY effect_key", (prefix, prefix + "%")).fetchall(),
+            "deliveries": database.execute("SELECT operation_id FROM product_feedback_deliveries WHERE source_key=%s OR effect_key LIKE %s ORDER BY operation_id", (prefix, prefix + "%")).fetchall(),
+            "operations": database.execute("SELECT operation_id FROM operation_receipts WHERE operation_id LIKE %s OR payload_json LIKE %s ORDER BY operation_id", (prefix + "%", "%" + prefix + "%")).fetchall(),
+            "tasks": database.execute("SELECT id FROM background_tasks WHERE id LIKE %s OR deduplication_key LIKE %s OR payload_json LIKE %s ORDER BY id", (prefix + "%", prefix + "%", "%" + prefix + "%")).fetchall(),
+            "review_receipts": database.execute("SELECT attempt_id FROM review_attempt_receipts WHERE card_id=%s ORDER BY attempt_id", (prefix,)).fetchall(),
+        }
+        assert {key: [row[0] for row in values] for key, values in scoped.items()} == {
+            "effects": [effect], "deliveries": [delivery], "operations": [operation], "tasks": [task], "review_receipts": []}
+        return result, source[0], tuple(row[0] for row in grades)
 
     try:
         with postgres.connection() as database:
