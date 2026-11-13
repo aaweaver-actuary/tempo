@@ -101,9 +101,8 @@ def test_native_existing_card_day_locks_serialize_admission_without_moving_issue
         database.execute('INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(%s,%s)', (identity+'-owner-a', identity+'-cross-z-shared'))
         adapter = QueueAdmissionAdapter(database)
         legacy_rows = database.execute(
-            f'WITH active_miss AS ({queue_application.outstanding_miss_query(database)}) '
-            + _PRIORITY_OPENING_CANDIDATE_BODY,
-            (adapter.miss_reason, day, day, day, day),
+            _PRIORITY_OPENING_CANDIDATE_BODY,
+            (day, day),
         ).fetchall()
         limits = {identity:1, identity+'-owner-a':1, identity+'-owner-z':1}
         legacy = plan_prioritized_opening_admissions(adapter.annotate_openings(legacy_rows),
