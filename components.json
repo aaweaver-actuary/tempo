@@ -8936,6 +8936,119 @@
         "tools/reduction/check_links.py#source-link-audit",
         "tools/reduction/path_audit.py#historical-diff-audit"
       ]
+    },
+    {
+      "id": "contract-exchange-tooling",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "contracts",
+      "publicExports": [],
+      "dependencies": [
+        "game-evidence-contracts",
+        "contract-typescript-consumer"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "contracts/check_dependencies.py",
+        "contracts/conftest.py",
+        "contracts/export_schemas.py",
+        "contracts/qualify_artifacts.py",
+        "contracts/run_tests.py"
+      ],
+      "ownershipRole": "Operate independent contract checks and qualification",
+      "dependencyNotes": [
+        "Source role mapping only; contract-exchange remains the existing test suite; no artifact or runtime qualification implied."
+      ],
+      "resourceRoles": [
+        "contracts/check_dependencies.py#boundary-check",
+        "contracts/conftest.py#pytest-hook",
+        "contracts/export_schemas.py#schema-export",
+        "contracts/qualify_artifacts.py#artifact-qualification",
+        "contracts/run_tests.py#suite-runner"
+      ]
+    },
+    {
+      "id": "contract-exchange-tests",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "contracts",
+      "publicExports": [],
+      "dependencies": [
+        "contract-exchange-tooling",
+        "game-evidence-contracts"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "contracts/tests/test_catalog_and_collection.py",
+        "contracts/tests/test_dependency_boundaries.py",
+        "contracts/tests/test_python_consumers.py",
+        "contracts/tests/test_semantic_negatives.py"
+      ],
+      "ownershipRole": "Check contract consumers and exchange",
+      "dependencyNotes": [
+        "Source role mapping only; contract-exchange remains the existing test suite; no artifact or runtime qualification implied."
+      ],
+      "resourceRoles": [
+        "contracts/tests/test_catalog_and_collection.py#test",
+        "contracts/tests/test_dependency_boundaries.py#test",
+        "contracts/tests/test_python_consumers.py#test",
+        "contracts/tests/test_semantic_negatives.py#test"
+      ]
+    },
+    {
+      "id": "contract-typescript-consumer",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "contracts",
+      "publicExports": [],
+      "dependencies": [
+        "game-evidence-contracts"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "contracts/consumer-examples/src/consumer.test.ts",
+        "contracts/consumer-examples/src/expectations.ts",
+        "contracts/consumer-examples/src/semantics.ts"
+      ],
+      "ownershipRole": "Consume producer fixtures and validate semantics",
+      "dependencyNotes": [
+        "Source role mapping only; contract-exchange remains the existing test suite; no artifact or runtime qualification implied."
+      ],
+      "resourceRoles": [
+        "contracts/consumer-examples/src/consumer.test.ts#consumer-test",
+        "contracts/consumer-examples/src/expectations.ts#consumer-expectations",
+        "contracts/consumer-examples/src/semantics.ts#consumer-semantics"
+      ]
     }
   ],
   "suites": [

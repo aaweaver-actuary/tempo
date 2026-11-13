@@ -705,3 +705,9 @@ The source guard inventories and parses them without execution. The selection of
 `scripts/tests/tempo-retained-history-authority.test.mjs` remains unconfirmed;
 this mapping does not establish either as passing. Other executable-role inventories
 and previously recorded fixture gaps remain open.
+
+The contract-tooling source census assigns twelve tracked executable Python and
+TypeScript files outside implemented package roots to tooling, tests, or the
+independent TypeScript consumer. The existing contract-exchange suite remains
+unchanged. This is source-role inventory and syntax inspection only; it does not
+execute tooling or establish artifact, runtime, native, or whole-repository coverage.

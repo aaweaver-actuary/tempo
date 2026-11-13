@@ -4,7 +4,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync,
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { checkComponents, repository, validateManifest, compositionPaths, validateCompositionOwnership, censusPaths, validateCensusOwnership, validateCensusInterfaces, validateStartupFacts, validateDdlResources, validateReductionTools } from "../check-components.mjs";
+import { checkComponents, repository, validateManifest, compositionPaths, validateCompositionOwnership, censusPaths, validateCensusOwnership, validateCensusInterfaces, validateStartupFacts, validateDdlResources, validateReductionTools, validateContractTooling } from "../check-components.mjs";
 import { validateOwnedPaths, selectComponents } from "../selection.mjs";
 import { validateMigrationInventory } from "../../../database/tooling/check-migration-inventory.mjs";
 
@@ -135,6 +135,42 @@ test("T02 historical reduction tool guard discovers new files and parses without
   assert.throws(()=>validateReductionTools(registered,root,python),/missing, duplicate or stale/);
   newOwner.ownedFiles.push(jsx);newOwner.resourceRoles.push(jsx+"#source-census");
   assert.throws(()=>validateReductionTools(registered,root,python),/tooling role/);
+});
+test("T02 contract tooling roles reject missing, duplicate, stale, wrong role and overlap", () => {
+  assert.deepEqual(validateContractTooling(original, repository, python), {sources:12});
+  const missing=structuredClone(original); missing.components.find(c=>c.id==="contract-exchange-tooling").ownedFiles.pop();
+  assert.throws(()=>validateContractTooling(missing,repository,python),/missing, duplicate or stale/);
+  const duplicate=structuredClone(original), d=duplicate.components.find(c=>c.id==="contract-exchange-tooling");d.ownedFiles.push(d.ownedFiles[0]);
+  assert.throws(()=>validateContractTooling(duplicate,repository,python),/missing, duplicate or stale/);
+  const stale=structuredClone(original); stale.components.find(c=>c.id==="contract-exchange-tooling").ownedFiles[0]="contracts/not-tracked.py";
+  assert.throws(()=>validateContractTooling(stale,repository,python),/missing, duplicate or stale/);
+  const wrong=structuredClone(original); wrong.components.find(c=>c.id==="contract-exchange-tooling").resourceRoles[0]+="-wrong";
+  assert.throws(()=>validateContractTooling(wrong,repository,python),/role/);
+  const reclassified=structuredClone(original), changed=reclassified.components.find(c=>c.id==="contract-exchange-tooling");
+  changed.resourceRoles[0]=changed.resourceRoles[0].replace("#boundary-check", "#suite-runner");
+  assert.deepEqual(validateContractTooling(reclassified,repository,python),{sources:12});
+  const duplicateRole=structuredClone(original), dr=duplicateRole.components.find(c=>c.id==="contract-exchange-tooling"); dr.resourceRoles[1]=dr.resourceRoles[0];
+  assert.throws(()=>validateContractTooling(duplicateRole,repository,python),/role/);
+  const overlap=structuredClone(original);overlap.components.find(c=>c.id==="integration").ownedFiles.push("contracts/run_tests.py");
+  assert.throws(()=>validateContractTooling(overlap,repository,python),/overlapping/);
+});
+test("T02 contract tooling discovers new tracked sources and rejects malformed source without execution", context => {
+  const root=mkdtempSync(join(tmpdir(),"tempo-contract-source-")); context.after(()=>rmSync(root,{recursive:true,force:true}));
+  assert.equal(spawnSync("git",["-C",root,"init","-q"]).status,0);
+  const files=original.components.filter(c=>["contract-exchange-tooling","contract-exchange-tests","contract-typescript-consumer"].includes(c.id)).flatMap(c=>c.ownedFiles);
+  for(const path of files){mkdirSync(join(root,path,".."),{recursive:true});cpSync(join(repository,path),join(root,path));}
+  assert.equal(spawnSync("git",["-C",root,"add","contracts"]).status,0);
+  assert.deepEqual(validateContractTooling(original,root,python),{sources:12});
+  const bad=join(root,"contracts/run_tests.py"),bytes=readFileSync(bad,"utf8"); writeFileSync(bad,"def broken(\n");
+  assert.throws(()=>validateContractTooling(original,root,python),/syntax/);writeFileSync(bad,bytes);
+  const badTs=join(root,"contracts/consumer-examples/src/semantics.ts"),tsBytes=readFileSync(badTs,"utf8");writeFileSync(badTs,"export function broken(\n");
+  assert.throws(()=>validateContractTooling(original,root,python),/syntax/);writeFileSync(badTs,tsBytes);
+  const added=join(root,"contracts/new_tool.py");writeFileSync(added,"raise RuntimeError('must not execute')\n");
+  assert.equal(spawnSync("git",["-C",root,"add","contracts/new_tool.py"]).status,0);
+  assert.throws(()=>validateContractTooling(original,root,python),/missing, duplicate or stale/);
+  const extended=structuredClone(original), owner=extended.components.find(c=>c.id==="contract-exchange-tooling");
+  owner.ownedFiles.push("contracts/new_tool.py"); owner.resourceRoles.push("contracts/new_tool.py#suite-runner");
+  assert.deepEqual(validateContractTooling(extended,root,python),{sources:13});
 });
 test("T02 DDL source version rejects empty, missing, duplicate and mismatched history", () => {
   const files = Array.from({length:66}, (_,i) => String(i+1).padStart(3,"0") + "_example.sql");
