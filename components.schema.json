@@ -200,7 +200,8 @@
               "database_infrastructure",
               "opening_progression",
               "puzzle_helpers",
-              "lifecycle_projection"
+              "lifecycle_projection",
+              "opening_kernels"
             ]
           }
         }

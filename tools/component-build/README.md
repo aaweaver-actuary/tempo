@@ -643,8 +643,14 @@ The queue ordering owner also maps the existing legacy bridge workspace and miss
 reason constants consumed by its facade. This records identity only and does not
 revive an optional producer or establish runtime behavior. Previous gaps remain open.
 
-At this base revision, 31 of 289 tracked Python files in those trees remain
-outside the combined 258-file selections. The registry alone assigns owners;
+A fiftieth selection maps supplied-input frozen opening math and bounded capacity
+frontier proposals, their current composition edge and unmapped admission/main
+consumers. This source map does not decide the disputed capacity behavior or
+qualify runtime; previous fixture gaps remain open. The existing lazy cycle
+between position queue admission and next-card preparation remains unresolved.
+
+At this base revision, 29 of 289 tracked Python files in those trees remain
+outside the combined 260-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover

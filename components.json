@@ -1956,7 +1956,8 @@
       ],
       "dependencies": [
         "study-frozen-order-policy",
-        "frozen-order-storage"
+        "frozen-order-storage",
+        "frozen-opening-math"
       ],
       "buildInputs": [],
       "buildCommand": null,
@@ -8311,6 +8312,77 @@
         "Caller-transaction query returns projection state, pending refresh, daily membership hash and existence of queued entries; current consumer is unmapped task composition."
       ],
       "censusScope": "lifecycle_projection"
+    },
+    {
+      "id": "frozen-opening-math",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/study/openings",
+      "publicExports": [
+        "backend/app/study/openings/frozen_math.py#anchor",
+        "backend/app/study/openings/frozen_math.py#validate_distribution",
+        "backend/app/study/openings/frozen_math.py#represented_reach",
+        "backend/app/study/openings/frozen_math.py#card_decisions",
+        "backend/app/study/openings/frozen_math.py#greedy_order",
+        "backend/app/study/openings/frozen_math.py#content_fingerprint"
+      ],
+      "dependencies": [
+        "backend-chess-identity"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study/openings/frozen_math.py"
+      ],
+      "ownershipRole": "Compute represented opening coverage",
+      "dependencyNotes": [
+        "Uses external python-chess and chess identity; existing frozen-order composition and main consume fingerprint/reader identity."
+      ],
+      "censusScope": "opening_kernels"
+    },
+    {
+      "id": "opening-capacity-frontier",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/study/openings",
+      "publicExports": [
+        "backend/app/study/openings/capacity_frontier.py#priority_frontier_depth",
+        "backend/app/study/openings/capacity_frontier.py#plan_prioritized_opening_admissions",
+        "backend/app/study/openings/capacity_frontier.py#CapacityRoute",
+        "backend/app/study/openings/capacity_frontier.py#CapacityCandidate",
+        "backend/app/study/openings/capacity_frontier.py#CapacitySnapshot",
+        "backend/app/study/openings/capacity_frontier.py#CapacityProposal",
+        "backend/app/study/openings/capacity_frontier.py#propose_capacity_expansion"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study/openings/capacity_frontier.py"
+      ],
+      "ownershipRole": "Plan opening capacity proposals",
+      "dependencyNotes": [
+        "Computes bounded supplied-input prioritized admissions and expansion proposals; existing queue admission, capacity service and main consumers remain outside census. Mapping does not decide disputed capacity behavior."
+      ],
+      "censusScope": "opening_kernels"
     }
   ],
   "suites": [
