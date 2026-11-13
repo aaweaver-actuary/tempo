@@ -1476,3 +1476,37 @@ it("receipt recovery does not overwrite a mismatched existing delivery identity"
   expect((await flushPendingReviews()).persistedAttemptIds).toEqual([original.attemptId]);
   expect(await store.get(key)).toMatchObject({ ...wrong, state: "pending" });
 });
+
+it.each(["immediate", "deferred"])("%s evidence rejection settles the fallback receipt's operation, not the last POST", async timing => {
+  const { studyIntentStore, refreshStudyIntents } = await import("../../database/browser/study-intent-storage");
+  const original = await enqueueOpeningEvidenceReview(`fallback-receipt-${timing}`);
+  const store = await studyIntentStore();
+  await store.update(`review:${original.attemptId}`, current => ({ ...current, data: { ...current.data as object, deliveryStarted: true } }));
+  await refreshStudyIntents();
+  const base = `review-attempt:${original.attemptId}`, aggregate = `${base}:aggregate-only`;
+  const key = `review-delivery:${aggregate}`;
+  await store.put({ key, kind: "review-delivery", attemptId: original.attemptId, requestId: aggregate,
+    endpoint: "/original", createdAt: "original", payload: { body: "retained aggregate bytes" } });
+  const calls: string[] = [];
+  let baseReads = 0;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = decodeURIComponent(String(input));
+    calls.push(`${init?.method ?? "GET"} ${url}`);
+    if (init?.method === "POST") {
+      expect(new Headers(init.headers).get("Idempotency-Key")).toBe(base);
+      return timing === "immediate"
+        ? Response.json({ detail: { code: "opening_evidence_conflict", message: "rejected", aggregate_review_allowed: true } }, { status: 409 })
+        : Response.json({ operation_id: base, state: "queued" }, { status: 202 });
+    }
+    if (url.endsWith(`/api/operations/${aggregate}`))
+      return Response.json({ operation_id: aggregate, state: "complete", response: { persisted: true, review_id: 55 } });
+    expect(url.endsWith(`/api/operations/${base}`)).toBe(true);
+    baseReads++;
+    return Response.json(baseReads === 1 ? { operation_id: base, state: "unknown" } :
+      { operation_id: base, state: "failed", error: { status_code: 409, message: "opening_evidence_conflict", retryable: false } });
+  }));
+  expect((await flushPendingReviews()).persistedAttemptIds).toEqual([original.attemptId]);
+  expect(await store.get(`review-delivery:${base}`)).toMatchObject({ state: "pending" });
+  expect(await store.get(key)).toMatchObject({ state: "committed", requestId: aggregate, receipt: { persisted: true, review_id: 55 } });
+  expect(calls.filter(call => call.startsWith("POST "))).toHaveLength(1);
+});

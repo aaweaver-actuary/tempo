@@ -264,7 +264,7 @@ async function sendReview(review: PendingReview, transport: ReturnType<typeof cr
   const reconciling = review.state === "reconciling";
   const endpoint = `${transport.origin}/api/cards/${encodeURIComponent(review.backendId)}/review${reconciling ? "/reconcile" : ""}`;
   let failureMarkerSent = false;
-  let sentDeliveryKey: string | undefined;
+  let confirmedOperationId: string | undefined;
   const response = await withReviewSaveDeadline(endpoint, review, signal => saveEvidenceAwareReview({
     endpoint, signal, client: transport.client, requireCurrent, rejectEvidence: rejectOpeningEvidence, request: async (url, options) => {
       requireCurrent();
@@ -303,7 +303,6 @@ async function sendReview(review: PendingReview, transport: ReturnType<typeof cr
         endpoint: url, revision: review.expectedRevision, createdAt: existing?.createdAt ?? review.completedAt ?? "legacy-time-unavailable",
         payload: { parentKey: `review:${attemptId}`, headers: options.headers, body: JSON.parse(String(options.body)) } });
       requireCurrent();
-      sentDeliveryKey = deliveryKey;
       const response = await transport.client.learningFetch(url, options);
       requireCurrent();
       return response;
@@ -311,6 +310,7 @@ async function sendReview(review: PendingReview, transport: ReturnType<typeof cr
     operationKey: reconciling ? `review-reconcile:${attemptId}:${review.reconciliationSequence ?? 1}` : `review-attempt:${attemptId}`,
     completion: review.openingEvidenceCompletion, evidenceRejected: review.evidenceRejected, positionStudy: review.positionStudy,
     verifyReceiptFirst,
+    onConfirmedOperation: operationId => { confirmedOperationId = operationId; },
     aggregateOnly: review.evidenceFallbackReason === "local_storage_quota",
     onEvidenceRejected: async (message) => {
       requireCurrent();
@@ -356,8 +356,8 @@ async function sendReview(review: PendingReview, transport: ReturnType<typeof cr
   // receipt can settle the delivery. A 202 body is never a review receipt.
   const receipt = await response.clone().json().catch(() => undefined) as { persisted?: boolean } | undefined;
   requireCurrent();
-  if (receipt?.persisted === true)
-    await settleExistingReviewDelivery(store, sentDeliveryKey?.slice("review-delivery:".length) ?? reviewOperationId(review), attemptId, receipt, requireCurrent);
+  if (receipt?.persisted === true && confirmedOperationId)
+    await settleExistingReviewDelivery(store, confirmedOperationId, attemptId, receipt, requireCurrent);
   requireCurrent();
   return response;
 }

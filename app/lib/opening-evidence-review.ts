@@ -15,6 +15,8 @@ type ReviewEvidenceOptions = {
   /** Issued position attempts must retain their exact evidence envelope. */
   positionStudy?: boolean;
   verifyReceiptFirst?: boolean;
+  /** The exact command whose terminal response was returned, including fallback suffix. */
+  onConfirmedOperation?: (operationId: string) => void;
   onEvidenceRejected: (message: string) => void | Promise<void>;
   request?: (url: string, options: RequestInit) => Promise<Response>;
 } & (
@@ -35,7 +37,10 @@ export async function saveEvidenceAwareReview(options: ReviewEvidenceOptions): P
       const receipt = await readOperationResponse(sentOperationId,
         { signal: options.signal, allowMissing: true, ...(options.client ? { client: options.client } : {}) });
       requireCurrent();
-      if (receipt.status !== 404) return receipt;
+      if (receipt.status !== 404) {
+        if (receipt.ok) options.onConfirmedOperation?.(sentOperationId);
+        return receipt;
+      }
     }
     requireCurrent();
     return request(options.endpoint, { method: "POST", signal: options.signal,
@@ -44,7 +49,11 @@ export async function saveEvidenceAwareReview(options: ReviewEvidenceOptions): P
   }).then(response => {
     requireCurrent();
     return confirmOriginalOperationResponse(response, sentOperationId, { signal: options.signal, ...(options.client ? { client: options.client } : {}) });
-  }).then(response => { requireCurrent(); return response; });
+  }).then(response => {
+    requireCurrent();
+    if (response.ok) options.onConfirmedOperation?.(sentOperationId);
+    return response;
+  });
   };
   let response: Response;
   try { response = await send(); }
