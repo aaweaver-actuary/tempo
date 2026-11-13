@@ -2853,11 +2853,13 @@
         "migrations": []
       },
       "ownedFiles": [
-        "backend/app/services/queue_ordering.py"
+        "backend/app/services/queue_ordering.py",
+        "backend/app/services/legacy_game_evidence_scope.py"
       ],
       "ownershipRole": "Retain backend ordering exports",
       "dependencyNotes": [
-        "Projects historical bridge priority labels into Study policy and restores original rows; main, queue refresh, command and placement consume existing exports."
+        "Projects historical bridge priority labels into Study policy and restores original rows; main, queue refresh, command and placement consume existing exports.",
+        "Owns the existing legacy workspace ID and bridge miss-reason constants used by queue ordering; this maps identity only and does not revive a producer."
       ],
       "censusScope": "queue_order"
     },

@@ -639,8 +639,12 @@ projection consumed by task composition, including membership hash and queued
 entry presence. It does not establish worker or runtime behavior. Previous fixture
 gaps remain open.
 
-At this base revision, 32 of 289 tracked Python files in those trees remain
-outside the combined 257-file selections. The registry alone assigns owners;
+The queue ordering owner also maps the existing legacy bridge workspace and miss
+reason constants consumed by its facade. This records identity only and does not
+revive an optional producer or establish runtime behavior. Previous gaps remain open.
+
+At this base revision, 31 of 289 tracked Python files in those trees remain
+outside the combined 258-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover
