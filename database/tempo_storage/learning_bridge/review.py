@@ -40,16 +40,16 @@ def current_revision(database, card_id):
 def latest_review_id(database, card_id, valid_only):
     return database.execute(('SELECT COALESCE(MAX(id),0) FROM reviews WHERE card_id=%s' if valid_only else 'SELECT MAX(id) FROM reviews WHERE card_id=%s') + (' AND invalidated_at IS NULL' if valid_only else ''), (card_id,)).fetchone()[0]
 
-def retain_introduction(database, queue_day, card_id):
+def retain_introduction(database: postgres.PostgresConnection, queue_day: str, card_id: str) -> None:
     database.execute('UPDATE cards SET introduced_at=COALESCE(introduced_at,%s) WHERE id=%s', (queue_day, card_id))
 
 def has_later_review(database, card_id, reviewed_at):
     return database.execute('SELECT id FROM reviews WHERE card_id=%s AND invalidated_at IS NULL AND reviewed_at>%s LIMIT 1', (card_id, reviewed_at)).fetchone() is not None
 
-def restore_receipt_outcome(database, outcome, guided, attempt_id):
+def restore_receipt_outcome(database: postgres.PostgresConnection, outcome: str, guided: int, attempt_id: str | None) -> None:
     database.execute('UPDATE review_attempt_receipts SET outcome=%s,guided=%s WHERE attempt_id=%s', (outcome, guided, attempt_id))
 
-def bind_receipt_request(database, request_json, attempt_id):
+def bind_receipt_request(database: postgres.PostgresConnection, request_json: str, attempt_id: str | None) -> None:
     database.execute('UPDATE review_attempt_receipts SET request_json=%s WHERE attempt_id=%s', (request_json, attempt_id))
 
 def queue_date(database, entry_id):
@@ -67,7 +67,7 @@ def mark_clean_tactic(database, reviewed_at, card_id):
 def insert_receipt(database, attempt_id, card_id, entry_id, outcome, guided, completed_at, review_id, scheduling_status, warning, result_json):
     database.execute('INSERT INTO review_attempt_receipts(attempt_id,card_id,queue_entry_id,outcome,guided,completed_at,review_id,scheduling_status,warning,result_json) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)', (attempt_id, card_id, entry_id, outcome, guided, completed_at, review_id, scheduling_status, warning, result_json))
 
-def retain_completion(database, result_json, entry_id, card_id):
+def retain_completion(database: postgres.PostgresConnection, result_json: str, entry_id: int, card_id: str) -> None:
     database.execute('UPDATE daily_queue SET review_result_json=%s WHERE id=%s AND card_id=%s', (result_json, entry_id, card_id))
 
 def last_queue_id(database, day):
