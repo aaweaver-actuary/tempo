@@ -49,3 +49,29 @@ it('FE25 delayed offline open cannot migrate an old authority to a new one', asy
     expect(databaseA).not.toBe(databaseB); databaseA.close(); databaseB.close();
   } finally { vi.unstubAllGlobals(); vi.resetModules(); }
 });
+
+it('FE25 journal append aborts an uncommitted stale callback without changing either locator', async () => {
+  vi.resetModules(); vi.stubGlobal('indexedDB', new IDBFactory());
+  try {
+    const { offlineTrainingDatabase } = await import('../../database/browser/offline-training-storage');
+    const { appendOpeningAttempt } = await import('../../database/browser/opening-evidence-journal-storage');
+    const { evidenceCompletion } = await import('../fixtures/opening-evidence-storage');
+    let generation = 1, checks = 0;
+    const a = { locator: 'fe25-journal-A', requireCurrent: () => {
+      if (generation !== 1 || ++checks >= 2) throw new Error('authority changed');
+    } };
+    const openA = { locator: a.locator, requireCurrent: () => {} };
+    const b = { locator: 'fe25-journal-B', requireCurrent: () => {} };
+    const dbA = await offlineTrainingDatabase(openA), dbB = await offlineTrainingDatabase(b);
+    const checkpoint = evidenceCompletion('original');
+    const { events, ...header } = checkpoint;
+    const attempt = { ...header, owner_session_id: 'owner', final_sequence: events.length, delivery_state: 'pending' as const };
+    await expect(appendOpeningAttempt(dbA, attempt, events, checkpoint, a)).rejects.toThrow('authority changed');
+    const read = (db: IDBDatabase) => new Promise<unknown>((resolve, reject) => {
+      const request = db.transaction('opening_attempts').objectStore('opening_attempts').get('original');
+      request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+    });
+    expect(await read(dbA)).toBeUndefined(); expect(await read(dbB)).toBeUndefined();
+    generation = 2; dbA.close(); dbB.close();
+  } finally { vi.unstubAllGlobals(); vi.resetModules(); }
+});

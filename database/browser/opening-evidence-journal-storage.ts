@@ -5,22 +5,24 @@ import type { SavedAttempt, SavedEvent, SavedOpeningJournal, OpeningEvidenceRece
 
 export const completionSignalKey = "tempo-opening-evidence-completion-v1";
 
-export function appendOpeningAttempt(database: IDBDatabase, attempt: SavedAttempt, pendingEvents: OpeningDecisionEvent[], snapshot: OpeningEvidenceCheckpoint): Promise<void> {
+export function appendOpeningAttempt(database: IDBDatabase, attempt: SavedAttempt, pendingEvents: OpeningDecisionEvent[], snapshot: OpeningEvidenceCheckpoint, binding?: OfflineDatabaseBinding): Promise<void> {
   return new Promise<void>((resolve, reject) => {
+    binding?.requireCurrent();
+    let failure: unknown;
     const transaction = database.transaction(["opening_attempts", "opening_events"], "readwrite");
     const attempts = transaction.objectStore("opening_attempts");
     const prior = attempts.get(attempt.attempt_id);
-    prior.onsuccess = () => attempts.put({ ...attempt,
+    prior.onsuccess = () => { try { binding?.requireCurrent(); attempts.put({ ...attempt,
       ...(prior.result?.delivery ? { delivery: prior.result.delivery } : {}),
       ...(["rejected", "retained"].includes(prior.result?.delivery_state)
         ? { delivery_state: prior.result.delivery_state, rejection: prior.result.rejection,
           retention_reason: prior.result.retention_reason } : {}),
-    });
+    }); } catch (error) { failure = error; transaction.abort(); } };
     // Normally one row; retries also repair this attempt's failed local appends.
     for (const pendingEvent of pendingEvents) transaction.objectStore("opening_events").put({ ...pendingEvent, attempt_id: snapshot.attempt_id });
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error);
-    transaction.onabort = () => reject(transaction.error);
+    transaction.oncomplete = () => { try { binding?.requireCurrent(); resolve(); } catch (error) { reject(error); } };
+    transaction.onerror = () => reject(failure ?? transaction.error);
+    transaction.onabort = () => reject(failure ?? transaction.error);
   });
 }
 
@@ -109,25 +111,29 @@ export function retainOpeningAttempt(database: IDBDatabase, snapshot: OpeningEvi
   });
 }
 
-export function freezeOpeningDelivery(database: IDBDatabase, checkpoint: OpeningEvidenceCheckpoint, operationKey: string): Promise<void> {
+export function freezeOpeningDelivery(database: IDBDatabase, checkpoint: OpeningEvidenceCheckpoint, operationKey: string, binding?: OfflineDatabaseBinding): Promise<void> {
   return new Promise<void>((resolve, reject) => {
+    binding?.requireCurrent();
+    let failure: unknown;
     const transaction = database.transaction("opening_attempts", "readwrite");
     const attempts = transaction.objectStore("opening_attempts");
     const read = attempts.get(checkpoint.attempt_id);
-    read.onsuccess = () => { if (read.result) attempts.put({ ...read.result, delivery: { checkpoint, operationKey } }); };
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error);
-    transaction.onabort = () => reject(transaction.error);
+    read.onsuccess = () => { try { binding?.requireCurrent(); if (read.result) attempts.put({ ...read.result, delivery: { checkpoint, operationKey } });  } catch (error) { failure = error; transaction.abort(); } };
+    transaction.oncomplete = () => { try { binding?.requireCurrent(); resolve(); } catch (error) { reject(error); } };
+    transaction.onerror = () => reject(failure ?? transaction.error);
+    transaction.onabort = () => reject(failure ?? transaction.error);
   });
 }
 
-export function confirmOpeningDelivery(database: IDBDatabase, checkpoint: OpeningEvidenceCheckpoint, receipt: OpeningEvidenceReceipt, onConfirmed: () => void): Promise<void> {
+export function confirmOpeningDelivery(database: IDBDatabase, checkpoint: OpeningEvidenceCheckpoint, receipt: OpeningEvidenceReceipt, onConfirmed: () => void, binding?: OfflineDatabaseBinding): Promise<void> {
   return new Promise<void>((resolve, reject) => {
+    binding?.requireCurrent();
+    let failure: unknown;
     const transaction = database.transaction(["opening_attempts", "opening_events"], "readwrite");
     const attemptStore = transaction.objectStore("opening_attempts");
     const eventStore = transaction.objectStore("opening_events");
     const current = attemptStore.get(checkpoint.attempt_id);
-    current.onsuccess = () => {
+    current.onsuccess = () => { try { binding?.requireCurrent();
       if (!current.result || ["rejected", "retained"].includes(current.result.delivery_state)) return;
       onConfirmed();
       if (current.result.position_plan !== undefined) {
@@ -140,18 +146,18 @@ export function confirmOpeningDelivery(database: IDBDatabase, checkpoint: Openin
       }
       for (const event of checkpoint.events) if (receipt.received_sequences!.includes(event.sequence)) eventStore.delete([checkpoint.attempt_id, event.sequence]);
       const remaining = eventStore.index("attempt_id").count(checkpoint.attempt_id);
-      remaining.onsuccess = () => {
+      remaining.onsuccess = () => { try { binding?.requireCurrent();
         const terminalPending = current.result.terminal?.state === "partial" &&
           JSON.stringify(current.result.terminal) !== JSON.stringify(checkpoint.terminal);
         if (checkpoint.terminal?.state === "partial" && receipt.contiguous_sequence === checkpoint.terminal.final_sequence && !remaining.result && !terminalPending) attemptStore.delete(checkpoint.attempt_id);
         else attemptStore.put({ ...current.result, delivery: undefined,
           local_capture_gap: receipt.contiguous_sequence === current.result.final_sequence ? undefined : current.result.local_capture_gap,
           delivery_state: remaining.result || terminalPending ? "pending" : "idle" });
-      };
-    };
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error);
-    transaction.onabort = () => reject(transaction.error);
+      } catch (error) { failure = error; transaction.abort(); } };
+     } catch (error) { failure = error; transaction.abort(); } };
+    transaction.oncomplete = () => { try { binding?.requireCurrent(); resolve(); } catch (error) { reject(error); } };
+    transaction.onerror = () => reject(failure ?? transaction.error);
+    transaction.onabort = () => reject(failure ?? transaction.error);
   });
 }
 
@@ -200,18 +206,20 @@ export function readPreparedOpeningAggregate(database: IDBDatabase): Promise<Pre
   });
 }
 
-export function markOrphanedOpeningAttemptPartial(database: IDBDatabase, attempt: SavedAttempt, endedAt: () => string): Promise<void> {
+export function markOrphanedOpeningAttemptPartial(database: IDBDatabase, attempt: SavedAttempt, endedAt: () => string, binding?: OfflineDatabaseBinding): Promise<void> {
   return new Promise<void>((resolve, reject) => {
+    binding?.requireCurrent();
+    let failure: unknown;
     const transaction = database.transaction("opening_attempts", "readwrite");
     const store = transaction.objectStore("opening_attempts");
     const read = store.get(attempt.attempt_id);
-    read.onsuccess = () => {
+    read.onsuccess = () => { try { binding?.requireCurrent();
       if (read.result && read.result.terminal?.state !== "partial" && !["rejected", "retained"].includes(read.result.delivery_state)) store.put({ ...read.result, delivery_state: "pending",
         terminal: { state: "partial", final_sequence: read.result.final_sequence,
           ended_at: read.result.terminal?.ended_at ?? endedAt() } });
-    };
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error); transaction.onabort = () => reject(transaction.error);
+     } catch (error) { failure = error; transaction.abort(); } };
+    transaction.oncomplete = () => { try { binding?.requireCurrent(); resolve(); } catch (error) { reject(error); } };
+    transaction.onerror = () => reject(failure ?? transaction.error); transaction.onabort = () => reject(failure ?? transaction.error);
   });
 }
 

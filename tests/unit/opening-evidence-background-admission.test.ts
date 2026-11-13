@@ -319,3 +319,69 @@ it.each(["missing", "foreign"])("%s checkpoint acknowledgment retains frozen key
   expect(posts[1].init?.body).toBe(posts[0].init?.body);
   expect(calls.some(call => call.url.includes("foreign"))).toBe(false);
 });
+
+it.each(['different locator', 'same locator generation'])('FE25 delayed evidence response preserves original journal after %s switch', async mode => {
+  const { journal, attempts, savedEvents } = await savedJournal();
+  let generation = 1;
+  const binding = { locator: mode === 'different locator' ? 'authority-A' : 'same-locator',
+    requireCurrent: () => { if (generation !== 1) throw new Error('authority changed'); } };
+  const owner = await import('../../database/browser/offline-training-storage');
+  vi.spyOn(owner, 'captureOfflineDatabaseBinding').mockReturnValue(binding);
+  let resolveResponse!: (response: Response) => void;
+  let notifyStarted!: () => void;
+  const started = new Promise<void>(resolve => { notifyStarted = resolve; });
+  const fetcher = vi.fn(() => { notifyStarted(); return new Promise<Response>(resolve => { resolveResponse = resolve; }); });
+  vi.stubGlobal('fetch', fetcher);
+  const pending = journal.flushOpeningEvidence();
+  await started;
+  const original = structuredClone(attempts.get(checkpoint.attempt_id));
+  const events = structuredClone([...savedEvents]);
+  generation = 2;
+  resolveResponse(Response.json({ persisted: true, attempt_id: checkpoint.attempt_id, received_sequences: [1], contiguous_sequence: 1 }));
+  await expect(pending).rejects.toThrow('authority changed');
+  expect(attempts.get(checkpoint.attempt_id)).toEqual(original);
+  expect([...savedEvents]).toEqual(events);
+  expect(fetcher).toHaveBeenCalledOnce();
+});
+
+it('FE25 delayed journal append keeps its captured authority and original events', async () => {
+  const { journal } = await savedJournal();
+  const owner = await import('../../database/browser/offline-training-storage');
+  const storage = await import('../../database/browser/opening-evidence-journal-storage');
+  let generation = 1;
+  const binding = { locator: 'authority-A', requireCurrent: () => { if (generation !== 1) throw new Error('authority changed'); } };
+  vi.spyOn(owner, 'captureOfflineDatabaseBinding').mockReturnValue(binding);
+  let release!: () => void, notifyStarted!: () => void;
+  const started = new Promise<void>(resolve => { notifyStarted = resolve; });
+  vi.spyOn(storage, 'retainOpeningAttempt').mockImplementation(() => { notifyStarted(); return new Promise<void>(resolve => { release = resolve; }); });
+  const append = vi.spyOn(storage, 'appendOpeningAttempt');
+  const prior = journal.retainOpeningEvidenceForStorageFallback(checkpoint);
+  await started;
+  const { mapQueueCardToPracticeCard } = await import('../../app/domain/adapters/practice-card-adapters');
+  const card = mapQueueCardToPracticeCard({ id: 'held-card', queue_entry_id: 101, start_fen: manifest.decisions[0].fen,
+    moves: ['e2e4','e7e5','g1f3','b8c6','f1b5'], content_type: 'opening', repertoire_name: 'Held',
+    repertoire_source: 'PGN', opening_decision_manifest: manifest });
+  const capture = journal.beginOpeningAttempt(card, 'held-original')!;
+  capture.response(0, 'e2e4', 'expected');
+  generation = 2; release();
+  await expect(prior).rejects.toThrow('authority changed');
+  await vi.waitFor(() => expect(capture.storageError).toContain('authority changed'));
+  expect(append).not.toHaveBeenCalled();
+  expect(capture.uncommittedEvents.get(1)).toMatchObject({ response_uci: 'e2e4' });
+});
+
+it('FE25 position reservation holds its original authority while waiting for its lock', async () => {
+  const { journal } = await savedJournal();
+  const owner = await import('../../database/browser/offline-training-storage');
+  let generation = 1;
+  vi.spyOn(owner, 'captureOfflineDatabaseBinding').mockReturnValue({ locator: 'authority-A',
+    requireCurrent: () => { if (generation !== 1) throw new Error('authority changed'); } });
+  const open = vi.mocked(owner.offlineTrainingDatabase); open.mockClear();
+  let resume!: () => void;
+  vi.stubGlobal('navigator', { onLine: true, locks: { request: vi.fn((_name, _options, callback) =>
+    new Promise<void>(resolve => { resume = () => { void callback({}).then(resolve); }; })) } });
+  const pending = journal.preparePositionOpeningAttempt({ positionStudyMode: 'position', positionPresentation: { attempt_id: 'position-original' } } as never);
+  generation = 2; resume();
+  expect(await pending).toContain('could not restore');
+  expect(open).not.toHaveBeenCalled();
+});
