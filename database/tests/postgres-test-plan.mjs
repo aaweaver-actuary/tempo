@@ -126,7 +126,7 @@ export const maintainedQueueCases = [
   'test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recovery',
 ];
 export const unresolvedQueueCases = [
-  'test_postgres_retired_opening_evidence_reconciliation_is_atomic_and_replay_safe',
+  'test_postgres_retained_review_reconciliation_preserves_original_attempt',
 ];
 export const excludedQueueCases = [
   'test_postgres_paused_feedback_history_preserves_ordinary_study',

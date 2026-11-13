@@ -1508,7 +1508,7 @@ test("P04 maintained queue receipt distinguishes pending native replacement from
   const receipt = { case_set: "maintained-six", scope: "partial", execution: "completed", executed_count: 6,
     cases: maintainedQueueCases, excluded_cases: excludedQueueCases, unresolved_owner_cases: unresolvedQueueCases };
   assert.equal(excludedQueueCases[0], "test_postgres_paused_feedback_history_preserves_ordinary_study");
-  assert.deepEqual(unresolvedQueueCases, ["test_postgres_retired_opening_evidence_reconciliation_is_atomic_and_replay_safe"]);
+  assert.deepEqual(unresolvedQueueCases, ["test_postgres_retained_review_reconciliation_preserves_original_attempt"]);
   verifyMaintainedQueueReceipt(receipt);
   assert.throws(() => verifyMaintainedQueueReceipt({ ...receipt, excluded_cases: unresolvedQueueCases }));
   assert.throws(() => verifyMaintainedQueueReceipt({ ...receipt, unresolved_owner_cases: excludedQueueCases }));

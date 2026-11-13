@@ -249,3 +249,12 @@ def test_paused_feedback_waits_for_the_exact_post_review_generation_and_publicat
     with pytest.raises(AssertionError, match='did not complete'):
         wait(lambda: ({'id': 'task', 'generation': 8, 'state': 'queued'}, {'published_refresh_epoch': 6}),
              lambda: None, lambda: next(ticks), lambda _: None, 'task', 8, 7)
+
+
+def test_queue_recovery_retained_review_selection_is_exact(capsys):
+    import json
+    namespace, events = _queue_selector_namespace()
+    namespace["queue_recovery_main"](["--case-set", "review-recovery"])
+    assert events == ["test_postgres_retained_review_reconciliation_preserves_original_attempt"]
+    receipt = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert receipt["scope"] == "review-recovery-only" and receipt["executed_count"] == 1

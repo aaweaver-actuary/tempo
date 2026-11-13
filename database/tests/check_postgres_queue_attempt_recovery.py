@@ -286,114 +286,158 @@ def test_postgres_guided_marker_locks_displayed_revision_until_commit():
         postgres.close_pools()
 
 
-def test_postgres_retired_opening_evidence_reconciliation_is_atomic_and_replay_safe():
+def test_postgres_retained_review_reconciliation_preserves_original_attempt():
+    """Current non-position recovery: immutable transport, atomic review and evidence."""
     from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
-    from app.services.postgres_opening_evidence import prepare_checkpoint, persist_checkpoint
-    from database.tests.check_postgres_opening_evidence import (
-        _create_color_fixture, _transport_color_fixture, _color_checkpoint,
-        _fixture_scheduling, _retain_color_provenance, shadow_digest,
-    )
+    from app.contracts.review_conflicts import ReviewConflict
+    from app.services.learning_review_adapter import LearningReviewAdapter
+    from app.study.position_checkpoint import prepare_checkpoint, persist_checkpoint, queue_manifests
+    from database.tests.check_postgres_opening_evidence import shadow_digest
+
     if os.getenv("TEMPO_TEST_INSTANCE") != "disposable":
-        raise RuntimeError("Opening reconciliation proof requires disposable PostgreSQL")
+        raise RuntimeError("Review reconciliation proof requires disposable PostgreSQL")
     dsn = "postgresql://postgres@postgres:5432/tempo"
     os.environ["TEMPO_DATABASE_WRITE_URL"] = dsn
     os.environ["TEMPO_DATABASE_READ_URL"] = dsn
     postgres.close_pools()
-    operations = []
-    fixtures = []
-    today = date.today().isoformat()
+    day = date.today().isoformat()
     with postgres.connection() as database:
-        snapshot = snapshot_queue_environment(database, (today, today))
+        environment = snapshot_queue_environment(database, (day, day))
+        positions = [tuple(row) for row in database.execute_native("SELECT id,position FROM daily_queue WHERE queue_date=%s", (day,)).fetchall()]
+    fixtures, operations = [], []
     try:
-        for scenario in ("valid", "guided", "changed", "unprovable"):
-            fixture = _create_color_fixture('black')
-            fixtures.append(fixture)
-            manifest = _transport_color_fixture(fixture)['opening_decision_manifest']
-            checkpoint = _color_checkpoint(fixture, manifest).model_dump(mode='json')
-            checkpoint['terminal']['state'] = 'complete'
-            completion = OpeningEvidenceCheckpoint.model_validate(checkpoint)
-            prepared = prepare_checkpoint(completion)
-            payload = {'card_id':fixture['card_id'], 'review':{
-                'attempt_id':completion.attempt_id, 'queue_entry_id':fixture['queue_id'],
-                'outcome':'again' if scenario == 'guided' else 'correct', 'guided':scenario == 'guided',
-                'expected_revision':completion.manifest.card_revision, 'recorded_at':completion.terminal.ended_at,
-                'opening_evidence_completion':checkpoint}, 'prepared_manifest':prepared}
-            original_operation = fixture['card_id']+'-original-save'
-            reconcile_operation = fixture['card_id']+'-reconcile'
-            operations.extend((original_operation, reconcile_operation))
+        for scenario in ("valid", "guided", "changed", "unprovable", "injected"):
+            card_id = "p05-review-" + uuid.uuid4().hex
+            attempt_id = card_id + "-attempt"
+            now = datetime.now(timezone.utc).replace(microsecond=0)
+            fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+            moves = ["e2e4", "e7e5"]
+            fixtures.append(card_id)
             with postgres.connection() as database:
-                # Previously acknowledged capture remains durable if this operation conflicts.
-                active = {**checkpoint, 'events':[], 'terminal':None}
-                persist_checkpoint(database, {'checkpoint':active,'prepared_manifest':prepared})
-                database.execute('DELETE FROM daily_queue WHERE id=?', (fixture['queue_id'],))
-                # A historical failed delivery must remain failed; recovery has its own transport identity.
-                database.execute_native(
-                    "INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,payload_json,error_json) "
-                    "VALUES(%s,'cards.review',%s,'failed',%s,%s)",
-                    (original_operation, request_digest('cards.review',payload), json.dumps(payload),
-                     json.dumps({'status_code':409,'message':'Historical queue projection was unavailable'})))
+                database.execute_native("INSERT INTO repertoires(id,name,source_name,created_at,new_cards_per_day) VALUES(%s,%s,'p05',%s,0)", (card_id, card_id, now.isoformat()))
+                database.execute_native("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(%s,%s,'captured black','black',%s,%s,%s)", (card_id + '-line', card_id, fen, json.dumps(moves), now.isoformat()))
+                database.execute_native("INSERT INTO cards(id,repertoire_id,kind,content_type,start_fen,moves_json,trained_color,state,due_date) VALUES(%s,%s,'prefix','opening',%s,%s,NULL,'learning',%s)", (card_id, card_id, fen, json.dumps(moves), day))
+                database.execute_native("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(%s,%s)", (card_id, card_id))
+                entry = database.execute_native("INSERT INTO daily_queue(queue_date,card_id,position,card_bucket,admission_kind,admission_repertoire_id) VALUES(%s,%s,-1000000,'opening','due',%s) RETURNING id", (day, card_id, card_id)).fetchone()[0]
+            issue = card_id + '-issue'; operations.append(issue)
+            assert execute_command(issue, 'queue.issue_head', {'queue_date': day, 'entry_id': entry, 'card_id': card_id, 'expected_revision': 1})['issued']
+            card = {'id': card_id, 'content_type': 'opening', 'revision': 1, 'start_fen': fen, 'moves': moves, 'queue_entry_id': entry}
+            queue_manifests([card])
+            manifest = card['opening_decision_manifest']
+            assert manifest['trained_color'] == 'black'
+            decision = manifest['decisions'][0]
+            checkpoint = OpeningEvidenceCheckpoint(attempt_id=attempt_id, manifest=manifest,
+                origin_queue_entry_id=entry, queue_entry_id=entry, started_at=now.isoformat(), study_timezone='UTC',
+                events=[{'sequence': 1, 'decision_index': 0, 'decision_id': decision['decision_id'],
+                    'expected_uci': decision['expected_uci'], 'kind': 'first_response', 'observed_at': now.isoformat(),
+                    'response_uci': decision['expected_uci'], 'disposition': 'expected'}],
+                terminal={'state': 'complete', 'final_sequence': 1, 'ended_at': now.isoformat()}).model_dump(mode='json')
+            prepared_manifest = prepare_checkpoint(OpeningEvidenceCheckpoint.model_validate(checkpoint))
+            payload = {'card_id': card_id, 'review': {'attempt_id': attempt_id, 'queue_entry_id': entry,
+                'outcome': 'again' if scenario == 'guided' else 'correct', 'guided': scenario == 'guided',
+                'expected_revision': 1, 'recorded_at': now.isoformat(), 'opening_evidence_completion': checkpoint},
+                'prepared_manifest': prepared_manifest}
+            original, reconcile, replay = (card_id + suffix for suffix in ('-original', '-reconcile', '-replay'))
+            operations.extend((original, reconcile, replay))
+            with postgres.connection() as database:
+                persist_checkpoint(database, {'checkpoint': {**checkpoint, 'events': [], 'terminal': None}, 'prepared_manifest': prepared_manifest})
+                database.execute_native('DELETE FROM daily_queue WHERE id=%s', (entry,))
+                database.execute_native("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,payload_json,error_json) VALUES(%s,'cards.review',%s,'failed',%s,%s)", (original, request_digest('cards.review', payload), json.dumps(payload), json.dumps({'status_code': 409, 'message': 'Historical queue projection was unavailable'})))
                 if scenario == 'changed':
-                    database.execute("UPDATE cards SET moves_json='[\"d2d4\",\"d7d5\"]' WHERE id=?", (fixture['card_id'],))
+                    database.execute_native("UPDATE cards SET revision=2,moves_json='[\"d2d4\",\"d7d5\"]' WHERE id=%s", (card_id,))
                 elif scenario == 'unprovable':
-                    database.execute('DELETE FROM queue_attempt_origins WHERE queue_entry_id=?', (fixture['queue_id'],))
+                    database.execute_native('DELETE FROM queue_attempt_origins WHERE queue_entry_id=%s', (entry,))
                 elif scenario == 'guided':
-                    # The validated parent color must survive mutable fallback changes.
-                    database.execute("UPDATE repertoire_lines SET trained_color='white' WHERE repertoire_id=?", (fixture['repertoire_id'],))
-                before_shadow = shadow_digest(database, fixture['card_id'])
-                before_scheduling = _fixture_scheduling(database, fixture)
+                    database.execute_native("UPDATE repertoire_lines SET trained_color='white' WHERE repertoire_id=%s", (card_id,))
+            def snapshot():
+                with postgres.connection(read_only=True) as database:
+                    queries = {
+                        'card': ('SELECT * FROM cards WHERE id=%s', card_id),
+                        'queue': ('SELECT * FROM daily_queue WHERE card_id=%s ORDER BY id', card_id),
+                        'reviews': ('SELECT * FROM reviews WHERE card_id=%s ORDER BY id', card_id),
+                        'receipts': ('SELECT * FROM review_attempt_receipts WHERE attempt_id=%s', attempt_id),
+                        'first_responses': ('SELECT * FROM study_position_first_responses WHERE attempt_id=%s ORDER BY decision_index', attempt_id),
+                        'grades': ('SELECT * FROM study_position_grades WHERE attempt_id=%s ORDER BY effect_id', attempt_id),
+                        'failed_transport': ('SELECT * FROM operation_receipts WHERE operation_id=%s', original),
+                    }
+                    return {**{name: [dict(row) for row in database.execute_native(sql, (value,)).fetchall()] for name, (sql, value) in queries.items()},
+                            'evidence': shadow_digest(database, card_id)}
+            before = snapshot()
+            # This is an issued legacy/non-position attempt; no frozen position
+            # plan or synthetic first-response/grade may be fabricated for it.
+            assert before['first_responses'] == before['grades'] == []
+            assert len(before['failed_transport']) == 1 and before['failed_transport'][0]['state'] == 'failed'
             try:
-                execute_command(original_operation, 'cards.review', payload)
+                execute_command(original, 'cards.review', payload)
             except RuntimeError as error:
                 assert str(error) == 'Historical queue projection was unavailable'
             else:
-                raise AssertionError('The original failed transport receipt must remain authoritative')
-            result = execute_command(reconcile_operation, 'cards.review.reconcile', payload)
-            assert result is not None, read_operation(reconcile_operation)
-            assert read_operation(original_operation)['state'] == 'failed'
-            with postgres.connection() as database:
-                if scenario in {'changed','unprovable'}:
-                    expected_code = 'card_revision_changed' if scenario == 'changed' else 'queue_attempt_unprovable'
-                    assert result['persisted'] is False and result['conflict']['code'] == expected_code
-                    assert shadow_digest(database, fixture['card_id']) == before_shadow, 'Conflict committed partial evidence'
-                    assert _fixture_scheduling(database, fixture) == before_scheduling, 'Conflict committed review/scheduling writes'
-                    assert database.execute('SELECT COUNT(*) FROM review_attempt_receipts WHERE attempt_id=?', (completion.attempt_id,)).fetchone()[0] == 0
+                raise AssertionError('Original failed transport must remain authoritative')
+            if scenario == 'injected':
+                save = LearningReviewAdapter.save_receipt
+                def fail_after_receipt(adapter, *args, **kwargs):
+                    save(adapter, *args, **kwargs)
+                    raise ReviewConflict('p05_injected', 'Rollback after review and checkpoint writes')
+                with patch.object(LearningReviewAdapter, 'save_receipt', fail_after_receipt):
+                    rejected = execute_command(reconcile, 'cards.review.reconcile', payload)
+                assert rejected['persisted'] is False and rejected['conflict']['code'] == 'p05_injected'
+                assert snapshot() == before, 'Handled failure committed a partial review, checkpoint, or receipt'
+                assert execute_command(reconcile, 'cards.review.reconcile', payload) == rejected
+                reconcile = replay
+                replay = card_id + '-after-rollback'; operations.append(replay)
+            result = execute_command(reconcile, 'cards.review.reconcile', payload)
+            after = snapshot()
+            assert after['first_responses'] == after['grades'] == []
+            assert after['failed_transport'] == before['failed_transport']
+            if scenario == 'changed':
+                # Current evidence validation rejects a changed revision before
+                # reconciliation; this is a preserved hold, not a saved review.
+                receipt = read_operation(reconcile)
+                assert result is None and receipt['state'] == 'failed'
+                assert receipt['error']['status_code'] == 409 and receipt['error']['detail']['code'] == 'opening_evidence_conflict'
+                assert after == before, 'Revision hold committed partial review, scheduling or evidence'
+                try:
+                    execute_command(reconcile, 'cards.review.reconcile', payload)
+                except RuntimeError:
+                    pass
                 else:
-                    assert result['persisted'] is True
-                    assert database.execute('SELECT COUNT(*) FROM reviews WHERE card_id=?', (fixture['card_id'],)).fetchone()[0] == 1
-                    receipt = database.execute('SELECT attempt_id,completed_at,request_json FROM review_attempt_receipts WHERE attempt_id=?', (completion.attempt_id,)).fetchone()
-                    assert receipt['attempt_id'] == completion.attempt_id
-                    assert json.loads(receipt['request_json'])['opening_evidence_completion'] == checkpoint
-                    assert json.loads(receipt['request_json'])['recorded_at'] == fixture['now'].isoformat()
-                    binding = database.execute_native('SELECT state,review_id,completed_at,review_result_json FROM opening_evidence_attempts WHERE attempt_id=%s', (completion.attempt_id,)).fetchone()
+                    raise AssertionError('Failed reconciliation receipt was not replayed')
+                assert execute_command(replay, 'cards.review.reconcile', payload) is None
+                assert snapshot() == after
+                continue
+            assert result is not None, read_operation(reconcile)
+            if scenario == 'unprovable':
+                assert result['persisted'] is False and result['conflict']['code'] == 'queue_attempt_unprovable'
+                assert after == before, 'Conflict committed partial review, scheduling or evidence'
+            else:
+                assert result['persisted'] is True and len(after['reviews']) == len(after['receipts']) == 1
+                assert after['receipts'][0]['attempt_id'] == attempt_id
+                assert json.loads(after['receipts'][0]['request_json'])['opening_evidence_completion'] == checkpoint
+                with postgres.connection(read_only=True) as database:
+                    binding = database.execute_native('SELECT state,review_id,completed_at,review_result_json FROM opening_evidence_attempts WHERE attempt_id=%s', (attempt_id,)).fetchone()
                     assert binding['state'] == 'complete' and binding['review_id'] == result['review_id']
-                    assert binding['completed_at'] == fixture['now'] and json.loads(binding['review_result_json']) == result
-                    assert database.execute_native('SELECT COUNT(*) FROM opening_evidence_observations WHERE attempt_id=%s', (completion.attempt_id,)).fetchone()[0] == 1
+                    assert binding['completed_at'] == now and json.loads(binding['review_result_json']) == result
+                    assert database.execute_native('SELECT COUNT(*) FROM opening_evidence_observations WHERE attempt_id=%s', (attempt_id,)).fetchone()[0] == 1
                     if scenario == 'guided':
                         assert result['requeue_entry_id'] is not None
-                        context = database.execute_native('SELECT effective_trained_color FROM opening_evidence_queue_contexts WHERE queue_entry_id=%s AND presentation_snapshot_id=%s AND repertoire_id=%s',
-                            (result['requeue_entry_id'],completion.manifest.presentation_snapshot_id,completion.manifest.repertoire_id)).fetchone()
-                        assert context[0] == 'black'
-                after_shadow = shadow_digest(database, fixture['card_id'])
-                after_scheduling = _fixture_scheduling(database, fixture)
-            assert execute_command(reconcile_operation, 'cards.review.reconcile', payload) == result
-            replay_operation = fixture['card_id']+'-reconcile-replay'
-            operations.append(replay_operation)
-            assert execute_command(replay_operation, 'cards.review.reconcile', payload) == result
-            with postgres.connection() as database:
-                assert shadow_digest(database, fixture['card_id']) == after_shadow
-                assert _fixture_scheduling(database, fixture) == after_scheduling
-            _retain_color_provenance(fixture)
-        print('PASS test_postgres_retired_opening_evidence_reconciliation_is_atomic_and_replay_safe (valid/guided/changed/unprovable, failed transport, receipt replay, completion, immutable color)')
+                        context = database.execute_native('SELECT effective_trained_color FROM opening_evidence_queue_contexts WHERE queue_entry_id=%s AND presentation_snapshot_id=%s AND repertoire_id=%s', (result['requeue_entry_id'], manifest['presentation_snapshot_id'], card_id)).fetchone()
+                        assert context and context[0] == 'black'
+            assert execute_command(reconcile, 'cards.review.reconcile', payload) == result
+            assert execute_command(replay, 'cards.review.reconcile', payload) == result
+            assert snapshot() == after
+        print('PASS test_postgres_retained_review_reconciliation_preserves_original_attempt', flush=True)
     finally:
         with postgres.connection() as database:
             for operation in operations:
-                database.execute('DELETE FROM operation_receipts WHERE operation_id=?', (operation,))
-            for fixture in fixtures:
-                database.execute('DELETE FROM review_schedule_snapshots WHERE review_id IN (SELECT id FROM reviews WHERE card_id=?)', (fixture['card_id'],))
-                database.execute('DELETE FROM review_attempt_receipts WHERE card_id=?', (fixture['card_id'],))
-                database.execute('DELETE FROM repertoires WHERE id=?', (fixture['repertoire_id'],))
-                database.execute('DELETE FROM queue_attempt_origins WHERE card_id=?', (fixture['card_id'],))
-            restore_queue_environment(database, snapshot)
+                database.execute_native('DELETE FROM operation_receipts WHERE operation_id=%s', (operation,))
+            for card_id in fixtures:
+                database.execute_native('DELETE FROM review_schedule_snapshots WHERE review_id IN (SELECT id FROM reviews WHERE card_id=%s)', (card_id,))
+                database.execute_native('DELETE FROM review_attempt_receipts WHERE card_id=%s', (card_id,))
+                database.execute_native('DELETE FROM repertoires WHERE id=%s', (card_id,))
+                database.execute_native('DELETE FROM queue_attempt_origins WHERE card_id=%s', (card_id,))
+            restore_queue_environment(database, environment)
+            for entry_id, position in positions:
+                database.execute_native('UPDATE daily_queue SET position=%s WHERE id=%s', (position, entry_id))
         postgres.close_pools()
 
 
@@ -977,7 +1021,7 @@ _QUEUE_RECOVERY_ALL = (
     "test_postgres_scheduling_concurrent_replay_preserves_one_history_and_queue_effect",
     "test_retained_command_retry_preserves_immutable_identity",
     "test_postgres_paused_feedback_history_preserves_ordinary_study",
-    "test_postgres_retired_opening_evidence_reconciliation_is_atomic_and_replay_safe",
+    "test_postgres_retained_review_reconciliation_preserves_original_attempt",
     "test_postgres_guided_marker_locks_displayed_revision_until_commit",
     "test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recovery",
 )
@@ -990,9 +1034,10 @@ _QUEUE_RECOVERY_MAINTAINED_SIX = (
     "test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recovery",
 )
 _QUEUE_RECOVERY_UNRESOLVED = (
-    "test_postgres_retired_opening_evidence_reconciliation_is_atomic_and_replay_safe",
+    "test_postgres_retained_review_reconciliation_preserves_original_attempt",
 )
 _QUEUE_RECOVERY_PAUSED = ("test_postgres_paused_feedback_history_preserves_ordinary_study",)
+_QUEUE_RECOVERY_REVIEW = ("test_postgres_retained_review_reconciliation_preserves_original_attempt",)
 _QUEUE_RECOVERY_EXCLUDED = (
     "test_postgres_paused_feedback_history_preserves_ordinary_study",
     *_QUEUE_RECOVERY_UNRESOLVED,
@@ -1003,10 +1048,10 @@ def queue_recovery_main(argv=None):
     import argparse
 
     parser = argparse.ArgumentParser(description="Owned queue recovery proof; maintained-six is partial acceptance only.")
-    parser.add_argument("--case-set", choices=("all", "maintained-six", "paused-feedback"), default="all")
+    parser.add_argument("--case-set", choices=("all", "maintained-six", "paused-feedback", "review-recovery"), default="all")
     parser.add_argument("--list", action="store_true", help="List selected cases without executing them.")
     options = parser.parse_args(argv)
-    cases = {"all": _QUEUE_RECOVERY_ALL, "maintained-six": _QUEUE_RECOVERY_MAINTAINED_SIX, "paused-feedback": _QUEUE_RECOVERY_PAUSED}[options.case_set]
+    cases = {"all": _QUEUE_RECOVERY_ALL, "maintained-six": _QUEUE_RECOVERY_MAINTAINED_SIX, "paused-feedback": _QUEUE_RECOVERY_PAUSED, "review-recovery": _QUEUE_RECOVERY_REVIEW}[options.case_set]
     if not cases or len(set(cases)) != len(cases):
         raise RuntimeError("Queue recovery selection must be nonempty and unique")
     actions = tuple(globals()[name] for name in cases)
@@ -1015,7 +1060,7 @@ def queue_recovery_main(argv=None):
     evidence = {
         "case_set": options.case_set,
         "cases": cases,
-        "scope": {"all": "all-eight", "maintained-six": "partial", "paused-feedback": "paused-feedback-only"}[options.case_set],
+        "scope": {"all": "all-eight", "maintained-six": "partial", "paused-feedback": "paused-feedback-only", "review-recovery": "review-recovery-only"}[options.case_set],
         "unresolved_owner_cases": _QUEUE_RECOVERY_UNRESOLVED,
         "excluded_cases": _QUEUE_RECOVERY_EXCLUDED if options.case_set == "maintained-six" else (),
         "execution": "discovery-only" if options.list else "starting",
