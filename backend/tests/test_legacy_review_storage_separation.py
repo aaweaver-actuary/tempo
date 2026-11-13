@@ -324,9 +324,24 @@ def test_evidence_revision_authority_keeps_current_or_retained_completed_revisio
         completion=SimpleNamespace(card_revision=2),
     )
     assert (
-        review.LearningReviewAdapter(None, None).evidence_revision_allowed(command)
+        review.LearningReviewAdapter(None, None).evidence_revision_allowed(command, command.completion)
         is allowed
     )
+
+
+def test_evidence_persistence_uses_the_validated_original_completion(monkeypatch):
+    from app.study import position_checkpoint
+    from tempo_learning_review.models import EvidenceCompletion
+
+    database = object()
+    evidence = EvidenceCompletion("original-attempt", "card", 4, True, 2, '{ "event": "original" }')
+    adapter = review.LearningReviewAdapter(database, None, prepared_manifest={"manifest": "original"})
+    calls = []
+    monkeypatch.setattr(position_checkpoint, "persist_checkpoint", lambda *args, **kwargs: calls.append((args, kwargs)))
+    adapter.persist_evidence(SimpleNamespace(), evidence)
+    assert calls == [((database, {"checkpoint": {"event": "original"},
+                                 "prepared_manifest": {"manifest": "original"}}),
+                      {"completing_review": True})]
 
 
 def test_postgres_maturity_signals_through_atomic_task_owner(monkeypatch):

@@ -37,6 +37,7 @@ class Capabilities:
         self.issue = True
         self.evidence_exists = True
         self.evidence_revision = True
+        self.evidence_inputs = []
         self.failure = None
         self.scheduled = dict(card_id="card-a", next_due=DAY.isoformat(), interval_days=0,
             state="learning", requeue_today=True, requeue_after_cards=4, stability=2.3,
@@ -96,8 +97,12 @@ class Capabilities:
         return self.locked
     def lock_queue_date(self): self.event("queue_lock")
     def completed_evidence_exists(self, *args): return self.evidence_exists
-    def evidence_revision_allowed(self, *args): return self.evidence_revision
-    def persist_evidence(self, *args): self.event("evidence")
+    def evidence_revision_allowed(self, command, completion):
+        self.evidence_inputs.append(("revision", command, completion))
+        return self.evidence_revision
+    def persist_evidence(self, command, completion):
+        self.evidence_inputs.append(("persist", command, completion))
+        self.event("evidence")
     def complete_evidence(self, *args): self.event("complete_evidence")
     def inherit_evidence_scope(self, *args): self.event("inherit")
     def continuation_facts(self, *args): return self.continuation
@@ -228,6 +233,24 @@ def test_evidence_and_prepared_continuation_sequence_and_exact_replay():
     assert sum(call[0] == "issue" for call in store.calls) == 1
 
 
+def test_validated_completion_handoff_keeps_exact_original_on_save_and_replay():
+    store = Capabilities()
+    evidence = replace(completion(), checkpoint_json='{ "original": [3, 1] }')
+    cmd = command(completion=evidence)
+    first = review.submit_review(store, cmd, lambda: CONTEXT).as_dict()
+    assert store.evidence_inputs == [("revision", cmd, evidence), ("persist", cmd, evidence)]
+    assert all(item[2] is evidence for item in store.evidence_inputs)
+    assert review.submit_review(store, cmd, lambda: CONTEXT).as_dict() == first
+    assert store.evidence_inputs[-1] == ("persist", cmd, evidence)
+    assert sum(item[0] == "revision" for item in store.evidence_inputs) == 1
+
+
+def test_absent_completion_never_crosses_evidence_handoff():
+    store = Capabilities()
+    review.submit_review(store, command(), lambda: CONTEXT)
+    assert store.evidence_inputs == []
+
+
 @pytest.mark.parametrize("change", ["day","cycle","revision","defense","study_exercise","absent","lock","admission"])
 def test_unavailable_optional_continuation_preserves_saved_review(change):
     store = Capabilities()
@@ -245,13 +268,14 @@ def test_unavailable_optional_continuation_preserves_saved_review(change):
 
 
 @pytest.mark.parametrize("changes", [{"attempt_id":"other"},{"card_id":"other"},
-    {"queue_entry_id":None},{"complete":False}])
+    {"queue_entry_id":None},{"queue_entry_id":2},{"complete":False}])
 def test_required_evidence_binding_rejects_mismatches_before_writes(changes):
     store = Capabilities()
     with pytest.raises(review.ReviewFailure) as caught:
         review.submit_review(store, command(completion=replace(completion(),**changes)), lambda:CONTEXT)
     assert caught.value.code == "opening_evidence_conflict"
     assert [call[0] for call in store.calls] == ["cards_lock","queue_lock"]
+    assert store.evidence_inputs == []
 
 
 def test_explicit_registration_and_immutable_internal_records():

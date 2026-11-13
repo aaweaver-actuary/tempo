@@ -198,10 +198,10 @@ def submit_review(store: ReviewSubmissionStore, command: ReviewCommand, context_
             if not store.completed_evidence_exists(command.attempt_id):
                 raise ReviewFailure(409, "The saved review receipt has no matching evidence completion binding",
                                     code="opening_evidence_conflict")
-        elif not store.evidence_revision_allowed(command):
+        elif not store.evidence_revision_allowed(command, completion):
             raise ReviewFailure(409, "The opening presentation changed before review completion",
                                 code="opening_evidence_conflict")
-        store.persist_evidence(command)
+        store.persist_evidence(command, completion)
     context = context_factory()
     if position and not completion and not prior:
         raise ReviewFailure(409, "Position completion requires opening evidence", code="opening_evidence_conflict")

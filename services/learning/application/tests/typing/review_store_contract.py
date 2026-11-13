@@ -2,7 +2,7 @@
 from app.services.learning_review_adapter import LearningReviewAdapter
 from tempo_learning_review.models import (
     AttemptReceipt, CardFacts, CompetingReview, ContinuationFacts, PreparedNext, QueueAttempt, ReconciledReview, ReviewCommand, ReviewContext, ReviewPolicy, ReviewResult,
-    ScheduledReview, ScheduleSnapshot,
+    ScheduledReview, ScheduleSnapshot, EvidenceCompletion,
 )
 from tempo_learning_review.ports import ReviewCompletionStore, ReviewScheduleStore, ReviewSubmissionStore
 
@@ -77,8 +77,8 @@ class IndependentSubmission(IndependentSchedule, IndependentCompletion):
     def lock_review_cards(self, command: ReviewCommand) -> bool: return False
     def lock_queue_date(self) -> None: pass
     def completed_evidence_exists(self, attempt_id: str) -> bool: return False
-    def evidence_revision_allowed(self, command: ReviewCommand) -> bool: return False
-    def persist_evidence(self, command: ReviewCommand) -> None: pass
+    def evidence_revision_allowed(self, command: ReviewCommand, completion: EvidenceCompletion) -> bool: return False
+    def persist_evidence(self, command: ReviewCommand, completion: EvidenceCompletion) -> None: pass
 
 
 def independent_submission() -> ReviewSubmissionStore:

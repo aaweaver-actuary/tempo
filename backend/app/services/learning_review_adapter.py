@@ -11,7 +11,7 @@ from fastapi import HTTPException
 import tempo_learning_review as learning
 from tempo_learning_review.models import (
     CompetingReview, QueueAttempt, ReconciledReview, ReviewCommand, ReviewContext, ReviewPolicy,
-    ScheduledReview, ScheduleSnapshot, ReviewResult,
+    ScheduledReview, ScheduleSnapshot, ReviewResult, EvidenceCompletion,
 )
 from tempo_storage.learning_bridge import review as storage
 from tempo_storage.connections import read_connection
@@ -566,12 +566,12 @@ class LearningReviewAdapter:
         row = storage.evidence_state(self.database, attempt_id)
         return bool(row and row[0] == "complete")
 
-    def evidence_revision_allowed(self, command: ReviewCommand) -> bool:
+    def evidence_revision_allowed(self, command: ReviewCommand, completion: EvidenceCompletion) -> bool:
         revision = storage.current_revision(self.database, command.card_id)
         entry = storage.entry_status(
             self.database, command.queue_entry_id, command.card_id
         )
-        expected = command.completion.card_revision
+        expected = completion.card_revision
         return bool(
             revision
             and (
@@ -584,14 +584,14 @@ class LearningReviewAdapter:
             )
         )
 
-    def persist_evidence(self, command: ReviewCommand) -> None:
+    def persist_evidence(self, command: ReviewCommand, completion: EvidenceCompletion) -> None:
         from app.study.position_checkpoint import persist_checkpoint
 
         with training_timing_stage("completion_evidence"):
             persist_checkpoint(
                 self.database,
                 {
-                    "checkpoint": json.loads(command.completion.checkpoint_json),
+                    "checkpoint": json.loads(completion.checkpoint_json),
                     "prepared_manifest": self.prepared_manifest,
                 },
                 completing_review=True,
