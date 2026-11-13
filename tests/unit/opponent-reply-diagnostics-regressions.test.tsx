@@ -1,6 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import type { Api } from "@lichess-org/chessground/api";
 import type { Square } from "chess.js";
 import { Chess } from "chess.js";
 import Home from "../../app/views/home_view";
@@ -78,7 +77,15 @@ function dragFixture() {
     dom: { bounds: () => ({ left: 10, top: 20, width: 400, height: 400 }) },
     orientation: "white", animation: { enabled: true, duration: 180 },
   };
-  captures.push(installTempoDragCapture(surface, { state } as unknown as Api));
+  captures.push(installTempoDragCapture(surface, () => {
+    const drag = state.draggable.current;
+    if (!drag) return null;
+    const match = drag.element.style.transform.match(/^translate\(\s*(-?[\d.]+)px,\s*(-?[\d.]+)px\s*\)$/);
+    return { started: drag.started, origin: drag.orig as "e2", originalPointer: [...drag.origPos],
+      orientation: state.orientation as "white" | "black", bounds: state.dom.bounds(),
+      animation: { enabled: state.animation.enabled, durationMs: state.animation.duration },
+      piecePosition: match ? [Number(match[1]), Number(match[2])] : null };
+  }));
   function start() {
     state.draggable.current = { started: true, orig: "e2", origPos: [240, 350], pos: [260, 370], element: piece };
     piece.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, buttons: 1, clientX: 240, clientY: 350 }));

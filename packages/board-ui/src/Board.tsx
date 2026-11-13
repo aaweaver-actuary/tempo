@@ -11,9 +11,11 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(props, r
   const surfaceRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<BoardController | null>(null);
   const [size, setSize] = useState(0);
+  const measuredSize = useRef(0);
 
   useImperativeHandle(ref, () => ({
     focus: () => hostRef.current?.focus(),
+    readInputSnapshot: () => controllerRef.current?.readInputSnapshot() ?? null,
     clearInput: () => controllerRef.current?.clearInput(),
     clearInputBounds: () => controllerRef.current?.clearInputBounds(),
     selectSquare: square => controllerRef.current?.selectSquare(square),
@@ -50,7 +52,12 @@ export const Board = forwardRef<BoardHandle, BoardProps>(function Board(props, r
     let disposed = false;
     const measure = () => {
       if (disposed) return;
-      setSize(fitBoardSize(host.getBoundingClientRect().width, props.maxSize));
+      const nextSize = fitBoardSize(host.getBoundingClientRect().width, props.maxSize);
+      if (nextSize !== measuredSize.current) {
+        measuredSize.current = nextSize;
+        controllerRef.current?.geometryChanged();
+        setSize(nextSize);
+      }
       controllerRef.current?.clearInputBounds();
     };
     const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(measure);

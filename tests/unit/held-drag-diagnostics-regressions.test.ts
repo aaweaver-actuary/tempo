@@ -1,5 +1,4 @@
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
-import type { Api } from "@lichess-org/chessground/api";
 import {
   installTempoDragCapture, tempoDragDiagnostics, resetTempoDragDiagnostics,
   disableTempoDragDiagnostics, recordTempoDragPhase,
@@ -21,7 +20,15 @@ function fixture() {
     dom: { bounds: vi.fn(() => ({ left: 10, top: 20, width: 400, height: 400 })) },
     orientation: "white", animation: { enabled: true, duration: 180 },
   };
-  const capture = installTempoDragCapture(surface, { state } as unknown as Api);
+  const capture = installTempoDragCapture(surface, () => {
+    const drag = state.draggable.current;
+    if (!drag) return null;
+    const match = drag.element.style.transform.match(/^translate\(\s*(-?[\d.]+)px,\s*(-?[\d.]+)px\s*\)$/);
+    return { started: drag.started, origin: drag.orig as "e2", originalPointer: [...drag.origPos],
+      orientation: state.orientation as "white" | "black", bounds: state.dom.bounds(),
+      animation: { enabled: state.animation.enabled, durationMs: state.animation.duration },
+      piecePosition: match ? [Number(match[1]), Number(match[2])] : null };
+  });
   fixtureCaptures.push(capture);
   function start() {
     const grab: [number, number] = state.orientation === "black" ? [190, 100] : [240, 350];
@@ -209,7 +216,8 @@ it("held_drag_metrics_account_for_grab_offset_orientation_and_coalescing", () =>
   expect(session.frames.at(-1)?.captureCostMs).toBeGreaterThanOrEqual(0);
   expect(session.events.find(event => event.type === "pointermove")?.captureCostMs).toBeGreaterThanOrEqual(0);
   expect(session.phases.some(phase => phase.operation === "opponent-reply")).toBe(true);
-  expect(active.state.dom.bounds).toHaveBeenCalledTimes(1);
+  // Each observed frame reads a fresh detached snapshot, including geometry.
+  expect(active.state.dom.bounds).toHaveBeenCalledTimes(2);
   active.capture.dispose();
 });
 
