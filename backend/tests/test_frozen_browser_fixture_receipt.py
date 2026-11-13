@@ -139,3 +139,21 @@ runpy.run_path(target,run_name='__main__')
     with psycopg.connect(**options) as db:
         assert db.execute('SELECT card_id,position FROM daily_queue WHERE id=%s', (entry,)).fetchone() == ('native-unrelated', 999)
         assert db.execute('SELECT 1 FROM studies WHERE id=%s', (prefix,)).fetchone() is None
+    # A queue ID rebound to another card is foreign state, never restored.
+    prefix = 'p12-frozen-' + uuid.uuid4().hex
+    with psycopg.connect(**options) as db:
+        db.execute("UPDATE daily_queue SET position=8 WHERE id=%s", (entry,))
+        db.execute("UPDATE queue_projections SET state='ready',refresh_pending=0 WHERE queue_date=%s", (day,))
+        db.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES('native-foreign','white','prefix','rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1','[\"d2d4\"]','new',%s)", (day,))
+    third = start('seed')
+    third_out, third_err = third.communicate(timeout=30)
+    assert third.returncode == 0, third_err
+    shifted = json.loads(third_out)['displaced'][0][2]
+    with psycopg.connect(**options) as db:
+        db.execute("UPDATE daily_queue SET card_id='native-foreign' WHERE id=%s", (entry,))
+    foreign = start('cleanup', '[]', '[]')
+    foreign_out, foreign_err = foreign.communicate(timeout=30)
+    assert foreign.returncode == 0, foreign_err
+    assert json.loads(foreign_out)['reordered'] == 1
+    with psycopg.connect(**options) as db:
+        assert db.execute('SELECT card_id,position FROM daily_queue WHERE id=%s', (entry,)).fetchone() == ('native-foreign', shifted)
