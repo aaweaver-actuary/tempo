@@ -654,8 +654,13 @@ storage/capacity adapters, including current frozen and Study-only fences. This
 source map does not decide the disputed capacity behavior or qualify runtime;
 previous fixture gaps and the position-admission lazy cycle remain open.
 
-At this base revision, 26 of 289 tracked Python files in those trees remain
-outside the combined 263-file selections. The registry alone assigns owners;
+Three existing namespace initializers are assigned to their sole mapped local
+review bridge, prefix mutation and Study capture-interface owners. The interfaces
+initializer retains its empty `__all__`; namespace assignment does not allocate
+future siblings or alter import behavior. Previous gaps remain open.
+
+At this base revision, 23 of 289 tracked Python files in those trees remain
+outside the combined 266-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover

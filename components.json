@@ -1057,11 +1057,13 @@
         "migrations": []
       },
       "ownedFiles": [
-        "backend/app/study/interfaces/captured_tactic.py"
+        "backend/app/study/interfaces/captured_tactic.py",
+        "backend/app/study/interfaces/__init__.py"
       ],
       "ownershipRole": "Describe borrowed Study capture admission",
       "dependencyNotes": [
-        "Typed capability consumes validated Tactics capture and returns card identity/admission facts; it does not own transaction or receipt."
+        "Typed capability consumes validated Tactics capture and returns card identity/admission facts; it does not own transaction or receipt.",
+        "Owns the existing package initializer as a namespace marker; this does not assign future sibling implementations."
       ],
       "censusScope": "captured_tactic"
     },
@@ -4922,11 +4924,13 @@
         "migrations": []
       },
       "ownedFiles": [
-        "database/tempo_storage/authored_repertoires/opening_mutations/prefix_splits.py"
+        "database/tempo_storage/authored_repertoires/opening_mutations/prefix_splits.py",
+        "database/tempo_storage/authored_repertoires/opening_mutations/__init__.py"
       ],
       "ownershipRole": "Store split mutations and queue facts on the supplied transaction",
       "dependencyNotes": [
-        "Direct SQL touches cards, revisions, memberships and queue data; connection and queue owners remain outside this selection."
+        "Direct SQL touches cards, revisions, memberships and queue data; connection and queue owners remain outside this selection.",
+        "Owns the existing package initializer as a namespace marker; this does not assign future sibling implementations."
       ],
       "censusScope": "prefix_split"
     },
@@ -7545,11 +7549,13 @@
         "migrations": []
       },
       "ownedFiles": [
-        "database/tempo_storage/learning_bridge/review.py"
+        "database/tempo_storage/learning_bridge/review.py",
+        "database/tempo_storage/learning_bridge/__init__.py"
       ],
       "ownershipRole": "Operate review identity, card locks and retained receipts using the supplied writer",
       "dependencyNotes": [
-        "Lock order and transaction scope belong to the calling review owner."
+        "Lock order and transaction scope belong to the calling review owner.",
+        "Owns the existing package initializer as a namespace marker; this does not assign future sibling implementations."
       ],
       "censusScope": "review"
     },
