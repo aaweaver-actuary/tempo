@@ -166,7 +166,8 @@
               "opening_graph",
               "pgn_import",
               "card_deletion",
-              "canonical_prefix"
+              "canonical_prefix",
+              "repertoire_changes"
             ]
           }
         }

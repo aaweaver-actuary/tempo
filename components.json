@@ -2,6 +2,134 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "repertoire-change-contract",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/repertoire/changes",
+      "publicExports": [
+        "backend/app/repertoire/changes/ports.py#AffectedOccurrence",
+        "backend/app/repertoire/changes/ports.py#ResponseConflict",
+        "backend/app/repertoire/changes/ports.py#ConflictReport",
+        "backend/app/repertoire/changes/ports.py#ChangeError"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/repertoire/changes/ports.py"
+      ],
+      "ownershipRole": "Describe repertoire source conflicts",
+      "dependencyNotes": [
+        "Typed conflict facts and errors use the existing position index types; callers and transport translation remain external."
+      ],
+      "censusScope": "repertoire_changes"
+    },
+    {
+      "id": "repertoire-change-validation",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/repertoire/changes",
+      "publicExports": [
+        "backend/app/repertoire/changes/application.py#conflict_report",
+        "backend/app/repertoire/changes/application.py#validate_source_rows",
+        "backend/app/repertoire/changes/application.py#validate_repair_source_rows"
+      ],
+      "dependencies": [
+        "repertoire-change-contract"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/repertoire/changes/application.py"
+      ],
+      "ownershipRole": "Validate repertoire source changes",
+      "dependencyNotes": [
+        "Uses product repertoire snapshot and exact-position index; validates caller-supplied locked source facts and retains the 10,000-source bound."
+      ],
+      "censusScope": "repertoire_changes"
+    },
+    {
+      "id": "repertoire-retained-mutations",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/repertoire/changes",
+      "publicExports": [
+        "backend/app/repertoire/changes/retained_mutations.py#replace_repertoire_line",
+        "backend/app/repertoire/changes/retained_mutations.py#rewrite_card"
+      ],
+      "dependencies": [
+        "canonical-prefix-application",
+        "integrity-repair-storage",
+        "integrity-issue-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/repertoire/changes/retained_mutations.py"
+      ],
+      "ownershipRole": "Apply retained line and card changes",
+      "dependencyNotes": [
+        "Uses caller transaction, card identity and column inspection, integrity and card-edit storage, and canonical route certification; integrity repair is an existing caller."
+      ],
+      "censusScope": "repertoire_changes"
+    },
+    {
+      "id": "repertoire-change-source-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/authored_repertoires",
+      "publicExports": [
+        "database/tempo_storage/authored_repertoires/product_changes.py#lock_sources"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/authored_repertoires/product_changes.py"
+      ],
+      "ownershipRole": "Lock and read bounded authored sources",
+      "dependencyNotes": [
+        "Native SQL locks repertoire on caller transaction and reads current line/card membership sources, rejecting more than 10,000; branch, card and repair commands own the surrounding operation."
+      ],
+      "censusScope": "repertoire_changes"
+    },
+    {
       "id": "canonical-prefix-application",
       "type": "integration",
       "maintainer": "Tempo",

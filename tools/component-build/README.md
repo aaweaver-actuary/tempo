@@ -409,8 +409,16 @@ repair, retained mutation and analysis consumers remain external edges. This is 
 source map, not a native or runtime qualification. The inherited legacy fixture and
 three focused PGN failures remain unresolved.
 
-At this base revision, 189 of 291 tracked Python files in those trees remain
-outside the combined 102-file selections. The registry alone assigns owners;
+A sixteenth selection maps repertoire change conflict facts and validation, retained
+line/card mutations, and bounded source-lock storage. Existing snapshot/index,
+canonical prefix, integrity/card-edit storage, and branch/card/repair command
+edges remain visible. The caller owns the transaction and operation receipt; this
+source map does not establish native or runtime qualification. The three PGN and
+three legacy fixture failures remain unresolved. The retained mutation boundary
+test also fails importing the missing `retained` module; it is not runtime proof.
+
+At this base revision, 185 of 291 tracked Python files in those trees remain
+outside the combined 106-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover
