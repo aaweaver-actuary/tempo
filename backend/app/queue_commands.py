@@ -2,7 +2,7 @@
 from __future__ import annotations
 from datetime import date
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from fastapi import HTTPException
 from .services import queue_application
 from .services.queue_ordering import PRESENTATION_VERSION
@@ -15,6 +15,10 @@ from .study.queue_order import capture_daily_queue_order, preserve_daily_queue_o
 _QUEUE_REFRESH_PROJECTION_SQL = queue_application._QUEUE_REFRESH_PROJECTION_SQL
 from tempo_storage.commands import queue as queue_storage
 from tempo_storage.commands.queue import _lock_attempt_card
+
+if TYPE_CHECKING:
+    from app.contracts.queue_issuance import QueueHeadIssueResult
+    from .services.queue_next_card import PreparedQueueHead
 _AVAILABLE_ATTEMPT_SQL = queue_application._AVAILABLE_ATTEMPT_SQL
 
 def available_attempt_sql() -> str:
@@ -41,7 +45,7 @@ def current_study_day(database, *, now=None):
     from .services.study_calendar import capture_study_calendar
     return capture_study_calendar(database, now=now).day.isoformat()
 
-def issue_queue_head(database, payload: dict[str, Any]) -> dict[str, Any]:
+def issue_queue_head(database, payload: dict[str, Any] | PreparedQueueHead) -> QueueHeadIssueResult:
     """Commit one head's issuance before returning it; never stamp prefetch."""
     from .services.queue_next_card import PreparedQueueHead
     from .services.background_runtime import training_timing_stage
