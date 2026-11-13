@@ -56,6 +56,22 @@ export function createStudyRuntime(options: StudyRuntimeOptions) {
       async checkReceipt(record, signal) { ensure(); const result = await entryFor(record).checkReceipt?.(record, signal); ensure(); return result; },
     };
     const inner = createStudySession({ store: guarded, learning });
+    // Reserve before the asynchronous retained-kind check, so overlapping callers
+    // join the same original recovery even when that check yields.
+    const recovery = new Map<string, ReturnType<StudySession["checkSave"]>>();
+    function recover(key: string, retry: boolean) {
+      ensure();
+      const existing = recovery.get(key);
+      if (existing) return existing;
+      const pending = (async () => {
+        await requireDeliverableExisting(key);
+        ensure();
+        return retry ? inner.retrySave(key) : inner.checkSave(key);
+      })();
+      recovery.set(key, pending);
+      void pending.finally(() => { if (recovery.get(key) === pending) recovery.delete(key); }).catch(() => undefined);
+      return pending;
+    }
     const facade: StudySession = {
       getSnapshot: inner.getSnapshot,
       subscribe(listener) { ensure(); return inner.subscribe(listener); },
@@ -66,8 +82,8 @@ export function createStudyRuntime(options: StudyRuntimeOptions) {
         await requireDeliverableExisting(envelope.key);
         return inner.submit(envelope, data, submission);
       },
-      async checkSave(key) { ensure(); await requireDeliverableExisting(key); return inner.checkSave(key); },
-      async retrySave(key) { ensure(); await requireDeliverableExisting(key); return inner.retrySave(key); },
+      checkSave(key) { return recover(key, false); },
+      retrySave(key) { return recover(key, true); },
       async retryNext(key, acquire, stillCurrent, retryable) {
         ensure(); await requireDeliverableExisting(key);
         return inner.retryNext(key, acquire, () => options.isCurrent(store) && generation === epoch && stillCurrent(), retryable);

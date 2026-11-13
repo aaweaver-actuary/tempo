@@ -1,5 +1,5 @@
-import { defaultStudyClient, type StudyClient } from "./study-connection";
-import { registerStudyDeliveryAdapter, studySession } from "./study-session-runtime";
+import { type StudyClient } from "./study-connection";
+import { studySession } from "./study-session-runtime";
 import { notifications, publishNotification, resolveNotification } from "./notifications";
 import type { IntentRecord, IntentStore } from "@tempo/browser-intents";
 import { confirmOriginalOperationResponse, FailedOperationError, PendingOperationError, readOperationResponse } from "./operation-status";
@@ -9,9 +9,6 @@ export { StudyRequestRejectedError } from "./study-command-delivery";
 export function createStudyCommandDelivery(client: StudyClient, getStore: () => Promise<IntentStore>, isStoreCurrent: (store: IntentStore) => boolean = () => true) {
   return createDelivery(client, getStore, { confirmOriginalOperationResponse, readOperationResponse, FailedOperationError, PendingOperationError }, isStoreCurrent);
 }
-
-const defaultDelivery = createStudyCommandDelivery(defaultStudyClient, studyIntentStore, isStudyIntentStoreCurrent);
-for (const kind of commandKinds) registerStudyDeliveryAdapter(kind, defaultDelivery.deliver, defaultDelivery.checkReceipt);
 
 function practiceScope(scope: string) { return scope.endsWith(":self-assess") ? scope.slice(0, -12) : scope; }
 function boundaryKey(scope: string) { return `practice-reset:${practiceScope(scope)}`; }
