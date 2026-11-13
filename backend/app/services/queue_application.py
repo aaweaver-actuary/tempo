@@ -282,14 +282,14 @@ def materialize_daily_queue(
     publication_storage.publish_projection(database, queue_date, now, blocked_count)
 
 
-def requeue(db, day, cid, after, attempt):
+def requeue(db: PostgresConnection, day: str, cid: str, after: int | None, attempt: str) -> int:
     previous_order = capture_daily_queue_order(db, day)
     cycle = requeue_storage.next_cycle(db, day, cid)
     if after is None:
         position = requeue_storage.next_position(db, day)
     else:
-        row = requeue_storage.position_at_offset(db, day, MISS_REASON, max(0, after))
-        position = row[0] if row else requeue_storage.next_position(db, day)
+        selected = requeue_storage.position_at_offset(db, day, MISS_REASON, max(0, after))
+        position = selected if selected is not None else requeue_storage.next_position(db, day)
         requeue_storage.shift_positions(db, day, position)
     inserted_entry_id = requeue_storage.append_attempt(
         db, day, cid, cycle, position, attempt
