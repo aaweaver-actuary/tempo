@@ -546,7 +546,10 @@ def prepare_position_checkpoint(database, request):
     )
 
 
-def begin_position_checkpoint(database, prepared):
+def begin_position_checkpoint(
+    database: postgres.PostgresConnection,
+    prepared: PositionCheckpointPreparation | None,
+) -> PositionCheckpointFence | None:
     """Take the owner advisory fence before original card/day/queue locks."""
     from tempo_storage.study import (
         position_first_responses as position_storage,
