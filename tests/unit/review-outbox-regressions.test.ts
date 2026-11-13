@@ -1421,3 +1421,58 @@ it.each(["missing", "foreign"])("%s advisory marker acknowledgment cannot stand 
   expect(calls.some(call => call.url.includes("foreign"))).toBe(false);
   expect(pendingReviews()).toEqual([]);
 });
+
+it.each([
+  { path: "delivery", suffix: "", state: "pending" as const },
+  { path: "delivery", suffix: ":aggregate-only", state: "pending" as const },
+  { path: "claimed", suffix: "", state: "reconciling" as const },
+  { path: "claimed", suffix: ":aggregate-only", state: "reconciling" as const },
+])("receipt-first $path settles only the existing original delivery ($state$suffix)", async ({ path, suffix, state }) => {
+  const { studyIntentStore } = await import("../../database/browser/study-intent-storage");
+  const original = { ...auditReview(`recovered-${path}-${suffix || "base"}`, 99200), deliveryStarted: true,
+    ...(state === "reconciling" ? { state, reconciliationSequence: 2 } : {}),
+    ...(suffix ? { evidenceRejected: "retained rejection" } : {}) };
+  await enqueuePendingReview(original);
+  const attemptId = original.attemptId;
+  const operationId = (state === "reconciling" ? `review-reconcile:${attemptId}:2` : `review-attempt:${attemptId}`) + suffix;
+  const deliveryKey = `review-delivery:${operationId}`;
+  const store = await studyIntentStore();
+  const envelope = { key: deliveryKey, kind: "review-delivery", attemptId, requestId: operationId,
+    endpoint: "/original", createdAt: "original-time", payload: { body: "original bytes" } };
+  await store.put(envelope);
+  if (path === "claimed") expect(await store.claim(`review:${attemptId}`, "other-tab", Date.now(), 60_000)).toBeTruthy();
+  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    expect(init?.method).not.toBe("POST");
+    expect(decodeURIComponent(String(input))).toContain(`/api/operations/${operationId}`);
+    return Response.json({ operation_id: operationId, state: "complete", response: { persisted: true, review_id: 42 } });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  expect((await flushPendingReviews()).persistedAttemptIds).toEqual([attemptId]);
+  expect(await store.get(deliveryKey)).toMatchObject({ ...envelope, state: "committed", receipt: { persisted: true, review_id: 42 } });
+  expect(fetcher).toHaveBeenCalledOnce();
+});
+
+it.each(["delivery", "claimed"])("receipt-first %s does not create an absent delivery record", async path => {
+  const { studyIntentStore } = await import("../../database/browser/study-intent-storage");
+  const original = { ...auditReview(`missing-delivery-${path}`, 99201), deliveryStarted: true };
+  await enqueuePendingReview(original);
+  const store = await studyIntentStore();
+  if (path === "claimed") await store.claim(`review:${original.attemptId}`, "other-tab", Date.now(), 60_000);
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ state: "complete", response: { persisted: true, review_id: 43 } })));
+  expect((await flushPendingReviews()).persistedAttemptIds).toEqual([original.attemptId]);
+  expect(await store.get(`review-delivery:review-attempt:${original.attemptId}`)).toBeUndefined();
+});
+
+it("receipt recovery does not overwrite a mismatched existing delivery identity", async () => {
+  const { studyIntentStore } = await import("../../database/browser/study-intent-storage");
+  const original = { ...auditReview("mismatched-delivery", 99202), deliveryStarted: true };
+  await enqueuePendingReview(original);
+  const store = await studyIntentStore();
+  const key = `review-delivery:review-attempt:${original.attemptId}`;
+  const wrong = { key, kind: "review-delivery", attemptId: original.attemptId, requestId: "foreign",
+    endpoint: "/original", createdAt: "original", payload: { body: "retain" } };
+  await store.put(wrong);
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ state: "complete", response: { persisted: true, review_id: 44 } })));
+  expect((await flushPendingReviews()).persistedAttemptIds).toEqual([original.attemptId]);
+  expect(await store.get(key)).toMatchObject({ ...wrong, state: "pending" });
+});

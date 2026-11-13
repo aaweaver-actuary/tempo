@@ -99,6 +99,24 @@ export function logicalAttemptId(review: Pick<PendingReview, "attemptId" | "queu
   return review.attemptId ?? `legacy-online:${review.queueEntryId}`;
 }
 
+function reviewOperationId(review: PendingReview): string {
+  const attemptId = logicalAttemptId(review);
+  const operation = review.state === "reconciling" ? `review-reconcile:${attemptId}:${review.reconciliationSequence ?? 1}` : `review-attempt:${attemptId}`;
+  return `${operation}${review.evidenceRejected || review.evidenceFallbackReason ? ":aggregate-only" : ""}`;
+}
+
+async function settleExistingReviewDelivery(store: Awaited<ReturnType<typeof studyIntentStore>>, operationId: string,
+  attemptId: string, receipt: LegacyReviewReceipt, requireCurrent: () => void): Promise<void> {
+  const key = `review-delivery:${operationId}`;
+  requireCurrent();
+  const existing = await store.get(key);
+  requireCurrent();
+  if (!existing || existing.kind !== "review-delivery" || existing.requestId !== operationId || existing.attemptId !== attemptId || existing.state !== "pending") return;
+  await store.update(key, current => current.kind === "review-delivery" && current.requestId === operationId &&
+    current.attemptId === attemptId && current.state === "pending" ? { ...current, state: "committed", receipt } : current);
+  requireCurrent();
+}
+
 function savedReviews(): PendingReview[] {
   return studyIntentRecords("review").filter(record => record.state === "pending" || record.state === "conflicted")
     .map(record => {
@@ -338,8 +356,8 @@ async function sendReview(review: PendingReview, transport: ReturnType<typeof cr
   // receipt can settle the delivery. A 202 body is never a review receipt.
   const receipt = await response.clone().json().catch(() => undefined) as { persisted?: boolean } | undefined;
   requireCurrent();
-  if (sentDeliveryKey && receipt?.persisted === true)
-    await store.update(sentDeliveryKey, current => ({ ...current, state: "committed", receipt }));
+  if (receipt?.persisted === true)
+    await settleExistingReviewDelivery(store, sentDeliveryKey?.slice("review-delivery:".length) ?? reviewOperationId(review), attemptId, receipt, requireCurrent);
   requireCurrent();
   return response;
 }
@@ -401,13 +419,16 @@ async function checkLegacyReviewReceipt(record: IntentRecord, signal: AbortSigna
   requireCurrent();
   const review = (record.data ?? record.payload) as PendingReview;
   const attemptId = logicalAttemptId(review);
-  const operationId = review.state === "reconciling" ? `review-reconcile:${attemptId}:${review.reconciliationSequence ?? 1}` : `review-attempt:${attemptId}`;
-  const response = await readOperationResponse(`${operationId}${review.evidenceRejected || review.evidenceFallbackReason ? ":aggregate-only" : ""}`, { allowMissing: true, signal, client: transport.client });
+  const operationId = reviewOperationId(review);
+  const response = await readOperationResponse(operationId, { allowMissing: true, signal, client: transport.client });
   requireCurrent();
   if (response.status === 404) return undefined;
   const receipt = await response.json() as LegacyReviewReceipt;
   requireCurrent();
-  if (receipt.persisted === true) return { state: "committed" as const, receipt };
+  if (receipt.persisted === true) {
+    await settleExistingReviewDelivery(store, operationId, attemptId, receipt, requireCurrent);
+    return { state: "committed" as const, receipt };
+  }
   if (receipt.persisted === false && validConflict(receipt.conflict) && !receipt.conflict.retryable)
     return { state: "conflicted" as const, receipt, data: { ...review, state: "conflicted", conflict: receipt.conflict } };
   return { state: "pending" as const };
