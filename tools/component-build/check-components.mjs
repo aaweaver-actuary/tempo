@@ -1,6 +1,5 @@
 import ts from "typescript";
 import { createHash } from "node:crypto";
-import { validateMigrationInventory } from "../../database/tooling/check-migration-inventory.mjs";
 import { readFileSync, readdirSync, realpathSync, existsSync } from "node:fs";
 import { resolve, dirname, relative, sep } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -348,7 +347,17 @@ export function validateDdlResources(manifest, root = repository, python = proce
   }
   const migrationNames = tracked.filter(p => p.startsWith("database/tempo_storage/ddl/migrations/")).map(p => p.split("/").at(-1));
   const schema = readFileSync(resolve(root,"database/tempo_storage/ddl/schema_version.py"),"utf8");
-  const version = validateMigrationInventory(migrationNames,schema);
+  const inventoryModule = resolve(root, "database/tooling/check-migration-inventory.mjs");
+  const inventoryCode = `import {pathToFileURL} from "node:url";
+let input=""; for await (const chunk of process.stdin) input+=chunk;
+const {files,schema}=JSON.parse(input);
+const {validateMigrationInventory}=await import(pathToFileURL(process.argv[2]).href);
+process.stdout.write(String(validateMigrationInventory(files,schema)));`;
+  const inventory = spawnSync(process.execPath, ["--input-type=module", "-e", inventoryCode, "ddl-source-inventory", inventoryModule], {
+    cwd: root, input: JSON.stringify({files:migrationNames,schema}), encoding:"utf8"
+  });
+  if (inventory.error || inventory.status !== 0 || !/^\d+$/.test(inventory.stdout)) throw new Error("Migration inventory failed: " + (inventory.error?.message ?? inventory.stderr));
+  const version = Number(inventory.stdout);
   const digest = createHash("sha256").update(readFileSync(resolve(root,"database/tempo_storage/ddl/historical/050_remediation.sql"))).digest("hex");
   const expectedDigest = "96907361dc003e78703dc57182bd020f96e82532bcea6724083326171242da0d";
   const wrapper = readFileSync(resolve(root,"database/tempo_storage/ddl/migrations/050_learning_remediation.sql"),"utf8");

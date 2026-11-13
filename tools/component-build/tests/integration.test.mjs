@@ -550,6 +550,22 @@ test("D selected TypeScript validation never invokes Python or needs backend sou
   writeFileSync(join(root, "components.json"), JSON.stringify({ schemaVersion: 1, components: [component] }));
   assert.equal(checkComponents(root, "/python-must-not-run", { componentIds: ["chess-line"] })[0].id, "chess-line");
 });
+test("T02 copied checker closure selects and lists without the DDL module", context => {
+  const root=mkdtempSync(join(tmpdir(),"tempo-checker-closure-")); context.after(()=>rmSync(root,{recursive:true,force:true}));
+  const component=original.components.find(c=>c.id==="chess-line");
+  mkdirSync(join(root,"tools/component-build"),{recursive:true}); mkdirSync(join(root,"packages"),{recursive:true});
+  for(const name of ["check-components.mjs","selection.mjs","worker-qualifier.mjs"]) cpSync(join(repository,"tools/component-build",name),join(root,"tools/component-build",name));
+  cpSync(join(repository,"components.schema.json"),join(root,"components.schema.json"));
+  cpSync(join(repository,component.root),join(root,component.root),{recursive:true});
+  symlinkSync(join(repository,"node_modules"),join(root,"node_modules"));
+  writeFileSync(join(root,"components.json"),JSON.stringify({schemaVersion:1,components:[component]}));
+  assert.equal(existsSync(join(root,"database")),false);
+  const cli=join(root,"tools/component-build/check-components.mjs"),env={...process.env,TEMPO_COMPONENT_PYTHON:"/python-must-not-run"}; delete env.TEMPO_COMPONENT_ROOT;
+  for(const args of [["--component","chess-line"],["--component","chess-line","--list"]]) {
+    const result=spawnSync(process.execPath,[cli,...args],{cwd:root,env,encoding:"utf8"});
+    assert.equal(result.status,0,result.stdout+result.stderr);
+  }
+});
 test("T02 DDL census does not run for selected or minimal component checks and listings", context => {
   const root = mkdtempSync(join(tmpdir(), "tempo-ddl-minimal-"));
   context.after(() => rmSync(root, {recursive:true, force:true}));
