@@ -9,6 +9,9 @@ import { afterEach, expect, it, vi } from "vitest";
 import { Chess } from "chess.js";
 import TacticsView from "../../app/views/tactics_view";
 import { playChessMoveSound } from "../../app/lib/move-sound";
+import { tacticCardIdentity } from "../../app/lib/tactic-card-identity";
+
+vi.mock("../../app/lib/tactic-card-identity", () => ({ tacticCardIdentity: vi.fn(async () => "card") }));
 
 vi.mock("../../app/components/chessboard", () => ({
   Chessboard: (props: {
@@ -234,4 +237,53 @@ it("C14 malformed tactic receipt retains the original completed attempt until a 
   await waitFor(() => expect(attempts).toHaveLength(2));
   expect(attempts[1]).toBe(attempts[0]);
   await screen.findByText("Puzzle 2 of 25");
+});
+
+
+it("C14 a foreign tactic card result cannot advance before the matching original receipt", async () => {
+  const attempts: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input, options) => {
+    const url = String(input);
+    if (url.includes("tactics-packs")) return Response.json(records.slice(0, 25));
+    if (url.includes("tactics/catalog")) return Response.json(catalog);
+    if (url.endsWith("/api/tactics/attempt")) {
+      attempts.push(JSON.parse(options.body).attempt_id);
+      return Response.json({ operation_id: `tactic-attempt:${attempts[0]}`, state: "queued" }, { status: 202 });
+    }
+    if (url.includes("/api/operations/")) return Response.json({ operation_id: `tactic-attempt:${attempts[0]}`, state: "complete",
+      response: { card_id: attempts.length === 1 ? "foreign-card" : "card", mode: "normal", next_due: "2026-11-13" } });
+    return Response.json({});
+  }));
+  render(<TacticsView theme="brown" pieceSet="cburnett" onQueueChanged={vi.fn()} />);
+  await screen.findByText("Puzzle 1 of 25");
+  fireEvent.click(screen.getByText("a2e6")); fireEvent.click(screen.getByText("f7f8"));
+  await screen.findByText("Could not save this attempt. Retry to save it before continuing.");
+  expect(screen.getByText("Puzzle 1 of 25")).toBeTruthy();
+  expect(tacticCardIdentity).toHaveBeenCalledWith(expect.any(String), ["a2e6", "d7d8", "f7f8"]);
+  fireEvent.click(screen.getByRole("button", { name: "Retry save" }));
+  await screen.findByText("Puzzle 2 of 25");
+  expect(attempts).toEqual([attempts[0], attempts[0]]);
+});
+
+it("C14 unavailable identity verification retains the completed tactic for its original retry", async () => {
+  vi.mocked(tacticCardIdentity).mockRejectedValueOnce(new Error("WebCrypto unavailable"));
+  const attempts: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input, options) => {
+    const url = String(input);
+    if (url.includes("tactics-packs")) return Response.json(records.slice(0, 25));
+    if (url.includes("tactics/catalog")) return Response.json(catalog);
+    if (url.endsWith("/api/tactics/attempt")) {
+      attempts.push(JSON.parse(options.body).attempt_id);
+      return Response.json({ card_id: "card", mode: "normal", next_due: "2026-11-13" });
+    }
+    return Response.json({});
+  }));
+  render(<TacticsView theme="brown" pieceSet="cburnett" onQueueChanged={vi.fn()} />);
+  await screen.findByText("Puzzle 1 of 25");
+  fireEvent.click(screen.getByText("a2e6")); fireEvent.click(screen.getByText("f7f8"));
+  await screen.findByText("Could not save this attempt. Retry to save it before continuing.");
+  expect(screen.getByText("Puzzle 1 of 25")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Retry save" }));
+  await screen.findByText("Puzzle 2 of 25");
+  expect(attempts).toEqual([attempts[0], attempts[0]]);
 });

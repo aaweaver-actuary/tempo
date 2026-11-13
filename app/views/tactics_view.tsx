@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { tacticCardIdentity } from "../lib/tactic-card-identity";
 import { executeStudyRequest, retainedStudyRequest } from "../lib/study-command-client";
 import { LEARNING_URL as API_URL, learningFetch as fetch, independentStudy } from "../lib/study-connection";
 import { positionsFromMoves, useBoardHistory } from "../hooks/use-board-history";
@@ -380,9 +381,13 @@ function TacticsWorkspace({
             : await fetch(`${API_URL}/api/tactics/attempt`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
           const confirmedResponse = independentStudy ? response : await confirmOriginalOperationResponse(response, `tactic-attempt:${completedAttempt.discoveryId}`);
           if (!confirmedResponse.ok) throw new Error();
-          if (!independentStudy) z.strictObject({ card_id: z.string().min(1),
-            mode: z.enum(["normal", "light", "hard"]), next_due: z.string().min(1) })
-            .parse(await confirmedResponse.json());
+          if (!independentStudy) {
+            const result = z.strictObject({ card_id: z.string().min(1),
+              mode: z.enum(["normal", "light", "hard"]), next_due: z.string().min(1) })
+              .parse(await confirmedResponse.json());
+            const expected = await tacticCardIdentity(puzzle.startingFen, packagedRecord.Moves.split(/\s+/).filter(Boolean).slice(1));
+            if (result.card_id !== expected) throw new Error("Tactic receipt names a different card.");
+          }
           invalidateWorkspaceData();
           onQueueChanged();
         } catch {
