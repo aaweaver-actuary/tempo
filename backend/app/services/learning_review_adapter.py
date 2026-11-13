@@ -220,7 +220,7 @@ class LearningReviewAdapter:
         self._review_attempt = self._attempt(row)
         return self._review_attempt
 
-    def recover_attempt(self, command):
+    def recover_attempt(self, command: ReviewCommand) -> QueueAttempt | None:
         from ..queue_attempt_origins import recover_queue_entry
 
         self._review_attempt = self._attempt(
