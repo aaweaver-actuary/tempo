@@ -7010,3 +7010,5 @@ browser, migration or installed acceptance; those require the admitted real
 finite native selections and their non-skipped execution receipts.
 
 - PGN import receipt/card projections or receipt lock use the wrong SQL: `backend/tests/test_pgn_import_storage_boundary.py::test_retained_import_storage_preserves_full_receipt_tuple_and_raw_json`, `::test_current_import_card_identity_projections_preserve_empty_and_existing_rows`, and `::test_current_import_receipt_lock_preserves_original_identity_and_opaque_writer`. In-process mutation controls reject incorrect projection/relations and a no-op lock. These borrowed-driver tests do not prove native SQL or locking.
+
+- `backend/tests/test_card_deletion_storage_boundary.py` checks exact cancellation selection and locked recheck, caller-owned connection lifecycle, fixed purge/tombstone targets and clock points, shared-card keep/delete policy, and post-write Study refresh. Its strict borrowed fake rejects unexpected SQL; it does not establish PostgreSQL execution or locking.
