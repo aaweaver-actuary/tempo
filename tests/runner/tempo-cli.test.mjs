@@ -12,7 +12,7 @@ import { schemaVersionFromSource, validateTarget, validateContainers, deployment
   CommandExecutionError, commandExecutor, inspectCandidateSource, isCandidateBlocker, isOperationalGitFailure, sourceFingerprint, sourceMatchesFingerprint } from "../../scripts/tempo-deployment.mjs";
 import { assessMigrationRecovery, cut62WitnessName, validateCut62Preflight, assertColdPreflightContainers, assertOfflineBuildContainers, cut62MountDirectory, requirePrivateCut62Witness, configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
 import { parseArguments, ensureDocker } from "../../scripts/tempo-cli.mjs";
-import { authenticateManagedSettlement, inspectRegisteredIsolation, matchesManagedPinnedHelper, runManagedPinnedChild } from "../../scripts/tempo-managed-isolation.mjs";
+import { cut62WitnessName as managedCut62WitnessName, authenticateManagedSettlement, inspectRegisteredIsolation, matchesManagedPinnedHelper, runManagedPinnedChild } from "../../scripts/tempo-managed-isolation.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
 import { assertDependencyCorrectionOrder } from "../../scripts/check-tempo-cli.mjs";
@@ -2841,6 +2841,29 @@ test("schema 62 comparator accepts only the exact guarded crossing", () => {
   assert.equal(cut62WitnessName({ ...guard, starting_schema: 59, intended_schema: 61 }), null);
   for (const change of [{ starting_schema: 60 }, { intended_schema: 63 }, { attempt_id: "../witness" }])
     assert.throws(() => cut62WitnessName({ ...guard, ...change }), /Unsupported/);
+});
+
+test("schema 62 comparator preserves original matrix across both public callers", () => {
+  // Frozen pre-extraction behavior: coercion, UUID acceptance, and error text are historical API.
+  function original(guard) {
+    const crossing = guard.starting_schema < 62 && guard.intended_schema >= 62;
+    if (!crossing) return null;
+    if (![59, 61].includes(guard.starting_schema) || guard.intended_schema !== 62 ||
+        !/^[0-9a-f-]{36}$/i.test(guard.attempt_id ?? ''))
+      throw new Error('Unsupported schema 62 crossing; preserve the original backup and fix forward.');
+    return `cut62-${guard.attempt_id}.json`;
+  }
+  const outcome = (fn, guard) => { try { return {value: fn(guard)}; } catch (error) { return {name:error.name, message:error.message}; } };
+  const schemas = [undefined, null, -1, 58, 59, 60, 61, 62, 63, 64, 65, '59', '62', 'bad'];
+  const ids = [undefined, null, '', '01234567-89ab-cdef-0123-456789abcdef',
+    '01234567-89AB-CDEF-0123-456789ABCDEF', 'x'.repeat(36), '-'.repeat(36), '../witness'];
+  for (const starting_schema of schemas) for (const intended_schema of schemas) for (const attempt_id of ids) {
+    const guard = {starting_schema, intended_schema, attempt_id};
+    const expected = outcome(original, guard);
+    assert.deepEqual(outcome(cut62WitnessName, guard), expected);
+    assert.deepEqual(outcome(managedCut62WitnessName, guard), expected);
+  }
+  assert.strictEqual(cut62WitnessName, managedCut62WitnessName);
 });
 
 test("schema 62 retry requires an existing private regular witness", t => {

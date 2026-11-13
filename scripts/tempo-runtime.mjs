@@ -5,7 +5,7 @@ import { closeSync, constants, existsSync, fstatSync, fsyncSync, linkSync, lstat
 import { createServer } from "node:net";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { isDeepStrictEqual } from 'node:util';
-import { atomicJson, deploymentCanStart, redact, targetKey, validateContainers, validateTarget } from "./tempo-deployment.mjs";
+import { cut62WitnessName, atomicJson, deploymentCanStart, redact, targetKey, validateContainers, validateTarget } from "./tempo-deployment.mjs";
 import { TempoProblem, classifyRedisReply, phaseGuidance } from "./tempo-guidance.mjs";
 
 import { isTimingPublicationFailure } from "./test-scenario-timings.mjs";
@@ -13,6 +13,8 @@ import { probeLifecycleRedis } from "../database/tooling/cli/probes.mjs";
 import { createBackupRestoreDatabase, createPostgresBackup, removeBackupRestoreDatabase, restorePostgresBackup } from "../database/tooling/cli/backup.mjs";
 import { advanceManagedIsolationMarker, assertManagedTargetLock, authenticateManagedCompletionEvidence, authenticateManagedSettlement, captureManagedTargetLock, createManagedSettlement, inspectManagedCompletedTarget, inspectManagedFence, inspectManagedHistorySelectionBinding, inspectManagedPreIsolationTarget, persistManagedHistoryWitnessIdentity, privateDefenseHistorySelection, readOwnedPrivateBytes, startManagedStoppedDetachedTarget, syncDirectory, syncManagedIsolationEvidence,
   prepareManagedDetachedTarget, runManagedPinnedChild, restoreManagedCompletedTarget } from './tempo-managed-isolation.mjs';
+
+export { cut62WitnessName } from "./tempo-deployment.mjs";
 
 export const applicationServices = ["web", "api",
   "foreground-worker", "background-worker", "background-scheduler"];
@@ -57,16 +59,6 @@ export async function inspectImmutableImageSet(docker, ids) {
     found.set(value.Id, value);
   }
   return found;
-}
-
-// Only the exact migration with a version-scoped comparator may cross this cut.
-export function cut62WitnessName(guard) {
-  const crossing = guard.starting_schema < 62 && guard.intended_schema >= 62;
-  if (!crossing) return null;
-  if (![59, 61].includes(guard.starting_schema) || guard.intended_schema !== 62 ||
-      !/^[0-9a-f-]{36}$/i.test(guard.attempt_id ?? ''))
-    throw new Error('Unsupported schema 62 crossing; preserve the original backup and fix forward.');
-  return `cut62-${guard.attempt_id}.json`;
 }
 
 // Validate the installed ledger before any application shutdown. A schema-60
