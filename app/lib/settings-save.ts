@@ -1,7 +1,8 @@
 import { decodeOperationResult } from "../domain/adapters/operation-result-adapter";
+import { settingsResponseSchema } from "../domain/schemas";
 import { readPendingSettingsSave, writePendingSettingsSave, removePendingSettingsSave } from "../../database/browser/adapters/practice/settings-save";
 import { API_URL } from "../const";
-import { confirmOperationResponse, PendingOperationError } from "./operation-status";
+import { confirmOriginalOperationResponse, PendingOperationError } from "./operation-status";
 
 type PendingSettingsSave = { operationId: string; body: string };
 
@@ -32,6 +33,7 @@ export async function saveLocalSettings(settings: Record<string, unknown>): Prom
       throw new Error(receipt.error.message ?? "The earlier settings save failed.");
     }
     if (receipt.kind === "complete") {
+      if (!settingsResponseSchema.safeParse(receipt.response).success) throw new PendingOperationError(pending.operationId);
       removePendingSettingsSave();
       if (pending.body === body) return;
       pending = null;
@@ -51,12 +53,14 @@ export async function saveLocalSettings(settings: Record<string, unknown>): Prom
     },
     body,
   });
-  response = await confirmOperationResponse(response);
+  response = await confirmOriginalOperationResponse(response, pending.operationId);
   if (!response.ok) {
     const result = await response.json().catch(() => ({})) as { detail?: string };
     // A failure between broker acceptance and receipt lookup can look like
     // HTTP 503. Keep the operation ID until a receipt proves its state.
     throw new Error(result.detail ?? `Settings save returned HTTP ${response.status}.`);
   }
+  const result: unknown = await response.json().catch(() => undefined);
+  if (!settingsResponseSchema.safeParse(result).success) throw new PendingOperationError(pending.operationId);
   removePendingSettingsSave();
 }
