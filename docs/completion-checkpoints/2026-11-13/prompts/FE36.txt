@@ -1,0 +1,76 @@
+TASK FE36 — Apply the independent entry retirement after current command consumers adopt their owner
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: FE008, FE010, FE012.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/frontend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: FE30.source_released; FE31.source_released; FE32.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- AGENTS.md — current scope, ownership and minimum real proof; distinguish implemented/tested/assembled/installed
+- SPEC.md — current November 10 reduction scope and retained ordinary Study preservation
+- docs/testing.md — smallest relevant proof and supported owned runner
+- SPEC.md — explicit independent Learning service/database retirement
+- static/src/study-main.tsx — StudyConnectionBoundary serving entry
+- scripts/study-composition.ts — study target entry substitution and emitted module inventory
+- vite.static.config.ts — TEMPO_TARGET=study and __TEMPO_STUDY__
+- app/components/study-connection-boundary.tsx — bootstrap/settings/new connection and retained export
+- app/components/study-settings-panel.tsx — obsolete /api/study/settings mutation
+- app/lib/study-client.ts — authority contracts and original service recovery
+- backend/app/main.py — no /api/study/bootstrap or /api/study/settings route
+
+WRITE RESERVATION:
+- static/src/study-main.tsx [existing]
+- scripts/study-composition.ts [existing]
+- app/components/study-connection-boundary.tsx [existing]
+- app/components/study-settings-panel.tsx [existing]
+- app/lib/study-client.ts [existing]
+- tests/unit/study-composition-regressions.test.ts [existing]
+- tests/unit/study-build-closure-regressions.test.ts [existing]
+- tests/unit/study-learning-connection-regressions.test.ts [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Apply the FE30 support table after FE31 and FE32 release the current tactic/burial callers. Remove dormant new issuance/settings controls from static/src/study-main.tsx and its connected boundary; retain the explicitly selected recovery-only hold/export surface or remove the unused serving target only when recovery remains reachable.
+2. Update scripts/study-composition.ts and build closure expectations to the actual supported entry. Recovery-only modules cannot create new attempts, call bootstrap/settings or activate retired optional producers.
+3. Apply the C21 exact retained route allowlist delta in study-client.ts under the FE06 semantic adapter contract. Preserve original-authority receipt/export access; retired/unknown records remain held and cannot become new monolith commands.
+4. Remove obsolete study-settings mutation UI after confirming normal settings continues through saveLocalSettings. Preserve retained settings bytes and display their held status; do not send them to another endpoint.
+5. Add regressions that recovery/export works with existing malformed/foreign records while all new issuance/mutation controls are absent. Re-run current monolith composition and single-card contracts to ensure normal offline/reload remains supported.
+
+ACCEPTANCE:
+- No active supported UI promises bootstrap/settings/new issuance from a service removed by current SPEC.
+- Existing authority-bound data is readable/exportable and never cleared or rebound automatically.
+- Normal monolith Study, offline phone/reload and current frozen exercise routes remain usable.
+- An explicit source-backed support decision resolves the mode ambiguity for FE010/FE012; no blanket study-command retirement.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: npm run test:unit -- tests/unit/study-composition-regressions.test.ts tests/unit/study-build-closure-regressions.test.ts tests/unit/study-learning-connection-regressions.test.ts tests/unit/study-single-card-contract.test.ts
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: npm run typecheck:browser
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- owner: P16; required: Recovery-only surface preserves original retained foreign/current records across reload; it performs no new issuance or grade. Normal monolith browser remains the release journey.
+
+MATERIAL RISKS:
+- A dormant source branch can still contain valuable retained-work recovery code. Removing serving must not delete data or redirect original authority.
+
+EXCLUSIONS:
+- No independent Learning service/bootstrap restoration
+- No new auth service
+- No blanket command-kind retirement
+- No live data inspection required merely to implement the SPEC-derived default
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

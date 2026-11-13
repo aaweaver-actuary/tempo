@@ -1,0 +1,192 @@
+[
+  {
+    "sha": "e016c12d8db3ad44c6b1bba29f0286fc5d6deaaf",
+    "subject": "Merge pull request #1019 from aaweaver-actuary/codex/completion-p01-sql-proof",
+    "pr_number": 1019
+  },
+  {
+    "sha": "3bd083216e2ec7f49323b81dae4899a6129da862",
+    "subject": "Merge pull request #1021 from aaweaver-actuary/packet/p03-deletion-boundary",
+    "pr_number": 1021
+  },
+  {
+    "sha": "637c4a21036645e552e47e895ee16c3277833159",
+    "subject": "Merge pull request #1028 from aaweaver-actuary/packet/fe34-fsrs-contract",
+    "pr_number": 1028
+  },
+  {
+    "sha": "49b45c228de5867a83a6b721f70c000dadb18ff9",
+    "subject": "Merge pull request #1057 from aaweaver-actuary/codex/completion-p14-checkpoint1",
+    "pr_number": 1057
+  },
+  {
+    "sha": "0df9f8e397821f3ec49dc0ee1ee0038dc847220a",
+    "subject": "Merge pull request #1032 from aaweaver-actuary/codex/completion-t02-pure-packages",
+    "pr_number": 1032
+  },
+  {
+    "sha": "c25852f83be585094f7f1af91182041a1d8b09c7",
+    "subject": "Merge pull request #1059 from aaweaver-actuary/codex/completion-t02-composition",
+    "pr_number": 1059
+  },
+  {
+    "sha": "4099de4cc3af416d2796f3aebe4250195b01b06e",
+    "subject": "Merge pull request #1056 from aaweaver-actuary/codex/completion-b34-1",
+    "pr_number": 1056
+  },
+  {
+    "sha": "076fda211b00eecfb195b8a9c22103158e2fdcee",
+    "subject": "Merge pull request #1060 from aaweaver-actuary/codex/completion-t02-backend",
+    "pr_number": 1060
+  },
+  {
+    "sha": "47680f507e9fc9d6ab92a95b58d27aaf2326872c",
+    "subject": "Merge pull request #1061 from aaweaver-actuary/codex/completion-t02-queue",
+    "pr_number": 1061
+  },
+  {
+    "sha": "eae672adc88da19bd221d9f4900c6dc92bfd6923",
+    "subject": "Merge pull request #1062 from aaweaver-actuary/codex/completion-t02-next",
+    "pr_number": 1062
+  },
+  {
+    "sha": "a973688d3215281a229cfa513af16e7d8eed0738",
+    "subject": "Merge pull request #1064 from aaweaver-actuary/codex/completion-t02-next-batch",
+    "pr_number": 1064
+  },
+  {
+    "sha": "aa3b2f47e465c363b3067f5b3b4cdc6f8c16b5df",
+    "subject": "Merge pull request #1078 from aaweaver-actuary/codex/completion-t02-census-integration",
+    "pr_number": 1078
+  },
+  {
+    "sha": "d1454e10402e3fa8f018c528e877a09c9f96a350",
+    "subject": "Merge pull request #1067 from aaweaver-actuary/codex/fe10-owner-combined",
+    "pr_number": 1067
+  },
+  {
+    "sha": "58f87cbc4881b1b8968a979a8216539cc7bea8dd",
+    "subject": "Merge pull request #1100 from aaweaver-actuary/codex/completion-t02-integration-d145",
+    "pr_number": 1100
+  },
+  {
+    "sha": "75de6be82a0aceb94704a86212876497f0a9e10b",
+    "subject": "Merge pull request #1107 from aaweaver-actuary/codex/b27-coverage-boundary",
+    "pr_number": 1107
+  },
+  {
+    "sha": "5a6f5721aa62551779010cf14e224de188eabd9b",
+    "subject": "Merge pull request #1109 from aaweaver-actuary/codex/completion-t02-integration-b27",
+    "pr_number": 1109
+  },
+  {
+    "sha": "d55ed4cda62b78d7507f91bf05d32d01087f27a4",
+    "subject": "Merge pull request #1110 from aaweaver-actuary/codex/completion-t02-http-composition-census",
+    "pr_number": 1110
+  },
+  {
+    "sha": "bdf59e1b0224cfe7440fbb4ed386a0a0c8ae99ab",
+    "subject": "Merge pull request #1111 from aaweaver-actuary/codex/completion-t02-position-storage-census",
+    "pr_number": 1111
+  },
+  {
+    "sha": "db3646b14da6af92987d995d0c880eef34325bea",
+    "subject": "Merge pull request #1112 from aaweaver-actuary/codex/b32-retired-authoring-assets",
+    "pr_number": 1112
+  },
+  {
+    "sha": "216802ef0a462d8770c89a4c89de53ff7d334d0a",
+    "subject": "Merge pull request #1113 from aaweaver-actuary/codex/completion-t02-database-infrastructure-census",
+    "pr_number": 1113
+  },
+  {
+    "sha": "3a8dbd79f59e07eaaa947d1375b14c636eb6888a",
+    "subject": "Merge pull request #1114 from aaweaver-actuary/codex/completion-t02-opening-progression-census",
+    "pr_number": 1114
+  },
+  {
+    "sha": "81d9f3dcca769aa986d333d6f5786fea1386c3e5",
+    "subject": "Merge pull request #1115 from aaweaver-actuary/codex/completion-t02-puzzle-helper-census",
+    "pr_number": 1115
+  },
+  {
+    "sha": "38fc8ed272ceec510bf402060ae3edc2e5a13ca3",
+    "subject": "Merge pull request #1116 from aaweaver-actuary/codex/completion-t02-lifecycle-projection-census",
+    "pr_number": 1116
+  },
+  {
+    "sha": "7a614536afb62ef88202870d40ad712c614aadc8",
+    "subject": "Merge pull request #1117 from aaweaver-actuary/codex/completion-t02-legacy-bridge-identity-census",
+    "pr_number": 1117
+  },
+  {
+    "sha": "ecf9a87669fe0b4b1c3246f58ae3b36d0a0cc560",
+    "subject": "Merge pull request #1118 from aaweaver-actuary/codex/completion-t02-opening-kernels-census",
+    "pr_number": 1118
+  },
+  {
+    "sha": "d3ce2ebb59dc3bf463c9f1ad2aceb12547415d1a",
+    "subject": "Merge pull request #1119 from aaweaver-actuary/codex/completion-t02-opening-admission-census",
+    "pr_number": 1119
+  },
+  {
+    "sha": "e77190e0db6b689bb3198c55a00c9d55614afb69",
+    "subject": "Merge pull request #1120 from aaweaver-actuary/codex/completion-t02-namespace-census",
+    "pr_number": 1120
+  },
+  {
+    "sha": "826db2484af52f7832a355a5a930242b642fd93f",
+    "subject": "Merge pull request #1122 from aaweaver-actuary/codex/completion-t02-startup-census",
+    "pr_number": 1122
+  },
+  {
+    "sha": "6e9d86baddfd1bd8f5269c930815aaee3b64b735",
+    "subject": "Merge pull request #1124 from aaweaver-actuary/codex/completion-t02-ddl-resource-census",
+    "pr_number": 1124
+  },
+  {
+    "sha": "05e18cf55d9a1fbaa8a984a71f268e2b63f4851a",
+    "subject": "Merge pull request #1125 from aaweaver-actuary/codex/completion-t02-ddl-lazy-loader",
+    "pr_number": 1125
+  },
+  {
+    "sha": "c3a9b10167ced771f35330adc452dde52417ae0f",
+    "subject": "Merge pull request #1126 from aaweaver-actuary/codex/t02-contract-tooling",
+    "pr_number": 1126
+  },
+  {
+    "sha": "2e58ec23b11647b9c11e8c71798472efc6b378aa",
+    "subject": "Merge pull request #1127 from aaweaver-actuary/codex/completion-t02-reduction-tooling",
+    "pr_number": 1127
+  },
+  {
+    "sha": "7a38298e09715f6c2df8a6f5fee10137e206c8f5",
+    "subject": "Merge pull request #1128 from aaweaver-actuary/codex/completion-t02-database-cli-census",
+    "pr_number": 1128
+  },
+  {
+    "sha": "680da1bef0f95f44207d95c886fe50d4f603be29",
+    "subject": "Merge pull request #1129 from aaweaver-actuary/codex/completion-t02-backup-verification-census",
+    "pr_number": 1129
+  },
+  {
+    "sha": "2fe256049333e8f2830bfe8b9d325186b53c3790",
+    "subject": "Merge pull request #1130 from aaweaver-actuary/codex/completion-t02-managed-cut-census",
+    "pr_number": 1130
+  },
+  {
+    "sha": "0a5a175279e58cff1cafd0fc32c73319b466c3f8",
+    "subject": "Merge pull request #1131 from aaweaver-actuary/codex/completion-t02-pg-qualification-census",
+    "pr_number": 1131
+  },
+  {
+    "sha": "47529aa20fe945af4f656fcd09ee00a17467139f",
+    "subject": "Merge pull request #1132 from aaweaver-actuary/codex/completion-t02-study-census-resource",
+    "pr_number": 1132
+  },
+  {
+    "sha": "2f799293af812e829a55a3c2bb5aba8ea1598c96",
+    "subject": "Merge pull request #1133 from aaweaver-actuary/codex/completion-t02-schema-wrapper-census",
+    "pr_number": 1133
+  }
+]

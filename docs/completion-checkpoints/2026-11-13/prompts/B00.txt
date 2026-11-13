@@ -1,0 +1,63 @@
+TASK B00 — Finish B04: exact bulk, direct-review and unused-port reachability map
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: BE001, BE013, BE015.
+ORIGINAL TASKS: B04.
+SUPPORTING DEFINITION: reference/planning-definitions/backend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: No source prerequisite; reserve the named files first.
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- backend/app/main.py — reconcile_unseen_queue,seed_queue,randomize_daily_queue,materialize_daily_queue,_apply_review,_reconcile_review
+- backend/app/services/queue_application.py
+- backend/app/services/tactical_catalog.py — seed_tactical_introductions
+- backend/app/study/position_learning/contracts.py — four Protocols
+- backend/app/services/learning_review_adapter.py — apply_legacy_review,submit_legacy_review
+- database/tests/frozen-order-browser-fixture.py
+- database/tests/native_review/test_postgres.py
+- backend/tests/test_next_exercise_native.py
+- database/tests/check_postgres_deletion.py
+- database/tests/games_collection/test_packaged_collection.py
+
+WRITE RESERVATION:
+- No product edits. Put the finite evidence/decision in the integration owner's existing run record.
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Produce one symbol table with every definition, import/re-export, actual caller, fixture-only caller, runner selection, and retained recovery receiver for the three named families.
+2. Trace tasks.execute_background_slice/progress_study_queue to execute_postgres_queue_refresh_slice. Separately trace bulk wrappers; do not confuse shared eligibility/requeue helpers with dead bulk orchestration.
+3. Record the known live fixture calls to randomize_daily_queue and the legacy tactical-history case. Determine whether any supported callers still require bulk seed/materialize/QueueAdmissionAdapter; attach exact searches and function names.
+4. For apply_legacy_review distinguish deliberately lower-level algorithm tests from user submission tests; trace mounted review/reconcile routes to full submit_legacy_review.
+5. For all four unused Protocols compare declared and actual signatures. Integration owner chooses removal of obsolete declarations plus accurate actual interfaces (preferred) or adoption only where a real injection boundary needs it; release B04/B05/B06/B26.
+
+ACCEPTANCE:
+- Original B04 is complete when this finite evidence table and concrete dispositions exist, even though wider BE001/BE013 work remains.
+- No product edit is made by this probe. Open confirmed rows stay open until the implementation tasks complete.
+- A possible unknown supported consumer is a named blocker with owner and exact contract question, not a reason to retain every duplicate indefinitely.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: rg -n '(seed_queue|materialize_daily_queue|randomize_daily_queue|seed_tactical_introductions|QueueAdmissionAdapter|PositionScheduleReadPort|IssuedPositionAttemptPort|GradeEffectWritePort|PositionOwnerEpochReadPort|apply_legacy_review|_apply_review|_reconcile_review)' backend database services
+  verified_against_source: entrypoint/options inspected; any proposed new selection is stated in acceptance; availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- No unrelated heavy test is implied. The owner selects the applicable changed-boundary checks.
+
+MATERIAL RISKS:
+- Static absence alone does not settle dynamically selected or external compatibility consumers; use current advertised entrypoints and runner inventory.
+
+EXCLUSIONS:
+- No new service, database, event bus, generic repository, scheduler, or retired producer restoration.
+- No changes to historical migration checksums, persisted command names, accepted operation identities, or original receipt bytes.
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

@@ -1,0 +1,79 @@
+TASK B09 — Finish private queue, bounded-read and source-token capability cleanup
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: BE005.
+ORIGINAL TASKS: B01.
+SUPPORTING DEFINITION: reference/planning-definitions/backend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: B04.source_released; B05.source_released; B07.source_released; B34.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- Before editing any additional consumer/test file, owner must resolve this bounded scope to exact existing paths and lease them: affected storage-boundary tests
+
+READ FIRST (repository-relative except reference/ paths):
+- backend/app/queue_commands.py — _lock_attempt_card,available_attempt_sql
+- backend/app/services/postgres_queue_refresh.py — _prepare_queue_randomization
+- backend/app/services/queue_application.py — eligibility aliases
+- backend/app/services/repertoire_move_verification.py — _source_token
+- database/tempo_storage/commands/queue.py
+- database/tempo_storage/queue_refresh/reads.py
+- database/tempo_storage/queue_refresh/application/eligibility.py
+- database/tempo_storage/repertoire_scope/move_verification.py — _source_token
+
+WRITE RESERVATION:
+- backend/app/queue_commands.py [existing]
+- backend/app/services/queue_application.py [existing]
+- backend/app/services/postgres_queue_refresh.py [existing]
+- backend/app/services/durable_tasks.py [existing] — remaining constant re-exports only
+- backend/app/services/repertoire_move_verification.py [existing]
+- database/tempo_storage/commands/queue.py [existing]
+- database/tempo_storage/queue_refresh/reads.py [existing]
+- database/tempo_storage/queue_refresh/application/eligibility.py [existing]
+- database/tempo_storage/repertoire_scope/move_verification.py [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Inventory remaining cross-owner private names at current head; original B01 removed some aliases already. Delete only consumer-free remaining re-exports after migrating test-only SQL assertions.
+2. Expose semantic queue attempt lock/availability operations, source-token operation, and bounded presentation-read capability from existing owners; caller supplies facts rather than choosing SQL fragments/private reader internals.
+3. Move the live shared eligibility/reset calls to a narrow public storage surface while retaining SQL and exact lock/order semantics. Do not rename every internal constant public.
+4. Rewrite affected boundary tests to assert semantic outcomes and sequencing; retain exact SQL tests within storage owner where meaningful.
+5. Attach final allowlist/caller search, including changed aliases and intentionally private names used solely within an owner.
+
+PRESCRIBED SMALL BATCHES:
+Batch 1: batch_id: B09-1; name: queue-capabilities; write_files: backend/app/queue_commands.py; database/tempo_storage/commands/queue.py; backend/tests/test_queue_command_database_split.py; instruction: Encapsulate actual card lock/availability capability; migrate private SQL test seams.; after_batch: None
+Batch 2: batch_id: B09-2; name: refresh-capabilities; write_files: backend/app/services/queue_application.py; backend/app/services/postgres_queue_refresh.py; database/tempo_storage/queue_refresh/reads.py; database/tempo_storage/queue_refresh/application/eligibility.py; backend/tests/test_queue_refresh_read_database_split.py; backend/tests/test_queue_application_database_split.py; instruction: Public active eligibility and bounded-read APIs; preserve actual SQL/order.; after_batch: B09-1
+Batch 3: batch_id: B09-3; name: remaining-aliases; write_files: backend/app/services/repertoire_move_verification.py; database/tempo_storage/repertoire_scope/move_verification.py; backend/app/services/durable_tasks.py; instruction: Expose source token semantic operation and remove only proven dead residual SQL re-exports.; after_batch: B09-2
+One batch per weak worker dispatch. Return scoped patch/evidence before next batch; root integration may combine coherent batches into one PR. Never ship a temporarily unregistered or partially translated runtime.
+
+ACCEPTANCE:
+- Backend no longer imports storage underscore names for these seams or passes private SQL fragments to substitute a store.
+- Current active eligibility, queue attempt, and bounded reads preserve behavior; shared live helpers survive bulk cleanup.
+- BE005 still waits Redis tasks B10/B11; no claim that removing imports alone encapsulates active capabilities.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: make python-file FILE=backend/tests/test_queue_command_database_split.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: make python-file FILE=backend/tests/test_queue_refresh_read_database_split.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: make python-file FILE=backend/tests/test_queue_application_database_split.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- Reuse relevant native queue proof when lock predicates or read semantics change; no new browser requirement for source-equivalent adapter exposure.
+
+MATERIAL RISKS:
+- Exact source-token module must be located first; path is not guessed as an implemented target.
+
+EXCLUSIONS:
+- No new service, database, event bus, generic repository, scheduler, or retired producer restoration.
+- No changes to historical migration checksums, persisted command names, accepted operation identities, or original receipt bytes.
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

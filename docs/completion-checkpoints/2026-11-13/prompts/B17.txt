@@ -1,0 +1,78 @@
+TASK B17 — Remove HTTP errors from remaining retained authoring and Study policies
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: BE007.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/backend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: B16.source_released; B27.source_released; B29.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- backend/app/pgn_import_validation.py — validate_sources
+- backend/app/services/canonical_prefix.py — ensure_line_in_scope,ensure_batch_lines_in_scope
+- backend/app/services/repertoire_move_verification.py — verify_repertoire_move
+- backend/app/services/study_attempts.py — finish_study_attempt
+- backend/app/services/study_mode.py — study_only_enabled
+
+WRITE RESERVATION:
+- backend/app/pgn_import_validation.py [existing]
+- backend/app/services/canonical_prefix.py [existing]
+- backend/app/services/repertoire_move_verification.py [existing]
+- backend/app/services/study_attempts.py [existing]
+- backend/app/services/study_mode.py [existing]
+- backend/app/main.py [existing] — edge mapping only — repertoire_move_membership
+- backend/app/command_gateway.py [existing] — reuse semantic failure mapping
+- backend/app/tasks.py [existing] — Study mode failure boundary only
+- backend/tests/test_repertoire_import_boundary.py [existing]
+- backend/tests/test_canonical_repertoire_prefix.py [existing]
+- backend/tests/test_study_calendar.py [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. For each named raise, use B16 neutral failure values and map only at current command/HTTP entrypoint. Keep validation/location diagnostics and structured repertoire conflict data intact.
+2. Do not remove FastAPI from genuine transport/command request decoders merely to satisfy a filename heuristic; scope is domain/application policy listed in BE007.
+3. Preserve bounded replay deadline, absent policy fail-closed behavior, missing exercise/card distinction and canonical-scope guard.
+4. Add one non-HTTP consumer test per failure family and parameterized mapper assertions for current HTTP 409/422/404/503 shapes.
+5. Import pure policy/contracts with transport blocked and attach residual scan with justified transport-layer exceptions.
+
+PRESCRIBED SMALL BATCHES:
+Batch 1: batch_id: B17-1; name: source-policy; write_files: backend/app/pgn_import_validation.py; backend/app/services/canonical_prefix.py; backend/tests/test_repertoire_import_boundary.py; backend/tests/test_canonical_repertoire_prefix.py; instruction: Neutral errors only after shared kernel and retired Coverage decision.; after_batch: None
+Batch 2: batch_id: B17-2; name: attempt-and-mode; write_files: backend/app/services/study_attempts.py; backend/app/services/study_mode.py; backend/app/tasks.py; backend/tests/test_study_calendar.py; instruction: Keep worker unavailable-policy and completion semantics without HTTP dependency.; after_batch: B17-1
+Batch 3: batch_id: B17-3; name: membership-edge; write_files: backend/app/services/repertoire_move_verification.py; backend/app/main.py; backend/app/command_gateway.py; instruction: Preserve foreground deadline/source-currentness errors at actual transport edge.; after_batch: B17-2
+One batch per weak worker dispatch. Return scoped patch/evidence before next batch; root integration may combine coherent batches into one PR. Never ship a temporarily unregistered or partially translated runtime.
+
+ACCEPTANCE:
+- Every BE007 nontransport raise has neutral semantics; supported transport callers maintain original response/retry contracts.
+- No stale source or unavailable policy is converted to empty/valid data.
+- No change in source validation or exercise grading policy beyond the separately approved tasks.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: make python-file FILE=backend/tests/test_repertoire_import_boundary.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: make python-file FILE=backend/tests/test_canonical_repertoire_prefix.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: make python-file FILE=backend/tests/test_study_calendar.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- No unrelated heavy test is implied. The owner selects the applicable changed-boundary checks.
+
+MATERIAL RISKS:
+- Error neutralization must not absorb legality semantics changes from B28–30; consume released kernel/mapper first.
+
+EXCLUSIONS:
+- No new service, database, event bus, generic repository, scheduler, or retired producer restoration.
+- No changes to historical migration checksums, persisted command names, accepted operation identities, or original receipt bytes.
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

@@ -1,0 +1,86 @@
+TASK S26 — Settle and adopt typed storage boundary: Settings and current mode facts
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: ST005.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/proof-storage-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: B02.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- Shared typing environment prerequisite: integration owner selects and records one exact mypy version and Python interpreter, provisions it once in the shared task environment during execution, and reuses the B12/B14/B26 convention. No blanket ignore-missing-imports, casts to Any, per-worker installation or repository-wide typing campaign.
+
+READ FIRST (repository-relative except reference/ paths):
+- database/tempo_storage/controls/settings.py — effective_opening_limit_rows; repertoire_limit_row; study_mode_setting
+- database/tempo_storage/foreground_controls/settings.py — locked_settings
+- database/tempo_storage/http_composition/settings.py — public_settings
+- database/tempo_storage/redis_control/policy.py — study_mode_setting
+- backend/app/main.py
+- backend/app/repertoire_settings.py
+- backend/app/services/study_mode.py
+- backend/app/services/study_priority.py
+- backend/app/settings_commands.py
+
+WRITE RESERVATION:
+- database/tempo_storage/controls/settings.py [existing]
+- database/tempo_storage/foreground_controls/settings.py [existing]
+- database/tempo_storage/http_composition/settings.py [existing]
+- database/tempo_storage/redis_control/policy.py [existing]
+- backend/app/main.py [existing]
+- backend/app/repertoire_settings.py [existing]
+- backend/app/services/study_mode.py [existing]
+- backend/app/services/study_priority.py [existing]
+- backend/app/settings_commands.py [existing]
+- backend/tests/test_settings_descriptor.py [existing]
+- backend/tests/test_repertoire_settings.py [existing]
+- backend/tests/test_study_calendar.py [existing]
+- backend/tests/typing/storage_contract_s26.py [proposed scoped type-check fixture; create only for the applicable owner/public contract after row classification]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Use the exact row ledger for this cluster. For every listed function, trace current supported callers and public owner reachability; classify as public physical leak, private owner implementation, retired/no supported caller, or already semantic/typed. Record concrete caller/public-export/source evidence, never a blanket no-change disposition.
+2. Type public/effective/locked settings and Study mode values while preserving missing versus default/override semantics. Reuse existing descriptor or contract, strip only storage-specific representation at boundary, and keep unrelated historical retired settings untouched.
+3. For confirmed public/application representation leaks, define the smallest pure typed value/operation contract in the existing owner surface, map SQL rows inside the adapter and adopt every actual listed consumer in the same change. No generic repository, new service or one-function-per-file layer.
+4. If a cursor is legitimately private, prove its enclosing public owner returns typed semantic values and prohibit direct cross-owner access with T03. If unreachable, prove registration/import/retained recovery absence before deleting the exclusive helper and its exclusive tests. If already typed, name the exact type and passing current caller contract.
+5. Add focused conformance assertions for present/absent/ambiguous/error values, exact IDs/ordering/nullability, immutable original JSON where required, and no new connect/commit/close. A semantic in-memory fake drives policy; an adapter spy rejects wrong predicates/projections. Use native proof only for actually changed SQL/mapping/lock/transaction semantics.
+6. Update local owner guidance and T02 ownership/proof metadata for this boundary only. Work in one bounded symbol subset at a time, using a sequential path lease for shared adapters/callers.
+7. Use the same scoped pinned checker convention as B12/B14/B26. In backend/tests/typing/storage_contract_s26.py, bind the actual production adapter and an independently implemented in-memory semantic fake to the real consumed interface, and check actual consumer result use. Include an intentional wrong result/argument implementation as a negative fixture and retain its expected checker errors. Imported Any or a cast cannot stand in for the production binding.
+
+ACCEPTANCE:
+- Every exact row assigned to this task has a source-linked current disposition; no unresolved public physical contract is closed by labeling it private.
+- Required public result/argument conversions have real production consumer adoption; no caller .fetchone/.fetchall/.rowcount/physical column order remains at the migrated interface.
+- Focused semantic fake/adapter contract and applicable native consumer proof pass; one final P14/P12 cohort supplies shared integration evidence rather than a full run per helper.
+- The applicable listed caller contracts actually pass a scoped static type check with real production and independent fake bindings, and the deliberate incompatible implementation fails. Runtime fake tests alone do not satisfy the original type-checkable criterion. Private/already-typed dispositions name and check their enclosing public contract; no forced rewrite of private SQL helpers.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: make python-file FILE=backend/tests/test_settings_descriptor.py
+  kind: focused; availability: current; source_entrypoint: Makefile:python-file; scripts/resolve-python.mjs:resolvePython; docs/testing.md
+- Working directory .: make python-file FILE=backend/tests/test_repertoire_settings.py
+  kind: focused; availability: current; source_entrypoint: Makefile:python-file; scripts/resolve-python.mjs:resolvePython; docs/testing.md
+- Working directory .: make python-file FILE=backend/tests/test_study_calendar.py
+  kind: focused; availability: current; source_entrypoint: Makefile:python-file; scripts/resolve-python.mjs:resolvePython; docs/testing.md
+- Working directory .: python -m mypy --strict --follow-imports=silent --no-incremental backend/tests/typing/storage_contract_s26.py
+  kind: static-typing; availability: PROPOSED scoped acceptance command; no configured checker gate currently exists; integration owner pins/provisions shared checker first and includes any actual changed contract module targets needed to prevent an Any import escape; requires_created_paths: backend/tests/typing/storage_contract_s26.py
+
+COORDINATED ACCEPTANCE:
+- At checkpoint2, include only native owner/concurrency/replay cases affected by this cluster; reuse accepted identical inputs. P14 exact selector release is required if the current runner cannot execute the necessary case.
+
+MATERIAL RISKS:
+- A typed dictionary alias or wrapper around a cursor is not a semantic boundary; conversely, forcing a new value class around every private/scalar helper adds cost without removing coupling.
+- Shared backend/app/main.py/service callers may move during BE ownership repairs: rebind the ledger to the released owner, do not edit stale entrypoints or create competing writers.
+
+EXCLUSIONS:
+- Blind rewrite of all264 historical rows
+- New storage/repository framework
+- Changing persistence schema only for typing
+- Unrelated historical feature restoration
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

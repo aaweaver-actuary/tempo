@@ -1,0 +1,75 @@
+TASK C12 — Bind repertoire-edit confirmations and retained annotation save to original keys
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: FE001.
+ORIGINAL TASKS: C01, Q0.
+SUPPORTING DEFINITION: reference/planning-definitions/frontend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: C10.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- AGENTS.md — current scope, ownership and minimum real proof; distinguish implemented/tested/assembled/installed
+- SPEC.md — current November 10 reduction scope and retained ordinary Study preservation
+- docs/testing.md — smallest relevant proof and supported owned runner
+- app/lib/analysis-paste-command.ts — save pasted-analysis command; retained repertoire-edit path
+- app/lib/branch-command.ts — saveBranchCommand
+- app/lib/branch-removal-command.ts — remove branch command
+- app/lib/card-revision-command.ts — revision pending record and result schema
+- app/lib/prefix-split-command.ts — decidePrefixSplit; manual split remains supported
+- app/utils/position-annotations.ts — savePositionAnnotation; retained helper has no known mounted save consumer
+
+WRITE RESERVATION:
+- app/lib/analysis-paste-command.ts [existing]
+- app/lib/branch-command.ts [existing]
+- app/lib/branch-removal-command.ts [existing]
+- app/lib/card-revision-command.ts [existing]
+- app/lib/prefix-split-command.ts [existing]
+- app/utils/position-annotations.ts [existing]
+- tests/unit/analysis-paste-pending-regressions.test.ts [existing]
+- tests/unit/branch-command-pending-regressions.test.ts [existing]
+- tests/unit/branch-removal-pending-regressions.test.ts [existing]
+- tests/unit/card-revision-pending-regressions.test.ts [existing]
+- tests/unit/prefix-split-pending-regressions.test.ts [existing]
+- tests/unit/position-annotation-pending-regressions.test.ts [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. At each initial command response, pass the exact pending.operationId to confirmOriginalOperationResponse. Preserve every existing body comparison, pending/blocked handling, endpoint and domain-result validation-before-clear.
+2. Add a compact missing/foreign-202 pair to each owning suite. Check the persisted pending record is byte-equivalent, no foreign receipt URL is called, and a retry with the original acknowledgment resolves using the same body.
+3. Keep manual prefix split endpoint work with the backend prefix owner. This is only transport identity adoption; do not reimplement split policy or wait for its heavy proof to land this source patch.
+4. Preserve annotation read/shape helpers. Retained save can safely use the strict API without claiming a new supported authoring UI.
+
+ACCEPTANCE:
+- Every listed durable caller supplies its original saved operation ID before polling.
+- Wrong/malformed complete domain payloads still retain pending commands; own completion still clears once.
+- No removal or revival is inferred from the legacy word analysis in a retained repertoire command filename.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: npm run test:unit -- tests/unit/analysis-paste-pending-regressions.test.ts tests/unit/branch-command-pending-regressions.test.ts tests/unit/branch-removal-pending-regressions.test.ts tests/unit/card-revision-pending-regressions.test.ts tests/unit/prefix-split-pending-regressions.test.ts tests/unit/position-annotation-pending-regressions.test.ts
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: npm run typecheck:browser
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- owner: P06/P12 integration owner; required: Exercise current manual split once after backend routes are restored; no extra whole-stack run for the annotation helper. Shared original-ID browser fault case covers transport lifecycle.
+
+MATERIAL RISKS:
+- This is mostly call-site work but using a new UUID or fresh UI payload during retry would invalidate retained operations.
+
+EXCLUSIONS:
+- No retired authoring UI restoration
+- No backend main.py edits
+- No new generic command framework
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

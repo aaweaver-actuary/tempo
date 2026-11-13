@@ -1,0 +1,70 @@
+TASK T04 — Select proof by changed owner and effect instead of blanket Study filenames
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: RT004.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/proof-storage-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: T02.source_released; T03.source_released; P07.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- Integration owner reserves shared CI selector/validator paths.
+
+READ FIRST (repository-relative except reference/ paths):
+- scripts/ci-fast-lane.mjs — selectFastLane; validateFastGate
+- scripts/ci-fast-lane-inventory.json
+- scripts/ci-fast-commands.mjs
+- scripts/ci-verification-plan.mjs
+- scripts/ci-quality.mjs
+- .github/workflows/pages.yml
+- tools/component-build/affected.mjs
+
+WRITE RESERVATION:
+- scripts/ci-fast-lane.mjs [existing]
+- scripts/ci-fast-lane-inventory.json [existing]
+- scripts/ci-fast-commands.mjs [existing]
+- scripts/ci-verification-plan.mjs [existing]
+- scripts/ci-quality.mjs [existing]
+- tests/runner/ci-fast-lane.test.mjs [existing]
+- tests/runner/ci-reliability.test.mjs [existing]
+- .github/workflows/pages.yml [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Use T02 owner/proof/effect declarations as selection authority; remove duplicated hand-maintained path decisions only after equivalent selection tests exist.
+2. For pure MoveNumberDisplay, OpeningTitle, board-ui geometry, chess-line and evidence-math implementation changes, select the relevant local/unit/contract consumers without PostgreSQL or unrelated browser suites.
+3. For Study facade/session transport, review/receipt/journal behavior, SQL/locking or lifecycle changes, select the exact required current native/browser/CLI cases, including P07 truthful scope validation.
+4. Keep unknown/ambiguous/deleted ownership conservative and explicit. Test rename/delete/package-public-interface changes, combined paths, missing files and stale source/case/report identities.
+5. Preserve current exact-case/zero-skip/zero-retry validators and build-input/source binding. Reuse affected.mjs only according to T02 decision; no third planner or broad FAST exemption.
+
+ACCEPTANCE:
+- The original eleven path probes plus pure-vs-persistence mutations select proportional proof for the actual reason.
+- A pure leaf does not require native/browser by name alone; changed durable behavior still selects its applicable real proof.
+- Hosted CI unavailable remains ci-disabled; changing selection code does not claim hosted execution.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: node --test --test-concurrency=1 tests/runner/ci-fast-lane.test.mjs tests/runner/ci-reliability.test.mjs
+  kind: focused; availability: current
+- Working directory .: node --test --test-concurrency=1 tools/component-build/tests/affected.test.mjs
+  kind: focused; availability: current
+
+COORDINATED ACCEPTANCE:
+- No unrelated heavy test is implied. The owner selects the applicable changed-boundary checks.
+
+MATERIAL RISKS:
+- Over-narrow selection can silently omit consumer breakage; retain unknown fallback and boundary-change consumer closure.
+
+EXCLUSIONS:
+- Enabling hosted CI
+- Running full-system suites for each pure leaf
+- Changing product resource limits
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

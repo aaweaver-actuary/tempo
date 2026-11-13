@@ -1,0 +1,66 @@
+TASK B06 — Retire or explicitly constrain direct review compatibility entrypoints
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: BE015.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/backend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: B00.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- backend/app/main.py — _apply_review,_reconcile_review
+- backend/app/services/learning_review_adapter.py — apply_legacy_review,submit_legacy_review
+- services/learning/application/src/tempo_learning_review/application.py — apply_review,submit_review
+- database/tests/check_postgres_deletion.py
+- database/tests/games_collection/test_packaged_collection.py
+- backend/tests/test_opening_evidence_contracts.py
+
+WRITE RESERVATION:
+- backend/app/main.py [existing] — direct compatibility wrappers
+- backend/app/services/learning_review_adapter.py [existing] — compatibility entrypoint only
+- database/tests/check_postgres_deletion.py [existing] — coordinate proof owner
+- database/tests/games_collection/test_packaged_collection.py [existing] — only retained disposition if still selected
+- backend/tests/test_opening_evidence_contracts.py [existing]
+- services/learning/application/README.md [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Implement B00 decision: route supported user-review callers through submit_legacy_review/submit_review; remove main convenience bypass wrappers once caller migration is complete.
+2. Keep pure apply_review only as an internal algorithm boundary with explicit already-fenced preconditions and tests intentionally named for that scope; it must not be advertised as user submission.
+3. For retained deletion/replay proof, replace synthetic direct grade calls with current full submission fixture or explicit lower-level algorithm test according to the assertion actually needed.
+4. Prove actual HTTP review/reconcile and worker recovery use full locks/evidence/continuation sequencing; demonstrate original payload binding conflicts still reject.
+5. If B00 positively establishes no supported bypass and an intentional constrained internal interface, document that decision with reachability and actual wrapper removal/constraint evidence.
+
+ACCEPTANCE:
+- No supported API/fixture accidentally selects a review submission path lacking complete owner guarantees.
+- No second scheduler is introduced; low-level apply_review remains internal, if retained.
+- Candidate can close by explicit supported-interface disposition; absence of a reproduced HTTP defect is recorded.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: make python-file FILE=backend/tests/test_opening_evidence_contracts.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: python services/learning/application/run_suite.py application
+  verified_against_source: entrypoint/options inspected; any proposed new selection is stated in acceptance; availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- Reuses final native review receipt/replay and assembled review journey; no extra browser run for removing wrappers.
+
+MATERIAL RISKS:
+- Do not make old receipt/evidence tests impossible by deleting the shared pure algorithm; constrain only the bypassable submission facade.
+
+EXCLUSIONS:
+- No new service, database, event bus, generic repository, scheduler, or retired producer restoration.
+- No changes to historical migration checksums, persisted command names, accepted operation identities, or original receipt bytes.
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

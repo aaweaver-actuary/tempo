@@ -1,0 +1,58 @@
+TASK P17 — Reconcile E00/E01/E03/E02 evidence descriptions with actual current proof
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: ST012, ST013.
+ORIGINAL TASKS: E00, E01, E02, E03.
+SUPPORTING DEFINITION: reference/planning-definitions/proof-storage-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: P01.source_released; P04.source_released; P05.source_released; P06.source_released; P07.source_released; P08.source_released; P16.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- Integration owner serializes shared guides/progress record; accepted qualification provenance is appended only when earned.
+
+READ FIRST (repository-relative except reference/ paths):
+- database/tests/README.md
+- docs/testing.md
+- tests/REGRESSIONS.md
+- tempo-low-fruit-20261112/progress/merge-review.json
+- database/tests/check_postgres_game_review_reader.py
+
+WRITE RESERVATION:
+- database/tests/README.md [existing]
+- docs/testing.md [existing]
+- tests/REGRESSIONS.md [existing]
+- tempo-low-fruit-20261112/progress/merge-review.json [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Describe accepted E00 exact-case bridge and E01 current borrowed-owner cases; keep P01 semantic limitations until repaired.
+2. Replace obsolete pending E03/ten-relation statements with the current three-relation read-only proof, real saved/pasted HTTP producer, source/image identity and no Study-write assertions.
+3. Record #1004 merged partial E02 as historical evidence with its actual qualification source, four residuals and QF-02/QF-03 limits; update only with new raw accepted evidence when earned.
+4. Keep reported installed d79/schema65 and current source091ad distinct. Documentation-only changes do not require reinstalling identical product code.
+
+ACCEPTANCE:
+- Current owner guides and regression descriptions match executable source and exact evidence; no prior report is relabeled as a current pass.
+- ST010 stays closed; this is finite proof-record alignment, not another documentation audit.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: git diff --check
+  kind: source; availability: current
+
+COORDINATED ACCEPTANCE:
+- No unrelated heavy test is implied. The owner selects the applicable changed-boundary checks.
+
+MATERIAL RISKS:
+- Overwriting old qualification provenance destroys the distinction between reported and independently observed evidence.
+
+EXCLUSIONS:
+- No unrelated feature, rewrite or retired producer restoration.
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

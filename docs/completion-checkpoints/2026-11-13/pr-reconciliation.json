@@ -1,0 +1,821 @@
+{
+  "schema_version": 1,
+  "observed_at_utc": "2026-11-13T19:24:54.301227+00:00",
+  "repository": "aaweaver-actuary/tempo",
+  "baseline_sha": "091ad318b1afaadcb25e5ca44ff526120a202336",
+  "current_main_sha": "2f799293af812e829a55a3c2bb5aba8ea1598c96",
+  "scope": "Nineteen post-packet open drafts selected from the current completion run; older pre-1008 backlog intentionally excluded.",
+  "method": [
+    "Fetched direct get_pr_info metadata for all nineteen PRs.",
+    "Verified each exact head with git merge-base --is-ancestor against current main.",
+    "Computed earliest covering first-parent merge and head containment in other inspected open PRs.",
+    "Read current PR bodies and seven relevant discussion/review timelines.",
+    "No product tests were executed; all test counts remain creator-reported."
+  ],
+  "limits": [
+    "This is a remote source and evidence reconciliation, not merge/release approval.",
+    "The original Mac, unpushed worktrees and local completion-run ledger have not been inspected.",
+    "No new installation is established. The transcript reports the previous installed app recovered after disk-full Docker failure.",
+    "A GitHub mergeable flag does not establish acceptance. Bot review guides do not count as submitted independent reviews.",
+    "Any source updates after this snapshot require head and evidence revalidation.",
+    "A head absent from main does not imply every constituent change is absent: cherry-picks or later equivalent implementations were not classified by this ancestry-only closure test."
+  ],
+  "summary": {
+    "open_drafts_at_snapshot": 19,
+    "entire_heads_already_in_main": 6,
+    "open_heads_not_in_main": 13,
+    "close_eligible_prs": [
+      1102,
+      1103,
+      1104,
+      1105,
+      1106,
+      1108
+    ],
+    "common_covering_merge_pr": 1109,
+    "common_covering_merge_sha": "5a6f5721aa62551779010cf14e224de188eabd9b",
+    "current_open_count": 13,
+    "already_closed_count": 6,
+    "top_level_candidate_count": 8
+  },
+  "closure_rule": "Close only the six exact entire heads already in main, with comment linking #1109 and the evidence. Describe them as integrated source maps, not new merges or full audit acceptance. Keep the thirteen unmerged heads open, including those contained only in unmerged aggregates.",
+  "remaining_aggregate_dependencies": [
+    {
+      "head_pr": 1025,
+      "contained_in_pr": 1026
+    },
+    {
+      "head_pr": 1035,
+      "contained_in_pr": 1048
+    },
+    {
+      "head_pr": 1048,
+      "contained_in_pr": 1049
+    },
+    {
+      "head_pr": 1049,
+      "contained_in_pr": 1052
+    },
+    {
+      "head_pr": 1121,
+      "contained_in_pr": 1123
+    }
+  ],
+  "prs": [
+    {
+      "number": 1025,
+      "title": "Expose detached board input diagnostics",
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "head": "packet/fe20-board-capabilities",
+      "head_sha": "14a28f2879ca846310145549ccb27978feec8ad2",
+      "base": "main",
+      "base_sha": "3bd083216e2ec7f49323b81dae4899a6129da862",
+      "mergeable": false,
+      "updated_at": "2026-11-13T01:33:43Z",
+      "url": "https://github.com/aaweaver-actuary/tempo/pull/1025",
+      "head_object_available": true,
+      "entire_head_in_current_main": false,
+      "earliest_covering_main_merge": null,
+      "included_in_other_open_prs": [
+        1026
+      ],
+      "recommended_action": "keep_open_pending_scope_and_acceptance",
+      "task": "FE20",
+      "summary": "Detached Board input and diagnostics are implemented on a source candidate.",
+      "reported_evidence": [
+        "Package build/typecheck and 53 tests; browser typecheck and 58 application tests."
+      ],
+      "remaining": [
+        "Standalone package qualifier offline install hit ENOTCACHED for whatwg-url 17.3.0.",
+        "Real-browser behavior and consuming Study adoption remain separate gates.",
+        "Head is included in #1026, which has not merged."
+      ],
+      "metadata_evidence": "evidence/prs/1025.json",
+      "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun"
+    },
+    {
+      "number": 1026,
+      "title": "Render Study boards through shared package",
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "head": "packet/fe21-shared-board",
+      "head_sha": "48769570a41011d5d01b47cf5e1c6e74c7aeec40",
+      "base": "packet/fe20-board-capabilities",
+      "base_sha": "14a28f2879ca846310145549ccb27978feec8ad2",
+      "mergeable": true,
+      "updated_at": "2026-11-13T01:51:01Z",
+      "url": "https://github.com/aaweaver-actuary/tempo/pull/1026",
+      "head_object_available": true,
+      "entire_head_in_current_main": false,
+      "earliest_covering_main_merge": null,
+      "included_in_other_open_prs": [],
+      "recommended_action": "keep_open_pending_scope_and_acceptance",
+      "task": "FE21",
+      "summary": "Study board consumes the public Board contract, including explicit drawing while locked.",
+      "reported_evidence": [
+        "Seven application suites: 71 passing; package: 53 passing; Game Review composition: 25 passing; browser typecheck."
+      ],
+      "remaining": [
+        "Six-case real-browser inventory for held drag, drawing, responsive geometry and owner switching has not executed.",
+        "Independent review and assembled acceptance remain pending.",
+        "Contains #1025; qualify the combined head before closing either as integrated.",
+        "Inherited #1025 acceptance remains part of this aggregate: rerun/resolve the standalone Board qualifier blocked by ENOTCACHED for whatwg-url 17.3.0, and retain actual package isolation and consuming adoption proof. Containment does not waive child criteria."
+      ],
+      "metadata_evidence": "evidence/prs/1026.json",
+      "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun",
+      "timeline": {
+        "count": 1,
+        "items": [
+          {
+            "url": "https://github.com/aaweaver-actuary/tempo/pull/1026#issuecomment-6841342025",
+            "login": "sourcery-ai[bot]",
+            "created_at": "2026-11-13T01:45:19Z",
+            "review": null,
+            "kind": "automated_guide"
+          }
+        ]
+      },
+      "timeline_evidence": "evidence/prs/1026-comments.json"
+    },
+    {
+      "number": 1033,
+      "title": "Move tactic history proof to phased queue publisher",
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "head": "packet/b04-seed-tactics",
+      "head_sha": "a3848b3d6f5469a8fea7a26c4c6e03acf03eb962",
+      "base": "main",
+      "base_sha": "637c4a21036645e552e47e895ee16c3277833159",
+      "mergeable": true,
+      "updated_at": "2026-11-13T05:28:40Z",
+      "url": "https://github.com/aaweaver-actuary/tempo/pull/1033",
+      "head_object_available": true,
+      "entire_head_in_current_main": false,
+      "earliest_covering_main_merge": null,
+      "included_in_other_open_prs": [],
+      "recommended_action": "keep_open_pending_scope_and_acceptance",
+      "task": "B04",
+      "summary": "Phased-publisher proof prepared; the legacy callable seed/materialize writers and wrappers remain.",
+      "reported_evidence": [
+        "At c365554223fb8f991deba3775c7887e5cf40fd05: three focused queue application cases and four native tactic-history cases.",
+        "At current a3848b3d6f5469a8fea7a26c4c6e03acf03eb962: eight native admission cases, four legacy boundary and four active phased owner cases, with owned DSN-fenced fixture cleanup."
+      ],
+      "remaining": [
+        "Delivery owner must explicitly dispose of OPENING_CAPACITY_FRONTIER_EXPANSION and capacity_route; the Nov10 SPEC does not explicitly retire this flag.",
+        "Legacy capacity script calls missing _prepare_prioritized_openings and its unreviewed-parent semantics differ from the current reviewed-parent route; existing tests do not prove equivalence.",
+        "Migrate the position Study native fixture off legacy seed SQL while retaining required due_cards, maximum_position and append_due_card capabilities.",
+        "Port/compare applicable quota, shared membership, source invalidation, contention, rollback and checkpoint assertions before coherent deletion.",
+        "Root owns the atomic main.py wrapper cutover; independent deletion review and assembled acceptance remain pending."
+      ],
+      "metadata_evidence": "evidence/prs/1033.json",
+      "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun",
+      "timeline": {
+        "count": 1,
+        "items": [
+          {
+            "url": "https://github.com/aaweaver-actuary/tempo/pull/1033#issuecomment-6841849394",
+            "login": "sourcery-ai[bot]",
+            "created_at": "2026-11-13T02:17:51Z",
+            "review": null,
+            "kind": "automated_guide"
+          }
+        ]
+      },
+      "timeline_evidence": "evidence/prs/1033-comments.json"
+    },
+    {
+      "number": 1035,
+      "title": "Add explicit Study runtime factory",
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "head": "packet/fe22-study-runtime",
+      "head_sha": "b5bbb958ea30faa0d1dcc3539841dfeecd9958aa",
+      "base": "packet/c21-frozen-recovery",
+      "base_sha": "2f2c10ef189645dd329898a57edf0f78b7ee2c0a",
+      "mergeable": true,
+      "updated_at": "2026-11-13T02:37:58Z",
+      "url": "https://github.com/aaweaver-actuary/tempo/pull/1035",
+      "head_object_available": true,
+      "entire_head_in_current_main": false,
+      "earliest_covering_main_merge": null,
+      "included_in_other_open_prs": [
+        1052,
+        1048,
+        1049
+      ],
+      "recommended_action": "keep_open_pending_scope_and_acceptance",
+      "task": "FE22",
+      "summary": "Explicit inert Study runtime factory implemented; factory/adapters remain a source candidate.",
+      "reported_evidence": [
+        "Four construction cases and browser typecheck at reported intermediate head 4ad2e19f."
+      ],
+      "remaining": [
+        "Independent review and assembled adoption proof remain pending.",
+        "Contained by #1048, #1049 and #1052; do not close as integrated before an accepted aggregate reaches main.",
+        "Owner-current/invalidation fences do not undo an already external operation or committed IndexedDB transaction."
+      ],
+      "metadata_evidence": "evidence/prs/1035.json",
+      "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun"
+    },
+    {
+      "number": 1037,
+      "title": "Extract bounded Study queue transport",
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "head": "packet/fe27-queue-transport",
+      "head_sha": "5d085521e5ddc91aab70f6378c59a1c909d5d11d",
+      "base": "codex/completion-c14-b31-integration",
+      "base_sha": "b14b8b0a759ff06511083cabe497f16ae8ab0e5e",
+      "mergeable": true,
+      "updated_at": "2026-11-13T02:48:02Z",
+      "url": "https://github.com/aaweaver-actuary/tempo/pull/1037",
+      "head_object_available": true,
+      "entire_head_in_current_main": false,
+      "earliest_covering_main_merge": null,
+      "included_in_other_open_prs": [],
+      "recommended_action": "keep_open_pending_scope_and_acceptance",
+      "task": "FE27",
+      "summary": "Bounded queue transport extracts fetch/base URL/timer dependencies and preserves issuance ownership.",
+      "reported_evidence": [
+        "93 focused cases and browser typecheck at 67fd0e7e."
+      ],
+      "remaining": [
+        "Independent review and assembled queue issuance/abort/retry/hold behavior remain pending.",
+        "Reconcile its historical stacked base with current main before integration."
+      ],
+      "metadata_evidence": "evidence/prs/1037.json",
+      "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun"
+    },
+    {
+      "number": 1041,
+      "title": "Classify independent Study serving and recovery",
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "head": "codex/completion-fe30",
+      "head_sha": "98cdcc91cf2d28366e73ba32113101563a1d2a44",
+      "base": "packet/c21-frozen-recovery",
+      "base_sha": "2f2c10ef189645dd329898a57edf0f78b7ee2c0a",
+      "mergeable": true,
+      "updated_at": "2026-11-13T02:51:02Z",
+      "url": "https://github.com/aaweaver-actuary/tempo/pull/1041",
+      "head_object_available": true,
+      "entire_head_in_current_main": false,
+      "earliest_covering_main_merge": null,
+      "included_in_other_open_prs": [],
+      "recommended_action": "keep_open_pending_scope_and_acceptance",
+      "task": "FE30",
+      "summary": "Documentation classifies monolith serving and recovery-only obligations for independently built legacy Study.",
+      "reported_evidence": [
+        "Documentation/source classification only; no product service change or installed proof."
+      ],
+      "remaining": [
+        "Independent source review remains pending.",
+        "FE31 tactic, FE32 burial and FE36 retirement successors remain.",
+        "Prepared-storage cached handle across same-lifetime authority changes is an acknowledged unproven risk; reload is a mitigation, not acceptance."
+      ],
+      "metadata_evidence": "evidence/prs/1041.json",
+      "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun"
+    },
+    {
+      "number": 1048,
+      "title": "Extract Study delivery adapters from session facades",
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "head": "codex/completion-fe23",
+      "head_sha": "ce1b3b55a7c6ad0a92932de2c33331b6a2c93bc4",
+      "base": "main",
+      "base_sha": "637c4a21036645e552e47e895ee16c3277833159",
+      "mergeable": true,
+      "updated_at": "2026-11-13T03:28:28Z",
+      "url": "https://github.com/aaweaver-actuary/tempo/pull/1048",
+      "head_object_available": true,
+      "entire_head_in_current_main": false,
+      "earliest_covering_main_merge": null,
+      "included_in_other_open_prs": [
+        1052,
+        1049
+      ],
+      "recommended_action": "keep_open_pending_scope_and_acceptance",
+      "task": "FE23",
+      "summary": "Session delivery adapter factories extracted; facades continue to register them.",
+      "reported_evidence": [
+        "172 focused cases and browser typecheck."
+      ],
+      "remaining": [
+        "Independent review and assembled owner behavior remain pending.",
+        "Exact head is included in #1049 and #1052; neither is integrated in main."
+      ],
+      "metadata_evidence": "evidence/prs/1048.json",
+      "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun"
+    },
+    {
+      "number": 1049,
+      "title": "Compose default Study runtime explicitly",
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "head": "codex/completion-fe24",
+      "head_sha": "a05f3df3fab9d069dab35e9f6fdb0dd9616a9096",
+      "base": "main",
+      "base_sha": "637c4a21036645e552e47e895ee16c3277833159",
+      "mergeable": true,
+      "updated_at": "2026-11-13T03:33:31Z",
+      "url": "https://github.com/aaweaver-actuary/tempo/pull/1049",
+      "head_object_available": true,
+      "entire_head_in_current_main": false,
+      "earliest_covering_main_merge": null,
+      "included_in_other_open_prs": [
+        1052
+      ],
+      "recommended_action": "keep_open_pending_scope_and_acceptance",
+      "task": "FE24",
+      "summary": "Default runtime explicitly composes a complete adapter table and reserves recovery before async retained-kind validation.",
+      "reported_evidence": [
+        "Six suites: 267 passing; browser typecheck."
+      ],
+      "remaining": [
+        "Independent review and assembled acceptance remain pending.",
+        "Exact head is included in #1052, which remains unmerged."
+      ],
+      "metadata_evidence": "evidence/prs/1049.json",
+      "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun"
+    },
+    {
+      "number": 1052,
+      "title": "Publish semantic Study review service ports",
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "head": "codex/completion-fe25",
+      "head_sha": "2bc7b688748ad5995d745fd51efccfdd2221a3b2",
+      "base": "main",
+      "base_sha": "5a6f5721aa62551779010cf14e224de188eabd9b",
+      "mergeable": true,
+      "updated_at": "2026-11-13T09:03:17Z",
+      "url": "https://github.com/aaweaver-actuary/tempo/pull/1052",
+      "head_object_available": true,
+      "entire_head_in_current_main": false,
+      "earliest_covering_main_merge": null,
+      "included_in_other_open_prs": [],
+      "recommended_action": "keep_open_pending_scope_and_acceptance",
+      "task": "FE25",
+      "summary": "Semantic Study review, authority, progression and diagnostics ports are implemented; controller adoption is a later task.",
+      "reported_evidence": [
+        "Earlier 9fb47a70: 315 passing, three failures reproduced on base and same 18 type diagnostics as base.",
+        "ef1a4abc: seven Chromium IndexedDB/Web Locks cases with controlled transport.",
+        "6b7ccf670b9b68fdca3debdfed7610b78badccc6: two two-tab phone/rebind orderings and unmocked no-Web-Locks original-receipt-to-playable-next journey.",
+        "Parent 48fdf431: 301 unit cases, typecheck, component and inventory checks.",
+        "Earlier integrated b591f397: P14 eight queue, seven native, eleven Chromium cases."
+      ],
+      "remaining": [
+        "Current remote head 2bc7b688748ad5995d745fd51efccfdd2221a3b2 includes two new real-browser authority-switch cases that compile/discover but have not run.",
+        "Separate FE25 browser selection at b591f397 failed during image build from host disk exhaustion; zero selected cases ran.",
+        "Earlier receipts do not qualify current integrated head. Restore host capacity, reconcile with current main and qualify the resulting exact head.",
+        "Historical clients do not implement the new Web Lock protocol; no historical-client compatibility proof or independent external build/cache provenance is recorded.",
+        "FE26 controller adoption remains distinct. Hosted CI and installation are not claimed."
+      ],
+      "safety_invariants": [
+        "Fresh absent-first-append recovery requires same authority, page-held attempt Web Lock, observed abort, and no exposure to online/phone aggregate or evidence send.",
+        "Existing exposed, legacy, position, foreign or ambiguous captures remain held.",
+        "Any newer ambiguous write invalidates an earlier abort proof."
+      ],
+      "metadata_evidence": "evidence/prs/1052.json",
+      "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun",
+      "timeline": {
+        "count": 0,
+        "items": []
+      },
+      "timeline_evidence": "evidence/prs/1052-comments.json"
+    },
+    {
+      "number": 1055,
+      "title": "Type Study next-exercise core facts",
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "head": "codex/completion-b12",
+      "head_sha": "4639c3888f37344d9636728eb94b10788d67e1e0",
+      "base": "codex/b12-p14-base",
+      "base_sha": "231b85ce53c4dd86137f288cee890382ed35a459",
+      "mergeable": true,
+      "updated_at": "2026-11-13T05:04:53Z",
+      "url": "https://github.com/aaweaver-actuary/tempo/pull/1055",
+      "head_object_available": true,
+      "entire_head_in_current_main": false,
+      "earliest_covering_main_merge": null,
+      "included_in_other_open_prs": [],
+      "recommended_action": "keep_open_pending_scope_and_acceptance",
+      "task": "B12",
+      "summary": "Typed next-exercise core facts and named prepared queue modes are a partial source handoff.",
+      "reported_evidence": [
+        "108 Python cases; strict mypy 1.15.0 for three core/fake files and incompatible callback negative control."
+      ],
+      "remaining": [
+        "Production composition remains unannotated; B13 owns conversion and actual-binding static proof.",
+        "PreparedQueueHead mode/proposal relation is checked at runtime, not expressed as a static discriminated union.",
+        "Six stale import failures referencing retired tempo_storage.study.game_feedback were recorded in additional timing coverage.",
+        "Full B12 acceptance requires B13, independent review and current integrated proof; historical P14 base is not current main."
+      ],
+      "metadata_evidence": "evidence/prs/1055.json",
+      "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun",
+      "timeline": {
+        "count": 1,
+        "items": [
+          {
+            "url": "https://github.com/aaweaver-actuary/tempo/pull/1055#issuecomment-6844672021",
+            "login": "sourcery-ai[bot]",
+            "created_at": "2026-11-13T05:04:53Z",
+            "review": null,
+            "kind": "automated_guide"
+          }
+        ]
+      },
+      "timeline_evidence": "evidence/prs/1055-comments.json"
+    },
+    {
+      "number": 1071,
+      "title": "Type Learning submission results and preserve receipt replay",
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "head": "codex/completion-b15",
+      "head_sha": "80f939d2bf79a54e6824f237b6a80da71e9903f6",
+      "base": "main",
+      "base_sha": "a973688d3215281a229cfa513af16e7d8eed0738",
+      "mergeable": true,
+      "updated_at": "2026-11-13T10:25:12Z",
+      "url": "https://github.com/aaweaver-actuary/tempo/pull/1071",
+      "head_object_available": true,
+      "entire_head_in_current_main": false,
+      "earliest_covering_main_merge": null,
+      "included_in_other_open_prs": [],
+      "recommended_action": "keep_open_pending_scope_and_acceptance",
+      "task": "B15",
+      "summary": "Learning submission/receipt types progressively hardened; latest remote gateway annotation slice remains a draft.",
+      "reported_evidence": [
+        "Latest 80f939d2b: 45 focused gateway/wrapper/replay cases reported; independent source review reported no actionable issue.",
+        "Earlier slices report identity/fence/completion, immutable receipt, clock and reconciliation-focused successes while preserving opaque original receipt replay."
+      ],
+      "remaining": [
+        "Strict adapter mypy still reports four errors at latest remote 80f939d2bf79a54e6824f237b6a80da71e9903f6; static acceptance is not met.",
+        "Actual PostgreSQL JSONB/clock, transaction ordering, race, rollback, lost-ack replay, hold behavior and assembled proof remain pending.",
+        "Production owner/producer strict qualification is not established merely by scoped core/fake success.",
+        "The attached run transcript ends while moving the missing-settings prerequisite-retry boundary, without a final commit/test receipt; inspect original Mac worktrees and ledger for unpushed/dirty state before recreating or overwriting.",
+        "Original branch body notes local reviewed B14/combined parent 869b50537a711c7aaca6608501118d0717c939ed not yet on its original PR base. Reconcile exact current branch ancestry before integration."
+      ],
+      "metadata_evidence": "evidence/prs/1071.json",
+      "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun",
+      "timeline": {
+        "count": 0,
+        "items": []
+      },
+      "timeline_evidence": "evidence/prs/1071-comments.json"
+    },
+    {
+      "number": 1102,
+      "title": "Map repertoire snapshot ownership",
+      "state": "closed",
+      "draft": true,
+      "merged": false,
+      "head": "codex/completion-t02-repertoire-snapshot-census",
+      "head_sha": "701c1cfd6ffdc3ccf0fe1b36f838ebfb62fdefaa",
+      "base": "codex/completion-t02-scheduling-census",
+      "base_sha": "b9d3deca46911428b775c102a0aaefb2e22759ad",
+      "mergeable": true,
+      "updated_at": "2026-11-13T08:34:20Z",
+      "url": "https://github.com/aaweaver-actuary/tempo/pull/1102",
+      "head_object_available": true,
+      "entire_head_in_current_main": true,
+      "earliest_covering_main_merge": {
+        "sha": "5a6f5721aa62551779010cf14e224de188eabd9b",
+        "subject": "Merge pull request #1109 from aaweaver-actuary/codex/completion-t02-integration-b27",
+        "pr_number": 1109
+      },
+      "included_in_other_open_prs": [
+        1123,
+        1052,
+        1104,
+        1103,
+        1121,
+        1106,
+        1108,
+        1105
+      ],
+      "recommended_action": "Already closed on 2026-11-13 after exact-head ancestry verification through #1109; preserve branch/history. Do not repeat closure.",
+      "task": "RT003/T02 bounded census",
+      "summary": "Repertoire snapshot source ownership map is already integrated through #1109.",
+      "reported_evidence": [
+        "234 boundary integration controls and 11 position occurrence cases reported."
+      ],
+      "remaining": [
+        "19 earlier fixture failures and ten missing-adapter cases remained recorded.",
+        "Source mapping does not prove full census or native/live acceptance."
+      ],
+      "metadata_evidence": "evidence/prs/1102.json",
+      "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun"
+    },
+    {
+      "number": 1103,
+      "title": "Map background activity control ownership",
+      "state": "closed",
+      "draft": true,
+      "merged": false,
+      "head": "codex/completion-t02-activity-control-census",
+      "head_sha": "a1d4105da50182fada6845f7191ce52af717ce60",
+      "base": "codex/completion-t02-repertoire-snapshot-census",
+      "base_sha": "701c1cfd6ffdc3ccf0fe1b36f838ebfb62fdefaa",
+      "mergeable": true,
+      "updated_at": "2026-11-13T08:37:39Z",
+      "url": "https://github.com/aaweaver-actuary/tempo/pull/1103",
+      "head_object_available": true,
+      "entire_head_in_current_main": true,
+      "earliest_covering_main_merge": {
+        "sha": "5a6f5721aa62551779010cf14e224de188eabd9b",
+        "subject": "Merge pull request #1109 from aaweaver-actuary/codex/completion-t02-integration-b27",
+        "pr_number": 1109
+      },
+      "included_in_other_open_prs": [
+        1123,
+        1052,
+        1104,
+        1121,
+        1106,
+        1108,
+        1105
+      ],
+      "recommended_action": "Already closed on 2026-11-13 after exact-head ancestry verification through #1109; preserve branch/history. Do not repeat closure.",
+      "task": "RT003/T02 bounded census",
+      "summary": "Background activity control source ownership map is already integrated through #1109.",
+      "reported_evidence": [
+        "238 scoped controls reported."
+      ],
+      "remaining": [
+        "24 PGN activity fixture failures (18 prepare_task_claim signature, six missing storage.postgres) plus earlier fixture gaps remained.",
+        "Alternative environment collection hit missing sqlglot.",
+        "Source mapping does not prove full census or native/live acceptance."
+      ],
+      "metadata_evidence": "evidence/prs/1103.json",
+      "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun"
+    },
+    {
+      "number": 1104,
+      "title": "Map background metrics ownership",
+      "state": "closed",
+      "draft": true,
+      "merged": false,
+      "head": "codex/completion-t02-metrics-census",
+      "head_sha": "21ab8c82895c1aad1f0dc2ca338aaa28a6ab619c",
+      "base": "codex/completion-t02-activity-control-census",
+      "base_sha": "a1d4105da50182fada6845f7191ce52af717ce60",
+      "mergeable": true,
+      "updated_at": "2026-11-13T08:40:25Z",
+      "url": "https://github.com/aaweaver-actuary/tempo/pull/1104",
+      "head_object_available": true,
+      "entire_head_in_current_main": true,
+      "earliest_covering_main_merge": {
+        "sha": "5a6f5721aa62551779010cf14e224de188eabd9b",
+        "subject": "Merge pull request #1109 from aaweaver-actuary/codex/completion-t02-integration-b27",
+        "pr_number": 1109
+      },
+      "included_in_other_open_prs": [
+        1123,
+        1052,
+        1121,
+        1106,
+        1108,
+        1105
+      ],
+      "recommended_action": "Already closed on 2026-11-13 after exact-head ancestry verification through #1109; preserve branch/history. Do not repeat closure.",
+      "task": "RT003/T02 bounded census",
+      "summary": "Background metrics source ownership map is already integrated through #1109.",
+      "reported_evidence": [
+        "242 scoped controls reported; diagnostics had three passing and two failing cases."
+      ],
+      "remaining": [
+        "Diagnostics failures concerned engine_game versus other and unsupported labels; previous PGN/fixture gaps remained.",
+        "Source mapping does not prove full census or native/live acceptance."
+      ],
+      "metadata_evidence": "evidence/prs/1104.json",
+      "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun"
+    },
+    {
+      "number": 1105,
+      "title": "Map Redis admission and wake ownership",
+      "state": "closed",
+      "draft": true,
+      "merged": false,
+      "head": "codex/completion-t02-redis-census",
+      "head_sha": "c619ca4b1e6e1b1c3a886a0fd708cd213f58750d",
+      "base": "codex/completion-t02-metrics-census",
+      "base_sha": "21ab8c82895c1aad1f0dc2ca338aaa28a6ab619c",
+      "mergeable": true,
+      "updated_at": "2026-11-13T08:44:07Z",
+      "url": "https://github.com/aaweaver-actuary/tempo/pull/1105",
+      "head_object_available": true,
+      "entire_head_in_current_main": true,
+      "earliest_covering_main_merge": {
+        "sha": "5a6f5721aa62551779010cf14e224de188eabd9b",
+        "subject": "Merge pull request #1109 from aaweaver-actuary/codex/completion-t02-integration-b27",
+        "pr_number": 1109
+      },
+      "included_in_other_open_prs": [
+        1123,
+        1052,
+        1121,
+        1106,
+        1108
+      ],
+      "recommended_action": "Already closed on 2026-11-13 after exact-head ancestry verification through #1109; preserve branch/history. Do not repeat closure.",
+      "task": "RT003/T02 bounded census",
+      "summary": "Redis admission/wake source ownership map is already integrated through #1109.",
+      "reported_evidence": [
+        "246 boundary controls and 57 Redis control/wake cases reported."
+      ],
+      "remaining": [
+        "Known inherited fixture gaps remained.",
+        "Source mapping does not prove full census or native/live acceptance."
+      ],
+      "metadata_evidence": "evidence/prs/1105.json",
+      "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun"
+    },
+    {
+      "number": 1106,
+      "title": "Map Study control ownership",
+      "state": "closed",
+      "draft": true,
+      "merged": false,
+      "head": "codex/completion-t02-study-mode-census",
+      "head_sha": "0a9c2aa83dfd5959a5479320acb2f24087d12a54",
+      "base": "codex/completion-t02-redis-census",
+      "base_sha": "c619ca4b1e6e1b1c3a886a0fd708cd213f58750d",
+      "mergeable": true,
+      "updated_at": "2026-11-13T08:49:41Z",
+      "url": "https://github.com/aaweaver-actuary/tempo/pull/1106",
+      "head_object_available": true,
+      "entire_head_in_current_main": true,
+      "earliest_covering_main_merge": {
+        "sha": "5a6f5721aa62551779010cf14e224de188eabd9b",
+        "subject": "Merge pull request #1109 from aaweaver-actuary/codex/completion-t02-integration-b27",
+        "pr_number": 1109
+      },
+      "included_in_other_open_prs": [
+        1123,
+        1052,
+        1121,
+        1108
+      ],
+      "recommended_action": "Already closed on 2026-11-13 after exact-head ancestry verification through #1109; preserve branch/history. Do not repeat closure.",
+      "task": "RT003/T02 bounded census",
+      "summary": "Study control source ownership map is already integrated through #1109.",
+      "reported_evidence": [
+        "Four ownership controls and seven priority-control cases reported."
+      ],
+      "remaining": [
+        "Known inherited fixture gaps remained.",
+        "Source mapping does not prove full census or native/live acceptance."
+      ],
+      "metadata_evidence": "evidence/prs/1106.json",
+      "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun"
+    },
+    {
+      "number": 1108,
+      "title": "Map repertoire move verification ownership",
+      "state": "closed",
+      "draft": true,
+      "merged": false,
+      "head": "codex/completion-t02-move-verification-census",
+      "head_sha": "764f3087be65c38395f2efafe0b97941b0a0602a",
+      "base": "codex/completion-t02-study-mode-census",
+      "base_sha": "0a9c2aa83dfd5959a5479320acb2f24087d12a54",
+      "mergeable": true,
+      "updated_at": "2026-11-13T08:51:56Z",
+      "url": "https://github.com/aaweaver-actuary/tempo/pull/1108",
+      "head_object_available": true,
+      "entire_head_in_current_main": true,
+      "earliest_covering_main_merge": {
+        "sha": "5a6f5721aa62551779010cf14e224de188eabd9b",
+        "subject": "Merge pull request #1109 from aaweaver-actuary/codex/completion-t02-integration-b27",
+        "pr_number": 1109
+      },
+      "included_in_other_open_prs": [
+        1123,
+        1052,
+        1121
+      ],
+      "recommended_action": "Already closed on 2026-11-13 after exact-head ancestry verification through #1109; preserve branch/history. Do not repeat closure.",
+      "task": "RT003/T02 bounded census",
+      "summary": "Repertoire move verification source ownership map is already integrated through #1109.",
+      "reported_evidence": [
+        "Four scoped checker controls reported."
+      ],
+      "remaining": [
+        "No dedicated direct service test was found; inherited fixture gaps remained.",
+        "Source mapping does not prove full census or native/live acceptance."
+      ],
+      "metadata_evidence": "evidence/prs/1108.json",
+      "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun"
+    },
+    {
+      "number": 1121,
+      "title": "Extract shared position carrier policy",
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "head": "codex/position-carrier-policy",
+      "head_sha": "fd8b7cb0a3b8ab5723414d408e9a9f25a284d139",
+      "base": "main",
+      "base_sha": "e77190e0db6b689bb3198c55a00c9d55614afb69",
+      "mergeable": true,
+      "updated_at": "2026-11-13T09:25:28Z",
+      "url": "https://github.com/aaweaver-actuary/tempo/pull/1121",
+      "head_object_available": true,
+      "entire_head_in_current_main": false,
+      "earliest_covering_main_merge": null,
+      "included_in_other_open_prs": [
+        1123
+      ],
+      "recommended_action": "keep_open_pending_scope_and_acceptance",
+      "task": "B13/T02 carrier prerequisite",
+      "summary": "Shared pure position-carrier policy extracted with legacy export alias.",
+      "reported_evidence": [
+        "26 focused cases with two skips; unchanged selector AST and compatibility alias reported."
+      ],
+      "remaining": [
+        "Two timing fixture failures reproduced on unchanged base and were excluded.",
+        "Native position introduction, issued-head/replay and assembled proof have not run.",
+        "Exact head is contained in #1123 but not current main; keep open until accepted aggregate integration."
+      ],
+      "metadata_evidence": "evidence/prs/1121.json",
+      "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun",
+      "timeline": {
+        "count": 1,
+        "items": [
+          {
+            "url": "https://github.com/aaweaver-actuary/tempo/pull/1121#issuecomment-6849141731",
+            "login": "sourcery-ai[bot]",
+            "created_at": "2026-11-13T09:25:28Z",
+            "review": null,
+            "kind": "automated_guide"
+          }
+        ]
+      },
+      "timeline_evidence": "evidence/prs/1121-comments.json"
+    },
+    {
+      "number": 1123,
+      "title": "Integrate extracted carrier and map position admission",
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "head": "codex/completion-t02-carrier-integration",
+      "head_sha": "7794188f6c851b0e768cbd6c3d230fd78964e5c7",
+      "base": "main",
+      "base_sha": "05e18cf55d9a1fbaa8a984a71f268e2b63f4851a",
+      "mergeable": false,
+      "updated_at": "2026-11-13T09:52:18Z",
+      "url": "https://github.com/aaweaver-actuary/tempo/pull/1123",
+      "head_object_available": true,
+      "entire_head_in_current_main": false,
+      "earliest_covering_main_merge": null,
+      "included_in_other_open_prs": [],
+      "recommended_action": "keep_open_pending_scope_and_acceptance",
+      "task": "T02/B13 carrier integration",
+      "summary": "Carrier extraction, position admission mapping and bounded namespace guard integrated on a source candidate.",
+      "reported_evidence": [
+        "Latest 7794188f6: registry checker/full listing, 27 scoped controls and seven carrier/timing cases reported.",
+        "Includes main through 05e18cf55d9a1fbaa8a984a71f268e2b63f4851a and the copied-checker source-removed repair."
+      ],
+      "remaining": [
+        "Current direct metadata reports mergeable:false; reconcile with main 2f799293af812e829a55a3c2bb5aba8ea1598c96.",
+        "Six namespace owners remain unresolved; this bounded map is not a whole-repository census.",
+        "Independent namespace/integration review remains pending even though initial carrier/map source review found no issue.",
+        "Native position/replay and assembled saved-review-to-playable-next gates remain unrun.",
+        "Contains #1121; qualify combined source before either is closed as integrated."
+      ],
+      "metadata_evidence": "evidence/prs/1123.json",
+      "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun",
+      "timeline": {
+        "count": 1,
+        "items": [
+          {
+            "url": "https://github.com/aaweaver-actuary/tempo/pull/1123#issuecomment-6849283340",
+            "login": "sourcery-ai[bot]",
+            "created_at": "2026-11-13T09:32:51Z",
+            "review": null,
+            "kind": "automated_guide"
+          }
+        ]
+      },
+      "timeline_evidence": "evidence/prs/1123-comments.json"
+    }
+  ],
+  "current_verification": "Direct get_pr_info rechecked all 19 records on 2026-11-13; all 13 unresolved heads unchanged; six redundant drafts already closed. Current main independently fetched by ref."
+}

@@ -1,0 +1,78 @@
+TASK B04 — Remove unreachable bulk seeding and duplicate admission writers
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: BE001.
+ORIGINAL TASKS: B04.
+SUPPORTING DEFINITION: reference/planning-definitions/backend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: B00.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- backend/app/services/queue_application.py — seed_queue,materialize_daily_queue,reconcile_unseen_queue,admit_prioritized_opening_cards
+- backend/app/services/tactical_catalog.py — seed_tactical_introductions
+- backend/app/services/queue_admission.py
+- backend/app/services/queue_admission_adapter.py
+- database/tempo_storage/queue_refresh/application/seeding.py
+- database/tempo_storage/queue_refresh/application/admission.py
+- backend/app/services/postgres_queue_refresh.py — _prepare_tactical_introduction,_publish_tactical_introduction,_admit_one_prioritized_opening,_admit_one_study_card
+
+WRITE RESERVATION:
+- backend/app/services/queue_application.py [existing] — only bulk seed/materialize/admission regions
+- backend/app/services/tactical_catalog.py [existing] — bulk seeder only
+- backend/app/services/queue_admission.py [existing] — only B00-proven obsolete writers/ports
+- backend/app/services/queue_admission_adapter.py [existing] — only B00-proven obsolete writers/ports
+- database/tempo_storage/queue_refresh/application/seeding.py [existing] — only unreferenced statements
+- database/tempo_storage/queue_refresh/application/admission.py [existing] — only unreferenced statements
+- backend/app/main.py [existing] — compatibility bulk wrappers; integration-owned merge
+- backend/tests/test_queue_application_database_split.py [existing]
+- backend/tests/test_queue_admission.py [existing]
+- backend/tests/test_tactic_introduction_history_postgres.py [existing]
+- database/tests/queue_admission/test_postgres.py [existing] — coordinate proof owner
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Use B00 consumer map; for a genuinely supported consumer, first migrate it to the existing phased owner or its semantic public operation. Do not simulate all phases inside a foreground writer transaction.
+2. Remove seed/materialize wrappers and bulk tactic seeder if all remaining callers are obsolete fixtures. Retire duplicate-only tests; port daily limits, generated-card exclusions, tactic introduction history, and rollback assertions to active phased owner tests.
+3. Remove only orphan bulk admission/seeding SQL and adapter APIs. Preserve live shared eligibility/reset/unlock, requeue, queue placement, and priority pure policy still used by the worker.
+4. Keep unique tactic_introductions claim before card/progress/queue effects; existing rollback and concurrent cross-day tests continue to exercise active writer.
+5. Search again for every deleted symbol and update current owner guide/drawing only for changed authority.
+
+PRESCRIBED SMALL BATCHES:
+Batch 1: batch_id: B04-1; name: seed-and-tactics; write_files: backend/app/services/queue_application.py; backend/app/services/tactical_catalog.py; backend/tests/test_tactic_introduction_history_postgres.py; backend/tests/test_queue_application_database_split.py; instruction: Remove proven-unreachable seed/materialize and migrate legacy tactic-history test to active publisher; preserve active helpers.; after_batch: None
+Batch 2: batch_id: B04-2; name: admission-writer; write_files: backend/app/services/queue_admission.py; backend/app/services/queue_admission_adapter.py; database/tempo_storage/queue_refresh/application/seeding.py; database/tempo_storage/queue_refresh/application/admission.py; backend/tests/test_queue_admission.py; database/tests/queue_admission/test_postgres.py; instruction: Remove B00-proven unused admission writers only after invariant tests reach active owner.; after_batch: B04-1
+Batch 3: batch_id: B04-3; name: root-wrapper; write_files: backend/app/main.py; instruction: Integration owner deletes only now-unreferenced compatibility wrappers.; after_batch: B04-2
+One batch per weak worker dispatch. Return scoped patch/evidence before next batch; root integration may combine coherent batches into one PR. Never ship a temporarily unregistered or partially translated runtime.
+
+ACCEPTANCE:
+- One active implementation owns tactic and Study introduction policy. No retained callable bulk seeder can write a competing queue.
+- Removed interfaces have no supported caller; retained claims/exclusions/rotation and once-only history are covered through active worker operations.
+- Native tactic history, rollback, and cross-day claim cases pass; shared helpers and issued work remain unchanged.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: make python-file FILE=backend/tests/test_queue_application_database_split.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: make python-file FILE=backend/tests/test_tactic_introduction_history_postgres.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- Release owner combines active queue refresh and saved-review/next-card acceptance once after B05.
+
+MATERIAL RISKS:
+- Generated-card exclusion predicates differ between old and active counts. Preserve the active intended frozen-card behavior explicitly; no blanket deletion of application/eligibility.py.
+
+EXCLUSIONS:
+- No new service, database, event bus, generic repository, scheduler, or retired producer restoration.
+- No changes to historical migration checksums, persisted command names, accepted operation identities, or original receipt bytes.
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

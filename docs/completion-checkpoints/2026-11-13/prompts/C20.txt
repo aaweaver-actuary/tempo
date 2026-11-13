@@ -1,0 +1,75 @@
+TASK C20 — Freeze the retained-exercise HTTP and recovery contract before either side changes
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: FE008.
+ORIGINAL TASKS: D02.
+SUPPORTING DEFINITION: reference/planning-definitions/frontend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: No source prerequisite; reserve the named files first.
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- AGENTS.md — current scope, ownership and minimum real proof; distinguish implemented/tested/assembled/installed
+- SPEC.md — current November 10 reduction scope and retained ordinary Study preservation
+- docs/testing.md — smallest relevant proof and supported owned runner
+- SPEC.md — November 10 pass 2: generated exercises frozen ordinary; standalone authoring retired
+- app/views/study_exercise_runner.tsx — PresentedStudyExercise, AttemptReply, present/feedback, restore/submit/self-assess
+- app/lib/offline-training.ts — recordOfflineStudyAttempt and performReplayOfflineAttempts
+- backend/app/study_attempt_commands.py — submit_study_attempt and self_assess_study_attempt
+- backend/app/services/study_attempts.py — finish_study_attempt result envelope and nested review
+- database/tempo_storage/http_composition/availability.py — exact retired defense/endgame predicate; frozen published exercise availability
+- database/tempo_storage/ddl/migrations/064_retire_optional_study_producers.sql — exact retired producer predicates and original operation/record preservation
+- backend/app/main.py — current mounted application has no four retained exercise routes
+- Packet reproduction/evidence: reference/deep-review/evidence/frontend/deep-review-frozen-reachability.test.tsx
+- Packet reproduction instructions: reference/deep-review/evidence/REPRODUCING.md. Negative probes are deliberately failing evidence, not implementation patches or current passes.
+
+WRITE RESERVATION:
+- app/domain/study-exercise-transport.ts [proposed or moved; verify the owning symbol before implementation]
+- tests/unit/frozen-study-contract.test.ts [proposed or moved; verify the owning symbol before implementation]
+- app/features/study/README.md [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Write the finite contract table for GET present, POST attempts, POST self-assess and GET feedback. Present fields come from the existing runner shape; attempt completion is the existing finish_study_attempt envelope, including nested review and persisted:true; pending self-assessment is not a completed review. A validated pending_self_assessment:true result is a completed original parent command receipt and must settle its intent as committed so predecessorSettled can release the child. It is not a completed human review and must not advance the card or reviewed count.
+2. Publish pure browser decoders for these values. Bind expected study/exercise/revision/attempt where present in the existing route/result contract. Validate FEN/specification projections and array bounds from existing owner contracts; do not render unchecked response casts.
+3. Write explicit classifications: current linked published study_exercise is supported frozen ordinary work; old attempt/self-assess with a valid original owner/receipt is retained recovery; exact defense/endgame kinds and ledger-retired producers are held; unknown endpoint/kind/authority is preserved and held. A generic study-command tag alone never means retirement.
+4. Use the already established queue -> prepared snapshot -> PracticeCard -> TrainingView reachability as evidence; do not spend another probe deciding whether frozen exercises exist. No live user-data inventory is needed to restore the missing retained capability.
+5. Agree B31 route projections and error/hold detail codes with the backend owner in the same handoff. Present must not reveal accepted move lines, required/optional answers, correct options, explanation or rubric; feedback must bind the persisted attempt revision. Preserve all existing attempt IDs, queue identity and request hash semantics.
+6. Keep v1 grading semantics and wire bodies in this baseline. Grader version decisions C22-C24 follow, rather than blocking the four-route repair.
+
+ACCEPTANCE:
+- Four exact method/path/response contracts and current consumers are listed; backend B31 can implement without inventing a new workflow.
+- Pure tests distinguish malformed200, wrong exercise/revision/attempt, genuine pending self-assessment, completed persisted review, retired hold and transport failure.
+- Nothing creates/enrolls/edits chapters or exercises or dispatches providers/analysis.
+- D02 classification is concrete and released; source reachability is established but assembled completion is not yet claimed.
+- Parent command completion and human-review completion are separate: pending self-assessment commits the parent intent, permits only its dependent child, and does not advance the queue.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: npm run test:unit -- tests/unit/frozen-study-contract.test.ts
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: npm run typecheck:browser
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- No unrelated heavy test is implied. The owner selects the applicable changed-boundary checks.
+
+MATERIAL RISKS:
+- The old frontend types omit nested review fields and cast unchecked JSON. New contract must mirror existing handler results, not normalize pending self-assessment into success.
+
+EXCLUSIONS:
+- No backend route implementation here
+- No main.py edits
+- No creation/enrollment/PGN-preview restoration
+- No reclassification of every study-command as retired
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

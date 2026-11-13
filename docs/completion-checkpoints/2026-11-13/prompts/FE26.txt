@@ -1,0 +1,70 @@
+TASK FE26 — Run the review controller through injected ports and preserve presentation fences
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: FE003.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/frontend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: FE25.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- AGENTS.md — current scope, ownership and minimum real proof; distinguish implemented/tested/assembled/installed
+- SPEC.md — current November 10 reduction scope and retained ordinary Study preservation
+- docs/testing.md — smallest relevant proof and supported owned runner
+- app/features/study/controller.ts — useStudyReviewController, submit, captureConfirmation, progressConfirmedReview, reconcilePreparedQueue
+- app/views/home_view.tsx — useStudyReviewController composition call
+- app/features/study/browser-services.ts — FE25 concrete adapter [proposed/moved; resolve before editing]
+- tests/unit/study-controller-review.test.ts — existing mocks and review states
+- tests/unit/study-controller-progression.test.ts — unmount/supersession/prepared progression
+
+WRITE RESERVATION:
+- app/features/study/controller.ts [existing]
+- app/features/study/browser-services.ts [proposed or moved; verify the owning symbol before implementation]
+- app/features/study/index.ts [existing]
+- app/views/home_view.tsx [existing]
+- tests/unit/study-controller-review.test.ts [existing]
+- tests/unit/study-controller-progression.test.ts [existing]
+- tests/unit/study-controller-boundary.test.ts [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Inject FE25 services at the Home composition call and replace controller imports of training-store, study-intent-storage, review-outbox, notifications and debug modules with semantic port calls. Leave React presentation lifecycle in the hook.
+2. Preserve capture-time authority/store identity, attempt ID+generation, transition generation, unmount abort and same-card pending ordering across every await. Do not advance from a generic response.ok or local phase alone.
+3. Rewrite owning tests to exercise the public hook using renderHook and supplied fake ports rather than mocking app internals. Include two independent controllers/services with no shared mutable store.
+4. Keep prepared continuation admission checks delegated to its existing adapter; move its semantic value types into the public contract without giving the controller raw store mutation.
+
+ACCEPTANCE:
+- Controller has no concrete browser storage, global training-store, outbox or notification imports.
+- Pending/foreign/unmounted/superseded completion cannot acquire or install a successor; a valid original receipt advances once.
+- Partial flush success plus later error, stale prepared continuation and retry-after-queue-failure retain their existing behavior.
+- Public controller is substitutable with fake ports; final state-write restriction is FE35.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: npm run test:unit -- tests/unit/study-controller-boundary.test.ts tests/unit/study-controller-review.test.ts tests/unit/study-controller-progression.test.ts tests/unit/study-shell-composition-regressions.test.tsx tests/unit/review-attempt-confirmation-regressions.test.tsx
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: npm run typecheck:browser
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- owner: integration owner / P12 and P16; required: On the assembled candidate, one real saved review -> original operation receipt -> authoritative playable successor; inject wrong/missing initial 202 identity and lost acknowledgment, then recover only the original receipt. Reuse tests/browser/study-recovery.spec.ts; add a named fault case. Unit mocks do not establish this claim.; runner: make preflight; then make ui-file FILE=study-recovery.spec.ts under the existing owned disposable runner; no live checkout.
+
+MATERIAL RISKS:
+- Async presentation fences are correctness policy, not cosmetic hook machinery. Port extraction must preserve captured authority rather than rereading a different current client after await.
+
+EXCLUSIONS:
+- No React state-machine replacement
+- No new global store
+- No queue protocol change
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

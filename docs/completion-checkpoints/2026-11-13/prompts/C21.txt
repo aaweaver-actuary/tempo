@@ -1,0 +1,81 @@
+TASK C21 — Wire supported frozen exercises and preserve held retained work without queue-wide failure
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: FE008.
+ORIGINAL TASKS: D02.
+SUPPORTING DEFINITION: reference/planning-definitions/frontend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: C20.source_released; B31.source_released; C14.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- AGENTS.md — current scope, ownership and minimum real proof; distinguish implemented/tested/assembled/installed
+- SPEC.md — current November 10 reduction scope and retained ordinary Study preservation
+- docs/testing.md — smallest relevant proof and supported owned runner
+- app/views/training_view.tsx — mounted StudyExerciseRunner for kind study
+- app/views/study_exercise_runner.tsx — presentation load, retained restore, revealFeedback, submit, self-assess
+- app/lib/study-command-client.ts — requireRetainedCommand, createStudyCommandDelivery, recoverStudyRequests
+- app/lib/offline-training.ts — performReplayOfflineAttempts; current non-409 failure aborts remaining pass
+- app/lib/study-client.ts — learningPaths allowlist and authority generation
+- app/domain/study-exercise-transport.ts — C20 decoded supported/held response contract [proposed/moved; resolve before editing]
+- Packet reproduction/evidence: reference/deep-review/evidence/frontend/deep-review-frozen-reachability.test.tsx
+- Packet reproduction instructions: reference/deep-review/evidence/REPRODUCING.md. Negative probes are deliberately failing evidence, not implementation patches or current passes.
+
+WRITE RESERVATION:
+- app/views/study_exercise_runner.tsx [existing]
+- app/lib/study-command-client.ts [existing]
+- app/lib/offline-training.ts [existing]
+- app/domain/study-exercise-transport.ts [proposed or moved; verify the owning symbol before implementation]
+- tests/unit/study-attempt-pending-regressions.test.tsx [existing]
+- tests/unit/study-command-client-capability.test.ts [existing]
+- tests/unit/offline-training-regressions.test.ts [existing]
+- tests/unit/retained-frozen-exercise-recovery.test.tsx [proposed or moved; verify the owning symbol before implementation]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Replace present/feedback/attempt/self-assess raw casts with C20 decoders. Keep UI loading/save/feedback errors recoverable and preserve generation, original attempt and practice boundary fences.
+2. When the original attempt receipt contains pending_self_assessment:true, commit that parent command intent after validation, keep the human attempt pending, and recover the same dependent self-assessment only then. Do not leave the parent intent pending or predecessorSettled will deadlock the child; do not count the parent command as a saved human review.
+3. Use exact supported endpoint/kind classification before POST. Receipt-first recovery may inspect the original operation even for held/unknown records, but absence of a receipt never authorizes sending to an unsupported route.
+4. For known retired kinds, unsupported authoring endpoints, ambiguous identity and legacy needs_analysis receipts, expose a useful held result containing the original record identity. Preserve stored body/key/revision/receipt bytes; do not mark committed or discarded and do not call a removed endpoint or optional analysis worker.
+5. Continue bounded round-robin generic recovery past held unrelated records. For phone replay, retain existing same-card/parent dependency ordering and conflict semantics, but an explicitly classified retired/ambiguous exercise must not abort unrelated later supported attempts. Scope notifications to the retained record.
+6. Supported frozen online saves, old generic intent recovery, old phone attempts and dependent self-assessments all use the B31 routes and original operation IDs. A stored offline snapshot does not substitute for current online authority when connected.
+7. Add a mixed retained-work fixture: supported frozen move-line + self-assessed explanation, retired defense/endgame, unknown legacy endpoint, and unrelated current opening/tactic review. Prove only supported requests dispatch and unrelated work completes.
+8. Give FE06/FE30 the exact allowlist delta as a handoff rather than concurrently editing study-client.ts. Keep original-authority recovery and export available.
+9. Add a three-stage regression: unconfirmed/foreign parent202 leaves its child unsent; the valid original parent complete receipt with pending_self_assessment:true commits only the parent and releases the same child; only the valid original completed child review advances/counts once. A foreign/malformed child receipt leaves the human attempt pending; repeated parent/child receipt recovery cannot duplicate a review.
+
+ACCEPTANCE:
+- No active supported frozen consumer calls a missing route; malformed payloads and revision/identity changes remain recoverable holds.
+- Retired/ambiguous records remain inspectable and byte-preserved, receive no fabricated acknowledgment, and do not prevent unrelated valid Study.
+- Self-assessment is sent only after its original parent receipt is confirmed; replay/reload never creates a replacement attempt.
+- Actual saved review, feedback and playable successor require the shared B31/P12 assembled proof; passing component mocks alone do not close FE008.
+- A parent receipt awaiting self-assessment is committed at the command coordinator, its child becomes eligible, and neither card advancement nor reviewed count occurs until the validated finished review.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: npm run test:unit -- tests/unit/study-command-client-capability.test.ts tests/unit/study-intent-storage-regressions.test.ts tests/unit/study-attempt-pending-regressions.test.tsx tests/unit/offline-training-regressions.test.ts tests/unit/retained-frozen-exercise-recovery.test.tsx
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: npm run typecheck:browser
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- owner: B31 + P12/P16 integration owner; required: One current frozen move-line through real present -> original attempt command -> persisted feedback -> playable next, one existing phone attempt and one pending self-assessment reload/replay. Include retired/ambiguous nonblocking hold and exact-once receipt/history assertions. Add current frozen browser case; do not resurrect retired authoring browser journey.; runner: make preflight; owned focused browser runner once the new current frozen test is registered, plus P16 real IndexedDB replay.
+
+MATERIAL RISKS:
+- Known held work can be skipped across unrelated cards; dependent same-card/self-assessment records cannot be reordered. HTTP404 is not evidence that a saved record is safe to discard.
+
+EXCLUSIONS:
+- No blanket study-command retirement
+- No automatic record migration/rewrite
+- No new authoring/provider/engine systems
+- No silent 404 skip or generic success
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

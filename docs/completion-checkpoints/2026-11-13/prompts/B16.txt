@@ -1,0 +1,84 @@
+TASK B16 — Make review failures transport-neutral and preserve durable wire errors
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: BE007.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/backend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: B15.source_released; B08.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- backend/app/contracts/review_conflicts.py
+- services/learning/application/src/tempo_learning_review/errors.py
+- backend/app/services/learning_review_adapter.py — translate_failure
+- backend/app/command_gateway.py — execute_command error serialization
+- backend/app/command_dispatch.py — dispatch_command
+- backend/app/study/policy/review_reconciliation.py
+- backend/app/study/position_checkpoint.py — evidence_error
+
+WRITE RESERVATION:
+- backend/app/contracts/review_conflicts.py [existing]
+- services/learning/application/src/tempo_learning_review/errors.py [existing]
+- services/learning/application/src/tempo_learning_review/application.py [existing] — error constructors
+- backend/app/services/learning_review_adapter.py [existing] — error adapter
+- backend/app/command_gateway.py [existing]
+- backend/app/command_dispatch.py [existing]
+- backend/app/study/policy/review_reconciliation.py [existing]
+- backend/app/study/position_checkpoint.py [existing] — only error construction
+- backend/tests/test_legacy_control_database_split.py [existing]
+- backend/tests/test_study_attempt_guard.py [existing]
+- backend/tests/test_opening_evidence_contracts.py [existing]
+- backend/tests/test_queue_head_issuance_coalescing.py [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Use one review error declaration owner in the independent Learning package and identity-preserving backend aliases; do not introduce two parallel transport-neutral ReviewConflict classes.
+2. Define stable semantic failure categories/codes with message/details and retryability; ReviewConflict no longer inherits HTTPException and Learning errors no longer require status numbers.
+3. Central transport/command receipt edge maps these exact categories to existing HTTP status/detail/code/retryable values. Preserve old receipt decoding including numeric status_code.
+4. Replace review reconciliation/checkpoint domain raises with semantic errors; retain scope-specific messages and structured evidence detail.
+5. Update non-HTTP worker tests and cold import test blocking FastAPI; verify command rollback saves a definitive original failure receipt.
+6. Run current queue issuance retry selection against mapped errors so only the same retryable head-change family increments generation.
+
+PRESCRIBED SMALL BATCHES:
+Batch 1: batch_id: B16-1; name: review-error-values; write_files: services/learning/application/src/tempo_learning_review/errors.py; services/learning/application/src/tempo_learning_review/application.py; backend/app/contracts/review_conflicts.py; backend/app/services/learning_review_adapter.py; instruction: One neutral review failure owner and compatibility aliases; map through existing adapter.; after_batch: None
+Batch 2: batch_id: B16-2; name: gateway-translation; write_files: backend/app/command_gateway.py; backend/app/command_dispatch.py; backend/tests/test_legacy_control_database_split.py; backend/tests/test_queue_head_issuance_coalescing.py; instruction: Preserve durable old status/code/detail/retry serialization and only intended retry families.; after_batch: B16-1
+Batch 3: batch_id: B16-3; name: checkpoint-policy; write_files: backend/app/study/policy/review_reconciliation.py; backend/app/study/position_checkpoint.py; backend/tests/test_opening_evidence_contracts.py; backend/tests/test_study_attempt_guard.py; instruction: Convert exact domain raise sites to neutral errors with old wire mapping; retain atomic receipt/rollback.; after_batch: B16-2
+One batch per weak worker dispatch. Return scoped patch/evidence before next batch; root integration may combine coherent batches into one PR. Never ship a temporarily unregistered or partially translated runtime.
+
+ACCEPTANCE:
+- Public domain contracts import with FastAPI blocked; semantic conflict/hold/unavailable distinctions are usable without HTTP integers.
+- Existing completed/failed operation JSON and browser recovery observe same status/code/message/retryable shape.
+- No error becomes generic success or accidental infinitely retryable task.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: python services/learning/application/run_suite.py application
+  verified_against_source: entrypoint/options inspected; any proposed new selection is stated in acceptance; availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: make python-file FILE=backend/tests/test_queue_head_issuance_coalescing.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: make python-file FILE=backend/tests/test_opening_evidence_contracts.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: make python-file FILE=backend/tests/test_command_registry_contract.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- Affected browser failure/operation recovery cases already owned by final assembled qualification; only rerun for changed actual wire outcomes.
+
+MATERIAL RISKS:
+- Gateway catches HTTPException today. Domain change must ship with edge mapping atomically or errors become 500/unclassified.
+
+EXCLUSIONS:
+- No new service, database, event bus, generic repository, scheduler, or retired producer restoration.
+- No changes to historical migration checksums, persisted command names, accepted operation identities, or original receipt bytes.
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

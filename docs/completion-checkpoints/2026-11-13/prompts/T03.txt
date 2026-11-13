@@ -1,0 +1,65 @@
+TASK T03 — Enforce the actual public boundaries through the existing parser and registry
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: RT002.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/proof-storage-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: T02.source_released; FE09.source_released; S01.source_released; S03.source_released; S04.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- FE09 source releases adopted pure domain imports; FE10 plus this guard supply full FE007 closure. Guard can develop from reviewed contract releases before downstream task merge.
+
+READ FIRST (repository-relative except reference/ paths):
+- tools/component-build/check-interface-boundaries.mjs
+- tools/component-build/check-components.mjs
+- tools/component-build/selected-interface-owners.json
+- tools/component-build/tests/interface-boundaries.test.mjs
+- eslint.config.mjs
+
+WRITE RESERVATION:
+- tools/component-build/check-interface-boundaries.mjs [existing]
+- tools/component-build/check-components.mjs [existing]
+- tools/component-build/selected-interface-owners.json [existing]
+- tools/component-build/tests/interface-boundaries.test.mjs [existing]
+- tools/component-build/REGRESSIONS.md [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Consume T02 current owner map and actual public exports. Cover all current participating consumers, including new/unregistered source under owner roots; selected12files cannot stand in for whole-owner enforcement.
+2. Resolve relevant relative, @/, bare workspace package, re-export, type-only, lazy/dynamic-literal and node: imports. Report type dependencies separately from emitted runtime reachability; do not claim an erased type import starts runtime I/O.
+3. Add negative controls: optional Game Review→Study journal; public facade→SQL/infrastructure; previously unregistered consumer→private implementation; app/domain→app/components/effectful app/lib even through import type.
+4. Retain positive controls for approved composition, internal private calls, own-module re-exports and neutral @tempo/board-ui type-only contracts. Enforce public import closure without wrapping private implementation as a fake facade.
+5. Wire the real current guard through the existing component suite/CI selection. No parallel lint/policy framework.
+
+ACCEPTANCE:
+- Every named negative mutation fails for the intended boundary and every approved composition case passes.
+- A new source consumer cannot silently escape the declared owner scope; missing/unknown imports are visible and conservative.
+- Static guard is never described as native SQL, lifecycle or whole-program effect proof.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: node tools/component-build/check-interface-boundaries.mjs tools/component-build/selected-interface-owners.json
+  kind: focused; availability: current
+- Working directory .: node --test --test-concurrency=1 tools/component-build/tests/interface-boundaries.test.mjs
+  kind: focused; availability: current
+- Working directory .: node tools/component-build/check-components.mjs
+  kind: focused; availability: current
+
+COORDINATED ACCEPTANCE:
+- No unrelated heavy test is implied. The owner selects the applicable changed-boundary checks.
+
+MATERIAL RISKS:
+- Banning all bare imports or treating type-only imports as runtime would break legitimate package/public composition and overstate risk.
+
+EXCLUSIONS:
+- No unrelated feature, rewrite or retired producer restoration.
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

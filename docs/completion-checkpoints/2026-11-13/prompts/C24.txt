@@ -1,0 +1,73 @@
+TASK C24 — Record new offline grading provenance and reconcile retained v1 answers without rewriting them
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: FE009, FE008.
+ORIGINAL TASKS: D03, D02.
+SUPPORTING DEFINITION: reference/planning-definitions/frontend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: C23.source_released; C21.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- AGENTS.md — current scope, ownership and minimum real proof; distinguish implemented/tested/assembled/installed
+- SPEC.md — current November 10 reduction scope and retained ordinary Study preservation
+- docs/testing.md — smallest relevant proof and supported owned runner
+- app/domain/offline-training.ts — OfflineAttempt answer/assessment/selfRating
+- app/lib/offline-training.ts — recordOfflineStudyAttempt, recordOfflineAttempt, performReplayOfflineAttempts
+- app/views/study_exercise_runner.tsx — offline local assessment and self-assessment
+- backend/app/study_attempt_commands.py — existing attempt answer hash and v1 assessment
+- backend/app/services/study_attempts.py — persisted server result authority
+
+WRITE RESERVATION:
+- app/domain/offline-training.ts [existing]
+- app/lib/offline-training.ts [existing]
+- app/views/study_exercise_runner.tsx [existing]
+- tests/unit/offline-training-regressions.test.ts [existing]
+- tests/unit/study-attempt-pending-regressions.test.tsx [existing]
+- tests/unit/study-exercise-grading.test.ts [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Attach C22 provenance only when a new offline frozen-exercise attempt is durably retained. Snapshot semantic version remains1; the separate browser implementation revision identifies corrected conformance. Preserve old objects/answers without adding a guessed provenance value.
+2. Expose a pure read classification for legacy_unknown/current/supported-other/unsupported provenance. Existing server receipts remain authoritative; never overwrite historical local assessment, original answer, selfRating, request/attempt ID or retained revision to manufacture parity.
+3. Replay the original answer and existing wire body under the same phone-study/phone-assessment IDs. Do not insert provenance into StudyAttemptRequest or its answer-hash input in the default compatibility policy.
+4. If legacy local assessment differs from current server v1 result, preserve both facts and publish the existing warning/conflict/held treatment. A definitive invalid_submission is a visible retained rejection/hold and does not fabricate a review; a genuine persisted server receipt may settle its own original attempt once. Dependent same-card repeats follow the actual server requeue result.
+5. Unsupported or ambiguous provenance must not block unrelated current attempts; reuse C21 scoped hold/recovery behavior. Never silently run all old answers through the corrected grader during storage load.
+6. Test current provenance, missing provenance, old SAN saved as local unrecognized but server invalid, zero-length legacy answer, genuine self-assessment, duplicate replay, and an unrelated valid review later in the same pass.
+
+ACCEPTANCE:
+- Every newly retained offline frozen answer identifies the grader contract and browser implementation used.
+- Legacy records keep original identity/answer/rating/assessment/revision bytes; missing version remains honestly unknown.
+- No review count or queue advancement occurs solely because local grading once said correct; original server receipt is required on replay.
+- Exactly-once phone retry and self-assessment still work under current v1; explicit mismatch is inspectable and scoped.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: npm run test:unit -- tests/unit/offline-training-regressions.test.ts tests/unit/study-attempt-pending-regressions.test.tsx tests/unit/study-exercise-grading.test.ts
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: npm run typecheck:browser
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- owner: P12/P16 + B31; required: Real IndexedDB reload and actual HTTP replay of one new conformant frozen answer and one old missing-provenance retained answer, with stable IDs/body and server review counts. One self-assessed record; one invalid/retired record cannot stall unrelated valid Study.
+
+MATERIAL RISKS:
+- Legacy local projections can differ from authoritative grading. Retrying under a new key or rewriting the answer would create a new operation and corrupt history.
+
+EXCLUSIONS:
+- No blanket retained-record rewrite
+- No inferred old provenance
+- No default field in backend request hash
+- No server policy/version change
+- No provider analysis
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

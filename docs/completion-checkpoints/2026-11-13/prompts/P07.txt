@@ -1,0 +1,67 @@
+TASK P07 — Restore truthful HTTP coverage and acceptance scope in every shared runner mode
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: ST012, ST013, RT004.
+ORIGINAL TASKS: E02.
+SUPPORTING DEFINITION: reference/planning-definitions/proof-storage-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: P04.source_released; P05.source_released; P06.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- One owner serializes runner/CI-validator edits after P04/P05/P06 source releases; P08 historical proof may proceed independently.
+
+READ FIRST (repository-relative except reference/ paths):
+- database/tests/test-postgres-docker.mjs — verifyForegroundAndStudyDurability
+- database/tests/postgres-test-plan.mjs — postgresTestStages; verifyMaintainedQueueReceipt
+- tests/fixtures/postgres-study-prefix-split.py
+- scripts/ci-run-layer.mjs — validatePostgresScenarios
+- scripts/ci-fast-lane.mjs
+
+WRITE RESERVATION:
+- database/tests/test-postgres-docker.mjs [existing]
+- database/tests/postgres-test-plan.mjs [existing]
+- tests/fixtures/postgres-study-prefix-split.py [existing]
+- scripts/ci-run-layer.mjs [existing]
+- scripts/ci-fast-lane.mjs [existing]
+- tests/runner/postgres-test-speedups.test.mjs [existing]
+- tests/runner/ci-fast-lane.test.mjs [existing]
+- tests/runner/ci-reliability.test.mjs [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Until P06 is accepted, emit the explicit unresolved prefix HTTP limitation in full, durability, study and maintained selections, or keep the normal HTTP assertion failing outside the explicitly partial lane. Do not let a mode label imply the previous HTTP coverage.
+2. After P06, restore real HTTP GET preview + POST accept through API and original operation receipt settlement, exact split rows and replay. The Python helper may remain a native invariant check, but cannot substitute for HTTP evidence.
+3. Update current queue inventory only after P04/P05 actual dispositions. Keep historical rollback P08 separately visible until executed or explicitly removed from current support with evidence.
+4. Extend existing report validators and negative controls to reject a pass with missing HTTP/replay proof, wrong acceptance scope, unresolved required cases, zero selection, skip/retry, duplicate cases or incomplete cleanup. Do not invent a second report format.
+5. Publish exact --list output before the one integration run; every selected mode reports its real scope and raw case set.
+
+ACCEPTANCE:
+- All consumers of study_durability preserve HTTP proof or visibly carry its unresolved limitation.
+- A successful maintained subset cannot be relabeled full E02/full-system qualification; final E02 closure requires P04/P05/P06/P08 and P14/P12 evidence.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: node --test --test-concurrency=1 tests/runner/postgres-test-speedups.test.mjs tests/runner/ci-fast-lane.test.mjs tests/runner/ci-reliability.test.mjs
+  kind: focused; availability: current
+- Working directory .: node database/tests/test-postgres-docker.mjs --mode study --maintained-study-proof --list
+  kind: discovery; availability: current
+- Working directory .: node database/tests/test-postgres-docker.mjs --mode durability --list
+  kind: discovery; availability: current
+
+COORDINATED ACCEPTANCE:
+- P14 current native/HTTP stage; P12 exact real browser cases.
+
+MATERIAL RISKS:
+- An exit-zero stage without exact source and HTTP evidence can silently preserve the current claim hazard.
+
+EXCLUSIONS:
+- No unrelated feature, rewrite or retired producer restoration.
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

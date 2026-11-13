@@ -1,0 +1,72 @@
+TASK T02 — Make the existing component registry describe every current executable owner
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: RT003.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/proof-storage-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: No source prerequisite; reserve the named files first.
+
+ADDITIONAL OWNER CONDITIONS:
+- Reserve components.json. Apply reviewed current owner declarations in finite batches; no blanket dependency on every downstream typed implementation.
+
+READ FIRST (repository-relative except reference/ paths):
+- components.json
+- components.schema.json
+- tools/component-build/selection.mjs
+- tools/component-build/check-components.mjs
+- tools/component-build/affected.mjs
+- tools/component-build/README.md
+
+WRITE RESERVATION:
+- components.json [existing]
+- components.schema.json [existing]
+- tools/component-build/selection.mjs [existing]
+- tools/component-build/check-components.mjs [existing]
+- tools/component-build/README.md [existing]
+- tools/component-build/tests/boundaries.test.mjs [existing]
+- tools/component-build/tests/integration.test.mjs [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Reconcile exact tracked runtime paths against current owners. Classify each as one production owner, pure public contract, explicit composition, fixture/test, or tooling role; retain a source-linked zero-unowned/zero-overlap report.
+2. Register existing board-ui and evidence-math public exports/local proof commands as implemented from their actual package manifests/README. Replace study-web/tempo-cli/integration placeholder roots with truthful current app/static/scripts/tempo ownership; do not pretend they are new independently deployable services.
+3. Adopt backend/storage subowner boundaries and current public interfaces from accepted BE/S/FE releases, with explicit side-effect/SQL/table owner and composition exceptions. Keep one authoritative mapping; the selected guard map becomes a projection/input consumer, not a second hand-maintained policy.
+4. Decide and record the existing affected planner role: recommended use its pure graph projection only if it can consume this same registry without a second source mapping; otherwise explicitly retire its unadopted production-planner claim and keep only reusable tested utility. No new planner.
+5. Split publication into small owner batches (pure packages; browser/CLI composition; backend+storage). Each batch validates actual files/exports/test selection and a deliberate unowned/duplicate-path failure.
+
+ACCEPTANCE:
+- Every current executable source has one explicit owner/role and current public surface; implemented packages select through supported component commands.
+- Current owner, API, dependencies, effect ownership and finite proof can be found without reading private implementation.
+- No package is marked implemented based only on a README claim or a source-only test.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: node tools/component-build/check-components.mjs --list
+  kind: discovery; availability: current
+- Working directory .: node tools/component-build/test-lane.mjs frontend --list
+  kind: discovery; availability: current
+- Working directory .: node tools/component-build/test-lane.mjs runners --list
+  kind: discovery; availability: current
+- Working directory .: node tools/component-build/check-components.mjs
+  kind: focused; availability: current
+- Working directory .: node --test --test-concurrency=1 tools/component-build/tests/boundaries.test.mjs tools/component-build/tests/integration.test.mjs
+  kind: focused; availability: current
+
+COORDINATED ACCEPTANCE:
+- Package-local installed/source-removed proof only for newly registered implemented artifacts; no PostgreSQL/browser for metadata-only adoption unless its claimed command requires it.
+
+MATERIAL RISKS:
+- A giant owner root or blanket composition exception can hide private coupling while producing a false zero-unowned report.
+
+EXCLUSIONS:
+- No unrelated feature, rewrite or retired producer restoration.
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

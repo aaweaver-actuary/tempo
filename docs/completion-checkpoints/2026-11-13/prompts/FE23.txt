@@ -1,0 +1,74 @@
+TASK FE23 — Separate delivery adapters from outbox/session composition without changing settlement
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: FE006.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/frontend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: FE22.source_released; C14.source_released; C24.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- AGENTS.md — current scope, ownership and minimum real proof; distinguish implemented/tested/assembled/installed
+- SPEC.md — current November 10 reduction scope and retained ordinary Study preservation
+- docs/testing.md — smallest relevant proof and supported owned runner
+- app/lib/review-outbox.ts — deliverLegacyReview, checkLegacyReviewReceipt, sendReview and local error/domain types
+- app/lib/teaching-state-outbox.ts — deliver, checkReceipt, confirmedTeaching
+- app/lib/study-command-client.ts — createStudyCommandDelivery and assessResponse
+- app/lib/review-transport.ts — current client generation binding
+- app/features/study/session-contracts.ts — FE22 supported and held kind contract [proposed/moved; resolve before editing]
+
+WRITE RESERVATION:
+- app/lib/review-delivery.ts [proposed or moved; verify the owning symbol before implementation]
+- app/lib/teaching-delivery.ts [proposed or moved; verify the owning symbol before implementation]
+- app/lib/study-command-delivery.ts [proposed or moved; verify the owning symbol before implementation]
+- app/lib/review-outbox.ts [existing]
+- app/lib/teaching-state-outbox.ts [existing]
+- app/lib/study-command-client.ts [existing]
+- tests/unit/review-outbox-regressions.test.ts [existing]
+- tests/unit/teaching-state-outbox-regressions.test.ts [existing]
+- tests/unit/study-command-client-capability.test.ts [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Extract cohesive delivery/checkReceipt factories for review, teaching and command families into proposed delivery modules. Supply the current client, store/currentness supplier and exact evidence/diagnostic callbacks explicitly; factories import no session composition root.
+2. Keep error/receipt types in a neutral existing/proposed contract owner only if needed to avoid a cycle; do not make delivery modules import an outbox facade that imports composition. Prefer passing small required callbacks over copying review policy.
+3. Preserve current original-ID confirmation, review reconciliation/aggregate-only evidence behavior, claim handling, dependent-command ordering, domain-result validation and completed-receipt rules exactly.
+4. Keep old public outbox/client exports available through their current facade during this preparatory change. Replace top-level registration only in FE24, once all three inert factories are ready; do not leave one adapter missing from the current app.
+5. Add import tests that fail if loading a delivery module opens browser storage, mutates a registry or creates a session. Existing owning regression tests exercise the same functions through the facade.
+
+ACCEPTANCE:
+- Three inert, explicit adapter factories can be constructed with fake clients/stores; no implementation imports the default session composition.
+- Existing domain acknowledgments, receipt identity, original bytes and authority fences are unchanged.
+- No copied second review delivery algorithm and no circular dependency through compatibility facades.
+- The old app remains wired until the single FE24 switch; this preparatory task alone does not close hidden registration.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: npm run test:unit -- tests/unit/review-outbox-regressions.test.ts tests/unit/teaching-state-outbox-regressions.test.ts tests/unit/study-command-client-capability.test.ts tests/unit/operation-status-study-client-regressions.test.ts
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: npm run typecheck:browser
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- No unrelated heavy test is implied. The owner selects the applicable changed-boundary checks.
+
+MATERIAL RISKS:
+- Review delivery currently shares many local helpers/types with its outbox; careless extraction creates a composition cycle or loses evidence-fallback safeguards.
+
+EXCLUSIONS:
+- No business settlement rewrite
+- No journal merge
+- No new retry logic
+- No backend registration change
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

@@ -1,0 +1,70 @@
+TASK P12 — Declare and demonstrate the exact assembled browser journeys
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: ST003, ST004, ST012, ST013.
+ORIGINAL TASKS: Q0, E02, E03.
+SUPPORTING DEFINITION: reference/planning-definitions/proof-storage-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: P06.source_released; P07.source_released; P16.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- Release exact browser inventory before P14 execution; P12 acceptance can share the P14 run. Heavy-slot lease and all actually changed cohort inputs are required.
+
+READ FIRST (repository-relative except reference/ paths):
+- tests/browser/study-only-mode.spec.ts
+- tests/browser/prefix-split-training.spec.ts
+- tests/browser/recovery.spec.ts
+- tests/browser/opening-progression.spec.ts
+- tests/browser/position-study-acceptance.spec.ts
+- tests/browser/minimal-game-review-acceptance.spec.ts
+- database/tests/postgres-test-options.mjs
+- docs/testing.md
+
+WRITE RESERVATION:
+- tests/browser/prefix-split-training.spec.ts [existing]
+- tests/browser/manual-prefix-split-http.spec.ts [proposed; reserve before creation]
+- tests/fixtures/postgres-study-prefix-split.py [existing]
+- tests/REGRESSIONS.md [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Before execution, collect exact browser identities from existing runner --list and current Playwright inventory. Keep each viewport/project/title explicit; zero selection, skip, retry or intercepted essential result cannot count as pass.
+2. Add one normal-build real manual prefix-split browser case using an owned multi-decision opening. Preview through the real GET, accept through UI/real POST, observe original operation receipt and exact split/lineage/queue rows, reload and resend same operation without a second split, then play the authoritative successor. Verify reject through a real endpoint assertion and existing local UI contract.
+3. Run P16 successful restart replay plus the existing relevant opening/position recovery and minimal Game Review saved/pasted comparison cases. Real Game Review must leave Study/receipt/queue snapshots unchanged.
+4. When S03–S05 or FE journal/session changes are in the cohort, include the applicable actual browser offline reload/quota/acknowledgment/position-plan recovery cases. Pure presentation/registry tasks do not independently require this matrix.
+5. Prefer one combined P14 runner invocation that includes these exact cases and applicable native checks. If a locator-only retry is needed, preserve failed evidence and rerun only the failed identities after proving native/product/fixture hashes unchanged.
+6. Checkpoint1 covers original packet + review residual candidate. Checkpoint2 reruns only journeys whose inputs/owner contracts changed during wider audit completion; reuse unchanged raw evidence with exact source comparisons.
+
+ACCEPTANCE:
+- Saved review has an authoritative successful receipt, exact-once durable effect and a rendered successor accepting a legal move.
+- Prefix preview/accept/reject use real HTTP, no route interception or direct Python command substitutes.
+- Browser reports bind clean source tree, images, schema, build target, cases and cleanup; no synthetic session is described as the user’s live Study.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: make preflight
+  kind: capability; availability: current
+- Working directory .: node database/tests/test-postgres-docker.mjs --mode browser --browser-file study-only-mode.spec.ts --list
+  kind: discovery; availability: current
+- Working directory .: node database/tests/test-postgres-docker.mjs --mode browser --browser-file manual-prefix-split-http.spec.ts --list
+  kind: discovery; availability: proposed spec; only after P06/P12 authoring release; requires_created_paths: tests/browser/manual-prefix-split-http.spec.ts
+
+COORDINATED ACCEPTANCE:
+- P14 runs the selected native+HTTP+browser stack once when possible; exact final regex/identity list is an output of discovery, never a guessed pass.
+
+MATERIAL RISKS:
+- A healthy container, queue JSON identity or mocked response is insufficient to prove a playable next card.
+
+EXCLUSIONS:
+- Synthetic reviews against live user history
+- Latency/cadence claim from stage duration
+- Browser proof for unrelated pure changes
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

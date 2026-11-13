@@ -1,0 +1,61 @@
+TASK S02 — Type introduction and owner-fence contracts without weakening their seals
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: ST002.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/proof-storage-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: S01.source_released; P02.source_released; B07.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- database/tempo_storage/study/position_introductions.py — PreparedIntroduction; IntroductionFence; prepare_introduction; fence_introduction; initialize_introduction
+- database/tempo_storage/study/position_owner_epoch.py — OwnerDecision; fence_position_owner_in_writer
+- backend/app/services/position_queue_admission.py
+- backend/tests/test_position_introductions.py
+
+WRITE RESERVATION:
+- database/tempo_storage/study/position_introductions.py [existing]
+- database/tempo_storage/study/position_owner_epoch.py [existing]
+- backend/app/services/position_queue_admission.py [existing]
+- packages/evidence-math/src/tempo_evidence_math/position_learning.py [existing]
+- backend/tests/test_position_introductions.py [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Consume S01 typed source and introduce named typed definition/binding/manifest/owner-epoch fields for preparation and fence results.
+2. Keep source, owner, allocator namespace, completed seed manifest, unseen alias/history, card locks and exact prepared-object identity in their existing order; preserve the private preparation and fence capabilities.
+3. Keep initial FSRS state construction in the scheduling owner and the allocated-ID callback contract from accepted ST001. Do not reintroduce fsrs.Card into storage.
+4. Update actual admission callers and fake boundaries together; use injected failures before and after allocation to preserve atomic insertion and historical hold recording.
+
+ACCEPTANCE:
+- Public imports are SQL-independent and exact fields are semantically typed.
+- Fresh introduction only writes after real admission; forged/mismatched fence, changed owner/source/history or failing initialization leaves no partial state.
+- ST001 remains closed with its scheduling/storage ownership intact.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: PYTEST_ADDOPTS='--deselect=backend/tests/test_position_introductions.py::test_native_authorized_introduction_writes_fresh_state_only_after_admission' make python-file FILE=backend/tests/test_position_introductions.py
+  kind: focused; availability: current; source_entrypoint: Makefile:python-file; scripts/resolve-python.mjs:resolvePython; docs/testing.md; scope: Pure cases only; exact named native cases intentionally deselected and still pending P14 native acceptance; native_pending_nodeids: backend/tests/test_position_introductions.py::test_native_authorized_introduction_writes_fresh_state_only_after_admission
+- Working directory .: PYTEST_ADDOPTS='--deselect=backend/tests/test_position_queue_admission.py::test_native_refresh_admits_due_carrier_and_reuses_pending' make python-file FILE=backend/tests/test_position_queue_admission.py
+  kind: focused; availability: current; source_entrypoint: Makefile:python-file; scripts/resolve-python.mjs:resolvePython; docs/testing.md; scope: Pure cases only; exact named native cases intentionally deselected and still pending P14 native acceptance; native_pending_nodeids: backend/tests/test_position_queue_admission.py::test_native_refresh_admits_due_carrier_and_reuses_pending
+
+COORDINATED ACCEPTANCE:
+- P14 existing --native-check position-introductions and position-queue-admission prove changed introduction/currentness transaction boundary.
+
+MATERIAL RISKS:
+- Merely renaming tuples without current consumer adoption leaves the same coupling; generalized token serialization would destroy ephemeral authority.
+
+EXCLUSIONS:
+- No unrelated feature, rewrite or retired producer restoration.
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

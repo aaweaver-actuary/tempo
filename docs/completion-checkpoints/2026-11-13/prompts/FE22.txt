@@ -1,0 +1,67 @@
+TASK FE22 — Construct one typed Study session runtime with a complete adapter table
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: FE006.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/frontend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: C21.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- AGENTS.md — current scope, ownership and minimum real proof; distinguish implemented/tested/assembled/installed
+- SPEC.md — current November 10 reduction scope and retained ordinary Study preservation
+- docs/testing.md — smallest relevant proof and supported owned runner
+- app/lib/study-session-runtime.ts — global adapters Map, registerStudyDeliveryAdapter, currentStore/session
+- packages/study-session/src/index.ts — createStudySession, LearningClient, Settlement, lease/settlement behavior
+- app/lib/study-command-client.ts — commandKinds and explicit retired kinds
+- database/browser/study-intent-storage.ts — existing IntentStore ownership; S04 will parameterize its composition
+
+WRITE RESERVATION:
+- app/features/study/session-runtime.ts [proposed or moved; verify the owning symbol before implementation]
+- app/features/study/session-contracts.ts [proposed or moved; verify the owning symbol before implementation]
+- tests/unit/study-runtime-construction.test.ts [proposed or moved; verify the owning symbol before implementation]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Create a pure createStudyRuntime factory accepting a supplied IntentStore supplier/currentness capability and a finite typed adapter-entry table. It creates the existing createStudySession only when requested, reuses it for the same supplied store, and disposes the old session on an explicit store/authority lifetime change.
+2. Declare exact known kinds: review, teaching, study-command, tactic-command, burial-command, settings-command, defense-command, endgame-command. Require a delivery or explicit held adapter for every known kind before retaining/delivering any work; reject duplicate entries and missing supported kinds at construction.
+3. Unknown retained kind produces a visible held error preserving original identity; a new unknown kind is rejected before retention. Held adapters never call transport. No global registry mutation or default singleton occurs on import.
+4. Keep the current package as sole lease/settlement/receipt owner. Do not implement a second session state machine, scheduler or persistent store in the new factory.
+5. Add a public consumer test with fake IntentStore/adapters for missing/duplicate kinds, held unknown work, same-store reuse, store replacement/dispose, and no calls at import.
+
+ACCEPTANCE:
+- Factory is inert and independently usable without default browser composition or vi.mock of app storage.
+- Construction-time invariants catch missing/duplicate supported adapters, while old unknown records remain inspectable holds.
+- Store rotation disposes exactly the old session and cannot deliver stale work through a new authority.
+- No FE006 closure yet: old module side effects remain until FE23/FE24 adoption.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: npm run test:unit -- tests/unit/study-runtime-construction.test.ts
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: npm run typecheck:browser
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- No unrelated heavy test is implied. The owner selects the applicable changed-boundary checks.
+
+MATERIAL RISKS:
+- The saved kind set contains deliberately retired compatibility records. Treating missing adapters as empty work would lose their recovery meaning.
+
+EXCLUSIONS:
+- No adapter implementation changes yet
+- No global registry
+- No schema/lease algorithm changes
+- No new browser runtime service
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

@@ -1,0 +1,77 @@
+TASK P14 — Run one coordinated exact native and HTTP qualification cohort
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: ST002, ST005, ST006, ST012, ST013, ST014.
+ORIGINAL TASKS: E00, E02, E03, E04, Q0.
+SUPPORTING DEFINITION: reference/planning-definitions/proof-storage-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: P01.source_released; P02.source_released; P03.source_released; P04.source_released; P05.source_released; P06.source_released; P07.source_released; P08.source_released; P16.source_released; P12.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- P12 prerequisite is exact reviewed browser inventory, not completed browser qualification. P13 acceptance is required if lifecycle behavior/images changed. Checkpoint2 consumes every changed applicable owner input; do not add unrelated native work.
+
+READ FIRST (repository-relative except reference/ paths):
+- database/tests/postgres-test-options.mjs
+- database/tests/postgres-test-plan.mjs
+- database/tests/position-native-pytest.py — NODEIDS; ExactCase
+- database/tests/native-split-pytest.py
+- scripts/release-candidate-artifacts.mjs
+- docs/testing.md
+
+WRITE RESERVATION:
+- database/tests/postgres-test-options.mjs [existing]
+- database/tests/postgres-test-plan.mjs [existing]
+- database/tests/position-native-pytest.py [existing]
+- database/tests/test-postgres-docker.mjs [existing]
+- tests/runner/postgres-test-speedups.test.mjs [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Reserve exactly one native/Docker/browser heavy slot. Resolve supported Python from backend/pyproject.toml, compatible Node dependencies and digest-verified WASM inputs; run make preflight before the native runner. No bypass of admission/traffic/resource accounting.
+2. Use a clean committed assembled candidate and capture git SHA/tree/status plus selected product/test/harness/fixture hashes. The ordinary native receipt’s HEAD field alone does not prove mounted bytes equal the commit.
+3. For checkpoint1, list and run current Study receipt/recovery, nine Study-only assertions, opening admission/restart, current priority plus P08 historical disposition, real prefix HTTP, current packaged reader, and the existing exact position grade/introduction/admission/split selectors needed by changed code. Include P12 exact browser set in that same stack when possible.
+4. Existing supported native-check names are redis-fixture-isolation, position-grade-effects, position-introductions, position-queue-admission, prefix-split-placement and game-review-reader. Native checks accept only study/browser modes; do not invent --native-only or combine --skip-browser with them.
+5. Any new conformance case required by S01/S05/S06/S07 or ST005 SQL changes gets one fixed reviewed selector in the existing bridge with exact collection/setup/call/teardown, owned fresh database, refusal and cleanup; no new generic qualification framework.
+6. Require native atomic failure, contention, stale source/owner, original operation replay, queue preservation and history retention only where applicable. Pure contract/metadata leaves use their pure tests; they do not add unrelated native/browser obligations.
+7. Checkpoint2 follows the final wider-audit candidate. Rerun changed inputs/consumer boundaries and preserve valid unchanged evidence with explicit comparisons; do not promote prior candidate results without that proof.
+8. Stop on first concrete failure, keep all diagnostics and cleanup results, repair its owning task, then rerun only invalidated evidence. Report executed/passed/failed/skipped/blocked separately.
+
+ACCEPTANCE:
+- Every selected native case truly executes exact expected identity with zero skips, retries, duplicates or zero-selection; all selected stages and cleanup complete.
+- SQL/locks/migrations/rollback are proved on native PostgreSQL; fake-boundary passes are not substituted.
+- E02 full current scope closes only after its four residual categories are accounted; no whole-repository/full lane health claim unless that actual lane ran and passed.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: git rev-parse HEAD
+  kind: source; availability: current
+- Working directory .: git rev-parse HEAD^{tree}
+  kind: source; availability: current
+- Working directory .: git --no-optional-locks status --porcelain --untracked-files=all
+  kind: source; availability: current
+- Working directory .: make preflight
+  kind: capability; availability: current
+- Working directory .: node database/tests/test-postgres-docker.mjs --mode study --browser-grep "study_only_mode_preserves_foreground_review_and_queue_progression across reload and resumption$" --native-check position-grade-effects --native-check position-introductions --native-check position-queue-admission --native-check prefix-split-placement --native-check game-review-reader --list
+  kind: discovery; availability: current
+- Working directory .: node database/tests/test-postgres-docker.mjs --mode study --browser-grep "study_only_mode_preserves_foreground_review_and_queue_progression across reload and resumption$" --native-check position-grade-effects --native-check position-introductions --native-check position-queue-admission --native-check prefix-split-placement --native-check game-review-reader
+  kind: native-browser; availability: current syntax; executable full current Study stages require P04–P08; expand browser grep only from P12 exact inventory
+
+COORDINATED ACCEPTANCE:
+- One heavy slot; current65 lifecycle first if needed, then one current Study/native/browser assembly, then only separately selected historical or ownership conformance cases not covered by that assembly.
+
+MATERIAL RISKS:
+- Source mounted from a dirty checkout can disagree with image/HEAD receipt; provenance must include actual clean/tree/input equality.
+
+EXCLUSIONS:
+- Repeated full suites per worker
+- Installation
+- Live review generation
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

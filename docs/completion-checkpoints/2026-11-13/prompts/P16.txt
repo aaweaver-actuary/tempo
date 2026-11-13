@@ -1,0 +1,57 @@
+TASK P16 — Require successful original-review replay and a playable final successor
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: ST012.
+ORIGINAL TASKS: E02.
+SUPPORTING DEFINITION: reference/planning-definitions/proof-storage-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: C11.source_released; P07.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- tests/browser/study-only-mode.spec.ts
+- database/tests/check_postgres_training_transition.py
+- tests/browser/recovery.spec.ts
+- Packet reproduction/evidence: reference/deep-review/evidence/qualification/qualification-review.md
+- Packet reproduction instructions: reference/deep-review/evidence/REPRODUCING.md. Negative probes are deliberately failing evidence, not implementation patches or current passes.
+
+WRITE RESERVATION:
+- tests/browser/study-only-mode.spec.ts [existing]
+- database/tests/check_postgres_training_transition.py [existing]
+- tests/REGRESSIONS.md [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Capture the first real review response and original idempotency key/body. After worker restart, validate the resend response; if202, poll the same original operation to a successful authoritative receipt.
+2. Compare original and replay attempt/card/revision/review/result identity, retain exactly three committed human reviews and exactly-once complete evidence.
+3. Assert the fourth authoritative queue entry renders with input enabled and play one legal move; do not click Correct or create a fourth completed review just to prove playability.
+4. Add/refine negative test logic so 4xx/5xx resend or foreign/malformed receipt fails even if review count remains3. Preserve settings restoration and owned fixture cleanup.
+
+ACCEPTANCE:
+- A rejected resend cannot pass. Three completed review→successor transitions have observed playable successors if that claim is made.
+- No stage duration is described as user review cadence or end-to-end interaction latency.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: node database/tests/test-postgres-docker.mjs --mode browser --browser-grep "study_only_mode_preserves_foreground_review_and_queue_progression across reload and resumption$" --list
+  kind: discovery; availability: current
+
+COORDINATED ACCEPTANCE:
+- P12 runs this exact case once on the assembled candidate.
+
+MATERIAL RISKS:
+- Counting rows proves no observed duplicate, not successful replay or a usable successor.
+
+EXCLUSIONS:
+- No unrelated feature, rewrite or retired producer restoration.
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

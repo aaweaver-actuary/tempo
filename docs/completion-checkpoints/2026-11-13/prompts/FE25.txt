@@ -1,0 +1,65 @@
+TASK FE25 — Publish semantic review ports and map the existing browser owners behind them
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: FE003.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/frontend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: FE24.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- AGENTS.md — current scope, ownership and minimum real proof; distinguish implemented/tested/assembled/installed
+- SPEC.md — current November 10 reduction scope and retained ordinary Study preservation
+- docs/testing.md — smallest relevant proof and supported owned runner
+- app/features/study/controller.ts — StudyReviewIdentity/SubmitOptions, PendingReview leak, AuthorityBinding
+- app/lib/review-outbox.ts — PendingReview, ReviewFlushResult, ReviewReplayError
+- app/lib/prepared-review-continuation.ts — PreparedNextIdentity/PreparedContinuation and advancement
+- app/state/training-store.ts — attempt token, queue/readiness and named actions
+- app/features/study/index.ts — public feature exports
+
+WRITE RESERVATION:
+- app/features/study/contracts.ts [proposed or moved; verify the owning symbol before implementation]
+- app/features/study/browser-services.ts [proposed or moved; verify the owning symbol before implementation]
+- app/features/study/index.ts [existing]
+- tests/unit/study-public-services.test.ts [proposed or moved; verify the owning symbol before implementation]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Define semantic ReviewIntent, ReviewIdentity, confirmation/failure outcomes, attempt token, prepared continuation and narrow review/progression ports in contracts.ts. Copy the meaning of existing fields; do not expose PendingReview, IntentRecord, database handles, Zustand setters or concrete error classes.
+2. Group existing capabilities by responsibility: retain/flush/recover/read pending facts; capture/check authority lifetime; read current attempt and perform named progression; publish diagnostics/notifications. Map concrete outbox/session/store methods in one browser-services adapter, preserving actual identity and conflict classification.
+3. Export only semantic types and construction/use contracts through features/study index. Keep the existing controller API available until FE26 adopts the adapter.
+4. Add a second consumer using fake semantic ports with no app-internal vi.mock; demonstrate retain, pending/committed/conflicted facts and stale-authority rejection.
+
+ACCEPTANCE:
+- Public review types import only neutral domain contracts, not storage/outbox/React-store implementations.
+- Concrete mapping is explicit and round-trips original identity without inventing an attempt ID.
+- Fake-port consumer does not implement IndexedDB or a global Zustand store.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: npm run test:unit -- tests/unit/study-public-services.test.ts tests/unit/study-controller-boundary.test.ts
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: npm run typecheck:browser
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- No unrelated heavy test is implied. The owner selects the applicable changed-boundary checks.
+
+MATERIAL RISKS:
+- An overly broad port that exports getState/setState or PendingReview merely renames the coupling. Keep semantic operations small and preserve existing authority lifetime checks.
+
+EXCLUSIONS:
+- No new session or scheduler
+- No controller behavior change in this preparatory task
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

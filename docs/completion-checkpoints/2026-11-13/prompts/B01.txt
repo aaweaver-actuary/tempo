@@ -1,0 +1,65 @@
+TASK B01 — Finish G00: calendar row dispositions and two finite compatibility decisions
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: BE003.
+ORIGINAL TASKS: G00, G02, G03, G04.
+SUPPORTING DEFINITION: reference/planning-definitions/backend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: No source prerequisite; reserve the named files first.
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- backend/app/settings_commands.py — apply_settings
+- backend/app/services/durable_tasks.py — _request_current_queue_in_transaction
+- backend/app/services/postgres_queue_refresh.py — execute_postgres_queue_refresh_slice
+- backend/app/services/study_calendar.py — capture_study_calendar
+- backend/app/study/policy/clock.py — StudyCalendar,study_calendar_at
+- backend/tests/test_study_calendar.py
+- database/tempo_storage/durable_tasks/storage.py
+- database/tempo_storage/lifecycle/refresh_requests.py
+- SPEC.md — November 10 pass 2
+- reference/audit-current.json — every BE003 file row
+- Packet reproduction/evidence: reference/deep-review/evidence/backend/repro_calendar_residual.py
+- Packet reproduction instructions: reference/deep-review/evidence/REPRODUCING.md. Negative probes are deliberately failing evidence, not implementation patches or current passes.
+
+WRITE RESERVATION:
+- No product edits. Put the finite evidence/decision in the integration owner's existing run record.
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Build a row-by-row table for every BE003 audit location: current use-case clock, configured zone source, explicit/recorded/accepted day, actual caller, and retained or removed disposition.
+2. Trace and record the settings case 2026-11-12T02:00Z / America/New_York: Study day 2026-11-11 while date.today returns 2026-11-12. Follow the older-day singleton early return before signal_queue_refresh_in_transaction. B02 owns the named regression; this probe makes no product edits.
+3. Choose the new settings operation follow-up policy. Recommended: one observed instant and newly saved effective Study zone; an existing accepted task keeps its own day. Specify how an east-to-west zone change requests the now-earlier current day without rewriting the old task/receipt.
+4. Determine supported missing-queue_date task variants from current persisted payload/history contracts and maintained fixtures; explicit accepted day always wins. If a trustworthy original acceptance fact cannot establish a day, do not infer it from the host or current zone.
+5. Integration owner records one-time missing-day resolution or explicit durable hold policy, and explains how a fresh known-current request can still progress. Release B02/B03 only with these exact contracts.
+
+ACCEPTANCE:
+- Every original BE003 row has a disposition; compatibility wrappers with ambient defaults are explicitly unsupported for new current-day acceptance or receive an injected context.
+- The backward-zone singleton behavior and supported legacy missing-day behavior have explicit choices, original IDs/receipts preserved.
+- No live data inspection/migration is assumed; missing historical facts are acknowledged, not invented.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: rg -n 'date.today|datetime.now|current_study_day|capture_study_calendar|review_day_at|queue_date' backend/app/settings_commands.py backend/app/services/durable_tasks.py backend/app/services/postgres_queue_refresh.py backend/app/services/scheduler.py backend/app/study/policy backend/app/*commands.py
+  verified_against_source: entrypoint/options inspected; any proposed new selection is stated in acceptance; availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- No unrelated heavy test is implied. The owner selects the applicable changed-boundary checks.
+
+MATERIAL RISKS:
+- This is a policy/support decision, not merely replacing date.today. Keeping the max-day guard unchanged can still strand the configured current day after a timezone change.
+
+EXCLUSIONS:
+- No new service, database, event bus, generic repository, scheduler, or retired producer restoration.
+- No changes to historical migration checksums, persisted command names, accepted operation identities, or original receipt bytes.
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

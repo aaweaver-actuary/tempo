@@ -1,0 +1,62 @@
+TASK S03 — Inject workspace and IndexedDB dependencies into the offline storage instance
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: ST003.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/proof-storage-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: FE06.source_released; FE08.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- Frontend FE06 releases authority-adapter contract; reserve app/lib/study-connection.ts.
+
+READ FIRST (repository-relative except reference/ paths):
+- database/browser/offline-training-storage.ts — offlineTrainingDatabase
+- database/browser/prepared-training-storage.ts
+- app/lib/study-connection.ts
+- app/domain/study-authority.ts
+- database/browser/study-connection-storage.ts
+
+WRITE RESERVATION:
+- database/browser/offline-training-storage.ts [existing]
+- database/browser/prepared-training-storage.ts [existing]
+- app/lib/study-connection.ts [existing]
+- app/lib/offline-training.ts [existing]
+- tests/unit/study-storage-boundary-regressions.test.tsx [existing]
+- tests/unit/offline-training-regressions.test.ts [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Consume the frontend FE005 authority-adapter contract; create a storage instance with workspace/database name, IDBFactory and failure notification supplied by browser composition.
+2. Remove the storage→app/lib/study-connection import and global singleton ownership. Preserve the exact workspace-derived database naming and existing version2 stores/indexes.
+3. Keep one promise/cache per instance with explicit close/versionchange handling. Reject blocked upgrade without losing retained records or using another workspace.
+4. Adopt the instance through the existing Study composition/connection owner and prepared-queue adapter; retain a compatibility re-export only if current consumers still need it and it delegates to that composition.
+
+ACCEPTANCE:
+- Storage can be imported/instantiated with two isolated factories/workspaces without importing the application Study singleton.
+- Mixed-version blocked/versionchange/retry cases preserve raw stores and original queue/attempt IDs.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: npm run test:frontend -- study-storage-boundary-regressions
+  kind: focused; availability: current
+- Working directory .: npm run test:frontend -- offline-training-regressions
+  kind: focused; availability: current
+
+COORDINATED ACCEPTANCE:
+- P12 final browser offline reload and saved-review replay if this task is included; no native PostgreSQL solely for this factory refactor.
+
+MATERIAL RISKS:
+- A new default name or cache shared across instances can silently bind one workspace to another.
+
+EXCLUSIONS:
+- No unrelated feature, rewrite or retired producer restoration.
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

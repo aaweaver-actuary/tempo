@@ -1,0 +1,84 @@
+TASK C14 — Finish 202 adoption for phone and tactics; remove permissive confirmation entry
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: FE001.
+ORIGINAL TASKS: C01, Q0.
+SUPPORTING DEFINITION: reference/planning-definitions/frontend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: C11.source_released; C12.source_released; C13.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- AGENTS.md — current scope, ownership and minimum real proof; distinguish implemented/tested/assembled/installed
+- SPEC.md — current November 10 reduction scope and retained ordinary Study preservation
+- docs/testing.md — smallest relevant proof and supported owned runner
+- app/lib/offline-training.ts — performReplayOfflineAttempts: phone-study and phone-assessment; review branch already delegates to evidence-aware confirmation
+- app/lib/training-bury-command.ts — buryTrainingEntry saved operationId
+- app/lib/tactic-capture-command.ts — capture_id
+- app/lib/tactical-catalog.ts — setPackActivation operationId
+- app/views/tactics_view.tsx — finish full-shell direct request and independent retained request
+- backend/app/main.py — tactic_attempt default operation ID is tactic-attempt:${attempt_id} when header absent
+- app/lib/operation-status.ts — temporary permissive confirmation entry
+- tests/unit/operation-status-integration-regressions.test.ts — obsolete discovery-admission pass-through test
+
+WRITE RESERVATION:
+- app/lib/offline-training.ts [existing]
+- app/lib/training-bury-command.ts [existing]
+- app/lib/tactic-capture-command.ts [existing]
+- app/lib/tactical-catalog.ts [existing]
+- app/views/tactics_view.tsx [existing]
+- app/lib/operation-status.ts [existing]
+- tests/unit/offline-training-regressions.test.ts [existing]
+- tests/unit/training-burial-regressions.test.ts [existing]
+- tests/unit/tactic-capture-regressions.test.tsx [existing]
+- tests/unit/tactic-activation-pending-regressions.test.ts [existing]
+- tests/unit/tactics-polish-regressions.test.tsx [existing]
+- tests/unit/operation-status-integration-regressions.test.ts [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Use phone-study:${attempt.attemptId} only for the raw frozen-exercise attempt POST, and phone-assessment:${attempt.attemptId} for its self-assessment. Remove redundant outer confirmation around the already confirmed saveEvidenceAwareReview result; do not guess whether it used aggregate-only.
+2. Use the existing burial operationId, tactic capture_id and pack activation operationId. For the remaining direct full-shell tactic response use the actual backend-derived tactic-attempt:${completedAttempt.discoveryId}; an executeStudyRequest result is already confirmed and needs no second poll.
+3. After source enumeration finds zero callers of old confirmOperationResponse, delete that permissive export and the stale discovery-specific exception/comment/test. No retained current discovery producer exists; queue GET acceptance stays with its existing decoder.
+4. Add missing/foreign-ID tests for phone submit and self-assessment, burial, capture, activation and direct tactic completion. Preserve exact phone IDs and answers, no serverAcknowledged flag, no local tactic progress advancement and no journal removal on the fault.
+5. Inspect all /api/operations consumers once: shared decoder or documented adapter, original-ID polling, domain acknowledgment before clearing. Include pgn-import-command and integrity-repair-outbox in this read-only enumeration; do not rewrite their already valid compatibility logic.
+6. Release offline-training.ts to C21/C24, training-bury-command.ts to FE32, tactics_view.tsx to FE31 and operation-status.ts to the integration owner.
+
+ACCEPTANCE:
+- No production call can confirm an initial durable-command 202 without an expected original ID.
+- Legacy receipt identity-optional reads remain supported only where already allowed; new acknowledgment identity is mandatory.
+- Wrong initial operation cannot settle phone review/self-assessment or advance tactics, and own-ID recovery completes once.
+- Caller inventory is complete, not a grep-based claim that every protocol has identical business validation.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: npm run test:unit -- tests/unit/operation-status-integration-regressions.test.ts tests/unit/operation-status-study-client-regressions.test.ts tests/unit/offline-training-regressions.test.ts tests/unit/training-burial-regressions.test.ts tests/unit/tactic-capture-regressions.test.tsx tests/unit/tactic-activation-pending-regressions.test.ts tests/unit/tactics-polish-regressions.test.tsx
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: npm run typecheck:browser
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: rg -n "confirmOperationResponse|confirmOriginalOperationResponse|/api/operations" app
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- owner: integration owner / P12 and P16; required: On the assembled candidate, one real saved review -> original operation receipt -> authoritative playable successor; inject wrong/missing initial 202 identity and lost acknowledgment, then recover only the original receipt. Reuse tests/browser/study-recovery.spec.ts; add a named fault case. Unit mocks do not establish this claim.; runner: make preflight; then make ui-file FILE=study-recovery.spec.ts under the existing owned disposable runner; no live checkout.
+- owner: P12/P16; required: Existing real phone reload/replay and tactic progression after original receipt; one coordinated assembled selection, not a stack per call-site.
+
+MATERIAL RISKS:
+- Phone helper already resolves fallback identities internally; adding another guessed key would reject valid replay. Pack activation currently has a separate storage-failure policy; changing that policy is outside this identity-only slice.
+
+EXCLUSIONS:
+- No new storage schema
+- No independent Learning service restoration
+- No whole-stack test per helper
+- No FE010 closure merely from helper adoption
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

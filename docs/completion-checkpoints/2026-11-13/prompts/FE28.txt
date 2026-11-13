@@ -1,0 +1,75 @@
+TASK FE28 — Move queue acquisition/reconciliation out of the view into one port-based application owner
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: FE004.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/frontend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: FE27.source_released; FE25.source_released; C21.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- AGENTS.md — current scope, ownership and minimum real proof; distinguish implemented/tested/assembled/installed
+- SPEC.md — current November 10 reduction scope and retained ordinary Study preservation
+- docs/testing.md — smallest relevant proof and supported owned runner
+- app/views/fetchAndInitializeQueue.tsx — fetchAndInitializeQueue, eligibleQueueCards, loadEligibleOfflineQueue, retainPendingFailures
+- app/state/training-store.ts — hydrateLocalQueue and protected active attempt rules
+- app/lib/prepared-review-continuation.ts — confirmation and prepared-next fences
+- app/lib/offline-training.ts — prepared queue/replay authority
+- app/features/study/queue-transport.ts — FE27 protocol [proposed/moved; resolve before editing]
+
+WRITE RESERVATION:
+- app/features/study/queue-application.ts [proposed or moved; verify the owning symbol before implementation]
+- app/features/study/queue-policy.ts [proposed or moved; verify the owning symbol before implementation]
+- app/features/study/browser-queue.ts [proposed or moved; verify the owning symbol before implementation]
+- app/views/fetchAndInitializeQueue.tsx [existing]
+- app/lib/prepared-review-continuation.ts [existing]
+- tests/unit/study-queue-application.test.ts [proposed or moved; verify the owning symbol before implementation]
+- tests/unit/desktop-queue-regressions.test.ts [existing]
+- tests/unit/prepared-queue-readiness-regressions.test.ts [existing]
+- tests/unit/phone-queue-preparation-regressions.test.ts [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Create one cohesive queue application factory with grouped ports for transport, retained reviews/failures/phone snapshots, card mapping, named queue installation/current-attempt checks, cache, and notices/clock. Keep request generation and AbortController lifetime inside that factory.
+2. Extract pure eligibility/reconciliation decisions over supplied facts. Preserve pending/confirmed/conflicted filtering, same-card phone dependency checks, guided failure retention, protected active attempt and the ban on authorizing a prefetched successor after filtering the authoritative connected head.
+3. Put concrete store/browser/worker bindings in browser-queue.ts. Leave fetchAndInitializeQueue.tsx as compatibility exports/composition only. Compute authority-sensitive cache locator at explicit composition/lifetime, not by restoring a connection during pure module import.
+4. Maintain cached offline versus connected authority: offline uses same-day issued prepared content and retained parent links; connected queue receipt requires a fresh read. Preserve optional cache-quota success, shell verification, bounded recovery and preparation notices.
+5. Add tests constructing the queue application directly with in-memory ports and no React/localStorage/global store: stale generation, canceled mapping, retained active card, invalid current head, retired record followed by valid work, failed queue read with eligible offline snapshot.
+
+ACCEPTANCE:
+- Queue application imports no React, concrete global store or browser persistence module.
+- Compatibility view module contains no durable orchestration or direct queue-layout writes.
+- All installation paths pass expected attempt/authority/generation checks; cache/offline projections cannot fabricate current server authority.
+- Existing phone/desktop/queue readiness tests plus direct fake-port test pass; assembled journey is centralized.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: npm run test:unit -- tests/unit/study-queue-application.test.ts tests/unit/desktop-queue-regressions.test.ts tests/unit/prepared-queue-readiness-regressions.test.ts tests/unit/phone-queue-preparation-regressions.test.ts tests/unit/queue-issuance-pending-regressions.test.ts tests/unit/study-cached-startup-regressions.test.tsx
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: npm run typecheck:browser
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- owner: integration owner / P12 and P16; required: On the assembled candidate, one real saved review -> original operation receipt -> authoritative playable successor; inject wrong/missing initial 202 identity and lost acknowledgment, then recover only the original receipt. Reuse tests/browser/study-recovery.spec.ts; add a named fault case. Unit mocks do not establish this claim.; runner: make preflight; then make ui-file FILE=study-recovery.spec.ts under the existing owned disposable runner; no live checkout.
+- owner: P16; required: Retained active phone card survives reload/reconnect and one original review replays once; reuse current phone browser selection.
+
+MATERIAL RISKS:
+- Filtering a connected issued head must not promote a cached successor into authority. This invariant is easy to lose while simplifying the large helper.
+
+EXCLUSIONS:
+- No generic repository/event bus
+- No full queue rewrite
+- No reset of attempt identity
+- No new optional preparation workflow
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

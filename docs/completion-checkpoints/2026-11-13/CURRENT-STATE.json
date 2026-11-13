@@ -1,0 +1,174 @@
+{
+  "schema_version": 1,
+  "observed_at_utc": "2026-11-13T19:24:54.301227+00:00",
+  "repository": "aaweaver-actuary/tempo",
+  "programme_issue": 908,
+  "main_sha": "2f799293af812e829a55a3c2bb5aba8ea1598c96",
+  "packet_baseline_sha": "091ad318b1afaadcb25e5ca44ff526120a202336",
+  "mainline_merge_count": 38,
+  "t02_branch_merge_count": 30,
+  "status": "source_progress_assignment_incomplete_installation_unverified",
+  "last_established_installation": {
+    "sha": "d79ae4fcc4b006985114d85b5fb9a5aca8becbf1",
+    "schema": 65,
+    "evidence": "historical only; not reobserved here"
+  },
+  "source_schema": 66,
+  "mac_current_state": "not observed",
+  "local_unpushed_tail": "B15 missing-settings prerequisite retry; exact local state unknown",
+  "already_closed_redundant_prs": [
+    1102,
+    1103,
+    1104,
+    1105,
+    1106,
+    1108
+  ],
+  "top_level_candidates": [
+    1071,
+    1052,
+    1123,
+    1055,
+    1033,
+    1026,
+    1037,
+    1041
+  ],
+  "contained_children": {
+    "1026": [
+      1025
+    ],
+    "1052": [
+      1035,
+      1048,
+      1049
+    ],
+    "1123": [
+      1121
+    ]
+  },
+  "active_candidates": [
+    {
+      "pr": 1026,
+      "branch": "packet/fe21-shared-board",
+      "head_sha": "48769570a41011d5d01b47cf5e1c6e74c7aeec40",
+      "task": "FE21",
+      "remaining": [
+        "Six-case real-browser inventory for held drag, drawing, responsive geometry and owner switching has not executed.",
+        "Independent review and assembled acceptance remain pending.",
+        "Contains #1025; qualify the combined head before closing either as integrated.",
+        "Inherited #1025 acceptance remains part of this aggregate: rerun/resolve the standalone Board qualifier blocked by ENOTCACHED for whatwg-url 17.3.0, and retain actual package isolation and consuming adoption proof. Containment does not waive child criteria."
+      ]
+    },
+    {
+      "pr": 1033,
+      "branch": "packet/b04-seed-tactics",
+      "head_sha": "a3848b3d6f5469a8fea7a26c4c6e03acf03eb962",
+      "task": "B04",
+      "remaining": [
+        "Delivery owner must explicitly dispose of OPENING_CAPACITY_FRONTIER_EXPANSION and capacity_route; the Nov10 SPEC does not explicitly retire this flag.",
+        "Legacy capacity script calls missing _prepare_prioritized_openings and its unreviewed-parent semantics differ from the current reviewed-parent route; existing tests do not prove equivalence.",
+        "Migrate the position Study native fixture off legacy seed SQL while retaining required due_cards, maximum_position and append_due_card capabilities.",
+        "Port/compare applicable quota, shared membership, source invalidation, contention, rollback and checkpoint assertions before coherent deletion.",
+        "Root owns the atomic main.py wrapper cutover; independent deletion review and assembled acceptance remain pending."
+      ]
+    },
+    {
+      "pr": 1037,
+      "branch": "packet/fe27-queue-transport",
+      "head_sha": "5d085521e5ddc91aab70f6378c59a1c909d5d11d",
+      "task": "FE27",
+      "remaining": [
+        "Independent review and assembled queue issuance/abort/retry/hold behavior remain pending.",
+        "Reconcile its historical stacked base with current main before integration."
+      ]
+    },
+    {
+      "pr": 1041,
+      "branch": "codex/completion-fe30",
+      "head_sha": "98cdcc91cf2d28366e73ba32113101563a1d2a44",
+      "task": "FE30",
+      "remaining": [
+        "Independent source review remains pending.",
+        "FE31 tactic, FE32 burial and FE36 retirement successors remain.",
+        "Prepared-storage cached handle across same-lifetime authority changes is an acknowledged unproven risk; reload is a mitigation, not acceptance."
+      ]
+    },
+    {
+      "pr": 1052,
+      "branch": "codex/completion-fe25",
+      "head_sha": "2bc7b688748ad5995d745fd51efccfdd2221a3b2",
+      "task": "FE25",
+      "remaining": [
+        "Current remote head 2bc7b688748ad5995d745fd51efccfdd2221a3b2 includes two new real-browser authority-switch cases that compile/discover but have not run.",
+        "Separate FE25 browser selection at b591f397 failed during image build from host disk exhaustion; zero selected cases ran.",
+        "Earlier receipts do not qualify current integrated head. Restore host capacity, reconcile with current main and qualify the resulting exact head.",
+        "Historical clients do not implement the new Web Lock protocol; no historical-client compatibility proof or independent external build/cache provenance is recorded.",
+        "FE26 controller adoption remains distinct. Hosted CI and installation are not claimed."
+      ]
+    },
+    {
+      "pr": 1055,
+      "branch": "codex/completion-b12",
+      "head_sha": "4639c3888f37344d9636728eb94b10788d67e1e0",
+      "task": "B12",
+      "remaining": [
+        "Production composition remains unannotated; B13 owns conversion and actual-binding static proof.",
+        "PreparedQueueHead mode/proposal relation is checked at runtime, not expressed as a static discriminated union.",
+        "Six stale import failures referencing retired tempo_storage.study.game_feedback were recorded in additional timing coverage.",
+        "Full B12 acceptance requires B13, independent review and current integrated proof; historical P14 base is not current main."
+      ]
+    },
+    {
+      "pr": 1071,
+      "branch": "codex/completion-b15",
+      "head_sha": "80f939d2bf79a54e6824f237b6a80da71e9903f6",
+      "task": "B15",
+      "remaining": [
+        "Strict adapter mypy still reports four errors at latest remote 80f939d2bf79a54e6824f237b6a80da71e9903f6; static acceptance is not met.",
+        "Actual PostgreSQL JSONB/clock, transaction ordering, race, rollback, lost-ack replay, hold behavior and assembled proof remain pending.",
+        "Production owner/producer strict qualification is not established merely by scoped core/fake success.",
+        "The attached run transcript ends while moving the missing-settings prerequisite-retry boundary, without a final commit/test receipt; inspect original Mac worktrees and ledger for unpushed/dirty state before recreating or overwriting.",
+        "Original branch body notes local reviewed B14/combined parent 869b50537a711c7aaca6608501118d0717c939ed not yet on its original PR base. Reconcile exact current branch ancestry before integration."
+      ]
+    },
+    {
+      "pr": 1123,
+      "branch": "codex/completion-t02-carrier-integration",
+      "head_sha": "7794188f6c851b0e768cbd6c3d230fd78964e5c7",
+      "task": "T02/B13 carrier integration",
+      "remaining": [
+        "Current direct metadata reports mergeable:false; reconcile with main 2f799293af812e829a55a3c2bb5aba8ea1598c96.",
+        "Six namespace owners remain unresolved; this bounded map is not a whole-repository census.",
+        "Independent namespace/integration review remains pending even though initial carrier/map source review found no issue.",
+        "Native position/replay and assembled saved-review-to-playable-next gates remain unrun.",
+        "Contains #1121; qualify combined source before either is closed as integrated."
+      ]
+    }
+  ],
+  "task_evidence_categories": {
+    "not_evidenced": 61,
+    "source_present_acceptance_open": 41,
+    "draft_known_if_evidence": 12,
+    "merged_slice": 14,
+    "accepted_no_change_candidate": 1
+  },
+  "task_completion_count": null,
+  "finding_baseline_only": {
+    "closed": 14,
+    "open": 37,
+    "needs_decision": 4,
+    "new_closures_asserted": 0
+  },
+  "first_lanes": [
+    "Recover B15 and finish its existing bounded change",
+    "Integrate FE25 aggregate",
+    "Current host/evidence inventory, then independent review and one heavy proof"
+  ],
+  "important_limits": [
+    "No product tests rerun in this reconciliation",
+    "No new product merge or installation",
+    "Earlier test reports remain pinned and attributed",
+    "Historical low disk/Docker incident is not a current measurement"
+  ]
+}

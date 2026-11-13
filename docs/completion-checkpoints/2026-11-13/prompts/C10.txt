@@ -1,0 +1,79 @@
+TASK C10 — Fence initial 202 confirmation with the original ID; fix review and settings first
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: FE001.
+ORIGINAL TASKS: C01, Q0.
+SUPPORTING DEFINITION: reference/planning-definitions/frontend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: No source prerequisite; reserve the named files first.
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- AGENTS.md — current scope, ownership and minimum real proof; distinguish implemented/tested/assembled/installed
+- SPEC.md — current November 10 reduction scope and retained ordinary Study preservation
+- docs/testing.md — smallest relevant proof and supported owned runner
+- app/lib/operation-status.ts — confirmOperationResponse, readReceipt, operationBinding; present helper trusts the returned ID
+- app/domain/adapters/operation-result-adapter.ts — decodeOperationAcceptance, decodeOperationResult
+- app/lib/opening-evidence-review.ts — saveEvidenceAwareReview.send; operationKey plus retained aggregate-only suffix
+- app/lib/settings-save.ts — saveLocalSettings and pendingSave
+- backend/app/command_dispatch.py — dispatch_command; operation IDs are bounded to 128 characters, not the queue decoder alphabet
+- backend/app/settings_commands.py — apply_settings returns full current Settings values
+- app/domain/schemas/index.ts — settingsResponseSchema
+- tests/unit/review-outbox-regressions.test.ts — optimistic outbox, uncertain-save and evidence fallback cases
+- Packet reproduction/evidence: reference/deep-review/evidence/frontend/deep-review-frontend-probes.test.ts
+- Packet reproduction instructions: reference/deep-review/evidence/REPRODUCING.md. Negative probes are deliberately failing evidence, not implementation patches or current passes.
+
+WRITE RESERVATION:
+- app/lib/operation-status.ts [existing]
+- app/domain/adapters/operation-result-adapter.ts [existing]
+- app/lib/opening-evidence-review.ts [existing]
+- app/lib/settings-save.ts [existing]
+- tests/unit/operation-status-integration-regressions.test.ts [existing]
+- tests/unit/review-outbox-regressions.test.ts [existing]
+- tests/unit/settings-save-pending-regressions.test.ts [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Add canonical confirmOriginalOperationResponse(response, expectedOperationId, options). For non-202 return unchanged. For 202 parse unknown JSON, require an object with a nonempty bounded string operation_id exactly equal to the supplied original ID, and classify admissible acknowledgment state through the existing operation-result decoder before any status URL, notification, or journal mutation. Missing/foreign/malformed IDs throw PendingOperationError carrying the expected ID.
+2. Do not reuse the queue-only allowed-character restriction to reject a persisted generic operation ID that the gateway accepts. Exact equality and existing gateway length are sufficient; URL-encode only when constructing the request.
+3. Keep readOperationResponse legacy receipt identity-optional behavior where currently allowed. Keep queue GET issuance decoding distinct: its initial ID is server allocated. Leave the old permissive confirmOperationResponse only as a temporary migration entry; C14 must remove it after C11-C13 adopt the strict entry.
+4. In saveEvidenceAwareReview compute the exact sent Idempotency-Key once per send, including :aggregate-only when retained rejection/fallback requires it, and pass that same key to strict confirmation. Do not regenerate review/reconciliation identity or permit position-study evidence fallback.
+5. In saveLocalSettings pass pending.operationId. On both receipt-first completion and direct/confirmed response, validate with the current settingsResponseSchema before removing the saved key/body. Update old partial-response test fixtures to the real full producer shape rather than relaxing the decoder.
+6. Promote the supplied deep-review review/settings probes into the owning suites. Preserve the exact initial request bytes and verify no GET to the foreign operation is issued.
+
+ACCEPTANCE:
+- Foreign, absent, nonstring, empty, malformed-JSON, unsupported-state and overlength acknowledgment cases cannot poll a foreign ID, clear pending work, report persisted, or advance the active attempt.
+- For a valid original-ID 202 and complete original receipt, one review/settings command settles once; pending/blocked/unknown/failed receipt classification remains unchanged.
+- Review aggregate-only and reconciliation keys are matched to the actual submitted delivery, not merely the base human-attempt key.
+- Settings malformed terminal response retains its original stored body and key; a complete real Settings result clears only after validation.
+- No claim of full FE001 closure: the temporary legacy confirmation entry remains for C11-C14.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: npm run test:unit -- tests/unit/operation-result-decoder.test.ts tests/unit/operation-status-integration-regressions.test.ts tests/unit/review-outbox-regressions.test.ts tests/unit/settings-save-pending-regressions.test.ts
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: npm run typecheck:browser
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- owner: integration owner / P12 and P16; required: On the assembled candidate, one real saved review -> original operation receipt -> authoritative playable successor; inject wrong/missing initial 202 identity and lost acknowledgment, then recover only the original receipt. Reuse tests/browser/study-recovery.spec.ts; add a named fault case. Unit mocks do not establish this claim.; runner: make preflight; then make ui-file FILE=study-recovery.spec.ts under the existing owned disposable runner; no live checkout.
+
+MATERIAL RISKS:
+- Highest-priority reproduced gap: a foreign 202 can falsely settle the original browser review. The fault is conditional protocol corruption, not evidence of current production data loss. Tightening completed settings fixtures can expose stale mocks.
+
+EXCLUSIONS:
+- No new receipt state machine
+- No journal consolidation
+- No changed retry/blocked/failure policy
+- Do not start a separate native/browser stack; hand affected assembled acceptance to the designated integration operator.
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

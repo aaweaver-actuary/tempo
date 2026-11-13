@@ -1,0 +1,73 @@
+TASK B02 — Fix settings follow-up and backward-day queue coalescing
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: BE003.
+ORIGINAL TASKS: G03, G04.
+SUPPORTING DEFINITION: reference/planning-definitions/backend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: B01.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- backend/app/settings_commands.py — SettingsRequest,apply_settings,SETTINGS_COMMAND
+- backend/app/services/durable_tasks.py — _request_current_queue_in_transaction
+- backend/app/queue_commands.py — request_queue_refresh_in_transaction
+- backend/tests/test_settings_descriptor.py
+- backend/tests/test_study_calendar.py
+- backend/tests/native_study_fixture.py
+- Packet reproduction/evidence: reference/deep-review/evidence/backend/repro_calendar_residual.py
+- Packet reproduction instructions: reference/deep-review/evidence/REPRODUCING.md. Negative probes are deliberately failing evidence, not implementation patches or current passes.
+
+WRITE RESERVATION:
+- backend/app/settings_commands.py [existing]
+- backend/app/services/durable_tasks.py [existing]
+- database/tempo_storage/durable_tasks/storage.py [existing] — only if selected durable coalescing operation needs a narrow adapter
+- backend/tests/test_study_calendar.py [existing]
+- backend/tests/test_settings_descriptor.py [existing]
+- backend/tests/test_settings_calendar_postgres.py [proposed or moved; verify the owning symbol before implementation] — proposed
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Implement only the B01 settings/day policy. Capture one aware instant and select the day from effective saved settings through study_calendar_at/capture_study_calendar; remove host date selection.
+2. Make the selected current day actually durable/signaled despite an outstanding later accepted task. Preserve existing task/day and history; use current generation/refresh-epoch mechanisms rather than a second scheduler or blind deletion of the greater-day guard.
+3. Repair affected settings tests to current retained Settings fields and current post-commit behavior; remove expectations of retired provider account writes, while retaining operation replay and policy-hook-before-wake assertions.
+4. Add named unchanged-zone and east-to-west-zone regressions. Assert settings update/refresh obligation/operation receipt commit or roll back together, and the same completed operation replays without recomputing time.
+5. Add the same boundary to an owned capped PostgreSQL fixture; integration owner executes it in the single heavy slot.
+
+ACCEPTANCE:
+- At 2026-11-12T02:00Z with America/New_York unchanged, new settings follow-up signals 2026-11-11, never host tomorrow.
+- An east-to-west change with accepted future-day work requests the selected earlier current day and preserves original accepted payload, generation history, receipt, and issued-origin dates.
+- A rollback leaves neither partial settings nor a false queue refresh; completed receipt replay causes no new follow-up.
+- Required native case executes, not skipped; whole-calendar closure still waits B03 and B01 map.
+- The configured current-day worker actually processes the durable request and reaches a ready/playable projection in the native case; merely signaling an epoch is insufficient.
+- Lease and partially advance an accepted future-day refresh, request the earlier current day after a backward-zone change, then resume the old slice. Prove the old lease/generation cannot publish or checkpoint against the new day/generation and the fresh current-day request still reaches ready under the B01 policy.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: make python-file FILE=backend/tests/test_study_calendar.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: make python-file FILE=backend/tests/test_settings_descriptor.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: make python-file FILE=backend/tests/test_settings_calendar_postgres.py
+  verified_against_source: Makefile:109-111; proposed test file must be added by this task; availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- One coordinated release saved-review → authoritative playable-next proof on a configured non-UTC day; do not repeat a browser stack per calendar leaf.
+
+MATERIAL RISKS:
+- Changing singleton coalescing can drop progress or mutate an accepted day if implemented as overwrite. The native case must cover the actual durable path.
+
+EXCLUSIONS:
+- No new service, database, event bus, generic repository, scheduler, or retired producer restoration.
+- No changes to historical migration checksums, persisted command names, accepted operation identities, or original receipt bytes.
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

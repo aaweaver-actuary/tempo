@@ -1,0 +1,70 @@
+TASK FE05 — Hold foreign authority cutover when an inspected retained store is unknown and nonempty
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: FE005.
+ORIGINAL TASKS: C02.
+SUPPORTING DEFINITION: reference/planning-definitions/frontend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: No source prerequisite; reserve the named files first.
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- AGENTS.md — current scope, ownership and minimum real proof; distinguish implemented/tested/assembled/installed
+- SPEC.md — current November 10 reduction scope and retained ordinary Study preservation
+- docs/testing.md — smallest relevant proof and supported owned runner
+- database/browser/study-connection-storage.ts — readRetainedStudyData; inspectRetainedStudyAuthority
+- app/domain/study-authority.ts — RetainedWorkFact and RetainedAuthorityInspection
+- app/lib/study-client.ts — assertStudyAuthority existing resume/recover/cutover policy
+- tests/unit/study-learning-connection-regressions.test.ts — authority transition and malformed foreign storage cases
+- tests/unit/study-client-factory-regressions.test.ts — semantic fake storage
+- Packet reproduction/evidence: reference/deep-review/evidence/frontend/deep-review-frontend-probes.test.ts
+- Packet reproduction instructions: reference/deep-review/evidence/REPRODUCING.md. Negative probes are deliberately failing evidence, not implementation patches or current passes.
+
+WRITE RESERVATION:
+- database/browser/study-connection-storage.ts [existing]
+- tests/unit/study-learning-connection-regressions.test.ts [existing]
+- tests/unit/study-client-factory-regressions.test.ts [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Enumerate recognized stores separately for tempo-study-intents and offline-training formats. Nonempty additional stores must yield disposition unknown; an empty unknown store does not alone prove retained work. Do not classify known metadata/teaching/event stores as unknown merely because they are not intent queues.
+2. For a named offline authority retain the already decoded database authority; for an unrecognized/global store without an established binding emit authority null. Do not infer trusted authority from arbitrary row fields in an unknown format.
+3. Keep assertStudyAuthority unchanged and test its exact matrix: terminal facts never block; nonterminal facts bound to the target authority do not block; cutover rejects foreign or authority-null facts; registered resume/recover tolerates facts bound to other registered authorities but still rejects authority-null/unregistered foreign facts. The new global unknown-store fact intentionally holds such transitions; do not promise all same-authority resumes remain allowed. Existing normal-build requests do not call this guard per request; do not add a product-wide lock.
+4. Promote the deep-review nonempty unknown-store probe into the owning suite. Include unknown global/foreign/current/registered cases and preserve original keys/values/raw export.
+5. Check known terminal-only intents and acknowledged phone records still permit cutover, and known nonterminal records still block it. No upgrade transaction, deletion, or write is performed during inspection.
+
+ACCEPTANCE:
+- A nonempty unrecognized foreign store can no longer look like empty retained work.
+- Read-only inspection and raw export leave original entries/keys intact, including malformed values.
+- Terminal-only recognized data, same-authority-bound unknown facts, registered foreign recovery and authority-null unknown facts obey the explicit transition matrix. Original raw bytes remain intact.
+- Empty/missing database detection, blocked connections and incompatible schemas remain truthful storage errors.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: npm run test:unit -- tests/unit/study-learning-connection-regressions.test.ts tests/unit/study-client-factory-regressions.test.ts tests/unit/operation-status-study-client-regressions.test.ts
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: npm run typecheck:browser
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- owner: integration owner/P16; required: One real IndexedDB reconnect/cutover test with unknown retained data and reload; no PostgreSQL stack required for this storage boundary.
+
+MATERIAL RISKS:
+- Synthetic future-store gap exists on both inspected revisions. Overbroad unknown facts could strand same-authority recovery; underbroad facts permit unsafe cutover.
+
+EXCLUSIONS:
+- No registry redesign
+- No record rewriting
+- No authority-policy change
+- No new browser database version
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

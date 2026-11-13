@@ -1,0 +1,72 @@
+TASK B12 — Type next-exercise facts, head identity and issuance variants
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: BE002.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/backend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: No source prerequisite; reserve the named files first.
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- backend/app/study/next_exercise.py — QueueReadSnapshot,issue_returned_head,next_exercise
+- backend/app/contracts/queue_issuance.py — NextExerciseOutcome
+- backend/app/services/queue_next_card.py — PreparedQueueHead
+- backend/tests/test_next_exercise_application.py
+- backend/tests/test_next_exercise_issuance.py
+
+WRITE RESERVATION:
+- backend/app/study/next_exercise.py [existing]
+- backend/app/contracts/queue_issuance.py [existing]
+- backend/app/services/queue_next_card.py [existing] — PreparedQueueHead shape only
+- backend/tests/test_next_exercise_application.py [existing]
+- backend/tests/test_next_exercise_issuance.py [existing]
+- backend/tests/test_next_exercise_import_boundary.py [existing]
+- backend/tests/typing/next_exercise_contract.py [proposed or moved; verify the owning symbol before implementation] — proposed scoped typing fixture
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Define exact immutable identity/projection/diagnostic and issued/replay/hold variants for fields the application actually reads. Reuse issued-plan contract types; keep optional transport extension data at edge.
+2. Replace unrestricted mode strings and object proposal with accurate discriminated variants. Do not turn a dataclass wrapping Any into a claimed typed boundary.
+3. Type each injected capability and its return, including current-head and replay. Make mutation/finalization responsibilities explicit or return fresh values while preserving old wire behavior.
+4. Update existing independent in-memory fixture to implement same interface and test missing identity/revision, invalid mode, held plan, and changed day/head.
+5. Leave concrete HTTP conversion to B13 and mark temporary adapters clearly until that task lands.
+6. After behavior is correct, run the scoped typing fixture with real production and independent fake bindings. Inspect errors and fix contract annotations/adapters; do not suppress errors to manufacture substitutability.
+
+ACCEPTANCE:
+- Core next_exercise imports neither FastAPI nor storage nor composition; actual production caller and independent fake use the same annotated capabilities.
+- Malformed required facts cannot produce ready; head/current-day revalidation and immutable conflict distinctions unchanged.
+- No claim of compiler type-check pass unless a real checker ran; current repository has no configured mypy/pyright gate.
+- Actual production binding and independent fake pass the scoped static typing check; deliberate incompatible implementation fails it. Checker/version/command/error output are retained. Runtime tests alone do not satisfy this criterion.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: make python-file FILE=backend/tests/test_next_exercise_application.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: make python-file FILE=backend/tests/test_next_exercise_issuance.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: make python-file FILE=backend/tests/test_next_exercise_import_boundary.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: python -m mypy --strict --follow-imports=silent --no-incremental backend/app/contracts/queue_issuance.py backend/app/study/next_exercise.py backend/tests/typing/next_exercise_contract.py
+  verified_against_source: PROPOSED acceptance command, not an existing configured repository runner; targets inspected and fixture proposed; pinned checker must be provisioned by owner first.; availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- No unrelated heavy test is implied. The owner selects the applicable changed-boundary checks.
+
+MATERIAL RISKS:
+- Do not type every flat HTTP field by rebuilding the whole API. Type the domain facts and translate at the edge.
+
+EXCLUSIONS:
+- No new service, database, event bus, generic repository, scheduler, or retired producer restoration.
+- No changes to historical migration checksums, persisted command names, accepted operation identities, or original receipt bytes.
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

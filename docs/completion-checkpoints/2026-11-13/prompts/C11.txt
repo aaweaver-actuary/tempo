@@ -1,0 +1,75 @@
+TASK C11 — Bind the remaining Study journal confirmations to their frozen delivery IDs
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: FE001.
+ORIGINAL TASKS: C01, Q0.
+SUPPORTING DEFINITION: reference/planning-definitions/frontend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: C10.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- AGENTS.md — current scope, ownership and minimum real proof; distinguish implemented/tested/assembled/installed
+- SPEC.md — current November 10 reduction scope and retained ordinary Study preservation
+- docs/testing.md — smallest relevant proof and supported owned runner
+- app/lib/review-outbox.ts — sendReview guided failure marker: queue-fail:${attemptId}
+- app/lib/teaching-state-outbox.ts — deliver/checkReceipt and record.requestId
+- app/lib/study-command-client.ts — createStudyCommandDelivery.deliver; existing incomplete 202 guard
+- app/lib/training-failure-outbox.ts — saveTrainingFailures operationId
+- app/lib/opening-evidence-journal.ts — flush opening checkpoint delivery: frozenDelivery.operationKey
+- app/lib/operation-status.ts — confirmOriginalOperationResponse proposed by C10
+
+WRITE RESERVATION:
+- app/lib/review-outbox.ts [existing]
+- app/lib/teaching-state-outbox.ts [existing]
+- app/lib/study-command-client.ts [existing]
+- app/lib/training-failure-outbox.ts [existing]
+- app/lib/opening-evidence-journal.ts [existing]
+- tests/unit/teaching-state-outbox-regressions.test.ts [existing]
+- tests/unit/study-command-client-capability.test.ts [existing]
+- tests/unit/training-failure-outbox-regressions.test.ts [existing]
+- tests/unit/opening-evidence-regressions.test.ts [existing]
+- tests/unit/review-outbox-regressions.test.ts [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Use strict confirmation for the guided marker with queue-fail:${logicalAttemptId}, teaching with record.requestId, Study command with record.requestId, failure outbox with the persisted operationId, and checkpoint with the already frozen operationKey.
+2. Remove the teaching/Study-command ad hoc initial-202 identity branches once the canonical entry enforces both absence and mismatch. Keep their domain acknowledgments, dependent-self-assessment ordering and authoritative generation checks.
+3. Preserve background headers, injected fetch/client selection, abort/deadline behavior and the same stored checkpoint body. S05 may refactor the journal only after this exact call-site patch is released.
+4. Add parameterized missing/foreign-202 cases to each affected owning suite. For the guided marker, prove marker failure never counts as a review receipt and the later genuine review still follows its existing advisory-marker policy.
+5. Report each caller and expected-key expression in the handoff; do not infer one generic key from record.attemptId.
+
+ACCEPTANCE:
+- All five journal families preserve original key/payload and emit no foreign status GET on an invalid initial acknowledgment.
+- Checkpoint replay uses the frozen hash key and original bytes even after later journal events exist.
+- Teaching confirmation still matches cardId/revision/ply/taughtAt; Study command confirmation still matches original attempt/domain receipt.
+- No invalid acknowledgment produces committed/discarded/confirmed progression except an independently valid original terminal receipt.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: npm run test:unit -- tests/unit/teaching-state-outbox-regressions.test.ts tests/unit/study-command-client-capability.test.ts tests/unit/training-failure-outbox-regressions.test.ts tests/unit/opening-evidence-regressions.test.ts tests/unit/review-outbox-regressions.test.ts
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: npm run typecheck:browser
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- owner: integration owner / P12 and P16; required: On the assembled candidate, one real saved review -> original operation receipt -> authoritative playable successor; inject wrong/missing initial 202 identity and lost acknowledgment, then recover only the original receipt. Reuse tests/browser/study-recovery.spec.ts; add a named fault case. Unit mocks do not establish this claim.; runner: make preflight; then make ui-file FILE=study-recovery.spec.ts under the existing owned disposable runner; no live checkout.
+
+MATERIAL RISKS:
+- Changing key suffixes or consuming one authority response after a generation change would sever recovery. The review marker is advisory and must retain that distinction.
+
+EXCLUSIONS:
+- No storage format changes
+- No S05 journal lifetime changes
+- No runtime registration refactor yet
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

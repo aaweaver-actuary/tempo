@@ -1,0 +1,65 @@
+TASK S06 — Use explicit supported transaction capabilities for eligibility and frozen-order locks
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: ST006.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/proof-storage-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: P02.source_released; B07.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- S06 releases the explicit capability semantics before S16; shared frozen_order.py edits are serialized, never a reverse task dependency.
+
+READ FIRST (repository-relative except reference/ paths):
+- database/tempo_storage/queue_refresh/eligibility.py — position_due_exclusion
+- database/tempo_storage/frozen_order.py — activation; activate_run; restore_queue_changes
+- database/tempo_storage/queue_refresh/application/seeding.py — due_cards
+- database/tempo_storage/queue_refresh/application/admission.py — has_missing_due_card
+- database/tempo_storage/postgres.py — PostgresConnection
+
+WRITE RESERVATION:
+- database/tempo_storage/queue_refresh/eligibility.py [existing]
+- database/tempo_storage/frozen_order.py [existing]
+- database/tempo_storage/postgres.py [existing]
+- backend/tests/test_position_queue_admission.py [existing]
+- backend/tests/test_frozen_opening_order.py [existing]
+- backend/tests/test_frozen_queue_refresh_regression.py [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Remove behavior choices based solely on isinstance(raw, psycopg.Connection) or isinstance(database, PostgresConnection). Use the existing borrowed transaction capability plus an explicit schema-read/lock capability or fail clearly.
+2. Equivalent supported wrappers must execute the same to_regclass ownership check, due exclusion and FOR SHARE/FOR UPDATE clauses. A replacement incapable of those semantics must refuse, never omit a guard.
+3. Keep missing-table behavior only for explicitly supported pre-migration reads; current schema65 cannot silently claim no position owner because the wrapper type differs.
+4. Add spy/fake conformance tests that inspect the requested schema/lock queries and a native two-connection contention case for activation/restoration; preserve original queue occupants and protected attempts.
+
+ACCEPTANCE:
+- Equivalent supported capabilities choose identical eligibility and locking semantics.
+- Unsupported adapter fails with an actionable error before writes; no fallback to unlocked/legacy eligibility.
+- Native lock/concurrency proof remains separate from the passing fake conformance tests.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: PYTEST_ADDOPTS='--deselect=backend/tests/test_position_queue_admission.py::test_native_refresh_admits_due_carrier_and_reuses_pending' make python-file FILE=backend/tests/test_position_queue_admission.py
+  kind: focused; availability: current; source_entrypoint: Makefile:python-file; scripts/resolve-python.mjs:resolvePython; docs/testing.md; scope: Pure cases only; exact named native cases intentionally deselected and still pending P14 native acceptance; native_pending_nodeids: backend/tests/test_position_queue_admission.py::test_native_refresh_admits_due_carrier_and_reuses_pending
+- Working directory .: make python-file FILE=backend/tests/test_frozen_opening_order.py
+  kind: focused; availability: current; source_entrypoint: Makefile:python-file; scripts/resolve-python.mjs:resolvePython; docs/testing.md
+- Working directory .: make python-file FILE=backend/tests/test_frozen_queue_refresh_regression.py
+  kind: focused; availability: current; source_entrypoint: Makefile:python-file; scripts/resolve-python.mjs:resolvePython; docs/testing.md
+
+COORDINATED ACCEPTANCE:
+- P14 exact admission native case plus bounded frozen-order native lock case selected through the existing owning native runner.
+
+MATERIAL RISKS:
+- A generic capability bool supplied by arbitrary callers can recreate the guard bypass; supported adapters must actually implement the declared semantics.
+
+EXCLUSIONS:
+- No unrelated feature, rewrite or retired producer restoration.
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

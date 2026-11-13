@@ -1,0 +1,71 @@
+TASK B15 — Type Learning submission, completion and final result contracts
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: BE008.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/backend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: B14.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- services/learning/application/src/tempo_learning_review/application.py — submit_review
+- services/learning/application/src/tempo_learning_review/models.py — ReviewResult,EvidenceCompletion
+- services/learning/application/src/tempo_learning_review/ports.py — ReviewSubmissionStore
+- backend/app/services/learning_review_adapter.py — completion/continuation methods
+
+WRITE RESERVATION:
+- services/learning/application/src/tempo_learning_review/models.py [existing]
+- services/learning/application/src/tempo_learning_review/ports.py [existing]
+- services/learning/application/src/tempo_learning_review/application.py [existing] — submission/result paths
+- backend/app/services/learning_review_adapter.py [existing]
+- services/learning/application/tests/test_application.py [existing]
+- backend/tests/test_opening_evidence_contracts.py [existing]
+- services/learning/application/tests/typing/review_store_contract.py [proposed or moved; verify the owning symbol before implementation] — proposed scoped typing fixture
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Replace ReviewResult-as-arbitrary-JSON with explicit current result/completion/continuation values and an explicit opaque original-receipt representation for replay.
+2. Type competing review, completion callbacks, receipt save and continuation facts; remove mixed booleans/implicit dictionaries where variants have materially different authority.
+3. Preserve exact original payload/result JSON for idempotency binding; only current newly created results use declared serialization. Unknown retained receipt fields are preserved at replay edge rather than silently dropped.
+4. Update backend adapter and independent memory submission store together. Test evidence mismatch, retired original attempt, pending continuation, same operation replay and different payload conflict.
+5. Run installed Learning tooling/library check only for relevant changed package inputs; final native review/assembled proof belongs to integration.
+6. After behavior is correct, run the scoped typing fixture with real production and independent fake bindings. Inspect errors and fix contract annotations/adapters; do not suppress errors to manufacture substitutability.
+
+ACCEPTANCE:
+- Port and policy have explicit final result and completion/continuation requirements; opaque historical bytes are isolated and named.
+- A missing or incomplete evidence result cannot authorize grade, receipt or prepared continuation.
+- Existing wire field presence/defaults and exact stored receipts are preserved; no discarded unknown historical fields.
+- Actual production binding and independent fake pass the scoped static typing check; deliberate incompatible implementation fails it. Checker/version/command/error output are retained. Runtime tests alone do not satisfy this criterion.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: python services/learning/application/run_suite.py application
+  verified_against_source: entrypoint/options inspected; any proposed new selection is stated in acceptance; availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: python services/learning/application/run_suite.py tooling
+  verified_against_source: entrypoint/options inspected; any proposed new selection is stated in acceptance; availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: make python-file FILE=backend/tests/test_opening_evidence_contracts.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: python -m mypy --strict --follow-imports=silent --no-incremental services/learning/application/src/tempo_learning_review/models.py services/learning/application/src/tempo_learning_review/ports.py backend/app/services/learning_review_adapter.py services/learning/application/tests/typing/review_store_contract.py
+  verified_against_source: PROPOSED acceptance command, not an existing configured repository runner; targets inspected and fixture proposed; pinned checker must be provisioned by owner first.; availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- Coordinate original grade/receipt/continuation native cases and single release saved-review journey; no full browser qualification for pure model declaration alone.
+
+MATERIAL RISKS:
+- Typed parsing must not rewrite historical result JSON, JSON ordering/digest bindings, or receipt identity.
+
+EXCLUSIONS:
+- No new service, database, event bus, generic repository, scheduler, or retired producer restoration.
+- No changes to historical migration checksums, persisted command names, accepted operation identities, or original receipt bytes.
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

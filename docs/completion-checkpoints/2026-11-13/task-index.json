@@ -1,0 +1,3123 @@
+{
+  "main_sha": "2f799293af812e829a55a3c2bb5aba8ea1598c96",
+  "task_count": 129,
+  "status_is_evidence_category_not_acceptance": true,
+  "tasks": [
+    {
+      "task_id": "B00",
+      "title": "Finish B04: exact bulk, direct-review and unused-port reachability map",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "BE001",
+        "BE013",
+        "BE015"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [],
+      "original_gate_class": "source"
+    },
+    {
+      "task_id": "B01",
+      "title": "Finish G00: calendar row dispositions and two finite compatibility decisions",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "BE003"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [],
+      "original_gate_class": "source"
+    },
+    {
+      "task_id": "B02",
+      "title": "Fix settings follow-up and backward-day queue coalescing",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "BE003"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B01",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": "native"
+    },
+    {
+      "task_id": "B03",
+      "title": "Resolve supported historical missing-day queue tasks exactly once",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "BE003"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B01",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B02",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": "native"
+    },
+    {
+      "task_id": "B04",
+      "title": "Remove unreachable bulk seeding and duplicate admission writers",
+      "status": "draft_known_if_evidence",
+      "finding_ids": [
+        "BE001"
+      ],
+      "draft_prs": [
+        {
+          "number": 1033,
+          "title": "Move tactic history proof to phased queue publisher",
+          "state": "open",
+          "draft": true,
+          "merged": false,
+          "head": "packet/b04-seed-tactics",
+          "head_sha": "a3848b3d6f5469a8fea7a26c4c6e03acf03eb962",
+          "base": "main",
+          "base_sha": "637c4a21036645e552e47e895ee16c3277833159",
+          "mergeable": true,
+          "updated_at": "2026-11-13T05:28:40Z",
+          "url": "https://github.com/aaweaver-actuary/tempo/pull/1033",
+          "head_object_available": true,
+          "entire_head_in_current_main": false,
+          "earliest_covering_main_merge": null,
+          "included_in_other_open_prs": [],
+          "recommended_action": "keep_open_pending_scope_and_acceptance",
+          "task": "B04",
+          "summary": "Phased-publisher proof prepared; the legacy callable seed/materialize writers and wrappers remain.",
+          "reported_evidence": [
+            "At c365554223fb8f991deba3775c7887e5cf40fd05: three focused queue application cases and four native tactic-history cases.",
+            "At current a3848b3d6f5469a8fea7a26c4c6e03acf03eb962: eight native admission cases, four legacy boundary and four active phased owner cases, with owned DSN-fenced fixture cleanup."
+          ],
+          "remaining": [
+            "Delivery owner must explicitly dispose of OPENING_CAPACITY_FRONTIER_EXPANSION and capacity_route; the Nov10 SPEC does not explicitly retire this flag.",
+            "Legacy capacity script calls missing _prepare_prioritized_openings and its unreviewed-parent semantics differ from the current reviewed-parent route; existing tests do not prove equivalence.",
+            "Migrate the position Study native fixture off legacy seed SQL while retaining required due_cards, maximum_position and append_due_card capabilities.",
+            "Port/compare applicable quota, shared membership, source invalidation, contention, rollback and checkpoint assertions before coherent deletion.",
+            "Root owns the atomic main.py wrapper cutover; independent deletion review and assembled acceptance remain pending."
+          ],
+          "metadata_evidence": "evidence/prs/1033.json",
+          "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun",
+          "timeline": {
+            "count": 1,
+            "items": [
+              {
+                "url": "https://github.com/aaweaver-actuary/tempo/pull/1033#issuecomment-6841849394",
+                "login": "sourcery-ai[bot]",
+                "created_at": "2026-11-13T02:17:51Z",
+                "review": null,
+                "kind": "automated_guide"
+              }
+            ]
+          },
+          "timeline_evidence": "evidence/prs/1033-comments.json"
+        }
+      ],
+      "original_start_requires": [
+        {
+          "task_id": "B00",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": "native"
+    },
+    {
+      "task_id": "B05",
+      "title": "Migrate fixture ordering to active publication and delete bulk presentation writes",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "BE001"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B00",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B04",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": "native"
+    },
+    {
+      "task_id": "B06",
+      "title": "Retire or explicitly constrain direct review compatibility entrypoints",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "BE015"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B00",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": "caller"
+    },
+    {
+      "task_id": "B07",
+      "title": "Move position admission owner reads and admission proof SQL to storage",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "BE004"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "P02",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": "native"
+    },
+    {
+      "task_id": "B08",
+      "title": "Move checkpoint writer capability check and shared owner lock into storage",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "BE004"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B07",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": "native"
+    },
+    {
+      "task_id": "B09",
+      "title": "Finish private queue, bounded-read and source-token capability cleanup",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "BE005"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B04",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B05",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B07",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B34",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": "caller"
+    },
+    {
+      "task_id": "B10",
+      "title": "Encapsulate Redis admission keys and lease policy in current storage owner",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "BE005"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [],
+      "original_gate_class": "native"
+    },
+    {
+      "task_id": "B11",
+      "title": "Encapsulate wake ownership keys without changing broker protocol",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "BE005"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [],
+      "original_gate_class": "caller"
+    },
+    {
+      "task_id": "B12",
+      "title": "Type next-exercise facts, head identity and issuance variants",
+      "status": "draft_known_if_evidence",
+      "finding_ids": [
+        "BE002"
+      ],
+      "draft_prs": [
+        {
+          "number": 1055,
+          "title": "Type Study next-exercise core facts",
+          "state": "open",
+          "draft": true,
+          "merged": false,
+          "head": "codex/completion-b12",
+          "head_sha": "4639c3888f37344d9636728eb94b10788d67e1e0",
+          "base": "codex/b12-p14-base",
+          "base_sha": "231b85ce53c4dd86137f288cee890382ed35a459",
+          "mergeable": true,
+          "updated_at": "2026-11-13T05:04:53Z",
+          "url": "https://github.com/aaweaver-actuary/tempo/pull/1055",
+          "head_object_available": true,
+          "entire_head_in_current_main": false,
+          "earliest_covering_main_merge": null,
+          "included_in_other_open_prs": [],
+          "recommended_action": "keep_open_pending_scope_and_acceptance",
+          "task": "B12",
+          "summary": "Typed next-exercise core facts and named prepared queue modes are a partial source handoff.",
+          "reported_evidence": [
+            "108 Python cases; strict mypy 1.15.0 for three core/fake files and incompatible callback negative control."
+          ],
+          "remaining": [
+            "Production composition remains unannotated; B13 owns conversion and actual-binding static proof.",
+            "PreparedQueueHead mode/proposal relation is checked at runtime, not expressed as a static discriminated union.",
+            "Six stale import failures referencing retired tempo_storage.study.game_feedback were recorded in additional timing coverage.",
+            "Full B12 acceptance requires B13, independent review and current integrated proof; historical P14 base is not current main."
+          ],
+          "metadata_evidence": "evidence/prs/1055.json",
+          "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun",
+          "timeline": {
+            "count": 1,
+            "items": [
+              {
+                "url": "https://github.com/aaweaver-actuary/tempo/pull/1055#issuecomment-6844672021",
+                "login": "sourcery-ai[bot]",
+                "created_at": "2026-11-13T05:04:53Z",
+                "review": null,
+                "kind": "automated_guide"
+              }
+            ]
+          },
+          "timeline_evidence": "evidence/prs/1055-comments.json"
+        }
+      ],
+      "original_start_requires": [],
+      "original_gate_class": "pure"
+    },
+    {
+      "task_id": "B13",
+      "title": "Use typed next-exercise capabilities and remove HTTP closure side channel",
+      "status": "draft_known_if_evidence",
+      "finding_ids": [
+        "BE002"
+      ],
+      "draft_prs": [
+        {
+          "number": 1121,
+          "title": "Extract shared position carrier policy",
+          "state": "open",
+          "draft": true,
+          "merged": false,
+          "head": "codex/position-carrier-policy",
+          "head_sha": "fd8b7cb0a3b8ab5723414d408e9a9f25a284d139",
+          "base": "main",
+          "base_sha": "e77190e0db6b689bb3198c55a00c9d55614afb69",
+          "mergeable": true,
+          "updated_at": "2026-11-13T09:25:28Z",
+          "url": "https://github.com/aaweaver-actuary/tempo/pull/1121",
+          "head_object_available": true,
+          "entire_head_in_current_main": false,
+          "earliest_covering_main_merge": null,
+          "included_in_other_open_prs": [
+            1123
+          ],
+          "recommended_action": "keep_open_pending_scope_and_acceptance",
+          "task": "B13/T02 carrier prerequisite",
+          "summary": "Shared pure position-carrier policy extracted with legacy export alias.",
+          "reported_evidence": [
+            "26 focused cases with two skips; unchanged selector AST and compatibility alias reported."
+          ],
+          "remaining": [
+            "Two timing fixture failures reproduced on unchanged base and were excluded.",
+            "Native position introduction, issued-head/replay and assembled proof have not run.",
+            "Exact head is contained in #1123 but not current main; keep open until accepted aggregate integration."
+          ],
+          "metadata_evidence": "evidence/prs/1121.json",
+          "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun",
+          "timeline": {
+            "count": 1,
+            "items": [
+              {
+                "url": "https://github.com/aaweaver-actuary/tempo/pull/1121#issuecomment-6849141731",
+                "login": "sourcery-ai[bot]",
+                "created_at": "2026-11-13T09:25:28Z",
+                "review": null,
+                "kind": "automated_guide"
+              }
+            ]
+          },
+          "timeline_evidence": "evidence/prs/1121-comments.json"
+        },
+        {
+          "number": 1123,
+          "title": "Integrate extracted carrier and map position admission",
+          "state": "open",
+          "draft": true,
+          "merged": false,
+          "head": "codex/completion-t02-carrier-integration",
+          "head_sha": "7794188f6c851b0e768cbd6c3d230fd78964e5c7",
+          "base": "main",
+          "base_sha": "05e18cf55d9a1fbaa8a984a71f268e2b63f4851a",
+          "mergeable": false,
+          "updated_at": "2026-11-13T09:52:18Z",
+          "url": "https://github.com/aaweaver-actuary/tempo/pull/1123",
+          "head_object_available": true,
+          "entire_head_in_current_main": false,
+          "earliest_covering_main_merge": null,
+          "included_in_other_open_prs": [],
+          "recommended_action": "keep_open_pending_scope_and_acceptance",
+          "task": "T02/B13 carrier integration",
+          "summary": "Carrier extraction, position admission mapping and bounded namespace guard integrated on a source candidate.",
+          "reported_evidence": [
+            "Latest 7794188f6: registry checker/full listing, 27 scoped controls and seven carrier/timing cases reported.",
+            "Includes main through 05e18cf55d9a1fbaa8a984a71f268e2b63f4851a and the copied-checker source-removed repair."
+          ],
+          "remaining": [
+            "Current direct metadata reports mergeable:false; reconcile with main 2f799293af812e829a55a3c2bb5aba8ea1598c96.",
+            "Six namespace owners remain unresolved; this bounded map is not a whole-repository census.",
+            "Independent namespace/integration review remains pending even though initial carrier/map source review found no issue.",
+            "Native position/replay and assembled saved-review-to-playable-next gates remain unrun.",
+            "Contains #1121; qualify combined source before either is closed as integrated."
+          ],
+          "metadata_evidence": "evidence/prs/1123.json",
+          "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun",
+          "timeline": {
+            "count": 1,
+            "items": [
+              {
+                "url": "https://github.com/aaweaver-actuary/tempo/pull/1123#issuecomment-6849283340",
+                "login": "sourcery-ai[bot]",
+                "created_at": "2026-11-13T09:32:51Z",
+                "review": null,
+                "kind": "automated_guide"
+              }
+            ]
+          },
+          "timeline_evidence": "evidence/prs/1123-comments.json"
+        }
+      ],
+      "original_start_requires": [
+        {
+          "task_id": "B12",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B05",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": "caller"
+    },
+    {
+      "task_id": "B14",
+      "title": "Type Learning schedule and reconciliation port values",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "BE008"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B06",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": "pure"
+    },
+    {
+      "task_id": "B15",
+      "title": "Type Learning submission, completion and final result contracts",
+      "status": "draft_known_if_evidence",
+      "finding_ids": [
+        "BE008"
+      ],
+      "draft_prs": [
+        {
+          "number": 1071,
+          "title": "Type Learning submission results and preserve receipt replay",
+          "state": "open",
+          "draft": true,
+          "merged": false,
+          "head": "codex/completion-b15",
+          "head_sha": "80f939d2bf79a54e6824f237b6a80da71e9903f6",
+          "base": "main",
+          "base_sha": "a973688d3215281a229cfa513af16e7d8eed0738",
+          "mergeable": true,
+          "updated_at": "2026-11-13T10:25:12Z",
+          "url": "https://github.com/aaweaver-actuary/tempo/pull/1071",
+          "head_object_available": true,
+          "entire_head_in_current_main": false,
+          "earliest_covering_main_merge": null,
+          "included_in_other_open_prs": [],
+          "recommended_action": "keep_open_pending_scope_and_acceptance",
+          "task": "B15",
+          "summary": "Learning submission/receipt types progressively hardened; latest remote gateway annotation slice remains a draft.",
+          "reported_evidence": [
+            "Latest 80f939d2b: 45 focused gateway/wrapper/replay cases reported; independent source review reported no actionable issue.",
+            "Earlier slices report identity/fence/completion, immutable receipt, clock and reconciliation-focused successes while preserving opaque original receipt replay."
+          ],
+          "remaining": [
+            "Strict adapter mypy still reports four errors at latest remote 80f939d2bf79a54e6824f237b6a80da71e9903f6; static acceptance is not met.",
+            "Actual PostgreSQL JSONB/clock, transaction ordering, race, rollback, lost-ack replay, hold behavior and assembled proof remain pending.",
+            "Production owner/producer strict qualification is not established merely by scoped core/fake success.",
+            "The attached run transcript ends while moving the missing-settings prerequisite-retry boundary, without a final commit/test receipt; inspect original Mac worktrees and ledger for unpushed/dirty state before recreating or overwriting.",
+            "Original branch body notes local reviewed B14/combined parent 869b50537a711c7aaca6608501118d0717c939ed not yet on its original PR base. Reconcile exact current branch ancestry before integration."
+          ],
+          "metadata_evidence": "evidence/prs/1071.json",
+          "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun",
+          "timeline": {
+            "count": 0,
+            "items": []
+          },
+          "timeline_evidence": "evidence/prs/1071-comments.json"
+        }
+      ],
+      "original_start_requires": [
+        {
+          "task_id": "B14",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": "caller"
+    },
+    {
+      "task_id": "B16",
+      "title": "Make review failures transport-neutral and preserve durable wire errors",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "BE007"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B15",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B08",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": "caller"
+    },
+    {
+      "task_id": "B17",
+      "title": "Remove HTTP errors from remaining retained authoring and Study policies",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "BE007"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B16",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B27",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B29",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": "caller"
+    },
+    {
+      "task_id": "B18",
+      "title": "Export explicit core Study and Tactics command descriptors",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "BE009"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B02",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B03",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B16",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B22",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B31",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B09",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": "caller"
+    },
+    {
+      "task_id": "B19",
+      "title": "Export explicit authoring mutation command descriptors",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "BE009"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B24",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B25",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B27",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B30",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B17",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": "caller"
+    },
+    {
+      "task_id": "B20",
+      "title": "Export remaining retained control command descriptors",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "BE009"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B02",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B23",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": "caller"
+    },
+    {
+      "task_id": "B21",
+      "title": "Compose explicit supported command sets and isolate essential startup",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "BE009"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B18",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B19",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B20",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B31",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "P06",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": "assembled"
+    },
+    {
+      "task_id": "B22",
+      "title": "Move standalone tactic schedule and queue transitions behind Study capability",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "BE010"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B03",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": "native"
+    },
+    {
+      "task_id": "B23",
+      "title": "Give Study the transaction-bound card retirement and evidence purge capability",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "BE011"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "P03",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": "native"
+    },
+    {
+      "task_id": "B24",
+      "title": "Centralize authored reset/preserve learning transitions with explicit columns",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "BE012"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B33",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": "native"
+    },
+    {
+      "task_id": "B25",
+      "title": "Move prefix split learning state and queue/history transfer to Study",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "BE012"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B24",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "P06",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": "native"
+    },
+    {
+      "task_id": "B26",
+      "title": "Remove fictitious position ports and bind accurate current capability surfaces",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "BE013"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B00",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B07",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B08",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "S01",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "S02",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B12",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B14",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": "caller"
+    },
+    {
+      "task_id": "B27",
+      "title": "Reject retired Coverage inputs before authoring and remove their storage branch",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "BE018"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [],
+      "original_gate_class": "caller"
+    },
+    {
+      "task_id": "B28",
+      "title": "Extract one pure legal source interpretation kernel from current position index",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "BE019"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [],
+      "original_gate_class": "pure"
+    },
+    {
+      "task_id": "B29",
+      "title": "Use source kernel for conflict listing and strict import/change validation",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "BE019"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B28",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": "pure"
+    },
+    {
+      "task_id": "B30",
+      "title": "Use source kernel for integrity scans and paste preview response comparison",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "BE019"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B28",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B29",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B27",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": "pure"
+    },
+    {
+      "task_id": "B31",
+      "title": "Restore exactly four frozen ordinary exercise runtime endpoints",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "FE008"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "C20",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "P06",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": "native"
+    },
+    {
+      "task_id": "B32",
+      "title": "Retire executable tests exclusive to removed authoring/producer systems",
+      "status": "merged_slice",
+      "finding_ids": [
+        "BE021"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [],
+      "original_gate_class": "source"
+    },
+    {
+      "task_id": "B33",
+      "title": "Rebind retained review and scheduling regressions to current owners",
+      "status": "merged_slice",
+      "finding_ids": [
+        "BE021"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [],
+      "original_gate_class": "caller"
+    },
+    {
+      "task_id": "B34",
+      "title": "Repair retained queue timing/read probes and mixed route tests",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "BE021"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "P02",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": "caller"
+    },
+    {
+      "task_id": "B35",
+      "title": "Finish backend recovery and diagnostic fixture disposition",
+      "status": "merged_slice",
+      "finding_ids": [
+        "BE021"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [],
+      "original_gate_class": "caller"
+    },
+    {
+      "task_id": "B36",
+      "title": "Reconcile every BE021 reference and final backend finding coverage",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "BE021"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "P01",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "P02",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "P03",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B32",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B33",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B34",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B35",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B31",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B21",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": "source"
+    },
+    {
+      "task_id": "C10",
+      "title": "Fence initial 202 confirmation with the original ID; fix review and settings first",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "FE001"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "C11",
+      "title": "Bind the remaining Study journal confirmations to their frozen delivery IDs",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "FE001"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "C10",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "C12",
+      "title": "Bind repertoire-edit confirmations and retained annotation save to original keys",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "FE001"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "C10",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "C13",
+      "title": "Bind deletion and repertoire settings acknowledgments; validate rename completion",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "FE001"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "C10",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "C14",
+      "title": "Finish 202 adoption for phone and tactics; remove permissive confirmation entry",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "FE001"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "C11",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "C12",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "C13",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "C20",
+      "title": "Freeze the retained-exercise HTTP and recovery contract before either side changes",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "FE008"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "C21",
+      "title": "Wire supported frozen exercises and preserve held retained work without queue-wide failure",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "FE008"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "C20",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B31",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "C14",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "C22",
+      "title": "Choose and document bounded grader-v1 compatibility; repair the pure Python test owner",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "FE009"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "C20",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "C23",
+      "title": "Align browser grading and validation to current Python v1 using shared boundary vectors",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "FE009"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "C22",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "C24",
+      "title": "Record new offline grading provenance and reconcile retained v1 answers without rewriting them",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "FE009",
+        "FE008"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "C23",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "C21",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "FE05",
+      "title": "Hold foreign authority cutover when an inspected retained store is unknown and nonempty",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "FE005"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "FE06",
+      "title": "Move physical authority registry layout and database naming into the storage adapter",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "FE005"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "FE05",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "FE08",
+      "title": "Publish pure validation facts while retaining the current browser collector facade",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "FE007"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "FE09",
+      "title": "Adopt pure validation in both domain adapters and computation contracts",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "FE007"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "FE08",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "FE10",
+      "title": "Inject validation collection at worker and browser composition boundaries",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "FE007"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "FE09",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "C14",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "FE20",
+      "title": "Publish the small board adapter capabilities needed by current Study policy",
+      "status": "draft_known_if_evidence",
+      "finding_ids": [
+        "FE002"
+      ],
+      "draft_prs": [
+        {
+          "number": 1025,
+          "title": "Expose detached board input diagnostics",
+          "state": "open",
+          "draft": true,
+          "merged": false,
+          "head": "packet/fe20-board-capabilities",
+          "head_sha": "14a28f2879ca846310145549ccb27978feec8ad2",
+          "base": "main",
+          "base_sha": "3bd083216e2ec7f49323b81dae4899a6129da862",
+          "mergeable": false,
+          "updated_at": "2026-11-13T01:33:43Z",
+          "url": "https://github.com/aaweaver-actuary/tempo/pull/1025",
+          "head_object_available": true,
+          "entire_head_in_current_main": false,
+          "earliest_covering_main_merge": null,
+          "included_in_other_open_prs": [
+            1026
+          ],
+          "recommended_action": "keep_open_pending_scope_and_acceptance",
+          "task": "FE20",
+          "summary": "Detached Board input and diagnostics are implemented on a source candidate.",
+          "reported_evidence": [
+            "Package build/typecheck and 53 tests; browser typecheck and 58 application tests."
+          ],
+          "remaining": [
+            "Standalone package qualifier offline install hit ENOTCACHED for whatwg-url 17.3.0.",
+            "Real-browser behavior and consuming Study adoption remain separate gates.",
+            "Head is included in #1026, which has not merged."
+          ],
+          "metadata_evidence": "evidence/prs/1025.json",
+          "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun"
+        }
+      ],
+      "original_start_requires": [],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "FE21",
+      "title": "Render current Study and dialogs through the shared board package",
+      "status": "draft_known_if_evidence",
+      "finding_ids": [
+        "FE002"
+      ],
+      "draft_prs": [
+        {
+          "number": 1026,
+          "title": "Render Study boards through shared package",
+          "state": "open",
+          "draft": true,
+          "merged": false,
+          "head": "packet/fe21-shared-board",
+          "head_sha": "48769570a41011d5d01b47cf5e1c6e74c7aeec40",
+          "base": "packet/fe20-board-capabilities",
+          "base_sha": "14a28f2879ca846310145549ccb27978feec8ad2",
+          "mergeable": true,
+          "updated_at": "2026-11-13T01:51:01Z",
+          "url": "https://github.com/aaweaver-actuary/tempo/pull/1026",
+          "head_object_available": true,
+          "entire_head_in_current_main": false,
+          "earliest_covering_main_merge": null,
+          "included_in_other_open_prs": [],
+          "recommended_action": "keep_open_pending_scope_and_acceptance",
+          "task": "FE21",
+          "summary": "Study board consumes the public Board contract, including explicit drawing while locked.",
+          "reported_evidence": [
+            "Seven application suites: 71 passing; package: 53 passing; Game Review composition: 25 passing; browser typecheck."
+          ],
+          "remaining": [
+            "Six-case real-browser inventory for held drag, drawing, responsive geometry and owner switching has not executed.",
+            "Independent review and assembled acceptance remain pending.",
+            "Contains #1025; qualify the combined head before closing either as integrated."
+          ],
+          "metadata_evidence": "evidence/prs/1026.json",
+          "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun",
+          "timeline": {
+            "count": 1,
+            "items": [
+              {
+                "url": "https://github.com/aaweaver-actuary/tempo/pull/1026#issuecomment-6841342025",
+                "login": "sourcery-ai[bot]",
+                "created_at": "2026-11-13T01:45:19Z",
+                "review": null,
+                "kind": "automated_guide"
+              }
+            ]
+          },
+          "timeline_evidence": "evidence/prs/1026-comments.json"
+        }
+      ],
+      "original_start_requires": [
+        {
+          "task_id": "FE20",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "FE22",
+      "title": "Construct one typed Study session runtime with a complete adapter table",
+      "status": "draft_known_if_evidence",
+      "finding_ids": [
+        "FE006"
+      ],
+      "draft_prs": [
+        {
+          "number": 1035,
+          "title": "Add explicit Study runtime factory",
+          "state": "open",
+          "draft": true,
+          "merged": false,
+          "head": "packet/fe22-study-runtime",
+          "head_sha": "b5bbb958ea30faa0d1dcc3539841dfeecd9958aa",
+          "base": "packet/c21-frozen-recovery",
+          "base_sha": "2f2c10ef189645dd329898a57edf0f78b7ee2c0a",
+          "mergeable": true,
+          "updated_at": "2026-11-13T02:37:58Z",
+          "url": "https://github.com/aaweaver-actuary/tempo/pull/1035",
+          "head_object_available": true,
+          "entire_head_in_current_main": false,
+          "earliest_covering_main_merge": null,
+          "included_in_other_open_prs": [
+            1052,
+            1048,
+            1049
+          ],
+          "recommended_action": "keep_open_pending_scope_and_acceptance",
+          "task": "FE22",
+          "summary": "Explicit inert Study runtime factory implemented; factory/adapters remain a source candidate.",
+          "reported_evidence": [
+            "Four construction cases and browser typecheck at reported intermediate head 4ad2e19f."
+          ],
+          "remaining": [
+            "Independent review and assembled adoption proof remain pending.",
+            "Contained by #1048, #1049 and #1052; do not close as integrated before an accepted aggregate reaches main.",
+            "Owner-current/invalidation fences do not undo an already external operation or committed IndexedDB transaction."
+          ],
+          "metadata_evidence": "evidence/prs/1035.json",
+          "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun"
+        }
+      ],
+      "original_start_requires": [
+        {
+          "task_id": "C21",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "FE23",
+      "title": "Separate delivery adapters from outbox/session composition without changing settlement",
+      "status": "draft_known_if_evidence",
+      "finding_ids": [
+        "FE006"
+      ],
+      "draft_prs": [
+        {
+          "number": 1048,
+          "title": "Extract Study delivery adapters from session facades",
+          "state": "open",
+          "draft": true,
+          "merged": false,
+          "head": "codex/completion-fe23",
+          "head_sha": "ce1b3b55a7c6ad0a92932de2c33331b6a2c93bc4",
+          "base": "main",
+          "base_sha": "637c4a21036645e552e47e895ee16c3277833159",
+          "mergeable": true,
+          "updated_at": "2026-11-13T03:28:28Z",
+          "url": "https://github.com/aaweaver-actuary/tempo/pull/1048",
+          "head_object_available": true,
+          "entire_head_in_current_main": false,
+          "earliest_covering_main_merge": null,
+          "included_in_other_open_prs": [
+            1052,
+            1049
+          ],
+          "recommended_action": "keep_open_pending_scope_and_acceptance",
+          "task": "FE23",
+          "summary": "Session delivery adapter factories extracted; facades continue to register them.",
+          "reported_evidence": [
+            "172 focused cases and browser typecheck."
+          ],
+          "remaining": [
+            "Independent review and assembled owner behavior remain pending.",
+            "Exact head is included in #1049 and #1052; neither is integrated in main."
+          ],
+          "metadata_evidence": "evidence/prs/1048.json",
+          "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun"
+        }
+      ],
+      "original_start_requires": [
+        {
+          "task_id": "FE22",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "C14",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "C24",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "FE24",
+      "title": "Assemble explicit default Study runtime and remove registration side effects",
+      "status": "draft_known_if_evidence",
+      "finding_ids": [
+        "FE006"
+      ],
+      "draft_prs": [
+        {
+          "number": 1049,
+          "title": "Compose default Study runtime explicitly",
+          "state": "open",
+          "draft": true,
+          "merged": false,
+          "head": "codex/completion-fe24",
+          "head_sha": "a05f3df3fab9d069dab35e9f6fdb0dd9616a9096",
+          "base": "main",
+          "base_sha": "637c4a21036645e552e47e895ee16c3277833159",
+          "mergeable": true,
+          "updated_at": "2026-11-13T03:33:31Z",
+          "url": "https://github.com/aaweaver-actuary/tempo/pull/1049",
+          "head_object_available": true,
+          "entire_head_in_current_main": false,
+          "earliest_covering_main_merge": null,
+          "included_in_other_open_prs": [
+            1052
+          ],
+          "recommended_action": "keep_open_pending_scope_and_acceptance",
+          "task": "FE24",
+          "summary": "Default runtime explicitly composes a complete adapter table and reserves recovery before async retained-kind validation.",
+          "reported_evidence": [
+            "Six suites: 267 passing; browser typecheck."
+          ],
+          "remaining": [
+            "Independent review and assembled acceptance remain pending.",
+            "Exact head is included in #1052, which remains unmerged."
+          ],
+          "metadata_evidence": "evidence/prs/1049.json",
+          "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun"
+        }
+      ],
+      "original_start_requires": [
+        {
+          "task_id": "FE23",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "FE06",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "FE25",
+      "title": "Publish semantic review ports and map the existing browser owners behind them",
+      "status": "draft_known_if_evidence",
+      "finding_ids": [
+        "FE003"
+      ],
+      "draft_prs": [
+        {
+          "number": 1052,
+          "title": "Publish semantic Study review service ports",
+          "state": "open",
+          "draft": true,
+          "merged": false,
+          "head": "codex/completion-fe25",
+          "head_sha": "2bc7b688748ad5995d745fd51efccfdd2221a3b2",
+          "base": "main",
+          "base_sha": "5a6f5721aa62551779010cf14e224de188eabd9b",
+          "mergeable": true,
+          "updated_at": "2026-11-13T09:03:17Z",
+          "url": "https://github.com/aaweaver-actuary/tempo/pull/1052",
+          "head_object_available": true,
+          "entire_head_in_current_main": false,
+          "earliest_covering_main_merge": null,
+          "included_in_other_open_prs": [],
+          "recommended_action": "keep_open_pending_scope_and_acceptance",
+          "task": "FE25",
+          "summary": "Semantic Study review, authority, progression and diagnostics ports are implemented; controller adoption is a later task.",
+          "reported_evidence": [
+            "Earlier 9fb47a70: 315 passing, three failures reproduced on base and same 18 type diagnostics as base.",
+            "ef1a4abc: seven Chromium IndexedDB/Web Locks cases with controlled transport.",
+            "6b7ccf670b9b68fdca3debdfed7610b78badccc6: two two-tab phone/rebind orderings and unmocked no-Web-Locks original-receipt-to-playable-next journey.",
+            "Parent 48fdf431: 301 unit cases, typecheck, component and inventory checks.",
+            "Earlier integrated b591f397: P14 eight queue, seven native, eleven Chromium cases."
+          ],
+          "remaining": [
+            "Current remote head 2bc7b688748ad5995d745fd51efccfdd2221a3b2 includes two new real-browser authority-switch cases that compile/discover but have not run.",
+            "Separate FE25 browser selection at b591f397 failed during image build from host disk exhaustion; zero selected cases ran.",
+            "Earlier receipts do not qualify current integrated head. Restore host capacity, reconcile with current main and qualify the resulting exact head.",
+            "Historical clients do not implement the new Web Lock protocol; no historical-client compatibility proof or independent external build/cache provenance is recorded.",
+            "FE26 controller adoption remains distinct. Hosted CI and installation are not claimed."
+          ],
+          "safety_invariants": [
+            "Fresh absent-first-append recovery requires same authority, page-held attempt Web Lock, observed abort, and no exposure to online/phone aggregate or evidence send.",
+            "Existing exposed, legacy, position, foreign or ambiguous captures remain held.",
+            "Any newer ambiguous write invalidates an earlier abort proof."
+          ],
+          "metadata_evidence": "evidence/prs/1052.json",
+          "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun",
+          "timeline": {
+            "count": 0,
+            "items": []
+          },
+          "timeline_evidence": "evidence/prs/1052-comments.json"
+        }
+      ],
+      "original_start_requires": [
+        {
+          "task_id": "FE24",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "FE26",
+      "title": "Run the review controller through injected ports and preserve presentation fences",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "FE003"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "FE25",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "FE27",
+      "title": "Extract the bounded queue HTTP protocol into an independently testable capability",
+      "status": "draft_known_if_evidence",
+      "finding_ids": [
+        "FE004"
+      ],
+      "draft_prs": [
+        {
+          "number": 1037,
+          "title": "Extract bounded Study queue transport",
+          "state": "open",
+          "draft": true,
+          "merged": false,
+          "head": "packet/fe27-queue-transport",
+          "head_sha": "5d085521e5ddc91aab70f6378c59a1c909d5d11d",
+          "base": "codex/completion-c14-b31-integration",
+          "base_sha": "b14b8b0a759ff06511083cabe497f16ae8ab0e5e",
+          "mergeable": true,
+          "updated_at": "2026-11-13T02:48:02Z",
+          "url": "https://github.com/aaweaver-actuary/tempo/pull/1037",
+          "head_object_available": true,
+          "entire_head_in_current_main": false,
+          "earliest_covering_main_merge": null,
+          "included_in_other_open_prs": [],
+          "recommended_action": "keep_open_pending_scope_and_acceptance",
+          "task": "FE27",
+          "summary": "Bounded queue transport extracts fetch/base URL/timer dependencies and preserves issuance ownership.",
+          "reported_evidence": [
+            "93 focused cases and browser typecheck at 67fd0e7e."
+          ],
+          "remaining": [
+            "Independent review and assembled queue issuance/abort/retry/hold behavior remain pending.",
+            "Reconcile its historical stacked base with current main before integration."
+          ],
+          "metadata_evidence": "evidence/prs/1037.json",
+          "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun"
+        }
+      ],
+      "original_start_requires": [
+        {
+          "task_id": "C14",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "FE28",
+      "title": "Move queue acquisition/reconciliation out of the view into one port-based application owner",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "FE004"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "FE27",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "FE25",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "C21",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "FE29",
+      "title": "Move durable attempt completion and failure preparation out of Home",
+      "status": "merged_slice",
+      "finding_ids": [
+        "FE004",
+        "FE003"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "FE26",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "FE28",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "FE30",
+      "title": "Classify the independent serving entry and release the supported-shell decision",
+      "status": "draft_known_if_evidence",
+      "finding_ids": [
+        "FE008",
+        "FE010",
+        "FE012"
+      ],
+      "draft_prs": [
+        {
+          "number": 1041,
+          "title": "Classify independent Study serving and recovery",
+          "state": "open",
+          "draft": true,
+          "merged": false,
+          "head": "codex/completion-fe30",
+          "head_sha": "98cdcc91cf2d28366e73ba32113101563a1d2a44",
+          "base": "packet/c21-frozen-recovery",
+          "base_sha": "2f2c10ef189645dd329898a57edf0f78b7ee2c0a",
+          "mergeable": true,
+          "updated_at": "2026-11-13T02:51:02Z",
+          "url": "https://github.com/aaweaver-actuary/tempo/pull/1041",
+          "head_object_available": true,
+          "entire_head_in_current_main": false,
+          "earliest_covering_main_merge": null,
+          "included_in_other_open_prs": [],
+          "recommended_action": "keep_open_pending_scope_and_acceptance",
+          "task": "FE30",
+          "summary": "Documentation classifies monolith serving and recovery-only obligations for independently built legacy Study.",
+          "reported_evidence": [
+            "Documentation/source classification only; no product service change or installed proof."
+          ],
+          "remaining": [
+            "Independent source review remains pending.",
+            "FE31 tactic, FE32 burial and FE36 retirement successors remain.",
+            "Prepared-storage cached handle across same-lifetime authority changes is an acknowledged unproven risk; reload is a mitigation, not acceptance."
+          ],
+          "metadata_evidence": "evidence/prs/1041.json",
+          "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun"
+        }
+      ],
+      "original_start_requires": [
+        {
+          "task_id": "FE06",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "C21",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "FE31",
+      "title": "Give current Tactics one retained command lifecycle before transport",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "FE010"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "FE24",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "FE30",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "C14",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "FE32",
+      "title": "Use one burial lifecycle and a bounded reader for existing local markers",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "FE010"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "FE24",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "FE30",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "C14",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "FE33",
+      "title": "Document provisional offline repeats and isolate demo queue policy with conformance",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "FE012",
+        "FE004"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "FE30",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "C24",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "FE29",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "FE34",
+      "title": "Record intentional FSRS-shaped scheduling API as the current abstraction",
+      "status": "accepted_no_change_candidate",
+      "finding_ids": [
+        "FE013"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "FE35",
+      "title": "Restrict queue/attempt writes to named invariant-preserving actions",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "FE003",
+        "FE004"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "FE26",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "FE28",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "FE29",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "FE33",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "FE36",
+      "title": "Apply the independent entry retirement after current command consumers adopt their owner",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "FE008",
+        "FE010",
+        "FE012"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "FE30",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "FE31",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "FE32",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "P01",
+      "title": "Make the three rebound E01 SQL tests reject wrong queries and missing locks",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "ST012",
+        "ST013",
+        "BE021"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "P02",
+      "title": "Dispose all five stale position-admission tests against current owners",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "ST012",
+        "BE021",
+        "ST006"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "P03",
+      "title": "Repair the four current card-deletion borrowed-connection test failures",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "ST012",
+        "BE021"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "P04",
+      "title": "Replace the obsolete real-game queue case with paused-history preservation",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "ST012",
+        "ST013",
+        "BE021"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "P05",
+      "title": "Rebind the retired opening-reconciliation queue case to retained review recovery",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "ST012",
+        "ST013",
+        "BE021"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "P04",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "C11",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B00",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "P06",
+      "title": "Restore the three retained manual prefix-split HTTP routes",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "ST012",
+        "ST013"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "P07",
+      "title": "Restore truthful HTTP coverage and acceptance scope in every shared runner mode",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "ST012",
+        "ST013",
+        "RT004"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "P04",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "P05",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "P06",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "P08",
+      "title": "Give the historical 49→48→49 rollback case a finite, explicit supported disposition",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "ST012",
+        "ST013"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "P16",
+      "title": "Require successful original-review replay and a playable final successor",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "ST012"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "C11",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "P07",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "P17",
+      "title": "Reconcile E00/E01/E03/E02 evidence descriptions with actual current proof",
+      "status": "merged_slice",
+      "finding_ids": [
+        "ST012",
+        "ST013"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "P01",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "P04",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "P05",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "P06",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "P07",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "P08",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "P16",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "S01",
+      "title": "Separate typed position source values from the concrete sealed SQL capability",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "ST002"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B00",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "S02",
+      "title": "Type introduction and owner-fence contracts without weakening their seals",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST002"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "S01",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "P02",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B07",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "S03",
+      "title": "Inject workspace and IndexedDB dependencies into the offline storage instance",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST003"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "FE06",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "FE08",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "S04",
+      "title": "Inject intent-store validation and portable-backup diagnostics at composition",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST003"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "S03",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "FE08",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "FE24",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "S05",
+      "title": "Make the opening journal own IndexedDB lifetime and commit-boundary results",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST004"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "S03",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "S04",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "C11",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "S06",
+      "title": "Use explicit supported transaction capabilities for eligibility and frozen-order locks",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST006"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "P02",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B07",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "S07",
+      "title": "Separate queue-abandonment request/policy from SQL and operator transport",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST014"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "T02",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "T01",
+      "title": "Share the exact cut62 witness policy and qualify its current lifecycle use",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "RT005"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "T02",
+      "title": "Make the existing component registry describe every current executable owner",
+      "status": "merged_slice",
+      "finding_ids": [
+        "RT003"
+      ],
+      "draft_prs": [
+        {
+          "number": 1123,
+          "title": "Integrate extracted carrier and map position admission",
+          "state": "open",
+          "draft": true,
+          "merged": false,
+          "head": "codex/completion-t02-carrier-integration",
+          "head_sha": "7794188f6c851b0e768cbd6c3d230fd78964e5c7",
+          "base": "main",
+          "base_sha": "05e18cf55d9a1fbaa8a984a71f268e2b63f4851a",
+          "mergeable": false,
+          "updated_at": "2026-11-13T09:52:18Z",
+          "url": "https://github.com/aaweaver-actuary/tempo/pull/1123",
+          "head_object_available": true,
+          "entire_head_in_current_main": false,
+          "earliest_covering_main_merge": null,
+          "included_in_other_open_prs": [],
+          "recommended_action": "keep_open_pending_scope_and_acceptance",
+          "task": "T02/B13 carrier integration",
+          "summary": "Carrier extraction, position admission mapping and bounded namespace guard integrated on a source candidate.",
+          "reported_evidence": [
+            "Latest 7794188f6: registry checker/full listing, 27 scoped controls and seven carrier/timing cases reported.",
+            "Includes main through 05e18cf55d9a1fbaa8a984a71f268e2b63f4851a and the copied-checker source-removed repair."
+          ],
+          "remaining": [
+            "Current direct metadata reports mergeable:false; reconcile with main 2f799293af812e829a55a3c2bb5aba8ea1598c96.",
+            "Six namespace owners remain unresolved; this bounded map is not a whole-repository census.",
+            "Independent namespace/integration review remains pending even though initial carrier/map source review found no issue.",
+            "Native position/replay and assembled saved-review-to-playable-next gates remain unrun.",
+            "Contains #1121; qualify combined source before either is closed as integrated."
+          ],
+          "metadata_evidence": "evidence/prs/1123.json",
+          "evidence_class": "source_ancestry_and_creator_reported_results_not_rerun",
+          "timeline": {
+            "count": 1,
+            "items": [
+              {
+                "url": "https://github.com/aaweaver-actuary/tempo/pull/1123#issuecomment-6849283340",
+                "login": "sourcery-ai[bot]",
+                "created_at": "2026-11-13T09:32:51Z",
+                "review": null,
+                "kind": "automated_guide"
+              }
+            ]
+          },
+          "timeline_evidence": "evidence/prs/1123-comments.json"
+        }
+      ],
+      "original_start_requires": [],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "T03",
+      "title": "Enforce the actual public boundaries through the existing parser and registry",
+      "status": "merged_slice",
+      "finding_ids": [
+        "RT002"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "T02",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "FE09",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "S01",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "S03",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "S04",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "T04",
+      "title": "Select proof by changed owner and effect instead of blanket Study filenames",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "RT004"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "T02",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "T03",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "P07",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "T05",
+      "title": "Declare and prove the Rust component fixture input contract",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST011"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "T02",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "P13",
+      "title": "Qualify the actual schema65 installation lifecycle and recovery path",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "RT005",
+        "ST012",
+        "ST013"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "T01",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "P12",
+      "title": "Declare and demonstrate the exact assembled browser journeys",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "ST003",
+        "ST004",
+        "ST012",
+        "ST013"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "P06",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "P07",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "P16",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "P14",
+      "title": "Run one coordinated exact native and HTTP qualification cohort",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "ST002",
+        "ST005",
+        "ST006",
+        "ST012",
+        "ST013",
+        "ST014"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "P01",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "P02",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "P03",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "P04",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "P05",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "P06",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "P07",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "P08",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "P16",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "P12",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "P15",
+      "title": "Use the normal CLI for authorized installation and observe genuine live Study",
+      "status": "not_evidenced",
+      "finding_ids": [],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "P12",
+          "stage": "qualified",
+          "note": "Applicable final browser acceptance before installation; read-only target inspection may be prepared earlier."
+        },
+        {
+          "task_id": "P14",
+          "stage": "qualified",
+          "note": "Applicable exact native/HTTP cohort accepted before installation."
+        },
+        {
+          "task_id": "P13",
+          "stage": "qualified",
+          "note": "This packet assigns T01 lifecycle changes, so its applicable current65 acceptance is required."
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "S08",
+      "title": "Settle and adopt typed storage boundary: Position issuance identity and lock facts",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST005"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "S01",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "S02",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B07",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "S09",
+      "title": "Settle and adopt typed storage boundary: Position issuance attempt and completion evidence facts",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST005"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "S08",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B00",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "S10",
+      "title": "Settle and adopt typed storage boundary: Position grading and checkpoint receipt contracts",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST005"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "S01",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "S02",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B08",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B26",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "S11",
+      "title": "Settle and adopt typed storage boundary: Learning review and reconciliation snapshots",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST005"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B14",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B15",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B06",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "S12",
+      "title": "Settle and adopt typed storage boundary: Queue command and operation receipt facts",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST005"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "P01",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B18",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "S13",
+      "title": "Settle and adopt typed storage boundary: Queue application seeding, eligibility and publication projections",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST005"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "S06",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B07",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "S14",
+      "title": "Settle and adopt typed storage boundary: Opening, tactic and capacity admission facts",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST005"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "P02",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B07",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B22",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "S06",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "S15",
+      "title": "Settle and adopt typed storage boundary: Queue refresh and HTTP head projection contracts",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST005"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B12",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B13",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "S16",
+      "title": "Settle and adopt typed storage boundary: Queue placement, retained origins and frozen-order state facts",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST005"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "S06",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "S17",
+      "title": "Settle and adopt typed storage boundary: PGN import and card-edit storage projections",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST005"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "P01",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B19",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "S18",
+      "title": "Settle and adopt typed storage boundary: Card and repertoire deletion retention facts",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST005"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "P03",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B23",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "S19",
+      "title": "Settle and adopt typed storage boundary: Integrity scan and publication adapter facts",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST005"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B30",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "S20",
+      "title": "Settle and adopt typed storage boundary: Integrity read and repair command contracts",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST005"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "S19",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B19",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "S21",
+      "title": "Settle and adopt typed storage boundary: Repertoire branch, paste, canonical-prefix and move-membership facts",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST005"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B19",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B27",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B28",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B29",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "S22",
+      "title": "Settle and adopt typed storage boundary: Manual prefix split command and lineage facts",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST005"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "P06",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "P07",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B25",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "S23",
+      "title": "Settle and adopt typed storage boundary: Opening graph worker persistence facts",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST005"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B28",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "S24",
+      "title": "Settle and adopt typed storage boundary: Durable task identity and read models",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST005"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B02",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B03",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "S25",
+      "title": "Settle and adopt typed storage boundary: Durable task claim and transition facts",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST005"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "S24",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B02",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B03",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "S26",
+      "title": "Settle and adopt typed storage boundary: Settings and current mode facts",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST005"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B02",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "S27",
+      "title": "Settle and adopt typed storage boundary: Background activity, refresh and readiness facts",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST005"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B02",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B03",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "S28",
+      "title": "Settle and adopt typed storage boundary: Tactics catalog, capture and attempt facts",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST005"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B22",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "S29",
+      "title": "Settle and adopt typed storage boundary: Retained exercise attempt facts after route restoration",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST005"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B31",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "C23",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "S30",
+      "title": "Settle and adopt typed storage boundary: Retained HTTP read projections and command lock facts",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST005"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B18",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B19",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B20",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "S31",
+      "title": "Settle and adopt typed storage boundary: Read-only Game Review storage values",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST005"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "S34",
+      "title": "Settle and adopt typed storage boundary: Bounded published repertoire source facts",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST005"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "S01",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "P09",
+      "title": "Reconcile current proof contract: Background diagnostic and admission proofs",
+      "status": "merged_slice",
+      "finding_ids": [
+        "ST012",
+        "ST013"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B21",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "P10",
+      "title": "Reconcile current proof contract: Current opening checkpoint, original evidence and immutability proofs",
+      "status": "merged_slice",
+      "finding_ids": [
+        "ST012",
+        "ST013"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "P05",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B08",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "P11",
+      "title": "Reconcile current proof contract: Deletion and repertoire allowance native proofs",
+      "status": "source_present_acceptance_open",
+      "finding_ids": [
+        "ST012",
+        "ST013"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "P03",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B23",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "P18",
+      "title": "Reconcile current proof contract: Historical position seed/operator/source-fixture support decisions",
+      "status": "not_evidenced",
+      "finding_ids": [
+        "ST012",
+        "ST013"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B00",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "P19",
+      "title": "Reconcile current proof contract: Frozen order proof inputs and native SQL",
+      "status": "merged_slice",
+      "finding_ids": [
+        "ST012",
+        "ST013"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "S06",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "P20",
+      "title": "Reconcile current proof contract: Tactic capture and retained corpus/history native proofs",
+      "status": "merged_slice",
+      "finding_ids": [
+        "ST012",
+        "ST013"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B22",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B31",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "P21",
+      "title": "Reconcile current proof contract: Current queue dispatch, opening admission and capacity proof closures",
+      "status": "merged_slice",
+      "finding_ids": [
+        "ST012",
+        "ST013"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "P02",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B07",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B12",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B13",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "P22",
+      "title": "Reconcile current proof contract: Historical schema and retired packaged collection proof decisions",
+      "status": "merged_slice",
+      "finding_ids": [
+        "ST012",
+        "ST013"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "B21",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B35",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    },
+    {
+      "task_id": "P24",
+      "title": "Reconcile current proof contract: Mixed native review suite after retained split and receipt repairs",
+      "status": "merged_slice",
+      "finding_ids": [
+        "ST012",
+        "ST013"
+      ],
+      "draft_prs": [],
+      "original_start_requires": [
+        {
+          "task_id": "P05",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "P06",
+          "stage": "source_released"
+        },
+        {
+          "task_id": "B06",
+          "stage": "source_released"
+        }
+      ],
+      "original_gate_class": null
+    }
+  ]
+}

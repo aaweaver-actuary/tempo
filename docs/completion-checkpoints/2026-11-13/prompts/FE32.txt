@@ -1,0 +1,71 @@
+TASK FE32 — Use one burial lifecycle and a bounded reader for existing local markers
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: FE010.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/frontend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: FE24.source_released; FE30.source_released; C14.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- AGENTS.md — current scope, ownership and minimum real proof; distinguish implemented/tested/assembled/installed
+- SPEC.md — current November 10 reduction scope and retained ordinary Study preservation
+- docs/testing.md — smallest relevant proof and supported owned runner
+- app/lib/training-bury-command.ts — buryTrainingEntry, finishTrainingBurial, pendingTrainingBurialEntry, recoverTrainingBurial
+- database/browser/adapters/practice/training-burial-command.ts — retained operation/body/marker keys
+- app/lib/study-command-client.ts — burial-command validation and generic retained request
+- app/views/home_view.tsx — burial callback and queue refresh completion
+
+WRITE RESERVATION:
+- app/lib/training-bury-command.ts [existing]
+- app/lib/study-command-client.ts [existing]
+- app/lib/study-command-delivery.ts [proposed or moved; verify the owning symbol before implementation]
+- database/browser/adapters/practice/training-burial-command.ts [existing]
+- tests/unit/training-burial-regressions.test.ts [existing]
+- tests/unit/training-burial-caller-regressions.test.tsx [existing]
+- tests/unit/study-command-client-capability.test.ts [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Route new supported burials through the existing retained command/session owner for every supported composition. Remove build-flag-selected fresh submission logic.
+2. Preserve existing local operation/body/marker records through a narrow compatibility reader. If adopting one known pending legacy command into the existing intent store is necessary, use its original operation ID and exact serialized body; retain legacy bytes until durable adoption and validated original receipt plus required queue refresh. Never bulk migrate or clear on load.
+3. If generic payloads need an optional raw body representation for this one legacy replay, use it only for the frozen transport bytes and preserve the semantic parsed value for validation. Existing intent records are unchanged; do not reserialize legacy bytes to a new operation.
+4. Keep committed-but-not-refreshed burial recovery separate from command settlement: no extra bury mutation while the marker only awaits queue reconciliation.
+5. Test crashes between durable adoption and legacy cleanup, absent/blocked/failed/original receipt, stale queue entry, foreign202 and repeated queue-refresh failure. Recovery must choose the known old command before starting any new one.
+
+ACCEPTANCE:
+- One supported fresh burial lifecycle retains before send; no build-mode mutation branch remains.
+- Legacy record identity/body/marker survive any interrupted handoff and cannot create a second burial.
+- Queue-refresh failure keeps useful pending identity; valid receipt cannot be mistaken for a playable successor.
+- No unrelated local key scan or database rewrite is introduced.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: npm run test:unit -- tests/unit/training-burial-regressions.test.ts tests/unit/training-burial-caller-regressions.test.tsx tests/unit/study-command-client-capability.test.ts
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: npm run typecheck:browser
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- owner: P16/P12; required: One existing local burial marker survives reload and interrupted adoption/refresh, settles its original receipt once and then installs a valid queue. No whole-stack loop per compatibility case.
+
+MATERIAL RISKS:
+- Two stores during a handoff can become two authorities. Keep a single original ID and do not clear the old representation before its durable replacement/receipt is established.
+
+EXCLUSIONS:
+- No blanket legacy journal migration
+- No new state machine
+- No clearing uncertain work
+- No service restoration
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

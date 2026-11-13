@@ -1,0 +1,73 @@
+TASK B27 — Reject retired Coverage inputs before authoring and remove their storage branch
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: BE018.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/backend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: No source prerequisite; reserve the named files first.
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- backend/app/contracts/transport/authored_lines.py — source_gap_id
+- backend/app/analysis_paste_commands.py — commit_analysis_paste
+- backend/app/branch_commands.py — add_repertoire_branch
+- backend/app/services/analysis_paste.py — build_paste_preview,commit_pasted_lines,_resolves_gap
+- database/tempo_storage/authored_repertoires/analysis_paste.py — coverage_gap,cover_gap
+- database/tempo_storage/authored_repertoires/branches.py — lock_source_gap,mark_gap_covered
+
+WRITE RESERVATION:
+- backend/app/contracts/transport/authored_lines.py [existing]
+- backend/app/analysis_paste_commands.py [existing]
+- backend/app/branch_commands.py [existing]
+- backend/app/services/analysis_paste.py [existing]
+- database/tempo_storage/authored_repertoires/analysis_paste.py [existing]
+- database/tempo_storage/authored_repertoires/branches.py [existing]
+- backend/app/main.py [existing] — preview/commit input adapter only; coordinate owner
+- backend/tests/test_retired_coverage_inputs.py [proposed or moved; verify the owning symbol before implementation] — proposed
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Keep accepted terminal operation replay at gateway before fresh decode. For new requests or unfinished legacy gap-bearing commands, return one deterministic retired-feature response before any source/content/storage write.
+2. Retain source_gap_id only as an explicitly rejected compatibility input where necessary to recognize old bytes; do not silently ignore it or reinterpret the operation as gap-free.
+3. Apply same guard to preview, paste commit and branch add; verify payload original identity remains retained on failed operation.
+4. Remove _resolves_gap and now-unreferenced Coverage SELECT/UPDATE operations from authoring storage; ordinary content paths no longer require Coverage tables.
+5. Test missing/null gap normal behavior, valid-looking old gap, malformed old gap, completed old receipt replay, and zero partial writes for rejection.
+
+PRESCRIBED SMALL BATCHES:
+Batch 1: batch_id: B27-1; name: boundary-rejection; write_files: backend/app/contracts/transport/authored_lines.py; backend/app/analysis_paste_commands.py; backend/app/branch_commands.py; backend/app/main.py; backend/tests/test_retired_coverage_inputs.py; instruction: Reject new/unfinished gap-bearing requests before writes while gateway replays existing terminal receipt.; after_batch: None
+Batch 2: batch_id: B27-2; name: retired-branch-removal; write_files: backend/app/services/analysis_paste.py; database/tempo_storage/authored_repertoires/analysis_paste.py; database/tempo_storage/authored_repertoires/branches.py; instruction: Delete unused Coverage behavior and verify gap-free path.; after_batch: B27-1
+One batch per weak worker dispatch. Return scoped patch/evidence before next batch; root integration may combine coherent batches into one PR. Never ship a temporarily unregistered or partially translated runtime.
+
+ACCEPTANCE:
+- No retained edit/import path accesses retired Coverage state.
+- Gap-bearing pending operation receives documented terminal/held retirement disposition with original id/payload; no silent new operation.
+- Gap-free import/correction behavior and current guards preserved.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: make python-file FILE=backend/tests/test_retired_coverage_inputs.py
+  verified_against_source: Makefile:109-111; proposed test file must be added by this task; availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: make python-file FILE=backend/tests/test_explicit_product_composition.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- Consumer pending/recovery check for original failed command; no full native/browser stack solely to delete unreachable SQL.
+
+MATERIAL RISKS:
+- Pydantic field deletion alone may change old replay/failed payload interpretation. Explicit boundary recognition is needed.
+
+EXCLUSIONS:
+- No new service, database, event bus, generic repository, scheduler, or retired producer restoration.
+- No changes to historical migration checksums, persisted command names, accepted operation identities, or original receipt bytes.
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

@@ -1,0 +1,57 @@
+TASK P02 — Dispose all five stale position-admission tests against current owners
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: ST012, BE021, ST006.
+ORIGINAL TASKS: E02.
+SUPPORTING DEFINITION: reference/planning-definitions/proof-storage-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: No source prerequisite; reserve the named files first.
+
+ADDITIONAL OWNER CONDITIONS:
+- Reserve the admission test file first; release it to B07/S06/S02 before their later assertions.
+
+READ FIRST (repository-relative except reference/ paths):
+- backend/tests/test_position_queue_admission.py — test_due_consumers_apply_position_ownership_only_when_schema_present; test_refresh_consumes_prepared_due_before_advancing; test_new_position_issue_fences_source_before_existing_queue_locks_and_rolls_back_stale_head; test_urgent_game_target_is_selected_when_natural_due_is_false; test_changed_urgency_rolls_back_inserted_position_plan
+- database/tempo_storage/queue_refresh/eligibility.py — position_due_exclusion
+- backend/app/services/position_queue_admission.py
+- SPEC.md
+
+WRITE RESERVATION:
+- backend/tests/test_position_queue_admission.py [existing]
+- tests/REGRESSIONS.md [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Replace the absent conflicts/native_configured/is_postgres_connection seams in the first three tests with the current eligibility, preparation and writer-capability boundary. Retain source-before-queue lock order and stale-head rollback assertions.
+2. The two game_feedback cases describe a retired active producer. Preserve their useful rollback/current-owner protection assertion under an actual retained source/owner invalidation; move only exclusively retired urgency expectations to an explicitly historical record, backed by SPEC November 10 pass 2 and P04 pause-preservation proof.
+3. Do not restore game_feedback imports, add compatibility stubs, or suppress failures with a global not-native/name filter. Record each old nodeid → current nodeid or evidenced retirement.
+4. Run every pure case in the file with the one current native nodeid explicitly deselected: test_native_refresh_admits_due_carrier_and_reuses_pending. P14 runs that exact pending case through the supported native bridge. The second native node from the earlier combined report belongs to test_position_introductions.py, not this file.
+
+ACCEPTANCE:
+- All five named pre-existing failures have a source-linked disposition and retained assertions still execute.
+- Pure cases pass; native deselections/skips are reported separately and are never counted as native passes.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: PYTEST_ADDOPTS='--deselect=backend/tests/test_position_queue_admission.py::test_native_refresh_admits_due_carrier_and_reuses_pending' make python-file FILE=backend/tests/test_position_queue_admission.py
+  kind: focused; availability: current; source_entrypoint: Makefile:python-file; scripts/resolve-python.mjs:resolvePython; docs/testing.md; scope: Pure cases only; exact named native cases intentionally deselected and still pending P14 native acceptance; native_pending_nodeids: backend/tests/test_position_queue_admission.py::test_native_refresh_admits_due_carrier_and_reuses_pending
+- Working directory .: node database/tests/test-postgres-docker.mjs --mode browser --browser-grep "study_only_mode_preserves_foreground_review_and_queue_progression across reload and resumption$" --native-check position-queue-admission --list
+  kind: discovery; availability: current
+
+COORDINATED ACCEPTANCE:
+- P14: exact current position-queue-admission native selector on the assembled candidate.
+
+MATERIAL RISKS:
+- Retiring the two historical producer tests without replacement current owner invalidation proof would weaken rollback protection.
+
+EXCLUSIONS:
+- No unrelated feature, rewrite or retired producer restoration.
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

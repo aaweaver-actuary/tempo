@@ -1,0 +1,64 @@
+TASK P08 — Give the historical 49→48→49 rollback case a finite, explicit supported disposition
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: ST012, ST013.
+ORIGINAL TASKS: E02.
+SUPPORTING DEFINITION: reference/planning-definitions/proof-storage-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: No source prerequisite; reserve the named files first.
+
+ADDITIONAL OWNER CONDITIONS:
+- Reserve shared runner paths independently of P07 completion; recheck exact historical/current schema sources.
+
+READ FIRST (repository-relative except reference/ paths):
+- database/tests/check_postgres_study_priority.py — historical_migration_sources; require_copy_contract; historical_rollback_proof; run_proof; main
+- database/tempo_storage/ddl/migrations/049_study_priority_recovery.sql
+- database/tempo_storage/ddl/rollbacks/049_study_priority_recovery.sql
+- database/tests/postgres-test-plan.mjs
+
+WRITE RESERVATION:
+- database/tests/check_postgres_study_priority.py [existing]
+- database/tests/postgres-test-options.mjs [existing]
+- database/tests/postgres-test-plan.mjs [existing]
+- database/tests/test-postgres-docker.mjs [existing]
+- tests/runner/postgres-test-speedups.test.mjs [existing]
+- tests/REGRESSIONS.md [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Recommended disposition: retain the index-only historical rollback safety case because the rollback SQL remains supported historical source; keep it separate from current65 lifecycle.
+2. Inspect whether exact current→historical table-copy contracts actually match. If they do not, do not weaken require_copy_contract or project away new history: seed the exact schema49 fixture directly on its owned historical database with an explicit historically accepted request/receipt fixture and preserve a separate current65 sentinel unchanged.
+3. Expose one fixed historical-rollback selection in the existing runner (or reuse the existing full six-case current runner if its exact inputs are already valid). A new selector must have exact cases/refusal/cleanup tests before it is advertised.
+4. Prove exact ledger1..49 →1..48→1..49, only the two intended priority indexes change, all 60 historical accepted review/receipt rows remain byte-equivalent, and the original current65 database, ledger and sentinel history never change.
+5. If the integration owner instead retires this historical operation, first prove no supported CLI/upgrade/rollback command calls it, update the actual support documentation/registration, retain source history, and record the owner decision. Do not merely mark it not required because the installed database is65.
+
+ACCEPTANCE:
+- One executable retained historical proof or one positively evidenced retired-support decision accounts for the old sixth case; no generic defer.
+- No claim that a 65→48 live downgrade is safe; no current65 schema/image rollback is attempted.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: PYTHONPATH=backend:database backend/.venv/bin/python database/tests/check_postgres_study_priority.py --list
+  kind: discovery; availability: current
+- Working directory .: PYTHONPATH=backend:database backend/.venv/bin/python database/tests/check_postgres_study_priority.py --current-only --list
+  kind: discovery; availability: current
+- Working directory .: node --test --test-concurrency=1 tests/runner/postgres-test-speedups.test.mjs
+  kind: focused; availability: current
+
+COORDINATED ACCEPTANCE:
+- P14 runs the delivered single-case selector on one owned native slot; exact command must be copied from reviewed --list and parser, not guessed.
+
+MATERIAL RISKS:
+- The current proof requires exact source/destination table contracts; a silent reduced projection could make an unsafe historical copy appear equal.
+
+EXCLUSIONS:
+- No unrelated feature, rewrite or retired producer restoration.
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

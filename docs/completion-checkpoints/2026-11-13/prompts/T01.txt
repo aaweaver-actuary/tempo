@@ -1,0 +1,63 @@
+TASK T01 — Share the exact cut62 witness policy and qualify its current lifecycle use
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: RT005.
+ORIGINAL TASKS: F02, E04.
+SUPPORTING DEFINITION: reference/planning-definitions/proof-storage-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: No source prerequisite; reserve the named files first.
+
+ADDITIONAL OWNER CONDITIONS:
+- Integration owner records current65 lifecycle applicability before source implementation; this is a decision, not P13 completion. T01 reviewed source feeds P13; P13 accepted native lifecycle gates T01 merge.
+
+READ FIRST (repository-relative except reference/ paths):
+- scripts/tempo-runtime.mjs — cut62WitnessName; validateCut62Preflight
+- scripts/tempo-managed-isolation.mjs — cut62WitnessName
+- scripts/tempo-deployment.mjs
+- tests/runner/tempo-cli.test.mjs
+
+WRITE RESERVATION:
+- scripts/tempo-runtime.mjs [existing]
+- scripts/tempo-managed-isolation.mjs [existing]
+- scripts/tempo-deployment.mjs [existing]
+- tests/runner/tempo-cli.test.mjs [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Put the one pure witness-name policy in the existing shared deployment owner, or a single dependency-safe module already owned by that CLI component. Both current runtime and managed-isolation callers import it; preserve any verified public re-export.
+2. Preserve exact rule: no crossing returns null; legal crossings are only starting59 or61 to intended62 with the existing UUID acceptance/filename; unsupported crossings keep the exact fail-closed error. Do not generalize this historical safety rule to64/65.
+3. Run exact old/new equivalence matrix for lower/upper/malformed/missing schemas, UUIDs, same-schema and illegal63/64/65 intended targets; retain private-file, witness identity, original backup/retry and interrupted-capture controls.
+4. Release the reviewed source to P13 before merge. Use its current65 disposable lifecycle acceptance and unchanged-input historical policy controls; do not require obsolete current63 reconstruction merely because that old harness refuses65.
+
+ACCEPTANCE:
+- One cut62WitnessName body; two real callers; no import cycle or changed witness/error/legal-crossing outcome.
+- Focused comparator/witness controls plus applicable actual current lifecycle proof pass before merge. Source-only extraction is not itself merge-qualified.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: node --test --test-concurrency=1 --test-name-pattern='schema 62 comparator accepts only the exact guarded crossing' tests/runner/tempo-cli.test.mjs
+  kind: focused; availability: current
+- Working directory .: node --test --test-concurrency=1 --test-name-pattern='schema 62 (retry requires|bind source|runtime preserves|rejects a different|interrupted capture)' tests/runner/tempo-cli.test.mjs
+  kind: focused; availability: current
+- Working directory .: node --test --test-concurrency=1 --test-name-pattern='schema 6[345]' tests/runner/tempo-cli.test.mjs
+  kind: focused; availability: current
+
+COORDINATED ACCEPTANCE:
+- P13 current65→candidate65 registered disposable lifecycle with exact immutable images/config and recovery; add64→65 only if a real supported starting64 path is in scope.
+
+MATERIAL RISKS:
+- This tiny extraction sits on migration safety. A lower source line count does not waive lifecycle-sensitive acceptance.
+
+EXCLUSIONS:
+- New historical migration support
+- Weakening current63/full refusal
+- Live installation in this planning stage
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

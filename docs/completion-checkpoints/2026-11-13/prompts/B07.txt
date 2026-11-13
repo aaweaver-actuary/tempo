@@ -1,0 +1,64 @@
+TASK B07 — Move position admission owner reads and admission proof SQL to storage
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: BE004.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/backend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: P02.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- backend/app/services/position_queue_admission.py — prepare_due,prepare_opening_introduction,admit_targeted_position_introduction
+- database/tempo_storage/study/position_owner_epoch.py
+- database/tempo_storage/study/position_introductions.py
+- backend/tests/test_position_queue_admission.py
+- backend/tests/test_position_introductions.py
+
+WRITE RESERVATION:
+- backend/app/services/position_queue_admission.py [existing]
+- database/tempo_storage/study/position_owner_epoch.py [existing]
+- database/tempo_storage/study/position_introductions.py [existing]
+- backend/tests/test_position_queue_admission.py [existing]
+- backend/tests/test_position_introductions.py [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Add narrowly named storage operations for next active owner after repertoire, exact active/current owner facts, and canonical admitted card/queue proof. Return explicit semantic immutable facts, not cursor/physical row leakage.
+2. Move the four exact SQL statements from the three named application functions without changing predicates, ordering, limits, borrowed transaction, or introduced-card proof.
+3. Application keeps source preparation, carrier choice, hold interpretation, and injecting initial_position_state. Storage imports no application policy.
+4. Extend existing tests for owner missing/changed, epoch/digest mismatch, legacy/shadow/held owner, and canonical admission absent despite an introduced claim.
+5. Release these modules to ST002/ST005 after signatures settle.
+
+ACCEPTANCE:
+- No execute/execute_native SQL remains in these three application functions.
+- The active preparation caller and independent storage fake use same typed facts; current hold reasons unchanged.
+- Native admission and introduction cases preserve rollback, history and busy/stale fences.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: make python-file FILE=backend/tests/test_position_queue_admission.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: make python-file FILE=backend/tests/test_position_introductions.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- Existing --native-check position-queue-admission and position-introductions, coordinated once by heavy owner; exact registered nodes in database/tests/position-native-pytest.py.
+
+MATERIAL RISKS:
+- ST002/ST005 overlap: do not simultaneously change sealed proposal representation or all storage return types.
+
+EXCLUSIONS:
+- No new service, database, event bus, generic repository, scheduler, or retired producer restoration.
+- No changes to historical migration checksums, persisted command names, accepted operation identities, or original receipt bytes.
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

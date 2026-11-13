@@ -1,0 +1,497 @@
+{
+  "scope": "Transcript extraction only. No GitHub state, local Mac state, product behavior or test result independently verified by this subagent.",
+  "source": {
+    "path": "/workspace/scratch/98ef0fd314f3/upload/Pasted markdown.md",
+    "sha256": "f417662f656fd72fe729ed8a05ccbf58bae05750ca2edb8337581acb320b4abb",
+    "line_count": 1047,
+    "read_in_full": true
+  },
+  "critical_final_state": {
+    "reason_for_pause": "User says weekly usage exhausted. Transcript itself ends during active missing-settings work, without a formal final pause/cleanup/commit record.",
+    "installed_state": "No installation of this run is reported. Earlier installed release reportedly remained running after Docker recovery; no new installed SHA/schema is given.",
+    "host_capacity": "Latest explicit free-space observation is approximately3.6 GiB, down from4.3 GiB after recovery. Further image builds and a proposed no-build native queue case were held. Recheck before resuming; do not present this historical measurement as current.",
+    "fe25": "Unmerged integrated candidate as far as transcript establishes. Earlier exact candidate passed fixedP14, but the separate10-case FE25 browser selection did not execute because its stack build failed. Later main/test integrations still require applicable exact-input browser/assembled qualification.",
+    "b15": "Draft/source work. Latest reported strict count is4; then missing-settings handling was being moved to original-operation prerequisite retry. No final command/result/commit after that last change is supplied. Native gateway, lock, rollback and replay gates remain outstanding.",
+    "native_queue_gate": "Replacement source/receipt/fixture work exists but native execution is explicitly pending. Earlier automatic Game-priority gate cannot simply be deleted or relabeled passed.",
+    "carrier_cycle": "Pure carrier selector extraction with compatibility entry and registry integration is a draft; focused/source review passed, position-native and assembled journey required before merge.",
+    "resources": "Failed FE25 test containers/volumes/network and later exact owned builder/admission lock were reported cleaned. No general cleanup of all last active workers/worktrees is established by this transcript."
+  },
+  "explicit_pr_claims": [
+    {
+      "number": 1067,
+      "url": "https://github.com/aaweaver-actuary/tempo/pull/1067",
+      "claimed_state": "merged",
+      "claimed_merge_short_sha": "d1454e10",
+      "scope": "wake repair",
+      "claimed_evidence": "Exact merge tree matches source passing fixedP14 with11browser cases plus real-broker witness; cleanup/input hashes matched.",
+      "remaining": "Earlier split stall and P22 historical packaged-suite disposition remain open; no installation or hostedCI pass.",
+      "line_refs": [
+        17,
+        21
+      ]
+    },
+    {
+      "number": 1100,
+      "url": "https://github.com/aaweaver-actuary/tempo/pull/1100",
+      "claimed_state": "merged",
+      "claimed_merge_short_sha": null,
+      "scope": "source ownership mapping",
+      "claimed_evidence": "Exact tested tree; census199/289; earlier combined source-only batch226checks.",
+      "remaining": "Does not establish whole-repository ownership or runtime qualification.",
+      "line_refs": [
+        43,
+        49
+      ]
+    },
+    {
+      "number": 1107,
+      "url": "https://github.com/aaweaver-actuary/tempo/pull/1107",
+      "claimed_state": "merged",
+      "claimed_merge_short_sha": "75de6be8",
+      "scope": "B27 retired Coverage boundary and unreachable storage-branch removal",
+      "claimed_evidence": "26focused checks and2native PostgreSQL gateway cases on final source; original IDs/bytes preserved, retired inputs410, completed receipts replayed, authoring/Coverage snapshots unchanged.",
+      "remaining": "Separate numbered-PGN parser defect remains unfixed.",
+      "line_refs": [
+        233,
+        239,
+        251,
+        261
+      ]
+    }
+  ],
+  "other_reported_merged_work_requiring_github_identification": [
+    {
+      "scope": "Several backend/storage ownership census batches",
+      "evidence": "Reported counts advance199→237→245→256 of289; missing dependency edges fixed and cycles checked. Later shared namespace markers explicitly scoped.",
+      "qualification_limit": "Source mapping only; the census excludes other executable areas and cannot establish whole-repository ownership.",
+      "line_refs": [
+        283,
+        317,
+        365,
+        405,
+        587,
+        589,
+        595,
+        617
+      ]
+    },
+    {
+      "scope": "FirstB32 authoring/asset-tool test retirement batch",
+      "evidence": "Obsolete exclusive tests removed; actual corpus hashes and chess legality restored/passing.",
+      "qualification_limit": "Current priority-runner gap left untouched/open.",
+      "line_refs": [
+        341,
+        365,
+        373
+      ]
+    },
+    {
+      "scope": "Startup census metadata/registration checks",
+      "evidence": "Explicit Celery loader relationships; checks retained under optimizedPython and actual queues checked after two false-pass repairs.",
+      "qualification_limit": "Static registration evidence, not startup/recovery runtime proof.",
+      "line_refs": [
+        505,
+        543,
+        549,
+        559
+      ]
+    },
+    {
+      "scope": "DDL source census",
+      "evidence": "Historical/forward/rollback/tooling categories recorded without executing SQL; standalone isolation repair reviewed.",
+      "qualification_limit": "Source schema number is not installed schema. A later eager-import defect was subsequently repaired separately.",
+      "line_refs": [
+        655,
+        665,
+        675
+      ]
+    },
+    {
+      "scope": "Standalone component-check eager-import repair",
+      "evidence": "Source-removed standalone failure reproduced beforefix and fixed/merged.",
+      "qualification_limit": "No installation; carrier draft then integrated repair.",
+      "line_refs": [
+        687,
+        741
+      ]
+    },
+    {
+      "scope": "Contract-tooling ownership mapping",
+      "evidence": "Generated game-evidence schema dependency added; duplicate checker ownership removed so registry remains authoritative.",
+      "qualification_limit": "Some test-shaped tooling files are not selected; those gaps remain acknowledged rather than tests declared obsolete.",
+      "line_refs": [
+        761,
+        769,
+        795
+      ]
+    },
+    {
+      "scope": "Reduction-tooling census",
+      "evidence": "JSX discovery fixed; fail-closed newly trackedJSX check and integrated review.",
+      "qualification_limit": "Source-only classification.",
+      "line_refs": [
+        795,
+        811
+      ]
+    },
+    {
+      "scope": "Fingerprint and backup-verification source mappings",
+      "evidence": "Mapped and merged.",
+      "qualification_limit": "Neither fingerprint nor backup-verification tool was executed for that mapping.",
+      "line_refs": [
+        917
+      ]
+    }
+  ],
+  "unfinished_work": [
+    {
+      "id": "FE25",
+      "state": "Integrated candidate; original separate browser proof unexecuted; later exact-source qualification open",
+      "completed_source_evidence": [
+        "Package builds and28package tests",
+        "Full typecheck zero diagnostics",
+        "Nine focused unit files370tests",
+        "Independent architecture/source review",
+        "Additional authority-change browser tests source reviewed; realIndexedDB/transport races not yet executed",
+        "Later current-main integration focusedchecks/typecheck passed"
+      ],
+      "remaining": [
+        "Find exact current branch/head and pushedPR",
+        "Inventory last integrated test/source changes",
+        "Run separate10-case browser cohort after host capacity/admission",
+        "Run or justify reuse of affected fixedP14/assembled evidence for exact final inputs",
+        "Independent final review, merge, installation as applicable"
+      ],
+      "line_refs": [
+        85,
+        91,
+        167,
+        175,
+        293,
+        325
+      ]
+    },
+    {
+      "id": "B15",
+      "state": "Draft; last reported4strict diagnostics; further missing-settings patch in progress",
+      "completed_source_evidence": [
+        "Nullable admission and recovered original identity preserved",
+        "Receipt identity vsserialized result beforeinsertion",
+        "Atomic calendar capture prevents partial initialization on same-adapter retry",
+        "Nullable latest-review result reflected",
+        "Position attempt/plan lock guard beforelocking",
+        "Requeue always-insert semantics inclzero positions/retained origin cycles",
+        "Validated original completion/effect owner handoffs",
+        "Checkpoint historical JSONB-shaped replay case",
+        "Stored reconciliation receipt text retained while normalized response unchanged",
+        "Clock preserves existing timestamp/timezone/missing-settings behavior",
+        "Gateway annotations allow scalar/list/null historicalJSON"
+      ],
+      "remaining": [
+        "Recover exact current edits/head and rerun literal strictcheck; latest4count predates last missing-settings work",
+        "Resolve legitimate borrowed-writer wrapper contract rather than narrowing toproductionconnection",
+        "Verify missing-settings original-operation prerequisite retry, direct/backgroundlimits and recovery",
+        "Native actual driver/gateway/lock/rollback/concurrency/lostack replay acceptance",
+        "Review changed semantic boundaries and merge only after gates"
+      ],
+      "line_refs": [
+        421,
+        519,
+        533,
+        579,
+        603,
+        609,
+        633,
+        649,
+        681,
+        695,
+        751,
+        785,
+        831,
+        845,
+        857,
+        865,
+        877,
+        917,
+        931,
+        939,
+        947,
+        955,
+        969,
+        979,
+        985,
+        991,
+        1001,
+        1011,
+        1021,
+        1035
+      ]
+    },
+    {
+      "id": "B32/current priority gate replacement",
+      "state": "Partial; one test-retirement batch merged, native gate replacement pending",
+      "completed_source_evidence": [
+        "Retained corpus integrity restored",
+        "Current frozen-order writer basis selected instead of obsoletefeedbackfixture",
+        "SQL placeholders/database-owner binding corrected afterreview",
+        "Dirtycheckout-receipt rejection added",
+        "Ownedpool cleanup even onfixture setupfailure tested",
+        "NonDocker receipt checks pass"
+      ],
+      "remaining": [
+        "Identify exactrunner/PR/head",
+        "Run owned current native queue case with clean committedsource when capacitysafe",
+        "Verify protected attempts/staleplans/ordinaryprogress and receiptbinding",
+        "Wire actualCIselection andvalidator preservingrequiredqueuegate",
+        "Independentreview and merge"
+      ],
+      "line_refs": [
+        341,
+        373,
+        379,
+        387,
+        405,
+        429,
+        437,
+        449,
+        469,
+        475
+      ]
+    },
+    {
+      "id": "Carrier/queue-routing↔position-admission cycle",
+      "state": "Source-reviewed draft",
+      "completed_source_evidence": [
+        "Bidirectionallazydependency traced, no import-time failureclaim",
+        "Unchangedpureselector extracted with existingcache/compatibilityentry",
+        "Combinedregistry/standalonecheck repair integrated",
+        "Actualimportedges checked"
+      ],
+      "remaining": [
+        "Position-native andassembledsave-next proof",
+        "Exactheadreview/merge",
+        "Do not weaken cycle guard or call lifecycle registration metadata proof ofruntime"
+      ],
+      "line_refs": [
+        425,
+        489,
+        525,
+        565,
+        587,
+        617,
+        747
+      ]
+    },
+    {
+      "id": "T02 broader ownership and tooling",
+      "state": "MultiplemappingPRsmerged; whole-repo coveragestillopen",
+      "completed_source_evidence": [
+        "Severalbackend/storagebatches",
+        "Startupregistrationmetadata",
+        "Sharednamespace markers scoped",
+        "DDL/tooling mappings"
+      ],
+      "remaining": [
+        "Resolve actual unowned executable sources vsalreadyownedintegrationfiles",
+        "Retain19sharedpackagemarker limitations incl6without observedownerinscannedtrees",
+        "Identify current twoDBCLIadapter mapping draft/reviewstatus",
+        "Managed-witness draft capabilityguards repaired, finalmerge notreported",
+        "Do not pursue extra benchmark subdivision absentconcretegap"
+      ],
+      "line_refs": [
+        587,
+        595,
+        617,
+        761,
+        819,
+        839,
+        923,
+        931,
+        939,
+        959
+      ]
+    },
+    {
+      "id": "P22 historical suite disposition",
+      "state": "Explicit residual",
+      "completed_source_evidence": [],
+      "remaining": [
+        "Supported disposition ofretiredpackagedsuite; notclosed bywake-repairP14pass"
+      ],
+      "line_refs": [
+        17,
+        21
+      ]
+    },
+    {
+      "id": "B15 scheduling-store fixture debt",
+      "state": "Tenbaseline setup errors remain",
+      "completed_source_evidence": [
+        "Sameerrors reproducedonparent; focused scheduling/positionchecks pass"
+      ],
+      "remaining": [
+        "Rebindretiredfixturetoactualsupportedowner or evidence-backedretirement; keepresultseparatefromproductregressions"
+      ],
+      "line_refs": [
+        681
+      ]
+    },
+    {
+      "id": "Finalrelease/install/liveacceptance",
+      "state": "Notperformed",
+      "completed_source_evidence": [
+        "EarlierTempo responds afterDockerrecovery"
+      ],
+      "remaining": [
+        "Currenthost/capacity/readinesscheck",
+        "Qualified exact mergedcandidate includingchangedproduct inputs",
+        "Normalauthorizedregistered-machineinstall",
+        "Exactrunningidentity/schema/modes verification",
+        "Genuineinstalledsaved-review→playablenextobservation"
+      ],
+      "line_refs": [
+        27,
+        29,
+        221,
+        225,
+        623,
+        675
+      ]
+    }
+  ],
+  "defects_to_check_for_existing_issues": [
+    {
+      "title": "Numbered PGN movetext fails the gap-free parser",
+      "status_reported": "pre-existing and unfixed",
+      "evidence": "B27gap-freecheck failed on1.e4…; explicitlykept separatefromCoverageremoval andrecordedinPR1107",
+      "line_refs": [
+        239,
+        261
+      ]
+    },
+    {
+      "title": "Missing settings can terminally fail original review operation",
+      "status_reported": "conditional product gap, active B15 repair not yet accepted",
+      "evidence": "No installedmissing-rowconditionobserved; existingforeground prerequisite retry reportedlypreservesoriginaloperation andperiodicretry, nativeproofrequired",
+      "line_refs": [
+        519,
+        1021,
+        1035
+      ]
+    },
+    {
+      "title": "Current CI priority qualifier points to missing/retired automatic Game-priority contract",
+      "status_reported": "integration gate gap; replacement source pendingnative",
+      "evidence": "Do notremove requiredqueueprotection justtoretiretests",
+      "line_refs": [
+        305,
+        347,
+        353,
+        379,
+        387,
+        469
+      ]
+    },
+    {
+      "title": "Earlier manual split stall",
+      "status_reported": "explicitly retained asopenresidual despitewake-repairpassingcohort",
+      "evidence": "Exactmechanism/issueidentifier absentinthistranscript; inspectPR1067",
+      "line_refs": [
+        17,
+        21
+      ]
+    }
+  ],
+  "host_incident_timeline": [
+    {
+      "state": "Diskfull",
+      "report": "163MiBfree; BuildKitmetadataread-only; FE25browserbuildfailedbeforecases",
+      "line_refs": [
+        175,
+        179
+      ]
+    },
+    {
+      "state": "Scopedcleanupblocked",
+      "report": "Automaticcommandreviewrejectedrecursiveinactive dependencycopy removal; failedprojectcleanupblockedwhileDockerdown",
+      "line_refs": [
+        183,
+        187,
+        195
+      ]
+    },
+    {
+      "state": "Attributioncorrected",
+      "report": "Spacewasfreedbyaworkerremovingitscompleteddisposabledependencycopies, notsystemautomaticreclamation; nosharedDockerpruning/retained evidence removalreported",
+      "line_refs": [
+        209
+      ]
+    },
+    {
+      "state": "Daemonrestart",
+      "report": "HostVMlogfailedduetodiskfull; supportedDockerrestartused; existingTemporespondedagain",
+      "line_refs": [
+        215,
+        219,
+        221
+      ]
+    },
+    {
+      "state": "Scopedcleanupcomplete",
+      "report": "Exactfailedprojectcontainers/volumes/network plusownedBuildKitcontainerandadmissionlockgone; evidencepreserved",
+      "line_refs": [
+        221,
+        225
+      ]
+    },
+    {
+      "state": "Capacityhold",
+      "report": "4.3GiBfree; askedforatleast10GiBadditionalbeforeimagebuilds/install; later3.6GiBfreeheldno-buildnativecasealso",
+      "line_refs": [
+        225,
+        267,
+        475
+      ]
+    },
+    {
+      "state": "Lateravailability",
+      "report": "Temporunningserviceresponds; doctorreportsmissingrelease-checkevidenceforcurrentmain; nonewinstallation",
+      "line_refs": [
+        623,
+        675
+      ]
+    }
+  ],
+  "false_or_superseded_blockers_not_to_carry_forward_as_current": [
+    "Dockerunavailable/lockedMac: laterDockerrestartandTemposervice recovery were reported; recheckcurrentstate ratherthanassertoutage.",
+    "FailedFE25projectresourcecustody: exactproject/builder/admissioncleanupwas laterreportedcomplete.",
+    "Python3.12missingpytest: fixedcohort reranwithcheckedPython3.14; retainfailedattempt butnotcurrentonlyblocker.",
+    "FE25fulltypecheckbaseline22diagnostics: laterreportedzeroaftertest-fixturerepairs; stillverifycurrentcandidate.",
+    "TwoB15gatewayfailures: latertracedtostale borrowedpackage; currentpackagepathpassedall5selectedmockgatewaycases.",
+    "B32lostcorpuslegality: explicitlyrestoredandfirstretirementbatchmerged.",
+    "DDLstandaloneearlyloadregression: subsequentfixexplicitlyreportedmerged."
+  ],
+  "unavailable_from_transcript": [
+    "NoexactfinalmainSHA",
+    "NoexactFE25/B15/carrier/queuegatebranch namesorheadSHAs",
+    "Noexactlocalworktreeorevidencedirectorypaths",
+    "Noformalcurrentcompletion-run.jsonsnapshot",
+    "Noexplicitfinalauditcounts",
+    "NoexactinstalledSHA/schemafromthisrun",
+    "Noformalall-workerstop/dirtyworkcheckpoint"
+  ],
+  "recommended_resume_order": [
+    "Preserve/recoverexistingbranches,dirtywork,andcompletionledger beforeanyrebase/reset; comparecurrentGitHubheads.",
+    "Checkactualregisteredhostdisk/Docker/Tempostate andtaskresourcecustody; donotstartbuildswiththehistoricalinsufficientmargin.",
+    "FinishcurrentB15missing-settings/typingboundarywithfocusedchecksandindependentreview; donotcall4errorsfinalafternewpatch.",
+    "Keepready independentmapping/proofinventorytasksrunningwithoutnewDockerbuilds.",
+    "Useoneheavyoperatorforcurrentqueuegate,carrierandFE25applicableexactcandidateproof; preservefailedreceipts andinput-fingerprintlimits.",
+    "Mergeacceptedexactheads,qualifyfinalreleaseandinstallthroughnormalworkflow; genuine liveacceptanceremainsseparate."
+  ],
+  "interpretation_notes": [
+    "Repeated C10/B01/P06 finished lines are UI agent-completion notifications across many assignments, notproofthatnewpacketC10/B01/P06tasks repeatedlycompleted.",
+    "Allpass/merge/hostclaims here are reported transcript statements awaitingparentGitHub/ledgerverification.",
+    "Never sum test counts fromoverlappinghistoricalruns asuniquecoverage.",
+    "A sourcecensusratio isnotwhole-repoownership orindependentruntimequalification."
+  ]
+}

@@ -1,0 +1,68 @@
+TASK FE30 — Classify the independent serving entry and release the supported-shell decision
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: FE008, FE010, FE012.
+ORIGINAL TASKS: D02.
+SUPPORTING DEFINITION: reference/planning-definitions/frontend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: FE06.source_released; C21.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- AGENTS.md — current scope, ownership and minimum real proof; distinguish implemented/tested/assembled/installed
+- SPEC.md — current November 10 reduction scope and retained ordinary Study preservation
+- docs/testing.md — smallest relevant proof and supported owned runner
+- SPEC.md — explicit independent Learning service/database retirement
+- static/src/study-main.tsx — StudyConnectionBoundary serving entry
+- scripts/study-composition.ts — study target entry substitution and emitted module inventory
+- vite.static.config.ts — TEMPO_TARGET=study and __TEMPO_STUDY__
+- app/components/study-connection-boundary.tsx — bootstrap/settings/new connection and retained export
+- app/components/study-settings-panel.tsx — obsolete /api/study/settings mutation
+- app/lib/study-client.ts — authority contracts and original service recovery
+- backend/app/main.py — no /api/study/bootstrap or /api/study/settings route
+
+WRITE RESERVATION:
+- static/src/README.md [existing]
+- app/features/study/README.md [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Read the existing study target entry substitution, imports and public build tests. Record the current producer/consumer map for bootstrap, settings, new issuance, retained receipts and retained export. This is bounded source/build-manifest classification; do not start a browser or a retired service to discover the absence already established in main.py.
+2. Apply current SPEC: the independent Learning service/database is retired; the supported product is the current monolith Study including frozen ordinary exercises and offline/reload. Default dormant serving disposition is a recovery-only hold/export surface or removal of the unused serving target while preserving reachable recovery. State this as the current implementation direction, not a newly invented grading/runtime policy.
+3. Release which current callers FE31/FE32 must adopt into the supported existing command owner before deleting mode-specific mutation paths. FE36 owns the final entry/control removal. Keep source classification separate from that later mutation so dependencies do not form a cycle.
+4. Preserve independent authority factories/inspection required for old original-authority work. Retained settings to /api/study/settings and unsupported issuance are held; do not translate/rebind their IDs/bodies.
+5. If concrete evidence shows a currently supported consumer contrary to this map, integration owner resolves its narrow contract with the current backend before removal. Never restore the retired independent service as a shortcut.
+
+ACCEPTANCE:
+- A finite path/consumer/support table distinguishes current monolith support from independent recovery-only retained work.
+- FE31/FE32 have a concrete composition target and FE36 has explicit controls/entry points to retire after adoption.
+- Existing retained data/authority contracts are preserved; no active source behavior is modified by this decision slice.
+- No decision is deferred generically and no new user approval is required for the SPEC-derived default.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: git diff --check -- static/src/README.md app/features/study/README.md
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- No unrelated heavy test is implied. The owner selects the applicable changed-boundary checks.
+
+MATERIAL RISKS:
+- A dormant source branch can still contain valuable retained-work recovery code. Removing serving must not delete data or redirect original authority.
+
+EXCLUSIONS:
+- No product code edit in this slice
+- No new independent service/bootstrap
+- No record migration
+- No live user-data inventory required for source classification
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

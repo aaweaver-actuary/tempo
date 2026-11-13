@@ -1,0 +1,68 @@
+TASK S01 — Separate typed position source values from the concrete sealed SQL capability
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: ST002.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/proof-storage-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: B00.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- B00 releases the actual port decision; B26 later adopts S01/S02, so do not depend on B26 here. Co-design S34 shape without a reverse dependency.
+
+READ FIRST (repository-relative except reference/ paths):
+- database/tempo_storage/authored_repertoires/position_study_source.py — AuthoredSourceToken; PreparedPositionSource; PreparedPositionSourceWithFacts; prepared_source; fence_position_source
+- backend/app/repertoire/position_study_source.py — prepare_position_source; prepare_position_source_with_facts
+- backend/app/contracts/product_v02/repertoire.py — RepertoireSnapshot; DecisionPresentation
+- packages/evidence-math/src/tempo_evidence_math/position_learning.py
+- backend/app/repertoire/snapshot.py — PreparedPublishedRepertoire
+
+WRITE RESERVATION:
+- packages/evidence-math/src/tempo_evidence_math/position_learning.py [existing]
+- database/tempo_storage/authored_repertoires/position_study_source.py [existing]
+- backend/app/repertoire/position_study_source.py [existing]
+- backend/app/study/position_learning/contracts.py [existing]
+- backend/tests/test_position_learning_contract_values.py [existing]
+- database/tests/position_study/test_position_source_authority.py [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Choose the smallest existing pure position contract surface and add narrow typed source/membership/decision-binding/publication fact views. Do not import backend, SQL, or full Repertoire implementation into evidence-math.
+2. Replace snapshot: object, routes: tuple and untyped publication-fact dictionaries at the public boundary with those semantic types and existing RouteOption/PositionDefinition/SourceCertificate values.
+3. Keep the actual capability seal private to the storage/preparation implementation. Public clients depend on the pure view/port; a value with matching fields or digest alone is never sufficient authority.
+4. Update every current import of the public prepared classes to the contract surface. One fake preparation+fence pair may substitute the boundary for policy tests; the real writer still rejects its foreign/forged ticket.
+5. Preserve original full snapshot provenance versus current authored digest, exact header/integrity comparison, bounded source read, graph lock and currentness fences.
+
+ACCEPTANCE:
+- Importing public values does not import tempo_storage, psycopg, application composition or start I/O.
+- No public snapshot/routes/bindings/facts field remains object/unparameterized tuple/Any.
+- Foreign/forged preparation and stale source still fail closed; native source/currentness proof retains lock order and limits.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: make python-file FILE=backend/tests/test_position_learning_contract_values.py
+  kind: focused; availability: current; source_entrypoint: Makefile:python-file; scripts/resolve-python.mjs:resolvePython; docs/testing.md
+- Working directory .: make python-file FILE=backend/tests/test_position_schedule_occurrences.py
+  kind: focused; availability: current; source_entrypoint: Makefile:python-file; scripts/resolve-python.mjs:resolvePython; docs/testing.md
+- Working directory .: PYTEST_ADDOPTS='--deselect=database/tests/position_study/test_position_source_authority.py::test_native_id_only_edit_and_busy_row_cannot_cross_fence' make python-file FILE=database/tests/position_study/test_position_source_authority.py
+  kind: focused; availability: current; source_entrypoint: Makefile:python-file; scripts/resolve-python.mjs:resolvePython; docs/testing.md; scope: Pure cases only; exact named native cases intentionally deselected and still pending P14 native acceptance; native_pending_nodeids: database/tests/position_study/test_position_source_authority.py::test_native_id_only_edit_and_busy_row_cannot_cross_fence
+
+COORDINATED ACCEPTANCE:
+- One current source-authority native case on P14 or the final changed-storage integration checkpoint; a new fixed bridge selector must be implemented/reviewed before execution if the existing selector does not reach the fence.
+
+MATERIAL RISKS:
+- Replacing sealed implementation checks with structural typing at runtime would let constructed data bypass preparation authority.
+
+EXCLUSIONS:
+- New service/package/repository framework
+- Moving graph traversal into a writer transaction
+- Changing supported source bounds
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

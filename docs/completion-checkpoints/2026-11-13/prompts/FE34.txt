@@ -1,0 +1,65 @@
+TASK FE34 — Record intentional FSRS-shaped scheduling API as the current abstraction
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: FE013.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/frontend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: No source prerequisite; reserve the named files first.
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- AGENTS.md — current scope, ownership and minimum real proof; distinguish implemented/tested/assembled/installed
+- SPEC.md — current November 10 reduction scope and retained ordinary Study preservation
+- docs/testing.md — smallest relevant proof and supported owned runner
+- packages/scheduling/README.md — pinned FSRS6.3.2 state and explicit clock/day contract
+- packages/scheduling/src/tempo_scheduling/__init__.py — public exported schedule/position/init/clone operations
+- packages/scheduling/src/tempo_scheduling/_scheduler.py — complete fsrs_card_json input
+- packages/scheduling/src/tempo_scheduling/_position_schedule.py — initial_position_state, clone_state
+- backend/app/services/scheduler.py — outer legacy environmental defaults
+- packages/scheduling/tests/test_purity.py — fresh installed child processes
+- backend/tests/test_scheduling_boundary.py — backend dependency guard
+
+WRITE RESERVATION:
+- packages/scheduling/README.md [existing]
+- backend/app/study/policy/README.md [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Record the bounded current decision: complete FSRS6.3.2 Card JSON is intentionally part of the supported scheduling API at this product stage. Consumers supply explicit time/day/allocated identity; scheduling owns validation and algorithm semantics. This is a vendor-shaped stable contract, not an implementation-independent promise.
+2. Document the credible tradeoff: a future algorithm/vendor/state-format change will require scheduler-owned versioning/migration. The existing initial_position_state API already removes the need for callers to construct fresh position state; do not add an opaque-memory framework without a concrete replacement requirement.
+3. List current installed-package deterministic/purity qualification separately from checkout imports and preserve it. This docs-only decision changes no package behavior or runtime semantics.
+4. Close FE013 by accepted documented abstraction choice; if integration owner explicitly selects replaceability instead, it must be a separate concrete implementation scope with a state-compatibility plan, not this packet pretending an opaque type alone solves it.
+
+ACCEPTANCE:
+- Public docs explicitly answer whether serialized FSRS Card is supported and pin its compatibility expectations.
+- Identity allocation, aware instant and Study day remain owner-supplied; no environmental APIs move into pure scheduling.
+- No unrelated scheduler refactor is required to resolve the decision row.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: git diff --check -- packages/scheduling/README.md backend/app/study/policy/README.md
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- owner: integration owner; required: No new executable test for documentation-only decision. If behavior/export bytes change, use existing installed package qualification: from packages/scheduling, uv sync --locked --no-editable; uv run --locked --no-editable python -m build; uv run --locked --no-editable python -m pytest tests. Do not claim checkout tests as installed evidence.
+
+MATERIAL RISKS:
+- Intentional API coupling has a future replacement cost. Hiding it in an opaque wrapper now adds complexity without a current substitute requirement.
+
+EXCLUSIONS:
+- No new opaque scheduler framework
+- No FSRS mathematics/state rewrite
+- No schema migration
+- No mandatory full stack
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

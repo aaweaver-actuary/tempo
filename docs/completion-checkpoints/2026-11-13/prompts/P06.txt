@@ -1,0 +1,70 @@
+TASK P06 — Restore the three retained manual prefix-split HTTP routes
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: ST012, ST013.
+ORIGINAL TASKS: E02.
+SUPPORTING DEFINITION: reference/planning-definitions/proof-storage-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: No source prerequisite; reserve the named files first.
+
+ADDITIONAL OWNER CONDITIONS:
+- main.py path sequence: P06 → B31 → B04/B05 → B06 → B27 → B21. Reserve proposed router/test paths.
+
+READ FIRST (repository-relative except reference/ paths):
+- SPEC.md
+- backend/app/prefix_split_commands.py — accept_prefix_split; reject_prefix_split
+- backend/app/services/prefix_split.py — preview_prefix_split; apply_prefix_split
+- backend/app/main.py
+- backend/app/contracts/transport/content.py — PrefixSplitRequest
+- app/lib/prefix-split-command.ts
+- app/views/card_editor.tsx
+- app/views/training_view.tsx
+- Packet reproduction/evidence: reference/deep-review/evidence/qualification/routes-and-e01-probe.json
+- Packet reproduction instructions: reference/deep-review/evidence/REPRODUCING.md. Negative probes are deliberately failing evidence, not implementation patches or current passes.
+
+WRITE RESERVATION:
+- backend/app/prefix_split_routes.py [proposed; reserve before creation]
+- backend/app/main.py [existing]
+- backend/tests/test_prefix_split_http.py [proposed; reserve before creation]
+- tests/REGRESSIONS.md [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Add a small router using GET /api/cards/{identifier}/prefix-split for the existing read-only preview and POST on that path plus /reject for the existing registered commands. Mount it once in main.py.
+2. Follow current command_dispatch and operation response semantics exactly: original Idempotency-Key, expected revision, 202 original operation polling, immutable payload conflict, completed/failed/blocked distinctions.
+3. Keep SQL and split policy in their existing owners. Preserve actual source/currentness, integrity, original membership, active-attempt and queue-order protections; add a route-level negative wherever transport must carry the authoritative revision/identity.
+4. Use a real assembled FastAPI route inventory to prove the routes mount; route tests exercise read/writer dispatch, not mocked product responses. Send P07/P12 the supported endpoints and exact result schema.
+
+ACCEPTANCE:
+- Exactly one GET and two POST routes mount on the normal packaged app and invoke existing owners.
+- Preview is read-only; accept/reject use the original operation and revision; stale/illegal/conflicting requests fail truthfully.
+- P12 proves actual UI→HTTP→writer→receipt→playable successor, so route-source success alone is component-tested only.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: make python-file FILE=backend/tests/test_prefix_split_http.py
+  kind: focused; availability: proposed test path; execute only after the named owning task creates and registers it; source_entrypoint: Makefile:python-file; scripts/resolve-python.mjs:resolvePython; docs/testing.md; requires_created_paths: backend/tests/test_prefix_split_http.py
+- Working directory .: npm run test:frontend -- prefix-split-pending-regressions
+  kind: focused; availability: current
+- Working directory .: npm run test:frontend -- prefix-split-training-regressions
+  kind: focused; availability: current
+
+COORDINATED ACCEPTANCE:
+- P07 restores real durability HTTP checks; P12 adds the real prefix-split browser case using existing owned fixtures.
+
+MATERIAL RISKS:
+- The native command currently succeeds while the HTTP surface is absent; mocks of these endpoints cannot close the gap.
+
+EXCLUSIONS:
+- Advanced prefix transition/evaluation
+- Automatic recombination
+- New scheduler or new split algorithm
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

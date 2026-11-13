@@ -1,0 +1,66 @@
+TASK S07 — Separate queue-abandonment request/policy from SQL and operator transport
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: ST014.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/proof-storage-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: T02.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- P13 harness is needed only for applicable later CLI qualification, not to start pure contract/policy work.
+
+READ FIRST (repository-relative except reference/ paths):
+- database/tempo_storage/lifecycle/queue_attempt_abandonment.py — validate_request; origin_fingerprint; plan_in_writer; abandon_in_writer; _locked_origin; _check_unaccepted; main
+- scripts/position-study/abandon-queue-attempt.mjs
+- backend/tests/test_queue_attempt_abandonment_postgres.py
+- database/tests/check_postgres_cli_lifecycle.py — abandon_fixture
+
+WRITE RESERVATION:
+- backend/app/contracts/queue_attempt_abandonment.py [proposed; reserve before creation]
+- backend/app/study/queue_attempt_abandonment.py [proposed; reserve before creation]
+- backend/app/queue_attempt_abandonment_cli.py [proposed; reserve before creation]
+- database/tempo_storage/lifecycle/queue_attempt_abandonment.py [existing]
+- scripts/position-study/abandon-queue-attempt.mjs [existing]
+- backend/tests/test_queue_attempt_abandonment_postgres.py [existing]
+- tests/runner/tempo-cli.test.mjs [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Add pure typed PlanRequest/ApplyRequest/OriginFacts/PlanResult/AbandonmentReceipt values under the existing backend contract owner; request/origin fingerprints keep exact encoding and UTC rules.
+2. Move the unfinished-issued-legacy-opening eligibility decision to one Study application owner. Storage supplies locked semantic origin/queue/accepted-review/position-plan facts and persists the exact receipt under its existing locks/savepoint.
+3. Move argparse/base64 transport to a thin backend CLI composition module; update the registered target-checked Node operator to call it. Keep target lock, installed immutable image/config verification and default-plan/apply distinction.
+4. Preserve original queue/card/revision/operation/digest/actor/reason and exact replay/conflict behavior. Keep missing pre-migration receipt lookup safe where actually supported.
+5. Use existing native abandonment fixture to prove concurrent review wins safely, changed origin holds, duplicate apply returns the same receipt, and unrelated origins/reviews/cards/grades remain byte-identical.
+
+ACCEPTANCE:
+- Public request/result contract imports without SQL or CLI startup.
+- Exactly one Study policy owner and one SQL writer remain; operator and Study lookup call the same contract.
+- Native concurrency/replay/rollback and target-isolation acceptance pass; no actual user attempt is abandoned.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: make python-file FILE=backend/tests/test_queue_attempt_abandonment_postgres.py
+  kind: native; availability: current wrapper; run only inside the admitted owned native fixture with exact non-skipping case execution
+- Working directory .: node --test --test-concurrency=1 --test-name-pattern="abandon" tests/runner/tempo-cli.test.mjs
+  kind: focused; availability: current
+
+COORDINATED ACCEPTANCE:
+- P14 bounded native abandonment test through the existing fixture; P13 registered disposable operator plan/apply/replay, never live apply.
+
+MATERIAL RISKS:
+- Moving savepoint/lock orchestration can race review acceptance. Keep card lock → queue day → origin lock order and atomic receipt boundary.
+
+EXCLUSIONS:
+- Changing abandonment eligibility
+- Abandoning any live attempt
+- Adding a new recovery state machine
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

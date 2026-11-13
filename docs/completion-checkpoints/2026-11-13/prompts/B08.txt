@@ -1,0 +1,64 @@
+TASK B08 — Move checkpoint writer capability check and shared owner lock into storage
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: BE004.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/backend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: B07.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- backend/app/study/position_checkpoint.py — begin_position_checkpoint
+- database/tempo_storage/study/position_first_responses.py
+- database/tempo_storage/study/position_owner_epoch.py — owner_lock_key
+- database/tests/position_study/test_position_first_responses.py
+- backend/tests/test_opening_checkpoint_preparation.py
+- database/tests/position_study/test_position_grade_effects.py
+
+WRITE RESERVATION:
+- backend/app/study/position_checkpoint.py [existing] — begin_position_checkpoint only
+- database/tempo_storage/study/position_owner_epoch.py [existing] — reuse internal _writer and shared owner-lock implementation
+- backend/tests/test_opening_checkpoint_preparation.py [existing]
+- database/tests/position_study/test_position_first_responses.py [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Add the narrow public shared-owner-fence capability to position_owner_epoch.py, reusing its existing _writer check and shared advisory lock. It returns semantic writer/busy outcome without checking current source when original checkpoint replay does not require that.
+2. Keep application replay/plan/manifest scope checks in their current order; call the storage capability at the exact old lock location.
+3. Translate storage capability outcomes to existing evidence hold/conflict semantics; do not let storage import FastAPI or the checkpoint application.
+4. Add reader/no-transaction/busy/invalid connection tests and a sequence assertion that original replay/scope validation precedes owner lock and card/day/queue locks follow it.
+5. Execute actual PostgreSQL lock/rollback proof through the existing grade/checkpoint owner fixture.
+
+ACCEPTANCE:
+- No raw.info.transaction_status or advisory SQL remains in checkpoint application.
+- Malformed/forged preparation, changed issued record and unavailable writer retain exact refusal semantics.
+- Failed checkpoint/grade after lock rolls back first-response effect and checkpoint together; public contract import is inert.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: make python-file FILE=backend/tests/test_opening_checkpoint_preparation.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: make python-file FILE=database/tests/position_study/test_position_first_responses.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- Existing native grade-effects case plus a focused shared-lock native assertion in that owner, not a separate browser gate.
+
+MATERIAL RISKS:
+- The seal is an authority, not a data shape. Do not weaken validation to hasattr or a boolean writer flag.
+
+EXCLUSIONS:
+- No new service, database, event bus, generic repository, scheduler, or retired producer restoration.
+- No changes to historical migration checksums, persisted command names, accepted operation identities, or original receipt bytes.
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

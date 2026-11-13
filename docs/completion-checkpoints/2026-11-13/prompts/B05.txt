@@ -1,0 +1,74 @@
+TASK B05 — Migrate fixture ordering to active publication and delete bulk presentation writes
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: BE001.
+ORIGINAL TASKS: B04.
+SUPPORTING DEFINITION: reference/planning-definitions/backend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: B00.source_released; B04.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- backend/app/services/queue_application.py — randomize_daily_queue,_quarantine_malformed_opening_cards
+- backend/app/services/postgres_queue_refresh.py — _prepare_queue_randomization,_publish_queue_randomization,_quarantine_one_opening
+- database/tempo_storage/queue_refresh/application/publication.py
+- database/tempo_storage/queue_refresh/presentation.py
+- database/tests/frozen-order-browser-fixture.py
+- database/tests/native_review/test_postgres.py
+- backend/tests/test_next_exercise_native.py
+
+WRITE RESERVATION:
+- backend/app/services/postgres_queue_refresh.py [existing] — narrow public active publication callable if needed
+- backend/app/services/queue_application.py [existing] — remaining duplicate presentation only
+- database/tempo_storage/queue_refresh/application/publication.py [existing]
+- backend/app/main.py [existing] — remaining bulk wrappers
+- database/tests/frozen-order-browser-fixture.py [existing]
+- database/tests/native_review/test_postgres.py [existing]
+- backend/tests/test_next_exercise_native.py [existing]
+- backend/tests/test_queue_randomization_noop_protection.py [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. For each B00 fixture consumer, use actual active preparation/publication operations with the same membership/identity/source revalidation and caller locks. A narrow fixture adapter may orchestrate existing capabilities; it may not implement ordering again.
+2. Preserve frozen introduction ranks, same seed/order fingerprint, protected issued pointers, invalidation retries and current queue membership checks.
+3. Delete orphan bulk randomization/quarantine/ready-marking statements and wrappers after fixture migration. Keep queue ordering pure policy as the single reusable policy.
+4. Run current no-op protection and native next-exercise cases, including changed membership between preparation and publish and failure rollback.
+5. Attach final definition/caller map proving bulk writers are gone and fixtures now prove the production phase owner.
+
+PRESCRIBED SMALL BATCHES:
+Batch 1: batch_id: B05-1; name: fixture-adoption; write_files: backend/app/services/postgres_queue_refresh.py; database/tests/frozen-order-browser-fixture.py; database/tests/native_review/test_postgres.py; backend/tests/test_next_exercise_native.py; instruction: Move every fixture to the existing active ordering/publication capability; verify stale membership/rollback.; after_batch: None
+Batch 2: batch_id: B05-2; name: duplicate-retirement; write_files: backend/app/services/queue_application.py; database/tempo_storage/queue_refresh/application/publication.py; backend/app/main.py; backend/tests/test_queue_randomization_noop_protection.py; instruction: Remove only orphan alternate presentation writers and complete final caller map.; after_batch: B05-1
+One batch per weak worker dispatch. Return scoped patch/evidence before next batch; root integration may combine coherent batches into one PR. Never ship a temporarily unregistered or partially translated runtime.
+
+ACCEPTANCE:
+- No alternate projection-ready UPDATE, quarantine writer, or per-entry bulk ordering survives merely for test convenience.
+- Stale membership/proposal is refused without moving protected attempts; retry converges with stable input.
+- BE001 is eligible for closure only after B04 and this task.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: make python-file FILE=backend/tests/test_queue_randomization_noop_protection.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: make python-file FILE=backend/tests/test_next_exercise_native.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- Final queue/position browser selection consumes the migrated frozen fixture; retain original immutable order evidence.
+
+MATERIAL RISKS:
+- A fixture that writes equivalent-looking rows directly would hide the original competing-owner problem. Use active publisher, not copied SQL.
+
+EXCLUSIONS:
+- No new service, database, event bus, generic repository, scheduler, or retired producer restoration.
+- No changes to historical migration checksums, persisted command names, accepted operation identities, or original receipt bytes.
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

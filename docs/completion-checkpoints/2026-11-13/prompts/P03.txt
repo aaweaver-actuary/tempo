@@ -1,0 +1,54 @@
+TASK P03 — Repair the four current card-deletion borrowed-connection test failures
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: ST012, BE021.
+ORIGINAL TASKS: E02.
+SUPPORTING DEFINITION: reference/planning-definitions/proof-storage-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: No source prerequisite; reserve the named files first.
+
+ADDITIONAL OWNER CONDITIONS:
+- Reserve deletion test file first; release corrected fixture to B23/S18.
+
+READ FIRST (repository-relative except reference/ paths):
+- backend/tests/test_card_deletion_storage_boundary.py — Compatible; test_cancellation_queries_then_clocks_fetches_and_rechecks_only_exact_matches; test_purge_preserves_identifier_reads_clock_points_fixed_targets_and_tombstones; test_repertoire_delete_keeps_shared_owner_retention_policy_and_refresh_after_writes
+- database/tempo_storage/authored_repertoires/card_deletion/storage.py
+- backend/app/card_deletion.py
+
+WRITE RESERVATION:
+- backend/tests/test_card_deletion_storage_boundary.py [existing]
+- tests/REGRESSIONS.md [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Update Compatible to model the current native execution capability rather than intentionally rejecting execute_native. Do not make unknown SQL succeed.
+2. Keep exact cancellation identity/recheck ordering, monotonic clock points, fixed tombstone targets, shared membership keep/delete behavior and post-write refresh/calendar assertions.
+3. Add a negative for unexpected connection/commit/close and for a wrong cancellation predicate so a broadly permissive fake cannot hide a regression.
+4. Execute the complete file before its sequential handoff to backend BE011 and the ST005 deletion cluster.
+
+ACCEPTANCE:
+- All four named parameterized failures pass for their intended assertions; no task-owned production change was needed only to satisfy the obsolete fixture.
+- Retained cancellation/retention identities and transaction ownership remain enforced.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: make python-file FILE=backend/tests/test_card_deletion_storage_boundary.py
+  kind: focused; availability: current; source_entrypoint: Makefile:python-file; scripts/resolve-python.mjs:resolvePython; docs/testing.md
+
+COORDINATED ACCEPTANCE:
+- No unrelated heavy test is implied. The owner selects the applicable changed-boundary checks.
+
+MATERIAL RISKS:
+- A fake that simply accepts every native query would reproduce the QF-04 blind spot.
+
+EXCLUSIONS:
+- No unrelated feature, rewrite or retired producer restoration.
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

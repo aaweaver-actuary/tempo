@@ -1,0 +1,79 @@
+TASK FE33 — Document provisional offline repeats and isolate demo queue policy with conformance
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: FE012, FE004.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/frontend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: FE30.source_released; C24.source_released; FE29.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- AGENTS.md — current scope, ownership and minimum real proof; distinguish implemented/tested/assembled/installed
+- SPEC.md — current November 10 reduction scope and retained ordinary Study preservation
+- docs/testing.md — smallest relevant proof and supported owned runner
+- app/lib/offline-training.ts — offlineRepeatPosition and recordOfflineAttempt scheduling projection
+- app/views/home_view.tsx — demo initialization, local queue writes, Again/first-clean repeat handling
+- packages/scheduling/src/tempo_scheduling/_scheduler.py — schedule_review requeue/mode/first-clean logic
+- app/domain/transport.ts — BackendQueueCard metadata
+- tests/unit/study-single-card-contract.test.ts — independent cannot manufacture attempt authority
+- tests/unit/offline-training-regressions.test.ts — current provisional phone repeat semantics
+
+WRITE RESERVATION:
+- app/features/study/demo-queue.ts [proposed or moved; verify the owning symbol before implementation]
+- app/lib/offline-training.ts [existing]
+- app/views/home_view.tsx [existing]
+- app/domain/offline-training.ts [existing]
+- tests/fixtures/offline-repeat-policy.json [proposed or moved; verify the owning symbol before implementation]
+- tests/unit/offline-training-regressions.test.ts [existing]
+- tests/unit/study-single-card-contract.test.ts [existing]
+- packages/scheduling/tests/test_offline_repeat_contract.py [proposed or moved; verify the owning symbol before implementation]
+- app/features/study/README.md [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Record the SPEC-compatible decision: normal monolith prepared-phone repeats remain a provisional local projection, server receipts/scheduling remain authoritative; demo is a distinct local demonstration policy; the retired independent service/recovery surface authorizes no fresh offline attempts.
+2. Extract Home demo queue initialization/completion/burial/reorder persistence into one cohesive demo-queue adapter with explicit storage/time input and named results. Preserve current demo repeat position4 and first-clean end-of-queue behavior as demo behavior; do not describe it as FSRS scheduling.
+3. Create a versioned conformance fixture for the supported phone projection fields, comparing relevant requeue/mode decisions to current schedule_review with explicit complete FSRS input and times. Cover guided-as-Again, first clean/reinforcement, normal/light/hard, last-five failure threshold and missing legacy metadata. Record both current projection and canonical server outputs for an intentional provisional difference; never call that full scheduler parity. No FSRS runs in the browser.
+4. Use current semantics as the decision baseline. Preserve existing same-day, invalid-history and requiresConnectedGrading holds. Do not add a blanket hold merely because optional legacy metadata is absent. For a demonstrated divergence, document whether it is the deliberately provisional projection or an existing required-parity bug before changing newly created projections; any changed projection gets a new explicit local policy version and a named vector. Existing retained parent chains/answers and server replay remain unchanged.
+5. New prepared/projection metadata may identify the local projection policy; old saved records without it remain readable and are not rewritten. No policy change is silently applied to a retained queue.
+6. Home becomes a caller of demo/online/offline application actions rather than a writer of tempo-daily-queue, tempo-cards-left, reviewed/failure counters or scheduler projections. Preference-only localStorage writes may remain.
+
+ACCEPTANCE:
+- Each mode has a concrete authority/support classification and a runnable current owner.
+- Supported relevant repeat decisions have versioned owner-backed conformance cases. Intentional provisional differences are explicit, not claimed as parity; no new independent offline authority is created.
+- Demo remains explicitly distinct and does not claim real saved review/schedule authority.
+- Home no longer persists queue layouts; retained phone attempts, parent chains and unacknowledged work are preserved.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: npm run test:unit -- tests/unit/offline-training-regressions.test.ts tests/unit/study-single-card-contract.test.ts tests/unit/study-regressions.test.tsx
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: uv run --directory packages/scheduling --locked --no-editable python -m pytest tests/test_offline_repeat_contract.py -q
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: npm run typecheck:browser
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- owner: P16; required: Reuse actual phone outage/reload/replay case to prove provisional queue advancement and original server reconciliation; demo adapter requires no PG stack.
+
+MATERIAL RISKS:
+- Offline requeue is not the full FSRS algorithm. Matching only Again=4 can hide hard/light/first-clean distinctions; expanding into a second scheduler would be worse.
+
+EXCLUSIONS:
+- No browser FSRS clone
+- No new due-date authority
+- No record reset/migration
+- No demo becoming production
+- No independent Learning resurrection
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

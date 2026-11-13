@@ -1,0 +1,70 @@
+TASK B21 — Compose explicit supported command sets and isolate essential startup
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: BE009.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/backend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: B18.source_released; B19.source_released; B20.source_released; B31.source_released; P06.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- backend/app/tasks.py — imports and command registration
+- backend/app/command_gateway.py — _registry,_handlers,_preparers
+- backend/app/main.py — router imports and app construction
+- backend/app/product_composition/README.md
+- backend/app/contracts/command_registry.py
+
+WRITE RESERVATION:
+- backend/app/tasks.py [existing]
+- backend/app/command_gateway.py [existing] — composition injection only
+- backend/app/main.py [existing] — integration-owned imports/mounts
+- backend/app/product_composition/command_registration.py [proposed or moved; verify the owning symbol before implementation] — proposed
+- backend/tests/test_worker_command_registration_boundary.py [existing]
+- backend/tests/test_http_command_registration_boundary.py [existing]
+- backend/tests/test_explicit_product_composition.py [existing]
+- backend/app/product_composition/README.md [existing]
+- docs/architecture/diagrams/study-games.md [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Compose fixed essential Study, retained controls/authoring and minimal Game Review route sets through existing root; do not add a plugin discovery framework or dynamic import-by-user-name.
+2. Make actual essential worker/API startup avoid optional Games and unused authoring imports. Existing worker command dispatch/recovery resolves a command only through the fixed declared family/name table; it loads that retained family at its dispatch boundary, after retired/unknown rejection. Preserve all retained UI/recovery commands without requiring all authoring families before the first essential review. No new process, queue, mode, plugin discovery or import-by-user-string.
+3. Remove import-time register calls from released descriptor families and replace worker checkpoint statement. Keep compatibility registry maps only as private executor implementation, not domain imports.
+4. Cold subprocess tests block optional provider/retired Games imports and prove essential Study registration/recovery. Duplicate/unknown/retired names have their existing outcomes.
+5. Run a current assembled queue/save/recovery test once with optional family absent; attach exact command inventory and update current assembly drawing.
+
+ACCEPTANCE:
+- Domain/contract/command owner imports are inert. Essential registration supplies review/queue/checkpoint recovery without optional imports.
+- Production root still supplies every supported current name, including frozen attempts and prefix split; persisted names do not change.
+- No broker/provider/database startup occurs from importing public contract/descriptor modules.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: make python-file FILE=backend/tests/test_worker_command_registration_boundary.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: make python-file FILE=backend/tests/test_http_command_registration_boundary.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: make python-file FILE=backend/tests/test_explicit_product_composition.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- Single combined startup/isolation/review-to-next proof for the release; do not spawn extra services or parallel native stacks.
+
+MATERIAL RISKS:
+- Core descriptors can still import authoring through helper modules. Trace transitive startup imports; do not mistake renamed eager imports for isolation.
+
+EXCLUSIONS:
+- No new service, database, event bus, generic repository, scheduler, or retired producer restoration.
+- No changes to historical migration checksums, persisted command names, accepted operation identities, or original receipt bytes.
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

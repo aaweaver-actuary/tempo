@@ -1,0 +1,73 @@
+TASK FE06 — Move physical authority registry layout and database naming into the storage adapter
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: FE005.
+ORIGINAL TASKS: C02, C03.
+SUPPORTING DEFINITION: reference/planning-definitions/frontend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: FE05.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- AGENTS.md — current scope, ownership and minimum real proof; distinguish implemented/tested/assembled/installed
+- SPEC.md — current November 10 reduction scope and retained ordinary Study preservation
+- docs/testing.md — smallest relevant proof and supported owned runner
+- app/lib/study-client.ts — StudyClientStorage, offlineDatabaseFor, authorities, retainedStudyData, connectStudyWithAuthority
+- app/domain/study-authority.ts — semantic retained facts
+- database/browser/study-connection-storage.ts — authority registry read/write and retained database inspection
+- app/lib/study-connection.ts — browserStorage and defaultStudyClient composition
+- tests/unit/study-client-factory-regressions.test.ts — inert factory and isolated clients
+
+WRITE RESERVATION:
+- app/domain/study-authority.ts [existing]
+- database/browser/study-connection-storage.ts [existing]
+- app/lib/study-client.ts [existing]
+- app/lib/study-connection.ts [existing]
+- tests/unit/study-client-factory-regressions.test.ts [existing]
+- tests/unit/study-learning-connection-regressions.test.ts [existing]
+- tests/unit/operation-status-study-client-regressions.test.ts [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Publish independently declared semantic AuthorityIdentity/RegisteredAuthority facts and a storage port: read registered origin/workspace identities, bind an authority, inspect retained work, export retained bytes, and supply an opaque offline-store locator to composition. Keep semantic authority identity and transition rules in the client.
+2. Move tempo-offline-training naming, offlineDatabase registry-field parsing/validation and JSON serialization behind the existing browser storage adapter. Keep the exact v1 registry keys, database names and bytes; read/validate old registry without migration.
+3. Have storage inspection discover its registered database names internally instead of receiving a client callback that exposes physical registry fields. The client supplies semantic authority descriptors only.
+4. Preserve session credential storage behavior and opt-in restoration. Do not conflate session secrets with the non-secret authority registry; preserve malformed-registry holds and double authority check around bootstrap.
+5. Update composition and fake-port tests. Demonstrate a client backed by an in-memory semantic registry with no IndexedDB names, raw JSON registry or physical offlineDatabase property.
+6. Release the semantic contract to S03/S04 storage factory work. The storage owner may later parameterize handles; it must consume this port rather than moving the physical layout back to app policy.
+
+ACCEPTANCE:
+- study-client.ts contains no physical database/object-store names, offlineDatabase casts, registry JSON parse/stringify or storage-layout rules.
+- Factory import remains inert; two clients retain isolated credentials, generation fences, bodies and notifications.
+- Reload/resume/recover/cutover outcomes and byte-preserving export are unchanged except FE05 accepted unknown-store correction.
+- Existing registry bytes are read compatibly; no automatic rebinding, store rename or data migration.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: npm run test:unit -- tests/unit/study-client-factory-regressions.test.ts tests/unit/study-learning-connection-regressions.test.ts tests/unit/operation-status-study-client-regressions.test.ts
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: npm run typecheck:browser
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- owner: P16; required: Reuse FE05 real IndexedDB reconnect/reload selection; this refactor does not require an unrelated database/server proof.
+
+MATERIAL RISKS:
+- Authority registration and bootstrap can race with another tab. Moving parsing must preserve both checks and original recovery semantics, not introduce a generic registry framework.
+
+EXCLUSIONS:
+- No new storage service
+- No C03 reimplementation; inert import already accepted
+- No new credentials/authentication design
+- No ST003/ST004 closure by relocation alone
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

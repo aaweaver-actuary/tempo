@@ -1,0 +1,73 @@
+TASK C23 — Align browser grading and validation to current Python v1 using shared boundary vectors
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: FE009.
+ORIGINAL TASKS: D03.
+SUPPORTING DEFINITION: reference/planning-definitions/frontend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: C22.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- AGENTS.md — current scope, ownership and minimum real proof; distinguish implemented/tested/assembled/installed
+- SPEC.md — current November 10 reduction scope and retained ordinary Study preservation
+- docs/testing.md — smallest relevant proof and supported owned runner
+- app/domain/study-exercises.ts — studySpecificationSchema, studyAnswerSchema, studySnapshotSchema, availableKnightRoutes, evaluateStudyAnswer
+- backend/app/contracts/study_exercises.py — all v1 specification/answer models
+- backend/app/study/policy/study_grading.py — validate_exercise and evaluate_answer; authoritative unchanged policy
+- tests/fixtures/study-grading.json — shared schema/outcome vectors
+- tests/unit/study-exercise-grading.test.ts — current outcome-only driver
+- backend/tests/test_studies.py — C22 pure fixture driver
+
+WRITE RESERVATION:
+- app/domain/study-exercises.ts [existing]
+- tests/fixtures/study-grading.json [existing]
+- tests/unit/study-exercise-grading.test.ts [existing]
+- backend/tests/test_studies.py [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Change only browser parsing/evaluation and shared test drivers to conform to current Python v1. Parse UCI explicitly before chess.js evaluation: SAN such as Nf3 is invalid_submission under v1 even if chess.js can execute it. Never normalize a retained answer from SAN to UCI before replay.
+2. Cover schema-stage array limits from the real models: move answers 1..40, square answers 0..64, knight answer path 0..4, choices 1..12/displayed order0..12; accepted lines1..20, options2..12, targets1..8, hop counts0..3. Include text/default/extra-field/scalar cases where runtime parsers currently differ. Do not add guessed bounds to inner accepted lines, candidate_region or correct_option_ids that the current server does not impose.
+3. Implement the server validate_exercise invariants for the browser path that uses frozen snapshots: legal board/UCI accepted lines, square rubric uniqueness/disjointness/region coverage, actual starting knight, ordered hop bounds, target uniqueness and option/correct-ID validity.
+4. Fixture runner must distinguish specification schema rejection, specification semantic invalidity, answer schema rejection, and returned assessment. Compare full semantic assessment (outcome and omitted/extra/outside_region; feedback strings where part of existing contract), not just an outcome boolean.
+5. Add positive/negative edge vectors: 0/max/over-limit arrays; SAN/legal UCI/illegal UCI/promotion; repeated squares/option IDs; empty and duplicated displayed_order under existing server behavior; knight zero hops, exact/at-most, static occupied destinations/start return, unreachable with nonempty path; explanation ready=false and self-assessment.
+6. Keep the old v1 server implementation intact. If a current Python result is surprising, encode it as compatibility and report it; do not quietly change both implementations until tests agree.
+
+ACCEPTANCE:
+- Both current runtimes produce the same accepted/rejected stage and semantic assessment for the shared comprehensive v1 corpus.
+- Existing 15 vectors remain valid; illegal/SAN differences and array-bound mismatches have named negative regressions.
+- No persistence, scheduler or transport changes are mixed into pure grading.
+- An unsupported snapshot/version is held explicitly by callers, not cast into v1.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: npm run test:unit -- tests/unit/study-exercise-grading.test.ts
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: make python-file FILE=backend/tests/test_studies.py
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: npm run typecheck:browser
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- No unrelated heavy test is implied. The owner selects the applicable changed-boundary checks.
+
+MATERIAL RISKS:
+- Python defaults/coercions and TS strict validation differ; matching only currently emitted UI answers would miss replay/schema compatibility. Tightening Python to make matching easier is outside this slice.
+
+EXCLUSIONS:
+- No v1 server semantic change
+- No optional analysis/open-judgment service
+- No automatic old-record regrading
+- No native/whole-stack gate for pure parity alone
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

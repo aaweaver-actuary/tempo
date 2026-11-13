@@ -1,0 +1,74 @@
+TASK C22 — Choose and document bounded grader-v1 compatibility; repair the pure Python test owner
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: FE009.
+ORIGINAL TASKS: D03.
+SUPPORTING DEFINITION: reference/planning-definitions/frontend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: C20.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- AGENTS.md — current scope, ownership and minimum real proof; distinguish implemented/tested/assembled/installed
+- SPEC.md — current November 10 reduction scope and retained ordinary Study preservation
+- docs/testing.md — smallest relevant proof and supported owned runner
+- app/domain/study-exercises.ts — current browser schema/evaluateStudyAnswer accepts SAN and lacks server bounds
+- backend/app/contracts/study_exercises.py — current Pydantic v1 bounds/defaults
+- backend/app/study/policy/study_grading.py — GRADER_VERSION=1, validate_exercise, evaluate_answer
+- backend/app/study_attempt_commands.py — request.model_dump answer hash; existing attempt replay first
+- app/domain/offline-training.ts — OfflineAttempt lacks grading provenance
+- backend/app/study/queue_serving.py — exercise_snapshot emits schema_version1/grader_version1
+- backend/tests/test_studies.py — retained golden test mixed with removed app.studies.pgn preview import/test
+- tests/fixtures/study-grading.json — 15 current outcome-only vectors
+
+WRITE RESERVATION:
+- backend/app/study/policy/README.md [existing]
+- app/features/study/README.md [existing]
+- backend/tests/test_studies.py [existing]
+- tests/fixtures/study-grading.json [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Record the recommended preservation decision: the current Python v1 acceptance/grading path remains authoritative for historical and retained v1 work. Repair browser behavior to that existing semantic contract; identify new browser conformance with a separate implementation revision, not an invented claim that old browser v1 was already equivalent.
+2. Define new local provenance as server_contract_version:1 plus browser_implementation_revision:2 (names may follow existing style), recorded only for newly created offline attempts. Missing old provenance is displayed/handled as legacy_unknown, never backfilled by reading or regraded silently.
+3. Explicitly freeze existing v1 quirks as compatibility: UCI-only move evaluation; current minimum/maximum arrays and defaults; duplicate selected choices invalid; displayed_order semantics as currently implemented by Python (set equality, not a new uniqueness rule); exact/at-most knight routes; explanation readiness and self-assessment. Different parser rejection versus invalid_submission versus unrecognized are observable outcomes.
+4. If an owner deliberately changes Python acceptance (for example stricter displayed_order duplicate handling or globally strict scalar coercion), choose a real grader/schema v2 with a separate versioned path before coding that change. Do not silently stamp changed policy as v1. This optional alternative is not needed to finish the default fix.
+5. Rebind backend/tests/test_studies.py: preserve the named golden grader test, remove only the import and obsolete PGN-preview test for deleted app.studies.pgn. Do not restore the module and do not run the mixed stale suite as though valid. Notify inventory owner T02 of the retired named case.
+6. Extend the fixture format additively with named expected validation stage and semantic result fields; keep the existing 15 v1 cases unchanged. C23 owns the new comprehensive vectors and runtime adoption.
+
+ACCEPTANCE:
+- One written compatibility decision states canonical current semantics, new implementation provenance, old missing-provenance handling and the explicit trigger for a real v2.
+- Old attempt/request hashes and persisted grader_version values are unchanged; this task adds no default field to StudyAttemptRequest/model_dump.
+- backend/tests/test_studies.py is a runnable pure grader suite with no deleted producer import; retained named cases remain.
+- Policy decision is a proposed implementation default grounded in current semantics, not a claim of new user-approved grading behavior.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: make python-file FILE=backend/tests/test_studies.py
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: npm run test:unit -- tests/unit/study-exercise-grading.test.ts
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- No unrelated heavy test is implied. The owner selects the applicable changed-boundary checks.
+
+MATERIAL RISKS:
+- Adding even a default-null provenance field to the hashed request model can break retry identity. A version bump that merely relabels old records is also unsafe.
+
+EXCLUSIONS:
+- No grader modernization
+- No record rewrite/backfill
+- No PGN preview restoration
+- No FSRS policy changes
+- No new versioned endpoint unless genuine semantic change is separately selected
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

@@ -1,0 +1,73 @@
+TASK P15 — Use the normal CLI for authorized installation and observe genuine live Study
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: Coordinated release/installed acceptance.
+ORIGINAL TASKS: Q0, E04.
+SUPPORTING DEFINITION: reference/planning-definitions/proof-storage-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: P12.qualified; P14.qualified; P13.qualified
+
+ADDITIONAL OWNER CONDITIONS:
+- Accepted source merges under AUTHORITY.md and actual target inspection. Applicable P13 lifecycle plus P14/P12 current affected acceptance gate installation. Genuine user interaction remains separately pending until observed.
+
+READ FIRST (repository-relative except reference/ paths):
+- tempo
+- scripts/tempo-cli.mjs — parseArguments
+- scripts/tempo-runtime.mjs
+- docs/TEMPO-CLI.md
+- AGENTS.md
+
+WRITE RESERVATION:
+- No product edits. Put the finite evidence/decision in the integration owner's existing run record.
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. When the integration owner releases this task after the applicable qualification and source merge, inspect the actual registered target and current deployment receipt before choosing the normal supported operation. AUTHORITY.md already authorizes this installation; verify access and target identity without asking again for general permission.
+2. If the management command is not installed, ./tempo install only registers the existing target/CLI. It is not deployment, migration or acceptance. Normally use the already installed tempo command.
+3. Capture tempo status, tempo doctor --verbose and tempo start --plan. The plan is read-only and may report hosted CI unavailable; that is neither a successful qualification nor proof that installation will be accepted.
+4. After the exact candidate is merge-qualified and installation is authorized, use tempo start --no-ci --no-open while the repository-approved hosted-CI workaround applies. Normal tempo start remains supported when hosted checks are available. Do not use invented tempo update/install-release commands or call --no-ci a CI pass.
+5. The normal updater rechecks actual main/source/target/schema/backup/recovery conditions. If the head changed, qualify/reconcile it or stop at that precise gate; do not silently install an unreviewed main. Candidate-ref/candidate-sha is documented for exact reviewed offline maintenance rehearsal and requires --no-ci, not a blanket alternate deploy path.
+6. After success, inspect normal deployment.json and running immutable image IDs/config fingerprints, exact source revision, schema ledger65, active modes, workers and health. Preserve original backup/guard and fix-forward semantics on failure; never remove a guard to force startup.
+7. Observe a real user-initiated saved review and next playable card, with the user’s actual interaction and consent. Capture original attempt/operation/review IDs and timing only as observed. Do not generate synthetic reviews on live data or describe disposable scripted traffic as live cadence.
+8. If the user has not performed a real review, record installed/source-qualified and live interaction pending; do not declare that final live usability/cadence gate complete. A test-only/docs-only delta from the same installed product needs no forced reinstall.
+
+ACCEPTANCE:
+- Installation evidence distinguishes source, qualified candidate, installed image set/schema/modes and actual functional observation.
+- Genuine user interaction is the only live review→next-card evidence; unavailable interaction remains pending.
+- No unsupported command or historical downgrade path is suggested to a fresh operator.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: tempo status
+  kind: read-only-operator; availability: current
+- Working directory .: tempo doctor --verbose
+  kind: read-only-operator; availability: current
+- Working directory .: tempo start --plan
+  kind: read-only-operator; availability: current
+- Working directory .: ./tempo install
+  kind: management-registration; availability: current; only if command is absent and registration is needed
+- Working directory .: tempo start --no-ci --no-open
+  kind: authorized-installation; availability: current
+- Working directory .: tempo doctor --verbose
+  kind: read-only-post-install; availability: current
+
+COORDINATED ACCEPTANCE:
+- Real user interaction after installation is observed separately from all disposable acceptance.
+
+MATERIAL RISKS:
+- A newer main can appear between plan and update; the normal CLI rechecks it. Existing schema65 does not waive proof for changed lifecycle code.
+
+EXCLUSIONS:
+- No installation before candidate applicable qualification and merge
+- Synthetic live reviews
+- Live history cleanup
+- Routine reinstallation for test-only changes
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

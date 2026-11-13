@@ -1,0 +1,71 @@
+TASK B31 — Restore exactly four frozen ordinary exercise runtime endpoints
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: FE008.
+ORIGINAL TASKS: D02.
+SUPPORTING DEFINITION: reference/planning-definitions/backend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: C20.source_released; P06.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- SPEC.md — November 10 pass 2 frozen ordinary exercises
+- app/views/study_exercise_runner.tsx — present,attempt,self-assess,feedback consumers
+- app/lib/offline-training.ts — retained study attempts
+- backend/app/study_attempt_commands.py — submit_study_attempt,self_assess_study_attempt
+- backend/app/services/study_attempts.py — finish_study_attempt
+- database/tempo_storage/study_attempts/storage.py
+- backend/app/contracts/studies.py — StudyAttemptRequest,StudySelfAssessmentRequest
+- backend/app/contracts/command_registry.py — retired authored commands
+- Packet reproduction/evidence: reference/deep-review/evidence/qualification/routes-and-e01-probe.json
+- Packet reproduction instructions: reference/deep-review/evidence/REPRODUCING.md. Negative probes are deliberately failing evidence, not implementation patches or current passes.
+
+WRITE RESERVATION:
+- backend/app/study_exercise_routes.py [proposed or moved; verify the owning symbol before implementation] — proposed
+- backend/app/main.py [existing] — one router import/mount only
+- database/tempo_storage/study_attempts/storage.py [existing] — narrow read helper if needed
+- backend/tests/test_frozen_study_routes.py [proposed or moved; verify the owning symbol before implementation] — proposed
+- backend/tests/test_frozen_study_attempts_postgres.py [proposed or moved; verify the owning symbol before implementation] — proposed
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Consume C20 server-v1 support/response contract handoff only. Later grader C22-C24 must not block these runtime routes. Retain GRADER_VERSION=1 and original request model_dump hash; do not add default provenance fields.
+2. Mount GET /api/studies/{study_id}/exercises/{exercise_id}/present; POST same prefix /attempts; POST /attempts/{attempt_id}/self-assess; GET /attempts/{attempt_id}/feedback. No other /studies APIs.
+3. Present reads retained existing exercise/current revision/position on reader connection, enforces same study/exercise owner and supported current status, and projects only prompt-visible fields. Omit accepted lines/reference sets/correct-option IDs/rubric.
+4. Submission routes dispatch existing studies.attempts.submit and studies.attempts.self_assess with original Idempotency-Key and precise current payload envelopes; route never writes scheduling tables.
+5. Feedback requires an existing attempt bound to the same study/exercise and reads its persisted exercise revision, not a newer current revision. Unknown/mismatched attempt cannot reveal answers.
+6. Test ordinary queued exercise, correct/again, explanation self-assess, pending/reload/lost acknowledgment replay, original receipt, old revision feedback, and retired payload hold. Native fixture seeds retained rows only; no authoring restoration.
+
+ACCEPTANCE:
+- Actual frozen queue card can present, submit, self-assess when required and reveal its bound feedback; response agrees with frontend contract and retained server-v1 grading baseline. Keep GRADER_VERSION=1 and original model_dump request hash shape; add no default provenance fields.
+- One answer/replay creates exactly one attempt/schedule effect; review context requires queue identity and practice cannot name queue.
+- Creation/import/chapter/bundle/enroll/proposal/automatic-feedback routes remain retired; retained journal data unchanged.
+- Four route tests and real owned native completion run; final browser journey owned by frontend/P12.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: make python-file FILE=backend/tests/test_frozen_study_routes.py
+  verified_against_source: Makefile:109-111; proposed test file must be added by this task; availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: make python-file FILE=backend/tests/test_frozen_study_attempts_postgres.py
+  verified_against_source: Makefile:109-111; proposed test file must be added by this task; availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- Coordinate frontend FE008 test: queued frozen exercise → answer receipt → reload/offline replay → authoritative playable successor; one shared browser run.
+
+MATERIAL RISKS:
+- Backend source exists but routes are absent. Reintroducing old study_routes.py wholesale would resurrect retired authoring; add focused runtime router only.
+
+EXCLUSIONS:
+- No new service, database, event bus, generic repository, scheduler, or retired producer restoration.
+- No changes to historical migration checksums, persisted command names, accepted operation identities, or original receipt bytes.
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

@@ -1,0 +1,68 @@
+TASK S04 — Inject intent-store validation and portable-backup diagnostics at composition
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: ST003.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/proof-storage-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: S03.source_released; FE08.source_released; FE24.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- database/browser/study-intent-storage.ts — initializeStudyIntentStorage; migrate; closeStudyIntentStorage
+- database/browser/tempo-db.ts — getRecords; putRecords; openTempoDatabase
+- database/browser/encrypted-backup.ts
+- app/lib/study-legacy-validation.ts
+- app/lib/validated-data.ts
+- app/lib/data-validation.ts
+
+WRITE RESERVATION:
+- database/browser/study-intent-storage.ts [existing]
+- database/browser/tempo-db.ts [existing]
+- database/browser/encrypted-backup.ts [existing]
+- app/lib/study-legacy-validation.ts [existing]
+- app/lib/study-intent-store.ts [proposed; reserve before creation]
+- tests/unit/study-storage-boundary-regressions.test.tsx [existing]
+- tests/unit/validated-data-regressions.test.ts [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Consume frontend FE08 pure parsing contract; storage accepts pure schemas/validators and an injected diagnostic reporter, without importing validated-data/debug-reporting or application review implementations.
+2. Inject workspace, intent-store opener/factory, Web Storage and notifications into an explicit intent storage instance. Move window storage-listener registration to lifecycle composition with unsubscribe.
+3. Keep all legacy source keys, cutover acknowledgement semantics, source rereads, frozen payload bytes, generation cancellation, teaching facts and conflict states unchanged.
+4. Adopt these dependencies through the existing Study intent/session composition after FE006. Portable export/import retains its version/encryption envelope and tombstone/order semantics; do not redesign backup format.
+5. Prove malformed legacy bytes remain retained, failed/aborted hydration cannot publish ready, an older tab invalidates the same gate, and stale generation callbacks cannot overwrite a newer workspace.
+
+ACCEPTANCE:
+- No database/browser production import targets app/lib implementation modules.
+- Storage instance tests supply workspace/factory/validation/diagnostics/notifications without application singleton startup.
+- Original durable IDs, byte-preserved payloads and mixed-version recovery behave identically.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: npm run test:frontend -- study-storage-boundary-regressions
+  kind: focused; availability: current
+- Working directory .: npm run test:frontend -- validated-data-regressions
+  kind: focused; availability: current
+- Working directory .: npm run test:frontend -- pending-review-recovery-regressions
+  kind: focused; availability: current
+
+COORDINATED ACCEPTANCE:
+- P12 real reload/acknowledgment recovery and offline retained journal acceptance on the assembled browser.
+
+MATERIAL RISKS:
+- Moving event registration without lifecycle cleanup may double-notify or leave old workspace listeners active.
+
+EXCLUSIONS:
+- Merging distinct review, opening-event and teaching authorities into one global store
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

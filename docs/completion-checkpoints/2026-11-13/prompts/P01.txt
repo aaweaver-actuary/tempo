@@ -1,0 +1,59 @@
+TASK P01 — Make the three rebound E01 SQL tests reject wrong queries and missing locks
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: ST012, ST013, BE021.
+ORIGINAL TASKS: E01.
+SUPPORTING DEFINITION: reference/planning-definitions/proof-storage-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: No source prerequisite; reserve the named files first.
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- backend/tests/test_pgn_import_storage_boundary.py — Borrowed; test_retained_import_storage_preserves_full_receipt_tuple_and_raw_json; test_current_import_card_identity_projections_preserve_empty_and_existing_rows
+- database/tempo_storage/authored_repertoires/pgn_import/storage.py — existing_card_ids; deleted_card_ids
+- database/tempo_storage/commands/receipts/storage.py — operation_status
+- tests/REGRESSIONS.md
+- Packet reproduction/evidence: reference/deep-review/evidence/qualification/probe-routes-and-e01.py
+- Packet reproduction instructions: reference/deep-review/evidence/REPRODUCING.md. Negative probes are deliberately failing evidence, not implementation patches or current passes.
+
+WRITE RESERVATION:
+- backend/tests/test_pgn_import_storage_boundary.py [existing]
+- tests/REGRESSIONS.md [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Keep the existing 20-case file and original request/result/transaction assertions. Strengthen only the three QF-04 projection/lock cases.
+2. Assert the receipt projection selects its twelve named fields from operation_receipts with the exact operation predicate; compare unchanged raw payload/error bytes as before.
+3. Give existing_card_ids and deleted_card_ids nonempty distinct replies plus an empty case. Reject reversed relation/column projections while preserving input order parameters and caller-owned lifecycle.
+4. Assert the receipt lock uses the actual advisory transaction lock with its exact key and parameters. A plain SELECT %s must fail the regression.
+5. Run bounded mutation controls against wrong receipt projection, wrong deleted-card table and missing advisory lock; retain the expected failures in the handoff, then restore source.
+
+ACCEPTANCE:
+- All three known in-process mutations are detected; the complete owning file passes without -k exclusions.
+- No assertion treats preloaded fake replies as native SQL, locking or migration acceptance.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: make python-file FILE=backend/tests/test_pgn_import_storage_boundary.py
+  kind: focused; availability: current; source_entrypoint: Makefile:python-file; scripts/resolve-python.mjs:resolvePython; docs/testing.md
+
+COORDINATED ACCEPTANCE:
+- No unrelated heavy test is implied. The owner selects the applicable changed-boundary checks.
+
+MATERIAL RISKS:
+- Overly textual SQL assertions may reject harmless formatting; normalize whitespace and assert selected semantics plus parameters, not a copied whole implementation.
+
+EXCLUSIONS:
+- Native stack for this pure borrowed-boundary repair
+- Restoring retired approval facade/preview APIs
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

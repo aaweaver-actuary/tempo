@@ -1,0 +1,64 @@
+TASK T05 — Declare and prove the Rust component fixture input contract
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: ST011.
+ORIGINAL TASKS: F01.
+SUPPORTING DEFINITION: reference/planning-definitions/proof-storage-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: T02.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- Integration owner records supported Rust component input-set decision before staging implementation.
+
+READ FIRST (repository-relative except reference/ paths):
+- tempo-core/Cargo.toml
+- tempo-core/src/lib.rs
+- tests/fixtures/README.md
+- tests/fixtures/card-id-parity.json
+- tests/fixtures/position-distance-parity.json
+- tests/fixtures/core-parity.json
+- components.json
+
+WRITE RESERVATION:
+- components.json [existing]
+- tempo-core/README.md [existing]
+- tests/fixtures/README.md [existing]
+- tools/component-build/tests/integration.test.mjs [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Recommended current support decision: tempo-core is an independently testable repository component with an explicitly declared crate + three governed fixture input set; standalone published Cargo-package testing is not a current product promise.
+2. Declare those exact files as fixture inputs in the existing component registry and README. Do not create parallel mutable fixture authority or alter parity bytes.
+3. Add a source-restricted staging proof which copies only declared crate/workspace lock inputs and the three fixture paths into an owned temporary root, removes access to the source repository, and executes the documented Rust component tests.
+4. Prove omitted fixture fails selection/staging before cargo. Reconcile Rust, backend/test_regressions.py and TypeScript parity consumers with the same governed fixture authority.
+5. If the integration owner explicitly chooses independently publishable Cargo artifact support instead, put one governed fixture authority inside the packaged crate and update exact Python/TS consumers; verify cargo package contents and unpacked-crate tests. Do not claim package independence while relying on undeclared siblings.
+
+ACCEPTANCE:
+- The declared supported independent component test works from only its input set.
+- One fixture authority remains and parity consumers use it; supported-scope decision is explicit and source-linked.
+- ST007 stays closed; no replay algorithm is reintroduced.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: cargo test --manifest-path tempo-core/Cargo.toml --locked
+  kind: component; availability: current
+- Working directory .: cargo fmt --manifest-path tempo-core/Cargo.toml --check
+  kind: component; availability: current
+
+COORDINATED ACCEPTANCE:
+- No native PostgreSQL or browser required for declared Rust fixture packaging with unchanged WASM API.
+
+MATERIAL RISKS:
+- Credible counterargument: future crate distribution benefits from self-contained fixtures. That is a different artifact promise; choose it explicitly rather than adding accidental sibling dependencies.
+
+EXCLUSIONS:
+- No unrelated feature, rewrite or retired producer restoration.
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

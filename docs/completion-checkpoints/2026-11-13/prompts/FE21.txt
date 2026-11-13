@@ -1,0 +1,80 @@
+TASK FE21 — Render current Study and dialogs through the shared board package
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: FE002.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/frontend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: FE20.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- AGENTS.md — current scope, ownership and minimum real proof; distinguish implemented/tested/assembled/installed
+- SPEC.md — current November 10 reduction scope and retained ordinary Study preservation
+- docs/testing.md — smallest relevant proof and supported owned runner
+- app/components/board/chessboard.tsx — Chessboard wrapper
+- app/components/chessboard.tsx — compatibility re-export
+- app/components/board/persistent-board-shell.tsx — persistent owner and publication props
+- app/state/board-shell-store.ts — BoardPresentation shape contract and sameBoardShapes
+- app/features/game-review/GameReviewView.tsx — existing public package consumer
+- packages/board-ui/REGRESSIONS.md — package renderer case ownership
+
+WRITE RESERVATION:
+- app/components/board/chessboard.tsx [existing]
+- app/components/board/persistent-board-shell.tsx [existing]
+- app/state/board-shell-store.ts [existing]
+- app/responsive.css [existing]
+- tests/unit/board-authoritative-restoration-regressions.test.tsx [existing]
+- tests/unit/board-drag-preservation-regressions.test.tsx [existing]
+- tests/unit/board-shortcuts-regressions.test.tsx [existing]
+- tests/unit/board-move-feedback-regressions.test.tsx [existing]
+- tests/unit/shared-board-shell-training-regressions.test.tsx [existing]
+- tests/unit/shared-board-shell-tactics-regressions.test.tsx [existing]
+- tests/unit/shared-board-shell-mount-regressions.test.tsx [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Replace only Chessground construction/set/destroy, drawing mutation, geometry/resize lifecycle and deferred callback fencing in the legacy wrapper with public Board/BoardHandle. Keep the policy mapped by FE20 in the wrapper.
+2. Use one stable identity from owner and positionKey; changing same-FEN owner/attempt must invalidate. Repeated semantically equivalent props and fresh handlers must preserve held input; reset and rejected same-FEN moves must use revision or clearInput.
+3. Convert shared shell shapes to renderer-neutral BoardShape values at the wrapper boundary, preserving brush/label/piece/last-move data and detached arrays. Do not expose raw Api or add a second Chessground lifecycle in a helper.
+4. Keep existing application keyboard/help/focus, hint exposure and move/capture/check/promotion sound behavior. Use public package CSS and remove only demonstrably duplicated renderer CSS; preserve external layout and test locators where meaningful.
+5. Rebind application tests that mock raw Chessground to the public Board boundary for application policy, and retain true interaction/restoration assertions in package/native tests. Do not delete named regression obligations because their old private implementation is gone.
+6. Check current Study, Tactics, frozen exercise and repair/editor modal consumers, plus existing Game Review; identify optional unavailable views without reviving them. Release the named regression mapping to the test inventory owner.
+
+ACCEPTANCE:
+- Only packages/board-ui owns Chessground construction/set/destroy for current browser presentation.
+- Application wrapper still owns legality/hints/sound/keyboard and persistent ownership; lock, same-FEN replacement, unmount and drawn-shape fencing retain behavior.
+- Equivalent status/annotation/theme updates preserve held drag; genuine identity/mode/orientation changes cancel and restore authoritative FEN.
+- Current local frontend native UI demonstrates drag/drawing/keyboard/geometry through the package, and Game Review remains validated.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: npm run test:unit -- tests/unit/board-authoritative-restoration-regressions.test.tsx tests/unit/board-drag-preservation-regressions.test.tsx tests/unit/board-shortcuts-regressions.test.tsx tests/unit/board-move-feedback-regressions.test.tsx tests/unit/shared-board-shell-training-regressions.test.tsx tests/unit/shared-board-shell-tactics-regressions.test.tsx tests/unit/shared-board-shell-mount-regressions.test.tsx
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: npm --prefix packages/board-ui test
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: npm run typecheck:browser
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- owner: board integration owner / P12; required: Use supported backend-free controlled UI lane for current wrapper and package native BUI-N01..N05 where affected; require one current Study/Tactics/GameReview owner-switch case. No backend suite for a renderer-only change.; runner: npm run test:ui-isolated -- interaction.spec.ts; select actual title/project via npm run test:ui-isolated:list first. Package native runner command is documented in packages/board-ui/browser/README.md and needs the already qualified installed consumer plus prepared Playwright.
+
+MATERIAL RISKS:
+- Wrapper has more application behavior than the package; wholesale replacement loses policy. Old tests inspect raw renderer internals and need honest ownership rebind, not relaxed assertions.
+
+EXCLUSIONS:
+- No engine/workbench resurrection
+- No change to grading/queue policy
+- No whole-stack mandatory gate for board rendering
+- No duplicate renderer behind compatibility facade
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

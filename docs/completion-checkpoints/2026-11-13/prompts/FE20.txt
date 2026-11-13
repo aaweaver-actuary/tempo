@@ -1,0 +1,80 @@
+TASK FE20 — Publish the small board adapter capabilities needed by current Study policy
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: FE002.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/frontend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: No source prerequisite; reserve the named files first.
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- AGENTS.md — current scope, ownership and minimum real proof; distinguish implemented/tested/assembled/installed
+- SPEC.md — current November 10 reduction scope and retained ordinary Study preservation
+- docs/testing.md — smallest relevant proof and supported owned runner
+- app/components/board/chessboard.tsx — legality/hint/sound/keyboard policy and Chessground lifecycle
+- packages/board-ui/src/types.ts — BoardProps/BoardHandle/BoardShape current public contract
+- packages/board-ui/src/controller.ts — BoardController input generations and cancellation
+- packages/board-ui/src/Board.tsx — renderer and geometry lifecycle
+- app/lib/performance.ts — installTempoDragCapture currently reads concrete Api.state
+- packages/board-ui/README.md — presentation and caller ownership
+
+WRITE RESERVATION:
+- packages/board-ui/src/types.ts [existing]
+- packages/board-ui/src/index.ts [existing]
+- packages/board-ui/src/controller.ts [existing]
+- packages/board-ui/src/Board.tsx [existing]
+- app/lib/performance.ts [existing]
+- app/components/board/chessboard.tsx [existing]
+- packages/board-ui/tests/controller.test.ts [existing]
+- packages/board-ui/tests/Board.test.tsx [existing]
+- packages/board-ui/consumer/public-types.ts [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Produce a checked mapping of every legacy prop to existing BoardProps: owner+positionKey to stable identity, external revision+reset to revision/clearInput, visual orientation, legal/free/select mode, destinations, check, last move, shapes, lock, layoutAnchor, keyboard container and focus.
+2. Keep chess rules, promotion choice, hints and exposure callback, sounds, help dialog, preference state and persistent owner in the application adapter. Existing package properties already cover the main rendering/input needs; do not add app stores or chess.js to board-ui.
+3. Remove the performance helper's need for mutable Chessground Api by accepting a narrow read-only input snapshot callback. Snapshot includes active/started drag, source square, original pointer, orientation, bounds, animation settings and displayed piece coordinates needed by current measurements; it exposes no renderer object, setters or DOM-owned mutable arrays.
+4. Add only the corresponding optional package handle/event seam needed to supply current diagnostic measurements. Keep diagnostics opt-in from the caller; importing/rendering the package must not install application telemetry. Preserve input-generation and disposal fences around callbacks.
+5. Adapt the existing legacy renderer to supply the same neutral snapshot callback temporarily so this preparatory contract slice preserves diagnostics before FE21 switches rendering.
+6. Extend installed-consumer type fixtures and focused package tests for the narrow capability, detached data and disposal. Do not use a public getApi escape hatch.
+
+ACCEPTANCE:
+- No application policy must reach a private package file or raw Chessground Api to adopt Board.
+- Optional diagnostic reads/events cannot mutate the renderer, retain obsolete callbacks or add global app effects.
+- Current move/hint/sound/keyboard/geometry capability mapping is complete and sufficient for FE21.
+- Package remains app/backend/worker independent; no FE002 closure until actual current consumers adopt it.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: npm --prefix packages/board-ui run typecheck
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: npm --prefix packages/board-ui test
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: npm run test:unit -- tests/unit/board-move-feedback-regressions.test.tsx tests/unit/performance-report-regressions.test.ts
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: npm run typecheck:browser
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- owner: board integration owner; required: After FE21 adoption, use the package-owned backend-free native board qualifier and the selected current application UI case. This preparatory API change itself needs no whole-stack database run.
+
+MATERIAL RISKS:
+- Preserving raw renderer diagnostics through a getApi backdoor would keep the old coupling. Dropping measurement behavior silently would invalidate existing board evidence.
+
+EXCLUSIONS:
+- No new telemetry framework
+- No new board library
+- No chess legality moved into package
+- No native/browser run by this planning packet
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

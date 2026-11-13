@@ -1,0 +1,64 @@
+TASK B10 — Encapsulate Redis admission keys and lease policy in current storage owner
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: BE005.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/backend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: No source prerequisite; reserve the named files first.
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- backend/app/services/redis_admission_gate.py
+- backend/app/services/study_priority.py — control_snapshot
+- database/tempo_storage/redis_control/admission.py
+- backend/tests/test_legacy_redis_control_database_split.py
+- backend/tests/test_redis_admission_fixture.py
+
+WRITE RESERVATION:
+- backend/app/services/redis_admission_gate.py [existing]
+- backend/app/services/study_priority.py [existing]
+- database/tempo_storage/redis_control/admission.py [existing]
+- backend/tests/test_legacy_redis_control_database_split.py [existing]
+- backend/tests/test_redis_admission_fixture.py [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Give existing admission storage named acquire/renew/release/presence/telemetry operations that own keys, Lua scripts and fixed lease durations.
+2. Keep async/thread lifetime, request timing and BackgroundAdmissionDeferred policy in application. If renewal cadence needs a value, expose a documented semantic lease contract rather than private key constants.
+3. Replace study_priority direct foreground-key use with public telemetry/presence capability; preserve fail-closed admission and actual foreground_wait distinction.
+4. Remove now-unused private script re-exports only after their tests migrate inside storage.
+5. Use current deterministic Redis call-order tests and owned Redis fixture for expiry/renewal/release interference.
+
+ACCEPTANCE:
+- Application sees no _FOREGROUND_KEY/_BACKGROUND_KEY/private Lua source. Storage owns namespace and lease values.
+- Failed Redis admission remains an unavailable/deferred boundary, never new success; browser activity lease and unrelated tokens remain intact.
+- Required Redis isolation proof executes on an owned fixture with original resource caps.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: make python-file FILE=backend/tests/test_legacy_redis_control_database_split.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: make python-file FILE=backend/tests/test_redis_admission_fixture.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- Existing --native-check redis-fixture-isolation can be batched with final native selection.
+
+MATERIAL RISKS:
+- Do not turn this encapsulation into a concurrency increase, new lease protocol, or unified application/storage runtime.
+
+EXCLUSIONS:
+- No new service, database, event bus, generic repository, scheduler, or retired producer restoration.
+- No changes to historical migration checksums, persisted command names, accepted operation identities, or original receipt bytes.
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

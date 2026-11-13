@@ -1,0 +1,70 @@
+TASK B22 — Move standalone tactic schedule and queue transitions behind Study capability
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: BE010.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/backend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: B03.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- backend/app/tactic_commands.py — submit_tactic_attempt
+- backend/app/study/interfaces/captured_tactic.py
+- backend/app/product_composition/tactic_capture.py
+- database/tempo_storage/tactics/attempts.py
+- backend/app/study/queue_placement.py — ensure_card_queued_after
+- backend/tests/test_study_calendar.py — test_tactic_attempt_lock_due_and_queue_share_capture_and_replay_retains_receipt
+
+WRITE RESERVATION:
+- backend/app/tactic_commands.py [existing]
+- backend/app/study/interfaces/tactic_attempt.py [proposed or moved; verify the owning symbol before implementation] — proposed
+- backend/app/study/tactic_attempt_admission.py [proposed or moved; verify the owning symbol before implementation] — proposed
+- backend/app/product_composition/tactic_attempt.py [proposed or moved; verify the owning symbol before implementation] — proposed focused borrowed adapter
+- database/tempo_storage/tactics/attempts.py [existing]
+- database/tempo_storage/study/tactic_attempts.py [proposed or moved; verify the owning symbol before implementation] — proposed
+- backend/tests/test_study_calendar.py [existing]
+- backend/tests/test_tactic_attempt_admission.py [proposed or moved; verify the owning symbol before implementation] — proposed
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Define validated immutable attempt facts and result; producer owns puzzle/source validation, progress/source receipt identity, Study owns scheduling/card creation/reopen/queue decision.
+2. Preserve lock order daily tactic admission → puzzle attempt replay → card → queue day. Receipt replay returns before new scheduling effect.
+3. Move exact light first due, nonclean reopen and failed guided-after-four behavior into Study owner; move card/queue SQL into Study storage with caller-owned transaction.
+4. Keep progress/admission-mode/source receipt updates on same transaction, using actual Study result. Do not reinterpret clean/correct or regenerate IDs.
+5. Test clean first pass, correct assisted, incorrect, existing light/normal card, exact retry/different attempt, and injected receipt failure rollback.
+
+ACCEPTANCE:
+- No Tactics producer chooses Study schedule columns or queues directly; both capture and packaged/historical attempts consume declared Study capabilities.
+- Captured day/instant and original receipt byte behavior unchanged; one logical attempt has one effect.
+- Owned native rollback and concurrent/replayed attempt proof executes; Tactics remains usable when optional Games is absent.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: make python-file FILE=backend/tests/test_study_calendar.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: make python-file FILE=backend/tests/test_tactic_capture_boundary.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: make python-file FILE=backend/tests/test_tactic_attempt_admission.py
+  verified_against_source: Makefile:109-111; proposed test file must be added by this task; availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- One final Tactics attempt → saved result → guided/playable queue path, batched with release qualification.
+
+MATERIAL RISKS:
+- Tactic progress and source receipt are producer-owned; moving all Tactics persistence into Study would invert ownership again.
+
+EXCLUSIONS:
+- No new service, database, event bus, generic repository, scheduler, or retired producer restoration.
+- No changes to historical migration checksums, persisted command names, accepted operation identities, or original receipt bytes.
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

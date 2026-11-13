@@ -1,0 +1,68 @@
+TASK FE08 — Publish pure validation facts while retaining the current browser collector facade
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: FE007.
+ORIGINAL TASKS: Q0.
+SUPPORTING DEFINITION: reference/planning-definitions/frontend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: No source prerequisite; reserve the named files first.
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- AGENTS.md — current scope, ownership and minimum real proof; distinguish implemented/tested/assembled/installed
+- SPEC.md — current November 10 reduction scope and retained ordinary Study preservation
+- docs/testing.md — smallest relevant proof and supported owned runner
+- app/lib/data-validation.ts — parseData, validRecords, recordIdentity, reportDataDiagnostic and mutable diagnostics/listeners
+- app/lib/validated-data.ts — browser parseData/validRecords wrappers and readJsonResponse
+- app/domain/adapters/workspace-adapters.ts — current effectful domain dependency
+- app/domain/adapters/practice-card-adapters.ts — second effectful domain dependency, including direct reportDataDiagnostic calls
+
+WRITE RESERVATION:
+- app/domain/validation.ts [proposed or moved; verify the owning symbol before implementation]
+- app/lib/data-validation.ts [existing]
+- app/lib/validated-data.ts [existing]
+- tests/unit/pure-validation-contract.test.ts [proposed or moved; verify the owning symbol before implementation]
+- tests/unit/validated-data-regressions.test.ts [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Publish ValidationIssue and ValidationEffects/reporter types in app/domain/validation.ts. Extract record identity, Zod issue formatting and value/list parsing there. The module must have no collector singleton, listeners, Date/clock, queueMicrotask, debug reporting or browser dependency.
+2. Give pure callers a result/throw contract with explicit optional diagnostic/reporting capabilities; no capability means no publication. Preserve existing error wording, record identity priorities and successful values. An injected effect is the caller's explicit choice, never imported global state.
+3. Keep app/lib/data-validation.ts as the owning collector adapter: bounded history, deduplication, timestamps, subscriptions and the existing public parse signatures delegate to the pure implementation with explicit collector effects. Keep validated-data.ts adding reportDebugError. Existing runtime callers therefore remain behaviorally stable before FE09/FE10.
+4. Add tests exercising parse/list filtering with no sink, an explicit fake sink, suppressed publication, duplicate bad records and original Error/context shape. Guard time/microtask/global reporter access during pure execution.
+5. Release this independently declared contract to FE09 and storage S03/S04; do not move browser registry/storage policy into the new module.
+
+ACCEPTANCE:
+- The new pure module can execute malformed and successful inputs without mutating diagnostics or reading time.
+- Existing browser collector behavior remains through the compatibility facade until explicit consumer migration.
+- Domain parsing semantics and public reporter/error fields are concrete and documented; this task alone does not claim FE007 closure.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: npm run test:unit -- tests/unit/pure-validation-contract.test.ts tests/unit/validated-data-regressions.test.ts
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: npm run typecheck:browser
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- No unrelated heavy test is implied. The owner selects the applicable changed-boundary checks.
+
+MATERIAL RISKS:
+- Changing collector behavior while extracting pure logic can hide existing validation warnings. Preserve the facade first, then migrate domain callers explicitly.
+
+EXCLUSIONS:
+- No schema acceptance change
+- No diagnostics framework
+- No domain adapter migration in this slice
+- No full-stack requirement
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

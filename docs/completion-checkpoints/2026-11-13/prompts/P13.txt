@@ -1,0 +1,82 @@
+TASK P13 — Qualify the actual schema65 installation lifecycle and recovery path
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: RT005, ST012, ST013.
+ORIGINAL TASKS: E04, F02.
+SUPPORTING DEFINITION: reference/planning-definitions/proof-storage-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: T01.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- One heavy-slot lease; independently observed actual target/schema applicability; clean exact candidate. T01 prerequisite means reviewed source only.
+
+READ FIRST (repository-relative except reference/ paths):
+- scripts/lifecycle-source-preflight.mjs — checkLifecycleSource
+- scripts/check-tempo-cli.mjs — validateLifecycleProfile; verifyTempoCliLifecycle
+- database/tests/test-postgres-docker.mjs — deployment_lifecycle_current
+- database/tests/postgres-test-options.mjs
+- database/tests/postgres-test-plan.mjs
+- scripts/tempo-runtime.mjs — validateCut62Preflight; assessMigrationRecovery; executeLifecycle
+- tests/runner/lifecycle-current-profile.test.mjs
+- docs/TEMPO-CLI.md
+- Makefile
+
+WRITE RESERVATION:
+- scripts/lifecycle-source-preflight.mjs [existing]
+- scripts/check-tempo-cli.mjs [existing]
+- database/tests/check_postgres_cli_lifecycle.py [existing]
+- database/tests/postgres-test-options.mjs [existing]
+- database/tests/postgres-test-plan.mjs [existing]
+- database/tests/test-postgres-docker.mjs [existing]
+- tests/runner/lifecycle-current-profile.test.mjs [existing]
+- tests/runner/lifecycle-source-preflight.test.mjs [existing]
+- tests/runner/postgres-test-speedups.test.mjs [existing]
+- Makefile [existing]
+- docs/testing.md [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Applicability first: bind current installed evidence to actual schema/ledger/images/config. The known reported baseline is d79/schema65; independently inspect the authorized target before using it. Same-schema65→candidate65 is the default required lifecycle for T01 and later product deployment;64→65 is conditional on an actually supported target needing that forward transition.
+2. Add an explicit current65 profile to the existing lifecycle owner and route existing lifecycle-current mode to the exact declared current profile. Do not merely delete the >=64 guard or reuse current63/historical assertions under a new label.
+3. A current65 fixture is an owned fresh schema65 database with populated retained Study/Tactics/history/receipts and current immutable images. Exercise the same registered CLI/runtime path, matching target/context/daemon/volumes/ports/config and binding candidate source/image hashes.
+4. Verify normal same-schema start/recreate, original receipt after no-op, failure before any write, injected interruption/retry at an applicable image/service transition, unknown/mismatched guard refusal, and no automatic start after unresolved migration verification. Preserve exact current history and only clean invocation-owned resources.
+5. If64→65 is genuinely in scope, add a separately labeled stopped-writer forward proof with restore-verified backup, exact1..64→1..65 ledger, new introduction-hold schema and unchanged retained rows. Reinstalling an older image must not be called a database rollback; incompatible lower-schema code refuses and recovery fixes forward from original evidence.
+6. Preserve historical full/current63 refusal and unit tests as correct scoped guards. Their inability to qualify65 is not a reason to rebuild obsolete schema16/59/61/62 stacks for this task.
+7. Release the supported command and exact expected stages/cases only after parser/source/refusal tests. Run real current65 lifecycle once with T01 reviewed source; report component-tested, lifecycle-qualified and merge-ready separately.
+
+ACCEPTANCE:
+- Current65 profile executes genuine CLI/runtime operations on an owned disposable target and records exact images/config/schema/history/recovery evidence.
+- Historical guard behavior remains intact; wrong schema/profile/overrides fail before resource acquisition.
+- Applicable lifecycle pass gates T01 merge, not its reviewed source release. No dependency cycle and no live operation in this task.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: node --test --test-concurrency=1 tests/runner/lifecycle-source-preflight.test.mjs tests/runner/lifecycle-current-profile.test.mjs tests/runner/postgres-test-speedups.test.mjs
+  kind: focused; availability: current
+- Working directory .: make preflight
+  kind: capability; availability: current
+- Working directory .: node database/tests/test-postgres-docker.mjs --mode lifecycle-current --list
+  kind: discovery; availability: current parser; current source only lists historical63, updated current65 inventory required
+- Working directory .: node database/tests/test-postgres-docker.mjs --mode lifecycle-current
+  kind: native-lifecycle; availability: proposed current65 behavior; currently rejects schema65; do not run as current65 until this task releases it
+
+COORDINATED ACCEPTANCE:
+- One heavy slot; lifecycle image receipt may feed P14/P12 only with exact existing source/image/config reuse validation.
+
+MATERIAL RISKS:
+- Blanket accepting schema65 would convert the old guard into a false safety claim. Current65 no-migration lifecycle and64→65 forward migration are different proofs.
+
+EXCLUSIONS:
+- Live maintenance
+- New historical migration matrix
+- Destructive history cleanup
+- Treating current63 refusal as a permanent release blocker
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

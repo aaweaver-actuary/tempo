@@ -1,0 +1,71 @@
+TASK B33 — Rebind retained review and scheduling regressions to current owners
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: BE021.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/backend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: No source prerequisite; reserve the named files first.
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- backend/tests/test_legacy_review_storage_separation.py
+- backend/tests/test_scheduling_review_store.py
+- backend/tests/test_prepared_review_continuation.py
+- backend/tests/test_retained_borrowed_store.py
+- backend/tests/test_retained_mutations_boundary.py
+- backend/app/services/learning_review_adapter.py
+- backend/app/services/review_service.py
+- backend/app/repertoire/changes/retained_mutations.py
+
+WRITE RESERVATION:
+- backend/tests/test_legacy_review_storage_separation.py [existing]
+- backend/tests/test_scheduling_review_store.py [existing]
+- backend/tests/test_prepared_review_continuation.py [existing]
+- backend/tests/test_retained_borrowed_store.py [existing]
+- backend/tests/test_retained_mutations_boundary.py [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Remove legacy_study_remediation mock/assertion from receipt sequencing test while preserving receipt-write/current-revision/rollback behavior actually supported.
+2. Rebind three real_game_feedback_adapter-dependent scheduling wrapper tests to current review_service/scheduling owner and keep history clock, source replay, error, rollback, maturity and follow-up ordering assertions.
+3. Keep prepared identity omission/request digest test; retire two optional queue.prepare_next/automatic-feedback expectations under current SPEC.
+4. Classify old retained factory/alias-identity tests: port real borrowed transaction/source mutation safeguards to current retained_mutations owner; delete alias-only or retired proposal-store assertions with explicit rationale.
+5. Run the complete changed files; document retained case inventory so no former failure disappears through empty collection.
+
+ACCEPTANCE:
+- Five files collect against current source and each retained assertion executes; no reintroduced old modules.
+- Actual transaction/effect/receipt safety assertions survive; obsolete optional feedback/proposal execution is removed.
+- No database/native pass is inferred from fake orchestration tests.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: make python-file FILE=backend/tests/test_legacy_review_storage_separation.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: make python-file FILE=backend/tests/test_scheduling_review_store.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: make python-file FILE=backend/tests/test_prepared_review_continuation.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: make python-file FILE=backend/tests/test_retained_mutations_boundary.py
+  verified_against_source: Makefile:109-111; existing file; availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- No unrelated heavy test is implied. The owner selects the applicable changed-boundary checks.
+
+MATERIAL RISKS:
+- Mocking a different function without preserving the same observable boundary would create false green evidence.
+
+EXCLUSIONS:
+- No new service, database, event bus, generic repository, scheduler, or retired producer restoration.
+- No changes to historical migration checksums, persisted command names, accepted operation identities, or original receipt bytes.
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

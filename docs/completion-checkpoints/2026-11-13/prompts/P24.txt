@@ -1,0 +1,67 @@
+TASK P24 — Reconcile current proof contract: Mixed native review suite after retained split and receipt repairs
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: ST012, ST013.
+ORIGINAL TASKS: Wider fixed-audit completion.
+SUPPORTING DEFINITION: reference/planning-definitions/proof-storage-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: P05.source_released; P06.source_released; B06.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- database/tests/native_review/test_postgres.py
+- database/tests/test-postgres-docker.mjs
+- database/tests/postgres-test-plan.mjs
+- components.json
+- SPEC.md
+
+WRITE RESERVATION:
+- database/tests/native_review/test_postgres.py [existing]
+- backend/tests/test_position_review_reconciliation.py [existing]
+- backend/tests/test_queue_order_owner.py [existing]
+- tests/REGRESSIONS.md [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Take only the audit row indexes assigned to this task. Resolve each old reference/query against current source and actual suite/runner/function call graph. Distinguish already repaired, current selected, supported leaf awaiting registration and exclusively historical/retired.
+2. Preserve retained review saving, exact operation replay/conflict, frozen queue order, source locks and current manual prefix split placement. Replace removed LearningReviewAdapter/card_schedule_state/postgres_opening_evidence/private queue helpers with current exact owners; retire active real-game promotion expectations only with P04 coverage. Convert remaining SQLite markers and verify the advertised native-split selector still collects its exact case; do not re-run or resurrect every historical case without support evidence.
+3. Split a mixed file by exact named case/helper families. Retained assertions get a current owner rebind and native %s semantics; historical-only cases get a source-linked support decision and current inventory removal. Remove no safety assertion merely because its old helper vanished.
+4. If a row is already fixed, prove the old reference/query is absent or replaced and link the actual current case/command/result; do not count the historical finding again or fabricate a new rewrite.
+5. Validate project import resolution and exact case collection before acquiring the heavy slot. Every retained native proof must have a reachable supported current runner/declared input set; proposed fixed selectors require parser/selection/refusal tests and exact operator command release.
+6. Exercise only the changed native owner/consumer path in P14. Preserve real environment ownership, writer/admission isolation, transaction bounds, exact case accounting and cleanup.
+
+ACCEPTANCE:
+- Each assigned historical proof row has a positive, source-linked current disposition and owning executable case or positively evidenced retirement.
+- No current selected proof imports a removed project implementation or uses ? with PostgresConnection/psycopg. Genuine SQL question-mark operators/literals are distinguished from parameter markers.
+- Current native assertions execute through their advertised runner; historical cases cannot masquerade as current passes.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: make python-file FILE=backend/tests/test_position_review_reconciliation.py
+  kind: focused; availability: current; source_entrypoint: Makefile:python-file; scripts/resolve-python.mjs:resolvePython; docs/testing.md
+- Working directory .: make python-file FILE=backend/tests/test_queue_order_owner.py
+  kind: focused; availability: current; source_entrypoint: Makefile:python-file; scripts/resolve-python.mjs:resolvePython; docs/testing.md
+
+COORDINATED ACCEPTANCE:
+- P14 checkpoint2 runs only the applicable selected native cohort. A static scan or collection result is not native execution.
+
+MATERIAL RISKS:
+- Old tests can mix useful retained invariants with removed products; blanket deletion or blanket resurrection both misstate support.
+- Current runner list names stages, not every nested executed assertion: bind the actual nested case inventory and raw native report.
+
+EXCLUSIONS:
+- Restoring retired optional products
+- Broad historical schema expansion
+- New alternate SQL translator
+- Claiming all native tests passed from import/compile checks
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.

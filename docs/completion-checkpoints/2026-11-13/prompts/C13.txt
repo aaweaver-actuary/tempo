@@ -1,0 +1,70 @@
+TASK C13 — Bind deletion and repertoire settings acknowledgments; validate rename completion
+
+You are one bounded Tempo implementation worker. This is a new-packet task ID. Earlier continuation references below are explicitly labeled original task IDs. Read COMMON-WORKER.md and AUTHORITY.md; do not reopen the whole historical A–G programme.
+
+AUTHORITY: You may implement this scope, run its focused checks on verified task-owned resources, commit, push an ordinary scoped branch and open/update its PR without asking Andy again. Merge only after applicable acceptance and the integration owner releases your exact head; the owner may merge for you. Only the owner or explicitly designated registered-machine operator installs after accepted release qualification. Actual credentials/platform controls still apply. A source-only decision task requires inspectable evidence, not an empty product commit.
+
+ASSIGNMENT INPUTS: The integration owner supplies the actual current base/head, named source releases, file reservation and any applicable runtime slot. Preparation source: 091ad318b1afaadcb25e5ca44ff526120a202336. Preserve other owners' work. Do not infer current main or live installation from this historical pin.
+
+FINDINGS: FE001.
+ORIGINAL TASKS: C01, Q0.
+SUPPORTING DEFINITION: reference/planning-definitions/frontend-plan.json (select this task ID; wider row and closure maps are included there).
+START AFTER: C10.source_released
+
+ADDITIONAL OWNER CONDITIONS:
+- None beyond the common reservations and actual task environment.
+
+READ FIRST (repository-relative except reference/ paths):
+- AGENTS.md — current scope, ownership and minimum real proof; distinguish implemented/tested/assembled/installed
+- SPEC.md — current November 10 reduction scope and retained ordinary Study preservation
+- docs/testing.md — smallest relevant proof and supported owned runner
+- app/lib/card-delete-command.ts — delete resultSchema and pending.operationId
+- app/lib/repertoire-delete-command.ts — deletedRepertoireSchema and retained learnedCards choice
+- app/lib/repertoire-rename-command.ts — renameRepertoireCommand currently clears unchecked complete.response
+- backend/app/repertoire_commands.py — rename_repertoire returns {id: repertoire_id, name}
+- app/lib/repertoire-settings-save.ts — saveRepertoireLimit validateResult
+
+WRITE RESERVATION:
+- app/lib/card-delete-command.ts [existing]
+- app/lib/repertoire-delete-command.ts [existing]
+- app/lib/repertoire-rename-command.ts [existing]
+- app/lib/repertoire-settings-save.ts [existing]
+- tests/unit/card-delete-pending-regressions.test.ts [existing]
+- tests/unit/repertoire-delete-pending-regressions.test.ts [existing]
+- tests/unit/repertoire-rename-pending-regressions.test.ts [existing]
+- tests/unit/repertoire-daily-limits.test.tsx [existing]
+
+Shared roots, audit files, registry/guards and test inventories are leased by the integration owner. If another task owns a named shared file, hand off the precise patch or acquire the lease; never edit concurrently. A task listing several independent batches must execute the first prescribed batch, release it, and continue only within the same bounded assignment.
+
+IMPLEMENTATION STEPS:
+1. Use strict original-ID confirmation for all four command families, retaining their existing original payloads and delete choices.
+2. Add the small rename acknowledgment schema matching the real producer: object with id/name. Validate both receipt-first and newly sent completion against the pending repertoireId and name before clearing.
+3. Keep deletion and per-repertoire-settings identity/value validation; do not weaken it to generic response.ok.
+4. Add absent/foreign initial-ID cases, malformed or wrong-id/name rename completions, and successful retry using the original journal. Release prefix-free file claims independently of C12.
+
+ACCEPTANCE:
+- Invalid original acknowledgment or domain result never clears a pending delete, rename or limit write.
+- Valid original result settles once and cannot authorize a different entity or later edited name.
+- Existing permanent deletion choice and expected revision are preserved exactly; this task executes no real deletion.
+
+PLANNED COMMANDS (none ran merely by creating this packet):
+- Working directory .: npm run test:unit -- tests/unit/card-delete-pending-regressions.test.ts tests/unit/repertoire-delete-pending-regressions.test.ts tests/unit/repertoire-rename-pending-regressions.test.ts tests/unit/repertoire-daily-limits.test.tsx
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+- Working directory .: npm run typecheck:browser
+  availability: planned; see the task for existing entrypoint versus proposed assertion
+
+COORDINATED ACCEPTANCE:
+- No unrelated heavy test is implied. The owner selects the applicable changed-boundary checks.
+
+MATERIAL RISKS:
+- An unchecked rename result was still a source-visible residual beyond the initial-202 probe. Tests must use the real {id,name} producer shape.
+
+EXCLUSIONS:
+- No storage migration
+- No live CRUD operations
+- No deletion policy changes
+
+HANDOFF / STOP:
+Give the owner ledger/HANDOFF-TEMPLATE.json fields: task ID, exact base/head and diff, paths, changed public consumers, actual commands/results/case IDs, source/runtime applicability, independent review, released capability, pending native/browser acceptance, PR state and next owner. A local pass does not imply merge, installation or closure of the larger finding.
+Exact relevant source accepted, applicable focused and assigned integrated proof complete, dependency heads included, actual repository protections honored, and integration owner releases this head. Read-only or justified no-change tasks need recorded evidence, not an empty PR.
+The owner may batch coherent small tasks into one reviewable PR. Stop at this task boundary; do not silently absorb neighboring findings.
