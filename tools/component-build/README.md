@@ -550,8 +550,62 @@ evidence, Tactics, Study and authoring consumers remain visible. This source map
 is not a standalone package or runtime qualification. Nineteen previously reported
 fixture failures remain unresolved.
 
-At this base revision, 90 of 289 tracked Python files in those trees remain
-outside the combined 199-file selections. The registry alone assigns owners;
+A thirty-sixth selection maps Study scheduling review contracts, policy, maturity,
+legacy adapters and borrowed SQL store. Existing scheduling package, FSRS defaults,
+source identity, caller transaction and review receipt owners remain visible. This
+source map does not establish native proof. Nineteen previously reported fixture
+failures remain unresolved. Ten scheduling store fixture cases also error on the
+missing `real_game_feedback_adapter`. The initial interpreter lacked `grimp` and
+installed scheduling/chess-core metadata; a task-owned locked, non-editable Python
+environment subsequently passed 49 scheduling boundary and package metadata cases.
+
+A thirty-seventh selection maps supplied repertoire snapshot projection, position
+index and scheduling occurrence interface. Existing source identities, chess and
+contract dependencies remain visible. Prepared facts and physical bindings do not
+grant writer authority or issuance; consumers must retain source fences. The
+nineteen earlier fixture failures and ten missing-adapter errors remain unresolved.
+
+A thirty-eighth selection maps background activity progress/control coordination and
+SQL. Existing source/generation checks, Study-only admission, fixed-source row
+locks and caller transaction remain visible; advisory progress emission catches
+operational failure. This source map does not establish native or runtime proof.
+The nineteen earlier fixture failures and ten missing-adapter errors remain open.
+The selected PGN activity-scope fixture reports 24 failures (18 incompatible claim
+signatures, six missing storage attributes); a separate environment lacked sqlglot
+and could not collect it. These observations do not establish runtime behavior.
+
+A thirty-ninth selection maps bounded background metric labels, diagnostic types,
+aggregation and transaction-fenced storage. Existing runtime snapshot and fixed
+bucket/shard dependencies remain visible; this is not runtime or native proof. The
+24 PGN activity-scope, nineteen earlier and ten missing-adapter fixture gaps remain
+unresolved. The diagnostics suite also has two unresolved label/runbook snapshot
+failures; these source-test results do not establish runtime behavior.
+
+A fortieth selection maps Redis admission, policy, coalesced wake and runtime
+instrumentation owners. Existing token, expiration, generation and advisory wake
+boundaries remain visible; durable tasks remain authoritative. This source map
+does not establish runtime or native proof. The two diagnostics, 24 PGN scope,
+nineteen earlier and ten missing-adapter fixture gaps remain unresolved.
+
+A forty-first selection maps process activity gating, Study-only policy and the
+generation-fenced expiring control snapshot. Database settings remain authoritative;
+unavailable control holds optional admission while existing essential exceptions
+remain in task composition. This source map is not runtime proof; the two diagnostics,
+24 PGN scope, nineteen earlier and ten missing-adapter fixture gaps remain open.
+
+A forty-second selection maps bounded repertoire move verification and its
+read-only source adapter. Existing legal replay, cursor, source-token recheck and
+main endpoint remain visible; this source map is not native or runtime proof. The
+previously reported fixture gaps remain unresolved.
+
+A forty-third selection maps current analysis-paste preview, commit command and
+line storage. Existing preview token/currentness, command identity and graph/
+integrity edges remain visible; retired Coverage inputs are rejected and no gap
+state is written. This source map is not runtime proof; previous fixture gaps
+remain unresolved.
+
+At this base revision, 52 of 289 tracked Python files in those trees remain
+outside the combined 237-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover

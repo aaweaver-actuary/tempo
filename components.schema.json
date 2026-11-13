@@ -186,7 +186,15 @@
               "position_plan",
               "position_source",
               "captured_tactic",
-              "chess_helpers"
+              "chess_helpers",
+              "scheduling_review",
+              "repertoire_snapshot",
+              "background_activity",
+              "background_metrics",
+              "redis_runtime",
+              "study_control",
+              "repertoire_move_verification",
+              "analysis_paste"
             ]
           }
         }

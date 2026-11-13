@@ -2,6 +2,942 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "analysis-paste-command",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/analysis_paste_commands.py#commit_analysis_paste"
+      ],
+      "dependencies": [
+        "backend-command-gateway",
+        "analysis-paste-service",
+        "study-calendar-capture",
+        "integrity-scan-service",
+        "opening-graph-rebuild"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/analysis_paste_commands.py"
+      ],
+      "ownershipRole": "Register and apply pasted analysis",
+      "dependencyNotes": [
+        "Registers analysis.paste.commit for task composition; rejects retired Coverage input, validates prepared preview and requests integrity/graph work in caller transaction."
+      ],
+      "censusScope": "analysis_paste"
+    },
+    {
+      "id": "analysis-paste-service",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/analysis_paste.py#PastedLine",
+        "backend/app/services/analysis_paste.py#parse_pasted_lines",
+        "backend/app/services/analysis_paste.py#build_paste_preview",
+        "backend/app/services/analysis_paste.py#commit_pasted_lines"
+      ],
+      "dependencies": [
+        "analysis-paste-storage",
+        "backend-chess-identity",
+        "backend-pgn-helpers",
+        "canonical-prefix-application"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/analysis_paste.py"
+      ],
+      "ownershipRole": "Prepare and commit authored paste",
+      "dependencyNotes": [
+        "Uses python-chess and existing source snapshot signature, preview token and currentness recheck. Main prepares preview, command commits selected lines; retired gap result remains false."
+      ],
+      "censusScope": "analysis_paste"
+    },
+    {
+      "id": "analysis-paste-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/authored_repertoires",
+      "publicExports": [
+        "database/tempo_storage/authored_repertoires/analysis_paste.py#repertoires",
+        "database/tempo_storage/authored_repertoires/analysis_paste.py#lines",
+        "database/tempo_storage/authored_repertoires/analysis_paste.py#insert_line",
+        "database/tempo_storage/authored_repertoires/analysis_paste.py#initial_depth",
+        "database/tempo_storage/authored_repertoires/analysis_paste.py#set_line_depth"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/authored_repertoires/analysis_paste.py"
+      ],
+      "ownershipRole": "Read and write pasted authored lines",
+      "dependencyNotes": [
+        "Caller-connection SQL reads repertoires and lines and inserts selected line and depth; service owns validation and caller owns transaction."
+      ],
+      "censusScope": "analysis_paste"
+    },
+    {
+      "id": "repertoire-move-verification",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/repertoire_move_verification.py#verify_repertoire_move"
+      ],
+      "dependencies": [
+        "repertoire-move-verification-storage",
+        "backend-chess-identity"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/repertoire_move_verification.py"
+      ],
+      "ownershipRole": "Verify a move against bounded saved repertoire lines",
+      "dependencyNotes": [
+        "Uses python-chess, monotonic replay budget and read connections; captures and rechecks source token around bounded page replay. Main exposes the existing endpoint and invalid, stale or unfinished evidence holds."
+      ],
+      "censusScope": "repertoire_move_verification"
+    },
+    {
+      "id": "repertoire-move-verification-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/repertoire_scope",
+      "publicExports": [
+        "database/tempo_storage/repertoire_scope/move_verification.py#_source_token",
+        "database/tempo_storage/repertoire_scope/move_verification.py#source_line_page"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/repertoire_scope/__init__.py",
+        "database/tempo_storage/repertoire_scope/move_verification.py"
+      ],
+      "ownershipRole": "Read repertoire verification source facts",
+      "dependencyNotes": [
+        "Caller-connection SQL computes existing source digest and ID-ordered bounded line page; service owns replay, source recheck and result decisions."
+      ],
+      "censusScope": "repertoire_move_verification"
+    },
+    {
+      "id": "application-activity-gate",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/activity_gate.py#BackgroundContractError",
+        "backend/app/services/activity_gate.py#ApplicationActivityGate"
+      ],
+      "dependencies": [
+        "redis-admission-application"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/activity_gate.py"
+      ],
+      "ownershipRole": "Coordinate process foreground and background activity",
+      "dependencyNotes": [
+        "Existing process-local request/job and database section controls use Redis admission when configured; main, tasks and database infrastructure bind it. No separate scheduler or authority is introduced."
+      ],
+      "censusScope": "study_control"
+    },
+    {
+      "id": "study-mode-policy",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/study_mode.py#study_only_enabled"
+      ],
+      "dependencies": [
+        "application-activity-gate",
+        "settings-control-storage",
+        "redis-admission-application",
+        "study-priority-control"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/study_mode.py"
+      ],
+      "ownershipRole": "Read Study-only admission policy",
+      "dependencyNotes": [
+        "Database settings remain authoritative; background shared control unavailable or not explicitly false holds optional admission. Existing daily queue and durable callback allowlists remain in task composition."
+      ],
+      "censusScope": "study_control"
+    },
+    {
+      "id": "study-priority-control",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/study_priority.py#refresh_policy",
+        "backend/app/services/study_priority.py#control_snapshot",
+        "backend/app/services/study_priority.py#policy_publisher"
+      ],
+      "dependencies": [
+        "application-activity-gate",
+        "redis-admission-application",
+        "redis-policy-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/study_priority.py"
+      ],
+      "ownershipRole": "Publish and read expiring Study control snapshot",
+      "dependencyNotes": [
+        "Reserves generation before bounded settings read and publishes only matching generation; unavailable, refreshing or expired control fails closed for optional work. Main owns publisher lifecycle."
+      ],
+      "censusScope": "study_control"
+    },
+    {
+      "id": "redis-admission-application",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/services/redis_admission_gate.py#foreground_present",
+        "backend/app/services/redis_admission_gate.py#record_browser_activity",
+        "backend/app/services/redis_admission_gate.py#foreground_lease",
+        "backend/app/services/redis_admission_gate.py#background_lease"
+      ],
+      "dependencies": [
+        "redis-admission-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/redis_admission_gate.py"
+      ],
+      "ownershipRole": "Coordinate foreground and background admission leases",
+      "dependencyNotes": [
+        "Existing Redis policy uses token leases, expiration and fail-closed deferral; callers own task and request lifecycle."
+      ],
+      "censusScope": "redis_runtime"
+    },
+    {
+      "id": "background-wake-application",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/services/background_wakes.py#consume_wake",
+        "backend/app/services/background_wakes.py#is_owned_publication",
+        "backend/app/services/background_wakes.py#CoalescingCelery",
+        "backend/app/services/background_wakes.py#CoalescedWakeTask"
+      ],
+      "dependencies": [
+        "redis-wake-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/background_wakes.py"
+      ],
+      "ownershipRole": "Compose coalesced advisory broker wakes",
+      "dependencyNotes": [
+        "Uses Celery, Kombu and Redis transport with ownership tokens; durable task recovery remains outside advisory wake."
+      ],
+      "censusScope": "redis_runtime"
+    },
+    {
+      "id": "background-runtime-application",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/services/background_runtime.py#measure_handler",
+        "backend/app/services/background_runtime.py#heartbeat",
+        "backend/app/services/background_runtime.py#snapshot",
+        "backend/app/services/background_runtime.py#StudyResponseTiming"
+      ],
+      "dependencies": [
+        "redis-runtime-storage",
+        "background-diagnostic-types",
+        "redis-admission-application"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/background_runtime.py"
+      ],
+      "ownershipRole": "Measure background and Study runtime",
+      "dependencyNotes": [
+        "Uses runtime timing context, diagnostic types and Redis worker-stage storage; existing task/main composition consumes instrumentation."
+      ],
+      "censusScope": "redis_runtime"
+    },
+    {
+      "id": "redis-admission-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "database/tempo_storage/redis_control/admission.py#client",
+        "database/tempo_storage/redis_control/admission.py#acquire_foreground",
+        "database/tempo_storage/redis_control/admission.py#remove_foreground",
+        "database/tempo_storage/redis_control/admission.py#acquire_background",
+        "database/tempo_storage/redis_control/admission.py#remove_background"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/redis_control/__init__.py",
+        "database/tempo_storage/redis_control/admission.py"
+      ],
+      "ownershipRole": "Persist token-based Redis admission state",
+      "dependencyNotes": [
+        "Existing Redis key and script operations use foreground/background tokens and time bounds; application owns lease policy and failure handling."
+      ],
+      "censusScope": "redis_runtime"
+    },
+    {
+      "id": "redis-policy-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "database/tempo_storage/redis_control/policy.py#advance_generation",
+        "database/tempo_storage/redis_control/policy.py#publish_policy",
+        "database/tempo_storage/redis_control/policy.py#policy_snapshot"
+      ],
+      "dependencies": [
+        "redis-admission-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/redis_control/policy.py"
+      ],
+      "ownershipRole": "Persist Redis policy generation and snapshot",
+      "dependencyNotes": [
+        "Uses Redis control client and admission facts for generation-fenced policy; callers own policy and durable setting."
+      ],
+      "censusScope": "redis_runtime"
+    },
+    {
+      "id": "redis-runtime-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "database/tempo_storage/redis_control/wake_runtime/runtime.py#publish_worker_stage",
+        "database/tempo_storage/redis_control/wake_runtime/runtime.py#worker_stage_values"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/redis_control/wake_runtime/__init__.py",
+        "database/tempo_storage/redis_control/wake_runtime/runtime.py"
+      ],
+      "ownershipRole": "Persist bounded Redis runtime stages",
+      "dependencyNotes": [
+        "Existing Redis client stores and reads worker-stage diagnostics; runtime composition owns semantics."
+      ],
+      "censusScope": "redis_runtime"
+    },
+    {
+      "id": "redis-wake-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "database/tempo_storage/redis_control/wake_runtime/wakes.py#ownership_keys",
+        "database/tempo_storage/redis_control/wake_runtime/wakes.py#consume_wake",
+        "database/tempo_storage/redis_control/wake_runtime/wakes.py#publish_wake",
+        "database/tempo_storage/redis_control/wake_runtime/wakes.py#reserve_wake",
+        "database/tempo_storage/redis_control/wake_runtime/wakes.py#abort_wake"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/redis_control/wake_runtime/wakes.py"
+      ],
+      "ownershipRole": "Persist coalesced Redis wake ownership",
+      "dependencyNotes": [
+        "Existing token-scoped Redis operations reserve, publish, consume and abort advisory wakes; durable task remains authoritative."
+      ],
+      "censusScope": "redis_runtime"
+    },
+    {
+      "id": "background-diagnostic-types",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/background_diagnostic_types.py#_timestamp_with_timezone"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/background_metric_kinds.py",
+        "backend/app/services/background_diagnostic_types.py"
+      ],
+      "ownershipRole": "Define bounded background diagnostic primitives",
+      "dependencyNotes": [
+        "Finite work kind/state labels and Pydantic timezone validation support existing metrics/runtime response contracts."
+      ],
+      "censusScope": "background_metrics"
+    },
+    {
+      "id": "background-metrics-service",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/background_metrics.py#metric_shard",
+        "backend/app/services/background_metrics.py#increment",
+        "backend/app/services/background_metrics.py#record_event_counts",
+        "backend/app/services/background_metrics.py#BackgroundDiagnostics"
+      ],
+      "dependencies": [
+        "background-diagnostic-types",
+        "background-metrics-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/background_metrics.py"
+      ],
+      "ownershipRole": "Aggregate bounded background metrics",
+      "dependencyNotes": [
+        "Validates counters and finite labels, uses fixed buckets and shards, caller transaction and existing runtime snapshot; it does not expose raw payloads."
+      ],
+      "censusScope": "background_metrics"
+    },
+    {
+      "id": "background-metrics-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/lifecycle",
+      "publicExports": [
+        "database/tempo_storage/lifecycle/background_metrics.py#record_metric_delta",
+        "database/tempo_storage/lifecycle/background_metrics.py#write_metric_delta",
+        "database/tempo_storage/lifecycle/background_metrics.py#task_kind"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/lifecycle/background_metrics.py"
+      ],
+      "ownershipRole": "Buffer and persist background metric deltas",
+      "dependencyNotes": [
+        "Caller-owned transaction buffers validated metrics and flushes sharded SQL updates in deterministic lock order; task kind lookup stays in storage."
+      ],
+      "censusScope": "background_metrics"
+    },
+    {
+      "id": "background-activity-service",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/background_activity.py#report_progress",
+        "backend/app/services/background_activity.py#emit_progress",
+        "backend/app/services/background_activity.py#set_control",
+        "backend/app/services/background_activity.py#set_control_in_transaction"
+      ],
+      "dependencies": [
+        "background-activity-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/background_activity.py"
+      ],
+      "ownershipRole": "Coordinate background progress and controls",
+      "dependencyNotes": [
+        "Checks supported source, generation and Study-only admission; emit_progress catches PostgreSQL operational failures. Existing activity command uses borrowed transaction; standalone entry points open existing connections."
+      ],
+      "censusScope": "background_activity"
+    },
+    {
+      "id": "background-activity-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/controls/activity",
+      "publicExports": [
+        "database/tempo_storage/controls/activity/storage.py#prepare_progress_read",
+        "database/tempo_storage/controls/activity/storage.py#prepare_control_read",
+        "database/tempo_storage/controls/activity/storage.py#prepare_control_update",
+        "database/tempo_storage/controls/activity/storage.py#upsert_progress"
+      ],
+      "dependencies": [
+        "pgn-import-preparation-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/controls/activity/__init__.py",
+        "database/tempo_storage/controls/activity/storage.py"
+      ],
+      "ownershipRole": "Persist background progress and control facts",
+      "dependencyNotes": [
+        "Caller-connection SQL uses fixed durable/integrity source allowlist, generation/current work reads and row locks, explicit import receipt scope and activity upserts; caller owns action policy and transaction."
+      ],
+      "censusScope": "background_activity"
+    },
+    {
+      "id": "repertoire-position-index",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/repertoire",
+      "publicExports": [
+        "backend/app/repertoire/position_index.py#PositionKey",
+        "backend/app/repertoire/position_index.py#PositionIndex",
+        "backend/app/repertoire/position_index.py#build_index",
+        "backend/app/repertoire/position_index.py#build_reentry_index"
+      ],
+      "dependencies": [
+        "backend-contracts",
+        "evidence-math"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/repertoire/__init__.py",
+        "backend/app/repertoire/position_index.py"
+      ],
+      "ownershipRole": "Index supplied authored repertoire positions",
+      "dependencyNotes": [
+        "Public package facade re-exports index and prepared snapshot. Uses python-chess and shared contracts; source and issuance authority remain external."
+      ],
+      "censusScope": "repertoire_snapshot"
+    },
+    {
+      "id": "repertoire-position-occurrences",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/repertoire",
+      "publicExports": [
+        "backend/app/repertoire/position_schedule_occurrences.py#PositionInventoryFacts",
+        "backend/app/repertoire/position_schedule_occurrences.py#inventory_from_snapshot",
+        "backend/app/repertoire/position_schedule_occurrences.py#routes_from_snapshot",
+        "backend/app/repertoire/position_schedule_occurrences.py#options_for_target"
+      ],
+      "dependencies": [
+        "repertoire-position-index",
+        "evidence-math"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/repertoire/interfaces/__init__.py",
+        "backend/app/repertoire/interfaces/position_schedule_occurrences.py",
+        "backend/app/repertoire/position_schedule_occurrences.py"
+      ],
+      "ownershipRole": "Project position scheduling occurrence facts",
+      "dependencyNotes": [
+        "Public interface re-exports supplied-snapshot projections; source certificates and physical bindings are detached facts, not source authority or route eligibility proof."
+      ],
+      "censusScope": "repertoire_snapshot"
+    },
+    {
+      "id": "repertoire-snapshot-projection",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/repertoire",
+      "publicExports": [
+        "backend/app/repertoire/snapshot.py#project_repertoire",
+        "backend/app/repertoire/snapshot.py#project_published_repertoire",
+        "backend/app/repertoire/snapshot.py#PreparedPublishedRepertoire"
+      ],
+      "dependencies": [
+        "backend-contracts",
+        "evidence-math",
+        "chess-core",
+        "game-review-contracts"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/repertoire/snapshot.py"
+      ],
+      "ownershipRole": "Project immutable repertoire publication",
+      "dependencyNotes": [
+        "Consumes detached bounded source facts and existing chess/evidence contracts; ephemeral prepared projection grants no current database authority and receiving writer must fence source."
+      ],
+      "censusScope": "repertoire_snapshot"
+    },
+    {
+      "id": "scheduling-review-contract",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/study/policy/scheduling_review_contracts.py#CardState",
+        "backend/app/study/policy/scheduling_review_contracts.py#ReviewRecord",
+        "backend/app/study/policy/scheduling_review_contracts.py#SchedulingReviewStore"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study/policy/scheduling_review_contracts.py",
+        "backend/app/services/scheduling_review_contracts.py"
+      ],
+      "ownershipRole": "Describe Study scheduling review facts and capabilities",
+      "dependencyNotes": [
+        "Typed Study policy contracts and assignment-only service facade preserve existing interfaces; callers own transaction and source identity."
+      ],
+      "censusScope": "scheduling_review"
+    },
+    {
+      "id": "scheduling-review-policy",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/study/policy/scheduling_review_application.py#apply_scheduling_review",
+        "backend/app/services/scheduling_review_application.py#apply_scheduling_review"
+      ],
+      "dependencies": [
+        "scheduling-review-contract",
+        "opening-maturity-policy",
+        "scheduling-adapter"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study/policy/scheduling_review_application.py",
+        "backend/app/services/scheduling_review_application.py"
+      ],
+      "ownershipRole": "Apply Study scheduling review decisions",
+      "dependencyNotes": [
+        "Study policy consumes borrowed store and injected scheduler; legacy service facade supplies existing scheduling functions. Review service and Learning adapter remain callers and own receipt/transaction boundary."
+      ],
+      "censusScope": "scheduling_review"
+    },
+    {
+      "id": "opening-maturity-policy",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/study/policy/opening_maturity.py#augment_opening_maturity"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study/policy/opening_maturity.py"
+      ],
+      "ownershipRole": "Augment opening maturity facts",
+      "dependencyNotes": [
+        "Existing scheduling and review reconciliation consumers provide successful-day, outcome and baseline facts; this helper owns no storage."
+      ],
+      "censusScope": "scheduling_review"
+    },
+    {
+      "id": "scheduling-adapter",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/services/scheduler.py#schedule_review"
+      ],
+      "dependencies": [
+        "scheduling"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/scheduler.py"
+      ],
+      "ownershipRole": "Adapt environmental defaults to scheduling package",
+      "dependencyNotes": [
+        "Uses FSRS Card and existing scheduling package; preserves supplied card identity and historical UTC/day defaults. Study/Learning remains scheduling owner."
+      ],
+      "censusScope": "scheduling_review"
+    },
+    {
+      "id": "scheduling-review-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "database/tempo_storage/scheduling_review_store.py#OwnedConnectionSchedulingReviewStore"
+      ],
+      "dependencies": [
+        "scheduling-review-contract"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/scheduling_review_store.py"
+      ],
+      "ownershipRole": "Persist scheduling review through borrowed connection",
+      "dependencyNotes": [
+        "SQL store reads card and maturity/source facts, appends review and saves card state on caller connection; caller owns lock, transaction and receipt."
+      ],
+      "censusScope": "scheduling_review"
+    },
+    {
       "id": "backend-chess-identity",
       "type": "integration",
       "maintainer": "Tempo",
@@ -2667,7 +3603,7 @@
       ],
       "ownershipRole": "Persist authored branch changes",
       "dependencyNotes": [
-        "Caller-transaction native SQL locks repertoire and gap candidates, reads settings/lines and writes line, training depth and gap state; integrity repair also uses the repertoire lock."
+        "Caller-transaction native SQL locks repertoire, reads settings/lines and writes lines and training depth; integrity repair also uses the repertoire lock."
       ],
       "censusScope": "card_branch_edits"
     },
