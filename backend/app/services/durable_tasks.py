@@ -286,7 +286,12 @@ def _request_current_queue_in_transaction(
     previous_payload = json.loads(task["payload_json"])
     previous_day = previous_payload.get("queue_date") or payload["queue_date"]
     task_key = "current"
+    alternate = None
     if not created and previous_day != payload["queue_date"]:
+        alternate = storage.locked_queue_task_for_day(database, payload["queue_date"])
+    if alternate is not None or (
+        not created and previous_day != payload["queue_date"] and task["state"] in ACTIVE_STATES
+    ):
         # Preserve the accepted singleton and its lease. Distinct calendar days
         # coalesce separately under the same daily_queue worker and fences.
         task_key = "current-day:" + payload["queue_date"]

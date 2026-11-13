@@ -348,6 +348,13 @@ def lock_or_create_current_queue_task(database, *, task_id, payload_json, priori
     return task, False
 
 
+def locked_queue_task_for_day(database, queue_date):
+    """Inspect an existing alternate while holding the singleton lock."""
+    return database.execute(
+        _TASK_BY_KIND_SQL + " FOR UPDATE", ("daily_queue", "current-day:" + queue_date)
+    ).fetchone()
+
+
 def update_locked_queue_task_payload(database, *, task_id, generation, payload_json):
     """Replace a caller-merged payload while preserving active task state.
 

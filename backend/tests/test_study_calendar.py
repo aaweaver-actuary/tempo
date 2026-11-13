@@ -394,6 +394,7 @@ def test_backward_day_creates_distinct_task_preserving_leased_singleton(monkeypa
         keys.append(key)
         return (original, False) if key == "current" else (created, True)
     monkeypatch.setattr(durable_tasks.storage, "lock_or_create_current_queue_task", lock)
+    monkeypatch.setattr(durable_tasks.storage, "locked_queue_task_for_day", lambda db, day: None)
     monkeypatch.setattr(foreground, "signal_queue_refresh_in_transaction", lambda db, day: signals.append(day))
     monkeypatch.setattr(durable_tasks, "_record_event", lambda *a, **kw: events.append((a, kw)))
     monkeypatch.setattr(durable_tasks, "mark_queue_refresh_requested", lambda: None)
