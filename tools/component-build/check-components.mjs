@@ -271,32 +271,52 @@ export function validateStartupFacts(manifest, root = repository, python = proce
   const loader = "backend/app/celery_app.py#celery-loader#worker-startup-composition#app.tasks";
   if (!celery || !worker || !api || JSON.stringify(celery.moduleAssignments) !== JSON.stringify([assignment]) || JSON.stringify(celery.lifecycleEdges) !== JSON.stringify([loader]) || !celery.ownedFiles.includes("backend/app/celery_app.py") || !worker.ownedFiles.includes("backend/app/tasks.py") || !api.ownedFiles.includes("backend/app/main.py")) throw new Error("Invalid startup assignment or loader ownership");
   if (manifest.components.some(c => c.id !== celery.id && (c.moduleAssignments?.length || c.lifecycleEdges?.length))) throw new Error("Unexpected startup assignment or loader");
-  const code = `import ast,pathlib,sys
-root=pathlib.Path(sys.argv[1])
-def parse(p): return ast.parse((root/p).read_text(),filename=p)
-c=parse('backend/app/celery_app.py'); t=parse('backend/app/tasks.py'); a=parse('backend/app/main.py')
-assign=[n for n in c.body if isinstance(n,(ast.Assign,ast.AnnAssign)) and any(isinstance(x,ast.Name) and x.id=='celery_app' for x in (n.targets if isinstance(n,ast.Assign) else [n.target]))]
-assert len(assign)==1 and isinstance(assign[0].value,ast.Call) and isinstance(assign[0].value.func,ast.Name) and assign[0].value.func.id=='CoalescingCelery'
-assert any(k.arg=='include' and ast.literal_eval(k.value)==['app.tasks'] for k in assign[0].value.keywords)
-conf=[n.value for n in c.body if isinstance(n,ast.Expr) and isinstance(n.value,ast.Call) and isinstance(n.value.func,ast.Attribute) and n.value.func.attr=='update' and isinstance(n.value.func.value,ast.Attribute) and n.value.func.value.attr=='conf' and isinstance(n.value.func.value.value,ast.Name) and n.value.func.value.value.id=='celery_app']
-assert len(conf)==1
-kw={k.arg:k.value for k in conf[0].keywords}; routes=ast.literal_eval(kw['task_routes']); beats=ast.literal_eval(kw['beat_schedule'])
-names={'ensure_daily_queue','execute_foreground_command','execute_background_command','recover_operations','recover_study_operations','poll_background_tasks','progress_study_queue','execute_background_slice'}
-expected={'app.tasks.'+n for n in names}; assert set(routes)==expected
-assert {v['task'] for v in beats.values()}=={'app.tasks.'+n for n in ('poll_background_tasks','recover_study_operations','recover_operations','progress_study_queue','ensure_daily_queue')} and len(beats)==5
-registered=[]
+  const code = `import ast, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+
+def parse(p):
+    return ast.parse((root / p).read_text(), filename=p)
+c = parse('backend/app/celery_app.py')
+t = parse('backend/app/tasks.py')
+a = parse('backend/app/main.py')
+assign = [n for n in c.body if isinstance(n, (ast.Assign, ast.AnnAssign)) and any((isinstance(x, ast.Name) and x.id == 'celery_app' for x in (n.targets if isinstance(n, ast.Assign) else [n.target])))]
+if not (len(assign) == 1 and isinstance(assign[0].value, ast.Call) and isinstance(assign[0].value.func, ast.Name) and (assign[0].value.func.id == 'CoalescingCelery')):
+    raise ValueError('startup witness mismatch')
+if not any((k.arg == 'include' and ast.literal_eval(k.value) == ['app.tasks'] for k in assign[0].value.keywords)):
+    raise ValueError('startup witness mismatch')
+conf = [n.value for n in c.body if isinstance(n, ast.Expr) and isinstance(n.value, ast.Call) and isinstance(n.value.func, ast.Attribute) and (n.value.func.attr == 'update') and isinstance(n.value.func.value, ast.Attribute) and (n.value.func.value.attr == 'conf') and isinstance(n.value.func.value.value, ast.Name) and (n.value.func.value.value.id == 'celery_app')]
+if not len(conf) == 1:
+    raise ValueError('startup witness mismatch')
+kw = {k.arg: k.value for k in conf[0].keywords}
+routes = ast.literal_eval(kw['task_routes'])
+beats = ast.literal_eval(kw['beat_schedule'])
+names = {'ensure_daily_queue', 'execute_foreground_command', 'execute_background_command', 'recover_operations', 'recover_study_operations', 'poll_background_tasks', 'progress_study_queue', 'execute_background_slice'}
+expected = {'app.tasks.' + n for n in names}
+if not set(routes) == expected:
+    raise ValueError('startup witness mismatch')
+if not routes == {**{'app.tasks.' + n: {'queue': 'foreground'} for n in ('execute_foreground_command', 'ensure_daily_queue', 'progress_study_queue', 'recover_study_operations')}, **{'app.tasks.' + n: {'queue': 'background'} for n in ('execute_background_command', 'execute_background_slice', 'poll_background_tasks', 'recover_operations')}}:
+    raise ValueError('startup witness mismatch')
+if not ({v['task'] for v in beats.values()} == {'app.tasks.' + n for n in ('poll_background_tasks', 'recover_study_operations', 'recover_operations', 'progress_study_queue', 'ensure_daily_queue')} and len(beats) == 5):
+    raise ValueError('startup witness mismatch')
+registered = []
 for n in t.body:
- if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)):
-  for d in n.decorator_list:
-   if isinstance(d,ast.Call) and isinstance(d.func,ast.Attribute) and isinstance(d.func.value,ast.Name) and d.func.value.id=='celery_app' and d.func.attr=='task':
-    registered.extend(ast.literal_eval(k.value) for k in d.keywords if k.arg=='name')
-assert len(registered)==8 and set(registered)==expected
-registrars={'study_attempt_commands','tactic_commands','queue_commands','review_commands','teaching_commands','repertoire_commands','settings_commands','annotation_commands','branch_commands','pgn_import_commands','analysis_paste_commands','prefix_split_commands','card_commands','activity_commands','integrity_repair_commands'}
-imports={x.name for n in t.body if isinstance(n,ast.ImportFrom) and n.level==1 and n.module is None for x in n.names}; assert registrars<=imports
-assert any(isinstance(n,ast.Expr) and isinstance(n.value,ast.Call) and isinstance(n.value.func,ast.Name) and n.value.func.id=='register_command' and n.value.args and isinstance(n.value.args[0],ast.Constant) and n.value.args[0].value=='opening_evidence.checkpoint' for n in t.body)
-assert any(isinstance(n,ast.AsyncFunctionDef) and n.name=='lifespan' for n in a.body)
-routers={n.value.args[0].id for n in a.body if isinstance(n,ast.Expr) and isinstance(n.value,ast.Call) and isinstance(n.value.func,ast.Attribute) and isinstance(n.value.func.value,ast.Name) and n.value.func.value.id=='app' and n.value.func.attr=='include_router' and n.value.args and isinstance(n.value.args[0],ast.Name)}
-assert {'game_review_router','prefix_split_router','study_exercise_router'}<=routers
+    if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        for d in n.decorator_list:
+            if isinstance(d, ast.Call) and isinstance(d.func, ast.Attribute) and isinstance(d.func.value, ast.Name) and (d.func.value.id == 'celery_app') and (d.func.attr == 'task'):
+                registered.extend((ast.literal_eval(k.value) for k in d.keywords if k.arg == 'name'))
+if not (len(registered) == 8 and set(registered) == expected):
+    raise ValueError('startup witness mismatch')
+registrars = {'study_attempt_commands', 'tactic_commands', 'queue_commands', 'review_commands', 'teaching_commands', 'repertoire_commands', 'settings_commands', 'annotation_commands', 'branch_commands', 'pgn_import_commands', 'analysis_paste_commands', 'prefix_split_commands', 'card_commands', 'activity_commands', 'integrity_repair_commands'}
+imports = {x.name for n in t.body if isinstance(n, ast.ImportFrom) and n.level == 1 and (n.module is None) for x in n.names}
+if not registrars <= imports:
+    raise ValueError('startup witness mismatch')
+if not any((isinstance(n, ast.Expr) and isinstance(n.value, ast.Call) and isinstance(n.value.func, ast.Name) and (n.value.func.id == 'register_command') and n.value.args and isinstance(n.value.args[0], ast.Constant) and (n.value.args[0].value == 'opening_evidence.checkpoint') for n in t.body)):
+    raise ValueError('startup witness mismatch')
+if not any((isinstance(n, ast.AsyncFunctionDef) and n.name == 'lifespan' for n in a.body)):
+    raise ValueError('startup witness mismatch')
+routers = {n.value.args[0].id for n in a.body if isinstance(n, ast.Expr) and isinstance(n.value, ast.Call) and isinstance(n.value.func, ast.Attribute) and isinstance(n.value.func.value, ast.Name) and (n.value.func.value.id == 'app') and (n.value.func.attr == 'include_router') and n.value.args and isinstance(n.value.args[0], ast.Name)}
+if not {'game_review_router', 'prefix_split_router', 'study_exercise_router'} <= routers:
+    raise ValueError('startup witness mismatch')
 `;
   const result = spawnSync(python, ["-c", code, resolve(root)], { encoding: "utf8" });
   if (result.error || result.status !== 0) throw new Error("Startup source witness failed: " + (result.error?.message ?? result.stderr));

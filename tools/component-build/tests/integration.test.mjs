@@ -102,6 +102,18 @@ test("T02 startup census cannot disappear when all owner tags are removed", () =
   for (const component of missing.components) if (component.censusScope === "startup_composition") delete component.censusScope;
   assert.throws(() => validateCensusOwnership(missing, "startup_composition", censusPaths("startup_composition", repository)), /lacks owners/);
 });
+test("T02 startup witness rejects foreign loader under optimized Python", context => {
+  const root = mkdtempSync(join(tmpdir(), "tempo-startup-optimize-")); context.after(() => rmSync(root, {recursive:true, force:true}));
+  mkdirSync(join(root, "backend/app"), {recursive:true});
+  for (const name of ["main.py", "tasks.py", "celery_app.py"]) {
+    let source = readFileSync(join(repository, "backend/app", name), "utf8");
+    if (name === "celery_app.py") source = source.replace('include=["app.tasks"]', 'include=["app.foreign"]');
+    writeFileSync(join(root, "backend/app", name), source);
+  }
+  const old = process.env.PYTHONOPTIMIZE; process.env.PYTHONOPTIMIZE = "1";
+  try { assert.throws(() => validateStartupFacts(original, root, python), /Startup source witness failed/); }
+  finally { if (old === undefined) delete process.env.PYTHONOPTIMIZE; else process.env.PYTHONOPTIMIZE = old; }
+});
 test("T02 startup import graph rejects a missing lazy import edge", () => {
   const bad = structuredClone(original), owner = bad.components.find(c => c.id === "queue-refresh-wakeup");
   owner.dependencies = owner.dependencies.filter(id => id !== "celery-startup-composition");
@@ -123,6 +135,7 @@ for (const [label, file, before, after] of [
   ["assignment", "celery_app.py", "celery_app = CoalescingCelery(", "foreign_app = CoalescingCelery("],
   ["loader", "celery_app.py", 'include=["app.tasks"]', 'include=["app.foreign"]'],
   ["task route", "celery_app.py", '"app.tasks.recover_study_operations": {"queue": "foreground"}', '"app.tasks.foreign": {"queue": "foreground"}'],
+  ["task queue", "celery_app.py", '"app.tasks.recover_study_operations": {"queue": "foreground"}', '"app.tasks.recover_study_operations": {"queue": "background"}'],
   ["beat target", "celery_app.py", '"task": "app.tasks.recover_study_operations"', '"task": "app.tasks.foreign"'],
   ["task registration", "tasks.py", 'name="app.tasks.recover_study_operations"', 'name="app.tasks.foreign"'],
   ["registrar", "tasks.py", 'from . import study_attempt_commands', 'from . import foreign_commands'],

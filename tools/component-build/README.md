@@ -661,7 +661,8 @@ future siblings or alter import behavior. Previous gaps remain open.
 
 A fifty-second selection records API, worker and Celery composition. Python
 imports remain dependency edges; Celery task loading is a separate typed lifecycle
-relationship and is not asserted acyclic. Static witnesses do not prove startup,
+relationship and is not asserted acyclic. Witnesses check beat target names, not
+their intervals, and exact task queue mappings. Static witnesses do not prove startup,
 recovery or delivery. Existing fixture gaps and the position admission cycle remain
 open.
 
