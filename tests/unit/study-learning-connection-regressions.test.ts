@@ -652,3 +652,22 @@ it("FE06 reads a v1 registry and inspects without rewriting its original bytes",
   await storage.inspectRetainedStudyAuthority();
   expect(localStorage.getItem("tempo-learning-authorities-v1")).toBe(bytes);
 });
+
+
+it("FE06 reconnect preserves existing v1 registry bytes and its opaque locator", async () => {
+  const origin = "http://learning.test:8001", workspace = "workspace-a";
+  const identity = `${origin}:study:${workspace}`;
+  const locator = `tempo-offline-training:${encodeURIComponent(identity)}`;
+  const bytes = `{  "${identity}" : { "origin":"${origin}", "workspace":"${workspace}", "offlineDatabase":"${locator}", "retainedField": {"original": true} } }`;
+  localStorage.setItem("tempo-learning-authorities-v1", bytes);
+  const client = await import("../../app/lib/study-connection");
+  const fetcher = vi.fn().mockResolvedValue(Response.json(bootstrap));
+  vi.stubGlobal("fetch", fetcher);
+  const setItem = vi.spyOn(Storage.prototype, "setItem");
+  await client.connectStudy(origin, workspace, credential);
+  expect(localStorage.getItem("tempo-learning-authorities-v1")).toBe(bytes);
+  expect(client.studyOfflineDatabaseName()).toBe(locator);
+  expect(setItem.mock.calls.some(([key]) => key === "tempo-learning-authorities-v1")).toBe(false);
+  expect(sessionStorage.getItem("tempo-learning-connection-v1")).toContain(credential);
+  expect(localStorage.getItem("tempo-learning-authorities-v1")).not.toContain(credential);
+});

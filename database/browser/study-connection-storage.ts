@@ -39,6 +39,9 @@ export function bindAuthority(authority: RegisteredAuthority): void {
     origin: authority.origin, workspace: authority.workspace, offlineDatabase: offlineStoreLocator(authority.identity),
   };
   validateBinding(authority.identity, binding);
+  // An existing valid identity already has this exact binding. Preserve its
+  // original serialized bytes and any retained fields on resume/recovery.
+  if (Object.hasOwn(existing, authority.identity)) return;
   localStorage.setItem(authoritiesKey, JSON.stringify({ ...existing, [authority.identity]: binding }));
 }
 
