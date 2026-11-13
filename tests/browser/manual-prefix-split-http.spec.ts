@@ -28,28 +28,31 @@ async function confirmed(request: APIRequestContext, response: APIResponse, orig
 }
 
 async function withOwnedPrefix(page: Page, request: APIRequestContext, action: (owned: {
-  card: string; entry: number; repertoire: string; snapshot: () => any;
+  card: string; entry: number; repertoire: string; snapshot: () => any; track: (id: string) => void;
 }) => Promise<void>) {
   const project = process.env.TEMPO_TEST_COMPOSE_PROJECT;
   const health = await request.get(`${api}/health`);
   await verifyPostgresFixtureTarget({ health: await health.json(), apiUrl: api, project });
   const compose = postgresFixtureComposeArguments(project);
   const filename = `p12-split-${randomUUID().replaceAll('-', '')}.pgn`;
-  const imported = await confirmed(request, await request.post(`${api}/imports/pgn`, { multipart: {
+  const importId = `p12-import-${randomUUID()}`;
+  const imported = await confirmed(request, await request.post(`${api}/imports/pgn`, { headers: {'Idempotency-Key':importId}, multipart: {
     file: { name: filename, mimeType: 'application/x-chess-pgn', buffer: Buffer.from('[Event "P12 owned split"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 *') },
     trained_color: 'white', initial_depth: '2',
-  }}));
+  }}), importId);
   const repertoire = (imported as {repertoire_id: string}).repertoire_id;
   expect(repertoire).toMatch(/^[a-zA-Z0-9_-]+$/);
-  let card = 'auto'; let day = ''; let displaced: number[][] = [];
-  const fixture = (actionName: string, extra?: string) => JSON.parse(execFileSync('docker', [...compose, 'run', '--rm', '--no-deps', '-e', 'TEMPO_TEST_INSTANCE=disposable', 'schema', 'python', '-', actionName, filename, repertoire, card, day, ...(extra ? [extra] : [])], {
+  let card = 'auto'; let day = ''; let displaced: number[][] = []; const operations: string[] = [importId];
+  const fixture = (actionName: string, ...extra: string[]) => JSON.parse(execFileSync('docker', [...compose, 'run', '--rm', '--no-deps', '-e', 'TEMPO_TEST_INSTANCE=disposable', 'schema', 'python', '-', actionName, filename, repertoire, card, day, ...extra], {
     input: requireFixture(), encoding: 'utf8', timeout: 30_000,
   }));
   try {
     const settingsResponse = await request.get(`${api}/settings`);
     const settings = await settingsResponse.json();
     day = new Intl.DateTimeFormat('en-CA', {timeZone: settings.timezone === 'local' ? process.env.TZ : settings.timezone, year:'numeric', month:'2-digit', day:'2-digit'}).format(new Date());
-    await confirmed(request, await request.put(`${api}/repertoires/${repertoire}/settings`, {data: {new_cards_per_day: 2}}));
+    const settingsId = `p12-settings-${randomUUID()}`;
+    await confirmed(request, await request.put(`${api}/repertoires/${repertoire}/settings`, {headers:{'Idempotency-Key':settingsId},data: {new_cards_per_day: 2}}), settingsId);
+    operations.push(settingsId);
     let ready: {ready: boolean; card?: string; entry?: number; displaced?: number[][]} = {ready:false};
     await expect.poll(() => { ready = fixture('prepare'); return ready.ready; }, {timeout:60_000}).toBe(true);
     card = ready.card!; displaced = ready.displaced!;
@@ -58,11 +61,13 @@ async function withOwnedPrefix(page: Page, request: APIRequestContext, action: (
     await prepareUI(page); await navigate(page, 'Train');
     await expect(page.locator('#train')).toHaveAttribute('data-queue-entry-id', String(entry));
     await expect(page.getByRole('button', {name:'Accept', exact:true})).toBeVisible();
-    await action({card, entry, repertoire, snapshot});
+    await action({card, entry, repertoire, snapshot, track: id => operations.push(id)});
   } finally {
-    if (card !== 'auto' && day) fixture('restore', JSON.stringify(displaced));
-    const removed = await request.delete(`${api}/repertoires/${encodeURIComponent(repertoire)}`);
-    await confirmed(request, removed);
+    if (!day) throw new Error('Original fixture Study day unavailable; preserve for inspection');
+    const cleanup = fixture('cleanup', JSON.stringify(displaced), JSON.stringify(operations));
+    expect(cleanup.cleaned).toBe(true);
+    expect(cleanup.restored + cleanup.reordered + cleanup.removed).toBe(displaced.length);
+    expect(Object.values(cleanup.remaining).every(value => value === 0)).toBe(true);
   }
 }
 
@@ -72,7 +77,7 @@ function requireFixture() {
 
 test('real manual split accepts original issued review and replays its exact receipt', async ({page, request}) => {
   test.setTimeout(180_000);
-  await withOwnedPrefix(page, request, async ({card, entry, snapshot}) => {
+  await withOwnedPrefix(page, request, async ({card, entry, snapshot, track}) => {
     const preview = await request.get(`${api}/cards/${card}/prefix-split`);
     expect(preview.ok()).toBe(true);
     const proposed = await preview.json();
@@ -82,7 +87,7 @@ test('real manual split accepts original issued review and replays its exact rec
     const sent = await pendingResponse; const original = sent.request();
     const operationId = original.headers()['idempotency-key'];
     const body = original.postDataJSON();
-    expect(operationId).toBeTruthy(); expect(body).toMatchObject({expected_revision:proposed.source_revision, queue_entry_id:entry});
+    expect(operationId).toBeTruthy(); track(operationId); expect(body).toMatchObject({expected_revision:proposed.source_revision, queue_entry_id:entry});
     const acceptance = await confirmed(request, sent as unknown as APIResponse, operationId) as {status:string;intent_id:string};
     expect(acceptance).toMatchObject({status:'waiting_review'});
     await expect(page.locator('#train')).toHaveAttribute('data-queue-entry-id', String(entry));
@@ -94,6 +99,7 @@ test('real manual split accepts original issued review and replays its exact rec
     const reviewRequest = page.waitForRequest(event => event.method()==='POST' && event.url().endsWith(`/cards/${card}/review`));
     await page.getByRole('button',{name:'Correct',exact:true}).click();
     const review = await reviewRequest; const reviewBody = review.postDataJSON();
+    const reviewOperationId = review.headers()['idempotency-key']; expect(reviewOperationId).toBeTruthy(); track(reviewOperationId);
     expect(reviewBody.queue_entry_id).toBe(entry); expect(reviewBody.expected_revision).toBe(proposed.source_revision);
     await expect.poll(() => snapshot().intent[0]?.[4], {timeout:90_000}).toBe('applied');
     const after = snapshot();
@@ -135,12 +141,12 @@ test('real manual split accepts original issued review and replays its exact rec
 
 test('real manual split rejection is retained on the original offered card', async ({page, request}) => {
   test.setTimeout(180_000);
-  await withOwnedPrefix(page, request, async ({card, entry, snapshot}) => {
+  await withOwnedPrefix(page, request, async ({card, entry, snapshot, track}) => {
     const before = snapshot();
     const rejection = page.waitForResponse(response => response.request().method()==='POST' && response.url().endsWith(`/cards/${card}/prefix-split/reject`));
     await page.getByRole('button',{name:'Reject',exact:true}).click();
     const response = await rejection; const operationId = response.request().headers()['idempotency-key'];
-    expect(operationId).toBeTruthy();
+    expect(operationId).toBeTruthy(); track(operationId);
     const result = await confirmed(request,response as unknown as APIResponse,operationId) as {rejected_after_review_id:number};
     expect(result.rejected_after_review_id).toBeGreaterThan(0);
     await expect(page.locator('#train')).toHaveAttribute('data-queue-entry-id',String(entry));

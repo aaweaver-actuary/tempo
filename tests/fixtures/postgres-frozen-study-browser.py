@@ -59,14 +59,24 @@ with psycopg.connect('postgresql://postgres@postgres:5432/tempo') as db:
         print(json.dumps({'attempts':attempts, 'reviews':reviews, 'origins':origins},default=str))
     elif action == 'cleanup':
         displaced, operations = json.loads(sys.argv[4]), json.loads(sys.argv[5])
-        db.execute('DELETE FROM operation_receipts WHERE operation_id = ANY(%s)', (operations,))
+        if not isinstance(operations, list) or any(not isinstance(value, str) or not value for value in operations):
+            raise RuntimeError('Invalid original operation identities')
+        owner_cards = [f'{prefix}-card-{i}' for i in range(3)]
+        owned = db.execute("""SELECT operation_id,state FROM operation_receipts WHERE
+          (command_name IN ('studies.attempts.submit','studies.attempts.self_assess') AND payload_json::jsonb->>'study_id'=%s)
+          OR (command_name='queue.issue_head' AND payload_json::jsonb->>'card_id' = ANY(%s))""", (prefix, owner_cards)).fetchall()
+        owned_ids = {row[0] for row in owned}
+        if any(item not in owned_ids for item in operations) or any(row[1] not in ('complete','failed') for row in owned):
+            raise RuntimeError('Original operations are missing, foreign or unfinished; preserve fixture')
+        db.execute('DELETE FROM operation_receipts WHERE operation_id = ANY(%s)', (list(owned_ids),))
         db.execute('DELETE FROM study_attempts WHERE exercise_id LIKE %s', (prefix+'-exercise-%',))
         db.execute('DELETE FROM study_sibling_burials WHERE exercise_id LIKE %s', (prefix+'-exercise-%',))
         db.execute('DELETE FROM review_schedule_snapshots WHERE review_id IN (SELECT id FROM reviews WHERE card_id LIKE %s)', (prefix+'-card-%',))
         db.execute('DELETE FROM review_attempt_receipts WHERE card_id LIKE %s', (prefix+'-card-%',))
         db.execute('DELETE FROM reviews WHERE card_id LIKE %s', (prefix+'-card-%',))
-        db.execute('DELETE FROM queue_attempt_origins WHERE card_id LIKE %s', (prefix+'-card-%',))
+        # Queue deletion triggers retained-origin capture; remove origins only after it.
         db.execute('DELETE FROM daily_queue WHERE card_id LIKE %s', (prefix+'-card-%',))
+        db.execute('DELETE FROM queue_attempt_origins WHERE card_id LIKE %s', (prefix+'-card-%',))
         db.execute('DELETE FROM cards WHERE id LIKE %s', (prefix+'-card-%',))
         db.execute('DELETE FROM study_exercise_revisions WHERE exercise_id LIKE %s', (prefix+'-exercise-%',))
         db.execute('DELETE FROM study_exercises WHERE study_id=%s', (prefix,))
@@ -74,8 +84,24 @@ with psycopg.connect('postgresql://postgres@postgres:5432/tempo') as db:
         db.execute('DELETE FROM study_sources WHERE chapter_id=%s', (prefix+'-chapter',))
         db.execute('DELETE FROM study_chapters WHERE study_id=%s', (prefix,))
         db.execute('DELETE FROM studies WHERE id=%s', (prefix,))
+        restored = reordered = removed = 0
         for entry, original, expected in displaced:
-            db.execute('UPDATE daily_queue SET position=%s WHERE id=%s AND position=%s', (original,entry,expected))
-        print(json.dumps({'cleaned':True}))
+            row = db.execute('SELECT position FROM daily_queue WHERE id=%s FOR UPDATE', (entry,)).fetchone()
+            if row is None: removed += 1
+            elif row[0] != expected: reordered += 1
+            else:
+                restored += db.execute('UPDATE daily_queue SET position=%s WHERE id=%s AND position=%s', (original,entry,expected)).rowcount
+        remaining = {}
+        for table, column, value in [('studies','id',prefix), ('study_chapters','study_id',prefix),
+          ('study_exercises','study_id',prefix), ('study_attempts','exercise_id',prefix+'-exercise-%'),
+          ('cards','id',prefix+'-card-%'), ('reviews','card_id',prefix+'-card-%'),
+          ('daily_queue','card_id',prefix+'-card-%'), ('queue_attempt_origins','card_id',prefix+'-card-%'),
+          ('review_attempt_receipts','card_id',prefix+'-card-%')]:
+            op = 'LIKE' if value.endswith('%') else '='
+            remaining[table] = db.execute(f'SELECT count(*) FROM {table} WHERE {column} {op} %s', (value,)).fetchone()[0]
+        remaining['operations'] = db.execute('SELECT count(*) FROM operation_receipts WHERE operation_id = ANY(%s)', (list(owned_ids),)).fetchone()[0]
+        if any(remaining.values()) or restored + reordered + removed != len(displaced):
+            raise RuntimeError(f'Owned frozen fixture cleanup incomplete: {remaining}')
+        print(json.dumps({'cleaned':True, 'remaining':remaining, 'restored':restored, 'reordered':reordered, 'removed':removed}))
     else:
         raise ValueError('Unknown fixture action')

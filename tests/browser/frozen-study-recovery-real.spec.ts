@@ -25,6 +25,24 @@ async function confirmed(request: APIRequestContext, response: APIResponse, id: 
   return result;
 }
 
+async function authoritativeHead(request: APIRequestContext) {
+  let head: {id:string;queue_entry_id:number;cycle:number;revision:number;study_exercise_id:string} | undefined;
+  await expect.poll(async () => {
+    const response = await request.get(`${api}/queue/window?limit=20`);
+    if (response.status() === 202) {
+      const acknowledgment = await response.json();
+      if (typeof acknowledgment.operation_id !== 'string' || !acknowledgment.operation_id) throw new Error('Queue issuance lacks original identity');
+      await confirmed(request, response, acknowledgment.operation_id);
+      return false;
+    }
+    if (!response.ok()) throw new Error(`Queue head HTTP ${response.status()}`);
+    const queue = await response.json();
+    if (!Array.isArray(queue.cards)) throw new Error('Malformed authoritative queue');
+    head = queue.cards[0]; return Boolean(head);
+  }, {timeout:60_000}).toBe(true);
+  return head!;
+}
+
 test('real frozen Study preserves original parent and child through reload and playable successor', async ({page, request}) => {
   test.setTimeout(180_000);
   const project = process.env.TEMPO_TEST_COMPOSE_PROJECT;
@@ -91,13 +109,25 @@ test('real frozen Study preserves original parent and child through reload and p
     expect(await confirmed(request,childReplay,childId)).toEqual(childResult);
     expect(fixture('snapshot')).toEqual(finished);
     await page.getByRole('button',{name:'Continue',exact:true}).click();
+    const head = await authoritativeHead(request);
+    expect(head).toMatchObject({id:`${prefix}-card-2`,queue_entry_id:entries[2],cycle:0,revision:1,study_exercise_id:`${prefix}-exercise-2`});
+    const presentNext = await request.get(`${api}/studies/${prefix}/exercises/${prefix}-exercise-2/present?${new URLSearchParams({card_id:head.id,queue_entry_id:String(head.queue_entry_id),queue_cycle:String(head.cycle),revision:String(head.revision)})}`);
+    expect(presentNext.ok()).toBe(true);
+    expect(await presentNext.json()).toMatchObject({id:`${prefix}-exercise-2`,revision:1,prompt:'P12 playable successor'});
+    const issued = fixture('snapshot');
+    expect(issued.origins).toContainEqual([entries[2],`${prefix}-card-2`,1,1]);
+    expect(issued.reviews).toHaveLength(2);
     await expect(page.getByText('P12 playable successor')).toBeVisible();
+    await expect(page.getByLabel('Coordinates or UCI move')).toBeEnabled();
     await page.getByLabel('Coordinates or UCI move').fill('d2d4');
     await page.getByRole('button',{name:'Add',exact:true}).click();
     await expect(page.getByText('Answer: d2d4')).toBeVisible();
     expect(fixture('snapshot').reviews).toHaveLength(2);
   } finally {
-    fixture('cleanup',JSON.stringify(displaced),JSON.stringify(operations));
+    const cleanup = fixture('cleanup',JSON.stringify(displaced),JSON.stringify(operations));
+    expect(cleanup.cleaned).toBe(true);
+    expect(cleanup.restored + cleanup.reordered + cleanup.removed).toBe(displaced.length);
+    expect(Object.values(cleanup.remaining).every(value => value === 0)).toBe(true);
   }
 });
 
@@ -178,7 +208,10 @@ test.describe('real frozen phone recovery', () => {
       await page.reload(); expect(fixture('snapshot')).toEqual(snapshot);
     } finally {
       await context.setOffline(false);
-      fixture('cleanup',JSON.stringify(displaced),JSON.stringify(operations));
+      const cleanup = fixture('cleanup',JSON.stringify(displaced),JSON.stringify(operations));
+    expect(cleanup.cleaned).toBe(true);
+    expect(cleanup.restored + cleanup.reordered + cleanup.removed).toBe(displaced.length);
+    expect(Object.values(cleanup.remaining).every(value => value === 0)).toBe(true);
     }
   });
 });
