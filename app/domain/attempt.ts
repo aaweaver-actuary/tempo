@@ -14,6 +14,8 @@ export type AttemptToken = {
   generation: number;
   phase: AttemptPhase;
   attemptId?: string;
+  /** Generated locally for this ordinary attempt, never restored from an issued plan. */
+  freshEvidenceAttempt?: boolean;
 };
 
 export function attemptEntryKey(card: PracticeCard): string {

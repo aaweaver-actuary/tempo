@@ -14,7 +14,7 @@ import { publishNotification, notifications, resolveNotification } from "./notif
 import { clearTrainingFailureAfterReview } from "./training-failure-outbox";
 
 import { definitiveEvidenceFailure } from "./opening-evidence-review";
-import { acknowledgeOpeningReview, retainOpeningEvidenceForStorageFallback } from "./opening-evidence-journal";
+import { acknowledgeOpeningReview, markOpeningEvidenceExposed, retainOpeningEvidenceForStorageFallback } from "./opening-evidence-journal";
 import { IntentStorageError } from "@tempo/browser-intents";
 
 let activeFlush: Promise<ReviewFlushResult> | undefined;
@@ -141,6 +141,8 @@ export function conflictedReviews(): PendingReview[] {
 }
 
 export async function enqueuePendingReview(review: PendingReview, binding?: ReviewAuthorityBinding): Promise<string> {
+  markOpeningEvidenceExposed(review.attemptId);
+  markOpeningEvidenceExposed(review.openingEvidenceCompletion?.attempt_id);
   binding?.requireCurrent();
   if (review.positionStudy && (!review.attemptId || !review.openingEvidenceCompletion ||
       review.openingEvidenceCompletion.attempt_id !== review.attemptId ||

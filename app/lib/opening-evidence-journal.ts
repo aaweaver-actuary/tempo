@@ -136,6 +136,37 @@ function holdAttemptLease(attemptId: string): void {
   });
 }
 
+type FreshCaptureOwnership = { lease: Promise<boolean>; available: boolean; held: boolean; exposed: boolean;
+  aborted: boolean; committed: boolean; cancelled: boolean; recoveryAbort?: () => void };
+
+// Only the training owner can mark a newly generated ordinary attempt as fresh.
+// A failed or unavailable lock merely disables the absent-anchor recovery.
+function claimFreshCapture(attemptId: string): FreshCaptureOwnership {
+  const owner: FreshCaptureOwnership = { lease: Promise.resolve(false), available: false, held: false, exposed: false, aborted: false, committed: false, cancelled: false };
+  if (typeof navigator === "undefined" || !navigator.locks) return owner;
+  owner.available = true;
+  owner.lease = new Promise<boolean>(resolve => {
+    try { void navigator.locks.request(`tempo-opening-attempt:${attemptId}`, { ifAvailable: true }, async lock => {
+      if (!lock || owner.cancelled) { resolve(false); return; }
+      owner.held = true;
+      let release!: () => void;
+      const held = new Promise<void>(done => { release = done; });
+      releaseLeases.set(attemptId, release);
+      resolve(true);
+      try { await held; } finally { owner.held = false; releaseLeases.delete(attemptId); }
+    }).catch(() => resolve(false)); } catch { resolve(false); }
+  });
+  return owner;
+}
+
+/** A shared or potentially sent aggregate can never qualify for absent-anchor recovery. */
+export function markOpeningEvidenceExposed(attemptId: string | undefined): void {
+  const owner = attemptId ? captures.get(attemptId)?.freshOwnership : undefined;
+  if (!owner) return;
+  owner.exposed = true;
+  owner.recoveryAbort?.();
+}
+
 /** Acquire exclusive capture ownership and restore the exact issued position journal. */
 const positionReservations = new Map<string, Promise<string | undefined>>();
 const positionPauses = new Map<string, Promise<void>>();
@@ -222,6 +253,7 @@ export class OpeningAttemptJournal {
   storageError: string | undefined;
   rebindHeld = false;
   retireRequested = false;
+  freshOwnership?: FreshCaptureOwnership;
   constructor(readonly header: AttemptHeader,
     private readonly append: (journal: OpeningAttemptJournal, event?: OpeningDecisionEvent) => Promise<void>,
     readonly positionPlan?: unknown,
@@ -298,10 +330,30 @@ async function storeAppend(journal: OpeningAttemptJournal, event?: OpeningDecisi
   const pendingEvents = [...journal.uncommittedEvents.values()];
   const writing = writeTail.catch(() => undefined).then(async () => {
     const binding = reboundBinding ?? journal.binding;
+    const owner = journal.freshOwnership;
+    if (owner) {
+      const granted = await owner.lease;
+      if (owner.available && !granted) {
+        journal.rebindHeld = true;
+        throw new Error("Opening evidence ownership is unavailable; the original capture remains held.");
+      }
+    }
     binding.requireCurrent();
     const database = await offlineTrainingDatabase(binding);
-    await journalStorage.appendOpeningAttempt(database, attempt, pendingEvents, snapshot, binding, reboundBinding !== undefined);
+    // Every new write makes an older abort insufficient until this write itself
+    // is observed to abort; an oncomplete authority failure is ambiguous.
+    const observedPriorAbort = owner?.aborted === true;
+    if (owner) owner.aborted = false;
+    const canInsertMissing = () => Boolean(reboundBinding && owner?.held && observedPriorAbort && !owner.committed && !owner.exposed && journal.binding.sameAuthority?.());
+    const proof = reboundBinding && owner ? { canInsert: canInsertMissing, registerAbort: (abort?: () => void) => { owner.recoveryAbort = abort; } } : undefined;
+    try {
+      await journalStorage.appendOpeningAttempt(database, attempt, pendingEvents, snapshot, binding, reboundBinding !== undefined, proof);
+    } catch (error) {
+      if (error instanceof journalStorage.OpeningEvidenceAppendAborted && owner?.held && !owner.committed && !owner.exposed) owner.aborted = true;
+      throw error;
+    }
     binding.requireCurrent();
+    if (owner) owner.committed = true;
     if (reboundBinding) journal.binding = reboundBinding;
     for (const pendingEvent of pendingEvents) journal.uncommittedEvents.delete(pendingEvent.sequence);
     if (!journal.uncommittedEvents.size) journal.storageError = undefined;
@@ -317,7 +369,7 @@ async function storeAppend(journal: OpeningAttemptJournal, event?: OpeningDecisi
 }
 
 export function beginOpeningAttempt(card: PracticeCard, attemptId: string | undefined,
-  options: { offline?: boolean; studyTimezone?: string; binding?: OfflineDatabaseBinding } = {}): OpeningAttemptJournal | undefined {
+  options: { offline?: boolean; studyTimezone?: string; binding?: OfflineDatabaseBinding; freshAttempt?: boolean } = {}): OpeningAttemptJournal | undefined {
   if (attemptId && card.kind === "opening" && card.openingEvidenceDiagnostic) publishNotification({
     severity: "warning", source: "opening evidence", key: `opening-evidence-unavailable:${card.id}`,
     message: card.openingEvidenceDiagnostic,
@@ -356,7 +408,8 @@ export function beginOpeningAttempt(card: PracticeCard, attemptId: string | unde
     source: options.offline ? "offline" : card.queueAttemptState === "reinforcement" ? "reinforcement" : "live", terminal: null };
   const journal = new OpeningAttemptJournal(header, storeAppend, position.positionStudyMode === "position" ? position.positionPresentation : undefined, options.binding);
   captures.set(attemptId, journal);
-  holdAttemptLease(attemptId);
+  if (options.freshAttempt && position.positionStudyMode !== "position") journal.freshOwnership = claimFreshCapture(attemptId);
+  else holdAttemptLease(attemptId);
   return journal;
 }
 
@@ -382,6 +435,7 @@ export function partialOpeningAttempt(attemptId: string | undefined): void {
     journal.retireRequested = true;
     void storeAppend(journal).catch(error => journal.reportStorageError(error));
   } else if (!journal?.events.length && !journal?.terminal) {
+    if (journal?.freshOwnership) journal.freshOwnership.cancelled = true;
     captures.delete(attemptId);
     releaseLeases.get(attemptId)?.();
   }
@@ -461,6 +515,7 @@ async function deliverOpeningEvidence(attemptId?: string, binding = captureOffli
     const saved = await savedJournal(attemptId, binding);
     binding.requireCurrent();
     if (!saved) return;
+    markOpeningEvidenceExposed(saved.attempt.attempt_id);
     const frozenDelivery = saved.attempt.delivery;
     const header = openingEvidenceCheckpointSchema.omit({ events: true }).parse(Object.fromEntries(
       Object.entries(saved.attempt).filter(([key]) => !["owner_session_id", "final_sequence", "delivery_state", "rejection", "retention_reason", "delivery", "local_capture_gap", "position_plan"].includes(key)),

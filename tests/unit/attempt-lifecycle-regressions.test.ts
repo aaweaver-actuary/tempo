@@ -593,3 +593,16 @@ describe("review attempt reliability", () => {
     expect(refreshed.practiceCards[1].queueEntryId).toBe(nextCard.queueEntryId);
   });
 });
+
+it('FE25 fresh evidence provenance belongs only to locally generated ordinary attempts', () => {
+  const store = useTrainingStore.getState();
+  store.initializeCardState(card);
+  const ordinary = useTrainingStore.getState().attempt;
+  expect(ordinary.freshEvidenceAttempt).toBe(true);
+  const id = ordinary.attemptId;
+  expect(id).toMatch(/^[0-9a-f-]{36}$/);
+  store.setAttemptPhase('guided');
+  expect(useTrainingStore.getState().attempt).toMatchObject({ attemptId: id, freshEvidenceAttempt: true });
+  store.initializeCardState({ ...card, positionStudyMode: 'position' });
+  expect(useTrainingStore.getState().attempt.freshEvidenceAttempt).toBe(false);
+});

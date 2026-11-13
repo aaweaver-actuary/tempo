@@ -462,3 +462,15 @@ it.each(["different locator", "same locator generation"])('FE25 phone quota retr
     expect(state.writes.filter(write => write.store === 'training')).toHaveLength(1);
   } finally { vi.restoreAllMocks(); vi.unstubAllGlobals(); }
 });
+
+it('FE25 marks the original phone attempt exposed before its storage operation', async () => {
+  const { vi } = await import('vitest');
+  const journal = await import('../../app/lib/opening-evidence-journal');
+  const offline = await import('../../app/lib/offline-training');
+  const mark = vi.spyOn(journal, 'markOpeningEvidenceExposed');
+  try {
+    const pending = offline.recordOfflineAttempt(101, 'correct', false, undefined, { attemptId: 'phone-exposure-original' });
+    expect(mark).toHaveBeenCalledWith('phone-exposure-original');
+    await pending.catch(() => undefined);
+  } finally { vi.restoreAllMocks(); }
+});

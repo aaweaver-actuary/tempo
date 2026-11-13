@@ -12,7 +12,7 @@ export { readPreparedTraining } from "../../database/browser/prepared-training-s
 export type { OfflineAttempt, PreparedTraining } from "../domain/offline-training";
 import type { OpeningEvidenceCheckpoint } from "../domain/opening-evidence";
 import { saveEvidenceAwareReview } from "./opening-evidence-review";
-import { acknowledgeOpeningReview, rejectOpeningEvidence, retainOpeningEvidenceForStorageFallback } from "./opening-evidence-journal";
+import { acknowledgeOpeningReview, markOpeningEvidenceExposed, rejectOpeningEvidence, retainOpeningEvidenceForStorageFallback } from "./opening-evidence-journal";
 import { publishNotification } from "./notifications";
 import { decodeFrozenAttempt } from "../domain/study-exercise-transport";
 
@@ -113,6 +113,8 @@ export async function recordOfflineAttempt(
     assessment: StudyAssessment; selfRating?: "correct" | "again"; gradingProvenance: { server_contract_version: 1; browser_implementation_revision: 2 } },
   openingResponse?: { attemptId: string; completion?: OpeningEvidenceCheckpoint },
 ): Promise<PreparedTraining> {
+  markOpeningEvidenceExposed(openingResponse?.attemptId);
+  markOpeningEvidenceExposed(openingResponse?.completion?.attempt_id);
   const binding = captureOfflineDatabaseBinding();
   const completedAt = openingResponse?.completion?.terminal?.ended_at ?? new Date().toISOString();
   const update = (includeEvidence: boolean) => (current: PreparedTraining | null): PreparedTraining => {

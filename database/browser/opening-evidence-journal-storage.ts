@@ -4,18 +4,25 @@ import type { OpeningDecisionEvent, OpeningEvidenceCheckpoint } from "../../app/
 import type { SavedAttempt, SavedEvent, SavedOpeningJournal, OpeningEvidenceReceipt, CompletionSignal, PreparedOpeningAggregate, PendingOpeningReviewAttempt } from "../../app/domain/opening-evidence-journal";
 
 export class OpeningEvidenceRebindConflict extends Error {}
+/** Observed only from IDB transaction abort, never from an ambiguous completion. */
+export class OpeningEvidenceAppendAborted extends Error {
+  constructor(cause: unknown) { super(String(cause), { cause }); }
+}
+type MissingAnchorProof = { canInsert: () => boolean; registerAbort: (abort?: () => void) => void };
 
 export const completionSignalKey = "tempo-opening-evidence-completion-v1";
 
-export function appendOpeningAttempt(database: IDBDatabase, attempt: SavedAttempt, pendingEvents: OpeningDecisionEvent[], snapshot: OpeningEvidenceCheckpoint, binding?: OfflineDatabaseBinding, validateRebind = false): Promise<void> {
+export function appendOpeningAttempt(database: IDBDatabase, attempt: SavedAttempt, pendingEvents: OpeningDecisionEvent[], snapshot: OpeningEvidenceCheckpoint, binding?: OfflineDatabaseBinding, validateRebind = false, missingAnchorProof?: MissingAnchorProof): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     binding?.requireCurrent();
     let failure: unknown;
-    const transaction = database.transaction(["opening_attempts", "opening_events"], "readwrite");
+    const transaction = database.transaction(missingAnchorProof
+      ? ["opening_attempts", "opening_events", "training"] : ["opening_attempts", "opening_events"], "readwrite");
     const attempts = transaction.objectStore("opening_attempts");
     const events = transaction.objectStore("opening_events");
     const prior = attempts.get(attempt.attempt_id);
     const abort = (error: unknown) => { failure = error; transaction.abort(); };
+    missingAnchorProof?.registerAbort(() => { try { transaction.abort(); } catch { /* Already settled. */ } });
     const write = (saved: SavedAttempt | undefined) => {
       binding?.requireCurrent();
       attempts.put({ ...attempt,
@@ -36,6 +43,21 @@ export function appendOpeningAttempt(database: IDBDatabase, attempt: SavedAttemp
         // A missing first append has no durable session/header anchor. The server
         // attempt status proves neither local ownership nor a missing in-flight write.
         // Keep that original in memory until an owner capability can prove it.
+        if (!saved && rows.result.length === 0 && missingAnchorProof?.canInsert()) {
+          // A phone aggregate is in this same database. Its absence must be
+          // checked atomically with the first header and event insertion.
+          const aggregate = transaction.objectStore("training").get("prepared-daily-queue");
+          aggregate.onsuccess = () => { try {
+            binding?.requireCurrent();
+            const prepared = aggregate.result as PreparedOpeningAggregate;
+            if (!missingAnchorProof.canInsert() || (prepared && (!Array.isArray(prepared.attempts) ||
+                prepared.attempts.some(item => !item || typeof item !== "object" ||
+                  typeof item.attemptId !== "string" || item.attemptId === attempt.attempt_id))))
+              throw new OpeningEvidenceRebindConflict("The original opening aggregate is uncertain; its unsaved evidence remains held.");
+            write(undefined);
+          } catch (error) { abort(error); } };
+          return;
+        }
         if (rows.result.length > 256 || !saved || (saved && (saved.owner_session_id !== attempt.owner_session_id ||
             saved.final_sequence > snapshot.events.length ||
             immutable.some(key => JSON.stringify(saved[key]) !== JSON.stringify(attempt[key])) ||
@@ -50,9 +72,13 @@ export function appendOpeningAttempt(database: IDBDatabase, attempt: SavedAttemp
         write(saved);
       } catch (error) { abort(error); } };
     } catch (error) { abort(error); } };
-    transaction.oncomplete = () => { try { binding?.requireCurrent(); resolve(); } catch (error) { reject(error); } };
-    transaction.onerror = () => reject(failure ?? transaction.error);
-    transaction.onabort = () => reject(failure ?? transaction.error);
+    transaction.oncomplete = () => { missingAnchorProof?.registerAbort(); try { binding?.requireCurrent(); resolve(); } catch (error) { reject(error); } };
+    // An error alone is ambiguous; only onabort proves no transaction commit.
+    transaction.onerror = () => {};
+    transaction.onabort = () => {
+      missingAnchorProof?.registerAbort();
+      reject(failure instanceof OpeningEvidenceRebindConflict ? failure : new OpeningEvidenceAppendAborted(failure ?? transaction.error));
+    };
   });
 }
 

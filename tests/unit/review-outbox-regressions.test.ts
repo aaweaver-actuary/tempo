@@ -1802,3 +1802,18 @@ it('FE23 review delivery imports and constructs without opening storage or regis
     expect(touch).not.toHaveBeenCalled();
   } finally { vi.doUnmock('../../database/browser/study-intent-storage'); vi.doUnmock('../../app/lib/study-session-runtime'); vi.resetModules(); }
 });
+
+it('FE25 marks an original online attempt exposed before retaining its aggregate', async () => {
+  const mark = vi.spyOn(openingEvidenceJournal, 'markOpeningEvidenceExposed');
+  const pending = enqueuePendingReview(auditReview('exposure-original', 99191));
+  expect(mark).toHaveBeenCalledWith('exposure-original');
+  await pending;
+  expect(pendingReviews()).toContainEqual(expect.objectContaining({ attemptId: 'exposure-original' }));
+});
+
+it('FE25 ordinary review remains retainable when Web Locks are unavailable', async () => {
+  vi.stubGlobal('navigator', { onLine: true });
+  const original = auditReview('ordinary-without-locks', 99192);
+  await expect(enqueuePendingReview(original)).resolves.toBe(original.attemptId);
+  expect(pendingReviews()).toContainEqual(expect.objectContaining(original));
+});

@@ -455,3 +455,106 @@ it.each(['partial', 'complete'])('FE25 %s capture survives a failed terminal app
   await vi.waitFor(() => expect((state.stores.opening_attempts.get(`terminal-${terminal}`) as { terminal?: unknown })?.terminal).toEqual(original.terminal));
   expect([...state.stores.opening_events.values()]).toContainEqual({ ...original.events[0], attempt_id: `terminal-${terminal}` });
 });
+
+it.each(['reconnect', 'exposed', 'foreign', 'no-lock', 'ambiguous', 'exposure-during-write', 'phone-existing', 'phone-uncertain', 'phone-unknown-entry', 'legacy', 'lock-error', 'lock-denied'] as const)(
+  'FE25 first aborted append %s only recovers with fresh exclusive unexposed ownership', async target => {
+    const { openingEvidenceStorage } = await import('../fixtures/opening-evidence-storage');
+    const state = await openingEvidenceStorage();
+    const owner = await import('../../database/browser/offline-training-storage');
+    let generation = 1, authority = 'A';
+    vi.spyOn(owner, 'captureOfflineDatabaseBinding').mockImplementation(() => {
+      const originalGeneration = generation, originalAuthority = authority;
+      return { locator: `locator-${originalAuthority}`, sameAuthority: () => authority === originalAuthority,
+        requireCurrent: () => { if (generation !== originalGeneration || authority !== originalAuthority) throw new Error('authority changed'); } };
+    });
+    if (target === 'no-lock') vi.stubGlobal('navigator', { onLine: true });
+    if (target === 'lock-error') vi.stubGlobal('navigator', { onLine: true, locks: { request: () => { throw new Error('lock unavailable'); } } });
+    if (target === 'lock-denied') vi.stubGlobal('navigator', { onLine: true, locks: { request: async (_name: string, _options: unknown, callback: (lock: null) => void) => callback(null) } });
+    const storage = await import('../../database/browser/opening-evidence-journal-storage');
+    const journal = await import('../../app/lib/opening-evidence-journal');
+    const { mapQueueCardToPracticeCard } = await import('../../app/domain/adapters/practice-card-adapters');
+    const card = mapQueueCardToPracticeCard({ id: manifest.card_id, revision: manifest.card_revision, queue_entry_id: 101,
+      start_fen: manifest.decisions[0].fen, moves: ['e2e4','e7e5','g1f3','b8c6','f1b5'], content_type: 'opening',
+      repertoire_name: 'Held', repertoire_source: 'PGN', opening_decision_manifest: manifest });
+    state.controls.beforePut = () => new DOMException('first abort', 'QuotaExceededError');
+    if (target === 'ambiguous') vi.spyOn(storage, 'appendOpeningAttempt').mockRejectedValueOnce(new Error('unknown outcome'));
+    const capture = journal.beginOpeningAttempt(card, `fresh-${target}`, { freshAttempt: target !== 'legacy' })!;
+    capture.response(0, manifest.decisions[0].expected_uci, 'expected');
+    await vi.waitFor(() => expect(capture.storageError).toBeDefined());
+    const original = structuredClone(capture.snapshot());
+    expect(state.stores.opening_attempts.size).toBe(0);
+    if (target === 'exposed') journal.markOpeningEvidenceExposed(original.attempt_id);
+    if (target === 'phone-existing') state.stores.training.set('prepared-daily-queue', { attempts: [{ attemptId: original.attempt_id }] });
+    if (target === 'phone-uncertain') state.stores.training.set('prepared-daily-queue', { attempts: 'malformed' });
+    if (target === 'phone-unknown-entry') state.stores.training.set('prepared-daily-queue', { attempts: [{}] });
+    state.controls.beforePut = undefined;
+    generation = 2;
+    if (target === 'foreign') authority = 'B';
+    if (target === 'exposure-during-write') state.controls.beforePut = () => { journal.markOpeningEvidenceExposed(original.attempt_id); return undefined; };
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('offline')));
+    await journal.recoverOpeningEvidence().catch(() => undefined);
+    expect(capture.snapshot()).toEqual(original);
+    if (target === 'reconnect') {
+      expect(capture.uncommittedEvents.size).toBe(0);
+      expect((state.stores.opening_attempts.get(original.attempt_id) as { attempt_id: string }).attempt_id).toBe(original.attempt_id);
+      const events = [...state.stores.opening_events.values()].map(row => { const { attempt_id: _id, ...event } = row as typeof original.events[number] & { attempt_id: string }; return event; });
+      expect(events).toEqual(original.events);
+    } else {
+      expect(capture.uncommittedEvents.get(1)).toEqual(original.events[0]);
+      expect(state.stores.opening_attempts.size).toBe(0);
+      expect(state.stores.opening_events.size).toBe(0);
+    }
+  },
+);
+
+it('FE25 an ambiguously acknowledged retry cannot reuse an older abort as absence proof', async () => {
+  const { openingEvidenceStorage } = await import('../fixtures/opening-evidence-storage');
+  const state = await openingEvidenceStorage();
+  const owner = await import('../../database/browser/offline-training-storage');
+  let generation = 1;
+  vi.spyOn(owner, 'captureOfflineDatabaseBinding').mockImplementation(() => {
+    const captured = generation;
+    return { locator: 'same-authority', sameAuthority: () => true,
+      requireCurrent: () => { if (generation !== captured) throw new Error('authority changed'); } };
+  });
+  const journal = await import('../../app/lib/opening-evidence-journal');
+  const { mapQueueCardToPracticeCard } = await import('../../app/domain/adapters/practice-card-adapters');
+  const card = mapQueueCardToPracticeCard({ id: manifest.card_id, revision: manifest.card_revision, queue_entry_id: 101,
+    start_fen: manifest.decisions[0].fen, moves: ['e2e4','e7e5','g1f3','b8c6','f1b5'], content_type: 'opening',
+    repertoire_name: 'Held', repertoire_source: 'PGN', opening_decision_manifest: manifest });
+  state.controls.beforePut = () => new DOMException('first abort', 'QuotaExceededError');
+  const capture = journal.beginOpeningAttempt(card, 'ambiguous-after-abort', { freshAttempt: true })!;
+  capture.response(0, manifest.decisions[0].expected_uci, 'expected');
+  await vi.waitFor(() => expect(capture.storageError).toContain('first abort'));
+  state.controls.beforePut = undefined;
+  generation = 2;
+  state.controls.beforeCommit = () => { generation = 3; return undefined; };
+  await journal.recoverOpeningEvidence().catch(() => undefined);
+  expect(state.stores.opening_attempts.has('ambiguous-after-abort')).toBe(true);
+  state.controls.beforeCommit = undefined;
+  // Model another tab acknowledging and removing the committed journal.
+  state.stores.opening_attempts.clear(); state.stores.opening_events.clear();
+  await journal.recoverOpeningEvidence().catch(() => undefined);
+  expect(capture.rebindHeld).toBe(true);
+  expect(capture.uncommittedEvents.size).toBe(1);
+  expect(state.stores.opening_attempts.size).toBe(0);
+});
+
+it('FE25 a denied fresh lock leaves an existing journal untouched', async () => {
+  const { openingEvidenceStorage } = await import('../fixtures/opening-evidence-storage');
+  const state = await openingEvidenceStorage();
+  vi.stubGlobal('navigator', { onLine: true, locks: { request: async (_name: string, _options: unknown, callback: (lock: null) => void) => callback(null) } });
+  const journal = await import('../../app/lib/opening-evidence-journal');
+  const { mapQueueCardToPracticeCard } = await import('../../app/domain/adapters/practice-card-adapters');
+  const card = mapQueueCardToPracticeCard({ id: manifest.card_id, revision: manifest.card_revision, queue_entry_id: 101,
+    start_fen: manifest.decisions[0].fen, moves: ['e2e4','e7e5','g1f3','b8c6','f1b5'], content_type: 'opening',
+    repertoire_name: 'Held', repertoire_source: 'PGN', opening_decision_manifest: manifest });
+  const saved = { attempt_id: 'foreign-existing', owner_session_id: 'another-session', final_sequence: 4, delivery_state: 'pending' };
+  state.stores.opening_attempts.set('foreign-existing', structuredClone(saved));
+  const capture = journal.beginOpeningAttempt(card, 'foreign-existing', { freshAttempt: true })!;
+  capture.response(0, manifest.decisions[0].expected_uci, 'expected');
+  await vi.waitFor(() => expect(capture.storageError).toContain('ownership is unavailable'));
+  expect(state.stores.opening_attempts.get('foreign-existing')).toEqual(saved);
+  expect(state.stores.opening_events.size).toBe(0);
+  expect(capture.uncommittedEvents.size).toBe(1);
+});

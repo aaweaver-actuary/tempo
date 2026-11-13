@@ -1,7 +1,7 @@
 import { learningFetch as fetch, type StudyClient } from "./study-connection";
 import type { OpeningEvidenceCheckpoint } from "../domain/opening-evidence";
 import { confirmOriginalOperationResponse, FailedOperationError, PendingOperationError, readOperationResponse } from "./operation-status";
-import { rejectOpeningEvidence } from "./opening-evidence-journal";
+import { markOpeningEvidenceExposed, rejectOpeningEvidence } from "./opening-evidence-journal";
 import { createReviewTransport } from "./review-transport";
 
 const fallbackEvidenceCodes = new Set(["opening_evidence_conflict", "opening_evidence_unavailable"]);
@@ -50,6 +50,8 @@ type ReviewEvidenceOptions = {
 );
 
 export async function saveEvidenceAwareReview(options: ReviewEvidenceOptions): Promise<Response> {
+  markOpeningEvidenceExposed(options.completion?.attempt_id);
+  markOpeningEvidenceExposed(typeof options.body.attempt_id === "string" ? options.body.attempt_id : undefined);
   const request = options.request ?? options.client?.learningFetch ?? fetch;
   const binding = options.client ? createReviewTransport(options.client) : undefined;
   const rejectEvidence = options.rejectEvidence ?? rejectOpeningEvidence;

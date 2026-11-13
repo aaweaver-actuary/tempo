@@ -444,7 +444,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
   ) => {
     // Restarting one issued position plan remains the same human attempt:
     // preserve its first responses and failure journal through guided replay.
-    if (nextCard.positionStudyMode !== "position" || get().attempt.entryKey !== attemptEntryKey(nextCard))
+    if (nextCard.positionStudyMode !== "position" && !nextCard.positionPresentation || get().attempt.entryKey !== attemptEntryKey(nextCard))
       partialOpeningAttempt(get().attempt.attemptId);
     const start = initialTrainingState(nextCard);
     set({
@@ -457,6 +457,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
         entryKey: attemptEntryKey(nextCard),
         generation: get().attempt.generation + 1,
         attemptId: trainingAttemptId(nextCard),
+        freshEvidenceAttempt: nextCard.positionStudyMode !== "position" && !nextCard.positionPresentation,
         phase: "playerTurn",
       },
       reviewSaveError: "",
@@ -504,6 +505,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
         entryKey: attemptEntryKey(card),
         generation: get().attempt.generation + 1,
         attemptId: trainingAttemptId(card),
+        freshEvidenceAttempt: !!card && card.positionStudyMode !== "position" && !card.positionPresentation,
         phase: nextAttemptFailed ? "guided" : "playerTurn",
       },
       reviewSaveError: "",
@@ -590,6 +592,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
             entryKey: card ? attemptEntryKey(card) : "",
             generation: current.attempt.generation + 1,
             attemptId: trainingAttemptId(card),
+            freshEvidenceAttempt: !!card && card.positionStudyMode !== "position" && !card.positionPresentation,
             phase: card ? (failed ? "guided" : "playerTurn") : "complete",
           },
         });
@@ -621,6 +624,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
         entryKey: card ? attemptEntryKey(card) : "",
         generation: current.attempt.generation + 1,
         attemptId: trainingAttemptId(card),
+        freshEvidenceAttempt: !!card && card.positionStudyMode !== "position" && !card.positionPresentation,
         phase: card ? (failed ? "guided" : "playerTurn") : "complete",
       },
     });
