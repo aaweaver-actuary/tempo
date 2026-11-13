@@ -11,6 +11,7 @@ import { SelectInput } from "../components/inputs/SelectInput";
 import { useBoardPublisher } from "../hooks/use-board-publisher";
 import type { PracticeCard } from "../domain/cards";
 import { availableKnightRoutes, evaluateStudyAnswer, studySpecificationSchema, type StudyAnswer } from "../domain/study-exercises";
+import { decodeFrozenPresentation, decodeFrozenFeedback, decodeFrozenAttempt } from "../domain/study-exercise-transport";
 import { recordOfflineStudyAttempt } from "../lib/offline-training";
 import { executeStudyRequest, retainedStudyRequest, startAnotherStudyPractice, studyPracticeBoundary, StudyRequestRejectedError } from "../lib/study-command-client";
 
@@ -122,8 +123,9 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
     };
     void present()
       .then(async (response) => {
-        const body = await response.json() as PresentedStudyExercise & { detail?: string };
-        if (!response.ok) throw new Error(responseError(response.status, body.detail));
+        const raw: unknown = await response.json();
+        if (!response.ok) throw new Error(responseError(response.status, (raw as { detail?: string })?.detail));
+        const body = decodeFrozenPresentation(raw, { exerciseId, revision: card?.revision });
         if (body.id !== exerciseId || (card?.revision !== undefined && body.revision !== card.revision) ||
             (card?.startingFen !== undefined && body.fen !== card.startingFen))
           throw new Error("The original exercise identity or revision changed. Restore the original attempt before continuing.");
@@ -220,8 +222,8 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
   const revealFeedback = useCallback(async (attemptId: string, generation: number) => {
     const feedbackResponse = await fetch(`${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/attempts/${attemptId}/feedback`);
     if (!feedbackResponse.ok) throw new Error("Answer saved, but feedback could not load. Retry feedback.");
-    const revealed = await feedbackResponse.json() as { specification: Record<string, unknown> };
-    if (generation === generationRef.current) { setFeedback(revealed.specification); setSaveError(""); }
+    const revealed = decodeFrozenFeedback(await feedbackResponse.json());
+    if (generation === generationRef.current) { setFeedback(revealed.specification as unknown as Record<string, unknown>); setSaveError(""); }
   }, [studyId, exerciseId]);
 
   const exerciseRevision = exercise?.revision;
@@ -243,7 +245,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
       pendingRef.current = { id: retained.requestId, payload: retained.body }; setUncertain(true);
       const restored = await executeStudyRequest({ scope: requestScope,
         endpoint: `${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/attempts`, requestId: retained.requestId, body: retained.body, practiceBoundary: boundary });
-      const body = await restored.json() as AttemptReply;
+      const body = decodeFrozenAttempt(await restored.json(), { attemptId: retained.attemptId, context: card ? "review" : "practice" });
       if (!active || generation !== generationRef.current) return;
       setReply(body); pendingRef.current = null; setUncertain(false);
       const assessment = await retainedStudyRequest(`${requestScope}:self-assess`, body.attempt_id);
@@ -252,7 +254,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
         const response = await executeStudyRequest({ scope: `${requestScope}:self-assess`,
           endpoint: `${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/attempts/${body.attempt_id}/self-assess`,
           requestId: assessment.requestId, attemptId: assessment.attemptId, revision: assessment.revision, body: assessment.body, practiceBoundary: boundary });
-        if (active && generation === generationRef.current) setReply(await response.json() as AttemptReply);
+        if (active && generation === generationRef.current) setReply(decodeFrozenAttempt(await response.json(), { attemptId: assessment.attemptId, context: card ? "review" : "practice" }));
       }
       await revealFeedback(body.attempt_id, generation);
       if (active && generation === generationRef.current && assessment?.state === "discarded") setSaveError((assessment.receipt as { message: string }).message);
@@ -315,10 +317,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
     try {
       const confirmed = await executeStudyRequest({ scope: requestScope, endpoint: `${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/attempts`,
         requestId: pending.id, body: pending.payload, practiceBoundary: practiceBoundaryRef.current });
-      const body = await confirmed.json() as AttemptReply & { detail?: string };
-      if (!confirmed.ok) {
-        throw new Error(responseError(confirmed.status, body.detail));
-      }
+      const body = decodeFrozenAttempt(await confirmed.json(), { attemptId: pending.id, context: card ? "review" : "practice" });
       if (generation !== generationRef.current) return;
       setReply(body); pendingRef.current = null; setUncertain(false);
       await revealFeedback(pending.id, generation);
@@ -349,8 +348,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
       const confirmed = await executeStudyRequest({ scope: `${requestScope}:self-assess`,
         endpoint: `${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/attempts/${reply.attempt_id}/self-assess`,
         requestId: retained?.requestId ?? `${reply.attempt_id}:self-assess${previous?.state === "discarded" ? `:${crypto.randomUUID()}` : ""}`, attemptId: reply.attempt_id, revision: exercise.revision, body: retained?.body ?? { rating }, practiceBoundary: practiceBoundaryRef.current });
-      const body = await confirmed.json() as AttemptReply & { detail?: string };
-      if (!confirmed.ok) throw new Error(responseError(confirmed.status, body.detail));
+      const body = decodeFrozenAttempt(await confirmed.json(), { attemptId: reply.attempt_id, context: card ? "review" : "practice" });
       if (generation === generationRef.current) setReply(body);
     } catch (error) { if (generation === generationRef.current) setSaveError(error instanceof Error ? error.message : "Could not save self-assessment. Retry."); }
     finally { if (generation === generationRef.current) setBusy(false); }

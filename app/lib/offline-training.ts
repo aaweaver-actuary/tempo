@@ -13,6 +13,7 @@ import type { OpeningEvidenceCheckpoint } from "../domain/opening-evidence";
 import { saveEvidenceAwareReview } from "./opening-evidence-review";
 import { acknowledgeOpeningReview, retainOpeningEvidenceForStorageFallback } from "./opening-evidence-journal";
 import { publishNotification } from "./notifications";
+import { decodeFrozenAttempt } from "../domain/study-exercise-transport";
 
 export class OfflineReplayError extends Error {
   constructor(message: string, readonly endpoint: string, options?: ErrorOptions) {
@@ -213,6 +214,8 @@ export async function recordOfflineStudyAttempt(localEntryId: number, studyId: s
 async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> {
   let current = await readPreparedTraining();
   if (!current) return null;
+  const heldCards = new Set<string>();
+  const heldEntries = new Set<number>();
   for (const [attemptIndex, attempt] of current.attempts.entries()) {
     if (attempt.serverReviewId || attempt.serverAcknowledged || (attempt.conflict && attempt.studyId)) continue;
     if (current.attempts.slice(0, attemptIndex).some((earlier) => earlier.cardId === attempt.cardId && earlier.conflict)) {
@@ -220,6 +223,15 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
         ...saved!, attempts: saved!.attempts.map((item) => item.localEntryId === attempt.localEntryId
           ? { ...item, conflict: "An earlier phone attempt for this card conflicted with the computer" } : item),
       }));
+      continue;
+    }
+    const studyFacts = [attempt.studyId, attempt.exerciseId, attempt.answer, attempt.attemptId];
+    const incompleteStudy = studyFacts.slice(0, 3).some(Boolean) && !studyFacts.every(Boolean);
+    if (incompleteStudy || heldCards.has(attempt.cardId) || (attempt.parentLocalEntryId !== undefined && heldEntries.has(attempt.parentLocalEntryId))) {
+      heldCards.add(attempt.cardId); heldEntries.add(attempt.localEntryId);
+      publishNotification({ severity: "warning", source: "phone recovery", key: `phone-attempt:${attempt.localEntryId}`,
+        message: "This saved phone exercise is held because its original identity is incomplete.",
+        details: { attemptId: attempt.attemptId ?? "unknown", localEntryId: attempt.localEntryId } });
       continue;
     }
     const parent = current.attempts.find((candidate) => candidate.localEntryId === attempt.parentLocalEntryId);
@@ -287,6 +299,10 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
       warning?: string; reconciliation?: string;
       competing_review?: { outcome?: string | null; completed_at?: string | null };
       pending_self_assessment?: boolean; review?: { review_id: number; requeue_entry_id: number | null } };
+    if (attempt.studyId && attempt.exerciseId && attempt.attemptId) {
+      const decoded = decodeFrozenAttempt(result, { attemptId: attempt.attemptId, context: "review" });
+      result = decoded as unknown as typeof result;
+    }
     if (result.pending_self_assessment && attempt.studyId && attempt.exerciseId && attempt.attemptId && attempt.selfRating) {
       const assessmentEndpoint = `${API_URL}/api/studies/${encodeURIComponent(attempt.studyId)}/exercises/${encodeURIComponent(attempt.exerciseId)}/attempts/${encodeURIComponent(attempt.attemptId)}/self-assess`;
       let assessed: Response;
@@ -307,7 +323,9 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
         continue;
       }
       if (!assessed.ok) throw new OfflineReplayError(`Could not sync study self-assessment (HTTP ${assessed.status})`, assessmentEndpoint);
-      result = await assessed.json() as typeof result;
+      const decoded = decodeFrozenAttempt(await assessed.json(), { attemptId: attempt.attemptId, context: "review" });
+      if ("pending_self_assessment" in decoded) throw new Error("The original self-assessment has not completed.");
+      result = decoded as unknown as typeof result;
     }
     if (result.review) result = { ...result.review };
     if (!Number.isInteger(result.review_id) && !(result.persisted && result.reconciliation === "history_only"))

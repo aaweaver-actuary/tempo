@@ -5,7 +5,7 @@ import { createStudyCommandDelivery } from "../../app/lib/study-command-client";
 
 function fixture(started = false) {
   const record = { key: "scope:original", kind: "study-command", requestId: "original", attemptId: "attempt",
-    endpoint: "/api/study/attempt", data: { started }, payload: { scope: "scope", body: { attempt_id: "attempt" },
+    endpoint: "/api/studies/s/exercises/e/attempts", revision: 1, data: { started }, payload: { scope: "scope", body: { attempt_id: "attempt", revision: 1, context: "practice" },
       headers: { "Idempotency-Key": "original", "Content-Type": "application/json" } } } as IntentRecord;
   const store = { update: vi.fn(async (_key, change) => change(record)), list: vi.fn(async () => []) } as unknown as IntentStore;
   return { record, store };
@@ -20,11 +20,11 @@ it("uses the supplied authority and store for POST and original receipt", async 
     if (init?.method === "POST") {
       expect(input).toBe(record.endpoint);
       expect(init.headers).toEqual({ "Idempotency-Key": "original", "Content-Type": "application/json" });
-      expect(JSON.parse(String(init.body))).toEqual({ attempt_id: "attempt" });
+      expect(JSON.parse(String(init.body))).toEqual({ attempt_id: "attempt", revision: 1, context: "practice" });
       return Response.json({ operation_id: "original", state: "queued" }, { status: 202 });
     }
     expect(String(input)).toBe("https://a.example/api/operations/original");
-    return Response.json({ operation_id: "original", state: "complete", response: { attempt_id: "attempt" } });
+    return Response.json({ operation_id: "original", state: "complete", response: { attempt_id: "attempt", assessment: { outcome: "needs_self_assessment", feedback: "compare" }, pending_self_assessment: true } });
   });
   const delivery = createStudyCommandDelivery(client(fetch), async () => store);
   expect((await delivery.deliver(record, new AbortController().signal)).state).toBe("committed");
@@ -56,8 +56,8 @@ it("refuses receipt polling after the supplied authority changes during a 202 bo
 it("checks each original receipt through its own supplied client", async () => {
   const { record, store } = fixture(true);
   const otherStore = fixture(true).store;
-  const firstFetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => Response.json({ operation_id: "original", state: "complete", response: { attempt_id: "attempt" } }));
-  const secondFetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => Response.json({ operation_id: "original", state: "complete", response: { attempt_id: "attempt" } }));
+  const firstFetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => Response.json({ operation_id: "original", state: "complete", response: { attempt_id: "attempt", assessment: { outcome: "needs_self_assessment", feedback: "compare" }, pending_self_assessment: true } }));
+  const secondFetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => Response.json({ operation_id: "original", state: "complete", response: { attempt_id: "attempt", assessment: { outcome: "needs_self_assessment", feedback: "compare" }, pending_self_assessment: true } }));
   const first = client(firstFetch), second = client(secondFetch);
   Object.defineProperty(second, "origin", { value: "https://b.example" });
   const a = createStudyCommandDelivery(first, async () => store);
@@ -68,14 +68,15 @@ it("checks each original receipt through its own supplied client", async () => {
   expect(String(secondFetch.mock.calls[0][0])).toBe("https://b.example/api/operations/original");
 });
 
-it.each(["defense-command", "endgame-command"])("holds retired %s before touching its journal or transport", async kind => {
+it.each(["defense-command", "endgame-command"])("holds retired %s without posting and may inspect its original receipt", async kind => {
   const { record, store } = fixture();
   record.kind = kind;
-  const fetch = vi.fn();
+  const fetch = vi.fn(async () => new Response(null, { status: 404 }));
   const delivery = createStudyCommandDelivery(client(fetch), async () => store);
   await expect(delivery.deliver(record, new AbortController().signal)).rejects.toThrow("retired exercise is held");
-  await expect(delivery.checkReceipt(record, new AbortController().signal)).rejects.toThrow("retired exercise is held");
-  expect(fetch).not.toHaveBeenCalled();
+  expect(await delivery.checkReceipt(record, new AbortController().signal)).toBeUndefined();
+  expect(fetch).toHaveBeenCalledOnce();
+  expect(String(fetch.mock.calls[0][0])).toContain("/api/operations/original");
   expect(store.update).not.toHaveBeenCalled();
 });
 
@@ -85,13 +86,13 @@ it.each(["missing", "foreign"])("%s Study acknowledgment cannot poll another ope
   const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
     expect(init?.method).toBe("POST");
     expect(new Headers(init?.headers).get("Idempotency-Key")).toBe(record.requestId);
-    expect(init?.body).toBe(JSON.stringify({ attempt_id: "attempt" }));
+    expect(init?.body).toBe(JSON.stringify({ attempt_id: "attempt", revision: 1, context: "practice" }));
     return Response.json(kind === "foreign" ? { operation_id: "foreign", state: "queued" } : { state: "queued" }, { status: 202 });
   });
   const delivery = createStudyCommandDelivery(client(fetch), async () => store);
   await expect(delivery.deliver(record, new AbortController().signal)).rejects.toMatchObject({ name: "PendingOperationError", operationId: "original" });
   expect(fetch).toHaveBeenCalledOnce();
-  expect(record.payload).toMatchObject({ body: { attempt_id: "attempt" } });
+  expect(record.payload).toMatchObject({ body: { attempt_id: "attempt", revision: 1, context: "practice" } });
 });
 
 it('B31 retained pending practice presentation requires one original parent and its unreset boundary', async () => {
@@ -216,4 +217,31 @@ it.each(['missing', 'rejecting', 'authority-change'])('C14 retained tactic %s di
   } finally {
     releaseDigest(); session.dispose(); store.close(); vi.unstubAllGlobals();
   }
+});
+
+it.each(["initial", "receipt-first"])("C21 %s holds a matching attempt with a foreign review context", async lane => {
+  const { record, store } = fixture(lane === "receipt-first");
+  const receipt = { attempt_id: "attempt", assessment: { outcome: "correct", feedback: "ok" },
+    rating: "correct", requested_rating: "correct", persisted: true,
+    review: { review_id: 7, requeue_entry_id: null } };
+  const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => init?.method === "POST"
+    ? Response.json(receipt)
+    : Response.json({ operation_id: "original", state: "complete", response: receipt }));
+  const delivery = createStudyCommandDelivery(client(fetcher), async () => store);
+  await expect(lane === "initial" ? delivery.deliver(record, new AbortController().signal)
+    : delivery.checkReceipt(record, new AbortController().signal)).rejects.toThrow("context");
+  expect(record.requestId).toBe("original");
+  expect((record.payload as { body: { context: string } }).body.context).toBe("practice");
+});
+
+it("C21 holds an unknown retained endpoint without posting its original body", async () => {
+  const { record, store } = fixture(true);
+  record.endpoint = "/api/studies/s/exercises/e/author";
+  const original = structuredClone(record.payload);
+  const fetcher = vi.fn(async () => new Response(null, { status: 404 }));
+  const delivery = createStudyCommandDelivery(client(fetcher), async () => store);
+  await expect(delivery.deliver(record, new AbortController().signal)).rejects.toThrow("held");
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(String(fetcher.mock.calls[0][0])).toContain("/api/operations/original");
+  expect(record.payload).toEqual(original);
 });

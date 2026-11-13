@@ -23,9 +23,9 @@ it("F2 a cached Study specification never selects offline grading for a connecte
   const requests: string[] = [];
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
     const url = String(input); requests.push(url);
-    if (url.includes("/present?")) return Response.json({ id: "exercise", revision: 1, type: "move_line", prompt: specification.prompt, hint: "", fen });
+    if (url.includes("/present?")) return Response.json({ id: "exercise", revision: 1, type: "move_line", mode: "single", grading_policy: "reference", prompt: specification.prompt, hint: "", fen });
     if (url.endsWith("/attempts")) return Response.json({ attempt_id: JSON.parse(String(options?.body)).attempt_id,
-      assessment: { outcome: "correct", feedback: "Saved by Learning" }, persisted: true });
+      assessment: { outcome: "correct", feedback: "Saved by Learning" }, rating: "correct", requested_rating: "correct", persisted: true, review: { review_id: 1, requeue_entry_id: null } });
     if (url.endsWith("/feedback")) return Response.json({ specification });
     throw new Error(`Unexpected request ${url}`);
   }));
@@ -51,10 +51,10 @@ it.each([false, true])("study feedback browses the reference line and R restores
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith("/present")) return Response.json({ id: "exercise", revision: 1, type: "move_line",
-      prompt: "Find the reference line", hint: "Develop a piece", fen: startingFen });
+      prompt: "Find the reference line", hint: "Develop a piece", mode: "stepwise_line", grading_policy: "reference", fen: startingFen });
     if (url.endsWith("/attempts") && init?.method === "POST") {
       submissions.push(JSON.parse(String(init.body)));
-      return Response.json({ attempt_id: JSON.parse(String(init?.body)).attempt_id, assessment: { outcome: "incorrect", feedback: "Review the reference" }, rating: "again" });
+      return Response.json({ attempt_id: JSON.parse(String(init?.body)).attempt_id, assessment: { outcome: "incorrect", feedback: "Review the reference" }, rating: "again", requested_rating: "again", persisted: true, review: null });
     }
     if (url.endsWith("/feedback")) return Response.json({ specification: { type: "move_line", prompt: "Find the reference line",
       hint: "Develop a piece", explanation: "Reference continuation", grading_policy: "reference", mode: "stepwise_line",
@@ -106,7 +106,7 @@ it.each([false, true])("study feedback browses the reference line and R restores
 
 it("study shortcuts preserve submitted moves and hints without revealing or submitting an unanswered line", async () => {
   const fetcher = vi.fn(async () => Response.json({ id: "exercise", revision: 1, type: "move_line",
-    prompt: "Find the continuation", hint: "Develop a piece", fen: new Chess().fen() }));
+    prompt: "Find the continuation", hint: "Develop a piece", mode: "single", grading_policy: "reference", fen: new Chess().fen() }));
   vi.stubGlobal("fetch", fetcher);
   const advance = vi.fn(async () => undefined);
   render(<StudyExerciseRunner studyId="study" exerciseId="exercise" boardTheme="brown" pieceSet="cburnett" useSharedBoard onAdvance={advance} />);
@@ -156,7 +156,7 @@ it("Study attempt and self-assessment retry pending Celery operations with the s
       return Response.json(assessmentStatusReads === 1 ? { state: "pending" } : {
         state: "complete", response: { attempt_id: attemptWrites[0].id,
           assessment: { outcome: "needs_self_assessment", feedback: "Assess your answer" },
-          rating: "correct", pending_self_assessment: false },
+          rating: "correct", requested_rating: "correct", persisted: true, review: null },
       });
     }
     if (url.includes("/api/operations/")) {
@@ -169,7 +169,7 @@ it("Study attempt and self-assessment retry pending Celery operations with the s
     }
     if (url.endsWith("/feedback"))
       return Response.json({ specification: { type: "explanation", prompt: "Explain the plan",
-        rubric: "Develop pieces" } });
+        hint: "", explanation: "", rubric: "Develop pieces" } });
     throw new Error(`Unexpected request: ${url}`);
   }));
 
@@ -200,12 +200,12 @@ it.each([false, true])("pr285_rejected_answer_can_be_corrected_with_fresh_identi
   const submissions: Array<{ body: { attempt_id: string; answer: { moves: string[] } }; key: string }> = [];
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    if (url.endsWith("/present")) return Response.json({ id: "exercise", revision: 1, type: "move_line", mode: "single", prompt: "Choose one legal move", hint: "", fen: new Chess().fen() });
+    if (url.endsWith("/present")) return Response.json({ id: "exercise", revision: 1, type: "move_line", mode: "single", grading_policy: "reference", prompt: "Choose one legal move", hint: "", fen: new Chess().fen() });
     if (url.endsWith("/attempts")) {
       const body = JSON.parse(String(init?.body)); submissions.push({ body, key: (init?.headers as Record<string, string>)["Idempotency-Key"] });
-      return body.answer.moves.length === 0 ? Response.json({ detail: "Submit one move" }, { status: 422 }) : Response.json({ attempt_id: body.attempt_id, assessment: { outcome: "correct", feedback: "Corrected answer saved" }, rating: "correct" });
+      return body.answer.moves.length === 0 ? Response.json({ detail: "Submit one move" }, { status: 422 }) : Response.json({ attempt_id: body.attempt_id, assessment: { outcome: "correct", feedback: "Corrected answer saved" }, rating: "correct", requested_rating: "correct", persisted: true, review: null });
     }
-    if (url.endsWith("/feedback")) return Response.json({ specification: { type: "move_line", prompt: "Choose one legal move", mode: "single", grading_policy: "reference", accepted_lines: [["e2e4"]], explanation: "Develop" } });
+    if (url.endsWith("/feedback")) return Response.json({ specification: { type: "move_line", prompt: "Choose one legal move", mode: "single", grading_policy: "reference", accepted_lines: [["e2e4"]], hint: "", explanation: "Develop" } });
     throw new Error(`Unexpected request: ${url}`);
   });
   vi.stubGlobal("fetch", fetcher);
@@ -244,9 +244,9 @@ it("pr285_practice_generation_new_self_assessment_cannot_reuse_the_old_attempt",
     if (url.endsWith("/attempts")) { const body = JSON.parse(String(init?.body)); attempts.push(body.attempt_id); return Response.json({ attempt_id: body.attempt_id, assessment: { outcome: "needs_self_assessment", feedback: "Assess your answer" }, pending_self_assessment: true }); }
     if (url.endsWith("/self-assess")) {
       const parent = url.split("/").at(-2)!; const { rating } = JSON.parse(String(init?.body)); assessments.push({ parent, rating, key: (init?.headers as Record<string, string>)["Idempotency-Key"] });
-      return Response.json({ attempt_id: parent, assessment: { outcome: "needs_self_assessment", feedback: "Assessment saved" }, pending_self_assessment: false, rating });
+      return Response.json({ attempt_id: parent, assessment: { outcome: "needs_self_assessment", feedback: "Assessment saved" }, rating, requested_rating: rating, persisted: true, review: null });
     }
-    if (url.endsWith("/feedback")) return Response.json({ specification: { type: "explanation", prompt: "Explain the plan", rubric: "Develop pieces" } });
+    if (url.endsWith("/feedback")) return Response.json({ specification: { type: "explanation", prompt: "Explain the plan", hint: "", explanation: "", rubric: "Develop pieces" } });
     throw new Error(`Unexpected request: ${url}`);
   }));
   render(<StudyExerciseRunner studyId="practice" exerciseId="exercise" boardTheme="brown" pieceSet="cburnett" useSharedBoard />);
@@ -275,10 +275,10 @@ it.each([false, true])("pr285_rejected_answer_self_assessment_replacement_uses_n
     if (url.endsWith("/self-assess")) {
       const { rating } = JSON.parse(String(init?.body)); const key = (init?.headers as Record<string, string>)["Idempotency-Key"]; ratings.push({ rating, key });
       if (ratings.length === 1) return Response.json({ operation_id: key, state: "queued" }, { status: 202 });
-      return Response.json({ attempt_id: parent, assessment: { outcome: "needs_self_assessment", feedback: "Replacement assessment saved" }, pending_self_assessment: false, rating });
+      return Response.json({ attempt_id: parent, assessment: { outcome: "needs_self_assessment", feedback: "Replacement assessment saved" }, rating, requested_rating: rating, persisted: true, review: null });
     }
     if (url.includes("/api/operations/")) return Response.json({ state: "failed", error: { status_code: 422, message: "Choose another assessment" } });
-    if (url.endsWith("/feedback")) return Response.json({ specification: { type: "explanation", prompt: "Rate the plan", rubric: "Develop" } });
+    if (url.endsWith("/feedback")) return Response.json({ specification: { type: "explanation", prompt: "Rate the plan", hint: "", explanation: "", rubric: "Develop" } });
     throw new Error(`Unexpected request: ${url}`);
   }));
   const runner = <StudyExerciseRunner studyId="rating" exerciseId="exercise" boardTheme="brown" pieceSet="cburnett" useSharedBoard />;
@@ -319,7 +319,7 @@ it('B31 issued Study refuses a changed presentation FEN even at the same revisio
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   const card: PracticeCard = { id: asCardId('fen-retained'), kind: 'study', title: 'Study', subtitle: '', startingFen: asFenString(new Chess().fen()),
     moves: [], userMoveTarget: 1, backendId: asCardId('fen-card'), queueEntryId: asQueueEntryId(21), queueCycle: 0, revision: 1 };
-  const fetcher = vi.fn(async (_input: RequestInfo | URL) => Response.json({ id: 'exercise', revision: 1, type: 'explanation', prompt: 'Changed source', hint: '', fen: '8/8/8/8/8/8/8/8 w - - 0 1' }));
+  const fetcher = vi.fn(async (_input: RequestInfo | URL) => Response.json({ id: 'exercise', revision: 1, type: 'explanation', prompt: 'Changed source', hint: '', fen: '4k3/8/8/8/8/8/8/4K3 w - - 0 1' }));
   vi.stubGlobal('fetch', fetcher);
   render(<StudyExerciseRunner studyId="study" exerciseId="exercise" card={card} boardTheme="brown" pieceSet="cburnett" />);
   await screen.findByText(/original exercise identity or revision changed/i);

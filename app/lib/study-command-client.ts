@@ -7,6 +7,7 @@ import { isStudyIntentStoreCurrent, studyIntentStore } from "../../database/brow
 import { studySettingsSchema } from "./study-connection";
 import { z } from "zod";
 import { tacticCardIdentityFromRequest } from "./tactic-card-identity";
+import { decodeFrozenAttempt } from "../domain/study-exercise-transport";
 
 type StudyCommandKind = "study-command" | "defense-command" | "tactic-command" | "endgame-command" | "burial-command" | "settings-command";
 const commandKinds: StudyCommandKind[] = ["study-command", "defense-command", "tactic-command", "endgame-command", "burial-command", "settings-command"];
@@ -31,6 +32,31 @@ function rejectionFromError(record: IntentRecord, error: unknown) {
     return rejected(record, 422, error.message, { code: error.code, retryable: error.retryable, detail: error.detail });
   throw error;
 }
+function frozenIdentity(record: IntentRecord, parent?: IntentRecord): { context: "review" | "practice"; child: boolean } {
+  const request = record.payload as FrozenStudyRequest | undefined;
+  const path = new URL(record.endpoint, "https://study.invalid").pathname;
+  const match = /^\/api\/studies\/([^/]+)\/exercises\/([^/]+)\/attempts(?:\/([^/]+)\/self-assess)?$/.exec(path);
+  const child = Boolean(match?.[3]);
+  const original = child ? parent : record;
+  const originalRequest = original?.payload as FrozenStudyRequest | undefined;
+  const context = originalRequest?.body?.context;
+  if (!match || !request?.scope || !original || !originalRequest || !["review", "practice"].includes(String(context)) ||
+      original.kind !== "study-command" || original.attemptId !== record.attemptId ||
+      originalRequest.body.attempt_id !== record.attemptId || originalRequest.body.revision !== record.revision ||
+      original.revision !== record.revision ||
+      (child && (decodeURIComponent(match[3]) !== record.attemptId || request.scope !== `${originalRequest.scope}:self-assess` ||
+        original.endpoint !== record.endpoint.replace(/\/[^/]+\/self-assess$/, ""))))
+    throw new Error(`Retained exercise ${record.requestId} is held: original route or identity is ambiguous.`);
+  return { context: context as "review" | "practice", child };
+}
+async function frozenParent(record: IntentRecord, store: IntentStore): Promise<IntentRecord | undefined> {
+  const request = record.payload as FrozenStudyRequest;
+  if (!request?.scope?.endsWith(":self-assess")) return undefined;
+  const parents = (await store.list()).filter(candidate => candidate.kind === "study-command" && candidate.attemptId === record.attemptId &&
+    (candidate.payload as FrozenStudyRequest)?.scope === request.scope.slice(0, -12));
+  if (parents.length !== 1) throw new Error(`Retained exercise ${record.requestId} is held: original parent is ambiguous.`);
+  return parents[0];
+}
 async function predecessorSettled(record: IntentRecord, store: IntentStore): Promise<boolean> {
   const request = record.payload as FrozenStudyRequest;
   const parentScope = request.scope.endsWith(":self-assess") ? request.scope.slice(0, -12) : undefined;
@@ -38,6 +64,12 @@ async function predecessorSettled(record: IntentRecord, store: IntentStore): Pro
   if (!parentScope && !recognition) return true;
   const parent = (await store.list()).find(candidate => candidate.kind === record.kind && candidate.attemptId === (parentScope ? record.attemptId : recognition) &&
     (parentScope ? (candidate.payload as FrozenStudyRequest).scope === parentScope : (candidate.payload as FrozenStudyRequest).scope.endsWith(":recognition")));
+  if (record.kind === "study-command" && parentScope) {
+    if (!parent || parent.state !== "committed") return false;
+    const identity = frozenIdentity(record, parent);
+    const receipt = decodeFrozenAttempt(parent.receipt, { attemptId: record.attemptId, context: identity.context });
+    return "pending_self_assessment" in receipt && receipt.pending_self_assessment;
+  }
   return parent?.state === "committed";
 }
 function bindAuthority(client: StudyClient) {
@@ -50,12 +82,16 @@ function bindAuthority(client: StudyClient) {
 
 export function createStudyCommandDelivery(client: StudyClient, getStore: () => Promise<IntentStore>) {
   async function deliver(record: IntentRecord, signal: AbortSignal) {
-    requireRetainedCommand(record.kind);
     const requireAuthority = bindAuthority(client);
     const request = record.payload as FrozenStudyRequest;
     const store = await getStore();
     requireAuthority();
     const started = Boolean((record.data as { started?: boolean } | undefined)?.started);
+    if (!started) {
+      requireRetainedCommand(record.kind);
+      if (record.kind === "study-command") frozenIdentity(record, await frozenParent(record, store));
+      requireAuthority();
+    }
     await store.update(record.key, current => ({ ...current, data: { ...current.data as object, started: true } }));
     requireAuthority();
     try {
@@ -65,7 +101,10 @@ export function createStudyCommandDelivery(client: StudyClient, getStore: () => 
       if (response.ok) body = await response.clone().json() as Record<string, unknown>;
       requireAuthority();
       // A completed transport response requesting analysis is not a completed exercise.
-      if (response.status === 404 || body?.status === "needs_analysis") {
+      if (body?.status === "needs_analysis") throw new Error(`Retained exercise ${record.requestId} is held: legacy analysis is unavailable.`);
+      if (response.status === 404) {
+        requireRetainedCommand(record.kind);
+        if (record.kind === "study-command") frozenIdentity(record, await frozenParent(record, store));
         if (!await predecessorSettled(record, store)) throw new PendingOperationError(record.requestId, "Confirm the original answer before recovering its dependent submission.");
         requireAuthority();
         response = await client.learningFetch(record.endpoint, { method: "POST", signal, headers: request.headers, body: JSON.stringify(request.body) });
@@ -87,7 +126,14 @@ export function createStudyCommandDelivery(client: StudyClient, getStore: () => 
     } catch (error) { return rejectionFromError(record, error); }
   }
   async function assessResponse(record: IntentRecord, body: Record<string, unknown>) {
-    if (record.kind === "study-command" && body.attempt_id !== record.attemptId) throw new Error("The service did not confirm the original study attempt.");
+    if (record.kind === "study-command") {
+      const store = await getStore();
+      const parent = await frozenParent(record, store);
+      const identity = frozenIdentity(record, parent);
+      if (identity.child && !await predecessorSettled(record, store)) throw new Error("The original parent receipt is not confirmed.");
+      const result = decodeFrozenAttempt(body, { attemptId: record.attemptId, context: identity.context });
+      if (identity.child && "pending_self_assessment" in result) throw new Error("The original self-assessment has not completed.");
+    } else if (isRetiredCommand(record.kind)) throw new Error(`Retained exercise ${record.requestId} is held: retired exercise.`);
     if (record.kind === "tactic-command") {
       const result = z.strictObject({ card_id: z.string().min(1), mode: z.enum(["normal", "light", "hard"]), next_due: z.string().min(1) }).parse(body);
       const request = record.payload as FrozenStudyRequest;
@@ -100,7 +146,6 @@ export function createStudyCommandDelivery(client: StudyClient, getStore: () => 
     return { state: body.status === "needs_analysis" ? "pending" as const : "committed" as const, receipt: body };
   }
   async function checkReceipt(record: IntentRecord, signal: AbortSignal) {
-    requireRetainedCommand(record.kind);
     const requireAuthority = bindAuthority(client);
     try {
       const response = await readOperationResponse(record.requestId, { allowMissing: true, signal, client });
@@ -191,7 +236,11 @@ export async function recoverStudyRequests(signal?: AbortSignal): Promise<void> 
   if (recovery?.store === store && recovery.signal === signal) return recovery.promise;
   const promise = (async () => {
     const coordinator = await studySession();
-    const pending = (await store.list(undefined, true)).filter(record => commandKinds.includes(record.kind as StudyCommandKind) && !isRetiredCommand(record.kind));
+    const records = (await store.list(undefined, true)).filter(record => commandKinds.includes(record.kind as StudyCommandKind));
+    for (const record of records.filter(record => isRetiredCommand(record.kind))) publishNotification({ severity: "warning", source: "study recovery",
+      key: `study-command:${record.key}`, message: "This retired exercise remains held with its original request.",
+      details: { attemptId: record.attemptId, requestId: record.requestId, endpoint: record.endpoint } });
+    const pending = records.filter(record => !isRetiredCommand(record.kind));
     const cursorKey = "study-command-recovery:cursor";
     let cursor = await store.checkpoint(cursorKey);
     let cursorOwned = true;
