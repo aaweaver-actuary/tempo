@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+from native_study_fixture import owned_postgres
 
 
 def receipt_validator():
