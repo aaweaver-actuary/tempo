@@ -1,28 +1,30 @@
-"""Named regressions for the retained authored Study grader."""
-
+"""Named cross-runtime regressions for the retained authored Study grader."""
 import json
 from pathlib import Path
 
-from pydantic import TypeAdapter
-
+import pytest
+from pydantic import TypeAdapter, ValidationError
 from app.contracts.study_exercises import ExerciseAnswer, ExerciseSpecification
 from app.study.policy.study_grading import evaluate_answer, validate_exercise
 
+CASES = json.loads((Path(__file__).parents[2] / "tests/fixtures/study-grading.json").read_text())
 
-def test_study_python_grader_matches_original_golden_cases():
-    cases = json.loads(
-        (Path(__file__).parents[2] / "tests/fixtures/study-grading.json").read_text()
-    )
-    specification_adapter = TypeAdapter(ExerciseSpecification)
-    answer_adapter = TypeAdapter(ExerciseAnswer)
-    for case in cases:
-        specification = specification_adapter.validate_python(case["specification"])
-        answer = answer_adapter.validate_python(case["answer"])
+@pytest.mark.parametrize("case", CASES, ids=lambda case: case["name"])
+def test_study_python_grader_shared_v1_cases(case):
+    try:
+        specification = TypeAdapter(ExerciseSpecification).validate_python(case["specification"])
+    except ValidationError:
+        assert case["expected_validation_stage"] == "specification_schema"
+        return
+    try:
         validate_exercise(specification, case["fen"])
-        result = evaluate_answer(specification, answer, case["fen"])
-        assert case["expected_validation_stage"] == "graded", case["name"]
-        assert result["outcome"] == case["outcome"], case["name"]
-        assert all(
-            result[key] == value
-            for key, value in case["expected_semantic_result"].items()
-        ), case["name"]
+    except ValueError:
+        assert case["expected_validation_stage"] == "specification_semantic"
+        return
+    try:
+        answer = TypeAdapter(ExerciseAnswer).validate_python(case["answer"])
+    except ValidationError:
+        assert case["expected_validation_stage"] == "answer_schema"
+        return
+    assert case["expected_validation_stage"] == "graded"
+    assert evaluate_answer(specification, answer, case["fen"]) == case["expected_semantic_result"]
