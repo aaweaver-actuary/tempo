@@ -2573,7 +2573,8 @@
         "study-queue-order-receipt",
         "queue-ordering-facade",
         "tactics-catalog-service",
-        "durable-task-application"
+        "durable-task-application",
+        "opening-progression-storage"
       ],
       "buildInputs": [],
       "buildCommand": null,
@@ -2641,7 +2642,9 @@
         "database/tempo_storage/queue_refresh/application/eligibility.py#ready_unlock_candidates",
         "database/tempo_storage/queue_refresh/application/eligibility.py#unlock_eligible_cards"
       ],
-      "dependencies": [],
+      "dependencies": [
+        "opening-progression-storage"
+      ],
       "buildInputs": [],
       "buildCommand": null,
       "artifact": null,
@@ -7457,7 +7460,8 @@
         "backend/app/services/review_service.py#apply_scheduling_review"
       ],
       "dependencies": [
-        "study-review-storage"
+        "study-review-storage",
+        "opening-progression-storage"
       ],
       "buildInputs": [],
       "buildCommand": null,
@@ -7488,7 +7492,8 @@
         "backend/app/study/policy/review_reconciliation.py#reconcile_completed_review"
       ],
       "dependencies": [
-        "study-review-reconciliation-storage"
+        "study-review-reconciliation-storage",
+        "opening-progression-storage"
       ],
       "buildInputs": [],
       "buildCommand": null,
@@ -8212,6 +8217,35 @@
         "Main and task composition bind existing activity gate and background measurement via delayed imports; rebinding different authorities is rejected by storage."
       ],
       "censusScope": "database_infrastructure"
+    },
+    {
+      "id": "opening-progression-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage",
+      "publicExports": [
+        "database/tempo_storage/opening_progression.py#unlock_legacy_children_after_review"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/opening_progression.py"
+      ],
+      "ownershipRole": "Apply existing legacy opening progression",
+      "dependencyNotes": [
+        "Shared practiced-parent SQL requires a non-invalidated Study review. Caller-transaction legacy unlock excludes opening cards represented by a published graph generation; non-opening children retain the existing mature-state condition."
+      ],
+      "censusScope": "opening_progression"
     }
   ],
   "suites": [
