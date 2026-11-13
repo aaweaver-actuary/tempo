@@ -28,6 +28,50 @@ class OwnerDecision:
     reason: str
 
 
+@dataclass(frozen=True)
+class PositionOwnerFacts:
+    repertoire_id: str
+    mode: str
+    epoch: str
+    source_digest: str
+
+
+def next_active_owner(database, after_repertoire: str) -> PositionOwnerFacts | None:
+    """Read the next active owner from the caller's borrowed connection."""
+    row = database.execute_native(
+        """SELECT o.repertoire_id,o.epoch,e.source_digest
+            FROM study_position_owners o JOIN study_position_epochs e
+              ON e.repertoire_id=o.repertoire_id AND e.epoch=o.epoch
+            WHERE o.mode='active' AND o.repertoire_id>%s ORDER BY o.repertoire_id LIMIT 1""",
+        (after_repertoire,),
+    ).fetchone()
+    return None if row is None else PositionOwnerFacts(row["repertoire_id"], "active", row["epoch"], row["source_digest"])
+
+
+def active_owner(database, repertoire_id: str) -> PositionOwnerFacts | None:
+    """Read the exact active owner used by a continued due scan."""
+    row = database.execute_native(
+        """SELECT o.repertoire_id,o.epoch,e.source_digest
+            FROM study_position_owners o JOIN study_position_epochs e
+              ON e.repertoire_id=o.repertoire_id AND e.epoch=o.epoch
+            WHERE o.mode='active' AND o.repertoire_id=%s""",
+        (repertoire_id,),
+    ).fetchone()
+    return None if row is None else PositionOwnerFacts(row["repertoire_id"], "active", row["epoch"], row["source_digest"])
+
+
+def current_owner(database, repertoire_id: str) -> PositionOwnerFacts | None:
+    """Read routing facts without acquiring the later writer fence."""
+    row = database.execute_native(
+        """SELECT o.mode,o.epoch,e.source_digest
+        FROM study_position_owners o JOIN study_position_epochs e
+          ON e.repertoire_id=o.repertoire_id AND e.epoch=o.epoch
+        WHERE o.repertoire_id=%s""",
+        (repertoire_id,),
+    ).fetchone()
+    return None if row is None else PositionOwnerFacts(repertoire_id, row["mode"], row["epoch"], row["source_digest"])
+
+
 def owner_lock_key(repertoire_id: str) -> str:
     """Shared with the future owner writer; no connection is opened here."""
     return "tempo:position-owner:" + repertoire_id

@@ -747,3 +747,84 @@ def test_changed_source_holds_before_position_plan_or_queue_locks(monkeypatch):
     assert result["issued"] is False
     assert result["position_study_hold"] == "position_owner_source_changed"
     assert calls == ["source"]
+
+
+def test_owner_read_contract_preserves_exact_selection_and_routing(monkeypatch):
+    from dataclasses import FrozenInstanceError
+    import pytest
+    from app.services import position_queue_admission as admission, queue_next_card
+    from tempo_storage.study import position_owner_epoch as storage
+
+    class Database:
+        def __init__(self):
+            self.rows = []
+            self.calls = []
+        def execute_native(self, sql, params):
+            self.calls.append((" ".join(sql.split()), params))
+            return NS(fetchone=lambda: self.rows.pop(0))
+
+    db = Database()
+    db.rows = [dict(repertoire_id="r", epoch="e", source_digest="digest"),
+               dict(repertoire_id="r", epoch="e", source_digest="digest"),
+               dict(mode="shadow", epoch="e", source_digest="digest")]
+    first = storage.next_active_owner(db, "q")
+    assert first == storage.PositionOwnerFacts("r", "active", "e", "digest")
+    with pytest.raises(FrozenInstanceError):
+        first.epoch = "other"
+    assert storage.active_owner(db, "r") == first
+    assert storage.current_owner(db, "r").mode == "shadow"
+    assert "o.mode='active' AND o.repertoire_id>%s ORDER BY o.repertoire_id LIMIT 1" in db.calls[0][0]
+    assert "o.mode='active' AND o.repertoire_id=%s" in db.calls[1][0]
+    assert "WHERE o.repertoire_id=%s" in db.calls[2][0]
+    assert [params for _, params in db.calls] == [("q",), ("r",), ("r",)]
+
+    # An independent fake returns the same immutable semantic values, without SQL.
+    monkeypatch.setattr(storage, "next_active_owner", lambda *_: None)
+    monkeypatch.setattr(storage, "active_owner", lambda *_: None)
+    assert admission.prepare_due(object(), "2026-11-02", {}) is None
+    assert admission.prepare_due(object(), "2026-11-02", {"position_repertoire": "r"}).reason == "position_owner_changed_during_admission"
+    monkeypatch.setattr(storage, "active_owner", lambda *_: first)
+    for epoch, digest in (("other", "digest"), ("e", "other")):
+        assert admission.prepare_due(object(), "2026-11-02", {"position_repertoire": "r", "position_epoch": epoch, "position_digest": digest}).reason == "position_owner_changed_during_admission"
+    for mode in (None, "inactive", "shadow", "staged", "paused"):
+        value = None if mode is None else storage.PositionOwnerFacts("r", mode, "e", "digest")
+        monkeypatch.setattr(storage, "current_owner", lambda *_, value=value: value)
+        result = admission.prepare_opening_introduction(object(), {"repertoire_id": "r", "card_id": "card"})
+        if mode in (None, "inactive", "shadow"):
+            assert result == ("legacy", "r")
+        else:
+            assert result.reason == "position_owner_" + mode
+    monkeypatch.setattr(storage, "current_owner", lambda *_: first)
+    monkeypatch.setattr(queue_next_card, "_cached_position_source", lambda *_: NS(authored_token=NS(authored_digest="changed")))
+    assert admission.prepare_opening_introduction(object(), {"repertoire_id": "r", "card_id": "card"}).reason == "position_owner_source_changed"
+
+
+def test_due_preparation_consumes_semantic_owner_facts_and_retains_cursor(monkeypatch):
+    from datetime import datetime, timezone
+    from app.services import position_queue_admission as admission
+    from tempo_storage.study import position_due_candidates, position_owner_epoch
+
+    owner = position_owner_epoch.PositionOwnerFacts("r", "active", "epoch", "digest")
+    instant = datetime(2026, 11, 2, 12, tzinfo=timezone.utc)
+    prepared_source, target = source([binding("card")])
+    prepared_source.authored_token.authored_digest = "digest"
+    state = NS(definition=target, due_at=instant)
+    state.definition.key.variant = "standard"
+    candidate = NS(state=state)
+    seen = []
+    class Reader:
+        def __init__(self, database, **kwargs):
+            seen.append((database, kwargs))
+        def read_due_page(self, *, after, limit):
+            assert after is None and limit == 1
+            return NS(candidates=[candidate])
+    monkeypatch.setattr(position_owner_epoch, "next_active_owner", lambda db, after: owner)
+    monkeypatch.setattr(position_due_candidates, "PositionDueCandidateReader", Reader)
+    monkeypatch.setattr(_source_preparation, "prepare_position_source", lambda db, rep: prepared_source)
+    db = object()
+    result = admission.prepare_due(db, "2026-11-02", {"position_instant": instant.isoformat()})
+    assert result["source"] is prepared_source and result["candidate"] is candidate
+    assert result["carrier"].presentation_id == "card"
+    assert result["cursor"] == {"position_repertoire": "r", "position_epoch": "epoch", "position_digest": "digest",
+        "position_instant": instant.isoformat(), "position_after": [instant.isoformat(), "standard", "position"]}
+    assert seen[0][0] is db and seen[0][1]["owner_epoch"] == "epoch" and seen[0][1]["source_digest"] == "digest"

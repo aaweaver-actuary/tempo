@@ -66,28 +66,18 @@ def prepare_due(database, day, payload):
         PositionDueCursor,
     )
 
+    from tempo_storage.study.position_owner_epoch import active_owner, next_active_owner
+
     current_rep = payload.get("position_repertoire")
     if not current_rep:
-        row = database.execute_native(
-            """SELECT o.repertoire_id,o.epoch,e.source_digest
-            FROM study_position_owners o JOIN study_position_epochs e
-              ON e.repertoire_id=o.repertoire_id AND e.epoch=o.epoch
-            WHERE o.mode='active' AND o.repertoire_id>%s ORDER BY o.repertoire_id LIMIT 1""",
-            (payload.get("position_repertoire_after", ""),),
-        ).fetchone()
+        row = next_active_owner(database, payload.get("position_repertoire_after", ""))
     else:
-        row = database.execute_native(
-            """SELECT o.repertoire_id,o.epoch,e.source_digest
-            FROM study_position_owners o JOIN study_position_epochs e
-              ON e.repertoire_id=o.repertoire_id AND e.epoch=o.epoch
-            WHERE o.mode='active' AND o.repertoire_id=%s""",
-            (current_rep,),
-        ).fetchone()
+        row = active_owner(database, current_rep)
         if row is None:
             return Hold("position_owner_changed_during_admission")
     if not row:
         return None
-    repertoire, epoch, digest = row["repertoire_id"], row["epoch"], row["source_digest"]
+    repertoire, epoch, digest = row.repertoire_id, row.epoch, row.source_digest
     if current_rep and (
         payload.get("position_epoch"),
         payload.get("position_digest"),
@@ -230,26 +220,20 @@ def prepare_opening_introduction(database, planned):
         prepare_introduction,
     )
 
+    from tempo_storage.study.position_owner_epoch import current_owner
+
     repertoire = planned["repertoire_id"]
-    row = database.execute_native(
-        """SELECT o.mode,o.epoch,e.source_digest
-        FROM study_position_owners o JOIN study_position_epochs e
-          ON e.repertoire_id=o.repertoire_id AND e.epoch=o.epoch
-        WHERE o.repertoire_id=%s""",
-        (repertoire,),
-    ).fetchone()
-    if row is None or row["mode"] in ("inactive", "shadow"):
+    row = current_owner(database, repertoire)
+    if row is None or row.mode in ("inactive", "shadow"):
         return ("legacy", repertoire)
-    if row["mode"] != "active":
-        return Hold("position_owner_" + row["mode"])
+    if row.mode != "active":
+        return Hold("position_owner_" + row.mode)
     from .queue_next_card import _cached_position_source
 
-    source = _cached_position_source(
-        database, repertoire, row["epoch"], row["source_digest"]
-    )
+    source = _cached_position_source(database, repertoire, row.epoch, row.source_digest)
     if isinstance(source, Hold):
         return source
-    if source.authored_token.authored_digest != row["source_digest"]:
+    if source.authored_token.authored_digest != row.source_digest:
         return Hold("position_owner_source_changed")
     intro = prepare_introduction(source, planned["card_id"])
     return intro if isinstance(intro, Hold) else ("position", intro)
@@ -356,7 +340,7 @@ def admit_targeted_position_introduction(
     receipt, not a fabricated review or Games scheduling effect.
     """
     from tempo_storage.study.position_introductions import (
-        initialize_introduction,
+        canonical_introduction_admitted, initialize_introduction,
     )
 
     prepared, target = prepared_target
@@ -369,17 +353,10 @@ def admit_targeted_position_introduction(
         target=target,
     )
     if result.status == "introduced":
-        admitted = database.execute_native(
-            """SELECT 1 FROM cards c JOIN daily_queue q ON q.card_id=c.id
-            WHERE c.id=%s AND c.revision=%s AND c.introduced_at IS NOT NULL
-              AND q.queue_date=%s AND q.admission_repertoire_id=%s AND q.status='queued' LIMIT 1""",
-            (
-                target.presentation_id,
-                target.presentation_revision,
-                day,
-                target.repertoire_id,
-            ),
-        ).fetchone()
+        admitted = canonical_introduction_admitted(
+            database, card_id=target.presentation_id, revision=target.presentation_revision,
+            day=day, repertoire_id=target.repertoire_id,
+        )
         if not admitted:
             raise ValueError("position_canonical_introduction_unproved")
         from tempo_scheduling import initial_position_state
