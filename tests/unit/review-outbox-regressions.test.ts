@@ -1725,3 +1725,43 @@ it.each(['unknown', 'foreign', 'unavailable', 'unproven failure', 'invalid body'
   closeStudyIntentStorage(); await initializeStudyIntentStorage();
   expect(await (await studyIntentStore()).get(key)).toEqual(before);
 });
+
+it.each(["authoritative rejection", "retryable rejection", "unavailable"])(
+  "C11 committed-parent orphan %s preserves its exact evidence and disposition", async scenario => {
+    const { studyIntentStore } = await import("../../database/browser/study-intent-storage");
+    const { defaultStudyClient } = await import("../../app/lib/study-connection");
+    const { recoverCommittedReviewDelivery } = await import("../../app/lib/review-outbox");
+    const original = await enqueueOpeningEvidenceReview(`orphan-evidence-${scenario}`);
+    const store = await studyIntentStore();
+    const parentKey = `review:${original.attemptId}`;
+    await store.update(parentKey, current => ({ ...current, state: "committed", receipt: { persisted: true, review_id: 19 } }));
+    const parentBefore = await store.get(parentKey);
+    const id = `review-attempt:${original.attemptId}`, key = `review-delivery:${id}`;
+    const payload = { parentKey, headers: { "Content-Type": "application/json", "Idempotency-Key": id }, body: {
+      outcome: original.outcome, guided: original.guided, queue_entry_id: original.queueEntryId,
+      attempt_id: original.attemptId, recorded_at: original.completedAt, opening_evidence_completion: original.openingEvidenceCompletion,
+    } };
+    await store.put({ key, kind: "review-delivery", attemptId: original.attemptId!, requestId: id,
+      endpoint: `${defaultStudyClient.origin}/api/cards/${original.backendId}/review`, createdAt: original.completedAt!, payload });
+    const before = await store.get(key);
+    const detail = { code: "opening_evidence_conflict", message: "Evidence was rejected", aggregate_review_allowed: true, retryable: false };
+    const error = { message: "Evidence was rejected", status_code: 409, code: detail.code,
+      retryable: scenario === "retryable rejection", detail };
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.method ?? "GET").toBe("GET");
+      expect(decodeURIComponent(String(url))).toContain(`/api/operations/${id}`);
+      if (scenario === "unavailable") throw new Error("offline");
+      return Response.json({ operation_id: id, state: "failed", error });
+    });
+    vi.stubGlobal("fetch", fetcher);
+    expect(await recoverCommittedReviewDelivery(key, new AbortController().signal))
+      .toBe(scenario === "authoritative rejection" ? "settled" : "hold");
+    const after = await store.get(key);
+    expect(after).toEqual(scenario === "authoritative rejection"
+      ? { ...before, version: before!.version + 1, state: "discarded", receipt: { state: "failed", error } } : before);
+    expect(after?.payload).toEqual(payload);
+    expect(await store.get(parentKey)).toEqual(parentBefore);
+    expect(fetcher).toHaveBeenCalledOnce();
+    closeStudyIntentStorage(); await initializeStudyIntentStorage();
+    expect(await (await studyIntentStore()).get(key)).toEqual(after);
+  });
