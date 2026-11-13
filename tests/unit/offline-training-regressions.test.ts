@@ -81,7 +81,7 @@ it("C21 holds an ambiguous phone exercise and its repeat while syncing an unrela
   const child = { ...base, localEntryId: 2, parentLocalEntryId: 1, cardId: "held", attemptId: "repeat" };
   const unrelated = { ...base, localEntryId: 3, cardId: "opening", attemptId: "opening-original" };
   storage.stores.training.set("prepared-daily-queue", { localDate: "2026-09-26", preparedAt: base.completedAt, cards: [], nextTemporaryId: 100, attempts: [held, child, unrelated] });
-  const fetcher = vi.fn(async () => Response.json({ review_id: 41, requeue_entry_id: null })); vi.stubGlobal("fetch", fetcher);
+  const fetcher = vi.fn(async (_input: RequestInfo | URL) => Response.json({ review_id: 41, requeue_entry_id: null })); vi.stubGlobal("fetch", fetcher);
   try {
     const result = await (await import("../../app/lib/offline-training")).replayOfflineAttempts();
     expect(result?.attempts.slice(0, 2)).toEqual([held, child]);
@@ -449,4 +449,42 @@ it('FE10 phone preparation publishes invalid opening evidence while retaining th
     expect(saved.cards).toHaveLength(1); expect(saved.cards[0].opening_decision_manifest).toBeUndefined();
     expect(diagnostics.dataDiagnostics()).toEqual([expect.objectContaining({ source: 'opening evidence', raw: card, message: expect.stringContaining('invalid manifest') })]);
   } finally { vi.unstubAllGlobals(); vi.restoreAllMocks(); }
+});
+
+it.each(["different locator", "same locator generation"])('FE25 phone quota retry retains original authority across %s', async mode => {
+  const { vi } = await import('vitest');
+  const { openingEvidenceStorage, evidenceCompletion } = await import('../fixtures/opening-evidence-storage');
+  const { localDayKey } = await import('../../app/utils/local');
+  const state = await openingEvidenceStorage();
+  const completion = evidenceCompletion();
+  const original = { localDate: localDayKey(), preparedAt: completion.started_at, nextTemporaryId: 100,
+    attempts: [], cards: [{ ...preparedCard, id: completion.manifest.card_id, queue_entry_id: 101, revision: 3,
+      latest_review_id: 7, cycle: 2, opening_decision_manifest: completion.manifest }] };
+  state.stores.training.set('prepared-daily-queue', structuredClone(original)); state.seed(completion);
+  const originalEvidence = structuredClone([...state.stores.opening_attempts]);
+  let generation = 1;
+  const binding = { locator: mode === 'different locator' ? 'authority-A' : 'same-locator',
+    requireCurrent: () => { if (generation !== 1) throw new Error('authority changed'); } };
+  const owner = await import('../../database/browser/offline-training-storage');
+  vi.spyOn(owner, 'captureOfflineDatabaseBinding').mockReturnValue(binding);
+  state.controls.beforePut = store => { if (store === 'training') { generation = 2; return new DOMException('quota', 'QuotaExceededError'); } };
+  try {
+    const offline = await import('../../app/lib/offline-training');
+    await expect(offline.recordOfflineAttempt(101, 'correct', false, undefined, { attemptId: completion.attempt_id, completion })).rejects.toThrow('authority changed');
+    expect(state.stores.training.get('prepared-daily-queue')).toEqual(original);
+    expect([...state.stores.opening_attempts]).toEqual(originalEvidence);
+    expect(state.writes.filter(write => write.store === 'training')).toHaveLength(1);
+  } finally { vi.restoreAllMocks(); vi.unstubAllGlobals(); }
+});
+
+it('FE25 marks the original phone attempt exposed before its storage operation', async () => {
+  const { vi } = await import('vitest');
+  const journal = await import('../../app/lib/opening-evidence-journal');
+  const offline = await import('../../app/lib/offline-training');
+  const mark = vi.spyOn(journal, 'markOpeningEvidenceExposed');
+  try {
+    const pending = offline.recordOfflineAttempt(101, 'correct', false, undefined, { attemptId: 'phone-exposure-original' });
+    expect(mark).toHaveBeenCalledWith('phone-exposure-original');
+    await pending.catch(() => undefined);
+  } finally { vi.restoreAllMocks(); }
 });

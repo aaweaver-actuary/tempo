@@ -659,7 +659,9 @@ async function enqueueOpeningEvidenceReview(attemptId: string) {
     terminal: { state: "complete", final_sequence: 1, ended_at: "2026-09-30T12:01:00Z" } });
   await enqueuePendingReview({ backendId: "shadow-card", queueEntryId: 101, outcome: "correct", guided: false,
     attemptId, completedAt: completion.terminal!.ended_at, openingEvidenceCompletion: completion });
-  return pendingReviews()[0];
+  const retained = pendingReviews()[0];
+  if (!retained?.attemptId) throw new Error("Original review attempt was not retained");
+  return { ...retained, attemptId: retained.attemptId };
 }
 
 describe("optimistic training review outbox", () => {
@@ -1542,7 +1544,7 @@ it.each(["failed", "retryable", "unknown", "unavailable"])("retained fallback re
   const reloaded = await (await studyIntentStore()).get(envelope.key);
   expect(reloaded).toMatchObject({ ...envelope, state: status === "failed" ? "discarded" : "pending" });
   const { inspectRetainedStudyAuthority } = await import("../../database/browser/study-connection-storage");
-  const inspected = await inspectRetainedStudyAuthority(() => []);
+  const inspected = await inspectRetainedStudyAuthority();
   const exported = inspected.retained.databases["tempo-study-intents"].intents as Array<{ key: string; state: string; workspace: string }>;
   const preserved = exported.find(item => item.key === envelope.key)!;
   expect(preserved.state).toBe(status === "failed" ? "discarded" : "pending");
@@ -1550,7 +1552,8 @@ it.each(["failed", "retryable", "unknown", "unavailable"])("retained fallback re
   expect(inspected.facts).toContainEqual(fact);
   const storage = await import("../../database/browser/study-connection-storage");
   const { createStudyClient } = await import("../../app/lib/study-client");
-  const client = createStudyClient({ independent: true, baseUrl: "", storage: { ...storage,
+  const client = createStudyClient({ independent: true, baseUrl: "", resolveBaseHref: () => "http://localhost/",
+    onAuthenticationRequired: () => undefined, acquireActivityHold: () => () => undefined, storage: { ...storage,
     inspectRetainedStudyAuthority: async () => ({ facts: [fact], retained: inspected.retained }) }, transport: vi.fn() });
   const cutover = client.assertStudyAuthority("https://foreign.example", "other");
   if (status === "failed") await expect(cutover).resolves.toEqual(inspected.retained);
@@ -1790,4 +1793,30 @@ it.each(['aggregate', 'reconcile-aggregate', 'no-completion'])('C11 orphan %s re
     message: detail.message, status_code: 409, code: detail.code, retryable: false, detail } })));
   expect(await recoverCommittedReviewDelivery(key, new AbortController().signal)).toBe('hold');
   expect(await store.get(key)).toEqual(before);
+});
+
+it('FE23 review delivery imports and constructs without opening storage or registering a session', async () => {
+  vi.resetModules(); const touch = vi.fn(() => { throw new Error('composition must remain inert'); });
+  vi.doMock('../../database/browser/study-intent-storage', touch); vi.doMock('../../app/lib/study-session-runtime', touch);
+  try {
+    const { createReviewDelivery } = await import('../../app/lib/review-delivery');
+    const factory = createReviewDelivery({ operations: {}, getStore: touch } as unknown as Parameters<typeof createReviewDelivery>[0]);
+    expect(typeof factory.deliverLegacyReview).toBe('function'); expect(typeof factory.checkLegacyReviewReceipt).toBe('function');
+    expect(touch).not.toHaveBeenCalled();
+  } finally { vi.doUnmock('../../database/browser/study-intent-storage'); vi.doUnmock('../../app/lib/study-session-runtime'); vi.resetModules(); }
+});
+
+it('FE25 marks an original online attempt exposed before retaining its aggregate', async () => {
+  const mark = vi.spyOn(openingEvidenceJournal, 'markOpeningEvidenceExposed');
+  const pending = enqueuePendingReview(auditReview('exposure-original', 99191));
+  expect(mark).toHaveBeenCalledWith('exposure-original');
+  await pending;
+  expect(pendingReviews()).toContainEqual(expect.objectContaining({ attemptId: 'exposure-original' }));
+});
+
+it('FE25 ordinary review remains retainable when Web Locks are unavailable', async () => {
+  vi.stubGlobal('navigator', { onLine: true });
+  const original = auditReview('ordinary-without-locks', 99192);
+  await expect(enqueuePendingReview(original)).resolves.toBe(original.attemptId);
+  expect(pendingReviews()).toContainEqual(expect.objectContaining(original));
 });

@@ -34,10 +34,10 @@ async function recoveryHarness(ids = ["A"], fallback = false) {
     const id = submittedAttempts.get(key) ?? key.split(":").at(-1)!;
     const mode = responseModes.get(id) ?? response.mode;
     if (mode === "network") throw new TypeError("Fetch failed");
-    if (init?.method === "POST" && mode !== "complete") return Response.json({ operation_id: key }, { status: 202 });
+    if (init?.method === "POST" && mode !== "complete") return Response.json({ operation_id: key, state: "pending" }, { status: 202 });
     const persisted = { persisted: true, attempt_id: id, received_sequences: [1, 2, 3], contiguous_sequence: 3 };
     return Response.json(init?.method === "POST" ? persisted : mode === "complete"
-      ? { state: "complete", response: persisted } : { state: mode, last_error: { message: "Repair the local worker" } });
+      ? { operation_id: key, state: "complete", response: persisted } : { operation_id: key, state: mode, last_error: { message: "Repair the local worker" } });
   }));
   const journal = await import("../../app/lib/opening-evidence-journal");
   const recovery = vi.spyOn(journal, "recoverOpeningEvidence");
@@ -139,12 +139,12 @@ it("independent pending journals replay missing admissions once without duplicat
       checkpointPosts.push(checkpoint.attempt_id);
       expect(acceptedCheckpoints.has(operationKey)).toBe(false);
       acceptedCheckpoints.set(operationKey, { body, attemptId: checkpoint.attempt_id });
-      return Response.json({ operation_id: operationKey }, { status: 202 });
+      return Response.json({ operation_id: operationKey, state: "pending" }, { status: 202 });
     }
     const accepted = acceptedCheckpoints.get(operationKey);
-    if (!accepted) return Response.json({ state: "unknown" });
-    if (accepted.attemptId === "A" && !aComplete) return Response.json({ state: "pending" });
-    return Response.json({ state: "complete", response: { persisted: true, attempt_id: accepted.attemptId,
+    if (!accepted) return Response.json({ operation_id: operationKey, state: "unknown" });
+    if (accepted.attemptId === "A" && !aComplete) return Response.json({ operation_id: operationKey, state: "pending" });
+    return Response.json({ operation_id: operationKey, state: "complete", response: { persisted: true, attempt_id: accepted.attemptId,
       received_sequences: [1, 2, 3], contiguous_sequence: 3 } });
   });
   await state.idle(); await state.idle();

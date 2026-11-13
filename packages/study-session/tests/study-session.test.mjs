@@ -86,3 +86,25 @@ test('pr285_rejected_answer_late_delivery_returns_actual_durable_terminal_result
     assert.equal(session.getSnapshot().phase, 'committed');
   });
 });
+
+test('FE25 submit propagates transient authority guard into retention', async () => {
+  await run(async () => ({ state: 'committed' }), async (session, store) => {
+    let calls = 0;
+    await assert.rejects(session.submit(envelope('guarded'), undefined, { deliver: false, requireCurrent() { if (++calls === 4) throw new Error('authority changed'); } }), /authority changed/);
+    assert.equal(await store.get('guarded'), undefined);
+  });
+});
+
+test('FE25 authority change after committed retention preserves the original pending record', async () => {
+  const store = await openIntentStore({ workspace: 'committed-before-switch', indexedDB: new IDBFactory() }); let current = true, delivered = 0;
+  const wrapped = new Proxy(store, { get(target, key) {
+    if (key === 'put') return async (...args) => { const result = await target.put(...args); current = false; return result; };
+    const value = Reflect.get(target, key); return typeof value === 'function' ? value.bind(target) : value;
+  } });
+  const session = createStudySession({ store: wrapped, learning: { deliver: async () => { delivered++; return { state: 'committed' }; } } });
+  try {
+    await assert.rejects(session.submit(envelope('original'), undefined, { requireCurrent() { if (!current) throw new Error('authority changed'); } }), /authority changed/);
+    assert.deepEqual((await store.get('original')).payload, { outcome: 'again' });
+    assert.equal((await store.get('original')).state, 'pending'); assert.equal(delivered, 0);
+  } finally { session.dispose(); store.close(); }
+});

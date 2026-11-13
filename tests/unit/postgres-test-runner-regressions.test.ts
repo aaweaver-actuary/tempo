@@ -114,17 +114,17 @@ it("maintained Study misuse fails before resource admission", () => {
     ['--mode','study','--native-check','position-grade-effects'], ['--mode','study','--maintained-study-proof']])
     expect(() => parsePostgresTestOptions([...args,'--maintained-study-proof'],cleanEnvironment)).toThrow();
   for (const environment of [{TEMPO_PG_STALE_DELIVERY_ONLY:'1'}, {TEMPO_RELEASE_CANDIDATE_MODE:'borrow'}])
-    expect(() => parsePostgresTestOptions(['--mode','study','--maintained-study-proof'],environment)).toThrow();
+    expect(() => parsePostgresTestOptions(['--mode','study','--maintained-study-proof'],{...cleanEnvironment,...environment})).toThrow();
 });
 
 it("maintained queue receipt fails closed on partial, wrong, missing or duplicate completion", async () => {
-  const {maintainedQueueCases,unresolvedQueueCases,verifyMaintainedQueueReceipt} = await import('../../database/tests/postgres-test-plan.mjs');
+  const {maintainedQueueCases,excludedQueueCases,unresolvedQueueCases,verifyMaintainedQueueReceipt} = await import('../../database/tests/postgres-test-plan.mjs');
   const receipt = {case_set:'maintained-six',scope:'partial',execution:'completed',executed_count:6,
-    cases:maintainedQueueCases,excluded_cases:unresolvedQueueCases,unresolved_owner_cases:unresolvedQueueCases};
+    cases:maintainedQueueCases,excluded_cases:excludedQueueCases,unresolved_owner_cases:unresolvedQueueCases};
   expect(() => verifyMaintainedQueueReceipt(receipt)).not.toThrow();
   for (const invalid of [undefined, {...receipt,execution:'discovery-only'}, {...receipt,executed_count:0},
     {...receipt,cases:[]}, {...receipt,cases:[...maintainedQueueCases.slice(1),maintainedQueueCases[1]]},
-    {...receipt,scope:'all-eight'}, {...receipt,excluded_cases:[]}])
+    {...receipt,scope:'all-eight'}, {...receipt,excluded_cases:[]}, {...receipt,excluded_cases:unresolvedQueueCases}])
     expect(() => verifyMaintainedQueueReceipt(invalid)).toThrow();
 });
 
@@ -192,7 +192,7 @@ it("owned Study snapshot retains exact rows and refuses wrong target before SQL"
 });
 
 
-it("native prefix durability uses only the finite registered command and original receipt identity", () => {
+it("retained native prefix fixture documents its identity and replay boundary", () => {
   const fixture = readFileSync('tests/fixtures/postgres-study-prefix-split.py','utf8');
   expect(fixture).toContain("command = 'cards.prefix_split.accept'");
   expect(fixture).toContain('request_hash=request_digest(command,payload)');
@@ -202,12 +202,28 @@ it("native prefix durability uses only the finite registered command and origina
   expect(fixture).toContain('tempo-disposable-postgres-test');
   expect(fixture).toContain("'tempo_writer'");
   expect(fixture).toContain('POSTGRES_SCHEMA_VERSION');
-  const runner=readFileSync('database/tests/test-postgres-docker.mjs','utf8');
+  // This fixture is historical source evidence; the current runner owns HTTP proof.
+});
+
+it("current HTTP prefix durability preserves original operation, receipt, split rows and restart replay", () => {
+  const runner = readFileSync('database/tests/test-postgres-docker.mjs','utf8');
+  const start = runner.indexOf('async function verifyHttpStudyPrefixSplit(');
+  const end = runner.indexOf('async function verifyStudyBurialRetainsQuota()', start);
+  expect(start).toBeGreaterThanOrEqual(0); expect(end).toBeGreaterThan(start);
+  const owner = runner.slice(start, end);
+  for (const required of ['const preview = await get(path)', 'assert.equal(preview.source_card_id, card.id)',
+    'assert.equal(preview.source_revision, card.revision)', 'assert.equal(preview.applied, false)',
+    '"Idempotency-Key": operationId', 'confirm(raw, operationId)', 'requireOriginalOperationReceipt',
+    'assert.deepEqual(receipt.response, response)', 'assert.equal(rows.length, 1)',
+    'assert.equal(rows[0].source_revision, card.revision)', 'assert.deepEqual(replay, response)',
+    'assert.deepEqual(await get(`operations/${encodeURIComponent(operationId)}`), receipt)',
+    'assert.deepEqual(originalPrefixSplitRows(await readStudySnapshot(), card.id), rows)'])
+    expect(owner).toContain(required);
+  expect(runner).toContain('verifyHttpStudyPrefixSplit(splitCard, importedStudy.repertoire_id, splitOperationId, true)');
+  expect(runner).toContain('verifyHttpStudyPrefixSplit(splitCard, importedStudy.repertoire_id, splitOperationId, false)');
   expect(runner).toContain('assert.deepEqual(replayedSplit, split,');
-  expect(runner).toContain('["exec", "-i", "-e", "TEMPO_TEST_INSTANCE=disposable", writer.id, "python"');
+  expect(runner).toContain('assert.deepEqual(stableStudyState(afterRestartSnapshot, importedStudy.repertoire_id), beforeRestartState,');
   expect(runner).toContain('measureScenario("failure_diagnostics",');
-  expect(runner).toContain('native-command-durability-not-HTTP');
-  expect(runner).not.toContain('get(`cards/${splitCard.id}/prefix-split`)');
 });
 
 

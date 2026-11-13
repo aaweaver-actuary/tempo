@@ -286,7 +286,8 @@ function StudyComposition({ optionalWorkspace }: { optionalWorkspace?: LegacyWor
     return () => { active = false; };
   }, [card, positionCaptureKey, positionMetadataUnavailable, setAttemptFailed, setShowHint, setFailureFen, setAssistedThisAttempt]);
   const openingJournal = useCommittedCallback(() => card.kind !== "opening" || positionUnavailable ? undefined : beginOpeningAttempt(card, useTrainingStore.getState().attempt.attemptId,
-    { offline: offlineQueue, studyTimezone: card.openingEvidenceStudyTimezone }));
+    { offline: offlineQueue, studyTimezone: card.openingEvidenceStudyTimezone,
+      freshAttempt: useTrainingStore.getState().attempt.freshEvidenceAttempt === true }));
   const observeAssistance = useCommittedCallback((moveOffset: number, kind: AssistanceKind) => {
     openingJournal()?.assistance(moveOffset, kind);
   });

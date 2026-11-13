@@ -6,12 +6,13 @@ import type { BackendQueueCard } from "../domain/transport";
 import { evaluateStudyAnswer, studyAnswerSchema, studySnapshotSchema, type StudyAnswer, type StudyAssessment } from "../domain/study-exercises";
 import { learningDayKey as localDayKey } from "./study-connection";
 import { readPreparedTraining, updatePreparedTraining } from "../../database/browser/prepared-training-storage";
+import { captureOfflineDatabaseBinding } from "../../database/browser/offline-training-storage";
 import { classifyOfflineGradingProvenance, type OfflineAttempt, type PreparedTraining } from "../domain/offline-training";
 export { readPreparedTraining } from "../../database/browser/prepared-training-storage";
 export type { OfflineAttempt, PreparedTraining } from "../domain/offline-training";
 import type { OpeningEvidenceCheckpoint } from "../domain/opening-evidence";
 import { saveEvidenceAwareReview } from "./opening-evidence-review";
-import { acknowledgeOpeningReview, rejectOpeningEvidence, retainOpeningEvidenceForStorageFallback } from "./opening-evidence-journal";
+import { acknowledgeOpeningReview, markOpeningEvidenceExposed, rejectOpeningEvidence, retainOpeningEvidenceForStorageFallback } from "./opening-evidence-journal";
 import { publishNotification } from "./notifications";
 import { decodeFrozenAttempt } from "../domain/study-exercise-transport";
 import { reportDataDiagnostic } from "./data-validation";
@@ -113,6 +114,9 @@ export async function recordOfflineAttempt(
     assessment: StudyAssessment; selfRating?: "correct" | "again"; gradingProvenance: { server_contract_version: 1; browser_implementation_revision: 2 } },
   openingResponse?: { attemptId: string; completion?: OpeningEvidenceCheckpoint },
 ): Promise<PreparedTraining> {
+  markOpeningEvidenceExposed(openingResponse?.attemptId);
+  markOpeningEvidenceExposed(openingResponse?.completion?.attempt_id);
+  const binding = captureOfflineDatabaseBinding();
   const completedAt = openingResponse?.completion?.terminal?.ended_at ?? new Date().toISOString();
   const update = (includeEvidence: boolean) => (current: PreparedTraining | null): PreparedTraining => {
     if (!current || current.localDate !== localDayKey())
@@ -176,14 +180,14 @@ export async function recordOfflineAttempt(
     }
     return { ...current, cards: remaining, attempts: [...current.attempts, attempt], nextTemporaryId };
   };
-  try { return await updatePreparedTraining(update(true)); }
+  try { return await updatePreparedTraining(update(true), binding); }
   catch (error) {
     const name = error && typeof error === "object" && "name" in error ? error.name : undefined;
     if (!openingResponse?.completion || !["QuotaExceededError", "NS_ERROR_DOM_QUOTA_REACHED"].includes(String(name))) throw error;
-    const compact = await updatePreparedTraining(update(false));
+    const compact = await updatePreparedTraining(update(false), binding);
     // Aggregate durability precedes optional diagnostics; neither retention nor its
     // failure can prevent this committed phone review from advancing training.
-    void retainOpeningEvidenceForStorageFallback(openingResponse.completion).catch(retentionError => publishNotification({
+    void retainOpeningEvidenceForStorageFallback(openingResponse.completion, binding).catch(retentionError => publishNotification({
       severity: "warning", source: "opening evidence", key: `opening-evidence:${openingResponse.attemptId}`,
       message: `The phone review is saved, but opening evidence could not be retained separately. ${String(retentionError)}`,
     }));

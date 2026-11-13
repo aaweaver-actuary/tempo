@@ -90,11 +90,12 @@ export function createStudySession(options: {
       snapshot = { phase: "active", generation: snapshot.generation + 1, key };
       for (const listener of listeners) listener();
     },
-    async submit(envelope: IntentEnvelope, data?: unknown, submission: { deliver?: boolean; boundary?: IntentPutOptions["boundary"] } = {}): Promise<Settlement> {
+    async submit(envelope: IntentEnvelope, data?: unknown, submission: { deliver?: boolean; boundary?: IntentPutOptions["boundary"]; requireCurrent?: () => void } = {}): Promise<Settlement> {
       const generation = snapshot.generation, displayedKey = snapshot.key;
+      const requireCurrent = submission.requireCurrent;
       if (envelope.key === displayedKey) publish("persisting", generation, displayedKey);
       let retained: IntentRecord;
-      try { retained = await options.store.put(envelope, data, { boundary: submission.boundary }); }
+      try { requireCurrent?.(); retained = await options.store.put(envelope, data, { boundary: submission.boundary, requireCurrent }); requireCurrent?.(); }
       catch (error) { if (envelope.key === displayedKey) publish("storage-failed", generation, displayedKey, error); throw error; }
       if (submission.deliver === false) {
         const state = retained.state;
@@ -103,8 +104,8 @@ export function createStudySession(options: {
       }
       return recover(envelope.key);
     },
-    checkSave: recover,
-    retrySave: recover,
+    checkSave(key: string, requireCurrent?: () => void) { requireCurrent?.(); return recover(key).then(result => { requireCurrent?.(); return result; }); },
+    retrySave(key: string, requireCurrent?: () => void) { requireCurrent?.(); return recover(key).then(result => { requireCurrent?.(); return result; }); },
     async retryNext(key: string, acquire: (signal: AbortSignal, acquisition: number) => Promise<unknown>, stillCurrent: () => boolean, retryable: (error: unknown) => boolean = () => true): Promise<void> {
       const generation = snapshot.generation, displayedKey = snapshot.key;
       const record = await options.store.get(key);

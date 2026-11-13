@@ -204,3 +204,15 @@ it.each(["missing", "foreign"])("%s guided failure acknowledgment retains its fr
   expect(calls).toHaveLength(1); // initial POST only
   expect(calls.some(url => url.includes("foreign"))).toBe(false);
 });
+
+it('FE25 bound failure cleanup preserves the original marker if authority changes before its update', async () => {
+  await enqueueTrainingFailure(42, 'original-card', 1);
+  const { studyIntentStore } = await import('../../database/browser/study-intent-storage'); const store = await studyIntentStore();
+  const before = await store.list('failure'); let current = true;
+  const original = store.update.bind(store);
+  const update = vi.spyOn(store, 'update').mockImplementation(async (key, change) => original(key, record => { current = false; return change(record); }));
+  try {
+    await expect(clearTrainingFailureAfterReview(42, 'original-card', 1, { store, requireCurrent: () => { if (!current) throw new Error('authority changed'); } })).rejects.toThrow('authority changed');
+    expect(await store.list('failure')).toEqual(before);
+  } finally { update.mockRestore(); }
+});
