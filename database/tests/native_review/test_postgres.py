@@ -530,17 +530,39 @@ def test_native_split_then_refresh_retains_verified_after_four_placement(split_c
     with postgres.connection() as database:
         database.execute("UPDATE daily_queue SET status='buried' WHERE id=%s",(case['entries'][1],))
         database.execute("UPDATE cards SET revision=3,moves_json='[\"e2e4\",\"e7e5\",\"g1f3\",\"b8c6\",\"f1b5\"]' WHERE id=%s",(source,))
-        database.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,source_kind) VALUES(%s,'again',%s,0,0,'study')",(source,case['day']))
+        review_id = database.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,source_kind) VALUES(%s,'again',%s,0,0,'study') RETURNING id",(source,case['day'])).fetchone()[0]
+        database.execute("INSERT INTO review_attempt_receipts(attempt_id,card_id,queue_entry_id,outcome,guided,review_id,scheduling_status,result_json) VALUES(%s,%s,%s,'again',0,%s,'saved','{}')", (case['identity']+'-receipt', source, case['entries'][0], review_id))
+        second = database.execute("INSERT INTO daily_queue(queue_date,card_id,cycle,position) VALUES(%s,%s,1,1000) RETURNING id", (case['day'], source)).fetchone()[0]
+        database.execute("UPDATE queue_attempt_origins SET issued_as_head=1 WHERE queue_entry_id=%s", (second,))
         for index in range(30):
             identifier = case['identity']+f'-split-tactic-{index}'
             database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type) VALUES(%s,%s,'prefix',%s,'[\"e2e4\"]','learning',%s,'tactic')",(identifier,case['identity'],FEN,case['day']))
             database.execute('INSERT INTO daily_queue(queue_date,card_id,position) VALUES(%s,%s,%s)',(case['day'],identifier,index+1))
         queue_application.randomize_daily_queue(database,case['day'])
+        # Follow the same card lock as the production command/issuance owner.
+        from app.prefix_split_commands import _lock_prefix_card
+        _lock_prefix_card(database, source)
+        original = [tuple(row) for row in database.execute("SELECT id,card_id,status FROM daily_queue WHERE id IN (%s,%s) ORDER BY id", (case['entries'][0], second))]
+        with pytest.raises(RuntimeError, match='issued attempt'):
+            apply_prefix_split(database,source,3,calendar=calendar)
+        assert [tuple(row) for row in database.execute("SELECT id,card_id,status FROM daily_queue WHERE id IN (%s,%s) ORDER BY id", (case['entries'][0], second))] == original
+        assert database.execute("SELECT COUNT(*) FROM prefix_splits WHERE source_card_id=%s", (source,)).fetchone()[0] == 0
+        assert tuple(database.execute("SELECT card_id,queue_entry_id,review_id,result_json FROM review_attempt_receipts WHERE attempt_id=%s", (case['identity']+'-receipt',)).fetchone()) == (source, case['entries'][0], review_id, '{}')
+        database.execute("UPDATE daily_queue SET status='complete' WHERE id=%s", (case['entries'][0],))
+        with pytest.raises(RuntimeError, match='issued attempt'):
+            apply_prefix_split(database,source,3,calendar=calendar)
+        database.execute("UPDATE daily_queue SET status='complete' WHERE id=%s", (second,))
         result = apply_prefix_split(database,source,3,calendar=calendar)
+        assert [tuple(row) for row in database.execute("SELECT id,card_id,status FROM daily_queue WHERE id IN (%s,%s) ORDER BY id", (case['entries'][0], second))] == [(row[0], row[1], 'complete') for row in original]
+        assert tuple(database.execute("SELECT card_id,queue_entry_id,review_id,result_json FROM review_attempt_receipts WHERE attempt_id=%s", (case['identity']+'-receipt',)).fetchone()) == (source, case['entries'][0], review_id, '{}')
+        assert database.execute("SELECT card_id FROM reviews WHERE id=%s", (review_id,)).fetchone()[0] == source
+        assert apply_prefix_split(database,source,3,calendar=calendar)['idempotent'] is True
+        with pytest.raises(RuntimeError, match='changed'):
+            apply_prefix_split(database,source,4,calendar=calendar)
         parent,child = result['parent']['card_id'],result['continuation']['card_id']
         database.execute('UPDATE cards SET pending_validation=0 WHERE id IN (%s,%s)',(parent,child))
         before = [tuple(row) for row in database.execute("SELECT id,card_id,position FROM daily_queue WHERE status='queued' ORDER BY position,id")]
         assert [row[1] for row in before[4:6]] == [parent,child]
-        assert tuple(database.execute('SELECT cycle,attempt_state FROM daily_queue WHERE card_id=%s AND status=\'queued\'',(parent,)).fetchone()) == (0,'clean')
+        assert tuple(database.execute('SELECT cycle,attempt_state FROM daily_queue WHERE card_id=%s AND status=\'queued\'',(parent,)).fetchone()) == (0,'guided')
         queue_application.randomize_daily_queue(database,case['day'])
         assert [tuple(row) for row in database.execute("SELECT id,card_id,position FROM daily_queue WHERE status='queued' ORDER BY position,id")] == before

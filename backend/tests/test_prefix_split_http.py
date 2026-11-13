@@ -5,7 +5,7 @@ import chess
 import pytest
 from fastapi.testclient import TestClient
 
-from app import command_dispatch, main, prefix_split_routes
+from app import command_dispatch, main, prefix_split_commands, prefix_split_routes
 from app.command_gateway import CommandConflict
 from app.contracts.command_identity import request_digest
 from app.services import prefix_split
@@ -111,3 +111,36 @@ def test_prefix_decision_dispatch_preserves_operation_revision_and_receipt(api, 
     before = len(submissions)
     assert api.post(path, json={"expected_revision": 0}, headers=headers).status_code == 422
     assert len(submissions) == before
+
+
+def test_prefix_accept_http_holds_issued_attempt_and_checks_replay_revision(api, monkeypatch):
+    """Exercise the actual command and split policy, with persistence facts isolated."""
+    from datetime import date
+    from types import SimpleNamespace
+    card = {"content_type": "opening", "kind": "prefix", "trained_color": "white",
+            "start_fen": chess.STARTING_FEN, "moves_json": '["e2e4", "e7e5", "g1f3"]', "revision": 7}
+    facts = {"prior": None, "active": True}
+    monkeypatch.setattr(prefix_split_commands, "_lock_prefix_card", lambda *a: None)
+    monkeypatch.setattr(prefix_split_commands.split_storage, "matches_queue_entry", lambda _db, _card, entry: entry == 42)
+    monkeypatch.setattr(prefix_split_commands, "capture_study_calendar", lambda *a: SimpleNamespace(day=date(2026, 11, 12)))
+    monkeypatch.setattr(prefix_split_commands, "lock_queue_date_for_position", lambda *a: None)
+    monkeypatch.setattr(prefix_split_commands, "_shared_usage", lambda *a: {})
+    monkeypatch.setattr(prefix_split.storage, "card_row", lambda *a: card)
+    monkeypatch.setattr(prefix_split.storage, "prior_split", lambda *a: facts["prior"])
+    monkeypatch.setattr(prefix_split.storage, "has_active_issued_attempt", lambda *a: facts["active"])
+    writes = []
+    monkeypatch.setattr(prefix_split, "capture_daily_queue_order", lambda *a: writes.append("mutation"))
+    monkeypatch.setattr(command_dispatch, "dispatch_command", lambda _name, payload, **_kw:
+                        prefix_split_commands.accept_prefix_split(object(), payload))
+    path = "/api/cards/source/prefix-split"
+    held = api.post(path, json={"expected_revision": 7, "queue_entry_id": 42}, headers={"Idempotency-Key": "original"})
+    assert held.status_code == 409 and "issued attempt" in held.json()["detail"]
+    wrong_entry = api.post(path, json={"expected_revision": 7, "queue_entry_id": 43}, headers={"Idempotency-Key": "wrong"})
+    assert wrong_entry.status_code == 409 and "queue attempt" in wrong_entry.json()["detail"]
+    assert writes == []
+    facts["prior"] = {"source_revision": 7}
+    replay = api.post(path, json={"expected_revision": 7, "queue_entry_id": 42}, headers={"Idempotency-Key": "original"})
+    assert replay.status_code == 200 and replay.json()["idempotent"] is True
+    stale = api.post(path, json={"expected_revision": 8}, headers={"Idempotency-Key": "other"})
+    assert stale.status_code == 409 and "changed" in stale.json()["detail"]
+    assert writes == []

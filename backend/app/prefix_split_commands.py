@@ -10,6 +10,7 @@ from .services.study_calendar import capture_study_calendar
 
 from .command_gateway import register_command
 from tempo_storage.foreground_controls import prefix_splits as storage
+from tempo_storage.authored_repertoires.opening_mutations import prefix_splits as split_storage
 from app.contracts.transport.content import PrefixSplitRequest
 from tempo_storage.postgres import PostgresConnection
 from tempo_storage.queue_position_lock import (
@@ -39,6 +40,8 @@ def accept_prefix_split(
     card_id = str(payload["card_id"])
     request = PrefixSplitRequest.model_validate(payload["request"])
     _lock_prefix_card(database, card_id)
+    if request.queue_entry_id is not None and not split_storage.matches_queue_entry(database, card_id, request.queue_entry_id):
+        raise HTTPException(409, "The queue attempt no longer matches this card")
     calendar = capture_study_calendar(database)
     lock_queue_date_for_position(database, calendar.day.isoformat())
     try:

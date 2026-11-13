@@ -19,7 +19,8 @@ def insert_revision(database, values):
 
 def reassign_reviews(database, shortened_card_id, source_card_id):
     database.execute(
-        'UPDATE reviews SET card_id=%s WHERE card_id=%s',
+        '''UPDATE reviews SET card_id=%s WHERE card_id=%s
+           AND NOT EXISTS (SELECT 1 FROM review_attempt_receipts r WHERE r.review_id=reviews.id)''',
         (shortened_card_id, source_card_id),
     )
 
@@ -68,9 +69,33 @@ def prior_split(database, source_card_id):
 
 def source_queue_entries(database, source_card_id):
     return database.execute(
-        'SELECT id,queue_date,cycle FROM daily_queue WHERE card_id=%s',
+        '''SELECT q.id,q.queue_date,q.cycle FROM daily_queue q WHERE q.card_id=%s
+           AND NOT EXISTS (SELECT 1 FROM queue_attempt_origins o
+                           WHERE o.queue_entry_id=q.id AND o.card_id=q.card_id AND o.issued_as_head=1)
+           AND NOT EXISTS (SELECT 1 FROM opening_evidence_attempts a WHERE a.queue_entry_id=q.id)
+           AND NOT EXISTS (SELECT 1 FROM study_position_issued_plans p WHERE p.queue_entry_id=q.id)
+           AND NOT EXISTS (SELECT 1 FROM review_attempt_receipts r WHERE r.queue_entry_id=q.id)''',
         (source_card_id,),
     ).fetchall()
+
+
+def has_active_issued_attempt(database, source_card_id):
+    """Read under the caller's card lock, shared with queue issuance and review."""
+    return database.execute_native(
+        '''SELECT 1 FROM daily_queue q WHERE q.card_id=%s AND q.status='queued'
+           AND (EXISTS (SELECT 1 FROM queue_attempt_origins o WHERE o.queue_entry_id=q.id
+                        AND o.card_id=q.card_id AND o.issued_as_head=1)
+             OR EXISTS (SELECT 1 FROM opening_evidence_attempts a WHERE a.queue_entry_id=q.id)
+             OR EXISTS (SELECT 1 FROM study_position_issued_plans p WHERE p.queue_entry_id=q.id)) LIMIT 1''',
+        (source_card_id,),
+    ).fetchone() is not None
+
+
+def matches_queue_entry(database, source_card_id, queue_entry_id):
+    return database.execute_native(
+        'SELECT 1 FROM daily_queue WHERE id=%s AND card_id=%s',
+        (queue_entry_id, source_card_id),
+    ).fetchone() is not None
 
 
 def complete_queue_entry(database, queue_entry_id):

@@ -173,6 +173,8 @@ def apply_prefix_split(
     trained_color = _trained_color_for_card(database, source_card)
     split = _legal_split(source_card, trained_color)
     if prior:
+        if int(prior["source_revision"]) != expected_revision:
+            raise RuntimeError("The card changed. Refresh the queue and try again")
         return _response(
             source_card_id,
             int(prior["source_revision"]),
@@ -182,6 +184,10 @@ def apply_prefix_split(
         )
     if int(source_card["revision"]) != expected_revision:
         raise RuntimeError("The card changed. Refresh the queue and try again")
+    # The caller holds the source card lock used by issuance/review. Do not
+    # retarget or archive a card while any issued queue attempt can still save.
+    if storage.has_active_issued_attempt(database, source_card_id):
+        raise RuntimeError("An issued attempt is still active. Save it before shortening this card")
 
     now = calendar.observed_at.isoformat()
     today = calendar.day.isoformat()
