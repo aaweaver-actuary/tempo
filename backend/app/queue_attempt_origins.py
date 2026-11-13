@@ -1,12 +1,19 @@
 """Durable admission proof; daily_queue is a replaceable projection, not a receipt."""
 
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from tempo_storage.postgres import PostgresConnection
+    from app.contracts.transport.study import ReviewRequest
+
 from tempo_storage.lifecycle import queue_attempt_origins as storage
 from tempo_storage.lifecycle.queue_attempt_origins import (
     retain_recovered_completion,
 )
 
 
-def recover_queue_entry(database, card_id: str, request) -> dict:
+def recover_queue_entry(database: PostgresConnection, card_id: str, request: ReviewRequest) -> dict[str, object]:
     from app.contracts.review_conflicts import ReviewConflict
 
     if not request.attempt_id or not request.queue_entry_id:

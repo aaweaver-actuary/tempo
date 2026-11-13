@@ -260,3 +260,56 @@ def test_receipt_write_precedes_late_current_revision_and_remediation_settlement
         command, SimpleNamespace(reviewed_at=NOW), dict(queue_entry_id=4, review_id=7)
     )
     assert events == ["receipt", "revision", ("settle", 2)]
+
+
+def test_queue_attempt_projection_keeps_null_admission_and_default_revision():
+    from tempo_storage.postgres import TempoRow
+
+    raw = '{ "persisted": true, "unknown": [1, 2] }'
+    row = TempoRow(
+        ("id", "card_id", "queue_date", "cycle", "admission_kind", "attempt_failed", "status", "review_result_json"),
+        (4, "card", DAY.isoformat(), 1, None, 0, "complete", raw),
+    )
+    result = review.LearningReviewAdapter(None, None)._attempt(row)
+    assert result.id == 4 and result.card_id == "card" and result.queue_date == DAY.isoformat()
+    assert result.cycle == 1 and result.admission_kind is None and result.revision == 0
+    assert result.attempt_failed is False and result.status == "complete" and result.recovered is False
+    assert result.review_result_json == raw
+
+
+def test_queue_attempt_recovery_preserves_original_revision_and_receipt(monkeypatch):
+    from app import queue_attempt_origins
+
+    raw = '{"unknown":{"ordered":[3,2,1]},"persisted":true}'
+    original = dict(id=9, card_id="card", queue_date=DAY.isoformat(), cycle=2,
+                    admission_kind=None, revision=7, attempt_failed=1, status="complete",
+                    review_result_json=raw, _recovered=True)
+    monkeypatch.setattr(queue_attempt_origins, "recover_queue_entry", lambda *_: original)
+    result = review.LearningReviewAdapter(None, None).recover_attempt(SimpleNamespace(card_id="card"))
+    assert result.id == 9 and result.card_id == "card" and result.queue_date == DAY.isoformat()
+    assert result.cycle == 2 and result.admission_kind is None and result.revision == 7
+    assert result.attempt_failed is True and result.status == "complete" and result.recovered is True
+    assert result.review_result_json == raw
+
+
+def test_missing_queue_attempt_remains_none_and_invalid_row_fails_closed(monkeypatch):
+    monkeypatch.setattr(review.storage, "first_queued_attempt", lambda *_: None)
+    adapter = review.LearningReviewAdapter(None, None)
+    assert adapter.find_attempt(SimpleNamespace(card_id="card", queue_entry_id=None), SimpleNamespace(local_day=DAY)) is None
+    invalid = dict(id="not-an-id", card_id="card", queue_date=DAY.isoformat(), cycle=0,
+                   admission_kind=None, attempt_failed=0, status="queued", review_result_json=None)
+    with pytest.raises(ValueError, match="Invalid retained queue attempt facts"):
+        adapter._attempt(invalid)
+
+
+def test_queue_attempt_recovery_preserves_original_conflict(monkeypatch):
+    from app import queue_attempt_origins
+    from app.contracts.review_conflicts import ReviewConflict
+
+    original = ReviewConflict("queue_attempt_unprovable", "Original attempt is unavailable.")
+    def reject(*_args):
+        raise original
+    monkeypatch.setattr(queue_attempt_origins, "recover_queue_entry", reject)
+    with pytest.raises(ReviewConflict) as error:
+        review.LearningReviewAdapter(None, None).recover_attempt(SimpleNamespace(card_id="card"))
+    assert error.value is original

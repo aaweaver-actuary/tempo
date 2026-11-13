@@ -3,7 +3,7 @@
 from __future__ import annotations
 from datetime import date, datetime, timezone
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING
 
 from fastapi import HTTPException
@@ -14,7 +14,7 @@ from tempo_learning_review.models import (
 )
 from tempo_storage.learning_bridge import review as storage
 from tempo_storage.connections import read_connection
-from tempo_storage.postgres import PostgresConnection
+from tempo_storage.postgres import PostgresConnection, TempoRow
 from app.contracts.transport.study import ReviewRequest
 from app.contracts.review_conflicts import ReviewConflict
 from tempo_storage.queue_position_lock import (
@@ -182,22 +182,21 @@ class LearningReviewAdapter:
             owners,
         )
 
-    def _attempt(self, row):
-        if row is None:
-            return None
-        values = dict(row)
-        return learning.QueueAttempt(
-            values["id"],
-            values["card_id"],
-            values["queue_date"],
-            values["cycle"],
-            values["admission_kind"],
-            values.get("revision", 0),
-            bool(values["attempt_failed"]),
-            values["status"],
-            values["review_result_json"],
-            values.get("_recovered", False),
-        )
+    def _attempt(self, row: TempoRow | Mapping[str, object]) -> QueueAttempt:
+        # Validate driver facts before crossing into the typed Learning owner.
+        values: dict[str, object] = {key: row[key] for key in row.keys()}
+        entry_id, card_id, queue_date = values["id"], values["card_id"], values["queue_date"]
+        cycle, admission, revision = values["cycle"], values["admission_kind"], values.get("revision", 0)
+        status, result = values["status"], values["review_result_json"]
+        recovered = values.get("_recovered", False)
+        if (not isinstance(entry_id, int) or not isinstance(card_id, str) or
+            not isinstance(queue_date, str) or not isinstance(cycle, int) or
+            (admission is not None and not isinstance(admission, str)) or
+            not isinstance(revision, int) or not isinstance(status, str) or
+            (result is not None and not isinstance(result, str)) or not isinstance(recovered, bool)):
+            raise ValueError("Invalid retained queue attempt facts")
+        return learning.QueueAttempt(entry_id, card_id, queue_date, cycle, admission, revision,
+            bool(values["attempt_failed"]), status, result, recovered)
 
     def find_attempt(self, command: ReviewCommand, context: ReviewContext) -> QueueAttempt | None:
         if command.queue_entry_id:
@@ -217,10 +216,10 @@ class LearningReviewAdapter:
                 command.card_id,
                 self.current_revision(command.card_id),
             )
-        self._review_attempt = self._attempt(row)
+        self._review_attempt = self._attempt(row) if row is not None else None
         return self._review_attempt
 
-    def recover_attempt(self, command: ReviewCommand) -> QueueAttempt | None:
+    def recover_attempt(self, command: ReviewCommand) -> QueueAttempt:
         from ..queue_attempt_origins import recover_queue_entry
 
         self._review_attempt = self._attempt(

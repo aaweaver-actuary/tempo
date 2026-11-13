@@ -140,7 +140,7 @@ class QueueAttempt:
     card_id: str
     queue_date: str
     cycle: int
-    admission_kind: str
+    admission_kind: str | None
     revision: int
     attempt_failed: bool
     status: str
