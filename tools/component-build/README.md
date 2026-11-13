@@ -372,8 +372,16 @@ activity, durable task, queue wake and retired-kind policy remain external edges
 The adapter locks and resets a failed task and records activity and generation
 events in the caller transaction. The inherited legacy fixture remains unresolved.
 
-At this base revision, 213 of 291 tracked Python files in those trees remain
-outside the combined 78-file selections. The registry alone assigns owners;
+An eleventh selection maps the existing repertoire integrity repair command,
+scan and source services, and their SQL and certificate adapters. Task composition,
+retained mutations, graph rebuild, queue, durable tasks, Redis admission, transport
+and source validation remain existing external edges. SQL stages and publishes
+scan facts and card blocks and supports repair under caller-owned transactions.
+This source map does not establish runtime isolation or native qualification.
+The inherited legacy command fixture remains unresolved.
+
+At this base revision, 205 of 291 tracked Python files in those trees remain
+outside the combined 86-file selections. The registry alone assigns owners;
 independent bounded path predicates discover new tracked inputs within each
 selected scope. Removing an ownership entry therefore fails the checker. The T02 delivery owner should select and inspect the next
 coherent owners before expanding the map; exact-file selection does not discover

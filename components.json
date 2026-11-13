@@ -2,6 +2,235 @@
   "schemaVersion": 1,
   "components": [
     {
+      "id": "integrity-repair-command",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app",
+      "publicExports": [
+        "backend/app/integrity_repair_commands.py#resolve_integrity_issue"
+      ],
+      "dependencies": [
+        "backend-command-gateway",
+        "study-calendar-capture",
+        "integrity-scan-service",
+        "integrity-source-service",
+        "integrity-repair-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/integrity_repair_commands.py"
+      ],
+      "ownershipRole": "Register and apply guided integrity repair",
+      "dependencyNotes": [
+        "Registers integrity.issue.resolve at import; task composition imports it. Uses retained mutation and source validation, graph rebuild, calendar and caller transaction with graph/card lock ordering."
+      ],
+      "censusScope": "integrity"
+    },
+    {
+      "id": "integrity-scan-service",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/postgres_integrity.py#current_integrity_certificate",
+        "backend/app/services/postgres_integrity.py#request_integrity_scan_in_transaction",
+        "backend/app/services/postgres_integrity.py#execute_postgres_integrity_slice"
+      ],
+      "dependencies": [
+        "integrity-native-storage",
+        "integrity-certificate",
+        "integrity-source-service",
+        "durable-task-application"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/postgres_integrity.py"
+      ],
+      "ownershipRole": "Prepare and publish bounded integrity scan slices",
+      "dependencyNotes": [
+        "Uses background reader, PostgreSQL writer, durable-task slice fences and Redis background lease; graph and feedback callers consume readiness and certificate facts."
+      ],
+      "censusScope": "integrity"
+    },
+    {
+      "id": "integrity-source-service",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/repertoire_integrity.py#integrity_summary",
+        "backend/app/services/repertoire_integrity.py#list_integrity_issues",
+        "backend/app/services/repertoire_integrity.py#prepare_issue_resolution"
+      ],
+      "dependencies": [
+        "integrity-issue-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/repertoire_integrity.py"
+      ],
+      "ownershipRole": "Inspect source integrity and prepare repairs",
+      "dependencyNotes": [
+        "Uses python-chess, position identity and card helpers, read connection and SQL adapter; existing private scan helpers are consumed by scan and repair services."
+      ],
+      "censusScope": "integrity"
+    },
+    {
+      "id": "integrity-repair-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/authored_repertoires",
+      "publicExports": [
+        "database/tempo_storage/authored_repertoires/integrity_commands.py#insert_replacement_line",
+        "database/tempo_storage/authored_repertoires/integrity_commands.py#locked_issue_signature",
+        "database/tempo_storage/authored_repertoires/integrity_commands.py#locked_source_card"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/authored_repertoires/integrity_commands.py"
+      ],
+      "ownershipRole": "Read and mutate repair source rows",
+      "dependencyNotes": [
+        "Caller-transaction SQL and the existing branches repertoire lock support source checks and line replacement; application owns repair decisions."
+      ],
+      "censusScope": "integrity"
+    },
+    {
+      "id": "integrity-certificate",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/authored_repertoires/integrity",
+      "publicExports": [
+        "database/tempo_storage/authored_repertoires/integrity/certificate.py#integrity_certificate_from_row"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/authored_repertoires/integrity/certificate.py"
+      ],
+      "ownershipRole": "Validate published integrity certificate facts",
+      "dependencyNotes": [
+        "Converts supplied persisted facts and payload to a certificate only when publication, generation, scan and graph predicates agree."
+      ],
+      "censusScope": "integrity"
+    },
+    {
+      "id": "integrity-native-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/authored_repertoires/integrity",
+      "publicExports": [
+        "database/tempo_storage/authored_repertoires/integrity/native.py#certificate_facts",
+        "database/tempo_storage/authored_repertoires/integrity/native.py#stage_source",
+        "database/tempo_storage/authored_repertoires/integrity/native.py#publish_issues",
+        "database/tempo_storage/authored_repertoires/integrity/native.py#complete_scan_state"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/authored_repertoires/integrity/native.py",
+        "database/tempo_storage/authored_repertoires/integrity/__init__.py"
+      ],
+      "ownershipRole": "Store bounded scan and publication facts",
+      "dependencyNotes": [
+        "Native SQL reads and stages scan sources and positions, publishes issues and card blocks, and updates scan state on caller-owned database operations."
+      ],
+      "censusScope": "integrity"
+    },
+    {
+      "id": "integrity-issue-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/authored_repertoires/integrity",
+      "publicExports": [
+        "database/tempo_storage/authored_repertoires/integrity/storage.py#summary_state",
+        "database/tempo_storage/authored_repertoires/integrity/storage.py#issue_details",
+        "database/tempo_storage/authored_repertoires/integrity/storage.py#active_card_authority",
+        "database/tempo_storage/authored_repertoires/integrity/storage.py#archive_unsupported_card"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/authored_repertoires/integrity/storage.py"
+      ],
+      "ownershipRole": "Read integrity issues and card authority",
+      "dependencyNotes": [
+        "SQL reads integrity issues and source/card membership facts and performs existing card and membership mutations under caller-owned transaction."
+      ],
+      "censusScope": "integrity"
+    },
+    {
       "id": "activity-control-command",
       "type": "integration",
       "maintainer": "Tempo",
