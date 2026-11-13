@@ -1158,26 +1158,6 @@ def reconcile_review(
     )
 
 
-def _reconcile_review(identifier: str, request: ReviewRequest, *, database=None):
-    # A separate transport operation can recover a historical failed command.
-    # The logical attempt receipt still owns exactly-once scheduling and replay.
-    try:
-        return _apply_review(identifier, request, database=database)
-    except ReviewConflict as error:
-        return {"persisted": False, "conflict": error.information()}
-
-
-def _apply_review(identifier: str, request: ReviewRequest, *, database=None):
-    """Compatibility entry point; the installed Learning application owns behavior."""
-    from .services.learning_review_adapter import apply_legacy_review
-
-    return apply_legacy_review(
-        identifier,
-        request,
-        database=database,
-        policy_provider=get_settings,
-    )
-
 
 @app.post("/api/repertoire/paste/preview")
 def preview_analysis_paste(request: AnalysisPastePreviewRequest):

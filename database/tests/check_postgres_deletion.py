@@ -348,11 +348,12 @@ def main_check():
                 assert database.execute("SELECT repertoire_id FROM cards WHERE id=?", (f"{repertoire_id}-shared",)).fetchone()[0] == other
                 assert database.execute("SELECT 1 FROM deleted_cards WHERE card_id=?", (f"{repertoire_id}-shared",)).fetchone() is None
                 try:
-                    main._apply_review(f"{repertoire_id}-new", ReviewRequest(outcome="correct"), database=database)
+                    review_commands.submit_review(database, {"card_id": f"{repertoire_id}-new", "review": ReviewRequest(outcome="correct").durable_payload()})
                 except ReviewConflict as error:
                     assert error.code == "card_deleted"
                 else:
                     raise AssertionError("Delayed repertoire review graded deleted content")
+                assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id=?", (f"{repertoire_id}-new",)).fetchone()[0] == 0
             assert tuple(database.execute("SELECT repertoire_id,interval_days,due_date FROM cards WHERE id=?", (f"{keep}-learned",)).fetchone()) == (RETAINED_REPERTOIRE_ID, 7, tomorrow)
             assert database.execute("SELECT archived FROM cards WHERE id=?", (f"{keep}-archived",)).fetchone()[0] == 1
             assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id=?", (f"{keep}-learned",)).fetchone()[0] == 1
@@ -443,11 +444,12 @@ def main_check():
             assert database.execute("SELECT 1 FROM cards WHERE id=?", (steps[0].card_id,)).fetchone() is None
             assert database.execute("SELECT parent_card_id FROM opening_graph_steps WHERE card_id=?", (steps[1].card_id,)).fetchone()[0] is None
             try:
-                main._apply_review(steps[0].card_id, ReviewRequest(outcome="correct"), database=database)
+                review_commands.submit_review(database, {"card_id": steps[0].card_id, "review": ReviewRequest(outcome="correct").durable_payload()})
             except ReviewConflict as error:
                 assert error.code == "card_deleted"
             else:
                 raise AssertionError("Delayed review graded deleted content")
+            assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id=?", (steps[0].card_id,)).fetchone()[0] == 0
         assert command("cards.delete", {"card_id": f"{keep}-shared", "expected_revision": 1})["deleted"]
         print("PASS test_permanent_card_delete_global_history_rebuild_restart_descendant_usability_and_delayed_review")
         from app.pgn_import_commands import prepare_import_payload
