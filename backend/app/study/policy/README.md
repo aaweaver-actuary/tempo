@@ -20,6 +20,18 @@ Scheduling mathematics reuse [`services/scheduler.py`](../../services/scheduler.
 opening identity helpers reuse [`chess/opening_segments.py`](../../chess/opening_segments.py).
 The retained backend facades preserve their current caller interfaces.
 
+The current scheduler boundary intentionally accepts and returns the complete
+FSRS 6.3.2 Card JSON held with Study state. This is a supported vendor-shaped
+contract, not a promise that another scheduler can consume the same bytes.
+The pure scheduling package validates that state and requires an aware instant
+and explicit Study day; callers own allocation and persistence of identities.
+Its `initial_position_state` operation constructs fresh position state from an
+externally allocated identity and aware due instant. The legacy backend facade
+continues to supply its existing environmental defaults when callers omit them.
+Any future replacement or state-format change needs scheduler-owned versioning
+and a compatibility or migration plan before retained histories can move. See
+the [scheduling package contract](../../../../packages/scheduling/README.md).
+
 ```mermaid
 flowchart TD
   Commands["Study review commands"] --> Review["Review application"]

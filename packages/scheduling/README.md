@@ -4,6 +4,22 @@
 from `tempo_scheduling`. FSRS stays pinned to 6.3.2; its parameters, rounding,
 growth caps, reinforcement, tracks, and result fields are unchanged.
 
+The supported scheduling contract intentionally includes complete serialized
+FSRS 6.3.2 `Card` JSON. It is vendor-shaped state, not an algorithm-independent
+memory format: callers retain and return the full value, and this package owns
+its validation and scheduling semantics. A future FSRS upgrade, algorithm
+replacement or state-format change requires scheduler-owned versioning and a
+compatibility or migration plan for retained cards; a type alias or opaque
+wrapper alone would not make existing state portable.
+
+The pure API does not allocate identities or consult a clock or timezone.
+Callers supply the allocated card identity, aware instant and explicit Study day
+as applicable. `initial_position_state` already constructs fresh position state
+from those facts, so callers need not construct a new position Card themselves.
+The legacy backend adapter described below is the separate owner of its existing
+environmental defaults; this decision does not move those defaults into the
+pure package.
+
 `schedule_review(outcome, *, reviewed_at, review_day, fsrs_card_json, ...)` requires
 an aware review instant, a separate calendar date, and complete serialized FSRS
 state. UTC-normalized instants drive FSRS; the supplied day drives due dates.
@@ -25,7 +41,9 @@ and `uv run --locked --no-editable python -m pytest tests` here.
 remains unchanged. The baseline rejected non-UTC offsets; 0.2.0 accepts aware
 offsets by preserving their instant in UTC and leaving `review_day` independent.
 Fresh installed-process tests prohibit environmental APIs without replacing FSRS
-constructors, decoding, or scheduling mathematics.
+constructors, decoding, or scheduling mathematics. That qualification uses the
+installed package in fresh child processes; a checkout import or an unexecuted
+command is not equivalent evidence.
 
 Position-owned cohorts use the additive public `clone_state` and
 `schedule_position_review` APIs, with `PositionSchedule` and `PositionGrade`.
