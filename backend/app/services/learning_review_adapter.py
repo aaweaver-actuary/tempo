@@ -34,6 +34,7 @@ from .background_runtime import training_timing_stage
 
 if TYPE_CHECKING:
     from app.contracts.transport.settings import Settings
+    from app.contracts.opening_evidence import OpeningEvidenceCheckpoint
     from app.study.position_checkpoint import PositionCheckpointFence, PositionCheckpointPreparation, PositionCheckpointReceipt
 
 
@@ -674,23 +675,38 @@ class LearningReviewAdapter:
                 409, effects.reason, code="opening_evidence_conflict"
             )
 
-    def complete_evidence(self, command: ReviewCommand, result: ReviewResult) -> None:
+    def _original_completion(self, command: ReviewCommand, completion: EvidenceCompletion) -> OpeningEvidenceCheckpoint:
+        request = self.request.opening_evidence_completion
+        if (completion != command.completion or request is None or request.terminal is None
+            or request.terminal.state != "complete" or not completion.complete
+            or request.attempt_id != completion.attempt_id or command.attempt_id != completion.attempt_id
+            or request.manifest.card_id != completion.card_id or command.card_id != completion.card_id
+            or request.manifest.card_revision != completion.card_revision
+            or request.queue_entry_id != completion.queue_entry_id or command.queue_entry_id != completion.queue_entry_id
+            or completion.queue_entry_id is None):
+            raise learning.ReviewFailure(409, "Completion must identify the same aggregate review attempt and queue entry", code="opening_evidence_conflict")
+        return request
+
+    def complete_evidence(self, command: ReviewCommand, result: ReviewResult, completion: EvidenceCompletion) -> None:
+        request = self._original_completion(command, completion)
         payload = result.as_dict()
         from app.study.position_checkpoint import complete_review_evidence
 
         complete_review_evidence(
-            self.database, self.request.opening_evidence_completion, payload
+            self.database, request, payload
         )
 
-    def inherit_evidence_scope(self, command: ReviewCommand, result: ReviewResult) -> None:
-        payload = result.current_mapping()
-        completion = self.request.opening_evidence_completion
+    def inherit_evidence_scope(self, command: ReviewCommand, result: ReviewResult, completion: EvidenceCompletion) -> None:
+        request = self._original_completion(command, completion)
+        _, current = result.current_receipt()
+        if current.idempotent is not False or current.requeue_entry_id is None:
+            raise learning.ReviewFailure(409, "Requeued review evidence is unavailable", code="opening_evidence_conflict")
         storage.inherit_evidence_scope(
             self.database,
-            payload["requeue_entry_id"],
-            completion.manifest.presentation_snapshot_id,
-            completion.manifest.repertoire_id,
-            completion.manifest.trained_color,
+            current.requeue_entry_id,
+            request.manifest.presentation_snapshot_id,
+            request.manifest.repertoire_id,
+            request.manifest.trained_color,
         )
 
     def continuation_facts(self, candidate: learning.PreparedNext) -> learning.ContinuationFacts | None:

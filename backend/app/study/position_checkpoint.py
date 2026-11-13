@@ -416,8 +416,11 @@ def _persist_checkpoint(
 
 
 def complete_review_evidence(
-    database, completion: OpeningEvidenceCheckpoint, result: dict
+    database, completion: OpeningEvidenceCheckpoint, result: object
 ) -> None:
+    if not isinstance(result, dict):
+        getattr(result, "get")  # Preserve the existing non-object failure.
+        raise EvidenceConflict("Aggregate review result is not an object")
     if not result.get("persisted"):
         raise EvidenceConflict("Aggregate review did not confirm persistence")
     storage.complete_attempt(

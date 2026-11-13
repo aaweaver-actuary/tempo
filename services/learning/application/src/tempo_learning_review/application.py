@@ -209,14 +209,14 @@ def submit_review(store: ReviewSubmissionStore, command: ReviewCommand, context_
         raise ReviewFailure(409, "Position completion requires opening evidence", code="opening_evidence_conflict")
     result = apply_review(store, command, context, position=position)
     if completion:
-        store.complete_evidence(command, result)
+        store.complete_evidence(command, result, completion)
         if position and not prior and result.current is not None and result.current.idempotent is False:
             store.apply_position_effects(command, context, result, completion)
             store.finish_position_receipt(command, context, result)
             _, request_json = _request_binding(command, context)
             store.bind_receipt(command, request_json)
         if not prior and result.current is not None and result.current.idempotent is False and result.current.requeue_entry_id is not None:
-            store.inherit_evidence_scope(command, result)
+            store.inherit_evidence_scope(command, result, completion)
     if command.attempt_id and not prior and result.current is not None and result.current.idempotent is False and continuation_locked:
         candidate = command.prepared_next
         if candidate and candidate.local_date == context.local_day.isoformat():

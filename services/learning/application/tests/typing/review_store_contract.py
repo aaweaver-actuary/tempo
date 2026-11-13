@@ -40,8 +40,8 @@ def independent_binding() -> ReviewScheduleStore:
 class IndependentCompletion:
     def apply_position_effects(self, command: ReviewCommand, context: ReviewContext, result: ReviewResult, completion: EvidenceCompletion) -> None: pass
     def finish_position_receipt(self, command: ReviewCommand, context: ReviewContext, result: ReviewResult) -> None: pass
-    def complete_evidence(self, command: ReviewCommand, result: ReviewResult) -> None: pass
-    def inherit_evidence_scope(self, command: ReviewCommand, result: ReviewResult) -> None: pass
+    def complete_evidence(self, command: ReviewCommand, result: ReviewResult, completion: EvidenceCompletion) -> None: pass
+    def inherit_evidence_scope(self, command: ReviewCommand, result: ReviewResult, completion: EvidenceCompletion) -> None: pass
     def continuation_facts(self, candidate: PreparedNext) -> ContinuationFacts | None: return None
     def issue_head(self, candidate: PreparedNext) -> bool: return False
     def save_continuation(self, attempt_id: str, result: ReviewResult) -> None: pass

@@ -645,6 +645,71 @@ def test_evidence_migration_captures_valid_scope_color_without_overwriting_conte
     assert "DO UPDATE" not in binding
 
 
+def _final_evidence_adapter():
+    from app.contracts.transport.study import ReviewRequest
+    from app.services import learning_review_adapter
+
+    manifest = json.loads((Path(__file__).resolve().parents[2] / "tests/fixtures/opening-evidence-manifest.json").read_text())
+    request = ReviewRequest.model_validate({"outcome": "correct", "attempt_id": "original", "queue_entry_id": 101,
+        "opening_evidence_completion": {"attempt_id": "original", "manifest": manifest,
+        "origin_queue_entry_id": 101, "queue_entry_id": 101, "started_at": "2026-09-30T12:00:00Z", "study_timezone": "UTC",
+        "terminal": {"state": "complete", "final_sequence": 0, "ended_at": "2026-09-30T12:01:00Z"}}})
+    command = learning_review_adapter.command_from_request(manifest["card_id"], request)
+    return learning_review_adapter.LearningReviewAdapter(object(), request), command, manifest
+
+
+def test_final_evidence_handoff_preserves_original_mapping_and_zero_requeue(monkeypatch):
+    from app.study import position_checkpoint
+    from tempo_learning_review import ReviewResult
+    from app.services import learning_review_adapter
+
+    adapter, command, manifest = _final_evidence_adapter()
+    completion = command.completion
+    original = '{ "persisted": true, "review_id": 1, "extra": [3, 2] }'
+    retained = ReviewResult.from_original(original)
+    writes = []
+    monkeypatch.setattr(position_checkpoint.storage, "complete_attempt", lambda *args: writes.append(("complete", args)))
+    monkeypatch.setattr(learning_review_adapter.storage, "inherit_evidence_scope", lambda *args: writes.append(("inherit", args)))
+    adapter.complete_evidence(command, retained, completion)
+    current = ReviewResult.from_dict({"persisted": True, "queue_entry_id": 101, "review_id": 1,
+                                      "idempotent": False, "requeue_entry_id": 0})
+    adapter.inherit_evidence_scope(command, current, completion)
+    assert writes == [("complete", (adapter.database, ("2026-09-30T12:01:00Z", 1,
+        json.dumps(json.loads(original), sort_keys=True, separators=(",", ":")), "original"))),
+        ("inherit", (adapter.database, 0, manifest["presentation_snapshot_id"], manifest["repertoire_id"], manifest["trained_color"]))]
+    assert retained.payload_json == original
+
+
+@pytest.mark.parametrize("raw,error", [("{", json.JSONDecodeError), ("[1, 2]", AttributeError), ("null", AttributeError)])
+def test_final_evidence_handoff_keeps_opaque_invalid_receipt_failure(monkeypatch, raw, error):
+    from app.study import position_checkpoint
+    from tempo_learning_review import ReviewResult
+
+    adapter, command, _ = _final_evidence_adapter()
+    monkeypatch.setattr(position_checkpoint.storage, "complete_attempt", lambda *_: pytest.fail("unexpected evidence write"))
+    original = ReviewResult.from_original(raw)
+    with pytest.raises(error):
+        adapter.complete_evidence(command, original, command.completion)
+    assert original.payload_json == raw
+
+
+def test_final_evidence_handoff_rejects_divergent_receipt_and_completion(monkeypatch):
+    from dataclasses import replace
+    from app.study import position_checkpoint
+    from app.services import learning_review_adapter
+    from tempo_learning_review import ReviewFailure, ReviewResult
+
+    adapter, command, _ = _final_evidence_adapter()
+    monkeypatch.setattr(position_checkpoint.storage, "complete_attempt", lambda *_: pytest.fail("unexpected completion write"))
+    monkeypatch.setattr(learning_review_adapter.storage, "inherit_evidence_scope", lambda *_: pytest.fail("unexpected scope write"))
+    result = ReviewResult.from_dict({"persisted": True, "queue_entry_id": 101, "review_id": 1,
+                                     "idempotent": False, "requeue_entry_id": 2})
+    with pytest.raises(ReviewFailure):
+        adapter.complete_evidence(command, result, replace(command.completion, attempt_id="foreign"))
+    with pytest.raises(ValueError, match="receipt facts"):
+        adapter.inherit_evidence_scope(command, replace(result, current=replace(result.current, requeue_entry_id=3)), command.completion)
+
+
 @pytest.mark.parametrize(
     ("has_receipt", "idempotent", "requeue_id", "expected_corrections"),
     [
