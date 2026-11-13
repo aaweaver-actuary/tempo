@@ -18,6 +18,7 @@ NODEID = 'database/tests/position_study/test_position_grade_effects.py::test_nat
 NODEIDS = {
     'position-queue-admission': 'backend/tests/test_position_queue_admission.py::test_native_refresh_admits_due_carrier_and_reuses_pending',
     'position-grade-effects': NODEID,
+    'position-review-atomicity': 'database/tests/position_study/test_position_review_transport_atomicity.py::test_p05_real_issued_review_transport_effect_and_checkpoint_rollback',
     'position-introductions': 'backend/tests/test_position_introductions.py::test_native_authorized_introduction_writes_fresh_state_only_after_admission',
 }
 

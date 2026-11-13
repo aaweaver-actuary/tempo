@@ -258,3 +258,19 @@ def test_queue_recovery_retained_review_selection_is_exact(capsys):
     assert events == ["test_postgres_retained_review_reconciliation_preserves_original_attempt"]
     receipt = json.loads(capsys.readouterr().out.splitlines()[-1])
     assert receipt["scope"] == "review-recovery-only" and receipt["executed_count"] == 1
+
+
+def test_p05_position_bridge_selects_one_exact_issued_review_case():
+    import importlib.util
+    from pathlib import Path
+    import pytest
+
+    path = Path(__file__).resolve().parents[2] / 'database/tests/position-native-pytest.py'
+    spec = importlib.util.spec_from_file_location('p05_position_bridge', path)
+    bridge = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bridge)
+    assert bridge.selected_nodeid({'TEMPO_NATIVE_POSITION_CHECK': 'position-review-atomicity'}) == (
+        'database/tests/position_study/test_position_review_transport_atomicity.py::'
+        'test_p05_real_issued_review_transport_effect_and_checkpoint_rollback')
+    with pytest.raises(RuntimeError, match='Unknown native position check'):
+        bridge.selected_nodeid({'TEMPO_NATIVE_POSITION_CHECK': 'other'})
