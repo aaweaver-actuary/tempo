@@ -1867,6 +1867,360 @@
         "productionAdoption": false
       },
       "testInventory": "REGRESSIONS.md"
+    },
+    {
+      "id": "backend-contracts",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/contracts",
+      "publicExports": [
+        "backend/app/contracts/command_identity.py#request_digest",
+        "backend/app/contracts/queue_issuance.py#issuance_operation_id",
+        "backend/app/contracts/transport/study.py#ReviewRequest"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/contracts/__init__.py",
+        "backend/app/contracts/analysis_paste_identity.py",
+        "backend/app/contracts/command_identity.py",
+        "backend/app/contracts/command_registry.py",
+        "backend/app/contracts/discovery_command_identity.py",
+        "backend/app/contracts/opening_evidence.py",
+        "backend/app/contracts/opening_graph.py",
+        "backend/app/contracts/product_v02/__init__.py",
+        "backend/app/contracts/product_v02/learning.py",
+        "backend/app/contracts/product_v02/repertoire.py",
+        "backend/app/contracts/queue_issuance.py",
+        "backend/app/contracts/review_command_identity.py",
+        "backend/app/contracts/review_conflicts.py",
+        "backend/app/contracts/runtime_timing.py",
+        "backend/app/contracts/studies.py",
+        "backend/app/contracts/study_exercises.py",
+        "backend/app/contracts/tactic_capture.py",
+        "backend/app/contracts/transport/__init__.py",
+        "backend/app/contracts/transport/authored_import.py",
+        "backend/app/contracts/transport/authored_integrity.py",
+        "backend/app/contracts/transport/authored_lines.py",
+        "backend/app/contracts/transport/authored_repertoire.py",
+        "backend/app/contracts/transport/content.py",
+        "backend/app/contracts/transport/settings.py",
+        "backend/app/contracts/transport/study.py",
+        "backend/app/contracts/transport/tactics.py"
+      ],
+      "ownershipRole": "Named transport and command-identity contracts; Pydantic and HTTP-aware conflicts remain explicit",
+      "dependencyNotes": [
+        "Framework and other contract dependencies remain as source imports; this is not a framework-free package."
+      ]
+    },
+    {
+      "id": "study-next-core",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/study",
+      "publicExports": [
+        "backend/app/study/next_exercise.py#next_exercise",
+        "backend/app/study/next_exercise.py#issue_returned_head",
+        "backend/app/study/next_exercise.py#QueueReadSnapshot",
+        "backend/app/study/queue_serving.py#queue_payload"
+      ],
+      "dependencies": [
+        "backend-contracts"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": "Study",
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study/next_exercise.py",
+        "backend/app/study/queue_serving.py"
+      ],
+      "ownershipRole": "Study queue selection and flat response shaping via caller-supplied capabilities; mutates detached cards",
+      "dependencyNotes": [
+        "The current next-exercise callback boundary remains untyped in main; B12/B13 are not represented as released."
+      ]
+    },
+    {
+      "id": "study-queue-composition",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/product_composition",
+      "publicExports": [
+        "backend/app/product_composition/study.py#queue_next_exercise",
+        "backend/app/product_composition/study.py#read_queue_snapshot"
+      ],
+      "dependencies": [
+        "study-next-core",
+        "study-queue-preparation",
+        "study-position-issuance"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": "Study",
+        "databases": [
+          "PostgreSQL (reader)"
+        ],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/product_composition/study.py"
+      ],
+      "ownershipRole": "HTTP response bridge that opens read scopes and dispatches the existing queue issue command",
+      "dependencyNotes": [
+        "Additional queue projection, dispatcher and manifest capabilities remain outside this finite map."
+      ]
+    },
+    {
+      "id": "study-queue-preparation",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/services",
+      "publicExports": [
+        "backend/app/services/queue_next_card.py#PreparedQueueHead",
+        "backend/app/services/queue_next_card.py#prepare_queue_head"
+      ],
+      "dependencies": [
+        "study-next-storage",
+        "study-position-issuance"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": "Study",
+        "databases": [
+          "PostgreSQL (reader)"
+        ],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/services/queue_next_card.py"
+      ],
+      "ownershipRole": "Bounded queue-head preparation opens a reader and maintains a small source cache; writer publication remains elsewhere",
+      "dependencyNotes": [
+        "Position source, due-reader, planner and queue admission collaborators remain outside this finite map."
+      ]
+    },
+    {
+      "id": "study-next-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/study",
+      "publicExports": [
+        "database/tempo_storage/study/next_exercise_reads.py#original_attempt_ids",
+        "database/tempo_storage/study/next_exercise_reads.py#admission_origin",
+        "database/tempo_storage/study/next_exercise_reads.py#position_owner",
+        "database/tempo_storage/study/next_exercise_reads.py#prior_attempt_ids"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": "Study",
+        "databases": [
+          "PostgreSQL (borrowed read)"
+        ],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/study/next_exercise_reads.py"
+      ],
+      "ownershipRole": "Detached next-exercise facts read through the caller-provided PostgreSQL connection; no commit or issue",
+      "dependencyNotes": [
+        "Caller owns connection lifetime and transaction; physical query implementation belongs here."
+      ]
+    },
+    {
+      "id": "study-position-issuance",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/study/position_learning",
+      "publicExports": [
+        "backend/app/study/position_learning/issuance.py#replay_exact_attempt",
+        "backend/app/study/position_learning/issuance.py#issue_in_borrowed_transaction",
+        "backend/app/study/position_learning/issuance.py#read_clean_presentation_proof"
+      ],
+      "dependencies": [
+        "study-position-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": "Study",
+        "databases": [
+          "PostgreSQL (borrowed writer)"
+        ],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/study/position_learning/issuance.py"
+      ],
+      "ownershipRole": "Replays and issues immutable position plans using the caller-owned writer and existing fences",
+      "dependencyNotes": [
+        "Owner epoch, due-candidate and plan policy collaborators remain outside this finite map; no transaction or commit is opened here."
+      ]
+    },
+    {
+      "id": "study-position-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage/study",
+      "publicExports": [
+        "database/tempo_storage/study/position_issued_plans.py#issued_plan",
+        "database/tempo_storage/study/position_issued_plans.py#insert_plan",
+        "database/tempo_storage/study/position_issued_plans.py#locked_queue"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": "Study",
+        "databases": [
+          "PostgreSQL (borrowed read/write)"
+        ],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/study/position_issued_plans.py"
+      ],
+      "ownershipRole": "Native SQL for position plan identity, writer fences, receipts and first-response reads on the borrowed connection",
+      "dependencyNotes": [
+        "SQL effects and locks are controlled by the caller transaction; this module is not a connection owner."
+      ]
+    },
+    {
+      "id": "game-review-policy",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/games",
+      "publicExports": [
+        "backend/app/games/comparison.py#first_departure",
+        "backend/app/games/comparison.py#position_identity"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": null,
+        "databases": [],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/games/__init__.py",
+        "backend/app/games/comparison.py"
+      ],
+      "ownershipRole": "Pure minimal first-departure comparison over supplied game and authored line facts",
+      "dependencyNotes": [
+        "Uses chess and the retained chess-core public API; does not call providers or write Study."
+      ]
+    },
+    {
+      "id": "game-review-http",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "backend/app/games",
+      "publicExports": [
+        "backend/app/games/review.py#detail",
+        "backend/app/games/review.py#recent_games",
+        "backend/app/games/review.py#game_detail"
+      ],
+      "dependencies": [
+        "game-review-policy",
+        "game-review-storage"
+      ],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": "Game Review",
+        "databases": [
+          "PostgreSQL (reader)"
+        ],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "backend/app/games/review.py"
+      ],
+      "ownershipRole": "Minimal read-only Game Review router and legal replay; opens a reader but creates no Study effect",
+      "dependencyNotes": [
+        "The FastAPI router and psycopg reader are explicit side effects; no provider synchronization is implied."
+      ]
+    },
+    {
+      "id": "game-review-storage",
+      "type": "integration",
+      "maintainer": "Tempo",
+      "status": "mapped",
+      "root": "database/tempo_storage",
+      "publicExports": [
+        "database/tempo_storage/game_review.py#recent_games",
+        "database/tempo_storage/game_review.py#game",
+        "database/tempo_storage/game_review.py#authored_lines"
+      ],
+      "dependencies": [],
+      "buildInputs": [],
+      "buildCommand": null,
+      "artifact": null,
+      "tests": [],
+      "toolchain": {},
+      "dataOwnership": {
+        "authority": "Game Review",
+        "databases": [
+          "PostgreSQL (borrowed read)"
+        ],
+        "migrations": []
+      },
+      "ownedFiles": [
+        "database/tempo_storage/game_review.py"
+      ],
+      "ownershipRole": "Native saved-game and authored-line reads on a borrowed connection",
+      "dependencyNotes": [
+        "Reads imported_games and repertoire_lines; no insert or queue mutation."
+      ]
     }
   ],
   "suites": [
