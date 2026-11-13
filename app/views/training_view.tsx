@@ -595,7 +595,7 @@ function TrainingContent(props: TrainingViewProps) {
       card={props.card} boardTheme={props.boardTheme} pieceSet={props.pieceSet}
       offline={props.offlineQueue ?? false}
       useSharedBoard={props.useSharedBoard ?? false} blocked={mutationBlocked}
-      onAdvance={async () => { props.refreshDatabaseQueue(); }} /></div></>;
+      onAdvance={async () => { props.refreshDatabaseQueue(true); }} /></div></>;
   }
   if (props.cardsLeft > 0 && (props.card.kind === "defense" || props.card.kind === "endgame")) {
     return <RetiredCardHold {...props} />;

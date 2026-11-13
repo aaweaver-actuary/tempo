@@ -32,6 +32,7 @@ type AttemptReply = {
   assessment: { outcome: string; feedback: string; omitted?: string[]; extra?: string[] };
   pending_self_assessment?: boolean;
   rating?: string;
+  persisted?: boolean;
 };
 
 function responseError(status: number, detail?: string) {
@@ -67,11 +68,12 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
   const practiceBoundaryRef = useRef<number | undefined>(undefined);
   const [practiceRestoration, setPracticeRestoration] = useState(0);
   const [uncertain, setUncertain] = useState(false);
+  const [offlineRecorded, setOfflineRecorded] = useState(false);
   const resetPracticeProjection = useCallback((boundary: number) => {
     if (practiceBoundaryRef.current === boundary) return;
     practiceBoundaryRef.current = boundary; generationRef.current++;
     pendingRef.current = null; offlineAnswerRef.current = null;
-    setReply(null); setFeedback(null); setSaveError(""); setSelectedSquares([]); setMoveSequence([]); setChoiceIds([]);
+    setReply(null); setOfflineRecorded(false); setFeedback(null); setSaveError(""); setSelectedSquares([]); setMoveSequence([]); setChoiceIds([]);
     setCoordinateInput(""); setAnswerText(""); setHintSeen(false); setUncertain(false); setBusy(true);
     setPracticeRestoration(value => value + 1);
   }, []);
@@ -84,7 +86,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
       if (generation !== generationRef.current) return;
       setExercise(null); setLoadError(""); setSaveError(""); setSelectedSquares([]);
       setMoveSequence([]); setCoordinateInput(""); setSelectedPromotion("q"); setChoiceIds([]); setReachable(true);
-      setAnswerText(""); setHintSeen(false); setReply(null); setFeedback(null); setUncertain(false);
+      setAnswerText(""); setHintSeen(false); setReply(null); setOfflineRecorded(false); setFeedback(null); setUncertain(false);
     });
     pendingRef.current = null;
     practiceBoundaryRef.current = undefined;
@@ -140,6 +142,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
 
 
   const answerLocked = Boolean(reply) || uncertain;
+  const canAdvance = Boolean(reply && !reply.pending_self_assessment && (reply.persisted === true || offlineRecorded));
   const currentFen = useMemo(() => {
     if (!exercise || exercise.type !== "move_line") return exercise?.fen ?? card?.startingFen ?? "8/8/8/8/8/8/8/8 w - - 0 1";
     try {
@@ -182,7 +185,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
   const keyboard = { ...boardHistory.keyboard,
     reset: () => { boardHistory.keyboard.reset(); setOrientation("white"); },
     hint: !reply && exercise?.hint && !boardHistory.viewingHistory && !blocked ? () => setHintSeen(true) : undefined,
-    nextItem: reply && !reply.pending_self_assessment && onAdvance && !busy && !blocked ? () => { void onAdvance(); } : undefined,
+    nextItem: canAdvance && onAdvance && !busy && !blocked ? () => { void onAdvance(); } : undefined,
   };
   useBoardPublisher("train", useSharedBoard && exercise?.id === exerciseId ? {
     keyboard,
@@ -292,6 +295,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
         }
         await recordOfflineStudyAttempt(Number(card.queueEntryId), studyId, answer, undefined, hintSeen);
         if (generation === generationRef.current) {
+          setOfflineRecorded(true);
           setReply({ attempt_id: crypto.randomUUID(), assessment, rating: assessment.outcome === "correct" ? "correct" : "again" });
           setFeedback(card.studySnapshot.specification as unknown as Record<string, unknown>);
         }
@@ -336,7 +340,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
     if (offline && card?.studySnapshot && card.queueEntryId && offlineAnswerRef.current) {
       try {
         await recordOfflineStudyAttempt(Number(card.queueEntryId), studyId, offlineAnswerRef.current, rating, hintSeen);
-        if (generation === generationRef.current) setReply({ ...reply, pending_self_assessment: false, rating });
+        if (generation === generationRef.current) { setOfflineRecorded(true); setReply({ ...reply, pending_self_assessment: false, rating }); }
         offlineAnswerRef.current = null;
       } catch (error) { if (generation === generationRef.current) setSaveError(error instanceof Error ? error.message : "Could not save self-assessment on phone."); }
       return;
@@ -412,7 +416,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
         {Boolean(feedback.further_analysis) && <p>{String(feedback.further_analysis)}</p>}</div>}
       {reply.pending_self_assessment && <div><Button disabled={busy} onClick={() => void selfAssess("correct")}>Correct (self-assessed)</Button>
         <Button disabled={busy} onClick={() => void selfAssess("again")}>Again (self-assessed)</Button></div>}
-      {!reply.pending_self_assessment && onAdvance && <Button onClick={() => void onAdvance()}>Continue</Button>}
+      {canAdvance && onAdvance && <Button onClick={() => void onAdvance()}>Continue</Button>}
       {!reply.pending_self_assessment && !card && !onAdvance && <Button disabled={busy} onClick={() => {
         const generation = generationRef.current;
         setBusy(true);

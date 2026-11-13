@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest";
 import { Chess } from "chess.js";
 import StudyExerciseRunner from "../../app/views/study_exercise_runner";
+import TrainingView from "../../app/views/training_view";
 import { useBoardShellStore } from "../../app/state/board-shell-store";
 import { PersistentBoardShell } from "../../app/components/board/persistent-board-shell";
 import { asCardId, asFenString, asQueueEntryId, type PracticeCard } from "../../app/types";
@@ -173,8 +174,9 @@ it("Study attempt and self-assessment retry pending Celery operations with the s
     throw new Error(`Unexpected request: ${url}`);
   }));
 
+  const advance = vi.fn(async () => undefined);
   render(<StudyExerciseRunner studyId="study" exerciseId="exercise"
-    boardTheme="brown" pieceSet="cburnett" useSharedBoard />);
+    boardTheme="brown" pieceSet="cburnett" useSharedBoard onAdvance={advance} />);
   await waitFor(() => expect((screen.getByRole("button", { name: "I have my answer" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "I have my answer" }));
   await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("still pending"));
@@ -184,8 +186,12 @@ it("Study attempt and self-assessment retry pending Celery operations with the s
   expect(attemptStatusReads).toBe(2);
   expect(attemptWrites[0].key).toBe(attemptWrites[0].id);
 
+  expect(screen.queryByRole("button", { name: "Continue" })).toBeNull();
+  expect(advance).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Correct (self-assessed)" }));
   await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("still pending"));
+  expect(screen.queryByRole("button", { name: "Continue" })).toBeNull();
+  expect(advance).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Again (self-assessed)" }));
   await waitFor(() => expect(screen.queryByRole("button", { name: "Correct (self-assessed)" })).toBeNull());
   expect((await (await studyIntentStore()).list("study-command")).find(record => record.endpoint.endsWith("/self-assess"))?.revision).toBe(3);
@@ -325,4 +331,86 @@ it('B31 issued Study refuses a changed presentation FEN even at the same revisio
   await screen.findByText(/original exercise identity or revision changed/i);
   expect(screen.queryByText('Changed source')).toBeNull();
   expect(String(fetcher.mock.calls[0][0])).toContain('/present?card_id=fen-card&queue_entry_id=21&queue_cycle=0&revision=1');
+});
+
+
+it("saved Study review Continue explicitly advances only after its original receipt", async () => {
+  vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+  const fen = new Chess().fen();
+  const card: PracticeCard = { id: asCardId("queue-17"), kind: "study", title: "Study", subtitle: "",
+    startingFen: asFenString(fen), moves: [], userMoveTarget: 1, backendId: asCardId("card-17"),
+    queueEntryId: asQueueEntryId(17), queueCycle: 0, revision: 1, studyId: "study", studyExerciseId: "exercise" };
+  const specification = { type: "move_line", prompt: "Original exercise", hint: "", explanation: "Saved feedback",
+    grading_policy: "reference", mode: "single", accepted_lines: [["e2e4"]] };
+  let finish!: (response: Response) => void;
+  const pending = new Promise<Response>(resolve => { finish = resolve; });
+  let originalAttempt = "";
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/present?")) return Response.json({ id: "exercise", revision: 1, type: "move_line", mode: "single", grading_policy: "reference", prompt: "Original exercise", hint: "", fen });
+    if (url.endsWith("/attempts")) {
+      originalAttempt = JSON.parse(String(init?.body)).attempt_id;
+      expect((init?.headers as Record<string, string>)["Idempotency-Key"]).toBe(originalAttempt);
+      return pending;
+    }
+    if (url.endsWith("/feedback")) return Response.json({ specification });
+    throw new Error(`Unexpected request ${url}`);
+  }));
+  const refresh = vi.fn();
+  render(<TrainingView dateLabel="Today" serviceError="" refreshDatabaseQueue={refresh} cardsLeft={2}
+    card={card} boardTheme="brown" pieceSet="cburnett" rateCard={vi.fn(async () => undefined)}
+    handleAttemptFailure={vi.fn()} resetCardAttempt={vi.fn()} onMove={vi.fn()} />);
+  await screen.findByText("Original exercise");
+  fireEvent.change(screen.getByLabelText("Coordinates or UCI move"), { target: { value: "e2e4" } });
+  fireEvent.click(screen.getByRole("button", { name: "Add", exact: true }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Submit", exact: true }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "Submit", exact: true }));
+  await waitFor(() => expect(originalAttempt).toBeTruthy());
+  expect(screen.queryByRole("button", { name: "Continue" })).toBeNull();
+  expect(refresh).not.toHaveBeenCalled();
+  await act(async () => finish(Response.json({ attempt_id: originalAttempt, assessment: { outcome: "correct", feedback: "Saved" },
+    rating: "correct", requested_rating: "correct", persisted: true, review: { review_id: 1, requeue_entry_id: null } })));
+  await screen.findByText("Saved feedback");
+  fireEvent.click(screen.getByRole("button", { name: "Continue", exact: true }));
+  expect(refresh).toHaveBeenCalledOnce();
+  expect(refresh).toHaveBeenCalledWith(true);
+});
+
+it("offline Study Continue waits for durable phone recording before explicit advance", async () => {
+  vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+  const fen = new Chess().fen();
+  const specification: StudySpecification = { type: "move_line", prompt: "Phone exercise", hint: "", explanation: "Phone feedback",
+    grading_policy: "reference", mode: "single", accepted_lines: [["e2e4"]] };
+  const card: PracticeCard = { id: asCardId("queue-18"), kind: "study", title: "Study", subtitle: "",
+    startingFen: asFenString(fen), moves: [], userMoveTarget: 1, backendId: asCardId("card-18"),
+    queueEntryId: asQueueEntryId(18), queueCycle: 0, revision: 1, studyId: "study", studyExerciseId: "exercise",
+    studySnapshot: { schema_version: 1, grader_version: 1, exercise_id: "exercise", revision: 1, fen, specification } };
+  let finish!: (value: unknown) => void;
+  const pending = new Promise(resolve => { finish = resolve; });
+  const offline = await import("../../app/lib/offline-training");
+  const recording = vi.spyOn(offline, "recordOfflineStudyAttempt")
+    .mockRejectedValueOnce(new Error("Phone storage failed"))
+    .mockImplementationOnce(() => pending as never);
+  const refresh = vi.fn();
+  try {
+    render(<TrainingView dateLabel="Today" serviceError="" offlineQueue refreshDatabaseQueue={refresh} cardsLeft={2}
+      card={card} boardTheme="brown" pieceSet="cburnett" rateCard={vi.fn(async () => undefined)}
+      handleAttemptFailure={vi.fn()} resetCardAttempt={vi.fn()} onMove={vi.fn()} />);
+    await screen.findByText("Phone exercise");
+    fireEvent.change(screen.getByLabelText("Coordinates or UCI move"), { target: { value: "e2e4" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Submit", exact: true }));
+    await screen.findByText("Phone storage failed");
+    expect(screen.queryByRole("button", { name: "Continue" })).toBeNull();
+    expect(refresh).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Submit", exact: true }));
+    await waitFor(() => expect(recording).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("button", { name: "Continue" })).toBeNull();
+    expect(refresh).not.toHaveBeenCalled();
+    await act(async () => finish({}));
+    await screen.findByText("Phone feedback");
+    fireEvent.click(screen.getByRole("button", { name: "Continue", exact: true }));
+    expect(refresh).toHaveBeenCalledOnce();
+    expect(refresh).toHaveBeenCalledWith(true);
+  } finally { recording.mockRestore(); }
 });
