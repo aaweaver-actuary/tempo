@@ -118,8 +118,75 @@ def _frozen_practice_has_no_queue_or_review_effect(frozen):
         assert db.execute("SELECT count(*) FROM operation_receipts WHERE operation_id LIKE %s AND state='failed'", ("invalid-operation-%",)).fetchone()[0] == 3
 
 
-def test_frozen_study_native_attempts_and_recovery(frozen):
+def test_frozen_study_native_attempts_and_recovery(frozen, monkeypatch):
     _frozen_queued_attempt_receipt_and_lost_ack_replay(frozen, 'a', 'correct')
     _frozen_queued_attempt_receipt_and_lost_ack_replay(frozen, 'b', 'again')
     _frozen_explanation_self_assessment_is_idempotent(frozen)
     _frozen_practice_has_no_queue_or_review_effect(frozen)
+    _issued_before_archive_remounts_and_saves_original_attempt(frozen, monkeypatch)
+
+
+def _issued_before_archive_remounts_and_saves_original_attempt(frozen, monkeypatch):
+    from tempo_storage.http_composition import queue_projection
+    from tempo_storage import connections
+    from app.product_composition import study as composition
+    client, transaction = frozen
+    day = date.today().isoformat()
+    with transaction() as db:
+        for name in ('retained', 'unissued'):
+            db.execute("INSERT INTO study_exercises(id,study_id,position_id,current_revision,status,created_at,updated_at) VALUES(%s,'frozen','position',1,'published','2026-01-01','2026-01-01')", (name,))
+            db.execute("INSERT INTO study_exercise_revisions(exercise_id,revision,specification_json,specification_hash,created_at) VALUES(%s,1,%s,'original','2026-01-01')", (name, json.dumps(SPEC)))
+            db.execute("INSERT INTO cards(id,repertoire_id,kind,content_type,study_exercise_id,start_fen,moves_json,state,due_date,revision) VALUES(%s,NULL,'exercise','study_exercise',%s,%s,'[]','learning',%s,1)", ('card-' + name, name, FEN, day))
+        retained = db.execute("INSERT INTO daily_queue(queue_date,card_id,position,cycle) VALUES(%s,'card-retained',-1000,0) RETURNING id", (day,)).fetchone()[0]
+        unissued = db.execute("INSERT INTO daily_queue(queue_date,card_id,position,cycle) VALUES(%s,'card-unissued',-999,0) RETURNING id", (day,)).fetchone()[0]
+    # Real issuer stamps the original queue/card/revision; no synthetic origin.
+    issued = command_gateway.execute_command('original-issued-head', 'queue.issue_head',
+        {'queue_date': day, 'entry_id': retained, 'card_id': 'card-retained', 'expected_revision': 1})
+    assert issued['issued'] is True
+    parent = {'attempt_id': 'pending-practice', 'revision': 1, 'context': 'practice', 'answer': {'type': 'explanation', 'text': 'original'}}
+    assert client.post(BASE + 'explain/attempts', json=parent, headers={'Idempotency-Key': 'pending-practice-parent'}).json()['pending_self_assessment'] is True
+    with transaction() as db:
+        origin = dict(db.execute("SELECT * FROM queue_attempt_origins WHERE queue_entry_id=%s AND card_id='card-retained' AND revision=1", (retained,)).fetchone())
+        assert origin['issued_as_head'] == 1
+        db.execute("UPDATE studies SET archived=1 WHERE id='frozen'")
+        db.execute("UPDATE study_exercises SET status='archived' WHERE id IN ('retained','unissued','explain')")
+    # A reload must find the issued row first, without admitting the unissued
+    # archive or dispatching another issuance; exact origin survives unchanged.
+    with transaction() as db:
+        rows = queue_projection.queue_rows(db, day, 20, miss_reason='')
+        assert rows and rows[0]['queue_entry_id'] == retained
+        assert all(row['queue_entry_id'] != unissued for row in rows)
+    monkeypatch.setattr(connections, 'read_connection', transaction)
+    def no_dispatch(*args, **kwargs):
+        raise AssertionError('reload must replay the issued head, not dispatch another issuance')
+    monkeypatch.setattr(command_dispatch, 'dispatch_command', no_dispatch)
+    outcome, result, transport = composition._issue_facts(day, {'queue_entry_id': retained, 'id': 'card-retained', 'revision': 1},
+        read_connection=transaction, queue_projection_storage=queue_projection)
+    assert outcome is None and transport is None and result == {'issued': True}
+    with transaction() as db:
+        assert dict(db.execute("SELECT * FROM queue_attempt_origins WHERE queue_entry_id=%s AND card_id='card-retained' AND revision=1", (retained,)).fetchone()) == origin
+    # Restore the fixture-only gateway transport for the original save.
+    monkeypatch.setattr(command_dispatch, 'dispatch_command', lambda name, payload, *, idempotency_key: command_gateway.execute_command(idempotency_key, name, payload))
+    assert client.get(BASE + 'retained/present').status_code == 404
+    query = f'?card_id=card-retained&queue_entry_id={retained}&queue_cycle=0&revision=1'
+    assert client.get(BASE + 'retained/present' + query).status_code == 200
+    assert client.get(BASE + f'unissued/present?card_id=card-unissued&queue_entry_id={unissued}&queue_cycle=0&revision=1').status_code == 404
+    assert client.get(BASE + 'explain/present?attempt_id=pending-practice').status_code == 200
+    assert client.get(BASE + 'explain/present?attempt_id=other').status_code == 404
+    child = client.post(BASE + 'explain/attempts/pending-practice/self-assess', json={'rating': 'correct'}, headers={'Idempotency-Key': 'pending-practice-child'})
+    assert child.json()['persisted'] is True and child.json()['review'] is None
+    assert client.get(BASE + 'explain/present?attempt_id=pending-practice').status_code == 404
+    body = {'attempt_id': 'issued-original', 'revision': 1, 'context': 'review', 'queue_entry_id': retained,
+            'queue_cycle': 0, 'card_id': 'card-retained', 'answer': {'type': 'choice', 'option_ids': ['a']}}
+    first = client.post(BASE + 'retained/attempts', json=body, headers={'Idempotency-Key': 'issued-original-operation'})
+    assert first.json()['persisted'] is True
+    assert client.post(BASE + 'retained/attempts', json=body, headers={'Idempotency-Key': 'issued-original-operation'}).json() == first.json()
+    with transaction() as db:
+        assert db.execute("SELECT count(*) FROM study_attempts WHERE id='issued-original'").fetchone()[0] == 1
+        assert db.execute("SELECT count(*) FROM reviews WHERE source_ref='issued-original'").fetchone()[0] == 1
+        assert db.execute("SELECT count(*) FROM queue_attempt_origins WHERE queue_entry_id=%s AND issued_as_head=1", (retained,)).fetchone()[0] == 1
+    for suffix, changed in (('unissued', {**body, 'attempt_id': 'wrong-origin', 'card_id': 'card-unissued', 'queue_entry_id': unissued}),
+                            ('practice', {**parent, 'attempt_id': 'new-practice'})):
+        client.post(BASE + ('unissued' if suffix == 'unissued' else 'explain') + '/attempts', json=changed, headers={'Idempotency-Key': 'reject-' + suffix})
+    with transaction() as db:
+        assert db.execute("SELECT count(*) FROM operation_receipts WHERE operation_id IN ('reject-unissued','reject-practice') AND state='failed'").fetchone()[0] == 2

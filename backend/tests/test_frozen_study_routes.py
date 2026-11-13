@@ -77,3 +77,17 @@ def test_feedback_requires_original_binding_and_returns_original_revision(client
     assert client.get(BASE + "/attempts/foreign/feedback").status_code == 404
     assert client.get("/api/studies/other/exercises/exercise/attempts/old-attempt/feedback").status_code == 404
     assert calls == [("study", "exercise", "old-attempt"), ("study", "exercise", "foreign"), ("other", "exercise", "old-attempt")]
+
+
+def test_retained_present_requires_exact_issued_or_pending_identity(client, monkeypatch):
+    row = {"id": "exercise", "current_revision": 2, "fen": FEN, "specification_json": json.dumps(SPEC)}
+    monkeypatch.setattr(routes.storage, "frozen_presentation", lambda *args: None)
+    monkeypatch.setattr(routes.storage, "issued_frozen_presentation", lambda db, study, exercise, card, entry, cycle, revision:
+                        row if (study, exercise, card, entry, cycle, revision) == ("study", "exercise", "card", 11, 3, 2) else None)
+    monkeypatch.setattr(routes.storage, "pending_frozen_presentation", lambda db, study, exercise, attempt:
+                        row if (study, exercise, attempt) == ("study", "exercise", "saved-attempt") else None)
+    assert client.get(BASE + "/present").status_code == 404
+    assert client.get(BASE + "/present?card_id=card&queue_entry_id=11&queue_cycle=3&revision=2").json()["revision"] == 2
+    assert client.get(BASE + "/present?card_id=card&queue_entry_id=11&queue_cycle=4&revision=2").status_code == 404
+    assert client.get(BASE + "/present?attempt_id=saved-attempt").json()["revision"] == 2
+    assert client.get(BASE + "/present?attempt_id=foreign").status_code == 404

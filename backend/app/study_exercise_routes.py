@@ -22,9 +22,15 @@ def _decode(value):
 
 
 @router.get(_prefix + "/present")
-def present(study_id: str, exercise_id: str):
+def present(study_id: str, exercise_id: str, card_id: str | None = None,
+            queue_entry_id: int | None = None, queue_cycle: int | None = None,
+            revision: int | None = None, attempt_id: str | None = None):
     with read_connection() as database:
         row = storage.frozen_presentation(database, study_id, exercise_id)
+        if row is None and all(value is not None for value in (card_id, queue_entry_id, queue_cycle, revision)):
+            row = storage.issued_frozen_presentation(database, study_id, exercise_id, card_id, queue_entry_id, queue_cycle, revision)
+        if row is None and attempt_id is not None:
+            row = storage.pending_frozen_presentation(database, study_id, exercise_id, attempt_id)
     if row is None:
         raise HTTPException(404, "Exercise unavailable")
     specification = _decode(row["specification_json"])

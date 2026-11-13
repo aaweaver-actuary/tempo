@@ -78,3 +78,23 @@ it.each(["defense-command", "endgame-command"])("holds retired %s before touchin
   expect(fetch).not.toHaveBeenCalled();
   expect(store.update).not.toHaveBeenCalled();
 });
+
+it('B31 retained pending practice presentation requires one original parent and its unreset boundary', async () => {
+  const { studyIntentStore } = await import('../../database/browser/study-intent-storage');
+  const { retainedPendingStudyPresentation } = await import('../../app/lib/study-command-client');
+  const store = await studyIntentStore();
+  const scope = 'study:b31-study:b31-exercise:practice:2', endpoint = '/api/studies/b31-study/exercises/b31-exercise/attempts';
+  const make = async (id: string) => {
+    const key = `${scope}:${id}`;
+    await store.put({ key, kind: 'study-command', attemptId: id, requestId: id, endpoint, revision: 2, createdAt: 'original',
+      payload: { scope, body: { attempt_id: id, revision: 2, context: 'practice' }, headers: { 'Idempotency-Key': id } } });
+    await store.update(key, current => ({ ...current, state: 'committed', receipt: { attempt_id: id, pending_self_assessment: true } }));
+  };
+  await make('original-b31');
+  expect(await retainedPendingStudyPresentation('b31-study', 'b31-exercise', endpoint)).toBe('original-b31');
+  expect(await retainedPendingStudyPresentation('b31-study', 'b31-exercise', '/foreign')).toBeUndefined();
+  await make('second-b31');
+  await expect(retainedPendingStudyPresentation('b31-study', 'b31-exercise', endpoint)).rejects.toThrow('Multiple retained');
+  await store.boundary(`practice-reset:${scope}`, record => (record.payload as { scope?: string })?.scope === scope, 0);
+  expect(await retainedPendingStudyPresentation('b31-study', 'b31-exercise', endpoint)).toBeUndefined();
+});

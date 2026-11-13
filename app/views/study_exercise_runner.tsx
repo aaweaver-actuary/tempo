@@ -103,10 +103,32 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
       }); });
       return () => { generationRef.current += 1; };
     }
-    void fetch(`${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/present`, { signal: controller.signal })
+    const base = `${API_URL}/api/studies/${studyId}/exercises/${exerciseId}`;
+    const present = async () => {
+      const response = await fetch(`${base}/present`, { signal: controller.signal });
+      if (response.status !== 404) return response;
+      const hasQueue = card?.backendId && card.queueEntryId !== undefined && card.queueCycle !== undefined && card.revision !== undefined;
+      if (hasQueue) {
+        const params = new URLSearchParams({ card_id: card.backendId!, queue_entry_id: String(card.queueEntryId),
+          queue_cycle: String(card.queueCycle), revision: String(card.revision) });
+        const issued = await fetch(`${base}/present?${params}`, { signal: controller.signal });
+        if (issued.status !== 404) return issued;
+      }
+      if (!card || hasQueue) {
+        const { retainedPendingStudyPresentation } = await import("../lib/study-command-client");
+        const queue = hasQueue ? { cardId: card!.backendId!, entryId: Number(card!.queueEntryId),
+          cycle: card!.queueCycle!, revision: card!.revision! } : undefined;
+        const attempt = await retainedPendingStudyPresentation(studyId, exerciseId, `${base}/attempts`, queue);
+        if (attempt) return fetch(`${base}/present?${new URLSearchParams({ attempt_id: attempt })}`, { signal: controller.signal });
+      }
+      return response;
+    };
+    void present()
       .then(async (response) => {
         const body = await response.json() as PresentedStudyExercise & { detail?: string };
         if (!response.ok) throw new Error(responseError(response.status, body.detail));
+        if (body.id !== exerciseId || (card?.revision !== undefined && body.revision !== card.revision))
+          throw new Error("The original exercise identity or revision changed. Restore the original attempt before continuing.");
         if (generation === generationRef.current) setExercise(body);
       })
       .catch((error: unknown) => {
@@ -114,7 +136,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
           setLoadError(error instanceof Error ? error.message : "Could not load this exercise.");
       });
     return () => { controller.abort(); generationRef.current += 1; };
-  }, [studyId, exerciseId, card?.studySnapshot, offline]);
+  }, [studyId, exerciseId, card?.studySnapshot, card?.backendId, card?.queueEntryId, card?.queueCycle, card?.revision, offline]);
 
 
   const answerLocked = Boolean(reply) || uncertain;

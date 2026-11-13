@@ -91,12 +91,15 @@ def submit_study_attempt(
     exercise = storage.locked_exercise(database, exercise_id)
     if exercise is None:
         raise HTTPException(404, "Study Exercises not found")
-    if (
-        exercise["study_id"] != str(payload["study_id"])
-        or exercise["status"] == "archived"
-        or exercise["current_revision"] != request.revision
-    ):
+    if exercise["study_id"] != str(payload["study_id"]) or exercise["current_revision"] != request.revision:
         raise HTTPException(409, "Exercise revision changed; reload before answering")
+    # An issued original review remains accepted after a later archive. The
+    # immutable origin cannot authorize a new or unrelated practice attempt.
+    if exercise["status"] != "published" or not storage.study_is_active(database, exercise["study_id"]):
+        if request.context != "review" or not storage.issued_review_origin(
+            database, exercise_id, request.card_id, request.queue_entry_id, request.queue_cycle, request.revision
+        ):
+            raise HTTPException(409, "Exercise revision changed; reload before answering")
     position = storage.exercise_position(database, exercise["position_id"])
     if position is None:
         raise HTTPException(404, "Study Positions not found")
