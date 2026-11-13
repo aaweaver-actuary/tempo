@@ -720,3 +720,12 @@ Compose; probes read the migration ledger or ping Redis. The caller retains targ
 selection, lifecycle ordering and cleanup. This source census neither performs
 those operations nor qualifies backup, native, runtime or installed behavior. Other
 database tooling and previously recorded fixture/test-selection gaps remain open.
+
+## PostgreSQL backup verification source roles
+
+The ordered fingerprint helper and backup verifier are separately mapped, with
+their existing caller-supplied database and CLI lifecycle dependencies. Their
+functions query databases when invoked; this static census parses source only.
+It does not run or qualify backup, restore, native or installed behavior. The
+CLI-state verifier and other database tooling remain separately unclassified, as
+do the previously recorded fixture and test-selection gaps.

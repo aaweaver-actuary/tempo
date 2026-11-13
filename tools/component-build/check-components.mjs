@@ -474,6 +474,38 @@ export function validateDatabaseCliTools(manifest, root = repository) {
   return {sources:tracked.length};
 }
 
+export function validateBackupVerificationSources(manifest, root = repository, python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3") {
+  const listed=spawnSync("git",["ls-files","-z","database/tooling"],{cwd:root,encoding:"utf8"});
+  if(listed.error || listed.status!==0) throw new Error("Cannot enumerate backup verification sources");
+  const tracked=listed.stdout.split("\0").filter(p=>/^database\/tooling\/(?:postgres_fingerprint|verify_postgres_backup)[^/]*\.(?:py|sh|js|jsx|mjs|cjs|ts|tsx)$/.test(p));
+  const ids=["postgres-fingerprint-tool","postgres-backup-verification"],owners=ids.map(id=>manifest.components.find(c=>c.id===id));
+  if(owners.some(c=>!c || c.status!=="mapped" || !Array.isArray(c.resourceRoles) || !Array.isArray(c.ownedFiles) || !Array.isArray(c.publicExports))) throw new Error("Missing backup verification owner");
+  const mapped=manifest.components.filter(c=>c.status==="mapped" && c.ownedFiles), files=owners.flatMap(c=>c.ownedFiles), allowed=new Set(["ordered-row-fingerprint","backup-verification"]);
+  if(new Set(files).size!==files.length || files.length!==tracked.length || files.some(p=>!tracked.includes(p))) throw new Error("Backup verification inventory missing, duplicate or stale");
+  const references=[];
+  for(const owner of owners) {
+    const roles=new Map();
+    for(const value of owner.resourceRoles) {const parts=typeof value==="string" ? value.split("#") : [];if(parts.length!==2 || !owner.ownedFiles.includes(parts[0]) || !allowed.has(parts[1]) || roles.has(parts[0])) throw new Error("Invalid backup verification role");roles.set(parts[0],parts[1]);}
+    if(roles.size!==owner.ownedFiles.length) throw new Error("Invalid backup verification role");
+    for(const path of owner.ownedFiles) if(!path.endsWith(".py") || path.split("/").some(x=>!x || x==="." || x==="..") || !existsSync(resolve(root,path)) || !inside(realpathSync(root),realpathSync(resolve(root,path))) || mapped.filter(c=>c.ownedFiles.includes(path)).length!==1) throw new Error("Invalid or overlapping backup verification source");
+    if(!owner.publicExports.length || new Set(owner.publicExports).size!==owner.publicExports.length) throw new Error("Invalid backup verification exports");
+    for(const value of owner.publicExports){const parts=value.split("#");if(parts.length!==2 || !owner.ownedFiles.includes(parts[0]) || !/^[A-Za-z_][A-Za-z_0-9]*$/.test(parts[1])) throw new Error("Invalid backup verification export");references.push({path:parts[0],symbol:parts[1]});}
+  }
+  if(!owners[1].dependencies.includes("postgres-fingerprint-tool") || !manifest.components.find(c=>c.id==="tempo-cli")?.dependencies.includes("postgres-backup-verification")) throw new Error("Missing backup verification dependency");
+  const code=`import ast,json,pathlib,sys
+root=pathlib.Path(sys.argv[1])
+refs=json.loads(sys.argv[2])
+for path in json.loads(sys.argv[3]):
+ tree=ast.parse((root/path).read_text(),filename=path)
+ names={n.name for n in tree.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef,ast.ClassDef))}
+ for ref in refs:
+  if ref['path']==path and ref['symbol'] not in names: raise ValueError('missing source export')
+`;
+  const parsed=spawnSync(python,["-c",code,resolve(root),JSON.stringify(references),JSON.stringify(tracked)],{encoding:"utf8"});
+  if(parsed.error || parsed.status!==0) throw new Error("Backup verification source parse failed: "+(parsed.error?.message ?? parsed.stderr));
+  return {sources:tracked.length};
+}
+
 export function checkComponents(root = repository, python = process.env.TEMPO_COMPONENT_PYTHON ?? "python3", options = {}) {
   const manifest = readManifest(root);
   const selected = selectComponents(manifest, options.componentIds);
@@ -489,6 +521,7 @@ export function checkComponents(root = repository, python = process.env.TEMPO_CO
     validateDdlResources(manifest, root, python);
     validateReductionTools(manifest, root, python);
     validateDatabaseCliTools(manifest, root);
+    validateBackupVerificationSources(manifest, root, python);
     validateContractTooling(manifest, root, python);
   }
   validateManifest(manifest, root, { componentIds: selected.map(component => component.id), suiteIds: options.componentIds === undefined ? manifest.suites?.map(suite => suite.id) : undefined });
@@ -530,6 +563,7 @@ if (process.argv[1] && resolve(process.argv[1]) === new URL(import.meta.url).pat
         validateDdlResources(manifest, root);
         validateReductionTools(manifest, root);
         validateDatabaseCliTools(manifest, root);
+        validateBackupVerificationSources(manifest, root);
         validateContractTooling(manifest, root);
       }
       validateManifest(manifest, root, { componentIds: options.suiteIds ? [] : selected.map(component => component.id), suiteIds: options.suiteIds });

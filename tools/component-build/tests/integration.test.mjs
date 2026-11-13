@@ -4,7 +4,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync,
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { checkComponents, repository, validateManifest, compositionPaths, validateCompositionOwnership, censusPaths, validateCensusOwnership, validateCensusInterfaces, validateStartupFacts, validateDdlResources, validateReductionTools, validateContractTooling, validateDatabaseCliTools } from "../check-components.mjs";
+import { checkComponents, repository, validateManifest, compositionPaths, validateCompositionOwnership, censusPaths, validateCensusOwnership, validateCensusInterfaces, validateStartupFacts, validateDdlResources, validateReductionTools, validateContractTooling, validateDatabaseCliTools, validateBackupVerificationSources } from "../check-components.mjs";
 import { validateOwnedPaths, selectComponents } from "../selection.mjs";
 import { validateMigrationInventory } from "../../../database/tooling/check-migration-inventory.mjs";
 
@@ -98,6 +98,40 @@ for (const [scope, path] of [["retained", "backend/app/contracts/new_contract.py
     assert.throws(() => validateCensusOwnership(original, scope, paths), /found 0/);
   });
 }
+test("T02 backup verification owners reject missing, duplicate, stale, role, export, dependency and overlap", () => {
+  assert.deepEqual(validateBackupVerificationSources(original,repository,python),{sources:2});
+  const change=(fn)=>{const bad=structuredClone(original),owner=bad.components.find(c=>c.id==="postgres-backup-verification");fn(bad,owner);return bad;};
+  assert.throws(()=>validateBackupVerificationSources(change((_,o)=>o.ownedFiles.pop()),repository,python),/missing, duplicate or stale/);
+  assert.throws(()=>validateBackupVerificationSources(change((_,o)=>o.ownedFiles.push(o.ownedFiles[0])),repository,python),/missing, duplicate or stale/);
+  assert.throws(()=>validateBackupVerificationSources(change((_,o)=>o.ownedFiles[0]="../foreign.py"),repository,python),/missing, duplicate or stale/);
+  assert.throws(()=>validateBackupVerificationSources(change((_,o)=>o.resourceRoles[0]+="-wrong"),repository,python),/verification role/);
+  assert.throws(()=>validateBackupVerificationSources(change((_,o)=>o.publicExports[0]=o.ownedFiles[0]+"#missing"),repository,python),/source parse failed/);
+  assert.throws(()=>validateBackupVerificationSources(change((_,o)=>o.dependencies=[]),repository,python),/dependency/);
+  assert.throws(()=>validateBackupVerificationSources(change((b,o)=>b.components.find(c=>c.id==="integration").ownedFiles.push(o.ownedFiles[0])),repository,python),/overlapping/);
+  const revised=change((_,o)=>{const [p]=o.resourceRoles[0].split("#");o.resourceRoles[0]=p+"#ordered-row-fingerprint";});
+  assert.deepEqual(validateBackupVerificationSources(revised,repository,python),{sources:2});
+});
+test("T02 backup verification sources parse without execution and discover new siblings", context => {
+  const root=mkdtempSync(join(tmpdir(),"tempo-backup-source-"));context.after(()=>rmSync(root,{recursive:true,force:true}));
+  assert.equal(spawnSync("git",["-C",root,"init","-q"],{cwd:root}).status,0);
+  const files=original.components.filter(c=>["postgres-fingerprint-tool","postgres-backup-verification"].includes(c.id)).flatMap(c=>c.ownedFiles);
+  for(const file of files){mkdirSync(join(root,file,".."),{recursive:true});cpSync(join(repository,file),join(root,file));}
+  assert.equal(spawnSync("git",["-C",root,"add","database/tooling"],{cwd:root}).status,0);
+  assert.deepEqual(validateBackupVerificationSources(original,root,python),{sources:2});
+  const target=join(root,files[0]),sentinel=join(root,"executed"),source=readFileSync(target,"utf8");
+  writeFileSync(target,source+`\nfrom pathlib import Path\nPath(${JSON.stringify(sentinel)}).write_text("unsafe")\n`);
+  assert.deepEqual(validateBackupVerificationSources(original,root,python),{sources:2});assert.equal(existsSync(sentinel),false);
+  writeFileSync(target,"def invalid(:\n");assert.throws(()=>validateBackupVerificationSources(original,root,python),/source parse failed/);writeFileSync(target,source);
+  const added="database/tooling/postgres_fingerprint_extra.py";writeFileSync(join(root,added),"def extra(): pass\n");
+  assert.equal(spawnSync("git",["-C",root,"add",added],{cwd:root}).status,0);
+  assert.throws(()=>validateBackupVerificationSources(original,root,python),/missing, duplicate or stale/);
+  const registered=structuredClone(original),owner=registered.components.find(c=>c.id==="postgres-fingerprint-tool");owner.ownedFiles.push(added);owner.resourceRoles.push(added+"#ordered-row-fingerprint");owner.publicExports.push(added+"#extra");
+  assert.deepEqual(validateBackupVerificationSources(registered,root,python),{sources:3});
+  const jsx="database/tooling/postgres_fingerprint_extra.jsx";writeFileSync(join(root,jsx),"export default null;\n");
+  assert.equal(spawnSync("git",["-C",root,"add",jsx],{cwd:root}).status,0);assert.throws(()=>validateBackupVerificationSources(registered,root,python),/missing, duplicate or stale/);
+  owner.ownedFiles.push(jsx);owner.resourceRoles.push(jsx+"#ordered-row-fingerprint");owner.publicExports.push(jsx+"#default");
+  assert.throws(()=>validateBackupVerificationSources(registered,root,python),/Invalid or overlapping backup verification source/);
+});
 test("T02 database CLI source owners reject missing, duplicate, stale, role, export and overlap", () => {
   assert.deepEqual(validateDatabaseCliTools(original,repository),{sources:2});
   const change=(fn)=>{const bad=structuredClone(original),owner=bad.components.find(c=>c.id==="database-cli-probes");fn(bad,owner);return bad;};
