@@ -13,6 +13,30 @@ DAY = date(2026, 10, 21)
 NOW = datetime(2026, 10, 21, 12, tzinfo=timezone.utc)
 
 
+@pytest.mark.parametrize("valid_only,value,expected", [
+    (True, 0, 0), (True, 8, 8), (False, None, None), (False, 9, 9),
+])
+def test_latest_review_id_preserves_sql_null_and_identity(valid_only, value, expected):
+    calls = []
+    class Database:
+        def execute(self, sql, parameters):
+            calls.append((sql, parameters))
+            return SimpleNamespace(fetchone=lambda: (value,))
+    adapter = review.LearningReviewAdapter(Database(), None)
+    assert adapter.latest_review_id("card", valid_only=valid_only) == expected
+    assert calls == [(("SELECT COALESCE(MAX(id),0) FROM reviews WHERE card_id=%s AND invalidated_at IS NULL"
+                       if valid_only else "SELECT MAX(id) FROM reviews WHERE card_id=%s"), ("card",))]
+
+
+@pytest.mark.parametrize("valid_only,row", [(True, (None,)), (True, (True,)), (False, ("9",)), (False, None)])
+def test_latest_review_id_rejects_invalid_storage_fact(valid_only, row):
+    class Database:
+        def execute(self, *_):
+            return SimpleNamespace(fetchone=lambda: row)
+    with pytest.raises(TypeError):
+        review.LearningReviewAdapter(Database(), None).latest_review_id("card", valid_only=valid_only)
+
+
 @pytest.mark.parametrize("failure", ["policy", "day"])
 def test_calendar_capture_is_atomic_after_failed_initialization(monkeypatch, failure):
     calls = []

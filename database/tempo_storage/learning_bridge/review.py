@@ -1,5 +1,6 @@
 """Complete existing legacy review statements and driver-specific lock operations."""
 from tempo_storage import postgres
+from typing import Literal, overload
 _ATTEMPT_LOCK = ' FOR UPDATE'
 
 def lock_current_card(database: postgres.PostgresConnection, card_id: str) -> None:
@@ -37,8 +38,22 @@ def first_queued_attempt(database: postgres.PostgresConnection, day: str, card_i
 def current_revision(database: postgres.PostgresConnection, card_id: str) -> postgres.TempoRow | None:
     return database.execute('SELECT revision FROM cards WHERE id=%s', (card_id,)).fetchone()
 
-def latest_review_id(database, card_id, valid_only):
-    return database.execute(('SELECT COALESCE(MAX(id),0) FROM reviews WHERE card_id=%s' if valid_only else 'SELECT MAX(id) FROM reviews WHERE card_id=%s') + (' AND invalidated_at IS NULL' if valid_only else ''), (card_id,)).fetchone()[0]
+@overload
+def latest_review_id(database: postgres.PostgresConnection, card_id: str, valid_only: Literal[True]) -> int: ...
+@overload
+def latest_review_id(database: postgres.PostgresConnection, card_id: str, valid_only: Literal[False]) -> int | None: ...
+@overload
+def latest_review_id(database: postgres.PostgresConnection, card_id: str, valid_only: bool) -> int | None: ...
+def latest_review_id(database: postgres.PostgresConnection, card_id: str, valid_only: bool) -> int | None:
+    row = database.execute(('SELECT COALESCE(MAX(id),0) FROM reviews WHERE card_id=%s' if valid_only else 'SELECT MAX(id) FROM reviews WHERE card_id=%s') + (' AND invalidated_at IS NULL' if valid_only else ''), (card_id,)).fetchone()
+    if row is None:
+        raise TypeError("'NoneType' object is not subscriptable")
+    value: object = row[0]
+    if type(value) is int:
+        return value
+    if value is None and not valid_only:
+        return None
+    raise TypeError("Invalid latest review ID")
 
 def retain_introduction(database: postgres.PostgresConnection, queue_day: str, card_id: str) -> None:
     database.execute('UPDATE cards SET introduced_at=COALESCE(introduced_at,%s) WHERE id=%s', (queue_day, card_id))

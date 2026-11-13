@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timezone
 import json
 from collections.abc import Callable, Mapping
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, overload
 
 from fastapi import HTTPException
 import tempo_learning_review as learning
@@ -235,7 +235,13 @@ class LearningReviewAdapter:
         row = storage.current_revision(self.database, card_id)
         return row["revision"] if row else None
 
-    def latest_review_id(self, card_id: str, *, valid_only: bool) -> int:
+    @overload
+    def latest_review_id(self, card_id: str, *, valid_only: Literal[True]) -> int: ...
+    @overload
+    def latest_review_id(self, card_id: str, *, valid_only: Literal[False]) -> int | None: ...
+    @overload
+    def latest_review_id(self, card_id: str, *, valid_only: bool) -> int | None: ...
+    def latest_review_id(self, card_id: str, *, valid_only: bool) -> int | None:
         return storage.latest_review_id(self.database, card_id, valid_only)
 
     def retain_introduction(self, card_id: str, queue_day: str) -> None:
