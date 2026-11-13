@@ -7008,3 +7008,5 @@ and marker checks, cleanup failure, environment/pool restoration and retained
 split assertions. They use fakes and do not constitute native PostgreSQL,
 browser, migration or installed acceptance; those require the admitted real
 finite native selections and their non-skipped execution receipts.
+
+- Retained manual prefix split routes missing or losing the original command identity, revision, or queue entry: `backend/tests/test_prefix_split_http.py::test_prefix_routes_mount_exactly_once`, `test_prefix_preview_uses_read_owner_and_rejects_illegal_card`, and `test_prefix_decision_dispatch_preserves_operation_revision_and_receipt` exercise the assembled API, real preview policy, foreground dispatch, pending receipt, stale failure and immutable payload conflict. Native and browser journey qualification remains separate.
